@@ -49,4 +49,4 @@ Platform builds and checksums are published under [Releases](../../releases). Th
 
 ## License
 
-The Worktable application is proprietary. The documentation and installer script in this repository are provided for use with Worktable. _(A formal license for this repository's contents is still to be finalized.)_
+The Worktable application is proprietary. The documentation and installer script in this repository are provided for use with Worktable under a limited grant — see [LICENSE](LICENSE).

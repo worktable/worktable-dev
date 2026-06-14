@@ -1,0 +1,33 @@
+Worktable License
+
+Copyright (c) 2026 Worktable. All rights reserved.
+
+This repository contains documentation and the installation script ("install.sh")
+for Worktable, a proprietary application. The Worktable application and its source
+code are proprietary and are NOT distributed under an open-source license.
+
+1. Permitted use.
+   You may:
+   (a) download, inspect, and run install.sh for the sole purpose of installing
+       and using Worktable; and
+   (b) read, copy, and share the documentation in this repository for the purpose
+       of evaluating and using Worktable, provided this notice is retained.
+
+2. Restrictions.
+   Except as expressly permitted in Section 1, you may not modify, redistribute,
+   sublicense, sell, or create derivative works from the contents of this
+   repository. Nothing in this license grants any right to the Worktable
+   application, its source code, trademarks, or branding.
+
+3. Releases.
+   Compiled Worktable binaries distributed via this repository's Releases are part
+   of the proprietary Worktable application and are governed by the Worktable terms
+   of service, not by this license.
+
+4. No warranty.
+   THE CONTENTS OF THIS REPOSITORY ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO
+   EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES,
+   OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE CONTENTS OF
+   THIS REPOSITORY OR THEIR USE.

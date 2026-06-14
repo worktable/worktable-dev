@@ -4,8 +4,8 @@
 
 Please report security issues **privately** — do not open a public issue for a vulnerability.
 
-- Preferred: use GitHub's [private vulnerability reporting](../../security/advisories/new) on this repository.
-- Or email **security@worktable.dev**. <!-- TODO: confirm/replace with a monitored address -->
+- Preferred: use GitHub's [private vulnerability reporting](../../security/advisories/new) on this repository — it is enabled and routes directly to the maintainers.
+- Or email **security@worktable.dev**.
 
 Include where possible: affected version (`worktable --version`), platform, a description of the issue, and steps to reproduce. We aim to acknowledge reports within a few business days.
 

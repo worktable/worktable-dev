@@ -21,4 +21,4 @@ By design, the local server runs as a single-user app on `localhost`:
 - The REST API under `/api/*` is unauthenticated. Run Worktable on localhost or behind your own network boundary.
 - The MCP endpoint (`/mcp`) is open by default and accepts an optional bearer token via `WORKTABLE_MCP_TOKEN`.
 
-See [docs/configuration.md](docs/configuration.md) for hardening guidance when exposing Worktable beyond localhost.
+See the [security model](https://docs.worktable.dev/reference/security/) and [remote access guide](https://docs.worktable.dev/guides/remote-access/) for hardening guidance when exposing Worktable beyond localhost.

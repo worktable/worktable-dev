@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Worktable isn't working right
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Worktable version
+      description: Run `worktable --version`
+      placeholder: 0.0.38
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 (Apple Silicon), Ubuntu 24.04, ...
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, agent/MCP client in use, `worktable doctor` output.
+    validations:
+      required: false

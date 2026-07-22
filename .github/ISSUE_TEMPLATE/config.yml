@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://docs.worktable.dev
+    about: Guides, concepts, and the full CLI and MCP reference.
+  - name: Report a security vulnerability
+    url: https://github.com/worktable/worktable-dev/security/advisories/new
+    about: Please report vulnerabilities privately, not as public issues.

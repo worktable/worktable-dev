@@ -1,7 +1,7 @@
 {
   "name": "@worktable/openclaw",
-  "version": "0.0.9",
-  "description": "OpenClaw channel plugin for durable Worktable threads",
+  "version": "0.0.10",
+  "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://docs.worktable.dev/",
@@ -33,7 +33,7 @@
     "channel": {
       "id": "worktable",
       "label": "Worktable",
-      "blurb": "Connect OpenClaw to durable Worktable threads."
+      "blurb": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud."
     },
     "compat": {
       "pluginApi": ">=2026.7.1-2",

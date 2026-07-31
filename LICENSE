@@ -6,6 +6,9 @@ This repository contains documentation and the installation script ("install.sh"
 for Worktable, a proprietary application. The Worktable application and its source
 code are proprietary and are NOT distributed under an open-source license.
 
+The OpenClaw adapter under plugins/openclaw is an explicit exception. It is
+governed by the MIT License in plugins/openclaw/LICENSE, not this license.
+
 1. Permitted use.
    You may:
    (a) download, inspect, and run install.sh for the sole purpose of installing

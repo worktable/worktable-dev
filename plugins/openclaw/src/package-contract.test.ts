@@ -5,7 +5,9 @@ import { worktableMcpEndpoint } from "./worktable-client"
 const manifest = JSON.parse(
   readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf8")
 ) as {
+  description: string
   version: string
+  icon?: string
   activation?: { onCommands?: string[] }
   commandAliases?: Array<{ name?: string; kind?: string }>
 }
@@ -14,12 +16,14 @@ const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8")
 ) as {
   version: string
+  description: string
   license?: string
   files?: string[]
   peerDependencies?: { openclaw?: string }
   devDependencies?: { openclaw?: string }
   repository?: { type?: string; url?: string; directory?: string }
   openclaw?: {
+    channel?: { blurb?: string }
     compat?: { pluginApi?: string; minGatewayVersion?: string }
     build?: { openclawVersion?: string; pluginSdkVersion?: string }
     install?: {
@@ -33,6 +37,12 @@ const packageJson = JSON.parse(
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 
 describe("packed OpenClaw contract", () => {
+  test("keeps the ClawHub listing metadata aligned", () => {
+    expect(manifest.description).toBe(packageJson.description)
+    expect(packageJson.openclaw?.channel?.blurb).toBe(packageJson.description)
+    expect(manifest.icon).toBe("https://www.worktable.dev/favicon.svg")
+  })
+
   test("declares the command ownership needed for lazy plugin CLI loading", () => {
     expect(manifest.activation?.onCommands).toContain("worktable")
     expect(manifest.commandAliases).toContainEqual({

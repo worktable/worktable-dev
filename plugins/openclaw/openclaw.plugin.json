@@ -1,8 +1,9 @@
 {
   "id": "worktable",
   "name": "Worktable",
-  "description": "Connect OpenClaw to durable Worktable participant threads.",
-  "version": "0.0.9",
+  "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
+  "version": "0.0.10",
+  "icon": "https://www.worktable.dev/favicon.svg",
   "channels": ["worktable"],
   "activation": {
     "onStartup": true,

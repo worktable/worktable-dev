@@ -11,7 +11,7 @@ Include where possible: affected version (`worktable --version`), platform, a de
 
 ## Scope
 
-- **In scope:** the Worktable local server and CLI, the MCP endpoint, the installer (`install.sh`), and released artifacts.
+- **In scope:** the Worktable local server and CLI, the MCP endpoint, the OpenClaw adapter, the installer (`install.sh`), and released artifacts.
 - **Out of scope:** issues that require an already-compromised host, and the deliberately documented behavior below.
 
 ## Known posture (not a vulnerability)

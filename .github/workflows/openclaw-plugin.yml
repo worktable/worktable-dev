@@ -1,0 +1,67 @@
+name: OpenClaw plugin
+
+on:
+  # Keep the check present on every pull request so branch protection never
+  # waits forever when a change falls outside the plugin path.
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/openclaw-plugin.yml"
+      - "plugins/openclaw/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openclaw-plugin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/openclaw
+    steps:
+      - name: Check out the public source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
+
+      - name: Verify exported source hashes
+        run: |
+          jq -r '.files | to_entries[] | "\(.value)  \(.key)"' SOURCE.json |
+            sha256sum -c -
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test and typecheck
+        run: |
+          bun test
+          bun run typecheck
+
+      - name: Build and pack twice reproducibly
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          bun run pack:dogfood
+          mv artifacts /tmp/worktable-openclaw-artifacts-first
+          mv dist /tmp/worktable-openclaw-dist-first
+          bun run pack:dogfood
+          cmp "/tmp/worktable-openclaw-artifacts-first/worktable-openclaw-${version}.tgz" \
+            "artifacts/worktable-openclaw-${version}.tgz"
+          sha256sum "artifacts/worktable-openclaw-${version}.tgz"
+
+      - name: Validate the ClawHub package contract
+        run: |
+          bunx clawhub@0.23.1 package validate . \
+            --runtime \
+            --allow-execute \
+            --json

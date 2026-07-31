@@ -1,0 +1,161 @@
+{
+  "id": "worktable",
+  "name": "Worktable",
+  "description": "Connect OpenClaw to durable Worktable participant threads.",
+  "version": "0.0.9",
+  "channels": ["worktable"],
+  "activation": {
+    "onStartup": true,
+    "onCommands": ["worktable"],
+    "onChannels": ["worktable"]
+  },
+  "commandAliases": [
+    {
+      "name": "worktable",
+      "kind": "cli"
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "channelConfigs": {
+    "worktable": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "server": {
+            "type": "string",
+            "format": "uri"
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authMode": {
+            "type": "string",
+            "enum": ["local-token", "agent-registration"]
+          },
+          "agentAuth": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "registrationId": { "type": "string", "minLength": 1 },
+              "authorizationServer": { "type": "string", "format": "uri" },
+              "identityEndpoint": { "type": "string", "format": "uri" },
+              "tokenEndpoint": { "type": "string", "format": "uri" },
+              "resource": { "type": "string", "format": "uri" },
+              "assertion": { "type": "string", "minLength": 1 },
+              "assertionExpiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "refreshToken": { "type": "string", "minLength": 1 },
+              "refreshTokenExpiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "registrationId",
+              "authorizationServer",
+              "identityEndpoint",
+              "tokenEndpoint",
+              "resource",
+              "assertion",
+              "assertionExpiresAt",
+              "refreshToken",
+              "refreshTokenExpiresAt"
+            ]
+          },
+          "pendingAgentAuth": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "registrationId": { "type": "string", "minLength": 1 },
+              "authorizationServer": { "type": "string", "format": "uri" },
+              "identityEndpoint": { "type": "string", "format": "uri" },
+              "tokenEndpoint": { "type": "string", "format": "uri" },
+              "resource": { "type": "string", "format": "uri" },
+              "assertion": { "type": "string", "minLength": 1 },
+              "assertionExpiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "refreshToken": { "type": "string", "minLength": 1 },
+              "refreshTokenExpiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "registrationId",
+              "authorizationServer",
+              "identityEndpoint",
+              "tokenEndpoint",
+              "resource",
+              "assertion",
+              "assertionExpiresAt",
+              "refreshToken",
+              "refreshTokenExpiresAt"
+            ]
+          },
+          "participantName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "defaultSpaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pendingPairingCode": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["server"],
+        "anyOf": [
+          { "required": ["token"] },
+          { "required": ["agentAuth"] },
+          { "required": ["pendingAgentAuth"] }
+        ]
+      },
+      "uiHints": {
+        "server": {
+          "label": "Worktable server"
+        },
+        "token": {
+          "label": "Worktable token",
+          "sensitive": true
+        },
+        "agentAuth": {
+          "label": "Worktable Agent Registration",
+          "sensitive": true,
+          "advanced": true
+        },
+        "pendingAgentAuth": {
+          "label": "Pending Agent Registration",
+          "sensitive": true,
+          "advanced": true
+        },
+        "participantName": {
+          "label": "Participant name"
+        },
+        "defaultSpaceId": {
+          "label": "Legacy default Space",
+          "help": "Compatibility preference for existing connections. New conversations otherwise live in Worktable.",
+          "advanced": true
+        },
+        "pendingPairingCode": {
+          "label": "Pending pairing completion",
+          "sensitive": true
+        }
+      }
+    }
+  }
+}

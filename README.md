@@ -4,7 +4,7 @@
 
 Agents get somewhere better than chat to put durable work: private docs, interactive HTML docs, and file-backed records. You get a calm visual surface to inspect, edit, and come back to that work later. Everything lives as plain files in a folder you own.
 
-> This repo is where Worktable's **releases and installer** live. The app itself is developed privately (more on that below). The product home is [worktable.dev](https://worktable.dev) and the docs live at [docs.worktable.dev](https://docs.worktable.dev).
+> This repo is where Worktable's **releases, installer, and public integrations** live. The app itself is developed privately (more on that below). The product home is [worktable.dev](https://worktable.dev) and the docs live at [docs.worktable.dev](https://docs.worktable.dev).
 
 ## Install
 
@@ -36,6 +36,11 @@ If people genuinely want the source open, I'd gladly do that work. [Open an issu
 
 Meanwhile, the part that matters day to day is already open: your workspace is plain files (markdown, YAML, HTML) in a folder you own. No database, no export step, no lock-in. If Worktable vanished tomorrow, your data would still be sitting there, readable by anything.
 
+The [OpenClaw adapter](plugins/openclaw) is a public exception: its standalone
+source is available under the MIT License so OpenClaw and ClawHub users can
+inspect exactly what they install. This does not change the license of the
+Worktable application.
+
 ## Documentation
 
 Guides, concepts, agent orientation, and the full CLI and MCP reference live at **[docs.worktable.dev](https://docs.worktable.dev)**. Release-by-release changes are on [What's new](https://docs.worktable.dev/whats-new/).
@@ -54,4 +59,4 @@ Once installed, updating is built in: run `worktable update`, or use Settings â†
 
 ## License
 
-The Worktable app is proprietary. The documentation and installer script in this repo are provided for use with Worktable under a limited grant: see [LICENSE](LICENSE).
+The Worktable app is proprietary. The documentation and installer script in this repo are provided for use with Worktable under a limited grant: see [LICENSE](LICENSE). Directories containing their own license, currently [`plugins/openclaw`](plugins/openclaw), are governed by that license instead.

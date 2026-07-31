@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "sourceRepository": "obkaro/worktable-core",
-  "sourceCommit": "6519dec359b9214ce0361f4b543676e3021917a4",
+  "sourceCommit": "490f9e0d047c675476de58ca82935d0108613697",
   "sourcePath": "packages/openclaw-plugin",
   "files": {
     ".gitignore": "fa9190365393c2d8d61e986093c042afe4994fce240915375314299d85903554",
     "CHANGELOG.md": "b0cb9d5bedf6432a6ad61c50765c68b080ec3aae0b77e0e3404612649512370e",
     "LICENSE": "c4bab3e44a361087f7f90c1835c4f8a0267bad1fd6d06e51ff7bc7eb173aed84",
-    "README.md": "7ab53f45b66e371ae39f78aab0869e9a1b55c30819a992e0a0bda24453ad9db2",
+    "README.md": "d90180a5af6d15c10f58098572b03892535ed77f5e58bfda9fdd8be658b4e699",
     "THIRD_PARTY_NOTICES.md": "f53e172d91304f2eada0460b37f13ea8666f86b04e0cf2e817e6e154d79c2125",
     "bun.lock": "e02791ecf8aa5103a9753aa0f0060e7b0a9c985fa6af6ffa6e1962a144137aa8",
     "index.ts": "f513b5c3d0d0ec2ff8802df5c38c012c073250e49ebf19d7a67acb379788ec7b",

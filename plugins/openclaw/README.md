@@ -51,10 +51,10 @@ OpenClaw's sensitive channel configuration.
 
 ## Develop locally
 
-Build and package from the Worktable repository:
+Build and package from this plugin directory:
 
 ```sh
-bun run --cwd packages/openclaw-plugin pack:dogfood
+bun run pack:dogfood
 ```
 
 Install the resulting versioned tarball from the OpenClaw account:

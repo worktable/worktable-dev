@@ -104,7 +104,7 @@ export function worktableAgentPresentationHeaders(input: {
 export class McpWorktableClient implements WorktableClient {
   readonly #client = new Client({
     name: "@worktable/openclaw",
-    version: "0.0.9",
+    version: "0.0.10",
   })
   readonly #transport: StreamableHTTPClientTransport
   #connected = false

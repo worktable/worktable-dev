@@ -7,7 +7,8 @@ import { setWorktableRuntime } from "./src/runtime.js"
 export default defineChannelPluginEntry({
   id: "worktable",
   name: "Worktable",
-  description: "Connect OpenClaw to durable Worktable threads.",
+  description:
+    "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
   plugin: worktableChannel,
   setRuntime: setWorktableRuntime,
   registerCliMetadata(api) {

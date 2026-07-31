@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.10
+
+- Present Worktable as the persistent workspace shared with OpenClaw agents and add the Worktable icon to the ClawHub listing.
+
 ## 0.0.9
 
 - Publish the Worktable adapter through ClawHub with standalone source, explicit compatibility metadata, and an MIT license.

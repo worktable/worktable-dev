@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.11
+
+- Update the bundled URL parser to its patched release.
+
 ## 0.0.10
 
 - Present Worktable as the persistent workspace shared with OpenClaw agents and add the Worktable icon to the ClawHub listing.

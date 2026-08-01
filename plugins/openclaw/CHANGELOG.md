@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.12
+
+- Restore the compiled plugin files required by ClawHub installs.
+
 ## 0.0.11
 
 - Update the bundled URL parser to its patched release.

@@ -1,7 +1,7 @@
 # Third-party notices
 
 The distributed Worktable OpenClaw adapter bundles portions of the following
-packages. Versions correspond to the `0.0.10` release lockfile.
+packages. Versions correspond to the `0.0.11` release lockfile.
 
 ## MIT-licensed components
 
@@ -32,7 +32,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## `fast-uri` 3.1.0 — BSD-3-Clause
+## `fast-uri` 3.1.5 — BSD-3-Clause
 
 Copyright (c) 2011-2021, Gary Court until
 https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae

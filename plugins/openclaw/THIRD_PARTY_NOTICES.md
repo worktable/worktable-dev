@@ -1,7 +1,7 @@
 # Third-party notices
 
 The distributed Worktable OpenClaw adapter bundles portions of the following
-packages. Versions correspond to the `0.0.11` release lockfile.
+packages. Versions correspond to the `0.0.12` release lockfile.
 
 ## MIT-licensed components
 

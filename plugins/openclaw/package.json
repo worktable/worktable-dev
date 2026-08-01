@@ -1,6 +1,6 @@
 {
   "name": "@worktable/openclaw",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
   "type": "module",
   "license": "MIT",

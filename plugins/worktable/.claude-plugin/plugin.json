@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "worktable",
+  "displayName": "Worktable",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Build shared Docs, live HTML workspaces, structured Records, annotations, and durable agent threads in Worktable.",
+  "author": {
+    "name": "Reva Labs",
+    "email": "support@worktable.dev"
+  },
+  "homepage": "https://docs.worktable.dev/start/connect-your-agent",
+  "repository": "https://github.com/worktable/worktable-dev",
+  "mcpServers": "./.mcp.json",
+  "keywords": [
+    "worktable",
+    "workspace",
+    "records",
+    "company knowledge",
+    "agent collaboration"
+  ]
+}

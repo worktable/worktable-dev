@@ -36,10 +36,10 @@ If people genuinely want the source open, I'd gladly do that work. [Open an issu
 
 Meanwhile, the part that matters day to day is already open: your workspace is plain files (markdown, YAML, HTML) in a folder you own. No database, no export step, no lock-in. If Worktable vanished tomorrow, your data would still be sitting there, readable by anything.
 
-The [OpenClaw adapter](plugins/openclaw) is a public exception: its standalone
-source is available under the MIT License so OpenClaw and ClawHub users can
-inspect exactly what they install. This does not change the license of the
-Worktable application.
+The [OpenClaw adapter](plugins/openclaw) and the
+[Worktable agent plugin](plugins/worktable) are public exceptions. Their source
+is available under the MIT License so agent users can inspect exactly what they
+install. This does not change the license of the Worktable application.
 
 ## Documentation
 
@@ -59,4 +59,4 @@ Once installed, updating is built in: run `worktable update`, or use Settings â†
 
 ## License
 
-The Worktable app is proprietary. The documentation and installer script in this repo are provided for use with Worktable under a limited grant: see [LICENSE](LICENSE). Directories containing their own license, currently [`plugins/openclaw`](plugins/openclaw), are governed by that license instead.
+The Worktable app is proprietary. The documentation and installer script in this repo are provided for use with Worktable under a limited grant: see [LICENSE](LICENSE). Directories containing their own license, including [`plugins/openclaw`](plugins/openclaw) and [`plugins/worktable`](plugins/worktable), are governed by that license instead.

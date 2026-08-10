@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create or manage interactive HTML"
+  short_description: "Build polished task-shaped views and tools"
+  default_prompt: "Use $worktable-create-or-manage-interactive-html to turn this into a durable, polished Worktable HTML Doc."

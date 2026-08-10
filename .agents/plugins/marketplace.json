@@ -1,0 +1,20 @@
+{
+  "name": "worktable",
+  "interface": {
+    "displayName": "Worktable"
+  },
+  "plugins": [
+    {
+      "name": "worktable",
+      "source": {
+        "source": "local",
+        "path": "./plugins/worktable"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

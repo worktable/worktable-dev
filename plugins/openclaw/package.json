@@ -1,6 +1,6 @@
 {
   "name": "@worktable/openclaw",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
   "type": "module",
   "license": "MIT",
@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "skills",
     "openclaw.plugin.json",
     "README.md",
     "CHANGELOG.md",
@@ -52,6 +53,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "pack:dogfood": "bun run scripts/pack-dogfood.ts",
+    "verify:discovery": "bun run scripts/verify-packed-discovery.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

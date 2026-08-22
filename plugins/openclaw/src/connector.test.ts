@@ -42,25 +42,44 @@ function delivery(
   return {
     messageId,
     threadId,
-    spaceId,
+    location: { kind: "space", spaceId },
     leaseId: `lease_${messageId}`,
     leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    identityId: "idt_klausdefault",
     thread: {
       id: threadId,
-      spaceId,
+      version: 3,
+      location: { kind: "space", spaceId },
       title: body,
-      participants: [
+      members: [
         { id: "ptc_finn", kind: "agent", name: "Finn" },
         { id: "ptc_klaus", kind: "agent", name: "Klaus" },
+      ],
+      identities: [
+        {
+          id: "idt_finndefault",
+          memberId: "ptc_finn",
+          name: "Finn",
+          default: true,
+          status: "active",
+        },
+        {
+          id: "idt_klausdefault",
+          memberId: "ptc_klaus",
+          name: "Klaus",
+          default: true,
+          status: "active",
+        },
       ],
     },
     message: {
       id: messageId,
       sequence: 1,
-      authorId: "ptc_finn",
-      recipientIds: ["ptc_klaus"],
+      authorIdentityId: "idt_finndefault",
+      authorMemberId: "ptc_finn",
+      notifyIdentityIds: [],
+      responseRequest: { identityId: "idt_klausdefault", status: "open" },
       body,
-      expectsReply: true,
       idempotencyKey: `input:${messageId}`,
       createdAt: new Date().toISOString(),
     },
@@ -68,24 +87,14 @@ function delivery(
 }
 
 class RecordingDispatcher implements AgentDispatcher {
-  readonly calls: Array<{
-    spaceId?: string
-    threadId: string
-    threadTarget?: string
-    messageId: string
-  }> = []
+  readonly calls: AgentDispatchInput[] = []
   readonly turnsByThread = new Map<string, number>()
 
   async dispatch(
     input: AgentDispatchInput,
     callbacks: Parameters<AgentDispatcher["dispatch"]>[1]
   ): Promise<string> {
-    this.calls.push({
-      spaceId: input.spaceId,
-      threadId: input.threadId,
-      threadTarget: input.threadTarget,
-      messageId: input.messageId,
-    })
+    this.calls.push(input)
     const conversationId =
       input.conversationId ??
       (input.spaceId ? `${input.spaceId}/${input.threadId}` : input.threadId)
@@ -195,10 +204,28 @@ describe("OpenClaw Worktable connector", () => {
   it("reuses a thread conversation, isolates another, and posts durable replies", async () => {
     const client = new FakeWorktableClient()
     const dispatcher = new RecordingDispatcher()
+    const alternateIdentity = delivery(
+      "msg_4",
+      "thr_alpha",
+      "Use a different role."
+    )
+    alternateIdentity.thread.identities.push({
+      id: "idt_klausresearch",
+      memberId: "ptc_klaus",
+      name: "Research",
+      default: false,
+      status: "active",
+    })
+    alternateIdentity.identityId = "idt_klausresearch"
+    alternateIdentity.message.responseRequest = {
+      identityId: "idt_klausresearch",
+      status: "open",
+    }
     client.deliveries.push(
       delivery("msg_1", "thr_alpha"),
       delivery("msg_2", "thr_alpha", "Follow up."),
-      delivery("msg_3", "thr_beta")
+      delivery("msg_3", "thr_beta"),
+      alternateIdentity
     )
     const connector = new WorktableConnector({
       client,
@@ -211,23 +238,44 @@ describe("OpenClaw Worktable connector", () => {
     expect(await connector.processOne()).toBe(true)
     expect(await connector.processOne()).toBe(true)
     expect(await connector.processOne()).toBe(true)
+    expect(await connector.processOne()).toBe(true)
 
-    expect(dispatcher.turnsByThread.get("connected-agents/thr_alpha")).toBe(2)
-    expect(dispatcher.turnsByThread.get("connected-agents/thr_beta")).toBe(1)
+    expect(
+      dispatcher.turnsByThread.get("space:connected-agents/thr_alpha")
+    ).toBe(2)
+    expect(
+      dispatcher.turnsByThread.get("space:connected-agents/thr_beta")
+    ).toBe(1)
+    expect(
+      dispatcher.turnsByThread.get(
+        "space:connected-agents/thr_alpha/idt_klausresearch"
+      )
+    ).toBe(1)
     expect(client.replies.map((reply) => reply.body)).toEqual([
       "Reply 1 in thr_alpha",
       "Reply 2 in thr_alpha",
       "Reply 1 in thr_beta",
+      "Reply 1 in thr_alpha",
     ])
-    expect(client.replies.every((reply) => reply.to === "ptc_finn")).toBe(true)
+    expect(
+      client.replies
+        .slice(0, 3)
+        .every(
+          (reply) =>
+            reply.authorIdentityId === "idt_klausdefault" &&
+            reply.responseTo === reply.inReplyTo
+        )
+    ).toBe(true)
     expect(
       client.replies.every(
         (reply) =>
-          reply.location === undefined &&
+          reply.location?.kind === "space" &&
           reply.spaceId === "connected-agents"
       )
     ).toBe(true)
-    expect(client.accepted).toEqual(new Set(["msg_1", "msg_2", "msg_3"]))
+    expect(client.accepted).toEqual(
+      new Set(["msg_1", "msg_2", "msg_3", "msg_4"])
+    )
     expect(
       client.progressEvents.some(
         (event) =>
@@ -238,7 +286,56 @@ describe("OpenClaw Worktable connector", () => {
     ).toBe(true)
   })
 
-  it("uses a location-qualified V2 Worktable session and stores qualified links portably", async () => {
+  it("preserves a migrated V1 Space conversation key", async () => {
+    const client = new FakeWorktableClient()
+    const dispatcher = new RecordingDispatcher()
+    const migrated = delivery("msg_v1", "thr_v1")
+    migrated.thread.spaceId = "connected-agents"
+    client.deliveries.push(migrated)
+    const connector = new WorktableConnector({
+      client,
+      dispatcher,
+      dedupe: memoryDedupe(),
+      replyOutbox: createMemoryReplyOutbox(),
+      accountId: "default",
+    })
+
+    await connector.processOne()
+
+    expect(dispatcher.calls[0]?.conversationId).toBe("connected-agents/thr_v1")
+  })
+
+  it("dispatches a named author with its conversation identity name", async () => {
+    const client = new FakeWorktableClient()
+    const dispatcher = new RecordingDispatcher()
+    const namedAuthor = delivery("msg_named_author", "thr_named_author")
+    namedAuthor.thread.identities.push({
+      id: "idt_finnresearch",
+      memberId: "ptc_finn",
+      name: "Research",
+      default: false,
+      status: "active",
+    })
+    namedAuthor.message.authorIdentityId = "idt_finnresearch"
+    client.deliveries.push(namedAuthor)
+    const connector = new WorktableConnector({
+      client,
+      dispatcher,
+      dedupe: memoryDedupe(),
+      replyOutbox: createMemoryReplyOutbox(),
+      accountId: "default",
+    })
+
+    await connector.processOne()
+
+    expect(dispatcher.calls[0]?.sender).toEqual({
+      id: "ptc_finn",
+      kind: "agent",
+      name: "Research",
+    })
+  })
+
+  it("uses a location-qualified Worktable session and stores qualified links portably", async () => {
     const client = new FakeWorktableClient()
     const rootDelivery = delivery(
       "msg_root",
@@ -247,10 +344,7 @@ describe("OpenClaw Worktable connector", () => {
       ""
     )
     rootDelivery.location = { kind: "worktable" }
-    delete rootDelivery.spaceId
-    rootDelivery.thread.version = 2
     rootDelivery.thread.location = { kind: "worktable" }
-    delete rootDelivery.thread.spaceId
     client.deliveries.push(rootDelivery)
     const calls: AgentDispatchInput[] = []
     const dispatcher: AgentDispatcher = {
@@ -337,7 +431,7 @@ describe("OpenClaw Worktable connector", () => {
   it("addresses a group-thread reply to the original author", async () => {
     const client = new FakeWorktableClient()
     const groupDelivery = delivery("msg_group", "thr_group")
-    groupDelivery.thread.participants.push({
+    groupDelivery.thread.members!.push({
       id: "ptc_mara",
       kind: "agent",
       name: "Mara",
@@ -354,7 +448,11 @@ describe("OpenClaw Worktable connector", () => {
     await connector.processOne()
 
     expect(client.replies).toHaveLength(1)
-    expect(client.replies[0]?.to).toBe(groupDelivery.message.authorId)
+    expect(client.replies[0]).toMatchObject({
+      authorIdentityId: groupDelivery.identityId,
+      responseTo: groupDelivery.messageId,
+      deliveryLeaseId: groupDelivery.leaseId,
+    })
   })
 
   it("does not invoke another agent turn for a duplicate native event ID", async () => {
@@ -512,6 +610,43 @@ describe("OpenClaw Worktable connector", () => {
     expect(logs.join("\n")).not.toContain("Reply 1 in thr_retained")
   })
 
+  it("upgrades a retained legacy reply to an explicit response", async () => {
+    const client = new FakeWorktableClient()
+    const dispatcher = new RecordingDispatcher()
+    const replyOutbox = createMemoryReplyOutbox()
+    const claimed = delivery("msg_legacy_reply", "thr_legacy_reply")
+    await replyOutbox.put(
+      "space:connected-agents/thr_legacy_reply/msg_legacy_reply",
+      {
+        spaceId: "connected-agents",
+        threadId: claimed.threadId,
+        inReplyTo: claimed.messageId,
+        to: "Finn",
+        body: "Retained legacy response",
+        idempotencyKey: "openclaw:legacy-reply",
+      }
+    )
+    client.deliveries.push(claimed)
+    const connector = new WorktableConnector({
+      client,
+      dispatcher,
+      dedupe: memoryDedupe(),
+      replyOutbox,
+      accountId: "default",
+    })
+
+    await connector.processOne()
+
+    expect(dispatcher.calls).toHaveLength(0)
+    expect(client.replies[0]).toMatchObject({
+      responseTo: claimed.messageId,
+      authorIdentityId: claimed.identityId,
+      deliveryLeaseId: claimed.leaseId,
+      body: "Retained legacy response",
+    })
+    expect(client.replies[0]).not.toHaveProperty("to")
+  })
+
   it("treats a completed empty response as terminal instead of rerunning it", async () => {
     const client = new FakeWorktableClient()
     let dispatches = 0
@@ -585,10 +720,10 @@ describe("OpenClaw Worktable connector", () => {
     for (const item of [first, second]) {
       const location = {
         kind: "space" as const,
-        spaceId: item.spaceId!,
+        spaceId:
+          item.location.kind === "space" ? item.location.spaceId : "missing",
       }
       item.location = location
-      item.thread.version = 2
       item.thread.location = location
     }
     client.deliveries.push(first, second)
@@ -1098,8 +1233,9 @@ describe("OpenClaw Worktable connector", () => {
     const reply = {
       spaceId: "space-a",
       threadId: "thr_a",
-      to: "ptc_finn",
       inReplyTo: "msg_a",
+      responseTo: "msg_a",
+      authorIdentityId: "idt_klausdefault",
       body: "Durably retained response",
       idempotencyKey: "openclaw:msg_a:reply",
     }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { verifyPackedArtifact } from "./verify-packed-artifact"
+import { cleanPreparedSkillPackage, prepareSkillPackage } from "./skill-package"
 
 const root = join(import.meta.dir, "..")
 const pkg = (await Bun.file(join(root, "package.json")).json()) as {
@@ -11,39 +12,47 @@ const pkg = (await Bun.file(join(root, "package.json")).json()) as {
 const artifactDir = join(root, "artifacts")
 await mkdir(artifactDir, { recursive: true })
 
-const build = Bun.spawn(["bun", "run", "build"], {
-  cwd: root,
-  stdout: "inherit",
-  stderr: "inherit",
-})
-if ((await build.exited) !== 0) process.exit(1)
-
-const notices = Bun.spawn(
-  ["bun", "run", "scripts/verify-third-party-notices.ts"],
-  {
+const preparedSkills = await prepareSkillPackage()
+try {
+  const build = Bun.spawn(["bun", "run", "build"], {
     cwd: root,
     stdout: "inherit",
     stderr: "inherit",
+  })
+  if ((await build.exited) !== 0) throw new Error("OpenClaw build failed")
+
+  const notices = Bun.spawn(
+    ["bun", "run", "scripts/verify-third-party-notices.ts"],
+    {
+      cwd: root,
+      stdout: "inherit",
+      stderr: "inherit",
+    }
+  )
+  if ((await notices.exited) !== 0) {
+    throw new Error("OpenClaw third-party notice verification failed")
   }
-)
-if ((await notices.exited) !== 0) process.exit(1)
 
-const filename = `${pkg.name.replace(/^@/, "").replaceAll("/", "-")}-${pkg.version}.tgz`
-const path = join(artifactDir, filename)
-const pack = Bun.spawn(["bun", "pm", "pack", "--filename", path, "--quiet"], {
-  cwd: root,
-  stdout: "inherit",
-  stderr: "inherit",
-})
-if ((await pack.exited) !== 0) process.exit(1)
-verifyPackedArtifact(path)
+  const filename = `${pkg.name.replace(/^@/, "").replaceAll("/", "-")}-${pkg.version}.tgz`
+  const path = join(artifactDir, filename)
+  const pack = Bun.spawn(["bun", "pm", "pack", "--filename", path, "--quiet"], {
+    cwd: root,
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  if ((await pack.exited) !== 0)
+    throw new Error("OpenClaw package build failed")
+  verifyPackedArtifact(path, preparedSkills.files)
 
-const digest = createHash("sha256")
-  .update(await readFile(path))
-  .digest("hex")
-const checksumPath = `${path}.sha256`
-await writeFile(checksumPath, `${digest}  ${basename(path)}\n`, "utf8")
+  const digest = createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex")
+  const checksumPath = `${path}.sha256`
+  await writeFile(checksumPath, `${digest}  ${basename(path)}\n`, "utf8")
 
-console.log(`Packed ${pkg.name}@${pkg.version}`)
-console.log(path)
-console.log(checksumPath)
+  console.log(`Packed ${pkg.name}@${pkg.version}`)
+  console.log(path)
+  console.log(checksumPath)
+} finally {
+  await cleanPreparedSkillPackage(preparedSkills)
+}

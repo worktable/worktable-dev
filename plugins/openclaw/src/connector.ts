@@ -1,5 +1,5 @@
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
-import type { ReplyOutbox } from "./reply-outbox.js"
+import type { ReplyOutbox, RetainedWorktableReply } from "./reply-outbox.js"
 import type {
   AgentDispatcher,
   ClaimedWorktableDelivery,
@@ -75,18 +75,7 @@ function safeErrorMessage(error: unknown): string {
 function deliveryLocation(
   delivery: ClaimedWorktableDelivery
 ): WorktableThreadLocation {
-  if (delivery.location) return delivery.location
-  const spaceId = delivery.spaceId ?? delivery.thread.spaceId
-  if (spaceId) return { kind: "space", spaceId }
-  return { kind: "worktable" }
-}
-
-function isLegacyDelivery(delivery: ClaimedWorktableDelivery): boolean {
-  const location = deliveryLocation(delivery)
-  return (
-    delivery.thread.version === 1 ||
-    (delivery.thread.version === undefined && location.kind === "space")
-  )
+  return delivery.location
 }
 
 function deliveryLocationKey(delivery: ClaimedWorktableDelivery): string {
@@ -98,10 +87,14 @@ function deliveryLocationKey(delivery: ClaimedWorktableDelivery): string {
 
 function deliveryConversationId(delivery: ClaimedWorktableDelivery): string {
   const location = deliveryLocation(delivery)
-  const legacy = isLegacyDelivery(delivery)
-  return legacy && location.kind === "space"
-    ? `${location.spaceId}/${delivery.threadId}`
-    : `${deliveryLocationKey(delivery)}/${delivery.threadId}`
+  const threadId =
+    location.kind === "space" && delivery.thread.spaceId === location.spaceId
+      ? `${location.spaceId}/${delivery.threadId}`
+      : `${deliveryLocationKey(delivery)}/${delivery.threadId}`
+  const identity = delivery.thread.identities.find(
+    (candidate) => candidate.id === delivery.identityId
+  )
+  return identity?.default ? threadId : `${threadId}/${delivery.identityId}`
 }
 
 function deliveryThreadTarget(delivery: ClaimedWorktableDelivery): string {
@@ -113,6 +106,23 @@ function deliveryThreadTarget(delivery: ClaimedWorktableDelivery): string {
 
 function deliveryEventId(delivery: ClaimedWorktableDelivery): string {
   return `${deliveryConversationId(delivery)}/${delivery.messageId}`
+}
+
+function upgradeRetainedReply(
+  delivery: ClaimedWorktableDelivery,
+  reply: RetainedWorktableReply
+): RetainedWorktableReply {
+  const location = deliveryLocation(delivery)
+  return {
+    location,
+    ...(location.kind === "space" ? { spaceId: location.spaceId } : {}),
+    threadId: delivery.threadId,
+    inReplyTo: delivery.messageId,
+    responseTo: delivery.messageId,
+    authorIdentityId: delivery.identityId,
+    body: reply.body,
+    idempotencyKey: reply.idempotencyKey,
+  }
 }
 
 function transformOutsideInlineCode(
@@ -577,14 +587,34 @@ export class WorktableConnector {
       turnAbort.signal.addEventListener("abort", stopHeartbeat, { once: true })
       await this.#withThreadTurn(conversationId, turnAbort.signal, async () => {
         let retained = await this.#replyOutbox.get(eventId)
+        if (retained) retained = upgradeRetainedReply(delivery, retained)
         if (!retained) {
-          const sender = delivery.thread.participants.find(
-            (participant) => participant.id === delivery.message.authorId
-          ) ?? {
-            id: delivery.message.authorId,
-            kind: "agent" as const,
-            name: delivery.message.authorId,
+          const authorMemberId =
+            delivery.message.authorMemberId ?? delivery.message.authorId
+          if (!authorMemberId) {
+            throw Object.assign(
+              new Error("Worktable delivery has no message author"),
+              { code: "INVALID_DELIVERY" }
+            )
           }
+          const authorIdentity = delivery.thread.identities.find(
+            (identity) =>
+              identity.id === delivery.message.authorIdentityId &&
+              identity.memberId === authorMemberId
+          )
+          const authorMember = delivery.thread.members.find(
+            (participant) => participant.id === authorMemberId
+          )
+          const sender = authorMember
+            ? {
+                ...authorMember,
+                name: authorIdentity?.name ?? authorMember.name,
+              }
+            : {
+                id: authorMemberId,
+                kind: "agent" as const,
+                name: authorIdentity?.name ?? authorMemberId,
+              }
           const reply = await this.#dispatcher.dispatch(
             {
               accountId: this.#accountId,
@@ -614,17 +644,18 @@ export class WorktableConnector {
             })
           }
           retained = {
-            ...(isLegacyDelivery(delivery) ? {} : { location }),
+            location,
             ...(location.kind === "space" ? { spaceId: location.spaceId } : {}),
             threadId: delivery.threadId,
-            to: delivery.message.authorId,
             inReplyTo: delivery.messageId,
+            responseTo: delivery.messageId,
+            authorIdentityId: delivery.identityId,
             body: portableWorktableDocLinks(
               reply,
               location.kind === "space" ? location.spaceId : "",
               this.#worktableOrigin
             ),
-            idempotencyKey: `openclaw:${delivery.messageId}:reply`,
+            idempotencyKey: `openclaw:${delivery.messageId}:${delivery.identityId}:reply`,
           }
           try {
             await this.#replyOutbox.put(eventId, retained)
@@ -641,7 +672,12 @@ export class WorktableConnector {
             })
           )
         }
-        await this.#client.reply(retained)
+        await this.#client.reply({
+          ...retained,
+          ...(delivery.thread.version === 3
+            ? { deliveryLeaseId: delivery.leaseId }
+            : {}),
+        })
         replyAppended = true
       })
       try {

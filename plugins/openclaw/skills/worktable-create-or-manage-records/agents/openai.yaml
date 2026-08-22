@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create or manage Worktable records"
+  short_description: "Structure repeated information as shared records"
+  default_prompt: "Use $worktable-create-or-manage-records to organize this information into reusable Worktable records."

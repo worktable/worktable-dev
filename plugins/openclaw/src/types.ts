@@ -7,11 +7,18 @@ export interface WorktableParticipant {
 export interface WorktableMessage {
   id: string
   sequence: number
-  authorId: string
-  recipientIds: string[]
+  authorIdentityId?: string
+  authorMemberId?: string
+  notifyIdentityIds?: string[]
+  responseRequest?: {
+    identityId: string
+    status: "open" | "responded" | "withdrawn"
+    respondedBy?: string
+  }
+  authorId?: string
+  recipientIds?: string[]
   body: string
   inReplyTo?: string
-  expectsReply: boolean
   idempotencyKey: string
   createdAt: string
 }
@@ -22,21 +29,28 @@ export type WorktableThreadLocation =
 
 export interface WorktableThread {
   id: string
-  version?: 1 | 2
-  location?: WorktableThreadLocation
-  /** Present on legacy Space threads and compatibility responses. */
+  version: 3
+  location: WorktableThreadLocation
+  /** Deprecated V1 migration provenance used for durable session keys. */
   spaceId?: string
   title: string
-  participants: WorktableParticipant[]
+  members: WorktableParticipant[]
+  identities: Array<{
+    id: string
+    memberId: string
+    name: string
+    default: boolean
+    status: "active" | "inactive"
+  }>
 }
 
 export interface ClaimedWorktableDelivery {
   messageId: string
   threadId: string
-  location?: WorktableThreadLocation
-  spaceId?: string
+  location: WorktableThreadLocation
   leaseId: string
   leaseExpiresAt: string
+  identityId: string
   thread: WorktableThread
   message: WorktableMessage
 }
@@ -51,11 +65,13 @@ export interface WorktablePostResult {
 
 export interface WorktableThreadSummary {
   id: string
-  version?: 1 | 2
+  version?: 1 | 2 | 3
   location?: WorktableThreadLocation
   spaceId?: string
   title: string
-  participants: WorktableParticipant[]
+  participants?: WorktableParticipant[]
+  members?: WorktableParticipant[]
+  identities?: Array<{ id: string; memberId: string; name: string }>
 }
 
 export interface ThreadProgress {
@@ -115,8 +131,11 @@ export interface WorktableClient {
     location?: WorktableThreadLocation
     spaceId?: string
     threadId: string
-    to: string
     inReplyTo: string
+    to?: string
+    responseTo?: string
+    authorIdentityId?: string
+    deliveryLeaseId?: string
     body: string
     idempotencyKey: string
   }): Promise<WorktablePostResult>

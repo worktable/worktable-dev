@@ -22,6 +22,7 @@ const tempDirs: string[] = []
 const originalConfigPath = process.env.OPENCLAW_CONFIG_PATH
 const originalStateDir = process.env.OPENCLAW_STATE_DIR
 const originalFetch = globalThis.fetch
+const OPENCLAW_RUNTIME_TIMEOUT_MS = 15_000
 
 async function createDiscoveredPluginFixture(
   parentDir: string
@@ -159,7 +160,7 @@ describe("OpenClaw Worktable pairing completion", () => {
         },
       },
     })
-  })
+  }, OPENCLAW_RUNTIME_TIMEOUT_MS)
 
   it("retries the idempotent completion request with the retained bearer", async () => {
     const requests: Array<{

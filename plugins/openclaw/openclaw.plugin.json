@@ -2,8 +2,9 @@
   "id": "worktable",
   "name": "Worktable",
   "description": "Connect OpenClaw to a persistent workspace shared with your agents—local, self-hosted, or in the cloud.",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "icon": "https://www.worktable.dev/favicon.svg",
+  "skills": ["./skills"],
   "channels": ["worktable"],
   "activation": {
     "onStartup": true,

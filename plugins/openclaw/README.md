@@ -34,6 +34,11 @@ Then start or restart the OpenClaw Gateway. Learn more in the Worktable docs for
 [agents](https://docs.worktable.dev/agents/overview/) and
 [threads](https://docs.worktable.dev/guides/threads/).
 
+The plugin includes Worktable's workflow skills. OpenClaw loads them while
+the plugin is enabled. A same-named skill in an agent workspace,
+`~/.agents/skills`, or another higher-priority location overrides the plugin
+copy; remove an older standalone copy if you want the plugin to provide it.
+
 ## Security
 
 The plugin connects only to the Worktable server you configure and its discovered
@@ -50,7 +55,7 @@ Build and package the plugin from this directory:
 
 ```sh
 bun run pack:dogfood
-openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-0.0.12.tgz --pin
+openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-0.0.13.tgz --pin
 ```
 
 The Worktable OpenClaw adapter is available under the [MIT License](LICENSE).

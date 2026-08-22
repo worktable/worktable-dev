@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.13
+
+- Include the Worktable skills with the plugin so OpenClaw agents receive the matching workflow guidance automatically.
+
 ## 0.0.12
 
 - Restore the compiled plugin files required by ClawHub installs.

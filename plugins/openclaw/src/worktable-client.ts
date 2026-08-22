@@ -171,7 +171,7 @@ export class McpWorktableClient implements WorktableClient {
   }
 
   async registerParticipant(name: string): Promise<WorktableParticipant> {
-    const result = await this.#call("worktable_threads_write", {
+    const result = await this.#call("worktable_thread_delivery", {
       action: "register_participant",
       name,
     })
@@ -291,15 +291,20 @@ export class McpWorktableClient implements WorktableClient {
     location?: import("./types.js").WorktableThreadLocation
     spaceId?: string
     threadId: string
-    to: string
     inReplyTo: string
+    to?: string
+    responseTo?: string
+    authorIdentityId?: string
+    deliveryLeaseId?: string
     body: string
     idempotencyKey: string
   }): Promise<WorktablePostResult> {
     return (await this.#call("worktable_threads_write", {
       action: "post",
       ...input,
-      expectsReply: false,
+      ...(input.responseTo
+        ? { notifyIdentityIds: [], responseIdentityId: null }
+        : { expectsReply: false }),
       waitSeconds: 0,
     })) as unknown as WorktablePostResult
   }

@@ -24,8 +24,10 @@ export interface RetainedWorktableReply {
   location?: WorktableThreadLocation
   spaceId?: string
   threadId: string
-  to: string
   inReplyTo: string
+  to?: string
+  responseTo?: string
+  authorIdentityId?: string
   body: string
   idempotencyKey: string
 }
@@ -66,8 +68,10 @@ function isRetainedReply(value: unknown): value is RetainedWorktableReply {
   return (
     (validLocation || typeof reply.spaceId === "string") &&
     typeof reply.threadId === "string" &&
-    typeof reply.to === "string" &&
     typeof reply.inReplyTo === "string" &&
+    ((typeof reply.responseTo === "string" &&
+      typeof reply.authorIdentityId === "string") ||
+      typeof reply.to === "string") &&
     typeof reply.body === "string" &&
     typeof reply.idempotencyKey === "string"
   )
@@ -127,6 +131,8 @@ function sameReply(
     left.threadId === right.threadId &&
     left.to === right.to &&
     left.inReplyTo === right.inReplyTo &&
+    left.responseTo === right.responseTo &&
+    left.authorIdentityId === right.authorIdentityId &&
     left.body === right.body &&
     left.idempotencyKey === right.idempotencyKey
   )

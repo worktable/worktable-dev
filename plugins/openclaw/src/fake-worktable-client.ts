@@ -12,8 +12,11 @@ export class FakeWorktableClient implements WorktableClient {
     location?: import("./types.js").WorktableThreadLocation
     spaceId?: string
     threadId: string
-    to: string
     inReplyTo: string
+    to?: string
+    responseTo?: string
+    authorIdentityId?: string
+    deliveryLeaseId?: string
     body: string
     idempotencyKey: string
   }> = []
@@ -77,8 +80,11 @@ export class FakeWorktableClient implements WorktableClient {
     location?: import("./types.js").WorktableThreadLocation
     spaceId?: string
     threadId: string
-    to: string
     inReplyTo: string
+    to?: string
+    responseTo?: string
+    authorIdentityId?: string
+    deliveryLeaseId?: string
     body: string
     idempotencyKey: string
   }): Promise<WorktablePostResult> {

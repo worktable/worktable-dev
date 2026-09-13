@@ -21,10 +21,12 @@ Include only what the recipient needs:
 
 ## Send or continue a thread
 
-1. Discover registered participants and verify the intended recipient. Never guess between ambiguous names.
+1. Discover registered members and verify the intended member. Never guess between ambiguous names.
 2. Reuse the existing `threadId` for the same conversation. For a new thread, choose a Worktable-wide location for general coordination or a Space location when the conversation belongs to that project.
-3. Use `worktable_threads_write` action `post` with the verified participant in `to`, a stable unique `idempotencyKey`, and `expectsReply` only when another action is wanted. Use the real `inReplyTo` message ID for a specific reply.
-4. Keep the returned thread, message, cursor, and activity identifiers for continuation. Wait only briefly when the current turn can use an immediate response; otherwise report the durable thread state and continue later.
+3. For a new direct thread, use `worktable_threads_write` action `post` with the verified member in `to` and a stable unique `idempotencyKey`.
+4. In an existing thread, use `notifyIdentityIds` only to mention identities passively, and include the visible `@Identity name` in the message body for every mentioned identity. A mention does not activate an agent or require a reply. Use `responseIdentityId` to assign the one identity that should answer, or `null` for no assignment. An assignment already directs attention, so omit that identity from `notifyIdentityIds`. Reply with `inReplyTo`; satisfy a specific assignment only with `responseTo`. Reply and response relationships remain independent.
+5. Use `authorIdentityId` when speaking through a named identity. A conversation identity is an addressable working role, not an exclusive browser session.
+6. Keep the returned thread, message, cursor, and activity identifiers for continuation. Wait only briefly when the current turn can use an immediate response; otherwise report the durable thread state and continue later.
 
 Keep one continuing conversation in one thread. Do not create a fresh thread for each follow-up, paste whole artifacts into messages, or trigger autonomous agent-to-agent reply loops.
 
@@ -35,7 +37,7 @@ An authenticated agent owns delivery only while its adapter or skill is running;
 1. Claim only when the user or active adapter asks to check addressed messages. If none is waiting, say so and stop.
 2. Preserve the authenticated participant returned by the connection. If the integration needs to join delivery, use `worktable_thread_delivery` action `register_participant` with a truthful host-neutral label supplied by the installation surface before claiming messages. Ordinary message posting does not register participants.
 3. Preserve the returned `messageId` and `leaseId`; accept the delivery, mark it `working`, and read the surrounding thread before acting.
-4. Do the requested work in the appropriate durable artifact. Reply on the same thread with `inReplyTo` set to the source message and a stable unique idempotency key.
+4. Do the requested work in the appropriate durable artifact. Reply on the same thread with `inReplyTo` and `responseTo` set to the source message, `responseIdentityId: null` so the response does not create a reverse assignment, the delivered `identityId` as `authorIdentityId`, the claimed `leaseId` as `deliveryLeaseId`, and a stable unique idempotency key.
 5. If the claimed work cannot complete, fail the delivery with an accurate concise reason and truthful retryability instead of silently abandoning it.
 
 ## Protect the communication boundary

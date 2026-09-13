@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.1] - 2026-09-13
+
+### Changed
+
+- Updated thread guidance for mentions, assigned responses, and replies that complete delivered work without creating reply loops.
+
 ## [0.1.0] - 2026-08-07
 
 ### Added

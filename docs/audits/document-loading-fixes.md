@@ -2,6 +2,8 @@
 
 Implementation follow-up to [the second-pass investigation](document-loading-second-pass.md). Measurements below concern isolated fixture documents served by the **real Bun production server**, not Vite preview, and are not measurements of a deployed tenant or native desktop WebView.
 
+The [critical follow-up](document-loading-critical-follow-up.md) profiles the remaining bottlenecks and measures initial-HTML reading and editor CPU prototypes. It also separates lightweight timing from the visual tracing overhead in this report.
+
 ## What changed
 
 The intended cold-opening sequence is now: correctly themed startup logo → shared document skeleton → readable content. Rich documents show a labeled saved preview while the live editor finishes; HTML and Markdown reveal their own content. Client-side document navigation skips app startup. There are still real loading boundaries, but they no longer introduce the tiny loader or the scale-pulsing skeleton.

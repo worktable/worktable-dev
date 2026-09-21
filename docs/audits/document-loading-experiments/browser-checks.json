@@ -1,0 +1,18 @@
+{
+  "checks": [
+    {
+      "currentApp": "last paragraph rendered"
+    },
+    {
+      "reader": "first paragraph rendered",
+      "browserScripts": 0
+    },
+    {
+      "editorPrototype": {
+        "blocks": 2000,
+        "typeAndUndo": true
+      }
+    }
+  ],
+  "errors": []
+}

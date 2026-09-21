@@ -122,7 +122,7 @@ test("a failed companion cancels the active lane and cleans its descendants", as
 }, 15_000)
 
 
-test("a command timeout notifies its owner before completion and retains the cause after abort", async () => {
+test.each(["timeout", "nonzero"] as const)("a %s failure notifies its owner before completion and retains the cause after abort", async (cause) => {
   const { runCommand } = await import("./command.ts")
   const { mkdtemp, rm } = await import("node:fs/promises")
   const { tmpdir } = await import("node:os")
@@ -133,8 +133,8 @@ test("a command timeout notifies its owner before completion and retains the cau
   let completed = false
   try {
     const outcome = await runCommand(
-      { executable: "bun", args: ["-e", "setInterval(() => {}, 1000)"], cwd: root },
-      10,
+      { executable: "bun", args: ["-e", cause === "timeout" ? "setInterval(() => {}, 1000)" : "process.exit(1)"], cwd: root },
+      cause === "timeout" ? 10 : 10_000,
       join(root, "rss.txt"),
       cancellation.signal,
       () => {
@@ -145,8 +145,9 @@ test("a command timeout notifies its owner before completion and retains the cau
     )
     completed = true
     expect(notified).toBe(true)
-    expect(outcome.timedOut).toBe(true)
+    expect(outcome.timedOut).toBe(cause === "timeout")
     expect(outcome.cancelled).toBe(false)
+    if (cause === "nonzero") expect(outcome.exitCode).toBe(1)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

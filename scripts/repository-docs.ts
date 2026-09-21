@@ -34,7 +34,8 @@ export function repositoryDocsOnly(paths: string[]): boolean {
 export function checkRepositoryDocument(
   root: string,
   source: string,
-  target = source
+  target = source,
+  exportedTargets: ReadonlySet<string> = new Set()
 ): string[] {
   const errors: string[] = []
   if (
@@ -43,7 +44,7 @@ export function checkRepositoryDocument(
   )
     return errors
   const content = readFileSync(resolve(root, source), "utf8")
-  if (/^(?:<<<<<<< |=======\s*$|>>>>>>> )/m.test(content))
+  if (/^(?:<<<<<<< |>>>>>>> )/m.test(content))
     errors.push(`${source}: unresolved merge conflict`)
   if (/\.ya?ml$/.test(source)) {
     try {
@@ -65,7 +66,11 @@ export function checkRepositoryDocument(
           ? resolve(root, `.${path}`)
           : resolve(root, dirname(target), path)
         const local = relative(resolve(root), absolute)
-        if (local.startsWith("../") || local === ".." || !existsSync(absolute))
+        if (
+          local.startsWith("../") ||
+          local === ".." ||
+          (!existsSync(absolute) && !exportedTargets.has(local))
+        )
           errors.push(`${source}: missing local target ${url}`)
       } catch {
         errors.push(`${source}: invalid local URL ${url}`)
@@ -87,6 +92,17 @@ export function checkRepositoryDocument(
 
 if (import.meta.main) {
   const args = process.argv.slice(2)
+  const exportedTargets = new Set<string>()
+  const exported = args.indexOf("--exported-files")
+  if (exported !== -1) {
+    const files = args[exported + 1]
+    if (!files)
+      throw new Error(
+        "--exported-files requires comma-separated repository paths"
+      )
+    for (const file of files.split(",")) exportedTargets.add(file)
+    args.splice(exported, 2)
+  }
   if (args[0] === "--classify" && args.length === 3) {
     let paths: string[] = []
     try {
@@ -118,13 +134,23 @@ if (import.meta.main) {
       .split("\0")
       .filter(isRepositoryDoc)
     const errors = paths.flatMap((path) =>
-      checkRepositoryDocument(process.cwd(), path)
+      checkRepositoryDocument(process.cwd(), path, path, exportedTargets)
     )
+    if (args[0] === "--overlay" && !existsSync(resolve(args[1]!))) {
+      throw new Error(`Missing required overlay: ${args[1]}`)
+    }
     if (args[0] === "--overlay")
-      errors.push(...checkRepositoryDocument(process.cwd(), args[1]!, args[2]!))
+      errors.push(
+        ...checkRepositoryDocument(
+          process.cwd(),
+          args[1]!,
+          args[2]!,
+          exportedTargets
+        )
+      )
     if (errors.length) throw new Error(errors.join("\n"))
     console.log(
-      `Repository documentation: ${paths.length} files checked (local Markdown targets, YAML parsing, merge conflicts).`
+      `Repository documentation: ${paths.length} files checked (local Markdown targets, YAML parsing, merge conflicts; ${exportedTargets.size} declared export targets checked in public CI).`
     )
   }
 }

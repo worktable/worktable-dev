@@ -7,7 +7,7 @@ body:
     attributes:
       label: Worktable version
       description: Run `worktable --version`
-      placeholder: 0.0.38
+      placeholder: 0.1.5
     validations:
       required: true
   - type: input
@@ -37,6 +37,6 @@ body:
     id: extra
     attributes:
       label: Anything else?
-      description: Logs, screenshots, agent/MCP client in use, `worktable doctor` output.
+      description: Use synthetic examples. Before attaching logs, screenshots, or `worktable doctor` output, remove credentials, personal information, and private workspace content.
     validations:
       required: false

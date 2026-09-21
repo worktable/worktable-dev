@@ -51,4 +51,3 @@ locally retained artifact.
 After the first release exists, configure ClawHub trusted publishing for this
 repository and a dedicated, commit-pinned `workflow_dispatch` workflow. Never
 publish from a mutable branch or an unpinned reusable workflow.
-

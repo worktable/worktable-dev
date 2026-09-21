@@ -1,10 +1,19 @@
 # Contributing to Worktable
 
-Use the build and canonical test commands in [README.md](./README.md). Include
+Fixes and documentation improvements are welcome. Before implementing a substantial
+feature, open an [issue](https://github.com/worktable/worktable-dev/issues/new?template=feature_request.yml)
+to agree on the problem, scope, and approach.
+
+Start with [Development](docs/development.md) for local setup and canonical tests,
+or [Building](docs/building.md) for release artifacts. Include
 the smallest verification that demonstrates the changed behavior. Preserve
 existing data formats, authentication boundaries and supported integrations.
 Run generated-file checks when changing their inputs; do not hand-edit generated
 outputs. Explain the concrete behavior and evidence in your pull request.
+
+For questions, use [Q&A](https://github.com/worktable/worktable-dev/discussions/categories/q-a).
+For a bug, include the version, platform, and a minimal reproduction in the
+[bug report form](https://github.com/worktable/worktable-dev/issues/new?template=bug_report.yml).
 
 ## Licenses and contribution rights
 

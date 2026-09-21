@@ -1,26 +1,39 @@
-# Security Policy
+# Security policy
 
-## Reporting a vulnerability
+## Report a vulnerability privately
 
-Please report security issues **privately**. Do not open a public issue for a vulnerability.
+Use [GitHub private vulnerability reporting](https://github.com/worktable/worktable-dev/security/advisories/new)
+or email **security@worktable.dev**. Do not report vulnerabilities in public
+issues or discussions.
 
-- Preferred: use GitHub's [private vulnerability reporting](../../security/advisories/new) on this repository. It is enabled and routes directly to the maintainers.
-- Or email **security@worktable.dev**.
+Include the affected Worktable version, platform, expected and observed behavior,
+and a minimal reproduction with synthetic data. Remove credentials and private
+workspace content from logs and attachments. We aim to acknowledge reports
+within a few business days.
 
-Include where possible: affected version (`worktable --version`), platform, a description of the issue, and steps to reproduce. We aim to acknowledge reports within a few business days.
+## Scope and versions
 
-## Scope
+Reports are welcome for the application, local server and CLI, Desktop,
+MCP connectors, agent plugins, installer, and released artifacts. Include the
+exact component and version; application and plugin versions may differ.
+Fixes are delivered in current releases. Older versions may require an upgrade.
 
-- **In scope:** the Worktable local server and CLI, the MCP endpoint, the OpenClaw adapter, the installer (`install.sh`), and released artifacts.
-- **Out of scope:** issues that require an already-compromised host, and the deliberately documented behavior below.
+An already-compromised host can read files and credentials available to its
+user. Worktable does not isolate a workspace from programs running with that
+user's filesystem access. Browser-origin bypasses, credential-scope violations,
+and unintended remote access are within scope.
 
-## Known posture (not a vulnerability)
+## Deployment boundaries
 
-Worktable's auth model follows how the server is bound:
+Local Worktable can provide implicit owner access on a literal loopback endpoint.
+That convenience is constrained by request provenance and configured access
+policy. A loopback bind alone does not mean every request is trusted: a configured
+public URL or explicit credential requirement changes the authentication posture.
+Agent credentials retain their own identity and scopes, and invalid credentials
+must not fall back to owner access.
 
-- **Loopback (the default):** the server binds `127.0.0.1` and runs owner-open, like a local app. The web app and the REST API under `/api/*` need no auth, and the MCP endpoint accepts an optional bearer token via `WORKTABLE_MCP_TOKEN`.
-- **Reachable (`--reachable`, or any non-loopback host):** the server refuses to bind without an owner password. The web app and REST API are gated behind that password (a signed session cookie), and MCP requires bearer tokens. Worktable still serves plain HTTP: put it behind your own HTTPS tunnel or proxy when exposing it beyond your machine.
-
-Reports that amount to "the loopback API is open on the local machine" describe this design, not a vulnerability.
-
-See the [security model](https://docs.worktable.dev/reference/security/) and [remote access guide](https://docs.worktable.dev/guides/remote-access/) for hardening guidance.
+For reachable self-hosted installations, configure authentication and HTTPS as
+described in the [security model](https://docs.worktable.dev/reference/security/)
+and [remote access guide](https://docs.worktable.dev/guides/remote-access/).
+Worktable Cloud has a separate hosted identity and OAuth flow. Those guides are
+the maintained reference for setup and operational behavior.

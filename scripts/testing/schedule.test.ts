@@ -93,3 +93,39 @@ describe("canonical suite scheduling", () => {
     }
   )
 })
+
+
+test("a known failure stops pending lanes before the failing lane finishes cleanup", async () => {
+  const started = Promise.withResolvers<void>()
+  const timedOut = Promise.withResolvers<void>()
+  const companionDone = Promise.withResolvers<void>()
+  const cleanup = Promise.withResolvers<void>()
+  const seen: string[] = []
+  const run = runSuiteSchedule(
+    ["bun-server", "bun-standard", "cli-boundary"].map((id) => ({ id })),
+    async ({ id }, signal, fail) => {
+      seen.push(id)
+      if (id === "bun-server") {
+        await started.promise
+        fail()
+        timedOut.resolve()
+        await cleanup.promise
+        return true
+      }
+      started.resolve()
+      await timedOut.promise
+      expect(signal.aborted).toBe(true)
+      companionDone.resolve()
+      return false
+    }
+  )
+  try {
+    await companionDone.promise
+    await Promise.resolve()
+    expect(seen).toEqual(["bun-server", "bun-standard"])
+  } finally {
+    cleanup.resolve()
+  }
+  expect(await run).toBe(true)
+  expect(seen).toEqual(["bun-server", "bun-standard"])
+})

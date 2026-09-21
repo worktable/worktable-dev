@@ -120,3 +120,34 @@ test("a failed companion cancels the active lane and cleans its descendants", as
     await rm(root, { recursive: true, force: true })
   }
 }, 15_000)
+
+
+test("a command timeout notifies its owner before completion and retains the cause after abort", async () => {
+  const { runCommand } = await import("./command.ts")
+  const { mkdtemp, rm } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const root = await mkdtemp(join(tmpdir(), "suite-timeout-"))
+  const cancellation = new AbortController()
+  let notified = false
+  let completed = false
+  try {
+    const outcome = await runCommand(
+      { executable: "bun", args: ["-e", "setInterval(() => {}, 1000)"], cwd: root },
+      10,
+      join(root, "rss.txt"),
+      cancellation.signal,
+      () => {
+        expect(completed).toBe(false)
+        notified = true
+        cancellation.abort()
+      }
+    )
+    completed = true
+    expect(notified).toBe(true)
+    expect(outcome.timedOut).toBe(true)
+    expect(outcome.cancelled).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

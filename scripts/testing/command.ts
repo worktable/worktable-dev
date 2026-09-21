@@ -19,7 +19,8 @@ export async function runCommand(
   command: Command,
   timeoutMs: number,
   rssPath: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onTimeout?: () => void
 ): Promise<{
   exitCode: number
   timedOut: boolean
@@ -72,11 +73,12 @@ export async function runCommand(
     () => {
       timedOut = true
       terminate()
+      onTimeout?.()
     },
     Math.max(1, timeoutMs)
   )
   const onAbort = () => {
-    cancelled = true
+    if (!timedOut) cancelled = true
     clearTimeout(timer)
     terminate()
   }

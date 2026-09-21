@@ -16,7 +16,7 @@ export interface LaneResult {
   title: string
   profile: string
   classification: string
-  status: "passed" | "failed" | "timed-out"
+  status: "passed" | "failed" | "timed-out" | "cancelled"
   durationMs: number
   peakRssMb?: number
   files: number

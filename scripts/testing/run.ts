@@ -1,14 +1,10 @@
 #!/usr/bin/env bun
 import { execFileSync } from "node:child_process"
-import { existsSync } from "node:fs"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import budgets from "./budgets.json"
-import {
-  processTreeIsAlive,
-  signalProcessTree,
-  waitForProcessTreeExit,
-} from "./process-tree.ts"
+import { runSuiteSchedule } from "./schedule.ts"
+import { runCommand, processTreeRssMb, type Command } from "./command.ts"
 import { aggregateResults, writeLaneResult, type LaneResult } from "./report.ts"
 import { CANONICAL_PORTFOLIO_REVISION } from "./health-policy.ts"
 import {
@@ -36,14 +32,6 @@ interface Options {
   testPathPrefixes: string[]
   suites: string[]
   repeat: number
-}
-
-interface Command {
-  executable: string
-  args: string[]
-  cwd: string
-  env?: Record<string, string>
-  captureStdout?: string
 }
 
 function parseArgs(argv: string[]): Options {
@@ -243,137 +231,10 @@ function commandForSuite(
   }
 }
 
-async function runCommand(
-  command: Command,
-  timeoutMs: number,
-  rssPath: string
-): Promise<{ exitCode: number; timedOut: boolean; peakRssMb?: number }> {
-  const useTime = process.platform === "linux" && existsSync("/usr/bin/time")
-  const executable = useTime ? "/usr/bin/time" : command.executable
-  const args = useTime
-    ? ["-v", "-o", rssPath, "--", command.executable, ...command.args]
-    : command.args
-  const stdout = command.captureStdout ? "pipe" : "inherit"
-  const processHandle = Bun.spawn([executable, ...args], {
-    cwd: command.cwd,
-    env: { ...process.env, ...command.env },
-    detached: true,
-    stdin: "inherit",
-    stdout,
-    stderr: "inherit",
-  })
-  let sampledPeakRssMb = 0
-  const sampleRss = () => {
-    sampledPeakRssMb = Math.max(
-      sampledPeakRssMb,
-      processTreeRssMb(processHandle.pid) ?? 0
-    )
-  }
-  sampleRss()
-  const rssTimer = setInterval(sampleRss, 500)
-  let timedOut = false
-  const trackedProcessGroups = new Set<number>()
-  let forceKillTimer: ReturnType<typeof setTimeout> | undefined
-  let forceKillSent = false
-  let resolveForceKill: (() => void) | undefined
-  const forceKillComplete = new Promise<void>((resolveForce) => {
-    resolveForceKill = resolveForce
-  })
-  const timer = setTimeout(
-    () => {
-      timedOut = true
-      signalProcessTree(processHandle, "SIGTERM", trackedProcessGroups)
-      forceKillTimer = setTimeout(() => {
-        forceKillSent = true
-        signalProcessTree(processHandle, "SIGKILL", trackedProcessGroups)
-        resolveForceKill?.()
-      }, 5_000)
-    },
-    Math.max(1, timeoutMs)
-  )
-  let captured = ""
-  if (command.captureStdout && processHandle.stdout) {
-    captured = await new Response(processHandle.stdout).text()
-    process.stdout.write(captured)
-  }
-  const exitCode = await processHandle.exited
-  clearTimeout(timer)
-  if (forceKillTimer !== undefined) {
-    if (processTreeIsAlive(processHandle.pid, trackedProcessGroups)) {
-      await forceKillComplete
-    } else {
-      clearTimeout(forceKillTimer)
-      resolveForceKill?.()
-    }
-  }
-  const processTreeExited =
-    !timedOut ||
-    (!forceKillSent &&
-      !processTreeIsAlive(processHandle.pid, trackedProcessGroups)) ||
-    (await waitForProcessTreeExit(
-      processHandle.pid,
-      2_000,
-      trackedProcessGroups
-    ))
-  clearInterval(rssTimer)
-  if (timedOut && !processTreeExited) {
-    throw new Error(
-      `Timed-out suite process group ${processHandle.pid} survived SIGKILL`
-    )
-  }
-  if (command.captureStdout) await writeFile(command.captureStdout, captured)
-  let peakRssMb: number | undefined
-  if (useTime && existsSync(rssPath)) {
-    const text = await Bun.file(rssPath).text()
-    const kib = Number(
-      text.match(/Maximum resident set size \(kbytes\):\s*(\d+)/)?.[1]
-    )
-    if (Number.isFinite(kib)) peakRssMb = kib / 1024
-  }
-  peakRssMb = Math.max(peakRssMb ?? 0, sampledPeakRssMb) || undefined
-  return { exitCode, timedOut, peakRssMb }
-}
-
 function printable(command: Command): string {
   return [command.executable, ...command.args]
     .map((part) => (/[\s"]/u.test(part) ? JSON.stringify(part) : part))
     .join(" ")
-}
-
-function processTreeRssMb(rootPid: number): number | undefined {
-  if (process.platform !== "linux") return undefined
-  try {
-    const rows = execFileSync("ps", ["-eo", "pid=,ppid=,rss="], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .trim()
-      .split("\n")
-      .map((line) => line.trim().split(/\s+/).map(Number))
-      .filter(
-        (row): row is [number, number, number] =>
-          row.length === 3 && row.every(Number.isFinite)
-      )
-    const tree = new Set([rootPid])
-    let added = true
-    while (added) {
-      added = false
-      for (const [pid, parentPid] of rows) {
-        if (!tree.has(pid) && tree.has(parentPid)) {
-          tree.add(pid)
-          added = true
-        }
-      }
-    }
-    return (
-      rows.reduce(
-        (sum, [pid, , rssKib]) => sum + (tree.has(pid) ? rssKib : 0),
-        0
-      ) / 1024
-    )
-  } catch {
-    return undefined
-  }
 }
 
 const options = parseArgs(process.argv.slice(2))
@@ -446,7 +307,10 @@ const portfolioRssTimer = setInterval(() => {
   )
 }, 500)
 
-async function executeSuite(suite: TestSuite): Promise<boolean> {
+async function executeSuite(
+  suite: TestSuite,
+  signal: AbortSignal
+): Promise<boolean> {
   const owned = ownedTestFiles(suite)
   const files = selectedTestFiles(
     owned,
@@ -474,18 +338,21 @@ async function executeSuite(suite: TestSuite): Promise<boolean> {
   const outcome = await runCommand(
     command,
     ceilingMs,
-    join(resultDirectory, `${suite.id}.resource.txt`)
+    join(resultDirectory, `${suite.id}.resource.txt`),
+    signal
   )
   const result: LaneResult = {
     suite: suite.id,
     title: suite.title,
     profile: options.profile,
     classification: suite.classification,
-    status: outcome.timedOut
-      ? "timed-out"
-      : outcome.exitCode === 0
-        ? "passed"
-        : "failed",
+    status: outcome.cancelled
+      ? "cancelled"
+      : outcome.timedOut
+        ? "timed-out"
+        : outcome.exitCode === 0
+          ? "passed"
+          : "failed",
     durationMs: performance.now() - laneStarted,
     peakRssMb: outcome.peakRssMb,
     files: files.length,
@@ -499,32 +366,9 @@ async function executeSuite(suite: TestSuite): Promise<boolean> {
   return false
 }
 
-function scheduledGroups(selected: TestSuite[]): TestSuite[][] {
-  const pair = new Set(["cli-boundary", "bun-server"])
-  const groups: TestSuite[][] = []
-  let paired = false
-  for (const suite of selected) {
-    if (pair.has(suite.id)) {
-      if (!paired) {
-        groups.push(selected.filter((candidate) => pair.has(candidate.id)))
-        paired = true
-      }
-      continue
-    }
-    groups.push([suite])
-  }
-  return groups
-}
-
-const executionSchedule = "cli-server-parallel"
+const executionSchedule = "portable-two-worker"
 console.log(`Execution schedule: ${executionSchedule}`)
-for (const group of scheduledGroups(suites)) {
-  const outcomes = await Promise.all(group.map(executeSuite))
-  if (outcomes.some(Boolean)) {
-    failed = true
-    break
-  }
-}
+failed = await runSuiteSchedule(suites, executeSuite)
 clearInterval(portfolioRssTimer)
 await writeFile(
   join(resultDirectory, "portfolio.json"),

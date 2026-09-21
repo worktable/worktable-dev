@@ -13,8 +13,9 @@ outputs.
 4. Create a protected tag named `openclaw-v<package-version>` at that exact
    public commit. Do not create a GitHub Release, because Worktable's installer
    uses the repository's latest application release.
-5. Build once from the protected tag with Bun 1.3.14 and retain the printed
-   SHA-256 digest.
+5. Build once from the protected tag with Bun 1.3.14 and retain the archive
+   and its matching `.tgz.sha256` checksum file. The packaging command prints
+   both file paths.
 
 The package version, plugin manifest version, and tag version must match. A
 ClawHub version is immutable; a failed or withdrawn version is replaced by a
@@ -46,9 +47,8 @@ clawhub package publish ./artifacts/worktable-openclaw-<version>.tgz \
 Review the dry-run output, then repeat without `--dry-run`. Wait for ClawHub's
 security scan to become clean before changing Worktable's user-facing install
 command. Download the published package and verify its SHA-256 against the
-locally retained artifact.
+locally retained checksum file.
 
 After the first release exists, configure ClawHub trusted publishing for this
 repository and a dedicated, commit-pinned `workflow_dispatch` workflow. Never
 publish from a mutable branch or an unpinned reusable workflow.
-

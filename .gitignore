@@ -71,3 +71,6 @@ fixtures/workspaces/.fix*-*
 
 # Separately obtained proprietary font; retained privately, omitted from public source.
 apps/desktop/ui/fonts/general-sans-variable.woff2
+
+# Disposable development workspace and application state
+.local-dev/

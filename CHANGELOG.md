@@ -12,6 +12,12 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Local installation:** Installation links point to the supported CLI setup while signed Desktop downloads are unavailable in the current release.
+
+
+
 ## [0.1.5] - 2026-09-20
 
 ### Added

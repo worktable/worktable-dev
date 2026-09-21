@@ -1,14 +1,19 @@
 ---
 title: Worktable Desktop
-description: Install the native macOS app and open a local, self-hosted, or Worktable Cloud workspace.
+description: Check Desktop availability and learn how the native macOS app connects to local, self-hosted, or Worktable Cloud workspaces.
 ---
 
 Worktable Desktop is the native macOS home for Worktable. The signed and
 notarized app supports Apple Silicon Macs running macOS 13 or newer.
 
-<a href="https://worktable.dev/releases/latest/worktable-desktop-darwin-arm64.dmg" data-public-analytics-cta="macos_download" data-public-analytics-placement="docs_start">Download the latest DMG</a>,
-open it, and move Worktable to Applications. Intel Macs and Linux can use the
-[command-line install](/start/install/).
+The current application release does not include a signed Desktop download.
+For a new installation, use the [CLI installer](/start/install/) on macOS or
+Linux and open Worktable in your browser. Existing Desktop installations can
+continue to connect to their saved workspaces.
+
+Desktop source is available in the
+[public repository](https://github.com/worktable/worktable-dev/tree/main/apps/desktop).
+The following sections describe the native app's connection and lifecycle behavior.
 
 ## Choose a connection
 

@@ -89,6 +89,12 @@ No test requires a production Cloud deployment.
 Boot the affected runtime path and exercise the behavior as well as running
 tests. Keep examples synthetic and describe what you verified in the PR.
 
+Repository README, contributor guides, and issue templates use focused CI
+checks for local Markdown links, YAML parsing, and unresolved merge conflicts.
+Run `bun scripts/repository-docs.ts` to check these documents locally. Product
+code, product documentation, workflow changes, and unknown paths retain full
+verification. A mixed change uses the broader path.
+
 ## Generated files and docs
 
 MCP metadata, theme files, and brand assets are checked in but generated.

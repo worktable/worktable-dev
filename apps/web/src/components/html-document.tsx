@@ -890,14 +890,17 @@ function WidgetDetailPage({
 
   if (error || !widget) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-destructive">
+      <div data-document-state className="flex h-full items-center justify-center text-sm text-destructive">
         HTML doc not found.
       </div>
     )
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div
+      data-document-ready={loadedFrameSrc === frameSrc ? "true" : undefined}
+      className="flex h-full min-h-0 flex-col bg-background"
+    >
       <WidgetPageMeta
         spaceId={spaceId}
         widgetId={widgetId}

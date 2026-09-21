@@ -1,11 +1,11 @@
 import {
-  lazy,
   Suspense,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from "react"
 import { Navigate, useNavigate, useRouter } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -82,6 +82,7 @@ import {
   type AnnotationDraft,
 } from "@/components/annotations/annotation-composer"
 import { Button } from "@worktable/ui/components/button"
+import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import { Input } from "@worktable/ui/components/input"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
@@ -105,11 +106,14 @@ import { WebsocketProvider } from "y-websocket"
 import { IndexeddbPersistence } from "y-indexeddb"
 
 // Lazy-load the editor (pulls in BlockNote, Mermaid, Shiki)
-const loadEditor = () => import("@/components/editor/editor")
-const Editor = lazy(() => loadEditor().then((m) => ({ default: m.Editor })))
+type LoadedEditorProps = ComponentProps<typeof import("@/components/editor/editor").Editor>
+const editor = preloadableComponent<LoadedEditorProps>(() =>
+  import("@/components/editor/editor").then((module) => ({ default: module.Editor }))
+)
+const Editor = editor.Component
 
 export function preloadDocEditor(formatId?: string): Promise<unknown> {
-  return formatId === "worktable.rich-text" ? loadEditor() : Promise.resolve()
+  return formatId === "worktable.rich-text" ? editor.preload() : Promise.resolve()
 }
 
 export function DocDocumentRenderer({

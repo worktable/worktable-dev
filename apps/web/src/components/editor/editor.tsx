@@ -59,7 +59,6 @@ import {
   WorktableMermaidBlock,
   insertWorktableMermaid,
 } from "./worktable-mermaid-block"
-import { EditorSkeleton } from "./editor-skeleton"
 
 const worktableCodeBlockOptions = {
   ...codeBlockOptions,
@@ -176,7 +175,6 @@ export function Editor({
   onCreateAnnotation,
   onSelectAnnotation,
 }: EditorProps) {
-  const [mounted, setMounted] = useState(false)
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   // Server-backed editor preference; default false until the query resolves.
@@ -203,8 +201,6 @@ export function Editor({
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
       resolvedTheme={resolvedTheme}
-      mounted={mounted}
-      setMounted={setMounted}
       isMobile={isMobile}
       spellcheck={spellcheck}
     />
@@ -222,14 +218,10 @@ function EditorInner({
   onCreateAnnotation,
   onSelectAnnotation,
   resolvedTheme,
-  mounted,
-  setMounted,
   isMobile,
   spellcheck,
 }: EditorProps & {
   resolvedTheme: "light" | "dark"
-  mounted: boolean
-  setMounted: (value: boolean) => void
   isMobile: boolean
   spellcheck: boolean
 }) {
@@ -273,22 +265,21 @@ function EditorInner({
         }
   )
 
+  // This editor is only rendered by client-side document routes. BlockNote
+  // mounts its DOM in a ref callback, before this passive readiness effect;
+  // a separate mount-state skeleton would add another unnecessary commit.
   useEffect(() => {
-    setMounted(true)
-  }, [setMounted])
-
-  useEffect(() => {
-    if (mounted) onReady?.()
-  }, [mounted, onReady])
+    onReady?.()
+  }, [onReady])
 
   // Reactively apply the spellcheck preference to the live ProseMirror node
   // (`editor.domElement`, the same node editorProps.attributes seeds). Setting
   // the attribute in place never touches document content, so toggling the
-  // preference — collab or non-collab — can't lose edits. `mounted` re-runs it
-  // once the DOM node exists.
+  // preference — collab or non-collab — can't lose edits. The DOM ref is
+  // attached before effects run.
   useEffect(() => {
     editor.domElement?.setAttribute("spellcheck", spellcheck ? "true" : "false")
-  }, [editor, spellcheck, mounted])
+  }, [editor, spellcheck])
 
   useEffect(() => {
     if (!onChange || collaboration) return
@@ -333,10 +324,10 @@ function EditorInner({
 
   useEffect(() => {
     if (collaboration) return
-    if (normalizedInitialContent !== undefined && mounted) {
+    if (normalizedInitialContent !== undefined) {
       editor.replaceBlocks(editor.document, normalizedInitialContent)
     }
-  }, [normalizedInitialContent, editor, mounted, collaboration])
+  }, [normalizedInitialContent, editor, collaboration])
 
   const getSlashMenuItems = useMemo(
     () =>
@@ -410,13 +401,9 @@ function EditorInner({
   }, [])
 
   useEffect(() => {
-    if (!mounted || !editorContainerRef.current) return
+    if (!editorContainerRef.current) return
     return initMermaidTouchHandler(editorContainerRef.current)
-  }, [mounted])
-
-  if (!mounted) {
-    return <EditorSkeleton />
-  }
+  }, [])
 
   return (
     <div

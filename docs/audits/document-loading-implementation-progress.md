@@ -401,3 +401,68 @@ and keep a stable chosen component for the lifetime of each mount. This requires
 validation and paired measurements; no speed gain is assumed yet. HTML still
 starts with a different shell loader before its common skeleton; a shared static
 HTML loading surface and explicit readiness/error handoff are also outstanding.
+
+
+### Stage 8 experiment: resolved-component preloads
+
+A shared preloadable component renders completed code preloads synchronously,
+without another lazy promise. Its per-mount component choice stays stable to
+avoid remounting a live editor when the cache resolves. Three real Suspense
+behavior tests, web/UI typechecks, production build, and all 12 relevant browser
+tests passed. However, this alone did **not** establish an editor speed gain:
+
+| Median, three alternating standard pairs | Stage 7 | Stage 8 |
+| --- | ---: | ---: |
+| Small editor | 4.367 s | 4.399 s |
+| HTML ready | 3.399 s | 3.276 s |
+| 2,000-paragraph editor | 7.131 s | 7.149 s |
+
+[All stage-8 runs](document-loading-stage8-evidence.json) have no page errors.
+Many imports are still executing when the renderer first mounts, so avoiding
+suspension only for already-resolved modules cannot eliminate that cold path.
+The small HTML difference is not a basis for claiming a large speedup.
+
+Stage 9 is in progress: start renderer evaluation from the validated server's
+code hint after a saved-content paint, overlapping metadata requests; remove the
+editor's separate mount-state skeleton (BlockNote mounts in its DOM ref before
+readiness effects); share the HTML skeleton between the server response and
+client renderer, with an explicit frame-ready/error handoff. The hint remains
+code-only and never seeds queries or collaboration. Production validation and
+measurements are pending. The stage-7 LAN build remains the recommended review.
+
+### Stage 9 validated: earlier code execution and one HTML loading surface
+
+Three alternating standard-profile pairs against stage 7:
+
+| Median | Stage 7 | Stage 9 |
+| --- | ---: | ---: |
+| Small editor | 4.366 s | 3.955 s |
+| HTML ready | 3.417 s | 3.386 s |
+| 2,000-paragraph editor | 7.337 s | 6.325 s |
+
+[All 18 stage-9 runs](document-loading-stage9-evidence.json) have no page errors.
+All three large-document pairs improved. The first small candidate run was
+slower (4.839 versus 4.117 seconds); the other two improved. These are fresh
+browser contexts against persistent servers, not a fresh server restart for
+every measurement. HTML has no established material speed gain at this stage.
+Its visual sequence is improved: the server and client share the same skeleton,
+which gives way to the sandboxed frame when ready. Authored HTML is never inserted
+into the parent document.
+
+Validation: production build, web/UI typechecks and all ten focused tests passed.
+All 12 relevant browser tests passed, including 5,000-block cold sync, repeated
+nested paste with stable IDs, annotation reopening, and HTML move/readiness
+behavior. [Production handoff checks](document-loading-stage9-handoff-evidence.json)
+proved that the injected HTML skeleton clears on both success and a controlled
+metadata failure. [Mobile color/edit/reload](document-loading-stage9-mobile-evidence.json)
+and [Mermaid/table/code-theme/settings checks](document-loading-stage9-rich-blocks-evidence.json)
+passed without page errors. Desktop and mobile screenshots were visually reviewed.
+
+Stage 9 is available at
+`http://192.168.2.211:39089/spaces/loading-audit/documents/rich-10` with the existing
+fixture password. Its fixed production assets are `/tmp/worktable-stage9-assets`.
+Stage 7 remains available on port 39087 for comparison. Remaining targets are
+ordinary editing below two seconds and dependable sub-200 ms interactions;
+these have not been demonstrated. A residual BlockNote hot path still looks up
+every changed block by document position even though traversal already supplied
+the node. Any further patch must preserve IDs across overlapping changed ranges.

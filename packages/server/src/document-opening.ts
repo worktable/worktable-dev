@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { DocumentReadingPreview } from "@worktable/ui/document-reading-preview"
+import { DocumentSkeleton } from "@worktable/ui/document-skeleton"
 import { requireScope, trustedLocalIdentity } from "./auth.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
@@ -45,7 +46,11 @@ opening.get("/spaces/:spaceId/documents/*", async (c) => {
         handle.rendererKey === "html"
       ) {
         return hasScope(c.get("identity").scopes, "widgets:read")
-          ? { pathname, html: "", preloadKey: "html" as const }
+          ? {
+              pathname,
+              html: renderToStaticMarkup(createElement(DocumentSkeleton)),
+              preloadKey: "html" as const,
+            }
           : null
       }
       if (

@@ -184,5 +184,7 @@ it("preloads authorized HTML code without placing authored HTML in the parent pa
   expect(html).toContain("/assets/html.js")
   expect(html).not.toContain("Authored frame content")
   expect(html).not.toContain("parent.alert")
-  expect(html).toContain(OPENING_VIEW_MARKER)
+  expect(html).toContain('data-document-loading="true"')
+  expect(html).toContain('aria-label="Opening document"')
+  expect(html).not.toContain("<iframe")
 })

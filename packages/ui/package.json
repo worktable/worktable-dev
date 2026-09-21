@@ -50,6 +50,7 @@
     "./public-share-page": "./src/public-share-page.ts",
     "./lib/*": "./src/lib/*.ts",
     "./components/*": "./src/components/*.tsx",
-    "./hooks/*": "./src/hooks/*.ts"
+    "./hooks/*": "./src/hooks/*.ts",
+    "./document-skeleton": "./src/document-skeleton.tsx"
   }
 }

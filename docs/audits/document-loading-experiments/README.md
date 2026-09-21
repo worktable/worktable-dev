@@ -114,3 +114,31 @@ Always close the browser context and then call the proxy's `close()`.
 WebSocket bodies pass through after a delayed handshake, so this helper verifies
 HTML delivery; it is not a Yjs-throughput simulator. It is a diagnostic, not a
 production server or an internet-facing proxy.
+
+
+## Final implementation measurements
+
+See [final results](../document-loading-results.md). Run from the repository root
+with Playwright installed and the visible CDP browser available. Set
+`AUDIT_PASSWORD` to the isolated fixture password without committing it.
+
+```sh
+AUDIT_BEFORE=http://192.168.2.211:45747 \
+AUDIT_AFTER=http://192.168.2.211:39090 \
+node docs/audits/document-loading-experiments/measure-paired-openings.mjs
+
+AUDIT_ORIGIN=http://192.168.2.211:39090 \
+AUDIT_TARGETS=rich-10,rich-2000,plain \
+node docs/audits/document-loading-experiments/measure-reading-and-input.mjs
+
+AUDIT_BEFORE=http://192.168.2.211:45747 \
+AUDIT_AFTER=http://192.168.2.211:39090 \
+node docs/audits/document-loading-experiments/measure-proxy-html.mjs
+```
+
+`AUDIT_OUTPUT` changes each script's JSON output path. `AUDIT_CDP` overrides
+`http://127.0.0.1:18800`; that address controls the browser locally, while the
+review URLs remain LAN-accessible. The input script types and undoes one character;
+never aim it at a real document. Run these sequentially with builds/tests idle.
+The paired script's CDP network emulation covers the parent page only; the proxy
+script also constrains the sandboxed HTML response and checks its latency.

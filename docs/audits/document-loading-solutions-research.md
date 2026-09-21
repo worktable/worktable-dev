@@ -1,5 +1,8 @@
 # Solutions for slow document opening
 
+Historical research before implementation. For the current code, measurements,
+and LAN review builds, see [implementation results](document-loading-implementation-progress.md).
+
 This research follows the [measured opening breakdown](document-loading-timing-breakdown.md). The goal is to improve both first readable content and usable editing. A fast preview followed by seconds of frozen input is not a completed solution.
 
 ## New findings from this pass

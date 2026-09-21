@@ -23,7 +23,7 @@ async function measure(page, target, temperature, profile) {
     else await page.goto(`${origin}/spaces/loading-audit/documents/${target}`, {waitUntil:'commit'});
     if (target === 'html-audit') {
       await page.frameLocator('iframe[data-worktable-widget-frame]').getByRole('heading', {name:'Audit HTML ready'}).waitFor({timeout:90000});
-      await page.getByRole('status', {name:'Opening document', exact:true}).waitFor({state:'hidden',timeout:90000});
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Opening document"]'), undefined, {timeout:90000});
     } else if (target === 'plain') {
       await page.locator('main .worktable-markdown').getByRole('heading', {name:'Audit Markdown'}).waitFor({timeout:90000});
     } else {

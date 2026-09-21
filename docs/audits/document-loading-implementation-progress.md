@@ -1,6 +1,6 @@
 # Document opening: implementation and acceptance targets
 
-Status: in progress. These targets are not yet achieved or release claims.
+Status: implementation validated locally. See [final results and LAN review](document-loading-results.md). Reading targets were met in the controlled fixtures; editing and interaction targets remain unmet. These are not production release claims.
 
 The target is readable saved content within 1 second on the controlled normal
 profile and 2.5 seconds on a constrained connection, ordinary-document editing
@@ -466,3 +466,49 @@ ordinary editing below two seconds and dependable sub-200 ms interactions;
 these have not been demonstrated. A residual BlockNote hot path still looks up
 every changed block by document position even though traversal already supplied
 the node. Any further patch must preserve IDs across overlapping changed ranges.
+
+
+### Stage 10: reuse traversed BlockNote nodes
+
+The ID plugin now uses the node already provided by its changed-range traversal
+instead of looking it up again by document position. A transaction-local map
+tracks IDs rewritten in overlapping ranges; duplicate membership uses a Set.
+Node sizes remain unchanged, so positions stay valid. The complete modified
+source, source hash, and MPL attribution are included in third-party notices.
+The patch applies cleanly to the checksum-verified upstream package and produces
+the exact installed TypeScript, ESM, and CommonJS files.
+
+Three alternating standard-profile pairs against stage 9:
+
+| Median | Stage 9 | Stage 10 |
+| --- | ---: | ---: |
+| Small editor | 4.262 s | 4.305 s |
+| HTML ready, parent-page CDP only | 3.511 s | 3.297 s |
+| 2,000-paragraph editor | 6.823 s | 6.488 s |
+
+[All 18 runs](document-loading-stage10-evidence.json) have no page errors. This is
+a modest large-document improvement, not a new small-document speedup. The first
+large candidate was 25 ms slower; the other two improved by 335 and 120 ms.
+The first small candidate was also slower. HTML does not use this plugin, so its
+difference should not be attributed to the patch.
+
+Validation: production build and all 11 project typechecks passed. Shared JSX
+rendering required enabling `react-jsx` in both server and CLI typechecks. All
+seven document browser tests passed, including a new real-plugin multi-step
+nested-insert check: exactly four ID assignments, unique IDs, and preserved
+original anchors. The test initially mutated shared attributes returned by
+ProseMirror's `toJSON`; cloning those attributes fixed test isolation before the
+successful run. This was not a product ID regression.
+
+The first 141-test server run had one failure in the pre-barrier cold-room
+snapshot case. Its 39-test file passed on recheck, then all 141 tests passed in
+a repeated suite. This intermittent result is retained rather than presented
+as a flawless first pass. No collaboration persistence code changed in stage 10.
+
+
+### Final comparison and constrained checks
+
+[Final results](document-loading-results.md) consolidate the complete original vs
+stage-10 paired comparison, correctly constrained HTML iframe tests, cold/warm
+input checks, reproduction commands, and explicit remaining targets. The final
+review is on LAN port 39090. No production deployment was performed.

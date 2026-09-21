@@ -479,4 +479,52 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
   await expect(editor.getByText("Nested text", { exact: true })).toHaveCount(3);
   const savedIds = await editor.locator('.bn-block-outer[data-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id")));
   expect(savedIds).toEqual(allIds);
+
+  // Exercise the installed ID plugin on a multi-step transaction, including
+  // nested inserts and a later change to an already-inserted block. Each new
+  // block must receive exactly one ID; existing annotation anchors stay intact.
+  const transactionResult = await editor.evaluate((element) => {
+    const tiptap = (element as HTMLElement & {
+      editor: import("@tiptap/core").Editor
+    }).editor;
+    const view = tiptap.view;
+    const source = view.state.doc.firstChild!.firstChild!;
+    type NodeJSON = { attrs?: Record<string, unknown>; content?: NodeJSON[] };
+    const copy: NodeJSON = structuredClone(source.toJSON());
+    const clearIds = (node: NodeJSON) => {
+      if (node.attrs && "id" in node.attrs) node.attrs.id = null;
+      node.content?.forEach(clearIds);
+    };
+    clearIds(copy);
+    const inserted = view.state.schema.nodeFromJSON(copy);
+    const tr = view.state.tr.insert(1, inserted);
+    tr.insert(tr.doc.content.size - 1, view.state.schema.nodeFromJSON(copy));
+    tr.insertText("Edited ", 3);
+    tr.setNodeMarkup(1, undefined, { ...tr.doc.nodeAt(1)!.attrs, id: null });
+    const plugin = view.state.plugins.find((candidate) =>
+      (candidate as unknown as { key: string }).key.startsWith("uniqueID$")
+    )!;
+    const append = plugin.spec.appendTransaction!;
+    let assigned = 0;
+    plugin.spec.appendTransaction = (...args) => {
+      const result = append.apply(plugin, args);
+      if (result) assigned += result.steps.length;
+      return result;
+    };
+    try {
+      view.dispatch(tr);
+    } finally {
+      plugin.spec.appendTransaction = append;
+    }
+    const ids: string[] = [];
+    view.state.doc.descendants((node) => {
+      if (node.type.name === "blockContainer") ids.push(node.attrs.id);
+    });
+    return { assigned, ids };
+  });
+  expect(transactionResult.assigned).toBe(4);
+  expect(transactionResult.ids.length).toBe(savedIds.length + 4);
+  expect(new Set(transactionResult.ids).size, JSON.stringify(transactionResult)).toBe(transactionResult.ids.length);
+  expect(transactionResult.ids.every(Boolean)).toBe(true);
+  expect(savedIds.every((id) => transactionResult.ids.includes(id!))).toBe(true);
 });

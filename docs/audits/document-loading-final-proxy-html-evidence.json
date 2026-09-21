@@ -1,0 +1,1365 @@
+{
+  "profile": "Loopback HTTP proxy: 400 ms request latency, shared 1.6 Mbps response budget, 0.75 Mbps request body budget; main page 4x CPU; WebSocket bodies unthrottled after delayed handshake. Static HTML fixture has no external resources.",
+  "runs": [
+    {
+      "label": "before-1",
+      "readyMs": 7924,
+      "errors": [],
+      "frameNavigation": {
+        "name": "http://192.168.2.211:45747/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 509.60000002384186,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 10.800000011920929,
+        "domainLookupStart": 10.800000011920929,
+        "domainLookupEnd": 10.800000011920929,
+        "connectStart": 10.800000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 10.800000011920929,
+        "requestStart": 18.700000047683716,
+        "responseStart": 437,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 437,
+        "responseEnd": 507.7000000476837,
+        "transferSize": 15191,
+        "encodedBodySize": 14891,
+        "decodedBodySize": 14891,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 508.9000000357628,
+        "domContentLoadedEventStart": 508.9000000357628,
+        "domContentLoadedEventEnd": 509.2000000476837,
+        "domComplete": 509.60000002384186,
+        "loadEventStart": 509.60000002384186,
+        "loadEventEnd": 509.60000002384186,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": null
+      },
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 449.7999999523163,
+          "duration": 417.5,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-Dwf_bbb6.js",
+          "start": 452.89999997615814,
+          "duration": 2528.5,
+          "bytes": 369975
+        },
+        {
+          "path": "/assets/index-giNB9WJ2.js",
+          "start": 454.19999998807907,
+          "duration": 475.19999998807907,
+          "bytes": 2158
+        },
+        {
+          "path": "/assets/main-s3sQKeml.css",
+          "start": 456.5,
+          "duration": 829.6999999880791,
+          "bytes": 39783
+        },
+        {
+          "path": "/v2/css",
+          "start": 1298.8999999761581,
+          "duration": 2.800000011920929,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1299.2999999523163,
+          "duration": 2.700000047683716,
+          "bytes": 0
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 1448.2999999523163,
+          "duration": 404.7000000476837,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3777.2999999523163,
+          "duration": 412.2000000476837,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/_spaceId-xWfZXQ5A.js",
+          "start": 3837.199999988079,
+          "duration": 474.5999999642372,
+          "bytes": 4158
+        },
+        {
+          "path": "/assets/annotations-queries-Da2Oo_PE.js",
+          "start": 3839.5,
+          "duration": 422.0999999642372,
+          "bytes": 1026
+        },
+        {
+          "path": "/assets/_-CcdE4skq.js",
+          "start": 3840,
+          "duration": 432.0999999642372,
+          "bytes": 1546
+        },
+        {
+          "path": "/assets/file-question-mark-eJA9a76G.js",
+          "start": 3840.199999988079,
+          "duration": 441.39999997615814,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3863.099999964237,
+          "duration": 430.19999998807907,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 3864.7999999523163,
+          "duration": 756.5,
+          "bytes": 1905
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3872.699999988079,
+          "duration": 871.6999999880791,
+          "bytes": 749
+        },
+        {
+          "path": "/api/spaces",
+          "start": 4758.399999976158,
+          "duration": 458,
+          "bytes": 2042
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4767.299999952316,
+          "duration": 420.7000000476837,
+          "bytes": 263
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4788.5,
+          "duration": 410.5,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/html-document-Dgi8GeO4.js",
+          "start": 4904.399999976158,
+          "duration": 474.10000002384186,
+          "bytes": 9744
+        },
+        {
+          "path": "/assets/textarea-BdCVDezp.js",
+          "start": 4905.099999964237,
+          "duration": 423.30000001192093,
+          "bytes": 737
+        },
+        {
+          "path": "/assets/annotation-panel-HQJEOnfh.js",
+          "start": 4905.299999952316,
+          "duration": 433.80000001192093,
+          "bytes": 1793
+        },
+        {
+          "path": "/assets/sparkles-Cy0qkJAg.js",
+          "start": 4905.5,
+          "duration": 690.3999999761581,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DDUmlKQj.js",
+          "start": 4905.599999964237,
+          "duration": 701.1000000238419,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-BjdM78HO.js",
+          "start": 4905.799999952316,
+          "duration": 720.7000000476837,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/desktop-context-panel-BYoU65iv.js",
+          "start": 4906,
+          "duration": 831.2999999523163,
+          "bytes": 911
+        },
+        {
+          "path": "/assets/badge-check-Doi6aliA.js",
+          "start": 4906.199999988079,
+          "duration": 841.5999999642372,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/code-BHE6tWvR.js",
+          "start": 4906.399999976158,
+          "duration": 881.3999999761581,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/minimize-IWBSveYz.js",
+          "start": 4906.5,
+          "duration": 1093.3999999761581,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/maximize-DIWUEZDQ.js",
+          "start": 4906.699999988079,
+          "duration": 1104,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/chevrons-left-BppSgthW.js",
+          "start": 4906.799999952316,
+          "duration": 1124.6000000238419,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DfiC1Pkz.js",
+          "start": 4910.199999988079,
+          "duration": 1232.8999999761581,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/chevrons-right-DqFV7G44.js",
+          "start": 4910.5,
+          "duration": 1241.3999999761581,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/save-C7kI3NPb.js",
+          "start": 4910.699999988079,
+          "duration": 1292.8999999761581,
+          "bytes": 431
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 4994.399999976158,
+          "duration": 1412.199999988079,
+          "bytes": 18
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5264.699999988079,
+          "duration": 1152.199999988079,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 5549.099999964237,
+          "duration": 897.4000000357628,
+          "bytes": 1182
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 6277.799999952316,
+          "duration": 421.60000002384186,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 6286,
+          "duration": 423.89999997615814,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 6792.299999952316,
+          "duration": 507.7000000476837,
+          "bytes": 14891
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1442.0999999642372,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.8999999761581421,
+        "domainLookupStart": 0.8999999761581421,
+        "domainLookupEnd": 0.8999999761581421,
+        "connectStart": 4.099999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 4.299999952316284,
+        "requestStart": 4.399999976158142,
+        "responseStart": 416.19999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 416.19999998807907,
+        "responseEnd": 426.2999999523163,
+        "transferSize": 2608,
+        "encodedBodySize": 2308,
+        "decodedBodySize": 13515,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 1393,
+        "domContentLoadedEventStart": 1393,
+        "domContentLoadedEventEnd": 1393.0999999642372,
+        "domComplete": 1442.0999999642372,
+        "loadEventStart": 1442.0999999642372,
+        "loadEventEnd": 1442.0999999642372,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      }
+    },
+    {
+      "label": "after-1",
+      "readyMs": 5606,
+      "errors": [],
+      "frameNavigation": {
+        "name": "http://192.168.2.211:39090/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 493,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.599999964237213,
+        "domainLookupStart": 8.599999964237213,
+        "domainLookupEnd": 8.599999964237213,
+        "connectStart": 8.599999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.599999964237213,
+        "requestStart": 19.899999976158142,
+        "responseStart": 441,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 441,
+        "responseEnd": 462.0999999642372,
+        "transferSize": 5345,
+        "encodedBodySize": 5045,
+        "decodedBodySize": 14891,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 492.2999999523163,
+        "domContentLoadedEventStart": 492.2999999523163,
+        "domContentLoadedEventEnd": 492.39999997615814,
+        "domComplete": 493,
+        "loadEventStart": 493,
+        "loadEventEnd": 493,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": null
+      },
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 518.5999999642372,
+          "duration": 440.9000000357628,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-BOE-2d39.js",
+          "start": 521.5,
+          "duration": 2487.5,
+          "bytes": 194870
+        },
+        {
+          "path": "/assets/react-runtime-Bp9mvg_d.js",
+          "start": 521.8000000119209,
+          "duration": 1588.8999999761581,
+          "bytes": 60604
+        },
+        {
+          "path": "/assets/shared-icons-CV4EbLhf.js",
+          "start": 522.3000000119209,
+          "duration": 699.8999999761581,
+          "bytes": 11417
+        },
+        {
+          "path": "/assets/index-DXgPVxbr.js",
+          "start": 526.6999999880791,
+          "duration": 533.5,
+          "bytes": 2226
+        },
+        {
+          "path": "/assets/icons-m6jofjue.js",
+          "start": 526.8999999761581,
+          "duration": 1716.9000000357628,
+          "bytes": 52827
+        },
+        {
+          "path": "/assets/document-views-_bYnqkdM.js",
+          "start": 527.0999999642372,
+          "duration": 947.2000000476837,
+          "bytes": 526
+        },
+        {
+          "path": "/assets/app-DHhTJZKu.css",
+          "start": 529.3999999761581,
+          "duration": 1243.5,
+          "bytes": 41595
+        },
+        {
+          "path": "/v2/css",
+          "start": 1935.5,
+          "duration": 12.199999988079071,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1935.8999999761581,
+          "duration": 12.100000023841858,
+          "bytes": 0
+        },
+        {
+          "path": "/assets/ws-DUK_7SWy.js",
+          "start": 1936.8999999761581,
+          "duration": 436,
+          "bytes": 2444
+        },
+        {
+          "path": "/assets/use-space-events-DkGAcW2w.js",
+          "start": 1951.3999999761581,
+          "duration": 432.60000002384186,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/doc-freshness-DHWphKJx.js",
+          "start": 1967,
+          "duration": 468.0999999642372,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/confirm-dialog-CId1e8sY.js",
+          "start": 1967.300000011921,
+          "duration": 548.8999999761581,
+          "bytes": 619
+        },
+        {
+          "path": "/assets/textarea-DbaZACTv.js",
+          "start": 1969.3999999761581,
+          "duration": 686.9000000357628,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/scrollEdges-C8HKs0ZM.js",
+          "start": 1969.5,
+          "duration": 817.1999999880791,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-BkkXmoQ4.js",
+          "start": 1969.699999988079,
+          "duration": 929.1999999880791,
+          "bytes": 10021
+        },
+        {
+          "path": "/assets/useRender-BGPoOgC9.js",
+          "start": 1969.800000011921,
+          "duration": 889.8999999761581,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-C5-aTzR0.js",
+          "start": 1970,
+          "duration": 961.8000000119209,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/annotation-panel-D4aV_3-T.js",
+          "start": 1970.0999999642372,
+          "duration": 1092.800000011921,
+          "bytes": 1797
+        },
+        {
+          "path": "/assets/deferred-mount-ymJs9FYY.js",
+          "start": 1970.199999988079,
+          "duration": 1232.199999988079,
+          "bytes": 283
+        },
+        {
+          "path": "/assets/desktop-context-panel-Bo2ygVIF.js",
+          "start": 1970.300000011921,
+          "duration": 1295.2999999523163,
+          "bytes": 603
+        },
+        {
+          "path": "/assets/profile-BDUdpeLm.js",
+          "start": 1970.5999999642372,
+          "duration": 1335.5,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/annotations-queries-CpMvvFbN.js",
+          "start": 1970.800000011921,
+          "duration": 1367.5,
+          "bytes": 1039
+        },
+        {
+          "path": "/assets/html-document-DdpgP3yU.js",
+          "start": 1971,
+          "duration": 1489.699999988079,
+          "bytes": 9818
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 2193.599999964237,
+          "duration": 1277,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3536.099999964237,
+          "duration": 406.2000000476837,
+          "bytes": 250
+        },
+        {
+          "path": "/assets/_spaceId-DfMoxgeA.js",
+          "start": 3593.300000011921,
+          "duration": 440.89999997615814,
+          "bytes": 4266
+        },
+        {
+          "path": "/assets/_-ZbRU6ZRO.js",
+          "start": 3596.5,
+          "duration": 418.19999998807907,
+          "bytes": 1577
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3612.800000011921,
+          "duration": 442,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3622.199999988079,
+          "duration": 452.69999998807907,
+          "bytes": 749
+        },
+        {
+          "path": "/assets/app-sidebar-Bw4o9Md3.js",
+          "start": 4217.399999976158,
+          "duration": 541.9000000357628,
+          "bytes": 22489
+        },
+        {
+          "path": "/assets/collapsible-QEkx40hD.js",
+          "start": 4219.099999964237,
+          "duration": 437.60000002384186,
+          "bytes": 2741
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 4343.899999976158,
+          "duration": 446.10000002384186,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 4351.399999976158,
+          "duration": 449.9000000357628,
+          "bytes": 28
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4359.899999976158,
+          "duration": 420.4000000357628,
+          "bytes": 263
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4791.599999964237,
+          "duration": 415,
+          "bytes": 939
+        },
+        {
+          "path": "/api/system/version",
+          "start": 4842.599999964237,
+          "duration": 416.7000000476837,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 4938.699999988079,
+          "duration": 462.19999998807907,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39090/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 2168.599999964237,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.5999999642372131,
+        "domainLookupStart": 1.5999999642372131,
+        "domainLookupEnd": 1.5999999642372131,
+        "connectStart": 19.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 19.80000001192093,
+        "requestStart": 19.899999976158142,
+        "responseStart": 437,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 437,
+        "responseEnd": 453.69999998807907,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 11386,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2090.300000011921,
+        "domContentLoadedEventStart": 2090.5,
+        "domContentLoadedEventEnd": 2091.099999964237,
+        "domComplete": 2168.599999964237,
+        "loadEventStart": 2168.599999964237,
+        "loadEventEnd": 2168.599999964237,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      }
+    },
+    {
+      "label": "after-2",
+      "readyMs": 5571,
+      "errors": [],
+      "frameNavigation": {
+        "name": "http://192.168.2.211:39090/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 468.5,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.299999952316284,
+        "domainLookupStart": 8.299999952316284,
+        "domainLookupEnd": 8.299999952316284,
+        "connectStart": 8.299999952316284,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.299999952316284,
+        "requestStart": 13.899999976158142,
+        "responseStart": 431.5,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 431.5,
+        "responseEnd": 451.0999999642372,
+        "transferSize": 5345,
+        "encodedBodySize": 5045,
+        "decodedBodySize": 14891,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 467.69999998807907,
+        "domContentLoadedEventStart": 467.69999998807907,
+        "domContentLoadedEventEnd": 468,
+        "domComplete": 468.39999997615814,
+        "loadEventStart": 468.39999997615814,
+        "loadEventEnd": 468.5,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": null
+      },
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 453,
+          "duration": 425.39999997615814,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-BOE-2d39.js",
+          "start": 453.69999998807907,
+          "duration": 2484.099999964237,
+          "bytes": 194870
+        },
+        {
+          "path": "/assets/react-runtime-Bp9mvg_d.js",
+          "start": 456.89999997615814,
+          "duration": 1559,
+          "bytes": 60604
+        },
+        {
+          "path": "/assets/shared-icons-CV4EbLhf.js",
+          "start": 457.89999997615814,
+          "duration": 681.3000000119209,
+          "bytes": 11417
+        },
+        {
+          "path": "/assets/index-DXgPVxbr.js",
+          "start": 459.2999999523163,
+          "duration": 519.2000000476837,
+          "bytes": 2226
+        },
+        {
+          "path": "/assets/icons-m6jofjue.js",
+          "start": 460.5,
+          "duration": 1685.699999988079,
+          "bytes": 52827
+        },
+        {
+          "path": "/assets/document-views-_bYnqkdM.js",
+          "start": 461.2999999523163,
+          "duration": 932,
+          "bytes": 526
+        },
+        {
+          "path": "/assets/app-DHhTJZKu.css",
+          "start": 462.19999998807907,
+          "duration": 1224.0999999642372,
+          "bytes": 41595
+        },
+        {
+          "path": "/v2/css",
+          "start": 1817.5999999642372,
+          "duration": 2.400000035762787,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1818.0999999642372,
+          "duration": 4.699999988079071,
+          "bytes": 0
+        },
+        {
+          "path": "/assets/ws-DUK_7SWy.js",
+          "start": 1819.199999988079,
+          "duration": 447.39999997615814,
+          "bytes": 2444
+        },
+        {
+          "path": "/assets/use-space-events-DkGAcW2w.js",
+          "start": 1819.7999999523163,
+          "duration": 416.80000001192093,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/doc-freshness-DHWphKJx.js",
+          "start": 1823.8999999761581,
+          "duration": 423.10000002384186,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/confirm-dialog-CId1e8sY.js",
+          "start": 1824.3999999761581,
+          "duration": 605.3999999761581,
+          "bytes": 619
+        },
+        {
+          "path": "/assets/textarea-DbaZACTv.js",
+          "start": 1828.8999999761581,
+          "duration": 734.6000000238419,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/scrollEdges-C8HKs0ZM.js",
+          "start": 1836.699999988079,
+          "duration": 805.0999999642372,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-BkkXmoQ4.js",
+          "start": 1838.5999999642372,
+          "duration": 925.3000000119209,
+          "bytes": 10021
+        },
+        {
+          "path": "/assets/useRender-BGPoOgC9.js",
+          "start": 1839.199999988079,
+          "duration": 843.5999999642372,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-C5-aTzR0.js",
+          "start": 1839.3999999761581,
+          "duration": 996,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/annotation-panel-D4aV_3-T.js",
+          "start": 1842.7999999523163,
+          "duration": 1125.5,
+          "bytes": 1797
+        },
+        {
+          "path": "/assets/deferred-mount-ymJs9FYY.js",
+          "start": 1843.7999999523163,
+          "duration": 1205.2000000476837,
+          "bytes": 283
+        },
+        {
+          "path": "/assets/desktop-context-panel-Bo2ygVIF.js",
+          "start": 1844.699999988079,
+          "duration": 1255,
+          "bytes": 603
+        },
+        {
+          "path": "/assets/profile-BDUdpeLm.js",
+          "start": 1844.8999999761581,
+          "duration": 1326,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/annotations-queries-CpMvvFbN.js",
+          "start": 1846.5,
+          "duration": 1402.699999988079,
+          "bytes": 1039
+        },
+        {
+          "path": "/assets/html-document-DdpgP3yU.js",
+          "start": 1846.7999999523163,
+          "duration": 1553.800000011921,
+          "bytes": 9818
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 1889.0999999642372,
+          "duration": 1491.9000000357628,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3466.699999988079,
+          "duration": 415.39999997615814,
+          "bytes": 250
+        },
+        {
+          "path": "/assets/_spaceId-DfMoxgeA.js",
+          "start": 3521.7999999523163,
+          "duration": 441.30000001192093,
+          "bytes": 4266
+        },
+        {
+          "path": "/assets/_-ZbRU6ZRO.js",
+          "start": 3526,
+          "duration": 416.7999999523163,
+          "bytes": 1577
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3549.599999964237,
+          "duration": 454.69999998807907,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3558.7999999523163,
+          "duration": 497.7000000476837,
+          "bytes": 749
+        },
+        {
+          "path": "/assets/app-sidebar-Bw4o9Md3.js",
+          "start": 4170.799999952316,
+          "duration": 543.8000000119209,
+          "bytes": 22489
+        },
+        {
+          "path": "/assets/collapsible-QEkx40hD.js",
+          "start": 4172.199999988079,
+          "duration": 442.30000001192093,
+          "bytes": 2741
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 4300.899999976158,
+          "duration": 444.60000002384186,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 4312.199999988079,
+          "duration": 442.89999997615814,
+          "bytes": 28
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4324.199999988079,
+          "duration": 411,
+          "bytes": 263
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4767.799999952316,
+          "duration": 413.2000000476837,
+          "bytes": 939
+        },
+        {
+          "path": "/api/system/version",
+          "start": 4795.899999976158,
+          "duration": 405.89999997615814,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 4883.099999964237,
+          "duration": 451,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39090/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1880.3999999761581,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.199999988079071,
+        "domainLookupStart": 1.199999988079071,
+        "domainLookupEnd": 1.199999988079071,
+        "connectStart": 3.299999952316284,
+        "secureConnectionStart": 0,
+        "connectEnd": 3.599999964237213,
+        "requestStart": 3.699999988079071,
+        "responseStart": 422.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 422.69999998807907,
+        "responseEnd": 433.89999997615814,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 11386,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 1814.699999988079,
+        "domContentLoadedEventStart": 1815.5999999642372,
+        "domContentLoadedEventEnd": 1815.8999999761581,
+        "domComplete": 1880.3999999761581,
+        "loadEventStart": 1880.3999999761581,
+        "loadEventEnd": 1880.3999999761581,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      }
+    },
+    {
+      "label": "before-2",
+      "readyMs": 7371,
+      "errors": [],
+      "frameNavigation": {
+        "name": "http://192.168.2.211:45747/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 554.1000000238419,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 17.69999998807907,
+        "domainLookupStart": 17.69999998807907,
+        "domainLookupEnd": 17.69999998807907,
+        "connectStart": 17.69999998807907,
+        "secureConnectionStart": 0,
+        "connectEnd": 17.69999998807907,
+        "requestStart": 41,
+        "responseStart": 458.10000002384186,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 458.10000002384186,
+        "responseEnd": 532.3000000119209,
+        "transferSize": 15191,
+        "encodedBodySize": 14891,
+        "decodedBodySize": 14891,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 552.6000000238419,
+        "domContentLoadedEventStart": 552.6000000238419,
+        "domContentLoadedEventEnd": 553.5,
+        "domComplete": 554,
+        "loadEventStart": 554.1000000238419,
+        "loadEventEnd": 554.1000000238419,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": null
+      },
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 447.60000002384186,
+          "duration": 422.0999999642372,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-Dwf_bbb6.js",
+          "start": 450.10000002384186,
+          "duration": 2570.5,
+          "bytes": 369975
+        },
+        {
+          "path": "/assets/index-giNB9WJ2.js",
+          "start": 461.89999997615814,
+          "duration": 460.2000000476837,
+          "bytes": 2158
+        },
+        {
+          "path": "/assets/main-s3sQKeml.css",
+          "start": 468.19999998807907,
+          "duration": 830.1000000238419,
+          "bytes": 39783
+        },
+        {
+          "path": "/v2/css",
+          "start": 1308.699999988079,
+          "duration": 3,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1310,
+          "duration": 1.899999976158142,
+          "bytes": 0
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 1469,
+          "duration": 409,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3765.800000011921,
+          "duration": 403.80000001192093,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/_spaceId-xWfZXQ5A.js",
+          "start": 3820.5,
+          "duration": 458.80000001192093,
+          "bytes": 4158
+        },
+        {
+          "path": "/assets/annotations-queries-Da2Oo_PE.js",
+          "start": 3822.699999988079,
+          "duration": 417.5,
+          "bytes": 1026
+        },
+        {
+          "path": "/assets/_-CcdE4skq.js",
+          "start": 3826.800000011921,
+          "duration": 424,
+          "bytes": 1546
+        },
+        {
+          "path": "/assets/file-question-mark-eJA9a76G.js",
+          "start": 3828.199999988079,
+          "duration": 432.5,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3864.899999976158,
+          "duration": 457.30000001192093,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 3870.199999988079,
+          "duration": 722.8000000119209,
+          "bytes": 1905
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3881.899999976158,
+          "duration": 792.4000000357628,
+          "bytes": 749
+        },
+        {
+          "path": "/api/spaces",
+          "start": 4657.199999988079,
+          "duration": 468.10000002384186,
+          "bytes": 2042
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4670.399999976158,
+          "duration": 412.5,
+          "bytes": 263
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4690.399999976158,
+          "duration": 414,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/html-document-Dgi8GeO4.js",
+          "start": 4816.699999988079,
+          "duration": 471.69999998807907,
+          "bytes": 9744
+        },
+        {
+          "path": "/assets/textarea-BdCVDezp.js",
+          "start": 4818.899999976158,
+          "duration": 419.60000002384186,
+          "bytes": 737
+        },
+        {
+          "path": "/assets/annotation-panel-HQJEOnfh.js",
+          "start": 4820.600000023842,
+          "duration": 427.5999999642372,
+          "bytes": 1793
+        },
+        {
+          "path": "/assets/sparkles-Cy0qkJAg.js",
+          "start": 4825.399999976158,
+          "duration": 666,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DDUmlKQj.js",
+          "start": 4827.199999988079,
+          "duration": 684.4000000357628,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-BjdM78HO.js",
+          "start": 4827.899999976158,
+          "duration": 714.4000000357628,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/desktop-context-panel-BYoU65iv.js",
+          "start": 4830.199999988079,
+          "duration": 811.8000000119209,
+          "bytes": 911
+        },
+        {
+          "path": "/assets/badge-check-Doi6aliA.js",
+          "start": 4831.199999988079,
+          "duration": 821,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/code-BHE6tWvR.js",
+          "start": 4831.399999976158,
+          "duration": 863.1000000238419,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/minimize-IWBSveYz.js",
+          "start": 4831.600000023842,
+          "duration": 1066.699999988079,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/maximize-DIWUEZDQ.js",
+          "start": 4831.800000011921,
+          "duration": 1086.3999999761581,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/chevrons-left-BppSgthW.js",
+          "start": 4832,
+          "duration": 1121,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DfiC1Pkz.js",
+          "start": 4832.100000023842,
+          "duration": 1222.5999999642372,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/chevrons-right-DqFV7G44.js",
+          "start": 4832.300000011921,
+          "duration": 1232.5999999642372,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/save-C7kI3NPb.js",
+          "start": 4832.5,
+          "duration": 1274.3999999761581,
+          "bytes": 431
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 4898.600000023842,
+          "duration": 1409.8999999761581,
+          "bytes": 18
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5109,
+          "duration": 1219.800000011921,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 5368,
+          "duration": 1003.1999999880791,
+          "bytes": 1182
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 6152.300000011921,
+          "duration": 427.39999997615814,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 6159.300000011921,
+          "duration": 438.30000001192093,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 6675.100000023842,
+          "duration": 532.2999999523163,
+          "bytes": 14891
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1454.199999988079,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.100000023841858,
+        "domainLookupStart": 1.100000023841858,
+        "domainLookupEnd": 1.100000023841858,
+        "connectStart": 4.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 4.800000011920929,
+        "requestStart": 4.800000011920929,
+        "responseStart": 413.89999997615814,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 413.89999997615814,
+        "responseEnd": 424.39999997615814,
+        "transferSize": 2608,
+        "encodedBodySize": 2308,
+        "decodedBodySize": 13515,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 1393.3999999761581,
+        "domContentLoadedEventStart": 1393.3999999761581,
+        "domContentLoadedEventEnd": 1394.6000000238419,
+        "domComplete": 1453.8999999761581,
+        "loadEventStart": 1454.199999988079,
+        "loadEventEnd": 1454.199999988079,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      }
+    }
+  ]
+}

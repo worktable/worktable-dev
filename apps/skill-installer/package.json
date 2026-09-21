@@ -1,0 +1,18 @@
+{
+  "name": "@worktable/skill-installer",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun run ../../scripts/testing/run.ts required --test-path-prefix apps/skill-installer/"
+  },
+  "dependencies": {
+    "@worktable/mcp-connect": "workspace:*",
+    "@worktable/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@worktable/config-typescript": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

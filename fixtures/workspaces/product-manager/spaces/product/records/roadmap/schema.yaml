@@ -1,0 +1,31 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.recordSchema"
+id: "roadmap"
+name: "Roadmap"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+fields:
+  title:
+    required: true
+    type: "string"
+  quarter:
+    values:
+      - "q1"
+      - "q2"
+      - "q3"
+      - "q4"
+    required: true
+    type: "enum"
+  status:
+    values:
+      - "planned"
+      - "in-progress"
+      - "shipped"
+    required: true
+    type: "enum"
+  owner:
+    type: "string"

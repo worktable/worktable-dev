@@ -1,0 +1,15 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "fb-002"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "feedback"
+data:
+  feature: "dark-theme"
+  sentiment: "positive"
+  source: "app-store"
+  summary: "Loves the new dark theme"

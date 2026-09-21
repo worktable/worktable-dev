@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "workspace-window-chrome",
+  "description": "Window dragging for the unprivileged workspace title-bar region.",
+  "local": false,
+  "remote": {
+    "urls": ["http://*:*/*", "https://*:*/*"]
+  },
+  "webviews": ["workspace"],
+  "permissions": ["core:window:allow-start-dragging"]
+}

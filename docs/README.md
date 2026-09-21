@@ -1,5 +1,5 @@
 # Worktable documentation
 
-The documentation has moved to **[docs.worktable.dev](https://docs.worktable.dev)**.
-
-Start there for install guides, connecting your agent, concepts, the CLI and MCP tool reference, and release notes ([What's new](https://docs.worktable.dev/whats-new/)).
+See the [contributor guide](../README.md) for building and testing Worktable,
+the [product docs](https://docs.worktable.dev) for using it, and the
+[OpenClaw release guide](./openclaw-release.md) for plugin packaging.

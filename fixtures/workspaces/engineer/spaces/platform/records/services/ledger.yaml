@@ -1,0 +1,14 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "ledger"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "services"
+data:
+  name: "Ledger"
+  owner: "payments-core"
+  tier: "tier-1"

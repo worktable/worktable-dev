@@ -1,4 +1,0 @@
-interface:
-  display_name: "Find and synthesize Worktable context"
-  short_description: "Research and synthesize workspace context"
-  default_prompt: "Use $worktable-find-and-synthesize-context to find and synthesize the relevant context in Worktable."

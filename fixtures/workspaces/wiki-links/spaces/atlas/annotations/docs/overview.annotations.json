@@ -1,0 +1,32 @@
+{
+  "type": "worktable.annotations",
+  "version": 1,
+  "spaceId": "atlas",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "annotations": [
+    {
+      "id": "ann-wiki-links-demo",
+      "spaceId": "atlas",
+      "target": {
+        "type": "doc",
+        "docPath": "overview"
+      },
+      "category": "instruction",
+      "status": "open",
+      "body": "Demo instruction for agents: read this doc's links, confirm /reference/changelog is reported broken, and reply here with the scratchpad's backlink count.",
+      "author": {
+        "type": "user",
+        "id": "fixture",
+        "name": "Fixture"
+      },
+      "labels": [
+        "demo"
+      ],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    }
+  ],
+  "revision": "455b09cdc8d95afdfeac2a26aa995622510640864472951c9c9e309503fc70ae"
+}

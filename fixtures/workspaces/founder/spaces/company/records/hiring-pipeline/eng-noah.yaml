@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "eng-noah"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "hiring-pipeline"
+data:
+  candidate: "Noah Williams"
+  nextInterview: "2026-08-10"
+  nextStep: "Keep warm for Q2"
+  owner: "Dev"
+  priority: "high"
+  role: "Infrastructure engineer"
+  stage: "closed"

@@ -1,62 +1,74 @@
 # Worktable
 
-**Worktable is a local-first workspace you share with your AI agents.**
+Worktable is a local-first, file-backed workspace shared by humans and AI agents.
+It includes a server, web app, CLI, Desktop app, MCP connector, plugins and user docs.
 
-Agents get somewhere better than chat to put durable work: private docs, interactive HTML docs, and file-backed records. You get a calm visual surface to inspect, edit, and come back to that work later. Everything lives as plain files in a folder you own.
+The application is licensed under [AGPL-3.0-only](./LICENSE). Exact shared MIT
+exceptions and third-party notices remain separate; see [NOTICE](./NOTICE) and
+the relevant package notices. Contributions follow the license of each file;
+see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-> This repo is where Worktable's **releases, installer, and public integrations** live. The app itself is developed privately (more on that below). The product home is [worktable.dev](https://worktable.dev) and the docs live at [docs.worktable.dev](https://docs.worktable.dev).
+## Build
 
-## Install
+Install Node 24.15.0 and the version of Bun named in `package.json`, then run:
 
 ```sh
-curl -fsSL https://worktable.dev/install | sh
-worktable
+bun install --frozen-lockfile
+bun run build
+bun run check:tools
+bun run check:theme
+bun run check:brand
+bun run typecheck
+bun run typecheck:lab
 ```
 
-That's it: setup walks you through the rest and prints your URL (default `http://localhost:7480`). Your workspace lands at `~/Worktable`. No npm, no Bun, no source checkout.
+`bun run release:lab` builds Linux CLI and skill-installer bundles for the host
+architecture, plus connector and plugin artifacts, in `dist/lab-releases`.
+Run the built CLI with `--help` for local
+setup commands. `bun run lab --help` describes disposable acceptance environments.
+For an AGPL checkout, release builds and artifact verification require a clean
+Git tree and an explicit source identity. Set `WORKTABLE_PUBLIC_SOURCE_REPOSITORY` to the GitHub origin
+repository and `WORKTABLE_PUBLIC_SOURCE_COMMIT` to the full checked-out commit.
+All release archives then identify that commit and omit build-runner links.
+A private runner does not make its own repository the public source. Local tags
+are ignored unless `WORKTABLE_PUBLIC_SOURCE_TAG` explicitly supplies the captured
+public release tag. It must match the package version and point to that commit.
+Public builds reject a differing `WORKTABLE_VERSION`, ambient `VITE_` settings,
+local environment files in build directories and ignored files in web public
+assets or the OpenClaw skill staging directory.
+Build from a fresh checkout. These settings bind build inputs; they do not
+approve publication.
 
-Want to read the script before piping it into your shell? Sensible. It's [right here](./install.sh), and it's the same file `worktable.dev/install` serves.
+Desktop packaging requires macOS and the Rust toolchain pinned in
+`apps/desktop/rust-toolchain.toml`.
 
-From there, [getting started](https://docs.worktable.dev/start/install/) covers the first run, and [connect your agent](https://docs.worktable.dev/start/connect-your-agent/) hooks up Claude Code, Cursor, or any other MCP client.
+## Verify
 
-## What you get
+Run canonical tests from an independent Git checkout:
 
-- **Docs:** versioned notes, plans, and briefs, as markdown or rich text.
-- **HTML docs:** self-contained interactive pages an agent builds for you (dashboards, planners, little tools), running in a sandboxed runtime.
-- **Records:** structured data as readable YAML files, shared between agents, HTML docs, and the UI.
-- **Annotations:** comments and instructions attached to anything, flowing both ways between you and your agents.
+```sh
+bun run test:policy
+bun run test:required
+bun run test:full
+```
 
-Files are the protocol. The whole workspace lives in one folder: watchable, git-able, greppable, portable. The server, the web app, the MCP tools, and your agents all read and write the same files.
+`required` covers standard, server, CLI and packaged-boundary tests. `full` adds
+Desktop contracts and browser journeys; it requires Rust, Chromium and the native
+Desktop build dependencies. `changed` currently selects every public changed lane.
+Tests never need a Cloud deployment. See the workflow for Linux dependencies.
 
-## Where's the source?
+Generate MCP metadata, theme and brand files with the corresponding `generate:*`
+commands. Generated files remain checked in and their checks reject drift.
 
-Worktable's source is private, for an ordinary reason: it started as a tool I built for myself, I use it every day, and right now I'd rather spend my time making it better than running an open-source project. Open-sourcing it properly is real work (auditing every corner of the codebase for release, then reviewing contributions and maintaining a stable surface), and doing it halfway would serve nobody.
+## Runtime sources
 
-If people genuinely want the source open, I'd gladly do that work. [Open an issue](../../issues) and say so.
+Prebuilt Worktable downloads include the Bun runtime. [SOURCE-MATERIALS.json](./SOURCE-MATERIALS.json)
+identifies its matching source and rebuild archive by URL, SHA256 and byte length.
+Verify the archive's checksum before using the included build instructions and
+replacement-runtime helper. The runtime identity must match the pinned Bun version and commit; release builds
+reject a missing or malformed reference. Other dependencies retain their source
+references and license terms in the release notices.
 
-Meanwhile, the part that matters day to day is already open: your workspace is plain files (markdown, YAML, HTML) in a folder you own. No database, no export step, no lock-in. If Worktable vanished tomorrow, your data would still be sitting there, readable by anything.
-
-The [OpenClaw adapter](plugins/openclaw) and the
-[Worktable agent plugin](plugins/worktable) are public exceptions. Their source
-is available under the MIT License so agent users can inspect exactly what they
-install. This does not change the license of the Worktable application.
-
-## Documentation
-
-Guides, concepts, agent orientation, and the full CLI and MCP reference live at **[docs.worktable.dev](https://docs.worktable.dev)**. Release-by-release changes are on [What's new](https://docs.worktable.dev/whats-new/).
-
-## Releases
-
-Platform builds and checksums are published under [Releases](../../releases) for macOS (Apple Silicon and Intel) and Linux (x64 and arm64). The installer resolves artifacts through `worktable.dev/releases/*`, which redirects here.
-
-Once installed, updating is built in: run `worktable update`, or use Settings → Software Update in the app.
-
-## Links
-
-- Product site: [worktable.dev](https://worktable.dev)
-- Bugs and feature requests: [Issues](../../issues)
-- Security: [SECURITY.md](SECURITY.md)
-
-## License
-
-The Worktable app is proprietary. The documentation and installer script in this repo are provided for use with Worktable under a limited grant: see [LICENSE](LICENSE). Directories containing their own license, including [`plugins/openclaw`](plugins/openclaw) and [`plugins/worktable`](plugins/worktable), are governed by that license instead.
+Release archive packaging requires Python 3 and unzip. Cloud acceptance labs require an explicit
+non-production origin: `bun run lab -- cloud --origin https://staging.example.test --dry-run`.
+Replace the example origin with your staging deployment for a real lab.

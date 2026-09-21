@@ -1,0 +1,36 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.recordSchema"
+id: "okrs"
+name: "OKRs"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+fields:
+  objective:
+    required: true
+    type: "string"
+  keyResult:
+    required: true
+    type: "string"
+  owner:
+    type: "string"
+  status:
+    values:
+      - "on-track"
+      - "at-risk"
+      - "off-track"
+    required: true
+    type: "enum"
+  progress:
+    type: "number"
+  trend:
+    values:
+      - "improving"
+      - "steady"
+      - "declining"
+    type: "enum"
+  reviewDate:
+    type: "date"

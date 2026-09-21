@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "workspace-agent-skills",
+  "description": "Fixed agent-skill lifecycle commands for the active local loopback workspace only.",
+  "local": false,
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*/*",
+      "http://localhost:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "webviews": ["workspace"],
+  "permissions": [
+    "allow-desktop-agent-skills-status",
+    "allow-desktop-agent-skills-preview",
+    "allow-desktop-agent-skills-apply"
+  ]
+}

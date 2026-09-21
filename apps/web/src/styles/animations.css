@@ -1,0 +1,50 @@
+/* Route loading bar */
+@keyframes loading-bar {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Block entrance animation */
+@keyframes block-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-block-in {
+  animation: block-in 200ms ease-out both;
+}
+
+/* ── Collapsible Panel — smooth height transition ─────────── */
+/* base-ui Collapsible.Panel sets --collapsible-panel-height
+   as a CSS variable. We transition height for smooth expand/collapse. */
+[data-slot="collapsible-content"] {
+  overflow: hidden;
+  height: var(--collapsible-panel-height);
+  transition: height 250ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+[data-slot="collapsible-content"][data-state="closed"] {
+  height: 0;
+}
+
+/* Border pulse for updated blocks */
+@keyframes border-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.511 0.096 186.391 / 0%);
+  }
+  50% {
+    box-shadow: 0 0 0 3px oklch(0.511 0.096 186.391 / 15%);
+  }
+}
+
+.animate-border-pulse {
+  animation: border-pulse 1s ease-in-out 1;
+}

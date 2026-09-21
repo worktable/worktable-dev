@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Roadmap</title>
+    <style>body{font:14px system-ui,sans-serif;margin:0;padding:16px}h1{font-size:16px;margin:0 0 12px}.row{padding:6px 0;border-bottom:1px solid #eee}</style>
+  </head>
+  <body>
+    <h1>Roadmap</h1>
+    <div id="list">Loading…</div>
+    <script type="module">
+      const api = globalThis.worktable;
+      const el = document.getElementById("list");
+      const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      try {
+        const result = api ? await api.records.query("roadmap") : [];
+        const records = Array.isArray(result) ? result : (result.records || []);
+        el.innerHTML = records.length
+          ? records.map((r) => '<div class="row">' + escapeHtml(r.data.title || r.data.objective || r.data.role || r.id) + "</div>").join("")
+          : "<p>No records yet.</p>";
+      } catch (e) { el.textContent = "Needs the Worktable record runtime."; }
+    </script>
+  </body>
+</html>

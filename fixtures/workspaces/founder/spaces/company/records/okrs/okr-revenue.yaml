@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "okr-revenue"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "okrs"
+data:
+  keyResult: "Close 40 paying teams and reach $1M ARR"
+  objective: "Build a repeatable revenue engine"
+  owner: "Maya"
+  progress: 0.68
+  reviewDate: "2026-09-25"
+  status: "on-track"
+  trend: "improving"

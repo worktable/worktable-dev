@@ -1,0 +1,22 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.widget"
+id: "roadmap-timeline"
+name: "Roadmap"
+description: "Lists roadmap items by quarter."
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+permissions:
+  network: false
+  records:
+    roadmap:
+      read: true
+  state:
+    read: true
+    write: true
+runtime:
+  entry: "index.html"
+  type: "html"

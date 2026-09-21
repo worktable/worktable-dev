@@ -1,0 +1,103 @@
+---
+/**
+ * Header override: section tabs and right-side controls, sitting beside
+ * the full-height sidebar on desktop (positioning in custom.css). The
+ * brand lockup lives in the sidebar on desktop and only shows here on
+ * mobile; search lives in the sidebar (see Sidebar.astro).
+ */
+import LanguageSelect from "@astrojs/starlight/components/LanguageSelect.astro"
+import SocialIcons from "@astrojs/starlight/components/SocialIcons.astro"
+import SiteTitle from "./SiteTitle.astro"
+import ThemeSelect from "./ThemeSelect.astro"
+import { TABS, tabForPath } from "./tabs"
+
+const currentTab = tabForPath(Astro.url.pathname)
+---
+
+<div class="header wt-header">
+  <div class="title-wrapper sl-flex md:sl-hidden">
+    <SiteTitle />
+  </div>
+  <nav class="wt-tabs sl-hidden md:sl-flex print:hidden" aria-label="Documentation sections">
+    {
+      TABS.map((tab) => (
+        <a href={tab.href} aria-current={tab.id === currentTab.id ? "true" : undefined}>
+          {tab.label}
+        </a>
+      ))
+    }
+  </nav>
+  <div class="sl-hidden md:sl-flex print:hidden right-group">
+    <div class="sl-flex social-icons">
+      <SocialIcons />
+    </div>
+    <ThemeSelect />
+    <LanguageSelect />
+  </div>
+</div>
+
+<style>
+  .wt-header {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    height: 100%;
+  }
+
+  .title-wrapper {
+    overflow: clip;
+    padding: 0.25rem;
+    margin: -0.25rem;
+    min-width: 0;
+  }
+
+  .wt-tabs {
+    align-items: center;
+    gap: 0.25rem;
+    height: 100%;
+  }
+
+  .wt-tabs a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 0.625rem;
+    font-size: 0.875rem;
+    font-weight: 480;
+    text-decoration: none;
+    color: oklch(from var(--foreground) l c h / 62%);
+    transition: color 120ms ease;
+  }
+
+  .wt-tabs a:hover {
+    color: var(--foreground);
+  }
+
+  .wt-tabs a[aria-current="true"] {
+    color: var(--primary-text);
+    font-weight: 500;
+  }
+
+  /* Active tab underline — sits on the header's bottom edge */
+  .wt-tabs a[aria-current="true"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0.625rem;
+    bottom: 1px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--primary);
+  }
+
+  .right-group {
+    margin-inline-start: auto;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .social-icons {
+    align-items: center;
+    gap: 0.75rem;
+  }
+</style>

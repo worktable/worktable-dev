@@ -1,0 +1,16 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "inc-001"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "incidents"
+data:
+  openedAt: "2025-11-02T09:14:00.000Z"
+  service: "payments-api"
+  severity: "sev1"
+  status: "resolved"
+  title: "Elevated 5xx on charge endpoint"

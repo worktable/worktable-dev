@@ -1,0 +1,35 @@
+{
+  "name": "worktable",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "worktable": "./bin/worktable.ts",
+    "wtb": "./bin/worktable.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun run src/index.ts",
+    "test": "bun run ../../scripts/testing/run.ts required --test-path-prefix apps/cli/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@bomb.sh/tab": "^0.0.17",
+    "@clack/prompts": "^1.5.1",
+    "@commander-js/extra-typings": "^15.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@worktable/mcp-connect": "workspace:*",
+    "@worktable/server": "workspace:*",
+    "@worktable/types": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@worktable/config-typescript": "workspace:*",
+    "typescript": "5.9.3",
+    "@eslint/js": "^9.39.4",
+    "typescript-eslint": "^8.54.0",
+    "eslint": "^9.39.4"
+  }
+}

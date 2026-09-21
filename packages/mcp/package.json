@@ -1,0 +1,28 @@
+{
+  "name": "@worktable/mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "worktable-mcp": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun run ../../scripts/testing/run.ts required --test-path-prefix packages/mcp/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@worktable/server": "workspace:*",
+    "@worktable/types": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  },
+  "devDependencies": {
+    "@worktable/config-typescript": "workspace:*",
+    "typescript": "5.9.3",
+    "@eslint/js": "^9.39.4",
+    "typescript-eslint": "^8.54.0",
+    "eslint": "^9.39.4"
+  }
+}

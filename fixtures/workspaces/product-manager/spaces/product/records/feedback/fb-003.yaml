@@ -1,0 +1,15 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "fb-003"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "feedback"
+data:
+  feature: "push-v2"
+  sentiment: "negative"
+  source: "support"
+  summary: "Notifications are too noisy"

@@ -1,0 +1,33 @@
+{
+  "name": "@worktable/mcp-connect",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./bridge": "./src/bridge.ts",
+    "./connector": "./src/connector.ts"
+  },
+  "scripts": {
+    "build": "bun run build:connector",
+    "build:connector": "bun run scripts/build-connector.ts",
+    "build:mcpb": "bun run scripts/build-mcpb.ts",
+    "test": "bun run ../../scripts/testing/run.ts required --test-path-prefix packages/mcp-connect/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@worktable/types": "workspace:*",
+    "smol-toml": "^1.7.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
+    "@worktable/config-typescript": "workspace:*",
+    "fast-check": "4.6.0",
+    "typescript": "5.9.3",
+    "@eslint/js": "^9.39.4",
+    "typescript-eslint": "^8.54.0",
+    "eslint": "^9.39.4"
+  }
+}

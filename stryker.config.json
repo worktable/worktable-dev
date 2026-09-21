@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun --config=scripts/testing/bunfig.standard.toml test apps/cli/src/local-authority-plan.test.ts packages/server/src/records-query-ast.test.ts packages/server/src/hosted-auth.test.ts"
+  },
+  "coverageAnalysis": "off",
+  "concurrency": 1,
+  "timeoutMS": 60000,
+  "mutator": {
+    "excludedMutations": ["BlockStatement", "StringLiteral"]
+  },
+  "mutate": [
+    "apps/cli/src/local-authority-plan.ts:168-210",
+    "packages/server/src/record-query.ts:269-283",
+    "packages/server/src/hosted-auth.ts:113-136"
+  ],
+  "reporters": ["clear-text", "json"],
+  "jsonReporter": {
+    "fileName": "test-results/mutation/stryker.json"
+  },
+  "thresholds": {
+    "high": 100,
+    "low": 0,
+    "break": 0
+  }
+}

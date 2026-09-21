@@ -1,0 +1,11 @@
+{
+  "type": "worktable.space",
+  "version": 1,
+  "id": "product",
+  "name": "Product",
+  "description": "Mobile app product management.",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "createdBy": "user",
+  "settings": {}
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "h-ideas",
+    "type": "heading",
+    "props": {
+      "level": 1,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Ideas",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "p-ideas-1",
+    "type": "paragraph",
+    "props": {
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "A BlockNote (.json) doc, to prove rich docs rebuild from the portable file.",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

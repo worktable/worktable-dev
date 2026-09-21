@@ -1,0 +1,48 @@
+[
+  {
+    "id": "h-arch",
+    "type": "heading",
+    "props": {
+      "level": 1,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Payments architecture",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "p-arch",
+    "type": "paragraph",
+    "props": {
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "High-level request flow. This doc is BlockNote (.json) and embeds a mermaid diagram, proving rich blocks survive a copy.",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "m-arch",
+    "type": "mermaid",
+    "props": {
+      "data": "graph LR\n  client[Client] --> edge[Edge proxy]\n  edge --> api[Payments API]\n  api --> ledger[Ledger]\n  api --> hooks[Webhooks]\n  api --> reporting[Reporting]",
+      "title": "Payments request flow",
+      "collapsed": "false",
+      "locked": "false"
+    },
+    "children": []
+  }
+]

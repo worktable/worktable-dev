@@ -1,0 +1,37 @@
+[
+  {
+    "id": "h-vis",
+    "type": "heading",
+    "props": {
+      "level": 1,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Product vision",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "p-vis",
+    "type": "paragraph",
+    "props": {
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "The fastest way to capture and revisit on the go — even offline.",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "extends": "@worktable/config-typescript/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": ["bun-types"]
+  },
+  "include": ["src", "bin", "../../packages/server/src/vendor.d.ts"]
+}

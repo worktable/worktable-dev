@@ -1,0 +1,54 @@
+{
+  "name": "@worktable/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store.ts",
+    "./start": "./src/start.ts",
+    "./mcp": "./src/mcp/index.ts",
+    "./runtime": "./src/runtime.ts"
+  },
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "test": "bun run ../../scripts/testing/run.ts required --suite bun-server --suite packaged-boundaries",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@blocknote/code-block": "0.51.4",
+    "@blocknote/core": "0.51.4",
+    "@blocknote/server-util": "0.51.4",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@worktable/hosted-contract": "workspace:*",
+    "@worktable/types": "workspace:*",
+    "hono": "^4.7.4",
+    "htmlparser2": "^10.1.0",
+    "jose": "^6.2.1",
+    "jsdom": "^26.1.0",
+    "lib0": "^0.2.87",
+    "mermaid": "^11.16.1",
+    "mdast-util-from-markdown": "^2.0.3",
+    "minisearch": "^7.2.0",
+    "nanoid": "^5.1.5",
+    "y-protocols": "^1.0.6",
+    "yaml": "^2.8.4",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1",
+    "yjs": "^13.6.27",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@worktable/config-typescript": "workspace:*",
+    "@hono/node-ws": "^1.0.6",
+    "@types/yauzl": "2.10.3",
+    "@types/yazl": "3.3.0",
+    "typescript": "5.9.3",
+    "@eslint/js": "^9.39.4",
+    "typescript-eslint": "^8.54.0",
+    "eslint": "^9.39.4",
+    "fast-check": "^4.9.0"
+  }
+}

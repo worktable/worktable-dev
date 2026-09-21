@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Worktable Staging",
+  "identifier": "dev.worktable.desktop.staging",
+  "version": "0.1.5",
+  "plugins": {
+    "updater": null
+  }
+}

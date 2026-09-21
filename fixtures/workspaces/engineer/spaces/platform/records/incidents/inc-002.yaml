@@ -1,0 +1,16 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "inc-002"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "incidents"
+data:
+  openedAt: "2025-11-09T16:40:00.000Z"
+  service: "webhooks"
+  severity: "sev2"
+  status: "mitigated"
+  title: "Duplicate webhook deliveries"

@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "okr-enterprise"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "okrs"
+data:
+  keyResult: "Complete SSO, audit logs, and three enterprise design partnerships"
+  objective: "Become ready for larger teams"
+  owner: "Maya"
+  progress: 0.54
+  reviewDate: "2026-09-16"
+  status: "at-risk"
+  trend: "declining"

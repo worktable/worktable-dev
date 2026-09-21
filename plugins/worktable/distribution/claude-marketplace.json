@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "worktable",
+  "owner": {
+    "name": "Reva Labs",
+    "email": "support@worktable.dev"
+  },
+  "description": "Official Worktable plugins for Claude Code.",
+  "version": "0.1.1",
+  "plugins": [
+    {
+      "name": "worktable",
+      "source": "./plugins/worktable",
+      "description": "Build shared Docs, live HTML workspaces, structured Records, annotations, and durable agent threads in Worktable.",
+      "version": "0.1.1",
+      "author": {
+        "name": "Reva Labs",
+        "email": "support@worktable.dev"
+      },
+      "homepage": "https://docs.worktable.dev/start/connect-your-agent",
+      "repository": "https://github.com/worktable/worktable-dev",
+      "license": "MIT",
+      "category": "Productivity",
+      "tags": ["workspace", "knowledge", "collaboration"],
+      "strict": true
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+---
+/**
+ * Sidebar override: full-height pane owning the brand lockup (desktop),
+ * search, a mobile-only section switcher (desktop gets the header tab
+ * row), and the current tab's groups as always-expanded static sections.
+ * On desktop the groups list is the scroll region (brand/search stay
+ * put) and carries the app's scroll-fade masks.
+ */
+import MobileMenuFooter from "@astrojs/starlight/components/MobileMenuFooter.astro"
+import Search from "@astrojs/starlight/components/Search.astro"
+import SidebarItems from "./SidebarItems.astro"
+import SiteTitle from "./SiteTitle.astro"
+import { TABS, tabForPath } from "./tabs"
+
+const { sidebar } = Astro.locals.starlightRoute
+const currentTab = tabForPath(Astro.url.pathname)
+
+const visible = sidebar.filter((entry) =>
+  entry.type === "group" ? currentTab.groups.includes(entry.label) : currentTab.id === "docs",
+)
+---
+
+<div class="wt-sidebar-brand sl-hidden md:sl-flex">
+  <SiteTitle />
+</div>
+
+<div class="wt-sidebar-search print:hidden">
+  <Search />
+</div>
+
+<nav class="wt-sidebar-tabs md:sl-hidden print:hidden" aria-label="Documentation sections">
+  {
+    TABS.map((tab) => (
+      <a href={tab.href} aria-current={tab.id === currentTab.id ? "true" : undefined}>
+        {tab.label}
+      </a>
+    ))
+  }
+</nav>
+
+<div class="wt-sidebar-groups scroll-fade">
+  {
+    visible.map((entry) =>
+      entry.type === "group" ? (
+        <section class="wt-side-group">
+          <h2 class="wt-side-group-label">{entry.label}</h2>
+          <SidebarItems entries={entry.entries} />
+        </section>
+      ) : (
+        <section class="wt-side-group">
+          <SidebarItems entries={[entry]} />
+        </section>
+      ),
+    )
+  }
+</div>
+
+<div class="md:sl-hidden">
+  <MobileMenuFooter />
+</div>
+
+<script>
+  // Scroll-fade contract from the app: data-scroll-top/bottom drive the
+  // mask gradients defined in custom.css. Only the groups list scrolls on
+  // desktop; on mobile it doesn't overflow, so no attributes ever get set.
+  const region = document.querySelector(".wt-sidebar-groups")
+  if (region instanceof HTMLElement) {
+    const update = () => {
+      region.toggleAttribute("data-scroll-top", region.scrollTop > 4)
+      region.toggleAttribute(
+        "data-scroll-bottom",
+        region.scrollTop + region.clientHeight < region.scrollHeight - 4,
+      )
+    }
+    region.addEventListener("scroll", update, { passive: true })
+    if (window.ResizeObserver) new ResizeObserver(update).observe(region)
+    update()
+  }
+
+  // Right-rail TOC: clicking a link marks it current immediately. Without
+  // this, links near the end of a page never highlight — the section can't
+  // reach the scroll-spy band at the top of the viewport. The observer's
+  // own updates are suppressed briefly so the post-jump intersection burst
+  // doesn't snap the highlight back; any real scroll input re-enables it.
+  // Must wait for the element upgrade — before it, the prototype is a bare
+  // HTMLElement with no `current` setter to hook.
+  customElements.whenDefined("starlight-toc").then(() => {
+    for (const toc of document.querySelectorAll("starlight-toc")) {
+      hookTocClicks(toc)
+    }
+  })
+
+  function hookTocClicks(toc: Element) {
+    const proto = Object.getPrototypeOf(toc)
+    const setCurrent = Object.getOwnPropertyDescriptor(proto, "current")?.set
+    if (!setCurrent) return
+    let suppressUntil = 0
+    Object.defineProperty(toc, "current", {
+      configurable: true,
+      set(link) {
+        if (Date.now() < suppressUntil) return
+        setCurrent.call(this, link)
+      },
+    })
+    toc.addEventListener("click", (event) => {
+      const link = event.target instanceof Element && event.target.closest("a")
+      if (!link) return
+      suppressUntil = Date.now() + 1500
+      setCurrent.call(toc, link)
+    })
+    for (const ev of ["wheel", "touchmove", "keydown"]) {
+      window.addEventListener(
+        ev,
+        () => {
+          suppressUntil = 0
+        },
+        { passive: true },
+      )
+    }
+  }
+</script>
+
+<style>
+  /* Vertically center the lockup within the header's height so the
+     brand row and the header controls sit on the same optical line
+     (sidebar-content already pads 1rem on top). */
+  .wt-sidebar-brand {
+    align-items: center;
+    min-height: calc(var(--sl-nav-height) - 1rem - 0.5rem);
+  }
+
+  .wt-sidebar-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  /* Desktop gets the header tab row instead; the scoped display:flex
+     above would beat Starlight's layered md:sl-hidden utility. */
+  @media (min-width: 50rem) {
+    .wt-sidebar-tabs {
+      display: none;
+    }
+  }
+
+  .wt-sidebar-tabs a {
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--sidebar-item-radius);
+    font-size: 0.8125rem;
+    font-weight: 480;
+    text-decoration: none;
+    color: oklch(from var(--sidebar-foreground) l c h / 70%);
+  }
+
+  .wt-sidebar-tabs a[aria-current="true"] {
+    color: var(--primary-text);
+    background-color: var(--sidebar-accent);
+    font-weight: 500;
+  }
+
+  /* The groups list is the sidebar's scroll region on desktop. */
+  @media (min-width: 50rem) {
+    .wt-sidebar-groups {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding-bottom: 1.5rem;
+      /* Bleed to the pane edge so the fade mask reaches it */
+      margin-inline: calc(-1 * var(--sl-sidebar-pad-x));
+      padding-inline: var(--sl-sidebar-pad-x);
+    }
+  }
+
+  .wt-side-group + .wt-side-group {
+    margin-top: 1.5rem;
+  }
+
+  .wt-side-group-label {
+    margin: 0 0 0.5rem;
+    padding-inline: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: oklch(from var(--sidebar-foreground) l c h / 45%);
+  }
+</style>

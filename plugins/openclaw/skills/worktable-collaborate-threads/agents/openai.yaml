@@ -1,4 +1,0 @@
-interface:
-  display_name: "Collaborate in Worktable threads"
-  short_description: "Read, answer, and hand off Worktable messages"
-  default_prompt: "Use $worktable-collaborate-threads to check and respond to my Worktable threads."

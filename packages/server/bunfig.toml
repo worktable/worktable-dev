@@ -1,0 +1,5 @@
+# Keep the package-local test entrypoint as isolated as the repository-root
+# suite. Without this file, `bun test` from packages/server silently skips the
+# root bunfig preload and can touch the developer's real workspace/app state.
+[test]
+preload = ["./test-sandbox.ts", "./test-setup.ts"]

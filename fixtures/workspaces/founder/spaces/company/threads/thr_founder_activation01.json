@@ -1,0 +1,119 @@
+{
+  "type": "worktable.thread",
+  "version": 3,
+  "id": "thr_founder_activation01",
+  "location": {
+    "kind": "space",
+    "spaceId": "company"
+  },
+  "title": "Activation review: the gap after first value",
+  "members": [
+    {
+      "id": "ptc_founder_inez01",
+      "kind": "human",
+      "name": "Inez",
+      "addedAt": "2026-08-12T14:00:00.000Z"
+    },
+    {
+      "id": "ptc_founder_atlas01",
+      "kind": "agent",
+      "name": "Atlas",
+      "addedAt": "2026-08-12T14:00:00.000Z"
+    }
+  ],
+  "identities": [
+    {
+      "id": "idt_founder_inez01",
+      "memberId": "ptc_founder_inez01",
+      "name": "Inez",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-12T14:00:00.000Z",
+      "updatedAt": "2026-08-12T14:25:00.000Z"
+    },
+    {
+      "id": "idt_founder_atlas01",
+      "memberId": "ptc_founder_atlas01",
+      "name": "Atlas",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-12T14:00:00.000Z",
+      "updatedAt": "2026-08-12T14:25:00.000Z"
+    }
+  ],
+  "revision": 4,
+  "messages": [
+    {
+      "id": "msg_founder_activation01",
+      "sequence": 1,
+      "authorIdentityId": "idt_founder_inez01",
+      "authorMemberId": "ptc_founder_inez01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_activation02",
+        "resolvedAt": "2026-08-12T14:08:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Review the last ten onboarding interviews and group the reasons people stop after creating their first useful document.",
+      "idempotencyKey": "founder-activation-1",
+      "createdAt": "2026-08-12T14:00:00.000Z"
+    },
+    {
+      "id": "msg_founder_activation02",
+      "sequence": 2,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "The interviews cluster into three gaps: no clear person to invite, uncertainty about what collaborators will see, and no obvious next task after the document exists. Six of ten teams described the first gap.",
+      "inReplyTo": "msg_founder_activation01",
+      "idempotencyKey": "founder-activation-2",
+      "createdAt": "2026-08-12T14:08:00.000Z"
+    },
+    {
+      "id": "msg_founder_activation03",
+      "sequence": 3,
+      "authorIdentityId": "idt_founder_inez01",
+      "authorMemberId": "ptc_founder_inez01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_activation04",
+        "resolvedAt": "2026-08-12T14:25:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Compare that with the activation record and propose two experiments we can read within a week. Keep them focused on sharing rather than templates.",
+      "idempotencyKey": "founder-activation-3",
+      "createdAt": "2026-08-12T14:16:00.000Z"
+    },
+    {
+      "id": "msg_founder_activation04",
+      "sequence": 4,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "I recommend an invite prompt immediately after the first revisit, and a collaborator preview beside the Share action. Measure invited teammates per activated team and the share-to-return rate. I added the evidence and proposed thresholds to the weekly review.",
+      "inReplyTo": "msg_founder_activation03",
+      "idempotencyKey": "founder-activation-4",
+      "createdAt": "2026-08-12T14:25:00.000Z"
+    }
+  ],
+  "createdAt": "2026-08-12T14:00:00.000Z",
+  "updatedAt": "2026-08-12T14:25:00.000Z"
+}

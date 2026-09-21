@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review with Worktable annotations"
-  short_description: "Anchor review feedback without editing content"
-  default_prompt: "Use $worktable-review-with-annotations to leave or address anchored feedback in Worktable."

@@ -1,0 +1,47 @@
+---
+import { getCollection } from "astro:content"
+import {
+  createPublicAnalyticsEarlyCtaScript,
+  type PublicAnalyticsConfig,
+} from "@worktable/public-analytics"
+
+const allowedPathnames = (
+  await getCollection("docs", ({ data }) => data.draft === false)
+)
+  .map(({ id }) => (id === "index" ? "/" : `/${id}`))
+  .sort()
+const config = {
+  projectToken: import.meta.env.PUBLIC_POSTHOG_PROJECT_TOKEN,
+  apiHost: import.meta.env.PUBLIC_POSTHOG_API_HOST,
+  siteSurface: "worktable_docs" as const,
+  allowedPathnames,
+  environmentVariableName: "PUBLIC_POSTHOG_PROJECT_TOKEN",
+  isDevelopment: import.meta.env.DEV,
+} satisfies PublicAnalyticsConfig
+const earlyCtaScript = createPublicAnalyticsEarlyCtaScript(config)
+---
+
+<script is:inline set:html={earlyCtaScript}></script>
+
+<script is:inline define:vars={{ config }}>
+  window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__ = config
+</script>
+
+<script>
+  import {
+    capturePublicPageview,
+    initializePublicAnalytics,
+  } from "@worktable/public-analytics/browser"
+  import type { PublicAnalyticsConfig } from "@worktable/public-analytics"
+
+  declare global {
+    interface Window {
+      __WORKTABLE_PUBLIC_ANALYTICS_CONFIG__?: PublicAnalyticsConfig
+    }
+  }
+
+  const config = window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__
+  if (config && initializePublicAnalytics(config)) {
+    capturePublicPageview()
+  }
+</script>

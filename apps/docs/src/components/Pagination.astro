@@ -1,0 +1,91 @@
+---
+/**
+ * Pagination override: quiet text links (small label over the page title)
+ * instead of the stock bordered boxes, and links are scoped to the current
+ * header tab — the last Guides page doesn't point into Agents.
+ */
+import { Icon } from "@astrojs/starlight/components"
+import { tabForPath } from "./tabs"
+
+const { dir, pagination } = Astro.locals.starlightRoute
+let { prev, next } = pagination
+const isRtl = dir === "rtl"
+
+const currentTab = tabForPath(Astro.url.pathname)
+if (prev && tabForPath(prev.href).id !== currentTab.id) prev = undefined
+if (next && tabForPath(next.href).id !== currentTab.id) next = undefined
+---
+
+{
+  (prev || next) && (
+    <div class="pagination-links print:hidden" dir={dir}>
+      {prev && (
+        <a href={prev.href} rel="prev">
+          <span class="link-label">
+            <Icon name={isRtl ? "right-arrow" : "left-arrow"} size="0.875rem" />
+            {Astro.locals.t("page.previousLink")}
+          </span>
+          <span class="link-title">{prev.label}</span>
+        </a>
+      )}
+      {next && (
+        <a href={next.href} rel="next">
+          <span class="link-label">
+            {Astro.locals.t("page.nextLink")}
+            <Icon name={isRtl ? "left-arrow" : "right-arrow"} size="0.875rem" />
+          </span>
+          <span class="link-title">{next.label}</span>
+        </a>
+      )}
+    </div>
+  )
+}
+
+<style>
+  .pagination-links {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-width: 48%;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+
+  [rel="next"] {
+    margin-inline-start: auto;
+    align-items: flex-end;
+    text-align: end;
+  }
+
+  .link-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 480;
+    color: oklch(from var(--foreground) l c h / 55%);
+    transition: color 120ms ease;
+  }
+
+  .link-title {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--foreground);
+    transition: color 120ms ease;
+  }
+
+  a:hover .link-title {
+    color: var(--primary-text);
+  }
+
+  a:hover .link-label {
+    color: oklch(from var(--foreground) l c h / 75%);
+  }
+</style>

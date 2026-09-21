@@ -1,0 +1,10 @@
+{
+  "type": "worktable.workspace",
+  "version": 1,
+  "id": "ws_fixture_basic_docs",
+  "name": "Basic Docs",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "cloud": {
+    "status": "unlinked"
+  }
+}

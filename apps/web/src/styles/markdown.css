@@ -1,0 +1,194 @@
+/* ── Markdown viewer styles ─────────────────────────────── */
+/* Scoped under .worktable-markdown to avoid conflicts with BlockNote */
+/* Uses CSS variable tokens from globals.css (oklch values) */
+
+.worktable-markdown {
+  color: var(--reading-foreground);
+  font-size: 1rem;
+  line-height: 1.85;
+  word-spacing: 0.02em;
+}
+
+.worktable-markdown h1 {
+  color: var(--foreground);
+  font-size: 3rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+}
+
+.worktable-markdown h2 {
+  color: var(--foreground);
+  font-size: 2rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.25;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 70%);
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+}
+
+.worktable-markdown h3 {
+  color: var(--foreground);
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+}
+
+.worktable-markdown h4 {
+  color: var(--foreground);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.worktable-markdown h5 {
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.worktable-markdown h6 {
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.worktable-markdown h1:first-child {
+  margin-top: 0;
+}
+
+.worktable-markdown p {
+  margin-bottom: 0.75rem;
+}
+
+.worktable-markdown strong {
+  font-weight: 600;
+}
+
+.worktable-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.worktable-markdown a:hover {
+  opacity: 0.8;
+}
+
+.worktable-markdown ul,
+.worktable-markdown ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.worktable-markdown ul {
+  list-style-type: disc;
+}
+
+.worktable-markdown ol {
+  list-style-type: decimal;
+}
+
+.worktable-markdown li {
+  margin-bottom: 0.25rem;
+}
+
+.worktable-markdown li > ul,
+.worktable-markdown li > ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+.worktable-markdown code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--code-accent-foreground);
+  background: var(--code-accent-background);
+  border-radius: 0.375rem;
+  padding: 0.1em 0.35em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.worktable-markdown pre {
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--muted), transparent 50%);
+  border: 1px solid color-mix(in oklch, var(--border), transparent 70%);
+}
+
+.worktable-markdown pre code {
+  display: block;
+  padding: 1rem;
+  background: none;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.worktable-markdown blockquote {
+  border-left: 3px solid color-mix(in oklch, var(--primary), transparent 60%);
+  padding-left: 1rem;
+  margin-bottom: 0.75rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.worktable-markdown table {
+  width: 100%;
+  margin-bottom: 1rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.worktable-markdown th,
+.worktable-markdown td {
+  border: 1px solid color-mix(in oklch, var(--border), transparent 70%);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.worktable-markdown th {
+  background: color-mix(in oklch, var(--muted), transparent 70%);
+  font-weight: 600;
+}
+
+.worktable-markdown tr:nth-child(even) {
+  background: color-mix(in oklch, var(--muted), transparent 85%);
+}
+
+.worktable-markdown hr {
+  border: none;
+  border-top: 1px solid color-mix(in oklch, var(--border), transparent 70%);
+  margin: 1.5rem 0;
+}
+
+.worktable-markdown img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+}
+
+.worktable-markdown input[type="checkbox"] {
+  margin-right: 0.5rem;
+}

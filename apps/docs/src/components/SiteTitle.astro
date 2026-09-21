@@ -1,0 +1,61 @@
+---
+/**
+ * Brand lockup: the Worktable app icon (same mark as the favicon and
+ * apps/web) plus the canonical wordmark from assets/brand, recolored to
+ * currentColor at build time so it follows the theme, and a quiet "Docs"
+ * qualifier. assets/brand is an out-of-graph build input — it's listed in
+ * scripts/vercel-ignore.sh (docs case); consolidated CI builds every ready PR.
+ */
+import wordmarkSource from "../../../../assets/brand/worktable-wordmark.svg?raw"
+
+const { siteTitleHref } = Astro.locals.starlightRoute
+
+const wordmark = wordmarkSource
+  .replaceAll('fill="white"', 'fill="currentColor"')
+  .replace(/<svg width="\d+" height="\d+"/, '<svg class="site-title-word" aria-hidden="true"')
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  <img
+    class="site-title-mark"
+    src="/favicon.svg"
+    alt=""
+    aria-hidden="true"
+    draggable="false"
+  />
+  <span class="sr-only">Worktable</span>
+  <Fragment set:html={wordmark} />
+  <span class="site-title-docs" translate="no">Docs</span>
+</a>
+
+<style>
+  .site-title {
+    align-items: center;
+    gap: 0.5625rem;
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .site-title-mark {
+    display: block;
+    width: 1.625rem;
+    height: 1.625rem;
+    flex-shrink: 0;
+  }
+
+  .site-title :global(.site-title-word) {
+    /* Wordmark is 4950x728; height sets the optical size */
+    height: 0.8125rem;
+    width: auto;
+    flex-shrink: 0;
+    color: var(--foreground);
+  }
+
+  .site-title-docs {
+    font-size: 1.0625rem;
+    font-weight: 480;
+    letter-spacing: -0.01em;
+    color: oklch(from var(--foreground) l c h / 50%);
+  }
+</style>

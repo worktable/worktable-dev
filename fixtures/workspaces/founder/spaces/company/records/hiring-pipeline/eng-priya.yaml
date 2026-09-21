@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "eng-priya"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "hiring-pipeline"
+data:
+  candidate: "Priya Shah"
+  nextInterview: "2026-08-20"
+  nextStep: "Founder conversation"
+  owner: "Dev"
+  priority: "high"
+  role: "Infrastructure engineer"
+  stage: "onsite"

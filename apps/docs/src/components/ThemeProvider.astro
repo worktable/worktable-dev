@@ -1,0 +1,51 @@
+---
+import { Icon } from "@astrojs/starlight/components"
+import PublicAnalytics from "./PublicAnalytics.astro"
+---
+
+<PublicAnalytics />
+
+{/* Override of Starlight's ThemeProvider: first-time visitors get dark
+    (seamless handoff from the dark worktable.dev), not the OS preference.
+    True first visit = no `starlight-theme` key at all; an explicit "Auto"
+    choice is stored as `""` and still follows the OS. Seeding the stored
+    value (rather than only changing the fallback) matters because
+    ThemeSelect re-applies `loadTheme()` on every page load and coerces
+    missing values to `auto`. Inlined to avoid FOUC, like the original. */}
+<script is:inline>
+	window.StarlightThemeProvider = (() => {
+		const hasStorage = typeof localStorage !== 'undefined';
+		let storedTheme = hasStorage && localStorage.getItem('starlight-theme');
+		if (hasStorage && storedTheme === null) {
+			localStorage.setItem('starlight-theme', 'dark');
+			storedTheme = 'dark';
+		}
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script>
+
+<template id="theme-icons">
+	<Icon name="sun" class="light" />
+	<Icon name="moon" class="dark" />
+	<Icon name="laptop" class="auto" />
+</template>

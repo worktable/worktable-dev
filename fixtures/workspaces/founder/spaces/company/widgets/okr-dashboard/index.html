@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Company pulse</title>
+    <style>
+      :root{color-scheme:light;--pulse-bg:#f7f7f5;--pulse-surface:#fff;--pulse-surface-2:#f1f2ef;--pulse-text:#202329;--pulse-muted:#6f747c;--pulse-border:#dedfda;--pulse-accent:#155eef;--pulse-good:#087a55;--pulse-good-bg:#e9f7f0;--pulse-warn:#a15c00;--pulse-warn-bg:#fff4df;--pulse-bad:#b42318;--pulse-bad-bg:#ffebe9;--pulse-shadow:0 16px 40px rgba(32,35,41,.07)}
+      html[data-theme="dark"]{color-scheme:dark;--pulse-bg:#0d1013;--pulse-surface:#14181c;--pulse-surface-2:#1b2025;--pulse-text:#eef0f2;--pulse-muted:#9aa1aa;--pulse-border:#2b3138;--pulse-accent:#78a6ff;--pulse-good:#68d7ad;--pulse-good-bg:#12382d;--pulse-warn:#ffc56e;--pulse-warn-bg:#3c2a0f;--pulse-bad:#ff938a;--pulse-bad-bg:#421d1a;--pulse-shadow:none}
+      *{box-sizing:border-box}body{margin:0;background:var(--pulse-bg);color:var(--pulse-text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{max-width:1180px;margin:0 auto;padding:32px}.eyebrow{margin:0 0 6px;color:var(--pulse-accent);font-size:11px;font-weight:750;letter-spacing:.12em;text-transform:uppercase}.top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px}h1{margin:0;font-size:28px;letter-spacing:-.03em}.lede{margin:6px 0 0;color:var(--pulse-muted)}.updated{color:var(--pulse-muted);font-size:12px;white-space:nowrap}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.metric,.panel{border:1px solid var(--pulse-border);background:var(--pulse-surface);box-shadow:var(--pulse-shadow)}.metric{border-radius:14px;padding:16px}.metric-label{color:var(--pulse-muted);font-size:12px}.metric-value{margin-top:5px;font-size:25px;font-weight:720;letter-spacing:-.03em}.metric-detail{margin-top:3px;color:var(--pulse-muted);font-size:12px}.grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.85fr);gap:16px}.panel{border-radius:16px;overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--pulse-border)}h2{margin:0;font-size:14px}.panel-note{color:var(--pulse-muted);font-size:12px}.objectives{padding:4px 18px}.objective{padding:15px 0;border-bottom:1px solid var(--pulse-border)}.objective:last-child{border-bottom:0}.objective-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.objective-name{font-weight:680}.kr{margin-top:3px;color:var(--pulse-muted);font-size:12px}.owner{color:var(--pulse-muted);font-size:11px;text-transform:capitalize}.status{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;white-space:nowrap}.status.on-track{background:var(--pulse-good-bg);color:var(--pulse-good)}.status.at-risk{background:var(--pulse-warn-bg);color:var(--pulse-warn)}.status.off-track{background:var(--pulse-bad-bg);color:var(--pulse-bad)}.progress-row{display:flex;align-items:center;gap:10px;margin-top:10px}.track{height:7px;flex:1;overflow:hidden;border-radius:999px;background:var(--pulse-surface-2)}.fill{height:100%;border-radius:inherit;background:var(--pulse-accent)}.pct{width:34px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}.hiring{padding:10px 18px 16px}.candidate{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:11px 0;border-bottom:1px solid var(--pulse-border)}.candidate:last-child{border-bottom:0}.candidate-name{font-weight:650}.candidate-role,.candidate-next{color:var(--pulse-muted);font-size:12px}.stage{align-self:center;border-radius:8px;background:var(--pulse-surface-2);padding:4px 7px;font-size:11px;font-weight:650;text-transform:capitalize}.empty,.error{padding:28px 18px;color:var(--pulse-muted);text-align:center}.footer{display:flex;justify-content:space-between;margin-top:14px;color:var(--pulse-muted);font-size:11px}@media(max-width:760px){.shell{padding:20px}.top{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}@media(max-width:460px){.metrics{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="top"><div><p class="eyebrow">Operating review</p><h1>Company pulse</h1><p class="lede">The handful of outcomes and hires that need attention this week.</p></div><div class="updated">Live from Worktable records</div></div>
+      <section class="metrics" id="metrics"><div class="metric"><div class="metric-label">Loading company data…</div></div></section>
+      <section class="grid"><article class="panel"><div class="panel-head"><h2>Company objectives</h2><span class="panel-note">Q3</span></div><div class="objectives" id="objectives"></div></article><aside class="panel"><div class="panel-head"><h2>Hiring pipeline</h2><span class="panel-note" id="candidate-count"></span></div><div class="hiring" id="hiring"></div></aside></section>
+      <div class="footer"><span>Sources: OKRs and Hiring pipeline</span><span>Changes update automatically</span></div>
+    </main>
+    <script type="module">
+      const api=globalThis.worktable;
+      const escapeHtml=(value)=>String(value??"").replace(/[&<>"']/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+      const percent=(value)=>Math.max(0,Math.min(100,Math.round(Number(value||0)*100)));
+      const label=(value)=>String(value||"").replaceAll("-"," ");
+      const normalize=(result)=>Array.isArray(result)?result:(result.records||[]);
+      let okrs=[];
+      let candidates=[];
+      const render=()=>{
+        okrs.sort((a,b)=>percent(b.data.progress)-percent(a.data.progress));
+        candidates=candidates.filter((item)=>item.data.stage!=="closed");
+        const avg=okrs.length?Math.round(okrs.reduce((sum,item)=>sum+percent(item.data.progress),0)/okrs.length):0;
+        const onTrack=okrs.filter((item)=>item.data.status==="on-track").length;
+        const attention=okrs.length-onTrack;
+        const lateStage=candidates.filter((item)=>["onsite","offer"].includes(item.data.stage)).length;
+        document.getElementById("metrics").innerHTML=[
+          [avg+"%","Average progress",okrs.length+" active objectives"],
+          [onTrack,"On track",attention+" need attention"],
+          [candidates.length,"Active candidates",lateStage+" in late stages"],
+          ["2","Decisions due","Activation and enterprise readiness"]
+        ].map(([value,name,detail])=>'<div class="metric"><div class="metric-label">'+escapeHtml(name)+'</div><div class="metric-value">'+escapeHtml(value)+'</div><div class="metric-detail">'+escapeHtml(detail)+'</div></div>').join("");
+        document.getElementById("objectives").innerHTML=okrs.length?okrs.map((item)=>{const data=item.data;const progress=percent(data.progress);return '<div class="objective"><div class="objective-top"><div><div class="objective-name">'+escapeHtml(data.objective)+'</div><div class="kr">'+escapeHtml(data.keyResult)+'</div><div class="owner">'+escapeHtml(data.owner)+'</div></div><span class="status '+escapeHtml(data.status)+'">'+escapeHtml(label(data.status))+'</span></div><div class="progress-row"><div class="track"><div class="fill" style="width:'+progress+'%"></div></div><span class="pct">'+progress+'%</span></div></div>'}).join(""):'<div class="empty">No objectives yet.</div>';
+        const stageOrder={offer:0,onsite:1,screening:2,sourcing:3,closed:4};
+        candidates.sort((a,b)=>(stageOrder[a.data.stage]??9)-(stageOrder[b.data.stage]??9));
+        document.getElementById("candidate-count").textContent=candidates.length+" active";
+        document.getElementById("hiring").innerHTML=candidates.length?candidates.slice(0,7).map((item)=>'<div class="candidate"><div><div class="candidate-name">'+escapeHtml(item.data.candidate||item.data.role)+'</div><div class="candidate-role">'+escapeHtml(item.data.role)+'</div></div><span class="stage">'+escapeHtml(label(item.data.stage))+'</span><div class="candidate-next">'+escapeHtml(item.data.nextStep||"")+'</div></div>').join(""):'<div class="empty">No active candidates.</div>';
+      };
+      try{
+        const [okrResult,hiringResult]=api?await Promise.all([api.records.query("okrs"),api.records.query("hiring-pipeline")]):[[],[]];
+        okrs=normalize(okrResult);
+        candidates=normalize(hiringResult);
+        render();
+        if(api){
+          api.records.subscribe("okrs",{},(nextRecords)=>{okrs=normalize(nextRecords);render()});
+          api.records.subscribe("hiring-pipeline",{},(nextRecords)=>{candidates=normalize(nextRecords);render()});
+        }
+      }catch(error){document.getElementById("metrics").innerHTML='<div class="metric"><div class="metric-label">Company data is unavailable.</div><div class="metric-detail">Open the source collections to check their status.</div></div>';document.getElementById("objectives").innerHTML='<div class="error">Could not load objectives.</div>';document.getElementById("hiring").innerHTML='<div class="error">Could not load hiring.</div>';}
+    </script>
+  </body>
+</html>

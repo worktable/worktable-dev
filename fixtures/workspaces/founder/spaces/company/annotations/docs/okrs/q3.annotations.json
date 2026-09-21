@@ -1,0 +1,32 @@
+{
+  "type": "worktable.annotations",
+  "version": 1,
+  "spaceId": "company",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "annotations": [
+    {
+      "id": "ann_founder_activation_task",
+      "spaceId": "company",
+      "target": {
+        "type": "doc",
+        "docPath": "okrs/q3"
+      },
+      "category": "instruction",
+      "status": "open",
+      "body": "Draft a 1-page activation plan to move the at-risk OKR (`okr-activation`) from 42% to 50%. Save it in the Company space.",
+      "author": {
+        "type": "user",
+        "id": "ceo",
+        "name": "Founder"
+      },
+      "labels": [
+        "agent-task"
+      ],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    }
+  ],
+  "revision": "c4d2d27a9b0fae9a29995cc2806a391f8c1cd3b4814f10026d6e98e96cacdc07"
+}

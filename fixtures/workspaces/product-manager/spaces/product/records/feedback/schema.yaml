@@ -1,0 +1,31 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.recordSchema"
+id: "feedback"
+name: "Feedback"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+fields:
+  summary:
+    required: true
+    type: "string"
+  source:
+    values:
+      - "app-store"
+      - "support"
+      - "interview"
+    required: true
+    type: "enum"
+  sentiment:
+    values:
+      - "positive"
+      - "neutral"
+      - "negative"
+    required: true
+    type: "enum"
+  feature:
+    references: "roadmap"
+    type: "reference"

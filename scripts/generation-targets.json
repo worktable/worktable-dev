@@ -1,0 +1,8 @@
+{
+  "favicons": [
+    "apps/web/public/favicon.svg",
+    "apps/docs/public/favicon.svg",
+    "apps/desktop/ui/worktable-icon.svg"
+  ],
+  "authKit": []
+}

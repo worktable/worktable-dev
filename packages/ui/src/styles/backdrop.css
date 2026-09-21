@@ -1,0 +1,70 @@
+/* Shared drafting-grid backdrop. Keep unlayered so Tailwind v4 preserves masks. */
+body {
+  isolation: isolate;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(
+      ellipse at var(--grid-left-origin),
+      var(--grid-wash),
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse at var(--grid-right-origin),
+      var(--grid-wash),
+      transparent 100%
+    );
+  background-size:
+    var(--grid-size) var(--grid-size),
+    var(--grid-size) var(--grid-size),
+    100% 100%,
+    100% 100%;
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse var(--grid-fade-width) var(--grid-fade-height) at
+        var(--grid-left-origin),
+      black 0%,
+      rgb(0 0 0 / var(--grid-fade-mid-opacity)) var(--grid-fade-midpoint),
+      rgb(0 0 0 / var(--grid-fade-tail-opacity)) var(--grid-fade-tail),
+      transparent var(--grid-fade-stop)
+    ),
+    radial-gradient(
+      ellipse var(--grid-fade-width) var(--grid-fade-height) at
+        var(--grid-right-origin),
+      black 0%,
+      rgb(0 0 0 / var(--grid-fade-mid-opacity)) var(--grid-fade-midpoint),
+      rgb(0 0 0 / var(--grid-fade-tail-opacity)) var(--grid-fade-tail),
+      transparent var(--grid-fade-stop)
+    );
+  mask-image:
+    radial-gradient(
+      ellipse var(--grid-fade-width) var(--grid-fade-height) at
+        var(--grid-left-origin),
+      black 0%,
+      rgb(0 0 0 / var(--grid-fade-mid-opacity)) var(--grid-fade-midpoint),
+      rgb(0 0 0 / var(--grid-fade-tail-opacity)) var(--grid-fade-tail),
+      transparent var(--grid-fade-stop)
+    ),
+    radial-gradient(
+      ellipse var(--grid-fade-width) var(--grid-fade-height) at
+        var(--grid-right-origin),
+      black 0%,
+      rgb(0 0 0 / var(--grid-fade-mid-opacity)) var(--grid-fade-midpoint),
+      rgb(0 0 0 / var(--grid-fade-tail-opacity)) var(--grid-fade-tail),
+      transparent var(--grid-fade-stop)
+    );
+}
+
+@media print {
+  body::before {
+    display: none;
+  }
+}

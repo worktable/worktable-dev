@@ -1,0 +1,88 @@
+---
+/**
+ * ThemeSelect override: a single icon button that flips dark/light with a
+ * rotating sun/moon swap, replacing the stock three-option <select>.
+ * Writes the same `starlight-theme` localStorage key the ThemeProvider
+ * seeds, so the pre-paint script keeps working. The "auto" option is
+ * intentionally dropped: first visits are seeded dark (worktable.dev
+ * handoff) and the toggle stores an explicit choice.
+ */
+import { Icon } from "@astrojs/starlight/components"
+---
+
+<starlight-theme-toggle>
+  <button type="button" class="wt-theme-toggle" aria-live="polite">
+    <span class="wt-theme-toggle-icons" aria-hidden="true">
+      <Icon name="sun" class="sun" size="1.125rem" />
+      <Icon name="moon" class="moon" size="1.125rem" />
+    </span>
+    <span class="sr-only">Toggle light and dark theme</span>
+  </button>
+</starlight-theme-toggle>
+
+<script>
+  const storageKey = "starlight-theme"
+
+  class StarlightThemeToggle extends HTMLElement {
+    constructor() {
+      super()
+      this.querySelector("button")?.addEventListener("click", () => {
+        const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark"
+        document.documentElement.dataset.theme = next
+        if (typeof localStorage !== "undefined") localStorage.setItem(storageKey, next)
+      })
+    }
+  }
+  customElements.define("starlight-theme-toggle", StarlightThemeToggle)
+</script>
+
+<style>
+  .wt-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: oklch(from var(--foreground) l c h / 70%);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .wt-theme-toggle:hover {
+    color: var(--foreground);
+    background-color: var(--surface-tint);
+  }
+
+  .wt-theme-toggle-icons {
+    position: relative;
+    display: block;
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  .wt-theme-toggle-icons :global(svg) {
+    position: absolute;
+    inset: 0;
+    transition: opacity 200ms ease, transform 260ms cubic-bezier(0.3, 0.7, 0.4, 1.1);
+  }
+
+  /* Dark shows the moon, light shows the sun; the outgoing icon rotates away. */
+  .wt-theme-toggle-icons :global(svg.sun) {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+
+  :global([data-theme="light"]) .wt-theme-toggle-icons :global(svg.sun) {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+
+  :global([data-theme="light"]) .wt-theme-toggle-icons :global(svg.moon) {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.6);
+  }
+</style>

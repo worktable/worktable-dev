@@ -1,0 +1,11 @@
+{
+  "type": "worktable.space",
+  "version": 1,
+  "id": "notes",
+  "name": "Notes",
+  "description": "A tiny starter space with a few docs.",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "createdBy": "user",
+  "settings": {}
+}

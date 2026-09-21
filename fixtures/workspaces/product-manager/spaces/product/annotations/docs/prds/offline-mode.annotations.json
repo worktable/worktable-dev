@@ -1,0 +1,30 @@
+{
+  "type": "worktable.annotations",
+  "version": 1,
+  "spaceId": "product",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "annotations": [
+    {
+      "id": "ann_pm_prd_comment",
+      "spaceId": "product",
+      "target": {
+        "type": "doc",
+        "docPath": "prds/offline-mode"
+      },
+      "category": "comment",
+      "status": "open",
+      "body": "Tie this PRD to roadmap item `offline-mode` (q1, in-progress) and the negative app-store feedback `fb-001`.",
+      "author": {
+        "type": "user",
+        "id": "pm",
+        "name": "PM"
+      },
+      "labels": [],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    }
+  ],
+  "revision": "ee53821e3549ab4dfc327bd6251be1cfd47d4d785ca04336b990413b23ecf71f"
+}

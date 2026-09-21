@@ -1,0 +1,664 @@
+/* ═══════════════════════════════════════════
+   Drafting Room — Cobalt × Bronze (docs)
+   Shared neutral surfaces, a localized drafting grid, glass
+   structure, and flat secondary controls. Canonical tokens come
+   from @worktable/ui/theme.css; this file only adapts Starlight.
+
+   Everything here is intentionally unlayered: Starlight's own
+   styles live in @layer starlight.*, so unlayered rules win
+   without specificity games. That also means these rules beat
+   Starlight's mobile/print states — geometry-adjacent overrides
+   are scoped to Starlight's breakpoints (50rem, 72rem) and the
+   print guard at the bottom of this file is mandatory.
+   ═══════════════════════════════════════════ */
+@import "@worktable/ui/theme.css";
+@import "@worktable/ui/backdrop.css";
+@import url("https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* Only the modal backdrop is Starlight-specific. The dialog border and
+   elevation come from the shared structural theme contract. */
+:root {
+  --docs-backdrop: oklch(0.1 0.006 250 / 55%);
+}
+
+:root[data-theme="light"] {
+  --docs-backdrop: oklch(0.3 0.012 250 / 30%);
+}
+
+/* ── Starlight scale (dark = default theme) */
+:root {
+  --sl-color-accent-low: var(--surface-selected);
+  --sl-color-accent: var(--primary);
+  --sl-color-accent-high: var(--primary-text);
+  --sl-color-white: var(--foreground);
+  --sl-color-gray-1: var(--foreground);
+  --sl-color-gray-2: color-mix(
+    in oklab,
+    var(--foreground) 72%,
+    var(--muted-foreground)
+  );
+  --sl-color-gray-3: var(--muted-foreground);
+  --sl-color-gray-4: color-mix(
+    in oklab,
+    var(--muted-foreground) 72%,
+    var(--muted)
+  );
+  --sl-color-gray-5: var(--surface-selected);
+  --sl-color-gray-6: var(--muted);
+  --sl-color-black: var(--background);
+
+  --sl-font: "General Sans", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono", ui-monospace, "Fira Code", monospace;
+
+  /* App prose column is max-w-3xl (48rem); Starlight default is 45rem */
+  --sl-content-width: 48rem;
+}
+
+/* ── Starlight scale (light) */
+:root[data-theme="light"] {
+  --sl-color-accent-low: var(--surface-selected);
+  --sl-color-accent: var(--primary);
+  --sl-color-accent-high: var(--primary-text);
+  --sl-color-white: var(--foreground);
+  --sl-color-gray-1: var(--foreground);
+  --sl-color-gray-2: color-mix(
+    in oklab,
+    var(--foreground) 72%,
+    var(--muted-foreground)
+  );
+  --sl-color-gray-3: var(--muted-foreground);
+  --sl-color-gray-4: color-mix(
+    in oklab,
+    var(--muted-foreground) 72%,
+    var(--muted)
+  );
+  --sl-color-gray-5: var(--surface-selected);
+  --sl-color-gray-6: var(--muted);
+  --sl-color-gray-7: var(--card);
+  --sl-color-black: var(--background);
+}
+
+/* ── Background ───────────────────────────────
+   Shared bottom-corner grid from @worktable/ui/backdrop.css. */
+html {
+  background-color: var(--background);
+}
+
+body {
+  background: transparent;
+}
+
+/* ── Type — General Sans only, one family at different sizes/weights.
+   Heading scale sized down from Starlight's defaults toward the
+   reference-docs register. */
+:root {
+  --sl-text-h1: 1.875rem;
+  --sl-text-h2: 1.5rem;
+  --sl-text-h3: 1.1875rem;
+  --sl-text-h4: 1rem;
+}
+
+body {
+  font-weight: 480;
+  letter-spacing: 0.015em;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+main h1,
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sl-markdown-content {
+  color: var(--reading-foreground);
+  font-weight: 480;
+  line-height: 1.85;
+  word-spacing: 0.02em;
+}
+
+.sl-markdown-content :is(p, li) {
+  letter-spacing: 0.02em;
+}
+
+/* Links pop brighter than body text (white on dark, ink on light);
+   the cobalt lives in the underline. */
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-white);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: oklch(from var(--primary) l c h / 75%);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.1875rem;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  color: var(--primary-text);
+  text-decoration-color: var(--primary);
+}
+
+/* ── Scrollbars — thin, quiet, app-identical */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* ── Header ───────────────────────────────────
+   Opaque, no border-b, no shadow (app rule: scroll separation
+   comes from the content fade directly beneath it, not hairlines
+   or glass). Never set `position` here — print.css relies on its
+   own reset. */
+.page > .header {
+  border-bottom: none;
+  background-color: var(--background);
+}
+
+/* ── App shell (desktop) ──────────────────────
+   The sidebar pane runs top-to-bottom and owns the brand lockup;
+   the header sits beside it over the content column only. The
+   pane stops scrolling itself — the groups list inside is the
+   scroll region (see Sidebar.astro). */
+@media (min-width: 50rem) {
+  [data-has-sidebar] .page > .header {
+    inset-inline-start: var(--sl-sidebar-width);
+    width: calc(100% - var(--sl-sidebar-width));
+  }
+
+  #starlight__sidebar {
+    inset-block: 0 0;
+    overflow: hidden;
+  }
+
+  #starlight__sidebar .sidebar-content {
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+/* ── Content scroll fades ─────────────────────
+   The app's top/bottom dissolve, as fixed gradient overlays over
+   the (flat, opaque) background — visually identical to the mask
+   version. Driven by data-scrolled / data-scroll-end from the
+   head script; unwound for print at the bottom of this file. */
+@media (min-width: 50rem) {
+  .main-frame::before,
+  .main-frame::after {
+    content: "";
+    position: fixed;
+    inset-inline: var(--sl-content-inline-start, 0) 0;
+    height: 2rem;
+    pointer-events: none;
+    z-index: 3;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .main-frame::before {
+    /* Below the header, and below the mobile TOC bar when present */
+    top: calc(var(--sl-nav-height) + var(--sl-mobile-toc-height, 0rem));
+    background: linear-gradient(to bottom, var(--background), transparent);
+  }
+
+  .main-frame::after {
+    bottom: 0;
+    background: linear-gradient(to top, var(--background), transparent);
+  }
+
+  [data-scrolled] .main-frame::before {
+    opacity: 1;
+  }
+
+  :root:not([data-scroll-end]) .main-frame::after {
+    opacity: 1;
+  }
+}
+
+/* Stop the fades short of the right TOC rail */
+@media (min-width: 72rem) {
+  [data-has-toc] .main-frame::before,
+  [data-has-toc] .main-frame::after {
+    inset-inline-end: var(--wt-toc-width);
+  }
+}
+
+/* ── Scroll fade (vertical) ───────────────────
+   Mask contract from the app: the head script adds .scroll-fade
+   to the sidebar pane and toggles data-scroll-top/bottom. */
+.scroll-fade {
+  --sf-size: 32px;
+}
+
+.scroll-fade[data-scroll-top]:not([data-scroll-bottom]) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size)
+  );
+  mask-image: linear-gradient(to bottom, transparent, black var(--sf-size));
+}
+
+.scroll-fade[data-scroll-bottom]:not([data-scroll-top]) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+.scroll-fade[data-scroll-top][data-scroll-bottom] {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+/* ── Sidebar — glass pane, app nav rows ───────
+   Desktop: translucent pane + blur + quiet hairline (the app
+   sidebar recipe). Mobile (<50rem): Starlight turns the pane
+   into a full overlay sheet, so it uses the same stable mobile
+   navigation surface as the app and never recomposites page text. */
+@media (min-width: 50rem) {
+  #starlight__sidebar {
+    background-color: var(--sidebar-desktop);
+    -webkit-backdrop-filter: blur(28px) saturate(1.3);
+    backdrop-filter: blur(28px) saturate(1.3);
+    border-inline-end: 1px solid var(--sidebar-border);
+  }
+
+  @supports not (backdrop-filter: blur(1px)) {
+    #starlight__sidebar {
+      background-color: var(--background);
+    }
+  }
+}
+
+@media (max-width: 49.99rem) {
+  #starlight__sidebar {
+    background-color: var(--navigation-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+#starlight__sidebar a {
+  border-radius: var(--sidebar-item-radius);
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 480;
+  color: var(--sidebar-item-foreground);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+#starlight__sidebar a:hover {
+  color: var(--sidebar-foreground);
+  background-color: var(--sidebar-hover);
+}
+
+#starlight__sidebar a[aria-current="page"],
+#starlight__sidebar a[aria-current="page"]:hover {
+  color: var(--primary-text);
+  background-color: var(--sidebar-accent);
+  font-weight: 500;
+}
+
+/* Group labels live in the Sidebar override component
+   (static always-expanded sections, no summary/caret). */
+
+/* Wordmark: theme ink on dark, cobalt in light mode. Selector must
+   out-rank the component's scoped `.site-title .site-title-word`. */
+:root[data-theme="light"] .site-title .site-title-word {
+  color: var(--primary);
+}
+
+/* ── Content column ───────────────────────────
+   Prose sits directly on the neutral canvas (the app has no paper card).
+   No hairline between title and content — app rule: fades and
+   space separate regions, not borders. */
+.content-panel + .content-panel {
+  border-top: 0;
+}
+
+/* Pagination styling lives in the Pagination override component. */
+
+/* ── Right TOC — the app's outline panel ──────
+   Starlight reserves a full sidebar-width (18.75rem) for the TOC,
+   which leaves a dead gutter on the right edge. Size the rail to
+   its content instead and center the article between the rails. */
+:root {
+  /* Match the left sidebar so the article sits between equal rails */
+  --wt-toc-width: var(--sl-sidebar-width);
+}
+
+@media (min-width: 72rem) {
+  .right-sidebar-container {
+    width: var(--wt-toc-width);
+  }
+
+  [data-has-sidebar][data-has-toc] .main-pane {
+    --sl-content-margin-inline: auto;
+    width: calc(100% - var(--wt-toc-width));
+  }
+}
+
+/* Visible hairline the active TOC indicator sits on. It must live on
+   the panel INSIDE the scroll container, not on .right-sidebar itself:
+   the rail's overflow-y:auto clips children to its padding box, so an
+   indicator could never paint over a border on the rail. */
+.right-sidebar {
+  border-inline-start: none;
+}
+
+.right-sidebar-panel {
+  border-inline-start: 1px solid var(--border);
+  min-height: 100%;
+}
+
+.right-sidebar-panel h2 {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: oklch(from var(--foreground) l c h / 40%);
+}
+
+/* No hairline here (the active indicator is the only line) — depth
+   indentation is padding on the links themselves, so every item's box
+   starts at the same left edge the indicator sits on. */
+starlight-toc nav > ul {
+  margin-top: 0.75rem;
+}
+
+starlight-toc a {
+  /* Extra start padding keeps the indicator clear of the text */
+  --pad-inline: 0.75rem;
+  position: relative;
+  font-size: 0.875rem;
+  padding-block: 0.4375rem;
+  border-radius: 0.375rem;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+starlight-toc a[aria-current="true"] {
+  color: var(--primary-text);
+  background-color: transparent;
+}
+
+starlight-toc a[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  /* Ride the rail's border line: panel padding + 1px border */
+  inset-inline-start: calc(-1 * var(--sl-sidebar-pad-x) - 1px);
+  inset-block: 0.5rem;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+}
+
+/* Mobile TOC bar (<72rem) — opaque like the header, no hairline.
+   Never touch --sl-mobile-toc-height (layout math). */
+@media (max-width: 71.99rem) {
+  mobile-starlight-toc nav {
+    border-bottom: none;
+    background-color: var(--background);
+  }
+}
+
+/* ── Code blocks — flat field surface ───────── */
+.expressive-code pre {
+  box-shadow: var(--field-shadow);
+}
+
+/* Copy button — flat outline-action recipe */
+.expressive-code .copy button {
+  background-color: var(--card);
+  background-image: var(--outline-button-image);
+  box-shadow: var(--outline-button-shadow);
+  border-radius: 0.5rem;
+}
+
+.expressive-code .copy button:active {
+  box-shadow: var(--outline-button-shadow);
+}
+
+/* ── Search ───────────────────────────────────
+   Trigger and field use the flat shared control finish.
+   Modal: opaque (portal rule — dialogs never blur), popover
+   surface, cobalt action color. Colors/radius/shadow only —
+   the dialog-frame's layout and focus plumbing stay untouched. */
+site-search button[data-open-modal] {
+  /* Lives at the top of the sidebar pane — full-width row */
+  width: 100%;
+  border: 1px solid var(--border-chrome);
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  color: oklch(from var(--foreground) l c h / 75%);
+  background-color: var(--card);
+  background-image: var(--outline-button-image);
+  box-shadow: var(--outline-button-shadow);
+}
+
+site-search button[data-open-modal]:hover {
+  background-color: var(--surface-tint);
+  filter: none;
+  border-color: var(--border-chrome);
+}
+
+site-search button[data-open-modal]:active {
+  filter: none;
+  box-shadow: var(--outline-button-shadow);
+  transform: none;
+}
+
+site-search button[data-open-modal] kbd {
+  background-color: var(--well-bg);
+  box-shadow: var(--field-shadow);
+  border-radius: 0.25rem;
+}
+
+/* Starlight's mobile navigation trigger is also a secondary action. */
+starlight-menu-button button {
+  border: 1px solid var(--border-chrome);
+  background-color: var(--card);
+  background-image: var(--outline-button-image);
+  box-shadow: var(--outline-button-shadow);
+}
+
+starlight-menu-button button:active {
+  box-shadow: var(--outline-button-shadow);
+  transform: none;
+}
+
+site-search dialog {
+  background: var(--popover);
+  border: 1px solid var(--overlay-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--overlay-dialog-shadow);
+}
+
+site-search dialog::backdrop {
+  background: var(--docs-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+site-search {
+  --sl-search-corners: 0.5rem;
+  --pagefind-ui-primary: var(--primary-text);
+  --pagefind-ui-text: var(--foreground);
+  --pagefind-ui-background: var(--popover);
+  --pagefind-ui-border: var(--border);
+  --pagefind-ui-border-radius: 0.5rem;
+  --pagefind-ui-font: var(--sl-font);
+}
+
+#starlight__search .pagefind-ui__search-input {
+  background-color: var(--well-bg);
+  border: 1px solid var(--border-chrome);
+  box-shadow: var(--field-shadow);
+  font-weight: 480;
+  outline: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+#starlight__search .pagefind-ui__search-input:hover:not(:focus-visible) {
+  background-color: var(--well-hover-bg);
+  border-color: var(--input-hover);
+}
+
+#starlight__search .pagefind-ui__search-input:focus-visible {
+  border-color: var(--ring);
+  box-shadow: var(--field-focus-shadow);
+}
+
+/* Theme toggle styling lives in the ThemeSelect override component. */
+
+/* ── Primary cobalt for technical notation and tips ── */
+.sl-markdown-content code:not(pre code) {
+  color: var(--code-accent-foreground);
+  background: var(--code-accent-background);
+  border-radius: 0.375rem;
+  padding: 0.1em 0.35em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.sl-markdown-content hr {
+  border-color: var(--surface-tint);
+}
+
+.starlight-aside--tip {
+  --sl-color-asides-text-accent: var(--code-accent-foreground);
+  --sl-color-asides-border: var(--code-accent-foreground);
+  background: var(--code-accent-background);
+}
+
+/* ── Print guard ──────────────────────────────
+   Unlayered rules above beat Starlight's layered print.css, so
+   glass and screen-only finishes must be explicitly unwound. */
+@media print {
+  /* Match the specificity of data-theme so print always selects the
+     generated light palette without copying any raw color values. */
+  :root[data-theme] {
+    --background: var(--theme-light-background);
+    --foreground: var(--theme-light-foreground);
+    --reading-foreground: var(--theme-light-reading-foreground);
+    --card: var(--theme-light-card);
+    --popover: var(--theme-light-popover);
+    --primary: var(--theme-light-primary);
+    --primary-text: var(--theme-light-primary-text);
+    --border: var(--theme-light-border);
+    --border-chrome: var(--theme-light-border-chrome);
+    --sidebar-foreground: var(--theme-light-sidebar-foreground);
+    --well-bg: var(--theme-light-well-bg);
+    --accent-bronze: var(--theme-light-accent-bronze);
+    --accent-bronze-ink: var(--theme-light-accent-bronze-ink);
+    --code-accent-foreground: var(--theme-light-code-accent-foreground);
+    --code-accent-background: var(--theme-light-code-accent-background);
+    --surface-tint: var(--theme-light-surface-tint);
+    --sl-color-accent-low: var(--theme-light-surface-selected);
+    --sl-color-accent: var(--theme-light-primary);
+    --sl-color-accent-high: var(--theme-light-primary-text);
+    --sl-color-white: var(--theme-light-foreground);
+    --sl-color-gray-1: var(--theme-light-foreground);
+    --sl-color-gray-2: var(--theme-light-secondary-foreground);
+    --sl-color-gray-3: var(--theme-light-muted-foreground);
+    --sl-color-gray-4: var(--theme-light-muted-foreground);
+    --sl-color-gray-5: var(--theme-light-surface-selected);
+    --sl-color-gray-6: var(--theme-light-muted);
+    --sl-color-gray-7: var(--theme-light-card);
+    --sl-color-black: var(--theme-light-background);
+  }
+
+  html,
+  body {
+    background: var(--theme-light-background);
+  }
+
+  .page > .header,
+  #starlight__sidebar,
+  mobile-starlight-toc nav {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  /* Print can match the ≥50rem media queries — unwind the app shell:
+     full-width header, no fixed fade overlays. */
+  [data-has-sidebar] .page > .header {
+    inset-inline-start: 0;
+    width: 100%;
+  }
+
+  .main-frame::before,
+  .main-frame::after {
+    display: none;
+  }
+
+  .expressive-code pre {
+    box-shadow: none;
+  }
+
+  /* Code prints monochrome: EC lightens its background in print but its
+     token colors are inline dark-theme values (html keeps data-theme=dark),
+     so force readable ink. !important beats EC's inline span styles. */
+  .expressive-code pre,
+  .expressive-code pre span {
+    color: var(--theme-light-foreground) !important;
+  }
+
+  site-search button[data-open-modal] {
+    box-shadow: none;
+    background-image: none;
+  }
+
+  * {
+    scrollbar-width: auto;
+  }
+}

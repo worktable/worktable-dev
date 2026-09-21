@@ -1,0 +1,19 @@
+Worktable
+Copyright (c) 2026 Reva Labs
+
+The first-party Worktable application is licensed under the GNU Affero General
+Public License, version 3 only (AGPL-3.0-only). See LICENSE. Permission to use a
+later version of that license is not granted by this project notice.
+
+Files and packages with separate license notices retain those licenses. The
+MIT scopes include the exact files named in packages/ui/LICENSE,
+packages/hosted-contract, packages/config-typescript,
+packages/public-analytics, and the separately licensed agent plugins.
+This is not an MIT license for the entire UI or application.
+
+Third-party code and assets retain their original notices and terms. The
+application license does not relicense third-party fonts or other material.
+
+The bundled Bun runtime source and rebuild archive is identified by URL and
+checksum in SOURCE-MATERIALS.json, retained alongside this notice. Other
+third-party source references remain in their component notices.

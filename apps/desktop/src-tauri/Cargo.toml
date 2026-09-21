@@ -1,0 +1,51 @@
+[package]
+name = "worktable-desktop"
+version = "0.1.5"
+description = "Native Tauri host for Worktable Desktop"
+authors = ["Worktable contributors"]
+edition = "2021"
+rust-version = "1.88.0"
+
+[features]
+default = []
+staging = []
+
+[build-dependencies]
+url = "2.5.8"
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+base64 = "0.22"
+cookie = "0.18.1"
+getrandom = "0.2"
+libc = "0.2"
+minisign-verify = "0.2"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "system-proxy"] }
+semver = "1"
+sha2 = "0.10"
+url = "2.5.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.11.5", features = ["unstable"] }
+tauri-plugin-opener = "2.5.4"
+tauri-plugin-dialog = "2.6.0"
+tauri-plugin-shell = "2.3.5"
+tauri-plugin-single-instance = "2.4.3"
+tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "sync", "time"] }
+time = { version = "0.3.53", features = ["formatting", "parsing"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSButton", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSHTTPCookie", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["block2", "WKHTTPCookieStore", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
+security-framework = "3.7.0"
+tauri-plugin-updater = "2.10.1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

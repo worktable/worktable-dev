@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Worktable</title>
+    <link rel="stylesheet" href="theme.generated.css" />
+    <link rel="stylesheet" href="shell.css" />
+    <script src="shell.js" defer></script>
+  </head>
+
+  <body data-view="initializing">
+    <div class="window-drag" data-tauri-drag-region aria-hidden="true"></div>
+
+    <main class="bootstrap scroll-fade" id="bootstrap">
+      <section
+        class="bootstrap-page progress-page"
+        id="progress-page"
+        aria-labelledby="progress-title"
+      >
+        <img
+          class="worktable-icon progress-mark"
+          src="./worktable-icon.svg"
+          alt=""
+          aria-hidden="true"
+          draggable="false"
+        />
+        <h1 id="progress-title">Preparing Worktable</h1>
+        <p
+          class="progress-message"
+          id="progress-message"
+          role="status"
+          aria-live="polite"
+        >
+          Checking this computer…
+        </p>
+        <div class="progress-line" aria-hidden="true"><span></span></div>
+        <button
+          class="button quiet progress-cancel"
+          id="cancel-cloud-connection"
+          type="button"
+          data-allow-while-busy
+          hidden
+        >
+          Cancel
+        </button>
+      </section>
+
+      <section
+        class="bootstrap-page update-page"
+        id="update-page"
+        aria-labelledby="update-title"
+      >
+        <div class="update-panel">
+          <img
+            class="worktable-icon update-icon"
+            src="./worktable-icon.svg"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+          />
+          <h1 id="update-title">Checking for updates</h1>
+          <p
+            class="lede update-message"
+            id="update-message"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p class="update-version" id="update-version" hidden></p>
+          <div class="update-progress" id="update-progress" hidden>
+            <div
+              class="update-progress-track"
+              role="progressbar"
+              aria-label="Update download"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <span id="update-progress-value"></span>
+            </div>
+            <p id="update-progress-label"></p>
+          </div>
+          <div class="update-notes" id="update-notes" hidden>
+            <p class="eyebrow">What’s new</p>
+            <p id="update-notes-copy"></p>
+          </div>
+          <div class="update-actions">
+            <button
+              class="button primary"
+              id="install-update"
+              type="button"
+              hidden
+            >
+              Download and Restart
+            </button>
+            <button
+              class="button secondary"
+              id="retry-update"
+              type="button"
+              hidden
+            >
+              Check again
+            </button>
+            <button
+              class="button secondary"
+              id="dismiss-update"
+              type="button"
+              hidden
+            >
+              Later
+            </button>
+          </div>
+          <button
+            class="manual-download-action"
+            id="open-update-download"
+            type="button"
+            hidden
+          >
+            Download Worktable
+          </button>
+        </div>
+      </section>
+
+      <section
+        class="bootstrap-page provider-page"
+        id="provider-page"
+        aria-labelledby="provider-title"
+      >
+        <div class="page-heading">
+          <img
+            class="worktable-icon product-icon"
+            src="./worktable-icon.svg"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+          />
+          <h1 id="provider-title">Get started</h1>
+        </div>
+        <div class="provider-grid">
+          <button class="provider-card" id="choose-local" type="button">
+            <span class="card-icon" aria-hidden="true">⌘</span>
+            <strong>On this Mac</strong>
+            <span>Keep your files on this Mac.</span>
+          </button>
+          <button class="provider-card" id="choose-self-hosted" type="button">
+            <span class="card-icon" aria-hidden="true">↗</span>
+            <strong>Self-hosted</strong>
+            <span>Connect to a server you run.</span>
+          </button>
+          <button class="provider-card" id="choose-cloud" type="button">
+            <span class="card-icon" aria-hidden="true">☁</span>
+            <strong>Worktable Cloud</strong>
+            <span>Sign in to your hosted Worktable.</span>
+          </button>
+        </div>
+      </section>
+
+      <section
+        class="bootstrap-page cloud-page"
+        id="cloud-page"
+        aria-labelledby="cloud-title"
+      >
+        <div class="page-heading cloud-heading">
+          <button
+            class="back-action"
+            id="cloud-provider-back"
+            type="button"
+            aria-label="Back to connection options"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m10 3.5-4.5 4.5 4.5 4.5" />
+            </svg>
+            <span>Back</span>
+          </button>
+          <img
+            class="worktable-icon connection-icon"
+            src="./worktable-icon.svg"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+          />
+          <h1 id="cloud-title">Sign in</h1>
+          <p class="lede" id="cloud-status-message">
+            Continue in your browser to sign in.
+          </p>
+        </div>
+        <div class="cloud-connect-actions" aria-label="Cloud sign-in">
+          <button
+            class="button quiet"
+            id="remove-cloud-connection"
+            type="button"
+            hidden
+          >
+            Remove connection
+          </button>
+          <button class="button primary" id="connect-cloud" type="button">
+            Sign in
+          </button>
+        </div>
+      </section>
+
+      <section
+        class="bootstrap-page remote-page"
+        id="remote-page"
+        aria-labelledby="remote-title"
+      >
+        <div class="page-heading">
+          <button
+            class="back-action"
+            id="remote-provider-back"
+            type="button"
+            aria-label="Back to connection options"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m10 3.5-4.5 4.5 4.5 4.5" />
+            </svg>
+            <span>Back</span>
+          </button>
+          <h1 id="remote-title">Connect to Worktable</h1>
+        </div>
+
+        <section
+          class="saved-connections"
+          id="saved-connections-section"
+          aria-labelledby="saved-connections-title"
+          hidden
+        >
+          <p class="eyebrow" id="saved-connections-title">Saved servers</p>
+          <div class="saved-connection-list" id="saved-connections"></div>
+        </section>
+
+        <form class="remote-connection-form" id="remote-connection-form">
+          <label class="field-label" for="remote-origin"
+            >Worktable address</label
+          >
+          <p class="field-help">Enter the address you use to open Worktable.</p>
+          <input
+            class="origin-input"
+            id="remote-origin"
+            name="origin"
+            type="url"
+            inputmode="url"
+            autocomplete="url"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="https://worktable.example.com"
+            required
+          />
+          <p
+            class="inline-message"
+            id="remote-origin-message"
+            data-tone="neutral"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <div
+            class="http-warning"
+            id="remote-http-warning"
+            role="alert"
+            hidden
+          >
+            <strong>This address isn’t secure</strong>
+            <p>Only continue on a network you trust.</p>
+            <label class="confirmation-row">
+              <input id="remote-http-confirm" type="checkbox" />
+              <span>Continue with this address.</span>
+            </label>
+          </div>
+          <div class="choice-actions remote-form-actions">
+            <button class="button primary" id="connect-remote" type="submit">
+              Connect
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section
+        class="bootstrap-page local-page"
+        id="local-page"
+        aria-labelledby="local-title"
+      >
+        <div class="page-heading">
+          <button
+            class="back-action"
+            id="provider-back"
+            type="button"
+            aria-label="Back to connection options"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m10 3.5-4.5 4.5 4.5 4.5" />
+            </svg>
+            <span>Back</span>
+          </button>
+          <h1 id="local-title">Set up Worktable</h1>
+        </div>
+
+        <section
+          class="existing-installation"
+          id="existing-installation"
+          aria-labelledby="existing-installation-title"
+          hidden
+        >
+          <div class="existing-installation-copy">
+            <h2 id="existing-installation-title">
+              Worktable is already set up
+            </h2>
+            <p id="existing-installation-message"></p>
+            <code id="existing-installation-path"></code>
+          </div>
+          <button
+            class="button primary"
+            id="use-existing-installation"
+            type="button"
+          >
+            Open Worktable
+          </button>
+        </section>
+
+        <div class="local-options">
+          <section
+            class="workspace-choice workspace-choice-create"
+            aria-labelledby="create-workspace-title"
+          >
+            <div class="choice-copy">
+              <div>
+                <h2 id="create-workspace-title">Create a new Worktable</h2>
+                <p>Your content will be stored in the selected folder.</p>
+              </div>
+            </div>
+            <div class="path-well">
+              <span>Location</span>
+              <code id="create-path"></code>
+            </div>
+            <p
+              class="inline-message"
+              id="create-message"
+              data-tone="neutral"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <div class="choice-actions">
+              <button
+                class="button secondary"
+                id="change-create-location"
+                type="button"
+              >
+                Change location…
+              </button>
+              <button
+                class="button primary"
+                id="create-workspace"
+                type="button"
+              >
+                Create Worktable
+              </button>
+            </div>
+          </section>
+
+          <section
+            class="workspace-choice workspace-choice-existing"
+            aria-labelledby="open-workspace-title"
+          >
+            <div class="choice-copy">
+              <div>
+                <h2 id="open-workspace-title">Open a Worktable</h2>
+                <p>Choose a folder that already contains Worktable.</p>
+              </div>
+            </div>
+            <div class="choice-actions">
+              <button class="button secondary" id="open-existing" type="button">
+                Choose folder…
+              </button>
+            </div>
+            <p
+              class="inline-message"
+              id="open-message"
+              data-tone="neutral"
+              role="status"
+              aria-live="polite"
+            ></p>
+          </section>
+        </div>
+      </section>
+
+      <section
+        class="bootstrap-page recovery-page"
+        id="recovery-page"
+        aria-labelledby="recovery-title"
+      >
+        <div class="recovery-panel">
+          <span class="recovery-symbol" aria-hidden="true">!</span>
+          <h1 id="recovery-title">Could not open Worktable</h1>
+          <p class="lede" id="recovery-message" role="alert"></p>
+          <div class="recovery-workspace" id="recovery-workspace">
+            <span>Location</span>
+            <code class="recovery-path" id="recovery-path"></code>
+          </div>
+          <div class="recovery-action-row">
+            <div class="recovery-primary-actions" id="recovery-primary-actions">
+              <button
+                class="button primary"
+                id="retry-connection"
+                type="button"
+              >
+                Try again
+              </button>
+              <button
+                class="button secondary"
+                id="restart-local-host"
+                type="button"
+              >
+                Restart local service
+              </button>
+              <button
+                class="button primary"
+                id="repair-local-authority"
+                type="button"
+              >
+                Repair Worktable
+              </button>
+              <button
+                class="button secondary"
+                id="recovery-change-workspace"
+                type="button"
+              >
+                Choose another Worktable
+              </button>
+              <button class="button quiet" id="remove-connection" type="button">
+                Remove this Worktable
+              </button>
+            </div>
+            <div
+              class="recovery-secondary-actions"
+              id="recovery-secondary-actions"
+            ></div>
+          </div>
+          <details
+            class="recovery-troubleshooting"
+            id="recovery-troubleshooting"
+          >
+            <summary>More options</summary>
+            <div class="recovery-utility-actions" id="recovery-utility-actions">
+              <button
+                class="button secondary"
+                id="open-local-logs"
+                type="button"
+              >
+                Open logs
+              </button>
+              <button
+                class="button secondary"
+                id="locate-workspace"
+                type="button"
+              >
+                Find moved Worktable…
+              </button>
+            </div>
+          </details>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

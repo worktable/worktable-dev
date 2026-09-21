@@ -1,0 +1,952 @@
+@import url("https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+@import "./theme.generated.css";
+@import "./backdrop.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn-utilities.css";
+@import "./typeset.css";
+
+@custom-variant dark (&:is(.dark *));
+@source "../../../apps/**/*.{ts,tsx}";
+@source "../../../components/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+@source "../../../../node_modules/@blocknote/shadcn/dist/**/*.js";
+
+/* ═══════════════════════════════════════════
+   Drafting Room — Cobalt × Bronze
+   Glass for structure, paper for content,
+   real tools for action.
+   ═══════════════════════════════════════════ */
+
+:root {
+  --radius: 0.75rem;
+  --spacing-section: 2.5rem;
+  --spacing-block: 1.5rem;
+}
+
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-reading-foreground: var(--reading-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-accent-bronze: var(--accent-bronze);
+  --color-accent-bronze-ink: var(--accent-bronze-ink);
+  --color-accent-bronze-soft: var(--accent-bronze-soft);
+  --color-code-accent: var(--code-accent-foreground);
+  --color-code-accent-surface: var(--code-accent-background);
+  --color-illustration-accent: var(--illustration-accent);
+  --color-border-chrome: var(--border-chrome);
+  --color-overlay-border: var(--overlay-border);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-resize-handle: var(--resize-handle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-surface-tint: var(--surface-tint);
+  --color-surface-selected: var(--surface-selected);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-hover: var(--input-hover);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-space-foreground: var(--sidebar-space-foreground);
+  --color-sidebar-item-foreground: var(--sidebar-item-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-control: var(--sidebar-control);
+  --color-sidebar-control-border: var(--sidebar-control-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-control-active: var(--control-active);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: "General Sans", system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --spacing-section: var(--spacing-section);
+  --spacing-block: var(--spacing-block);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-weight: 480;
+    letter-spacing: 0.015em;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Loosen tracking on body text for readability */
+  p,
+  span,
+  li,
+  td,
+  th,
+  label,
+  a {
+    letter-spacing: 0.02em;
+  }
+  /* Tighten headings slightly (they look better tight) */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.005em;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Glass Pane Utilities
+   ═══════════════════════════════════════════ */
+
+/* Glass utilities — outside @layer to prevent Tailwind from stripping backdrop-filter */
+.glass {
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  backdrop-filter: blur(28px) saturate(1.3);
+}
+.glass-heavy {
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  backdrop-filter: blur(40px) saturate(1.4);
+}
+.glass-light {
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+}
+
+.marketing-page-field {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent calc(50% - 640px),
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) calc(50% - 640px),
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) calc(50% - 639px),
+      transparent calc(50% - 639px),
+      transparent calc(50% + 639px),
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) calc(50% + 639px),
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) calc(50% + 640px),
+      transparent calc(50% + 640px)
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--card) 38%, transparent),
+      transparent 760px
+    );
+}
+
+.marketing-artifact-surface {
+  background-color: color-mix(in oklab, var(--card) 24%, var(--background));
+}
+
+.marketing-hero-grid {
+  pointer-events: none;
+  opacity: 0.72;
+  background-image:
+    linear-gradient(
+      color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
+      transparent 1px
+    );
+  background-position: center top;
+  background-size: 56px 56px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 18%,
+    black 70%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 18%,
+    black 70%,
+    transparent
+  );
+}
+
+.marketing-field-hero {
+  /* Small viewport units keep the initial mobile composition clear of browser
+     chrome. min-height lets short viewports grow instead of clipping content. */
+  min-height: 100svh;
+}
+
+.marketing-viewport-fade {
+  /* A light canvas washing over dark product content reads as a white veil.
+     Keep the cue barely present in light mode; dark mode can clear the edge. */
+  background: color-mix(in oklab, var(--background) 10%, transparent);
+}
+
+.dark .marketing-viewport-fade {
+  background: var(--background);
+}
+
+.marketing-viewport-fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+
+.marketing-viewport-fade-bottom {
+  -webkit-mask-image: linear-gradient(to top, black, transparent);
+  mask-image: linear-gradient(to top, black, transparent);
+}
+
+@keyframes marketing-grounding-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.marketing-grounding-enter {
+  animation: marketing-grounding-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes artifact-variant-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.artifact-variant-enter {
+  animation: artifact-variant-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes artifact-index-twinkle {
+  0%,
+  70%,
+  100% {
+    color: var(--muted-foreground);
+  }
+  78%,
+  90% {
+    color: var(--foreground);
+  }
+  96% {
+    color: var(--muted-foreground);
+  }
+}
+
+.artifact-index-item {
+  color: var(--muted-foreground);
+  animation-name: artifact-index-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+.artifact-index-item:hover {
+  color: var(--foreground);
+  animation: none;
+}
+
+@media (max-width: 767px) and (max-height: 760px) {
+  .marketing-field-main {
+    padding-top: 5rem;
+    padding-bottom: 1rem;
+  }
+
+  .marketing-field-copy h1 {
+    font-size: 3rem;
+  }
+
+  .marketing-field-copy h1 + p {
+    margin-top: 0.75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .marketing-field-acquisition {
+    margin-top: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-grounding-enter,
+  .agent-logo-slot *,
+  .artifact-variant-enter,
+  .artifact-index-item {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Side-by-side navigation benefits from a slightly recessed surface. Scope
+   the override to desktop shells so mobile drawers retain their stable
+   navigation composition. */
+.desktop-sidebar-surface {
+  --sidebar: var(--sidebar-desktop);
+}
+
+@layer utilities {
+  .glow-primary {
+    box-shadow: var(--glow-primary);
+  }
+}
+
+/* Inline technical notation uses the primary cobalt. Keep this
+   unlayered so app surfaces and third-party adapters share the same generated
+   finish without relying on Tailwind class discovery. */
+.inline-code-accent {
+  color: var(--code-accent-foreground);
+  background-color: var(--code-accent-background);
+  border-radius: 0.375rem;
+  padding: 0.1em 0.35em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ═══════════════════════════════════════════
+   Drafting Room — Tactile finish
+   Shallow rimmed keys sit 1px proud and travel 1px on press
+   (travel comes from active:translate-y-px on
+   the button base). Outside @layer so nothing
+   gets stripped or reordered.
+   ═══════════════════════════════════════════ */
+
+.btn-key {
+  /* Paint beneath the transparent structural border so the page canvas cannot
+     show through as a pale halo around primary buttons in light mode. */
+  background-clip: border-box;
+  background-image: linear-gradient(
+    to bottom,
+    var(--key-face-top) 0%,
+    var(--primary) 55%,
+    var(--key-face-bottom) 100%
+  );
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 var(--key-highlight),
+    0 2px 0 var(--key-edge-primary),
+    0 5px 8px -2px var(--key-shadow),
+    0 9px 16px -6px var(--key-shadow-ambient);
+}
+.btn-key:hover {
+  filter: brightness(1.035);
+  transform: translateY(-1px);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 0 var(--key-highlight),
+    0 3px 0 var(--key-edge-primary),
+    0 7px 10px -3px var(--key-shadow),
+    0 12px 20px -8px var(--key-shadow-ambient);
+}
+.btn-key:active {
+  filter: none;
+  transform: translateY(2px);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    inset 0 1px 1px var(--key-shadow),
+    0 0 0 var(--key-edge-primary),
+    0 1px 2px var(--key-shadow);
+}
+
+.btn-key-outline {
+  background-color: var(--card);
+  background-image: var(--outline-button-image);
+  box-shadow: var(--outline-button-shadow);
+}
+.btn-key-outline:hover,
+.btn-key-outline[aria-expanded="true"] {
+  background-color: var(--surface-tint);
+  filter: none;
+}
+.btn-key-outline:active {
+  filter: none;
+  box-shadow: var(--outline-button-shadow);
+  transform: none;
+}
+
+/* Aceternity-inspired hover border: the button keeps the shared outline
+   geometry while Motion interpolates one blurred radial highlight smoothly
+   around its four edges behind an inset card surface. */
+.marketing-cloud-launch {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 1px;
+  border-color: transparent;
+  background-color: color-mix(in oklab, var(--primary) 12%, var(--border));
+  background-image: none;
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    0 2px 0 color-mix(in oklab, var(--primary) 10%, var(--border)),
+    0 6px 10px -6px color-mix(in oklab, var(--primary) 12%, transparent);
+}
+
+.marketing-cloud-launch-glow {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  filter: blur(2px);
+}
+
+.marketing-cloud-launch-surface {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+  border-radius: calc(var(--radius) - 1px);
+  background: var(--card);
+  transition: background-color 180ms ease;
+}
+
+.marketing-cloud-launch:hover {
+  border-color: transparent;
+  filter: none;
+  transform: translateY(-1px);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    0 3px 0 color-mix(in oklab, var(--primary) 12%, var(--border)),
+    0 8px 13px -7px color-mix(in oklab, var(--primary) 16%, transparent);
+}
+
+.marketing-cloud-launch:hover .marketing-cloud-launch-surface,
+.marketing-cloud-launch:focus-visible .marketing-cloud-launch-surface {
+  background: color-mix(in oklab, var(--primary) 10%, var(--card));
+}
+
+.marketing-cloud-launch-arrow {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.marketing-cloud-launch:hover .marketing-cloud-launch-arrow {
+  transform: translateX(2px);
+}
+
+.marketing-cloud-launch:active .marketing-cloud-launch-surface {
+  background: color-mix(in oklab, var(--primary) 15%, var(--card));
+}
+
+.marketing-cloud-launch:active {
+  transform: translateY(1px);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    0 1px 0 color-mix(in oklab, var(--primary) 8%, var(--border)),
+    0 3px 6px -5px color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-cloud-launch-arrow {
+    transition: none;
+  }
+}
+
+/* Flat fields — inputs, read-only fields, checkboxes, and toggle tracks */
+.well {
+  background-color: var(--well-bg);
+  box-shadow: var(--field-shadow);
+}
+
+.well-interactive:not(:disabled):not([data-disabled]):not(
+    [aria-disabled="true"]
+  ):not([aria-invalid="true"]):not([readonly]):not(:focus-visible):hover {
+  background-color: var(--well-hover-bg);
+  border-color: var(--input-hover);
+}
+
+.well[data-checked] {
+  background-color: var(--surface-selected);
+  box-shadow: var(--field-shadow);
+}
+
+/* Input Group owns the shared control surface; nested controls stay visually
+   transparent while preserving their native focus and invalid semantics. */
+[data-slot="input-group"] .well[data-slot="input-group-control"] {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+[data-slot="input-group"]
+  .well-interactive[data-slot="input-group-control"]:not(:disabled):not(
+    [data-disabled]
+  ):not([aria-disabled="true"]):not([aria-invalid="true"]):not([readonly]):not(
+    :focus-visible
+  ):hover {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+/* Checked switches are active controls, not selected neutral surfaces. Keep
+   the track flat while giving it enough cobalt to avoid a disabled reading. */
+.switch-track[data-checked] {
+  background-color: var(--control-active);
+}
+
+/* The space selector sits inside a translucent sidebar, so it needs a quieter
+   local surface than a full input well. */
+.sidebar-selector {
+  background-color: var(--sidebar-control);
+  border-color: var(--sidebar-control-border);
+  box-shadow: none;
+}
+
+.sidebar-selector:hover,
+.sidebar-selector[aria-expanded="true"] {
+  background-color: var(--sidebar-hover);
+}
+
+/* Opaque portaled surfaces share two quiet elevation levels. Keep these
+   unlayered so product and third-party overlays can consume the exact same
+   border and shadow recipes without Tailwind-generated approximations. */
+.overlay-floating {
+  border: 1px solid var(--overlay-border);
+  box-shadow: var(--overlay-floating-shadow);
+}
+
+/* Sonner injects its behavioral stylesheet at runtime. This higher-specificity
+   adapter keeps keyboard focus on the same semantic overlay elevation instead
+   of falling back to Sonner's hard-coded black focus shadow. */
+[data-sonner-toast].worktable-toast:focus-visible {
+  box-shadow:
+    var(--overlay-floating-shadow),
+    0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
+}
+
+/* Sonner scopes these behavioral rules to its styled mode. Worktable owns the
+   visuals in unstyled mode, so preserve the stack and description behavior
+   with selectors scoped to the shared adapter. */
+[data-sonner-toast].worktable-toast[data-expanded="false"][data-front="false"]
+  > * {
+  opacity: 0;
+}
+
+[data-sonner-toaster][data-sonner-theme="dark"]
+  [data-sonner-toast].worktable-toast
+  [data-description] {
+  color: var(--muted-foreground);
+}
+
+.dialog-backdrop {
+  background-color: var(--dialog-backdrop);
+}
+
+.overlay-dialog {
+  /* Light and dark modal backdrops affect translucent perimeters differently.
+     Keep one border token while letting the canonical mode recipe choose the
+     compositing surface that produces the same quiet perceived edge. */
+  background-clip: var(--dialog-background-clip);
+  border-color: var(--overlay-border);
+  box-shadow: var(--overlay-dialog-shadow);
+}
+
+/* Sheets need their elevation cast back into the visible viewport. A centered
+   dialog shadow points the wrong way when the surface is pinned to an edge. */
+.overlay-drawer[data-vaul-drawer-direction="top"] {
+  box-shadow: var(--overlay-drawer-top-shadow);
+}
+
+.overlay-drawer[data-vaul-drawer-direction="right"] {
+  box-shadow: var(--overlay-drawer-right-shadow);
+}
+
+.overlay-drawer[data-vaul-drawer-direction="bottom"] {
+  box-shadow: var(--overlay-drawer-bottom-shadow);
+}
+
+.overlay-drawer[data-vaul-drawer-direction="left"] {
+  box-shadow: var(--overlay-drawer-left-shadow);
+}
+
+/* Mobile navigation is an anchored shell surface, not glass. Keeping the
+   parent opaque lets its translucent sidebar content resolve against the
+   canonical canvas instead of recompositing over the dimmed page underneath. */
+.navigation-backdrop {
+  background-color: var(--navigation-backdrop);
+}
+
+.navigation-drawer {
+  isolation: isolate;
+  background-color: var(--navigation-surface);
+  border-inline-start: 1px solid var(--sidebar-border);
+  box-shadow: var(--navigation-drawer-shadow);
+}
+
+/* Machined-bronze material detail — agent and annotation dots */
+.bronze-knob {
+  background: radial-gradient(
+    circle at 35% 30%,
+    color-mix(in oklab, var(--accent-bronze) 58%, white),
+    var(--accent-bronze) 55%,
+    color-mix(in oklab, var(--accent-bronze) 74%, black)
+  );
+}
+
+/* ═══════════════════════════════════════════
+   Scroll Fade — scroll-aware edge masks
+   Outside @layer to prevent Tailwind stripping
+   ═══════════════════════════════════════════ */
+
+.scroll-fade,
+.scroll-fade-bottom {
+  --sf-size: 32px;
+}
+
+/* Horizontal scroll fade variant */
+.scroll-fade-x {
+  --sf-size: 24px;
+}
+
+.scroll-fade-x[data-scroll-left]:not([data-scroll-right]) {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--sf-size)
+  );
+  mask-image: linear-gradient(to right, transparent, black var(--sf-size));
+}
+
+.scroll-fade-x[data-scroll-right]:not([data-scroll-left]) {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+.scroll-fade-x[data-scroll-left][data-scroll-right] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+/* No scroll: no mask needed (default) */
+
+/* Scrolled down only: fade top */
+.scroll-fade:is([data-scroll-top], [data-scrollable~="start"]):not(
+    :is([data-scroll-bottom], [data-scrollable~="end"])
+  ) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size)
+  );
+  mask-image: linear-gradient(to bottom, transparent, black var(--sf-size));
+}
+
+/* Content below only: fade bottom */
+.scroll-fade:is([data-scroll-bottom], [data-scrollable~="end"]):not(
+    :is([data-scroll-top], [data-scrollable~="start"])
+  ) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+/* Both: fade top and bottom */
+.scroll-fade:is([data-scroll-top], [data-scrollable~="start"]):is(
+    [data-scroll-bottom],
+    [data-scrollable~="end"]
+  ) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--sf-size),
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+/* Explicit top boundary: only signal content continuing below. */
+.scroll-fade-bottom:is([data-scroll-bottom], [data-scrollable~="end"]) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--sf-size)),
+    transparent
+  );
+}
+
+/* Base UI accordion panels expose their measured height as a CSS variable.
+   Keep this unlayered so enter/exit styles win consistently in Tailwind v4. */
+.marketing-accordion-panel {
+  height: var(--accordion-panel-height);
+  overflow: hidden;
+  transition: height 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.marketing-accordion-panel[data-starting-style],
+.marketing-accordion-panel[data-ending-style] {
+  height: 0;
+}
+
+.marketing-accordion-panel > div {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 180ms ease-out,
+    transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.marketing-accordion-panel[data-starting-style] > div,
+.marketing-accordion-panel[data-ending-style] > div {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-accordion-panel,
+  .marketing-accordion-panel > div {
+    transition: none;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Pane Resize — active-drag state (useResizable)
+   Outside @layer alongside the other global state rules
+   ═══════════════════════════════════════════ */
+
+/* Set on <body> while a resize drag is live. Iframes must not receive
+   pointer events mid-drag (a widget iframe under the cursor would swallow
+   the stream and freeze the resize), and nothing should text-select. */
+body[data-resizing] {
+  cursor: col-resize;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body[data-resizing] iframe {
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════
+   Custom Scrollbars
+   ═══════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Opt-out for containers where the edge fade already signals overflow
+   (e.g. horizontal tab strips) and even a thin thumb reads as clutter. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════
+   Global Transition Defaults
+   ═══════════════════════════════════════════ */
+
+@layer base {
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"]:disabled {
+    cursor: default;
+  }
+  a,
+  button,
+  [role="button"] {
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Menu interaction states
+   Explicit pointer, focus, and highlighted states keep Base UI menus and
+   selects consistent instead of relying on focus-following-pointer behavior.
+   ═══════════════════════════════════════════ */
+
+[data-slot="dropdown-menu-item"],
+[data-slot="dropdown-menu-sub-trigger"],
+[data-slot="dropdown-menu-checkbox-item"],
+[data-slot="dropdown-menu-radio-item"] {
+  padding: 0.4rem 0.625rem;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+[data-slot="dropdown-menu-item"]:is(:hover, :focus, [data-highlighted]),
+[data-slot="dropdown-menu-sub-trigger"]:is(
+  :hover,
+  :focus,
+  [data-highlighted],
+  [data-popup-open]
+),
+[data-slot="dropdown-menu-checkbox-item"]:is(
+  :hover,
+  :focus,
+  [data-highlighted]
+),
+[data-slot="dropdown-menu-radio-item"]:is(:hover, :focus, [data-highlighted]),
+[data-slot="select-item"]:is(:hover, [data-highlighted]) {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.dark [data-slot="dropdown-menu-item"]:is(:hover, :focus, [data-highlighted]),
+.dark
+  [data-slot="dropdown-menu-sub-trigger"]:is(
+    :hover,
+    :focus,
+    [data-highlighted],
+    [data-popup-open]
+  ),
+.dark
+  [data-slot="dropdown-menu-checkbox-item"]:is(
+    :hover,
+    :focus,
+    [data-highlighted]
+  ),
+.dark
+  [data-slot="dropdown-menu-radio-item"]:is(:hover, :focus, [data-highlighted]),
+.dark [data-slot="select-item"]:is(:hover, [data-highlighted]) {
+  background-color: var(--surface-selected);
+}
+
+[data-slot="dropdown-menu-item"][data-variant="destructive"]:is(
+    :hover,
+    :focus,
+    [data-highlighted]
+  ) {
+  background-color: color-mix(in oklch, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+.dark
+  [data-slot="dropdown-menu-item"][data-variant="destructive"]:is(
+    :hover,
+    :focus,
+    [data-highlighted]
+  ) {
+  background-color: color-mix(in oklch, var(--destructive) 20%, transparent);
+}
+
+[data-slot="select-item"] {
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+[data-slot="dropdown-menu-content"] {
+  padding: 0.3rem;
+}
+[data-slot="dropdown-menu-separator"] {
+  margin-block: 0.3rem;
+}

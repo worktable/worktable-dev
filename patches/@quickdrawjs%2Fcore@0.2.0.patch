@@ -1,0 +1,108 @@
+diff --git a/src/editor.js b/src/editor.js
+index 28bba64c33109196c6b50d0646fd0e0c38a616fc..9221fd42d994d206055790c3fbff602a58f703a2 100644
+--- a/src/editor.js
++++ b/src/editor.js
+@@ -450,6 +450,8 @@ export class Editor {
+     if (this.readonly) return
+     if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
+     if (e.button === 2) return
++    // Drawing owns the gesture; suppress browser selection/compatibility mouse input.
++    e.preventDefault()
+     if (this.editing) this._commitText()
+     this.container.focus({ preventScroll: true })
+     const s = this._evPoint(e)
+@@ -483,8 +485,11 @@ export class Editor {
+     }
+     // in pen mode a finger never draws
+     if (this.penMode && e.pointerType === 'touch') return
+-    if (this._pointers.size > 2) return
+-    if (this.session?.type === 'pinch') return
++    if (this._pointers.size > 2 && e.pointerType !== 'pen') return
++    if (this.session?.type === 'pinch') {
++      if (e.pointerType !== 'pen') return
++      this._cancelSession()
++    }
+ 
+     const p = this.screenToPage(s.x, s.y)
+     if (e.button === 1 || this.spaceHeld || this.tool === 'hand') {
+@@ -519,6 +524,7 @@ export class Editor {
+       this._hoverCursor(e)
+       return
+     }
++    if (ss.pointerId !== undefined && ss.pointerId !== e.pointerId) return
+     // in pen mode a finger only ever steers the camera — a palm dragging
+     // across the glass must not extend the pen's stroke
+     if (this.penMode && e.pointerType === 'touch' && ss.type !== 'pinch' && ss.type !== 'panning') return
+@@ -584,6 +590,7 @@ export class Editor {
+       if (this._pinchPoints().length < 2) this.session = null
+       return
+     }
++    if (ss.pointerId !== undefined && ss.pointerId !== e.pointerId) return
+     // a palm lift in pen mode must not end the pen's live stroke
+     if (this.penMode && e.pointerType === 'touch' && ss.type !== 'panning') return
+     switch (ss.type) {
+@@ -591,7 +598,13 @@ export class Editor {
+         this.session = null
+         this._syncCursor()
+         return
+-      case 'drawing': return this._endDraw()
++      case 'drawing':
++        // The last movement may arrive only with pointerup, especially on quick marks.
++        if (e.type === 'pointerup') {
++          const s = this._evPoint(e)
++          this._extendDraw(e, this.screenToPage(s.x, s.y), true)
++        }
++        return this._endDraw()
+       case 'erasing': return this._endErase()
+       case 'lasering': return this._endLaser()
+       case 'lineish': return this._endLineish()
+@@ -669,21 +682,22 @@ export class Editor {
+       },
+     }
+     this.store.put(shape)
+-    this.session = { type: 'drawing', id, last: p }
++    this.session = { type: 'drawing', id, pointerId: e.pointerId, last: p }
+   }
+-  _extendDraw(e, p) {
++  _extendDraw(e, p, final = false) {
+     const ss = this.session
+     const shape = this.store.get(ss.id)
+     if (!shape) { this.session = null; return }
+     const minD = 1.25 / this.camera.z
+-    if (Math.hypot(p.x - ss.last.x, p.y - ss.last.y) < minD) return
++    const distance = Math.hypot(p.x - ss.last.x, p.y - ss.last.y)
++    if (distance === 0 || (!final && distance < minD)) return
+     ss.last = p
+     // coalesced points ride along for pens — extra fidelity is free
+-    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
++    const evs = !final && e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+     const pts = shape.props.pts.slice()
+     for (const ce of evs.length ? evs : [e]) {
+       const cp = this.screenToPage(...(() => { const r = this._evPoint(ce); return [r.x, r.y] })())
+-      pts.push(cp.x - shape.x, cp.y - shape.y, ce.pressure || 0.5)
++      pts.push(cp.x - shape.x, cp.y - shape.y, final ? pts[pts.length - 1] : (ce.pressure || 0.5))
+     }
+     this.store.update(ss.id, { props: { pts } })
+   }
+diff --git a/src/quickdraw.css b/src/quickdraw.css
+index 79f2c01f128107d0ec4d954085b28cff5e049f1e..17c74f383189562b703a75594949d3a9467da623 100644
+--- a/src/quickdraw.css
++++ b/src/quickdraw.css
+@@ -9,6 +9,9 @@
+   outline: none;
+   background: #fbf9f4;
+   touch-action: none;
++  -webkit-user-select: none;
++  user-select: none;
++  -webkit-touch-callout: none;
+   border-radius: inherit;
+   /* lets the watermark dodge the dock on narrow boards (see below) */
+   container-type: inline-size;
+@@ -357,6 +360,7 @@
+   margin: 0;
+   white-space: pre-wrap;
+   caret-color: currentColor;
++  -webkit-touch-callout: default;
+   -webkit-user-select: text;
+   user-select: text;
+ }

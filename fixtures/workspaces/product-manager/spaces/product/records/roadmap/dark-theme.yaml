@@ -1,0 +1,15 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "dark-theme"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "roadmap"
+data:
+  owner: "design"
+  quarter: "q1"
+  status: "shipped"
+  title: "Dark theme"

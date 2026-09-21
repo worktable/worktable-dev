@@ -1,0 +1,118 @@
+{
+  "type": "worktable.thread",
+  "version": 3,
+  "id": "thr_founder_boardprep01",
+  "location": {
+    "kind": "worktable"
+  },
+  "title": "Prepare the August board discussion",
+  "members": [
+    {
+      "id": "ptc_founder_maya01",
+      "kind": "human",
+      "name": "Maya",
+      "addedAt": "2026-08-14T18:00:00.000Z"
+    },
+    {
+      "id": "ptc_founder_atlas01",
+      "kind": "agent",
+      "name": "Atlas",
+      "addedAt": "2026-08-14T18:00:00.000Z"
+    }
+  ],
+  "identities": [
+    {
+      "id": "idt_founder_maya01",
+      "memberId": "ptc_founder_maya01",
+      "name": "Maya",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-14T18:00:00.000Z",
+      "updatedAt": "2026-08-14T18:19:00.000Z"
+    },
+    {
+      "id": "idt_founder_atlas01",
+      "memberId": "ptc_founder_atlas01",
+      "name": "Atlas",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-14T18:00:00.000Z",
+      "updatedAt": "2026-08-14T18:19:00.000Z"
+    }
+  ],
+  "revision": 4,
+  "messages": [
+    {
+      "id": "msg_founder_boardprep01",
+      "sequence": 1,
+      "authorIdentityId": "idt_founder_maya01",
+      "authorMemberId": "ptc_founder_maya01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_boardprep02",
+        "resolvedAt": "2026-08-14T18:07:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Build a concise board narrative from the operating plan, weekly review, and Q3 update. Lead with the decision we need, not a recap of every metric.",
+      "idempotencyKey": "founder-boardprep-1",
+      "createdAt": "2026-08-14T18:00:00.000Z"
+    },
+    {
+      "id": "msg_founder_boardprep02",
+      "sequence": 2,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "Suggested narrative: the core business is progressing, activation remains the constraint, and enterprise pull is worth serving only through one shared audit-export commitment. The board decision is whether that focus is sufficient before fundraising begins.",
+      "inReplyTo": "msg_founder_boardprep01",
+      "idempotencyKey": "founder-boardprep-2",
+      "createdAt": "2026-08-14T18:07:00.000Z"
+    },
+    {
+      "id": "msg_founder_boardprep03",
+      "sequence": 3,
+      "authorIdentityId": "idt_founder_maya01",
+      "authorMemberId": "ptc_founder_maya01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_boardprep04",
+        "resolvedAt": "2026-08-14T18:19:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Good. Add the downside case if activation stalls at 45%, then leave the agenda ready for review.",
+      "idempotencyKey": "founder-boardprep-3",
+      "createdAt": "2026-08-14T18:12:00.000Z"
+    },
+    {
+      "id": "msg_founder_boardprep04",
+      "sequence": 4,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "The downside case is now explicit: if activation stalls at 45%, growth remains referral-limited and the enterprise work becomes a costly distraction. The agenda is ready for review with that tradeoff beside the fundraising decision.",
+      "inReplyTo": "msg_founder_boardprep03",
+      "idempotencyKey": "founder-boardprep-4",
+      "createdAt": "2026-08-14T18:19:00.000Z"
+    }
+  ],
+  "createdAt": "2026-08-14T18:00:00.000Z",
+  "updatedAt": "2026-08-14T18:19:00.000Z"
+}

@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "design-zoe"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "hiring-pipeline"
+data:
+  candidate: "Zoë Bennett"
+  nextInterview: "2026-08-25"
+  nextStep: "Review work samples"
+  owner: "Inez"
+  priority: "high"
+  role: "Product designer"
+  stage: "sourcing"

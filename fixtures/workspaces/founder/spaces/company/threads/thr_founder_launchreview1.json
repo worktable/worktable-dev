@@ -1,0 +1,153 @@
+{
+  "type": "worktable.thread",
+  "version": 3,
+  "id": "thr_founder_launchreview1",
+  "location": {
+    "kind": "space",
+    "spaceId": "company"
+  },
+  "title": "Launch review: invitation experiment",
+  "members": [
+    {
+      "id": "ptc_founder_maya01",
+      "kind": "human",
+      "name": "Maya",
+      "addedAt": "2026-08-15T15:00:00.000Z"
+    },
+    {
+      "id": "ptc_founder_inez01",
+      "kind": "human",
+      "name": "Inez",
+      "addedAt": "2026-08-15T15:00:00.000Z"
+    },
+    {
+      "id": "ptc_founder_atlas01",
+      "kind": "agent",
+      "name": "Atlas",
+      "addedAt": "2026-08-15T15:00:00.000Z"
+    },
+    {
+      "id": "ptc_founder_scout01",
+      "kind": "agent",
+      "name": "Scout",
+      "addedAt": "2026-08-15T15:00:00.000Z"
+    }
+  ],
+  "identities": [
+    {
+      "id": "idt_founder_maya01",
+      "memberId": "ptc_founder_maya01",
+      "name": "Maya",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-15T15:00:00.000Z",
+      "updatedAt": "2026-08-15T15:18:00.000Z"
+    },
+    {
+      "id": "idt_founder_inez01",
+      "memberId": "ptc_founder_inez01",
+      "name": "Inez",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-15T15:00:00.000Z",
+      "updatedAt": "2026-08-15T15:18:00.000Z"
+    },
+    {
+      "id": "idt_founder_atlas01",
+      "memberId": "ptc_founder_atlas01",
+      "name": "Atlas",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-15T15:00:00.000Z",
+      "updatedAt": "2026-08-15T15:18:00.000Z"
+    },
+    {
+      "id": "idt_founder_scout01",
+      "memberId": "ptc_founder_scout01",
+      "name": "Scout",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-15T15:00:00.000Z",
+      "updatedAt": "2026-08-15T15:18:00.000Z"
+    }
+  ],
+  "revision": 4,
+  "messages": [
+    {
+      "id": "msg_founder_launch001",
+      "sequence": 1,
+      "authorIdentityId": "idt_founder_maya01",
+      "authorMemberId": "ptc_founder_maya01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_launch002",
+        "resolvedAt": "2026-08-15T15:07:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "@Atlas, turn the interview evidence into a launch recommendation. Keep the decision separate from the supporting detail.",
+      "idempotencyKey": "founder-launch-1",
+      "createdAt": "2026-08-15T15:00:00.000Z"
+    },
+    {
+      "id": "msg_founder_launch002",
+      "sequence": 2,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "Recommendation: launch the invite prompt after the first revisit and hold the collaborator preview for the next readout. The prompt addresses the clearest interview signal and gives us a result within one week.",
+      "inReplyTo": "msg_founder_launch001",
+      "idempotencyKey": "founder-launch-2",
+      "createdAt": "2026-08-15T15:07:00.000Z"
+    },
+    {
+      "id": "msg_founder_launch003",
+      "sequence": 3,
+      "authorIdentityId": "idt_founder_inez01",
+      "authorMemberId": "ptc_founder_inez01",
+      "notifyIdentityIds": [
+        "idt_founder_atlas01"
+      ],
+      "responseRequest": {
+        "identityId": "idt_founder_scout01",
+        "status": "responded",
+        "respondedBy": "msg_founder_launch004",
+        "resolvedAt": "2026-08-15T15:18:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [
+          "idt_founder_atlas01"
+        ],
+        "responseIdentityId": "idt_founder_scout01"
+      },
+      "body": "@Scout, check the measurement plan before we commit. @Atlas, the recommendation can stand unless the instrumentation changes the decision.",
+      "idempotencyKey": "founder-launch-3",
+      "createdAt": "2026-08-15T15:12:00.000Z"
+    },
+    {
+      "id": "msg_founder_launch004",
+      "sequence": 4,
+      "authorIdentityId": "idt_founder_scout01",
+      "authorMemberId": "ptc_founder_scout01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "The plan is measurable as written. Add one guardrail: invited teammates who open the Worktable but never return should not count as successful sharing. That keeps a stronger activation signal from being hidden by invite volume.",
+      "inReplyTo": "msg_founder_launch003",
+      "idempotencyKey": "founder-launch-4",
+      "createdAt": "2026-08-15T15:18:00.000Z"
+    }
+  ],
+  "createdAt": "2026-08-15T15:00:00.000Z",
+  "updatedAt": "2026-08-15T15:18:00.000Z"
+}

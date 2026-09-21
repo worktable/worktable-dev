@@ -1,0 +1,143 @@
+/*
+ * Print / Save-as-PDF styles.
+ *
+ * App chrome (sidebar, header, side panels, action bars) carries Tailwind
+ * `print:hidden`; this file handles what per-element utilities can't:
+ *  - un-clipping the fixed-height scroll shell so the doc flows and paginates
+ *  - neutralizing screen-only effects (scroll-fade masks, glass)
+ *  - pagination hygiene
+ * The dark class is stripped for the print job in __root.tsx (beforeprint),
+ * so the light token set applies without duplicating the palette here.
+ *
+ * Kept outside @layer for the same Tailwind v4 reason as glass/scroll-fade.
+ */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: var(--background) !important;
+  }
+
+  /* The app shell is a chain of fixed-height flex containers, each clipping
+     its child scroll area. Print needs every link in that chain to expand to
+     its content instead, or the doc is cut off after one page. */
+  * {
+    overflow: visible !important;
+  }
+  .h-dvh,
+  .h-full {
+    height: auto !important;
+  }
+
+  /* Screen-only effects: edge fades would mask print content; glass is
+     meaningless on paper. */
+  .scroll-fade,
+  .scroll-fade-x {
+    mask-image: none !important;
+    -webkit-mask-image: none !important;
+  }
+  .glass {
+    backdrop-filter: none !important;
+    background: transparent !important;
+  }
+
+  /* Portaled/floating UI has no print meaning. Fixed-position elements are
+     never wanted on paper — browsers repeat them on every printed page — so
+     hide them wholesale (annotation buttons, toasts, future floating chrome).
+     Portaled popups/overlays render under <body>, outside the print-hidden
+     header, so a menu left open at Cmd+P time would print without these. */
+  [data-sonner-toaster],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="popover-content"],
+  [data-slot="tooltip-content"],
+  [data-slot="select-content"],
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="drawer-overlay"],
+  [data-slot="drawer-content"],
+  .fixed {
+    display: none !important;
+  }
+
+  /* BlockNote editor overlays (formatting toolbar, slash/suggestion menus,
+     side menu, drag-handle menu) use bn-* classes, not our data-slot
+     attributes — hide them too if one is open at Cmd+P time. */
+  .bn-toolbar,
+  .bn-suggestion-menu,
+  .bn-grid-suggestion-menu,
+  .bn-side-menu,
+  .bn-menu-dropdown,
+  .bn-drag-handle-menu {
+    display: none !important;
+  }
+
+  /* Mermaid: interactive chrome (zoom toolbar, pan hint) and the authoring
+     shell (title row, Editor/Templates/Lock action row, templates palette,
+     CodeMirror source editor) are screen-only — print keeps just the
+     rendered diagram. A collapsed block prints as its placeholder card,
+     minus the interactive affordances ("Click to expand", unfold icon):
+     the diagram cannot be force-rendered for print (Mermaid renders async;
+     the snapshot is immediate) and collapsed is the state the author chose. */
+  .mermaid-toolbar,
+  .mermaid-authoring-header,
+  .mermaid-authoring-ui,
+  .mermaid-source-editor,
+  .mermaid-collapse-hint {
+    display: none !important;
+  }
+  .mermaid-block-shell {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* A panned/zoomed diagram would otherwise print its shifted viewport
+     instead of the full diagram. The transition must go too: the print
+     snapshot is taken immediately, mid-animation. */
+  .mermaid-zoom-layer {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  /* Mermaid SVGs are rendered once with the active theme's palette and can't
+     re-render synchronously inside beforeprint, so a dark-rendered diagram
+     would print pale labels on white. Instead, print it as a dark figure
+     card on its own canvas (the dark config's `background`, see
+     packages/types/src/mermaid.ts) so it stays readable. */
+  .mermaid-interactive-container {
+    break-inside: avoid;
+  }
+  /* The extra .bn-container prefix outranks blocknote.css's
+     `background-color: transparent !important` on the same element. */
+  .bn-container
+    [data-content-type="mermaid"]
+    .mermaid-interactive-container[data-theme-mode="dark"]
+    .mermaid-diagram-area,
+  .mermaid-interactive-container[data-theme-mode="dark"] .mermaid-diagram-area {
+    background-color: var(--mermaid-canvas-dark) !important;
+    border-radius: 10px;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Pagination hygiene. */
+  pre,
+  table,
+  blockquote,
+  figure,
+  img {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+  }
+}
+
+@page {
+  margin: 18mm 16mm;
+}

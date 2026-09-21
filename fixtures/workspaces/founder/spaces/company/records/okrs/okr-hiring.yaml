@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "okr-hiring"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "okrs"
+data:
+  keyResult: "Hire three engineers and one product designer"
+  objective: "Build the founding team deliberately"
+  owner: "Maya"
+  progress: 0.6
+  reviewDate: "2026-09-22"
+  status: "on-track"
+  trend: "improving"

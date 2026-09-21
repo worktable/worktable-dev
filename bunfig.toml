@@ -1,0 +1,9 @@
+# Bun configuration. The test preload runs before every test file to reset
+# process-global state (singletons, timers, path overrides) that would otherwise
+# leak between files in Bun's single-process test runner. See the preload file
+# for the full rationale.
+[test]
+preload = [
+  "./packages/server/test-sandbox.ts",
+  "./packages/server/test-setup.ts",
+]

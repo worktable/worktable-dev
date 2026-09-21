@@ -1,0 +1,34 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.recordSchema"
+id: "incidents"
+name: "Incidents"
+description: "Production incidents, linked to the affected service."
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+fields:
+  title:
+    required: true
+    type: "string"
+  severity:
+    values:
+      - "sev1"
+      - "sev2"
+      - "sev3"
+    required: true
+    type: "enum"
+  status:
+    values:
+      - "open"
+      - "mitigated"
+      - "resolved"
+    required: true
+    type: "enum"
+  service:
+    references: "services"
+    type: "reference"
+  openedAt:
+    type: "datetime"

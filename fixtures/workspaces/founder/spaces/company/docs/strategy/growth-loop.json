@@ -1,0 +1,101 @@
+[
+  {
+    "id": "h-growth",
+    "type": "heading",
+    "props": {
+      "level": 1,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "The collaboration growth loop",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "p-growth-1",
+    "type": "paragraph",
+    "props": {
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "The product grows when one person's useful artifact becomes shared team context, then gives an agent enough context to produce the next useful result.",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "h-growth-2",
+    "type": "heading",
+    "props": {
+      "level": 2,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Working model",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "m-growth",
+    "type": "mermaid",
+    "props": {
+      "data": "flowchart LR\n  create[Create useful work] --> share[Share with a teammate]\n  share --> context[Build shared context]\n  context --> agent[Delegate to an agent]\n  agent --> review[Review the result]\n  review --> create",
+      "title": "Collaboration loop",
+      "collapsed": "false",
+      "locked": "false"
+    },
+    "children": []
+  },
+  {
+    "id": "h-growth-3",
+    "type": "heading",
+    "props": {
+      "level": 2,
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "What we measure",
+        "styles": {}
+      }
+    ],
+    "children": []
+  },
+  {
+    "id": "p-growth-2",
+    "type": "paragraph",
+    "props": {
+      "textColor": "default",
+      "backgroundColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "First shared artifact, first returning collaborator, first accepted agent contribution, and weekly teams with all three.",
+        "styles": {}
+      }
+    ],
+    "children": []
+  }
+]

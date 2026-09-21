@@ -1,0 +1,40 @@
+Shared-module license scope
+
+The MIT License below applies only to these files and to this license notice:
+
+- src/theme/theme-config.ts
+- src/public-share-page.ts
+- src/components/button.tsx
+- src/hooks/use-scroll-fade-x.ts
+- src/lib/utils.ts
+- src/styles/backdrop.css
+- src/styles/globals.css
+- src/styles/shadcn-utilities.css
+- src/styles/theme.generated.css
+- src/styles/typeset.css
+
+All other files in this package remain governed by the repository root LICENSE
+or their own third-party notices. This is not an MIT license for the entire UI
+package. This notice grants no rights to Worktable trademarks or brand assets.
+
+MIT License
+
+Copyright (c) 2026 Reva Labs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

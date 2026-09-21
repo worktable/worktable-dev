@@ -1,0 +1,54 @@
+{
+  "type": "worktable.annotations",
+  "version": 1,
+  "spaceId": "company",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "annotations": [
+    {
+      "id": "ann_founder_weekly_review",
+      "spaceId": "company",
+      "target": {
+        "type": "doc",
+        "docPath": "strategy/growth-loop"
+      },
+      "category": "comment",
+      "status": "open",
+      "body": "Add the owner and expected readout date for the first sharing experiment before Monday's operating review.",
+      "author": {
+        "type": "user",
+        "id": "founder",
+        "name": "Maya"
+      },
+      "labels": [],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    },
+    {
+      "id": "ann_founder_design_partners",
+      "spaceId": "company",
+      "target": {
+        "type": "doc",
+        "docPath": "strategy/growth-loop"
+      },
+      "category": "instruction",
+      "status": "open",
+      "body": "Use the design partner notes and activation thread to challenge this loop. Reply with one missing step and the metric that would tell us it is working.",
+      "author": {
+        "type": "user",
+        "id": "founder",
+        "name": "Maya"
+      },
+      "labels": [
+        "agent-task",
+        "enterprise"
+      ],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    }
+  ],
+  "revision": "7d889bdf6f964126b38fb24605e493bdfaad618515aa3226450a8baa3d17ade6"
+}

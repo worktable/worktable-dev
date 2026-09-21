@@ -1,0 +1,15 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "fb-001"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "feedback"
+data:
+  feature: "offline-mode"
+  sentiment: "negative"
+  source: "app-store"
+  summary: "Wants to use the app on the subway"

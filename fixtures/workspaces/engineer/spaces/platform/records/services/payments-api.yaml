@@ -1,0 +1,14 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "payments-api"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "services"
+data:
+  name: "Payments API"
+  owner: "payments-core"
+  tier: "tier-1"

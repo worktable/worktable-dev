@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "okr-activation"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "okrs"
+data:
+  keyResult: "Raise team activation from 34% to 50%"
+  objective: "Make the first week feel indispensable"
+  owner: "Inez"
+  progress: 0.42
+  reviewDate: "2026-09-18"
+  status: "at-risk"
+  trend: "improving"

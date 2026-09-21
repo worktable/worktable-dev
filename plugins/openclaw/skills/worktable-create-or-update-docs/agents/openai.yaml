@@ -1,4 +1,0 @@
-interface:
-  display_name: "Create or update Worktable Docs"
-  short_description: "Draft and maintain durable workspace Docs"
-  default_prompt: "Use $worktable-create-or-update-docs to create or update this durable Worktable Doc."

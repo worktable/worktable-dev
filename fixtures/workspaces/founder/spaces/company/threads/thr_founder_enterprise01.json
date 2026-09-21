@@ -1,0 +1,119 @@
+{
+  "type": "worktable.thread",
+  "version": 3,
+  "id": "thr_founder_enterprise01",
+  "location": {
+    "kind": "space",
+    "spaceId": "company"
+  },
+  "title": "Find the common enterprise requirement",
+  "members": [
+    {
+      "id": "ptc_founder_maya01",
+      "kind": "human",
+      "name": "Maya",
+      "addedAt": "2026-08-13T16:30:00.000Z"
+    },
+    {
+      "id": "ptc_founder_atlas01",
+      "kind": "agent",
+      "name": "Atlas",
+      "addedAt": "2026-08-13T16:30:00.000Z"
+    }
+  ],
+  "identities": [
+    {
+      "id": "idt_founder_maya01",
+      "memberId": "ptc_founder_maya01",
+      "name": "Maya",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-13T16:30:00.000Z",
+      "updatedAt": "2026-08-13T16:53:00.000Z"
+    },
+    {
+      "id": "idt_founder_atlas01",
+      "memberId": "ptc_founder_atlas01",
+      "name": "Atlas",
+      "default": true,
+      "status": "active",
+      "createdAt": "2026-08-13T16:30:00.000Z",
+      "updatedAt": "2026-08-13T16:53:00.000Z"
+    }
+  ],
+  "revision": 4,
+  "messages": [
+    {
+      "id": "msg_founder_enterprise01",
+      "sequence": 1,
+      "authorIdentityId": "idt_founder_maya01",
+      "authorMemberId": "ptc_founder_maya01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_enterprise02",
+        "resolvedAt": "2026-08-13T16:38:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Read the design partner notes and tell me where Northstar and Cascade genuinely overlap. Separate shared requirements from requests that only sound similar.",
+      "idempotencyKey": "founder-enterprise-1",
+      "createdAt": "2026-08-13T16:30:00.000Z"
+    },
+    {
+      "id": "msg_founder_enterprise02",
+      "sequence": 2,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "The real overlap is a portable audit record with actor, source, timestamp, artifact, action, and human-review status. Northstar's weekly export and Cascade's quarterly evidence package can both consume that. Automated access reviews are Cascade-only; reusable client spaces are Fieldcraft-only.",
+      "inReplyTo": "msg_founder_enterprise01",
+      "idempotencyKey": "founder-enterprise-2",
+      "createdAt": "2026-08-13T16:38:00.000Z"
+    },
+    {
+      "id": "msg_founder_enterprise03",
+      "sequence": 3,
+      "authorIdentityId": "idt_founder_maya01",
+      "authorMemberId": "ptc_founder_maya01",
+      "notifyIdentityIds": [],
+      "responseRequest": {
+        "identityId": "idt_founder_atlas01",
+        "status": "responded",
+        "respondedBy": "msg_founder_enterprise04",
+        "resolvedAt": "2026-08-13T16:53:00.000Z"
+      },
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": "idt_founder_atlas01"
+      },
+      "body": "Draft the narrow validation plan in the partner notes and flag anything that requires a policy decision before engineering estimates it.",
+      "idempotencyKey": "founder-enterprise-3",
+      "createdAt": "2026-08-13T16:45:00.000Z"
+    },
+    {
+      "id": "msg_founder_enterprise04",
+      "sequence": 4,
+      "authorIdentityId": "idt_founder_atlas01",
+      "authorMemberId": "ptc_founder_atlas01",
+      "notifyIdentityIds": [],
+      "creationIntent": {
+        "notifyIdentityIds": [],
+        "responseIdentityId": null
+      },
+      "body": "I added a two-part validation plan to the partner notes: confirm the shared export schema with both teams, then test one sample package in each review workflow. Retention and access-removal policy remain separate decisions before engineering estimates delivery.",
+      "inReplyTo": "msg_founder_enterprise03",
+      "idempotencyKey": "founder-enterprise-4",
+      "createdAt": "2026-08-13T16:53:00.000Z"
+    }
+  ],
+  "createdAt": "2026-08-13T16:30:00.000Z",
+  "updatedAt": "2026-08-13T16:53:00.000Z"
+}

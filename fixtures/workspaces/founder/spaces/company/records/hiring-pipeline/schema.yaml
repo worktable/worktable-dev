@@ -1,0 +1,38 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.recordSchema"
+id: "hiring-pipeline"
+name: "Hiring pipeline"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+fields:
+  role:
+    required: true
+    type: "string"
+  candidate:
+    required: true
+    type: "string"
+  stage:
+    values:
+      - "sourcing"
+      - "screening"
+      - "onsite"
+      - "offer"
+      - "closed"
+    required: true
+    type: "enum"
+  owner:
+    type: "string"
+  priority:
+    values:
+      - "critical"
+      - "high"
+      - "normal"
+    type: "enum"
+  nextStep:
+    type: "string"
+  nextInterview:
+    type: "date"

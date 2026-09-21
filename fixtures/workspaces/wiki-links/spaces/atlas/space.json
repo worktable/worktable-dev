@@ -1,0 +1,11 @@
+{
+  "type": "worktable.space",
+  "version": 1,
+  "id": "atlas",
+  "name": "Field Atlas",
+  "description": "A small interlinked doc set for demonstrating links, backlinks, and trust signals.",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "createdBy": "user",
+  "settings": {}
+}

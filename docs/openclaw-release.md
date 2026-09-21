@@ -1,13 +1,14 @@
 # OpenClaw adapter releases
 
-The standalone adapter source lives in `plugins/openclaw`. It is generated
-from the private Worktable authoring repository by an explicit file allowlist;
-`SOURCE.json` records the upstream revision and hashes every exported file.
+The adapter source lives in `packages/openclaw-plugin` in this repository.
+Canonical Worktable skills live in `plugins/worktable/skills` and are copied into
+the package during its build. Edit those sources rather than generated package
+outputs.
 
 ## Prepare a release
 
-1. Merge and fully verify the corresponding private Worktable change.
-2. Generate a public-source update and merge it through a pull request.
+1. Make the change in the canonical source and update the package and plugin manifest versions together.
+2. Merge the reviewed pull request and confirm all required checks pass.
 3. Confirm the `OpenClaw plugin / Verify` check succeeds on `main`.
 4. Create a protected tag named `openclaw-v<package-version>` at that exact
    public commit. Do not create a GitHub Release, because Worktable's installer
@@ -24,7 +25,7 @@ new patch version rather than overwritten.
 The first release is manual. From a clean checkout of the protected tag:
 
 ```sh
-cd plugins/openclaw
+cd packages/openclaw-plugin
 bun install --frozen-lockfile
 bun run pack:dogfood
 clawhub package publish ./artifacts/worktable-openclaw-<version>.tgz \
@@ -38,7 +39,7 @@ clawhub package publish ./artifacts/worktable-openclaw-<version>.tgz \
   --source-repo worktable/worktable-dev \
   --source-commit "$(git rev-parse HEAD)" \
   --source-ref "openclaw-v<version>" \
-  --source-path plugins/openclaw \
+  --source-path packages/openclaw-plugin \
   --dry-run
 ```
 
@@ -50,3 +51,4 @@ locally retained artifact.
 After the first release exists, configure ClawHub trusted publishing for this
 repository and a dedicated, commit-pinned `workflow_dispatch` workflow. Never
 publish from a mutable branch or an unpinned reusable workflow.
+

@@ -1,0 +1,16 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "inc-005"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "incidents"
+data:
+  openedAt: "2025-10-28T20:00:00.000Z"
+  service: "reporting"
+  severity: "sev3"
+  status: "resolved"
+  title: "Reporting export timeouts"

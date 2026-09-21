@@ -1,0 +1,29 @@
+{
+  "name": "@worktable/desktop",
+  "version": "0.1.5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:runtime": "bun run scripts/prepare-runtime.ts",
+    "prepare:runtime:fresh": "bun run scripts/prepare-runtime.ts --rebuild",
+    "check:contracts": "bun run ../../scripts/testing/run.ts full --suite desktop-contracts",
+    "check:prepared": "bun run check:contracts",
+    "check": "bun run prepare:runtime && bun run check:contracts",
+    "test:browser": "bun run ../../scripts/testing/run.ts full --suite desktop-browser",
+    "dev:isolated": "bun run scripts/dev-isolated.ts",
+    "native:dev": "bun run prepare:runtime && tauri dev",
+    "native:dev:isolated": "bun run prepare:runtime && tauri dev --config src-tauri/tauri.isolated.conf.json --additional-watch-folders ../ui",
+    "native:build:prepared": "tauri build && bun run scripts/verify-bundle.ts",
+    "release:prepare": "bun run prepare:runtime && bun run check:prepared",
+    "native:build:release:prepared": "tauri build --bundles app,dmg --config src-tauri/tauri.release.conf.json",
+    "native:build:staging:prepared": "tauri build --features staging --bundles app,dmg --config src-tauri/tauri.staging.conf.json && WORKTABLE_DESKTOP_EXPECTED_ENVIRONMENT=staging WORKTABLE_DESKTOP_BUNDLE_PATH='src-tauri/target/release/bundle/macos/Worktable Staging.app' bun run scripts/verify-bundle.ts",
+    "release:finalize": "bun run scripts/finalize-release-dmg.ts && bun run scripts/prepare-updater-release.ts && bun run scripts/verify-release-dmg.ts && bun run scripts/verify-release-updater.ts",
+    "native:build": "bun run prepare:runtime:fresh && bun run native:build:prepared",
+    "native:build:staging": "bun run prepare:runtime:fresh && bun run native:build:staging:prepared",
+    "ci": "bun run prepare:runtime:fresh && bun run check:prepared && bun run native:build:prepared && bun run scripts/smoke-bundle.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

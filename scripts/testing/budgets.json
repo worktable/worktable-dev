@@ -1,0 +1,15 @@
+{
+  "requiredCeilingSeconds": 540,
+  "requiredP95SloSeconds": 240,
+  "minimumComparableRuns": 20,
+  "fullBrowserObservationRunThreshold": 10,
+  "maximumLaneConcentration": 0.25,
+  "maximumPeakRssMb": 6144,
+  "fileWarningLines": 1000,
+  "durationWarningsSeconds": {
+    "standard": 2,
+    "integration": 5,
+    "boundary": 15
+  },
+  "bareSleepBaseline": {}
+}

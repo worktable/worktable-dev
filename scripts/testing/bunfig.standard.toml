@@ -1,0 +1,3 @@
+# Canonical Bun configuration for tests that do not own server process globals.
+# Server suites use packages/server/bunfig.toml instead.
+[test]

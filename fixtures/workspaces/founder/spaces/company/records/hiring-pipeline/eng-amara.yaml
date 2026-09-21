@@ -1,0 +1,18 @@
+# Worktable vNext canonical YAML. Edit carefully.
+version: 1
+kind: "worktable.record"
+id: "eng-amara"
+createdAt: "2026-01-01T00:00:00.000Z"
+updatedAt: "2026-01-01T00:00:00.000Z"
+createdBy: "user"
+metadata:
+  {}
+collectionId: "hiring-pipeline"
+data:
+  candidate: "Amara Okafor"
+  nextInterview: "2026-08-18"
+  nextStep: "Offer review with references"
+  owner: "Maya"
+  priority: "critical"
+  role: "Product engineer"
+  stage: "offer"

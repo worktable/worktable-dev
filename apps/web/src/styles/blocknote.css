@@ -1,0 +1,883 @@
+@import "./blocknote-theme.generated.css";
+
+/* BlockNote requires resolved hex/rgb color strings. The generated import
+   above adapts the canonical theme without making this file a second palette. */
+
+/* ============================================
+   Editor Container
+   ============================================ */
+
+.bn-container {
+  width: 100% !important;
+  background: transparent !important;
+}
+
+/* ============================================
+   Base Editor Styles
+   ============================================ */
+
+.bn-editor {
+  color: var(--reading-foreground) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 480 !important;
+  font-size: 16px !important;
+  line-height: 1.9 !important;
+  letter-spacing: 0.02em !important;
+  word-spacing: 0.02em !important;
+  padding: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  background: transparent !important;
+}
+
+/* Body text: more breathing room than BlockNote's default 1.5 */
+.bn-editor .bn-block-outer:has(> .bn-block > [data-content-type="paragraph"]) {
+  line-height: 1.85 !important;
+}
+
+/* Lists should read as grouped content, but wrapped items need air. */
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="bulletListItem"]),
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="numberedListItem"]),
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="checkListItem"]) {
+  line-height: 1.7 !important;
+  margin-bottom: 0.125rem !important;
+}
+
+.bn-editor [data-content-type="bulletListItem"] .bn-inline-content,
+.bn-editor [data-content-type="numberedListItem"] .bn-inline-content,
+.bn-editor [data-content-type="checkListItem"] .bn-inline-content {
+  letter-spacing: 0.02em !important;
+}
+
+/* Body text letter spacing */
+.bn-editor [data-content-type="paragraph"] .bn-inline-content {
+  letter-spacing: 0.02em !important;
+}
+
+/* Headings: tight tracking like NoteSync */
+.bn-editor [data-content-type="heading"] {
+  color: var(--foreground) !important;
+  padding-top: 0 !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* Breathing room before headings */
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"]:not([data-level])
+  ) {
+  margin-top: 1.75rem !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="2"]
+  ) {
+  margin-top: 1.25rem !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="3"]
+  ) {
+  margin-top: 1rem !important;
+}
+
+/* ============================================
+   Heading Styles
+   ============================================ */
+
+.bn-editor [data-content-type="heading"] {
+  padding-top: 0 !important;
+  font-family: var(--font-display) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em !important;
+}
+
+/* Breathing room before headings */
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"]:not([data-level])
+  ) {
+  margin-top: 2rem !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="2"]
+  ) {
+  margin-top: 1.25rem !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="3"]
+  ) {
+  margin-top: 1rem !important;
+}
+
+/* ============================================
+   Placeholder Text
+   ============================================ */
+
+.bn-editor .bn-block-content[data-is-empty-and-focused="true"]::before,
+.bn-editor .bn-block-content[data-is-empty="true"]:first-child::before {
+  color: var(--muted-foreground) !important;
+  font-style: italic !important;
+}
+
+/* ============================================
+   Link Styling
+   ============================================ */
+
+.bn-editor a {
+  color: var(--primary) !important;
+  text-decoration: underline !important;
+  text-decoration-color: color-mix(
+    in oklch,
+    var(--primary) 40%,
+    transparent
+  ) !important;
+  text-underline-offset: 2px !important;
+  text-decoration-thickness: 1px !important;
+  transition:
+    text-decoration-color 0.15s ease,
+    color 0.15s ease !important;
+}
+
+.bn-editor a:hover {
+  text-decoration-color: var(--primary) !important;
+}
+
+/* ============================================
+   Inline Code
+   ============================================ */
+
+.bn-editor [data-content-type]:not([data-content-type="codeBlock"]) code {
+  font-family: var(--font-mono) !important;
+  font-size: 0.875em !important;
+  color: var(--code-accent-foreground) !important;
+  background: var(--code-accent-background) !important;
+  border-radius: 0.375rem !important;
+  padding: 0.1em 0.35em !important;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ============================================
+   Code Block Styling
+   ============================================ */
+
+/* Code block: font and wrapping */
+.bn-editor [data-content-type="codeBlock"] pre,
+.bn-editor [data-content-type="codeBlock"] code {
+  font-family: var(--font-mono) !important;
+  font-size: 0.8rem !important;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Remove BlockNote's default border/outline on code block inner elements */
+.bn-editor [data-content-type="codeBlock"] code,
+.bn-editor [data-content-type="codeBlock"] .bn-inline-content {
+  border: none !important;
+  outline: none !important;
+}
+
+/* Code block: background, text color, border radius.
+   BlockNote defaults: bg #161616, color #fff.
+   Override both to match our design system. */
+.bn-block-content[data-content-type="codeBlock"] {
+  border-radius: var(--radius) !important;
+  background-color: var(--muted) !important;
+  color: var(--reading-foreground) !important;
+}
+
+.bn-container[data-color-scheme="dark"]
+  .bn-block-content[data-content-type="codeBlock"] {
+  background-color: var(--secondary) !important;
+}
+
+/* Remove prosemirror-highlight's node-level background.
+   The plugin sets --prosemirror-highlight-bg and background inline
+   on the code block node. Override to transparent so our design
+   system surface colors show through. */
+.bn-editor [data-content-type="codeBlock"] pre,
+.bn-editor [data-content-type="codeBlock"] code {
+  background: transparent !important;
+}
+
+/* Shiki dual-theme token colors.
+   With themes: { light, dark }, shiki outputs:
+   style="color: #light-value; --shiki-dark: #dark-value"
+   The inline color is already correct for light mode.
+   In dark mode, override with the --shiki-dark CSS variable. */
+.bn-container[data-color-scheme="dark"] .shiki {
+  color: var(--shiki-dark) !important;
+}
+
+/* Language selector styling */
+.bn-block-content[data-content-type="codeBlock"] > div > select {
+  font-family: var(--font-mono) !important;
+  font-size: 0.7rem !important;
+}
+
+.bn-container[data-color-scheme="light"]
+  .bn-block-content[data-content-type="codeBlock"]
+  > div
+  > select {
+  color: var(--muted-foreground) !important;
+}
+
+.bn-container[data-color-scheme="dark"]
+  .bn-block-content[data-content-type="codeBlock"]
+  > div
+  > select {
+  color: var(--muted-foreground) !important;
+}
+
+/* Scrollbars come from the app-wide treatment in @worktable/ui globals.css
+   (--scrollbar-thumb tokens); only the caret stays editor-specific. */
+.bn-editor {
+  caret-color: var(--code-accent-foreground) !important;
+}
+
+/* ============================================
+   Slash Menu
+   ============================================ */
+
+.bn-slash-menu,
+.bn-suggestion-menu,
+.bn-editor [class*="slashMenu"] {
+  background: var(--popover) !important;
+  border: 1px solid var(--overlay-border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--popover-foreground) !important;
+  box-shadow: var(--overlay-floating-shadow) !important;
+}
+
+.bn-suggestion-menu .bn-suggestion-menu-item,
+.bn-slash-menu [class*="item"]:hover,
+.bn-editor [class*="slashMenu"] [class*="item"]:hover {
+  color: var(--popover-foreground) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.bn-suggestion-menu .bn-suggestion-menu-item:hover,
+.bn-suggestion-menu .bn-suggestion-menu-item[aria-selected="true"],
+.bn-suggestion-menu .bn-suggestion-menu-item[data-selected="true"],
+.bn-suggestion-menu .bn-suggestion-menu-item[data-hovered="true"],
+.bn-slash-menu [class*="item"]:hover,
+.bn-editor [class*="slashMenu"] [class*="item"]:hover {
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+.bn-slash-menu [class*="item"][aria-selected="true"],
+.bn-editor [class*="slashMenu"] [class*="item"][aria-selected="true"] {
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* ============================================
+   Formatting Toolbar
+   ============================================ */
+
+.bn-toolbar,
+.bn-editor [class*="toolbar"] {
+  background: var(--popover) !important;
+  border: 1px solid var(--overlay-border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--popover-foreground) !important;
+  box-shadow: var(--overlay-floating-shadow) !important;
+}
+
+.bn-toolbar button,
+.bn-editor [class*="toolbar"] button {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--popover-foreground) !important;
+  border-radius: calc(var(--radius) * 0.65) !important;
+}
+
+.bn-toolbar button:disabled,
+.bn-toolbar button[data-disabled="true"],
+.bn-editor [class*="toolbar"] button:disabled,
+.bn-editor [class*="toolbar"] button[data-disabled="true"] {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--muted-foreground) !important;
+  opacity: 0.55 !important;
+}
+
+@media (max-width: 767px) {
+  .worktable-editor-scroll-root {
+    scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 4rem);
+    scroll-padding-bottom: calc(
+      var(--app-mobile-toolbar-height, 56px) + 1.5rem
+    );
+  }
+
+  .worktable-editor-content {
+    padding-bottom: calc(
+      6rem + var(--app-mobile-toolbar-height, 56px) +
+        var(--app-keyboard-height, 0px)
+    ) !important;
+  }
+
+  .bn-mobile-formatting-toolbar {
+    bottom: var(
+      --app-mobile-toolbar-bottom,
+      var(--bn-mobile-keyboard-offset, 0px)
+    ) !important;
+    left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    right: max(8px, env(safe-area-inset-right, 0px)) !important;
+    padding-inline: 0;
+    padding-bottom: 0 !important;
+    transition: bottom 180ms ease !important;
+    transform: none !important;
+    will-change: bottom;
+  }
+
+  body[data-keyboard-open] .bn-mobile-formatting-toolbar {
+    padding-bottom: 0 !important;
+  }
+
+  .worktable-mobile-formatting-toolbar-shell[data-active="false"] {
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 1;
+  }
+
+  .worktable-mobile-formatting-toolbar-shell[data-active="true"] {
+    pointer-events: auto;
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .bn-mobile-formatting-toolbar .worktable-mobile-formatting-toolbar {
+    display: contents;
+  }
+
+  .bn-mobile-formatting-toolbar .bn-toolbar {
+    gap: 4px !important;
+    padding: 5px 10px !important;
+    border-radius: calc(var(--radius) + 6px) !important;
+    border-color: var(--overlay-border) !important;
+    background: var(--popover) !important;
+    box-shadow: var(--overlay-floating-shadow) !important;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .bn-mobile-formatting-toolbar .bn-toolbar button {
+    flex: 0 0 auto;
+    min-width: 42px !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    border-radius: calc(var(--radius) + 2px) !important;
+    font-size: 0.8125rem !important;
+    font-weight: 500 !important;
+  }
+
+  /* Text-bearing triggers (block-type select: icon + label + chevron) size
+     to their content; icon-only buttons keep the square touch target. */
+  .bn-mobile-formatting-toolbar .bn-toolbar button:has(svg ~ svg) {
+    width: auto !important;
+    min-width: max-content !important;
+    padding-inline: 12px !important;
+  }
+
+  .bn-mobile-formatting-toolbar .bn-toolbar button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .bn-menu-dropdown,
+  .bn-mobile-toolbar-select-dropdown,
+  .bn-color-picker-dropdown {
+    z-index: 1000 !important;
+  }
+
+  .bn-mobile-toolbar-select-dropdown [role="menuitem"],
+  .bn-color-picker-dropdown [role="menuitem"],
+  .bn-menu-dropdown [role="menuitem"] {
+    min-height: 42px;
+    border-radius: var(--radius) !important;
+    font-size: 0.875rem;
+  }
+
+  .bn-mobile-toolbar-select-dropdown,
+  .bn-color-picker-dropdown {
+    max-height: min(52dvh, 440px) !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* shadcn's menu-item class force-sizes any svg to 16px; the tick stays a
+     quiet 10px indicator. */
+  .bn-tick-icon {
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  .bn-color-picker-dropdown .bn-color-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 22px !important;
+    height: 22px !important;
+    border: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
+    border-radius: 6px;
+    background: var(--popover);
+    color: var(--foreground);
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .bn-color-picker-dropdown
+    .bn-color-icon[data-background-color]:not(
+      [data-background-color="default"]
+    ) {
+    color: var(--foreground);
+  }
+
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="default"] {
+    background: var(--popover);
+  }
+
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="default"] {
+    color: var(--foreground);
+  }
+
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="gray"] {
+    color: #9b9a97;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="brown"] {
+    color: #64473a;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="red"] {
+    color: #e03e3e;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="orange"] {
+    color: #d9730d;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="yellow"] {
+    color: #dfab01;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="green"] {
+    color: #4d6461;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="blue"] {
+    color: #0b6e99;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="purple"] {
+    color: #6940a5;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-text-color="pink"] {
+    color: #ad1a72;
+  }
+
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="gray"] {
+    background-color: #ebeced;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="brown"] {
+    background-color: #e9e5e3;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="red"] {
+    background-color: #fbe4e4;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="orange"] {
+    background-color: #f6e9d9;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="yellow"] {
+    background-color: #fbf3db;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="green"] {
+    background-color: #ddedea;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="blue"] {
+    background-color: #ddebf1;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="purple"] {
+    background-color: #eae4f2;
+    color: #172b4d !important;
+  }
+  .bn-color-picker-dropdown .bn-color-icon[data-background-color="pink"] {
+    background-color: #f4dfeb;
+    color: #172b4d !important;
+  }
+
+  .bn-suggestion-menu {
+    max-height: min(68dvh, 560px) !important;
+    padding: 6px !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bn-suggestion-menu .bn-suggestion-menu-item {
+    min-height: 52px !important;
+    padding: 10px 12px !important;
+    border-radius: calc(var(--radius) * 0.8) !important;
+    font-size: 0.9375rem !important;
+  }
+
+  .bn-menu-dropdown,
+  .bn-drag-handle-menu {
+    min-width: 168px !important;
+    padding: 6px !important;
+  }
+
+  .bn-menu-dropdown :where(.bn-menu-item, [role="menuitem"]),
+  .bn-drag-handle-menu :where(.bn-menu-item, [role="menuitem"]) {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 11px 12px !important;
+    border-radius: calc(var(--radius) * 0.8) !important;
+    font-size: 0.9375rem !important;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bn-toolbar button:hover,
+  .bn-editor [class*="toolbar"] button:hover {
+    background: var(--accent) !important;
+    border-color: transparent !important;
+    color: var(--accent-foreground) !important;
+  }
+}
+
+.bn-toolbar button[data-active="true"],
+.bn-editor [class*="toolbar"] button[data-active="true"],
+.bn-toolbar button[data-selected="true"],
+.bn-editor [class*="toolbar"] button[data-selected="true"],
+.bn-toolbar button[aria-pressed="true"],
+.bn-editor [class*="toolbar"] button[aria-pressed="true"],
+.bn-toolbar button[data-state="on"],
+.bn-editor [class*="toolbar"] button[data-state="on"] {
+  background: var(--accent) !important;
+  color: var(--primary) !important;
+  border-color: color-mix(in oklch, var(--primary) 35%, transparent) !important;
+}
+
+.bn-menu-dropdown,
+.bn-drag-handle-menu {
+  background: var(--popover) !important;
+  border: 1px solid var(--overlay-border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--popover-foreground) !important;
+  box-shadow: var(--overlay-floating-shadow) !important;
+}
+
+.bn-menu-dropdown .bn-menu-item,
+.bn-drag-handle-menu .bn-menu-item {
+  width: 100% !important;
+  justify-content: flex-start !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--popover-foreground) !important;
+  border-radius: calc(var(--radius) * 0.65) !important;
+}
+
+.bn-menu-dropdown .bn-menu-item:hover,
+.bn-menu-dropdown .bn-menu-item:focus,
+.bn-menu-dropdown .bn-menu-item[data-highlighted],
+.bn-drag-handle-menu .bn-menu-item:hover,
+.bn-drag-handle-menu .bn-menu-item:focus,
+.bn-drag-handle-menu .bn-menu-item[data-highlighted] {
+  background: var(--accent) !important;
+  border-color: transparent !important;
+  color: var(--accent-foreground) !important;
+}
+
+/* ============================================
+   Side Menu (drag handle + add button)
+   ============================================ */
+
+.bn-side-menu,
+.bn-editor [class*="sideMenu"] {
+  color: var(--muted-foreground) !important;
+}
+
+.bn-side-menu :where(button, .bn-button),
+.bn-editor [class*="sideMenu"] :where(button, .bn-button) {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--muted-foreground) !important;
+  border-radius: calc(var(--radius) * 0.65) !important;
+}
+
+/* BlockNote positions the side menu against the block content box.
+   Body text needs a small optical nudge. Heading handles should center
+   on the visible text line, not BlockNote's oversized heading box. */
+.bn-side-menu[data-block-type="paragraph"],
+.bn-side-menu[data-block-type="bulletListItem"],
+.bn-side-menu[data-block-type="numberedListItem"],
+.bn-side-menu[data-block-type="checkListItem"] {
+  translate: 0 3px;
+}
+
+.bn-side-menu[data-block-type="heading"] {
+  translate: 0 0;
+}
+
+.bn-side-menu[data-block-type="heading"][data-level="1"] {
+  height: 58px !important;
+}
+
+.bn-side-menu[data-block-type="heading"][data-level="2"] {
+  height: 44px !important;
+}
+
+.bn-side-menu[data-block-type="heading"][data-level="3"] {
+  height: 34px !important;
+}
+
+.bn-side-menu button:hover,
+.bn-editor [class*="sideMenu"] button:hover {
+  background: var(--accent) !important;
+  color: var(--foreground) !important;
+}
+
+/* Hide BlockNote's nested-list guide rail. Indentation and bullets remain. */
+.bn-editor
+  .bn-block-group
+  .bn-block:not(:has(.bn-toggle-wrapper))
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed])::before {
+  border-left: none !important;
+}
+
+/* ============================================
+   Quotes
+   ============================================ */
+
+.bn-editor [data-content-type="quote"] {
+  padding-block: 0.25rem !important;
+}
+
+.bn-editor [data-content-type="quote"] blockquote {
+  margin: 0 !important;
+  border-left: 3px solid color-mix(in oklch, var(--primary) 72%, transparent) !important;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
+  background: var(--surface-tint) !important;
+  color: var(--reading-foreground) !important;
+  padding: 1.25rem 1.125rem !important;
+  font-style: normal !important;
+  line-height: 1.75 !important;
+}
+
+.bn-editor [data-content-type="quote"] blockquote .bn-inline-content {
+  letter-spacing: 0.015em !important;
+}
+
+/* ============================================
+   Tables
+   ============================================ */
+
+.bn-editor [data-content-type="table"] .tableWrapper {
+  border-radius: var(--radius-lg) !important;
+}
+
+.bn-editor [data-content-type="table"] table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  overflow: hidden !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--card) !important;
+}
+
+.bn-editor [data-content-type="table"] th,
+.bn-editor [data-content-type="table"] td {
+  border: 0 !important;
+  border-right: 1px solid var(--border) !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 0.625rem 0.75rem !important;
+  vertical-align: top !important;
+}
+
+.bn-editor [data-content-type="table"] th:last-child,
+.bn-editor [data-content-type="table"] td:last-child {
+  border-right: 0 !important;
+}
+
+.bn-editor [data-content-type="table"] tr:last-child th,
+.bn-editor [data-content-type="table"] tr:last-child td {
+  border-bottom: 0 !important;
+}
+
+.bn-editor [data-content-type="table"] th {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+  font-weight: 600 !important;
+}
+
+.bn-editor [data-content-type="table"] th > p,
+.bn-editor [data-content-type="table"] td > p {
+  min-height: 1.65rem !important;
+  line-height: 1.65 !important;
+}
+
+/* ============================================
+   Menus & Dropdowns (general)
+   ============================================ */
+
+.bn-editor [class*="menu"] {
+  border-color: var(--border) !important;
+}
+
+/* ============================================
+   ProseMirror Selection Override
+   ============================================ */
+
+/* One token ring on the selected node. BlockNote's own stylesheet also
+   paints a hardcoded 4px #64a0ff outline on the CHILD of selected block
+   content (`.bn-block-content.ProseMirror-selectednode > *` and
+   `.ProseMirror-selectednode > .bn-block-content > *`) — it double-ringed
+   image/file blocks and escaped every node-level override, so the child
+   rules are neutralized globally here. */
+.ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in oklch, var(--primary) 40%, transparent) !important;
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.ProseMirror .bn-block-content.ProseMirror-selectednode > *,
+.ProseMirror .ProseMirror-selectednode > .bn-block-content > * {
+  outline: none !important;
+}
+
+/* ============================================
+   Mermaid Block
+   The block UI is first-party (worktable-mermaid-block.tsx) and styled
+   with Tailwind; only what Tailwind can't reach lives here.
+   ============================================ */
+
+/* Diagram SVG: colors come from mermaid.initialize() theme variables; the
+   SVG only needs our font and a transparent background. */
+[data-content-type="mermaid"] svg {
+  font-family: var(--font-sans) !important;
+  background-color: transparent !important;
+}
+
+/* CodeMirror source editor: surface + gutter on tokens; the light/dark
+   token colors come from the CodeMirror theme picked in the component. */
+[data-content-type="mermaid"] .cm-editor {
+  font-family: var(--font-mono);
+  background-color: var(--secondary);
+}
+
+[data-content-type="mermaid"] .cm-editor .cm-gutters {
+  background-color: color-mix(
+    in oklch,
+    var(--secondary) 85%,
+    var(--background)
+  );
+  color: var(--muted-foreground);
+  border-right: 1px solid var(--border);
+}
+
+[data-content-type="mermaid"] .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* ============================================
+   Mermaid "Tap to Activate" Touch Handling
+   ============================================ */
+
+/* Override the plugin's inline touch-action: none so page scrolls through
+   diagrams by default. The JS handler (mermaid-touch-handler.ts) toggles
+   this to "none" when a diagram is activated for interaction. */
+.bn-editor [data-content-type="mermaid"] .mermaid-diagram-area {
+  touch-action: auto !important;
+}
+
+/* When a diagram is activated, restore touch-action so plugin handlers work */
+.bn-editor
+  [data-content-type="mermaid"].mermaid-touch-active
+  .mermaid-diagram-area {
+  touch-action: none !important;
+}
+
+/* Active diagram visual indicator: subtle border glow */
+.bn-editor
+  [data-content-type="mermaid"].mermaid-touch-active
+  .mermaid-interactive-container {
+  outline: 1px solid color-mix(in oklch, var(--primary) 24%, transparent) !important;
+  outline-offset: -1px;
+}
+
+/* "Tap to interact" hint bubble */
+.mermaid-touch-hint {
+  background: color-mix(in oklch, var(--foreground) 62%, transparent);
+  color: var(--background);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: none;
+}
+
+/* Dark mode hint */
+.bn-container[data-color-scheme="dark"] .mermaid-touch-hint {
+  background: color-mix(in oklch, var(--muted) 85%, transparent);
+  color: hsl(25 14% 10%);
+}
+
+/* Prevent ProseMirror from selecting/focusing mermaid blocks on touch.
+   This stops the blue focus ring, text selection, keyboard popup, and
+   accidental block deletion from a stray keystroke. */
+[data-content-type="mermaid"] .mermaid-interactive-container,
+[data-content-type="mermaid"] .mermaid-diagram-area,
+[data-content-type="mermaid"] .mermaid-diagram-area * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* ---- Mobile touch: suppress focus ring + keyboard on mermaid blocks ---- */
+@media (pointer: coarse) {
+  /* Kill the ProseMirror selection outline on mermaid blocks and their
+     parent wrappers. Multiple selectors because ProseMirror may add
+     .ProseMirror-selectednode at different levels of the DOM tree. */
+  .ProseMirror [data-content-type="mermaid"].ProseMirror-selectednode,
+  .ProseMirror .ProseMirror-selectednode:has([data-content-type="mermaid"]),
+  .ProseMirror .ProseMirror-selectednode [data-content-type="mermaid"] {
+    outline: none !important;
+  }
+
+  /* Diagram area is non-interactive by default; CSS backs up the JS
+     contenteditable=false approach */
+  [data-content-type="mermaid"] .mermaid-diagram-area {
+    pointer-events: none;
+  }
+
+  /* Re-enable when touch-activated */
+  [data-content-type="mermaid"].mermaid-touch-active .mermaid-diagram-area {
+    pointer-events: auto;
+  }
+
+  /* Overlay always needs to receive touches */
+  .mermaid-touch-overlay {
+    pointer-events: auto !important;
+  }
+
+  /* Toolbar buttons always tappable (zoom, fullscreen, download) */
+  [data-content-type="mermaid"] .mermaid-toolbar {
+    pointer-events: auto;
+  }
+  [data-content-type="mermaid"] .mermaid-toolbar button {
+    pointer-events: auto;
+  }
+}

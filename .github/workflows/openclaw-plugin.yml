@@ -8,7 +8,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/openclaw-plugin.yml"
-      - "plugins/openclaw/**"
+      - "packages/openclaw-plugin/**"
+      - "plugins/worktable/**"
+      - "bun.lock"
+      - "package.json"
   workflow_dispatch:
 
 permissions:
@@ -24,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: plugins/openclaw
+        working-directory: packages/openclaw-plugin
     steps:
       - name: Check out the public source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,17 +37,12 @@ jobs:
         with:
           bun-version: "1.3.14"
 
-      - name: Verify exported source hashes
-        run: |
-          jq -r '.files | to_entries[] | "\(.value)  \(.key)"' SOURCE.json |
-            sha256sum -c -
-
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
       - name: Test and typecheck
         run: |
-          bun test
+          bun run --cwd ../.. test:required --test-path-prefix packages/openclaw-plugin/
           bun run typecheck
 
       - name: Build and pack twice reproducibly

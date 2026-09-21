@@ -1,0 +1,32 @@
+{
+  "type": "worktable.annotations",
+  "version": 1,
+  "spaceId": "platform",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "annotations": [
+    {
+      "id": "ann_engineer_runbook_task",
+      "spaceId": "platform",
+      "target": {
+        "type": "doc",
+        "docPath": "runbooks/payment-failures"
+      },
+      "category": "instruction",
+      "status": "open",
+      "body": "Summarize the last three incidents (see the incidents collection) and propose a 5-item prevention checklist. Save it as a new doc in this space.",
+      "author": {
+        "type": "user",
+        "id": "lead",
+        "name": "Eng Lead"
+      },
+      "labels": [
+        "agent-task"
+      ],
+      "thread": [],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z",
+      "metadata": {}
+    }
+  ],
+  "revision": "f6d51865f13bfd1e9b2db560e607184bce28b20131114d5dd7650fd489cc8f9f"
+}

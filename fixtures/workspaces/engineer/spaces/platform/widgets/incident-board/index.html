@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Incident Board</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 0; padding: 16px; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      .row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee; }
+      .sev { font-weight: 600; width: 56px; }
+      .sev1 { color: #c0392b; } .sev2 { color: #d35400; } .sev3 { color: #7f8c8d; }
+    </style>
+  </head>
+  <body>
+    <h1>Open incidents</h1>
+    <div id="list">Loading…</div>
+    <script type="module">
+      // Record-reading widget: queries the 'incidents' collection via the widget runtime.
+      const api = globalThis.worktable;
+      const el = document.getElementById("list");
+      const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      try {
+        const result = api ? await api.records.query("incidents", { where: { status: "open" } }) : [];
+        const records = Array.isArray(result) ? result : (result.records || []);
+        el.innerHTML = records.length
+          ? records.map((r) => { const severity = String(r.data.severity || "?"); const severityClass = ["sev1", "sev2", "sev3"].includes(severity) ? severity : ""; return '<div class="row"><span class="sev ' + severityClass + '">' + escapeHtml(severity) + "</span><span>" + escapeHtml(r.data.title || r.id) + "</span></div>"; }).join("")
+          : "<p>No open incidents 🎉</p>";
+      } catch (e) {
+        el.textContent = "Incident board needs the Worktable record runtime.";
+      }
+    </script>
+  </body>
+</html>

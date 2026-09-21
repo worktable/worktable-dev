@@ -307,6 +307,7 @@
     },
   },
   "patchedDependencies": {
+    "@blocknote/core@0.54.2": "patches/@blocknote%2Fcore@0.54.2.patch",
     "@quickdrawjs/core@0.2.0": "patches/@quickdrawjs%2Fcore@0.2.0.patch",
   },
   "overrides": {

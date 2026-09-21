@@ -11,9 +11,11 @@ import {
   Fragment,
   Suspense,
   lazy,
+  memo,
   useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
 } from "react"
 import type { CSSProperties, ReactNode } from "react"
@@ -40,6 +42,7 @@ import {
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
+import { fontBootstrapScript } from "@worktable/ui/lib/fonts"
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import {
@@ -52,7 +55,7 @@ import {
 import { Toaster } from "@worktable/ui/components/sonner"
 const AppSidebar = lazy(() =>
   import("@/components/app-sidebar").then((module) => ({
-    default: module.AppSidebar,
+    default: memo(module.AppSidebar),
   }))
 )
 import { UpdateNudge } from "@/components/update-nudge"
@@ -157,6 +160,7 @@ function RootShell({ children }: { children: ReactNode }) {
         <DocumentOpeningData />
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+        <script dangerouslySetInnerHTML={{ __html: fontBootstrapScript }} />
         <script
           dangerouslySetInnerHTML={{ __html: documentOpeningLayoutScript }}
         />
@@ -754,11 +758,12 @@ function RootLayout() {
   const secondaryAction = pageMeta?.secondaryAction
   const SecondaryActionIcon = secondaryAction?.icon
 
-  const sidebarCtx = {
-    open: sidebarOpen,
-    setOpen: setSidebarOpen,
-    toggle,
-  }
+  // Document metadata updates the header repeatedly during opening. It should
+  // not rebuild the whole navigation tree or invalidate its sidebar context.
+  const sidebarCtx = useMemo(
+    () => ({ open: sidebarOpen, setOpen: setSidebarOpen, toggle }),
+    [sidebarOpen, toggle]
+  )
 
   // The login page renders bare, outside the sidebar/header chrome. Keep all
   // hooks above this branch so hook order stays stable across renders.

@@ -249,3 +249,155 @@ Current validated LAN build:
 The review password is unchanged and is deliberately not stored in this report.
 Use the sidebar for the 2,000-paragraph, Markdown, HTML, and rich-block fixtures.
 The workspace is isolated from real user documents.
+
+## Fresh original-code comparison of the saved checkpoint
+
+Commit `7c7cb76` is the validated implementation checkpoint. The old baseline
+process had stopped, so the final comparison restored commit `a035add` in an
+isolated checkout with its original dependencies (BlockNote 0.51.4) and original
+client assets. The failed connection before that restart produced no timing rows.
+Three alternating pairs per fixture, standard profile, all 18 with zero page errors:
+
+| Metric / median | Original | Checkpoint | Change |
+| --- | ---: | ---: | ---: |
+| Small document reading boundary | 3.711 s | 0.804 s | 78% sooner |
+| Small document editor ready | 5.213 s | 4.683 s | 10% sooner |
+| 2,000-paragraph reading boundary | 3.913 s | 0.775 s | 80% sooner |
+| 2,000-paragraph editor ready | 12.905 s | 7.540 s | 42% sooner |
+| HTML ready (top-page CDP profile) | 4.059 s | 3.479 s | 14% sooner |
+
+[All final standard runs](document-loading-final-standard-evidence.json).
+The large improvement is in first reading and large-document construction.
+Ordinary editing and HTML still miss their targets; do not describe the whole
+page as interactive in 0.8 seconds. The variation from earlier baseline medians
+also shows why results must be paired and why local samples are not field p75.
+
+
+### Stage 6: measured editor hot paths and deferred layout reads
+
+A separate instrumented CPU sample attributed repeated work to BlockNote's
+UniqueID duplicate detection (`indexOf` inside a per-ID filter) and repeatedly
+inverting the same transaction mapping. The dependency patch replaces that scan
+with a Set while preserving the previous equality/output behavior, and computes
+the inverse mapping once. It includes source, ESM and CJS changes; the generated
+notices include the complete modified source in addition to the upstream archive.
+The original source maps are not advertised for modified distribution files.
+The normal initial zero scroll offset no longer forces a layout write during
+editor reveal. Scroll fades use ResizeObserver's initial measurement instead of
+synchronous size reads inside React ref callbacks.
+
+Three alternating standard-profile pairs against the final stage-5 build:
+
+| Median | Stage 5 | Stage 6 |
+| --- | ---: | ---: |
+| Small editor ready | 5.030 s | 5.643 s |
+| 2,000-paragraph editor ready | 8.215 s | 7.512 s |
+
+All three large-document pairs improved (8.597→7.493, 8.215→7.702,
+7.909→7.512 seconds). The small-document comparison is mixed and its median
+regressed; do not claim this patch fixes small-document startup. The independent
+reading/input diagnostic measured a small cold editor at 4.480 seconds, showing
+why one favorable sample is insufficient.
+
+[All 12 paired runs](document-loading-stage6-evidence.json),
+[CPU attribution summary](document-loading-stage5-cpu-summary.json), and
+[reading/input diagnostic](document-loading-stage6-input-evidence.json) are saved.
+The CPU profile is diagnostic and includes profiler overhead; self-time can
+include native work attributed to a JavaScript caller.
+
+Stage-6 input diagnostic: small cold/warm automation-to-paint 86/59 ms, maximum
+EventTiming interaction duration 184/104 ms; large cold/warm 263/232 ms and
+544/392 ms respectively. These are session diagnostics, not field INP. Large
+editing responsiveness still misses the target.
+
+Validation: production build passed; all 141 server BlockNote, roundtrip,
+Markdown, Mermaid and Yjs tests passed; all seven browser document tests passed,
+including the new nested-copy/paste twice, unique IDs, original identity and
+save/reload regression. Initial versions of that test used End to position the
+caret, which did not work with the test browser's platform bindings; it now sets
+an explicit DOM selection before pressing Enter. A discarded low-level unit
+attempt mixed installed ProseMirror module instances; it was replaced by the
+actual browser integration test, where the application's singleton resolution
+applies. Neither invalid test attempt supplies performance evidence.
+
+### Stage 7 in progress: optional fonts and unused UI
+
+The shared stylesheet still imported Fontshare and Google Fonts CSS. Font
+`display=swap` does not remove the stylesheet's render-blocking dependency.
+The shell now requests these optional styles after a first paint opportunity,
+with nonmatching media until they arrive. The provider fonts and existing system
+fallbacks are unchanged; raw General Sans is not added to public source.
+This follows the browser's [render-blocking CSS behavior](https://web.dev/articles/critical-rendering-path/render-blocking-css)
+and [font-loading guidance](https://web.dev/articles/font-best-practices).
+
+Closed context panels now use the same deferred-mount primitive as closed sidebar
+dialogs, retaining their contents after first use for state and exit transitions.
+Sidebar context and component identity are stable across document-header updates.
+Production and controlled delayed-font validation are pending.
+
+The delayed-font experiment now has two valid pairs per format. Both font-provider
+CSS responses were deliberately held for eight seconds and then fulfilled with
+empty CSS, isolating the stylesheet dependency from actual font-file loading.
+
+| Median under the injected fault | Stage 6 | Stage 7 |
+| --- | ---: | ---: |
+| Small-document first contentful paint | 8.662 s | 0.680 s |
+| Small editor ready | 12.375 s | 4.894 s |
+| HTML route first contentful paint (shell) | 8.674 s | 0.746 s |
+| HTML document ready | 11.697 s | 3.578 s |
+
+For HTML, early shell paint is **not** document readiness. These results establish
+resilience to a stalled font stylesheet; they do not prove the user's particular
+slow session had this cause. Ordinary loading is measured separately. All eight
+accepted runs had no page errors. The initial HTML measurements were repeated
+because the measurement init script tried to use localStorage inside the sandbox;
+those four excluded runs and their reason remain in the raw artifact.
+
+[Delayed-font evidence](document-loading-delayed-font-evidence.json) and the
+[repeatable fault-injection script](document-loading-experiments/measure-delayed-fonts.mjs)
+are saved. Stage-7 production build and all 11 project typecheck tasks passed.
+All 15 canonical browser tests passed, including annotations after reopening,
+settings, nested HTML moves/archive/search, runtime readiness, and 5,000-block
+cold opening. Normal-profile timing and constrained input measurements follow.
+
+Three new alternating pairs against the restored original-code build, standard
+100 ms / 10 Mbps / 4× CPU profile, all 18 runs without page errors:
+
+| Median | Original code | Stage 7 |
+| --- | ---: | ---: |
+| Small document reading boundary | 4.063 s | 0.664 s |
+| Small editor ready | 5.440 s | 4.499 s |
+| 2,000-paragraph reading boundary | 4.408 s | 0.707 s |
+| 2,000-paragraph editor ready | 14.904 s | 7.489 s |
+| HTML ready, top-page CDP profile | 3.985 s | 3.511 s |
+
+[All standard-profile runs](document-loading-stage7-standard-evidence.json) are
+saved. The original large-editor result is slower than in the earlier session;
+use these alternating pairs together, rather than mixing sessions to enlarge a
+reported improvement. Saved reading is about 84% faster and large editing about
+50% faster in this session; ordinary editing and HTML remain above target.
+
+A separate [cold/warm input matrix](document-loading-stage7-input-evidence.json)
+measured constrained cold saved-reading boundaries of 1.831 s (small), 2.313 s
+(large), and 1.818 s (Markdown). Cold editing/viewer readiness was still
+7.235/13.288/6.336 s, respectively. Normal cold small/large maximum EventTiming
+interaction durations were 288/616 ms, so the overall 200 ms interaction target
+is not established. Warm small interactions were faster, but do not substitute
+those values for cold behavior. Typing/undo preserved fixture content in every run.
+
+Stage 7 review is served on the LAN at
+`http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10` with the existing
+fixture password (kept outside Git). Stable assets are copied to
+`/tmp/worktable-stage7-assets`; the previous validated stage 5 remains on port
+39085. These are isolated test workspaces.
+
+Next investigation: avoid redundant React.lazy suspension after successful code
+preloads. The installed React 19 production scheduler contains the 300 ms
+fallback throttle, and upstream tracks the
+[already-preloaded lazy-component case](https://github.com/react/react/issues/36569).
+Our renderer and editor both create fresh lazy wrapper promises at first render.
+A shared preloadable component can use an already-resolved component immediately
+and keep a stable chosen component for the lifetime of each mount. This requires
+validation and paired measurements; no speed gain is assumed yet. HTML still
+starts with a different shell loader before its common skeleton; a shared static
+HTML loading surface and explicit readiness/error handoff are also outstanding.

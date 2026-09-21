@@ -427,3 +427,56 @@ test("markdown document links navigate without restarting the application", asyn
   })
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin)
 })
+
+
+test("pasting nested blocks assigns new IDs and preserves existing identities", async ({ page }) => {
+  const response = await fetch(`${harness.apiUrl}/api/spaces/link-regression/docs/id-regression`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: [
+      { id: "original-parent", type: "paragraph", content: "Parent text", children: [
+        { id: "original-child", type: "paragraph", content: "Nested text" },
+      ] },
+      { id: "paste-target", type: "paragraph", content: "Paste here" },
+    ] }),
+  });
+  expect(response.ok).toBe(true);
+  await page.goto(appUrl("/spaces/link-regression/documents/id-regression"));
+  const editor = page.locator('.bn-editor[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  const parent = editor.locator('.bn-block-outer[data-id="original-parent"]');
+  const html = await parent.evaluate((node) => node.outerHTML);
+  const target = editor.locator('.bn-block-outer[data-id="paste-target"] .bn-inline-content');
+  for (let i = 0; i < 2; i++) {
+    const last = editor.locator('.bn-inline-content').last();
+    await last.click();
+    // Use a DOM range: the shared browser's platform key bindings can make
+    // End a no-op, leaving the caret in the middle of the clicked paragraph.
+    await last.evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    });
+    await page.keyboard.press("Enter");
+    await editor.evaluate((node, html) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("blocknote/html", html);
+      clipboardData.setData("text/plain", "Parent text\nNested text");
+      node.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+    }, html);
+    await expect(editor.getByText("Nested text", { exact: true })).toHaveCount(i + 2);
+  }
+  const allIds = await editor.locator('.bn-block-outer[data-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id")));
+  expect(new Set(allIds).size).toBe(allIds.length);
+  expect(allIds.every(Boolean)).toBe(true);
+  await expect(parent.locator('.bn-block-outer[data-id="original-child"]')).toHaveText("Nested text");
+  await expect(target).toHaveText("Paste here");
+  await flushDocPersist("id-regression");
+  await page.reload();
+  await expect(editor).toBeVisible();
+  await expect(editor.getByText("Nested text", { exact: true })).toHaveCount(3);
+  const savedIds = await editor.locator('.bn-block-outer[data-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id")));
+  expect(savedIds).toEqual(allIds);
+});

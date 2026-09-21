@@ -1275,7 +1275,7 @@ function BlockNoteDocPage({
     provider && readyEditor === provider && readyContent === provider
   )
   useEffect(() => {
-    if (!editorReadable) return
+    if (!editorReadable || previewScrollTop.current === 0) return
     const scrollRoot = editorPaneRef.current?.querySelector(
       ".worktable-editor-scroll-root"
     )

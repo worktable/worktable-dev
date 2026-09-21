@@ -1,3 +1,4 @@
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
   lazy,
@@ -6,7 +7,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type ReactNode,
 } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
@@ -307,13 +307,13 @@ function SettingsButton() {
           <UpdateIndicatorDot className="absolute top-2 right-2" />
         )}
       </button>
-      <DeferredDialog active={open}>
+      <DeferredMount active={open}>
         <SettingsDialog
           open={open}
           onOpenChange={setOpen}
           initialSection={section}
         />
-      </DeferredDialog>
+      </DeferredMount>
     </>
   )
 }
@@ -778,13 +778,13 @@ function SpaceSection({
         onClose={() => setNewWidgetOpen(false)}
         onCreate={handleCreateWidgetShell}
       />
-      <DeferredDialog active={newCollectionOpen}>
+      <DeferredMount active={newCollectionOpen}>
         <NewCollectionDialog
           open={newCollectionOpen}
           onClose={() => setNewCollectionOpen(false)}
           onCreate={handleCreateCollection}
         />
-      </DeferredDialog>
+      </DeferredMount>
     </>
   )
 }
@@ -3052,14 +3052,14 @@ export function AppSidebar() {
       </div>
 
       {/* New space dialog */}
-      <DeferredDialog active={newSpaceOpen}>
+      <DeferredMount active={newSpaceOpen}>
         <NewSpaceDialog
           open={newSpaceOpen}
           onClose={() => setNewSpaceOpen(false)}
           onCreate={handleCreateSpace}
           defaultGroup={activeGroup}
         />
-      </DeferredDialog>
+      </DeferredMount>
     </div>
   )
 }
@@ -3080,18 +3080,4 @@ function SpaceSectionWithViews({
       currentPath={currentPath}
     />
   )
-}
-
-// Load closed dialog code only on first use, then keep it mounted so exit
-// animations and state transitions continue to follow the dialog primitive.
-function DeferredDialog({
-  active,
-  children,
-}: {
-  active: boolean
-  children: ReactNode
-}) {
-  const [requested, setRequested] = useState(active)
-  if (active && !requested) setRequested(true)
-  return requested ? <Suspense fallback={null}>{children}</Suspense> : null
 }

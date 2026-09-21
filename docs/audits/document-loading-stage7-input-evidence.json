@@ -1,0 +1,2174 @@
+{
+  "origin": "http://192.168.2.211:39087",
+  "profiles": {
+    "normal": {
+      "latency": 100,
+      "downloadThroughput": 1250000,
+      "uploadThroughput": 500000,
+      "cpu": 4
+    },
+    "constrained": {
+      "latency": 400,
+      "downloadThroughput": 200000,
+      "uploadThroughput": 93750,
+      "cpu": 4
+    }
+  },
+  "note": "Single-session event durations are diagnostics, not field INP. Warm means a same-context reload after the cold opening and typing/undo check.",
+  "runs": [
+    {
+      "target": "rich-10",
+      "temperature": "cold",
+      "profile": "normal",
+      "readyMs": 4754,
+      "input": {
+        "automationToPaintOpportunityMs": 125.79999995231628
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 856.5,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 899.5,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.800000011920929,
+        "domainLookupStart": 3.899999976158142,
+        "domainLookupEnd": 3.899999976158142,
+        "connectStart": 3.899999976158142,
+        "secureConnectionStart": 0,
+        "connectEnd": 4.100000023841858,
+        "requestStart": 4.199999988079071,
+        "responseStart": 43.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 43.80000001192093,
+        "responseEnd": 113.30000001192093,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 745.3000000119209,
+        "domContentLoadedEventStart": 745.3000000119209,
+        "domContentLoadedEventEnd": 745.5,
+        "domComplete": 898.6999999880791,
+        "loadEventStart": 898.6999999880791,
+        "loadEventEnd": 899.5,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 828,
+          "duration": 0,
+          "paintTime": 610.3999999761581,
+          "presentationTime": 828
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 828,
+          "duration": 0,
+          "paintTime": 728.3000000119209,
+          "presentationTime": 828
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 123.60000002384186,
+          "duration": 107
+        },
+        {
+          "start": 559.3000000119209,
+          "duration": 58
+        },
+        {
+          "start": 645.6000000238419,
+          "duration": 89
+        },
+        {
+          "start": 974.3000000119209,
+          "duration": 461
+        },
+        {
+          "start": 1681.3999999761581,
+          "duration": 181
+        },
+        {
+          "start": 2062.399999976158,
+          "duration": 75
+        },
+        {
+          "start": 2139,
+          "duration": 167
+        },
+        {
+          "start": 2347.5,
+          "duration": 62
+        },
+        {
+          "start": 2470.300000011921,
+          "duration": 73
+        },
+        {
+          "start": 2690.699999988079,
+          "duration": 89
+        },
+        {
+          "start": 2821.5,
+          "duration": 58
+        },
+        {
+          "start": 2959.300000011921,
+          "duration": 299
+        },
+        {
+          "start": 3293.899999976158,
+          "duration": 93
+        },
+        {
+          "start": 3495.699999988079,
+          "duration": 100
+        },
+        {
+          "start": 3851.399999976158,
+          "duration": 141
+        },
+        {
+          "start": 4188.5,
+          "duration": 326
+        },
+        {
+          "start": 4835.800000011921,
+          "duration": 241
+        },
+        {
+          "start": 5245.899999976158,
+          "duration": 82
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 4835.199999988079,
+          "duration": 288,
+          "interactionId": 8561
+        },
+        {
+          "name": "pointerup",
+          "start": 4835.600000023842,
+          "duration": 288,
+          "interactionId": 8561
+        },
+        {
+          "name": "click",
+          "start": 4835.600000023842,
+          "duration": 288,
+          "interactionId": 8561
+        },
+        {
+          "name": "keydown",
+          "start": 5169.899999976158,
+          "duration": 56,
+          "interactionId": 8568
+        },
+        {
+          "name": "keyup",
+          "start": 5214.899999976158,
+          "duration": 16,
+          "interactionId": 8568
+        },
+        {
+          "name": "keydown",
+          "start": 5245.600000023842,
+          "duration": 96,
+          "interactionId": 8575
+        },
+        {
+          "name": "keypress",
+          "start": 5245.600000023842,
+          "duration": 96,
+          "interactionId": 8575
+        },
+        {
+          "name": "keyup",
+          "start": 5329.199999988079,
+          "duration": 16,
+          "interactionId": 8575
+        },
+        {
+          "name": "keydown",
+          "start": 5406.100000023842,
+          "duration": 48,
+          "interactionId": 8589
+        }
+      ],
+      "transferredBytes": 887405
+    },
+    {
+      "target": "rich-10",
+      "temperature": "warm",
+      "profile": "normal",
+      "readyMs": 3130,
+      "input": {
+        "automationToPaintOpportunityMs": 108.80000001192093
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 438.19999998807907,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 465.19999998807907,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.699999988079071,
+        "domainLookupStart": 8.699999988079071,
+        "domainLookupEnd": 8.699999988079071,
+        "connectStart": 8.699999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.699999988079071,
+        "requestStart": 10.800000011920929,
+        "responseStart": 20.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 20.69999998807907,
+        "responseEnd": 117.39999997615814,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 134.30000001192093,
+        "unloadEventEnd": 134.30000001192093,
+        "domInteractive": 251.80000001192093,
+        "domContentLoadedEventStart": 252.5999999642372,
+        "domContentLoadedEventEnd": 253.5999999642372,
+        "domComplete": 465.0999999642372,
+        "loadEventStart": 465.19999998807907,
+        "loadEventEnd": 465.19999998807907,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 428,
+          "duration": 0,
+          "paintTime": 242.89999997615814,
+          "presentationTime": 428
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 428,
+          "duration": 0,
+          "paintTime": 335.30000001192093,
+          "presentationTime": 428
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 124.59999996423721,
+          "duration": 85
+        },
+        {
+          "start": 259.5999999642372,
+          "duration": 84
+        },
+        {
+          "start": 470.69999998807907,
+          "duration": 186
+        },
+        {
+          "start": 810.5999999642372,
+          "duration": 55
+        },
+        {
+          "start": 1369.5,
+          "duration": 63
+        },
+        {
+          "start": 1770.199999988079,
+          "duration": 67
+        },
+        {
+          "start": 1995.0999999642372,
+          "duration": 132
+        },
+        {
+          "start": 2166.099999964237,
+          "duration": 64
+        },
+        {
+          "start": 2354.599999964237,
+          "duration": 63
+        },
+        {
+          "start": 2573.399999976158,
+          "duration": 103
+        },
+        {
+          "start": 2844.099999964237,
+          "duration": 108
+        },
+        {
+          "start": 3186.5,
+          "duration": 102
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 3184.800000011921,
+          "duration": 128,
+          "interactionId": 2689
+        },
+        {
+          "name": "pointerup",
+          "start": 3185,
+          "duration": 128,
+          "interactionId": 2689
+        },
+        {
+          "name": "click",
+          "start": 3185,
+          "duration": 128,
+          "interactionId": 2689
+        },
+        {
+          "name": "keydown",
+          "start": 3326.699999988079,
+          "duration": 40,
+          "interactionId": 2696
+        },
+        {
+          "name": "keyup",
+          "start": 3353.699999988079,
+          "duration": 16,
+          "interactionId": 2696
+        },
+        {
+          "name": "keydown",
+          "start": 3396.300000011921,
+          "duration": 64,
+          "interactionId": 2703
+        },
+        {
+          "name": "keypress",
+          "start": 3396.300000011921,
+          "duration": 64,
+          "interactionId": 2703
+        },
+        {
+          "name": "keydown",
+          "start": 3502.899999976158,
+          "duration": 24,
+          "interactionId": 2717
+        }
+      ],
+      "transferredBytes": 8895
+    },
+    {
+      "target": "rich-2000",
+      "temperature": "cold",
+      "profile": "normal",
+      "readyMs": 7757,
+      "input": {
+        "automationToPaintOpportunityMs": 264.89999997615814
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 731,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 887.4000000357628,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.9000000357627869,
+        "domainLookupStart": 6.800000011920929,
+        "domainLookupEnd": 6.800000011920929,
+        "connectStart": 6.800000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 7.700000047683716,
+        "requestStart": 9.100000023841858,
+        "responseStart": 54,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 54,
+        "responseEnd": 121.20000004768372,
+        "transferSize": 3861,
+        "encodedBodySize": 3561,
+        "decodedBodySize": 18970,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 829.2000000476837,
+        "domContentLoadedEventStart": 829.3000000119209,
+        "domContentLoadedEventEnd": 834.5,
+        "domComplete": 885.8000000119209,
+        "loadEventStart": 887.4000000357628,
+        "loadEventEnd": 887.4000000357628,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 748,
+          "duration": 0,
+          "paintTime": 614.8000000119209,
+          "presentationTime": 748
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 748,
+          "duration": 0,
+          "paintTime": 614.8000000119209,
+          "presentationTime": 748
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 136.4000000357628,
+          "duration": 91
+        },
+        {
+          "start": 560.2000000476837,
+          "duration": 66
+        },
+        {
+          "start": 663.5,
+          "duration": 78
+        },
+        {
+          "start": 935.4000000357628,
+          "duration": 530
+        },
+        {
+          "start": 1803.6000000238419,
+          "duration": 181
+        },
+        {
+          "start": 2163.5,
+          "duration": 82
+        },
+        {
+          "start": 2247.600000023842,
+          "duration": 143
+        },
+        {
+          "start": 2452.2000000476837,
+          "duration": 82
+        },
+        {
+          "start": 2538.900000035763,
+          "duration": 72
+        },
+        {
+          "start": 2823.7000000476837,
+          "duration": 78
+        },
+        {
+          "start": 2939.900000035763,
+          "duration": 64
+        },
+        {
+          "start": 3089.900000035763,
+          "duration": 290
+        },
+        {
+          "start": 3536.800000011921,
+          "duration": 143
+        },
+        {
+          "start": 3777,
+          "duration": 144
+        },
+        {
+          "start": 4842.300000011921,
+          "duration": 365
+        },
+        {
+          "start": 5276,
+          "duration": 130
+        },
+        {
+          "start": 5610.5,
+          "duration": 1361
+        },
+        {
+          "start": 6971.900000035763,
+          "duration": 134
+        },
+        {
+          "start": 7200.200000047684,
+          "duration": 251
+        },
+        {
+          "start": 7451.800000011921,
+          "duration": 61
+        },
+        {
+          "start": 7520.700000047684,
+          "duration": 72
+        },
+        {
+          "start": 8101,
+          "duration": 509
+        },
+        {
+          "start": 8611.600000023842,
+          "duration": 114
+        },
+        {
+          "start": 8777.300000011921,
+          "duration": 68
+        },
+        {
+          "start": 8926.600000023842,
+          "duration": 118
+        },
+        {
+          "start": 9252.200000047684,
+          "duration": 328
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 8098.400000035763,
+          "duration": 616,
+          "interactionId": 2080
+        },
+        {
+          "name": "pointerup",
+          "start": 8098.700000047684,
+          "duration": 616,
+          "interactionId": 2080
+        },
+        {
+          "name": "click",
+          "start": 8098.700000047684,
+          "duration": 616,
+          "interactionId": 2080
+        },
+        {
+          "name": "keydown",
+          "start": 8773.200000047684,
+          "duration": 128,
+          "interactionId": 2087
+        },
+        {
+          "name": "keyup",
+          "start": 8847.5,
+          "duration": 56,
+          "interactionId": 2087
+        },
+        {
+          "name": "keydown",
+          "start": 8897.700000047684,
+          "duration": 184,
+          "interactionId": 2094
+        },
+        {
+          "name": "keypress",
+          "start": 8897.700000047684,
+          "duration": 184,
+          "interactionId": 2094
+        },
+        {
+          "name": "keyup",
+          "start": 9046.5,
+          "duration": 40,
+          "interactionId": 2094
+        },
+        {
+          "name": "keydown",
+          "start": 9251.900000035763,
+          "duration": 376,
+          "interactionId": 2108
+        },
+        {
+          "name": "keyup",
+          "start": 9582.200000047684,
+          "duration": 40,
+          "interactionId": 2108
+        },
+        {
+          "name": "keyup",
+          "start": 9625.700000047684,
+          "duration": 24,
+          "interactionId": 2101
+        }
+      ],
+      "transferredBytes": 900556
+    },
+    {
+      "target": "rich-2000",
+      "temperature": "warm",
+      "profile": "normal",
+      "readyMs": 4906,
+      "input": {
+        "automationToPaintOpportunityMs": 247.4000000357628
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 516.5999999642372,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 574.8999999761581,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.5,
+        "domainLookupStart": 8.5,
+        "domainLookupEnd": 8.5,
+        "connectStart": 8.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.5,
+        "requestStart": 10.699999988079071,
+        "responseStart": 37.59999996423721,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 37.59999996423721,
+        "responseEnd": 115.80000001192093,
+        "transferSize": 3861,
+        "encodedBodySize": 3561,
+        "decodedBodySize": 18970,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 216.89999997615814,
+        "unloadEventEnd": 216.89999997615814,
+        "domInteractive": 348.19999998807907,
+        "domContentLoadedEventStart": 348.89999997615814,
+        "domContentLoadedEventEnd": 352.30000001192093,
+        "domComplete": 573.8999999761581,
+        "loadEventStart": 574.8999999761581,
+        "loadEventEnd": 574.8999999761581,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 492,
+          "duration": 0,
+          "paintTime": 398.0999999642372,
+          "presentationTime": 492
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 492,
+          "duration": 0,
+          "paintTime": 398.0999999642372,
+          "presentationTime": 492
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 201.69999998807907,
+          "duration": 105
+        },
+        {
+          "start": 439.5,
+          "duration": 83
+        },
+        {
+          "start": 645.5999999642372,
+          "duration": 192
+        },
+        {
+          "start": 1132.0999999642372,
+          "duration": 55
+        },
+        {
+          "start": 1632.0999999642372,
+          "duration": 50
+        },
+        {
+          "start": 1694.5,
+          "duration": 65
+        },
+        {
+          "start": 1884.300000011921,
+          "duration": 153
+        },
+        {
+          "start": 2136.699999988079,
+          "duration": 52
+        },
+        {
+          "start": 2271.699999988079,
+          "duration": 64
+        },
+        {
+          "start": 2393.899999976158,
+          "duration": 307
+        },
+        {
+          "start": 2823.199999988079,
+          "duration": 60
+        },
+        {
+          "start": 3075.5,
+          "duration": 1077
+        },
+        {
+          "start": 4153.199999988079,
+          "duration": 174
+        },
+        {
+          "start": 4420.899999976158,
+          "duration": 271
+        },
+        {
+          "start": 5191,
+          "duration": 387
+        },
+        {
+          "start": 5579.399999976158,
+          "duration": 94
+        },
+        {
+          "start": 5848.800000011921,
+          "duration": 81
+        },
+        {
+          "start": 6158.800000011921,
+          "duration": 404
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 5166,
+          "duration": 496,
+          "interactionId": 128
+        },
+        {
+          "name": "pointerup",
+          "start": 5166.199999988079,
+          "duration": 496,
+          "interactionId": 128
+        },
+        {
+          "name": "click",
+          "start": 5166.199999988079,
+          "duration": 496,
+          "interactionId": 128
+        },
+        {
+          "name": "keydown",
+          "start": 5703.599999964237,
+          "duration": 104,
+          "interactionId": 135
+        },
+        {
+          "name": "keyup",
+          "start": 5753,
+          "duration": 48,
+          "interactionId": 135
+        },
+        {
+          "name": "keydown",
+          "start": 5814.699999988079,
+          "duration": 152,
+          "interactionId": 142
+        },
+        {
+          "name": "keypress",
+          "start": 5814.699999988079,
+          "duration": 152,
+          "interactionId": 142
+        },
+        {
+          "name": "keyup",
+          "start": 5931.899999976158,
+          "duration": 40,
+          "interactionId": 142
+        },
+        {
+          "name": "keydown",
+          "start": 6153.800000011921,
+          "duration": 448,
+          "interactionId": 156
+        },
+        {
+          "name": "keyup",
+          "start": 6564.599999964237,
+          "duration": 40,
+          "interactionId": 156
+        }
+      ],
+      "transferredBytes": 22046
+    },
+    {
+      "target": "plain",
+      "temperature": "cold",
+      "profile": "normal",
+      "readyMs": 3868,
+      "input": null,
+      "errors": [],
+      "previewPaintOpportunityMs": 727.3999999761581,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 928.1999999880791,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.5,
+        "domainLookupStart": 4.5,
+        "domainLookupEnd": 4.600000023841858,
+        "connectStart": 4.600000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 4.800000011920929,
+        "requestStart": 4.899999976158142,
+        "responseStart": 75.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 75.80000001192093,
+        "responseEnd": 111.69999998807907,
+        "transferSize": 3121,
+        "encodedBodySize": 2821,
+        "decodedBodySize": 6909,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 593.5,
+        "domContentLoadedEventStart": 597.8999999761581,
+        "domContentLoadedEventEnd": 598.1999999880791,
+        "domComplete": 928.1000000238419,
+        "loadEventStart": 928.1000000238419,
+        "loadEventEnd": 928.1999999880791,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 724,
+          "duration": 0,
+          "paintTime": 576.8999999761581,
+          "presentationTime": 724
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 724,
+          "duration": 0,
+          "paintTime": 576.8999999761581,
+          "presentationTime": 724
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 118.5,
+          "duration": 61
+        },
+        {
+          "start": 513.6999999880791,
+          "duration": 79
+        },
+        {
+          "start": 617.3000000119209,
+          "duration": 114
+        },
+        {
+          "start": 1024.1000000238419,
+          "duration": 492
+        },
+        {
+          "start": 1625.800000011921,
+          "duration": 151
+        },
+        {
+          "start": 1943,
+          "duration": 73
+        },
+        {
+          "start": 2036.8999999761581,
+          "duration": 128
+        },
+        {
+          "start": 2255.5,
+          "duration": 67
+        },
+        {
+          "start": 2606.800000011921,
+          "duration": 69
+        },
+        {
+          "start": 2694.699999988079,
+          "duration": 55
+        },
+        {
+          "start": 2832.399999976158,
+          "duration": 350
+        },
+        {
+          "start": 3223.899999976158,
+          "duration": 141
+        },
+        {
+          "start": 3450.600000023842,
+          "duration": 75
+        }
+      ],
+      "interactions": [],
+      "transferredBytes": 525906
+    },
+    {
+      "target": "plain",
+      "temperature": "warm",
+      "profile": "normal",
+      "readyMs": 2035,
+      "input": null,
+      "errors": [],
+      "previewPaintOpportunityMs": 345,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 386.2999999523163,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 9.399999976158142,
+        "domainLookupStart": 9.399999976158142,
+        "domainLookupEnd": 9.399999976158142,
+        "connectStart": 9.399999976158142,
+        "secureConnectionStart": 0,
+        "connectEnd": 9.399999976158142,
+        "requestStart": 11.5,
+        "responseStart": 22.899999976158142,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 22.899999976158142,
+        "responseEnd": 117.29999995231628,
+        "transferSize": 3121,
+        "encodedBodySize": 2821,
+        "decodedBodySize": 6909,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 130.5,
+        "unloadEventEnd": 130.5,
+        "domInteractive": 237.79999995231628,
+        "domContentLoadedEventStart": 237.79999995231628,
+        "domContentLoadedEventEnd": 238,
+        "domComplete": 386.2999999523163,
+        "loadEventStart": 386.2999999523163,
+        "loadEventEnd": 386.2999999523163,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 324,
+          "duration": 0,
+          "paintTime": 249.5999999642372,
+          "presentationTime": 324
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 324,
+          "duration": 0,
+          "paintTime": 249.5999999642372,
+          "presentationTime": 324
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 121.79999995231628,
+          "duration": 83
+        },
+        {
+          "start": 429.2999999523163,
+          "duration": 197
+        },
+        {
+          "start": 917,
+          "duration": 62
+        },
+        {
+          "start": 1466.2999999523163,
+          "duration": 115
+        },
+        {
+          "start": 1737.5,
+          "duration": 63
+        }
+      ],
+      "interactions": [],
+      "transferredBytes": 8055
+    },
+    {
+      "target": "rich-10",
+      "temperature": "cold",
+      "profile": "constrained",
+      "readyMs": 7235,
+      "input": {
+        "automationToPaintOpportunityMs": 109.40000003576279
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 1831.1000000238419,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 2264.300000011921,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.9000000357627869,
+        "domainLookupStart": 5.200000047683716,
+        "domainLookupEnd": 5.200000047683716,
+        "connectStart": 5.200000047683716,
+        "secureConnectionStart": 0,
+        "connectEnd": 5.300000011920929,
+        "requestStart": 5.400000035762787,
+        "responseStart": 17.100000023841858,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 17.100000023841858,
+        "responseEnd": 429.7000000476837,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 1776.1000000238419,
+        "domContentLoadedEventStart": 1776.1000000238419,
+        "domContentLoadedEventEnd": 1777.4000000357628,
+        "domComplete": 2264.300000011921,
+        "loadEventStart": 2264.300000011921,
+        "loadEventEnd": 2264.300000011921,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 1856,
+          "duration": 0,
+          "paintTime": 1768.800000011921,
+          "presentationTime": 1856
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 1856,
+          "duration": 0,
+          "paintTime": 1768.800000011921,
+          "presentationTime": 1856
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 420,
+          "duration": 75
+        },
+        {
+          "start": 1778.6000000238419,
+          "duration": 67
+        },
+        {
+          "start": 3207.400000035763,
+          "duration": 412
+        },
+        {
+          "start": 3715.5,
+          "duration": 148
+        },
+        {
+          "start": 4442,
+          "duration": 155
+        },
+        {
+          "start": 4642.5,
+          "duration": 103
+        },
+        {
+          "start": 4841.600000023842,
+          "duration": 92
+        },
+        {
+          "start": 5346.200000047684,
+          "duration": 65
+        },
+        {
+          "start": 5530,
+          "duration": 175
+        },
+        {
+          "start": 5730.100000023842,
+          "duration": 51
+        },
+        {
+          "start": 5899.600000023842,
+          "duration": 211
+        },
+        {
+          "start": 6213.900000035763,
+          "duration": 61
+        },
+        {
+          "start": 6408,
+          "duration": 124
+        },
+        {
+          "start": 6577,
+          "duration": 72
+        },
+        {
+          "start": 6755.600000023842,
+          "duration": 246
+        },
+        {
+          "start": 7297.700000047684,
+          "duration": 196
+        },
+        {
+          "start": 7625.800000011921,
+          "duration": 63
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 7297.300000011921,
+          "duration": 224,
+          "interactionId": 5515
+        },
+        {
+          "name": "pointerup",
+          "start": 7297.400000035763,
+          "duration": 224,
+          "interactionId": 5515
+        },
+        {
+          "name": "click",
+          "start": 7297.400000035763,
+          "duration": 224,
+          "interactionId": 5515
+        },
+        {
+          "name": "keydown",
+          "start": 7552.900000035763,
+          "duration": 40,
+          "interactionId": 5522
+        },
+        {
+          "name": "keydown",
+          "start": 7623,
+          "duration": 72,
+          "interactionId": 5529
+        },
+        {
+          "name": "keypress",
+          "start": 7623,
+          "duration": 72,
+          "interactionId": 5529
+        }
+      ],
+      "transferredBytes": 887405
+    },
+    {
+      "target": "rich-10",
+      "temperature": "warm",
+      "profile": "constrained",
+      "readyMs": 4059,
+      "input": {
+        "automationToPaintOpportunityMs": 72
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 695.2999999523163,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1162.5999999642372,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.599999964237213,
+        "domainLookupStart": 8.599999964237213,
+        "domainLookupEnd": 8.599999964237213,
+        "connectStart": 8.599999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.599999964237213,
+        "requestStart": 10.699999988079071,
+        "responseStart": 19,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 19,
+        "responseEnd": 443.0999999642372,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 446,
+        "unloadEventEnd": 446,
+        "domInteractive": 580.5999999642372,
+        "domContentLoadedEventStart": 580.5999999642372,
+        "domContentLoadedEventEnd": 581.7999999523163,
+        "domComplete": 1162.5,
+        "loadEventStart": 1162.5,
+        "loadEventEnd": 1162.5999999642372,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 668,
+          "duration": 0,
+          "paintTime": 599.3999999761581,
+          "presentationTime": 668
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 668,
+          "duration": 0,
+          "paintTime": 599.3999999761581,
+          "presentationTime": 668
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 432.5999999642372,
+          "duration": 99
+        },
+        {
+          "start": 623.3999999761581,
+          "duration": 76
+        },
+        {
+          "start": 770.5999999642372,
+          "duration": 187
+        },
+        {
+          "start": 1103.199999988079,
+          "duration": 54
+        },
+        {
+          "start": 2078.399999976158,
+          "duration": 64
+        },
+        {
+          "start": 2579.599999964237,
+          "duration": 116
+        },
+        {
+          "start": 2928,
+          "duration": 64
+        },
+        {
+          "start": 3300.599999964237,
+          "duration": 106
+        },
+        {
+          "start": 3412.099999964237,
+          "duration": 51
+        },
+        {
+          "start": 4114.699999988079,
+          "duration": 73
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 4114.699999988079,
+          "duration": 120,
+          "interactionId": 9887
+        },
+        {
+          "name": "pointerup",
+          "start": 4114.899999976158,
+          "duration": 120,
+          "interactionId": 9887
+        },
+        {
+          "name": "click",
+          "start": 4114.899999976158,
+          "duration": 120,
+          "interactionId": 9887
+        },
+        {
+          "name": "keydown",
+          "start": 4260,
+          "duration": 32,
+          "interactionId": 9894
+        },
+        {
+          "name": "keydown",
+          "start": 4301.799999952316,
+          "duration": 32,
+          "interactionId": 9901
+        },
+        {
+          "name": "keypress",
+          "start": 4301.799999952316,
+          "duration": 32,
+          "interactionId": 9901
+        },
+        {
+          "name": "keydown",
+          "start": 4386,
+          "duration": 24,
+          "interactionId": 9915
+        }
+      ],
+      "transferredBytes": 8895
+    },
+    {
+      "target": "rich-2000",
+      "temperature": "cold",
+      "profile": "constrained",
+      "readyMs": 13288,
+      "input": {
+        "automationToPaintOpportunityMs": 261.80000001192093
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 2313.2000000476837,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3625.400000035763,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.4000000357627869,
+        "domainLookupStart": 6.300000011920929,
+        "domainLookupEnd": 6.300000011920929,
+        "connectStart": 6.300000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 6.900000035762787,
+        "requestStart": 7.400000035762787,
+        "responseStart": 35.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 35.80000001192093,
+        "responseEnd": 430.30000001192093,
+        "transferSize": 3861,
+        "encodedBodySize": 3561,
+        "decodedBodySize": 18970,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2205.900000035763,
+        "domContentLoadedEventStart": 2206,
+        "domContentLoadedEventEnd": 2206.2000000476837,
+        "domComplete": 3625.400000035763,
+        "loadEventStart": 3625.400000035763,
+        "loadEventEnd": 3625.400000035763,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2312,
+          "duration": 0,
+          "paintTime": 2190.600000023842,
+          "presentationTime": 2312
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2312,
+          "duration": 0,
+          "paintTime": 2190.600000023842,
+          "presentationTime": 2312
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 427.2000000476837,
+          "duration": 77
+        },
+        {
+          "start": 2131,
+          "duration": 74
+        },
+        {
+          "start": 2206.5,
+          "duration": 115
+        },
+        {
+          "start": 2886.5,
+          "duration": 422
+        },
+        {
+          "start": 3378.2000000476837,
+          "duration": 115
+        },
+        {
+          "start": 4547.900000035763,
+          "duration": 143
+        },
+        {
+          "start": 4726.5,
+          "duration": 79
+        },
+        {
+          "start": 4890.5,
+          "duration": 76
+        },
+        {
+          "start": 5393.600000023842,
+          "duration": 70
+        },
+        {
+          "start": 5705.100000023842,
+          "duration": 197
+        },
+        {
+          "start": 5933.700000047684,
+          "duration": 69
+        },
+        {
+          "start": 6039.300000011921,
+          "duration": 194
+        },
+        {
+          "start": 6495.5,
+          "duration": 78
+        },
+        {
+          "start": 6618.5,
+          "duration": 83
+        },
+        {
+          "start": 9985.700000047684,
+          "duration": 450
+        },
+        {
+          "start": 10576.400000035763,
+          "duration": 137
+        },
+        {
+          "start": 10874.800000011921,
+          "duration": 1631
+        },
+        {
+          "start": 12505.800000011921,
+          "duration": 151
+        },
+        {
+          "start": 12740.300000011921,
+          "duration": 272
+        },
+        {
+          "start": 13013,
+          "duration": 73
+        },
+        {
+          "start": 13088.400000035763,
+          "duration": 58
+        },
+        {
+          "start": 13588,
+          "duration": 479
+        },
+        {
+          "start": 14068.300000011921,
+          "duration": 113
+        },
+        {
+          "start": 14231.900000035763,
+          "duration": 59
+        },
+        {
+          "start": 14371.300000011921,
+          "duration": 131
+        },
+        {
+          "start": 14722.200000047684,
+          "duration": 351
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 13587.5,
+          "duration": 584,
+          "interactionId": 6607
+        },
+        {
+          "name": "pointerup",
+          "start": 13587.700000047684,
+          "duration": 584,
+          "interactionId": 6607
+        },
+        {
+          "name": "click",
+          "start": 13587.700000047684,
+          "duration": 584,
+          "interactionId": 6607
+        },
+        {
+          "name": "keydown",
+          "start": 14226.700000047684,
+          "duration": 128,
+          "interactionId": 6614
+        },
+        {
+          "name": "keyup",
+          "start": 14292.200000047684,
+          "duration": 56,
+          "interactionId": 6614
+        },
+        {
+          "name": "keydown",
+          "start": 14350.400000035763,
+          "duration": 192,
+          "interactionId": 6621
+        },
+        {
+          "name": "keypress",
+          "start": 14350.400000035763,
+          "duration": 192,
+          "interactionId": 6621
+        },
+        {
+          "name": "keyup",
+          "start": 14503.400000035763,
+          "duration": 32,
+          "interactionId": 6621
+        },
+        {
+          "name": "keydown",
+          "start": 14721.400000035763,
+          "duration": 392,
+          "interactionId": 6635
+        },
+        {
+          "name": "keyup",
+          "start": 15075.600000023842,
+          "duration": 40,
+          "interactionId": 6635
+        }
+      ],
+      "transferredBytes": 900556
+    },
+    {
+      "target": "rich-2000",
+      "temperature": "warm",
+      "profile": "constrained",
+      "readyMs": 5494,
+      "input": {
+        "automationToPaintOpportunityMs": 236
+      },
+      "errors": [],
+      "previewPaintOpportunityMs": 731.1999999880791,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1205.5999999642372,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.5,
+        "domainLookupStart": 8.5,
+        "domainLookupEnd": 8.5,
+        "connectStart": 8.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.5,
+        "requestStart": 10.5,
+        "responseStart": 28.5,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 28.5,
+        "responseEnd": 433.80000001192093,
+        "transferSize": 3861,
+        "encodedBodySize": 3561,
+        "decodedBodySize": 18970,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 512.5999999642372,
+        "unloadEventEnd": 512.5999999642372,
+        "domInteractive": 619.3000000119209,
+        "domContentLoadedEventStart": 619.5,
+        "domContentLoadedEventEnd": 620.5999999642372,
+        "domComplete": 1205.5999999642372,
+        "loadEventStart": 1205.5999999642372,
+        "loadEventEnd": 1205.5999999642372,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 712,
+          "duration": 0,
+          "paintTime": 636.3999999761581,
+          "presentationTime": 712
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 712,
+          "duration": 0,
+          "paintTime": 636.3999999761581,
+          "presentationTime": 712
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 494.0999999642372,
+          "duration": 90
+        },
+        {
+          "start": 670.8000000119209,
+          "duration": 61
+        },
+        {
+          "start": 834.3999999761581,
+          "duration": 199
+        },
+        {
+          "start": 1917.8999999761581,
+          "duration": 63
+        },
+        {
+          "start": 2154.599999964237,
+          "duration": 69
+        },
+        {
+          "start": 2698.899999976158,
+          "duration": 134
+        },
+        {
+          "start": 2928.599999964237,
+          "duration": 64
+        },
+        {
+          "start": 3078.399999976158,
+          "duration": 332
+        },
+        {
+          "start": 3488.899999976158,
+          "duration": 54
+        },
+        {
+          "start": 3600.300000011921,
+          "duration": 65
+        },
+        {
+          "start": 3780.5,
+          "duration": 1069
+        },
+        {
+          "start": 4850.300000011921,
+          "duration": 142
+        },
+        {
+          "start": 5075.300000011921,
+          "duration": 235
+        },
+        {
+          "start": 5311.300000011921,
+          "duration": 77
+        },
+        {
+          "start": 5775.099999964237,
+          "duration": 403
+        },
+        {
+          "start": 6179,
+          "duration": 136
+        },
+        {
+          "start": 6503.5,
+          "duration": 92
+        },
+        {
+          "start": 6835.5,
+          "duration": 310
+        }
+      ],
+      "interactions": [
+        {
+          "name": "pointerdown",
+          "start": 5770.899999976158,
+          "duration": 544,
+          "interactionId": 442
+        },
+        {
+          "name": "pointerup",
+          "start": 5771,
+          "duration": 544,
+          "interactionId": 442
+        },
+        {
+          "name": "click",
+          "start": 5771,
+          "duration": 544,
+          "interactionId": 442
+        },
+        {
+          "name": "keydown",
+          "start": 6349.800000011921,
+          "duration": 104,
+          "interactionId": 449
+        },
+        {
+          "name": "keyup",
+          "start": 6405.5,
+          "duration": 72,
+          "interactionId": 449
+        },
+        {
+          "name": "keydown",
+          "start": 6500.5,
+          "duration": 144,
+          "interactionId": 456
+        },
+        {
+          "name": "keypress",
+          "start": 6500.5,
+          "duration": 144,
+          "interactionId": 456
+        },
+        {
+          "name": "keyup",
+          "start": 6597,
+          "duration": 48,
+          "interactionId": 456
+        },
+        {
+          "name": "keydown",
+          "start": 6830.5,
+          "duration": 368,
+          "interactionId": 470
+        },
+        {
+          "name": "keyup",
+          "start": 7146.899999976158,
+          "duration": 48,
+          "interactionId": 470
+        }
+      ],
+      "transferredBytes": 22046
+    },
+    {
+      "target": "plain",
+      "temperature": "cold",
+      "profile": "constrained",
+      "readyMs": 6336,
+      "input": null,
+      "errors": [],
+      "previewPaintOpportunityMs": 1818.300000011921,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 2245.800000011921,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.4000000357627869,
+        "domainLookupStart": 5.800000011920929,
+        "domainLookupEnd": 5.800000011920929,
+        "connectStart": 5.800000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 6,
+        "requestStart": 6.100000023841858,
+        "responseStart": 20.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 20.80000001192093,
+        "responseEnd": 430.10000002384186,
+        "transferSize": 3121,
+        "encodedBodySize": 2821,
+        "decodedBodySize": 6909,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 1765.199999988079,
+        "domContentLoadedEventStart": 1765.199999988079,
+        "domContentLoadedEventEnd": 1765.4000000357628,
+        "domComplete": 2245.800000011921,
+        "loadEventStart": 2245.800000011921,
+        "loadEventEnd": 2245.800000011921,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 1844,
+          "duration": 0,
+          "paintTime": 1759,
+          "presentationTime": 1844
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 1844,
+          "duration": 0,
+          "paintTime": 1759,
+          "presentationTime": 1844
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 425.60000002384186,
+          "duration": 72
+        },
+        {
+          "start": 1765.6000000238419,
+          "duration": 65
+        },
+        {
+          "start": 3348.400000035763,
+          "duration": 449
+        },
+        {
+          "start": 3923.600000023842,
+          "duration": 147
+        },
+        {
+          "start": 4547.600000023842,
+          "duration": 80
+        },
+        {
+          "start": 4660.300000011921,
+          "duration": 191
+        },
+        {
+          "start": 5402.400000035763,
+          "duration": 65
+        },
+        {
+          "start": 5562.900000035763,
+          "duration": 214
+        },
+        {
+          "start": 5800.199999988079,
+          "duration": 64
+        },
+        {
+          "start": 5931.600000023842,
+          "duration": 172
+        }
+      ],
+      "interactions": [],
+      "transferredBytes": 524156
+    },
+    {
+      "target": "plain",
+      "temperature": "warm",
+      "profile": "constrained",
+      "readyMs": 2684,
+      "input": null,
+      "errors": [],
+      "previewPaintOpportunityMs": 644.7999999523163,
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 1103.0999999642372,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 8.399999976158142,
+        "domainLookupStart": 8.399999976158142,
+        "domainLookupEnd": 8.399999976158142,
+        "connectStart": 8.399999976158142,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.399999976158142,
+        "requestStart": 10.899999976158142,
+        "responseStart": 24.799999952316284,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 24.799999952316284,
+        "responseEnd": 431,
+        "transferSize": 3121,
+        "encodedBodySize": 2821,
+        "decodedBodySize": 6909,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 430.5,
+        "unloadEventEnd": 430.5,
+        "domInteractive": 532.3999999761581,
+        "domContentLoadedEventStart": 532.3999999761581,
+        "domContentLoadedEventEnd": 534.5,
+        "domComplete": 1103,
+        "loadEventStart": 1103.0999999642372,
+        "loadEventEnd": 1103.0999999642372,
+        "type": "reload",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 620,
+          "duration": 0,
+          "paintTime": 555.5,
+          "presentationTime": 620
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 620,
+          "duration": 0,
+          "paintTime": 555.5,
+          "presentationTime": 620
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 424.19999998807907,
+          "duration": 67
+        },
+        {
+          "start": 596.0999999642372,
+          "duration": 51
+        },
+        {
+          "start": 713.6999999880791,
+          "duration": 194
+        },
+        {
+          "start": 1048.8999999761581,
+          "duration": 50
+        },
+        {
+          "start": 1474.7999999523163,
+          "duration": 50
+        },
+        {
+          "start": 2281,
+          "duration": 78
+        },
+        {
+          "start": 2446.7999999523163,
+          "duration": 59
+        }
+      ],
+      "interactions": [],
+      "transferredBytes": 4975
+    }
+  ]
+}

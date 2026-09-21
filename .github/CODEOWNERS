@@ -1,3 +1,4 @@
 /packages/openclaw-plugin/ @obkaro
+/plugins/worktable/skills/ @obkaro
 /plugins/openclaw/ @obkaro
 /.github/workflows/openclaw-plugin.yml @obkaro

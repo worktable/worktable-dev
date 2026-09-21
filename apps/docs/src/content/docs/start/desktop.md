@@ -1,6 +1,6 @@
 ---
 title: Worktable Desktop
-description: Install the native macOS app and open a local, self-hosted, or Worktable Cloud workspace.
+description: Check Desktop availability and learn how the native macOS app connects to local, self-hosted, or Worktable Cloud workspaces.
 ---
 
 Worktable Desktop is the native macOS home for Worktable. The signed and

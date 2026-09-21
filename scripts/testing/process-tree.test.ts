@@ -60,3 +60,63 @@ test("zombie-only process groups are not considered alive", () => {
   expect(processGroupsContainLiveMember(new Set([10, 11]), rows)).toBe(false)
   expect(processGroupsContainLiveMember(new Set([10, 12]), rows)).toBe(true)
 })
+
+test("a failed companion cancels the active lane and cleans its descendants", async () => {
+  if (process.platform === "win32") return
+  const { runCommand } = await import("./command.ts")
+  const { runSuiteSchedule } = await import("./schedule.ts")
+  const { mkdtemp, readFile, rm, watch } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const root = await mkdtemp(join(tmpdir(), "suite-cancellation-"))
+  const ready = join(root, "ready.json")
+  let outcome: Awaited<ReturnType<typeof runCommand>> | undefined
+  const script = `
+    const child = Bun.spawn(["sh", "-c", "while :; do sleep 1; done"], { detached: true });
+    await Bun.write(${JSON.stringify(ready)}, JSON.stringify([process.pid, child.pid]));
+    setInterval(() => {}, 1000);
+  `
+  try {
+    const seen: string[] = []
+    const failed = await runSuiteSchedule(
+      ["bun-server", "bun-standard", "cli-boundary"].map((id) => ({ id })),
+      async ({ id }, signal) => {
+        seen.push(id)
+        if (id === "bun-server") {
+          outcome = await runCommand(
+            { executable: "bun", args: ["-e", script], cwd: root },
+            10_000,
+            join(root, "rss.txt"),
+            signal
+          )
+          return outcome.exitCode !== 0
+        }
+        const readiness = new AbortController()
+        const events = watch(root, {
+          signal: AbortSignal.any([
+            readiness.signal,
+            AbortSignal.timeout(8_000),
+          ]),
+        })
+        try {
+          if (!(await Bun.file(ready).exists())) {
+            for await (const _event of events) {
+              if (await Bun.file(ready).exists()) break
+            }
+          }
+        } finally {
+          readiness.abort()
+        }
+        return true
+      }
+    )
+    expect(failed).toBe(true)
+    expect(seen).not.toContain("cli-boundary")
+    expect(outcome?.cancelled).toBe(true)
+    expect(outcome?.timedOut).toBe(false)
+    const pids: number[] = JSON.parse(await readFile(ready, "utf8"))
+    for (const pid of pids) expect(processTreeIsAlive(pid)).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}, 15_000)

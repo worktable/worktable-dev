@@ -1,0 +1,327 @@
+{
+  "apiCompression": [
+    {
+      "paragraphs": 10,
+      "encoding": null,
+      "bodyBytes": 2649,
+      "gzipOfflineBytes": 578
+    },
+    {
+      "paragraphs": 500,
+      "encoding": null,
+      "bodyBytes": 104890,
+      "gzipOfflineBytes": 3647
+    },
+    {
+      "paragraphs": 2000,
+      "encoding": null,
+      "bodyBytes": 422391,
+      "gzipOfflineBytes": 13106
+    }
+  ],
+  "duplicateStylesheets": [
+    {
+      "url": "http://127.0.0.1:43009/assets/main-s3sQKeml.css#",
+      "id": "style-sheet-808033-1",
+      "bytes": 261348,
+      "sha256": "4a0100dee7ee44ba9f84e40319cbfcd3f95f0993ff1796facc7ad429eddfbdb5"
+    },
+    {
+      "url": "http://127.0.0.1:43009/assets/main-s3sQKeml.css",
+      "id": "style-sheet-808033-9",
+      "bytes": 261348,
+      "sha256": "4a0100dee7ee44ba9f84e40319cbfcd3f95f0993ff1796facc7ad429eddfbdb5"
+    }
+  ],
+  "selectorProfile": {
+    "note": "Diagnostic at 1x CPU with selector stats enabled; heavy instrumentation overhead, not a speed benchmark.",
+    "totalSelectorUs": 1268063,
+    "topSelectors": [
+      {
+        "selector": ".bn-block-content:has(.ProseMirror-trailingBreak:only-child)::after",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 92382,
+        "attempts": 16010,
+        "matches": 6
+      },
+      {
+        "selector": ":is(.focus\\:\\*\\*\\:text-accent-foreground:focus *)",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 45469,
+        "attempts": 21111,
+        "matches": 0
+      },
+      {
+        "selector": ":is(.focus\\:\\*\\*\\:text-accent-foreground:focus *)",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 32935,
+        "attempts": 20721,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-editor .bn-block-outer:has(> .bn-block > [data-content-type=\"paragraph\"])",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 31604,
+        "attempts": 4002,
+        "matches": 4002
+      },
+      {
+        "selector": ".bn-block-content:has(.ProseMirror-trailingBreak:only-child)::after",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 28502,
+        "attempts": 16010,
+        "matches": 6
+      },
+      {
+        "selector": ":where(.space-y-0\\.5 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 26702,
+        "attempts": 21111,
+        "matches": 4
+      },
+      {
+        "selector": "*",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 26697,
+        "attempts": 82884,
+        "matches": 66860
+      },
+      {
+        "selector": "*",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 23859,
+        "attempts": 84444,
+        "matches": 68388
+      },
+      {
+        "selector": "::-webkit-scrollbar",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 23818,
+        "attempts": 21111,
+        "matches": 17097
+      },
+      {
+        "selector": ".bn-editor [class*=\"slashMenu\"]",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 23356,
+        "attempts": 20620,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-editor [data-content-type=\"bulletListItem\"] .bn-inline-content",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 19811,
+        "attempts": 4002,
+        "matches": 0
+      },
+      {
+        "selector": "div",
+        "stylesheet": "ua-style-sheet",
+        "us": 19339,
+        "attempts": 32884,
+        "matches": 24878
+      },
+      {
+        "selector": ":where(.space-y-0\\.5 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 18966,
+        "attempts": 20721,
+        "matches": 4
+      },
+      {
+        "selector": ":is(.not-data-\\[variant\\=destructive\\]\\:focus\\:\\*\\*\\:text-accent-foreground:not([data-variant=\"destructive\"]):focus *)",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 17550,
+        "attempts": 20721,
+        "matches": 0
+      },
+      {
+        "selector": "::-webkit-scrollbar",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 16727,
+        "attempts": 20721,
+        "matches": 16715
+      },
+      {
+        "selector": "::after",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 14591,
+        "attempts": 21111,
+        "matches": 17098
+      },
+      {
+        "selector": ".bn-block:has(> .bn-block-content[data-text-color=\"gray\"])",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 14076,
+        "attempts": 4002,
+        "matches": 0
+      },
+      {
+        "selector": ":is(.not-data-\\[variant\\=destructive\\]\\:focus\\:\\*\\*\\:text-accent-foreground:not([data-variant=\"destructive\"]):focus *)",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 13766,
+        "attempts": 21111,
+        "matches": 0
+      },
+      {
+        "selector": "::backdrop",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 13033,
+        "attempts": 21111,
+        "matches": 17097
+      },
+      {
+        "selector": ".bn-block-content::before",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 12196,
+        "attempts": 16010,
+        "matches": 16008
+      },
+      {
+        "selector": "[data-sonner-toast][data-styled=\"true\"] [data-icon] > *",
+        "stylesheet": "style-sheet-799099-3",
+        "us": 11365,
+        "attempts": 21102,
+        "matches": 0
+      },
+      {
+        "selector": "::after",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 11053,
+        "attempts": 20721,
+        "matches": 16716
+      },
+      {
+        "selector": ".bn-block-group .bn-block-group > .bn-block-outer",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 9574,
+        "attempts": 4002,
+        "matches": 0
+      },
+      {
+        "selector": "::backdrop",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 9462,
+        "attempts": 20721,
+        "matches": 16715
+      },
+      {
+        "selector": ":where(.divide-border\\/70 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 9356,
+        "attempts": 41442,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-block-content::before",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 8928,
+        "attempts": 16010,
+        "matches": 16008
+      },
+      {
+        "selector": ".bn-block-group .bn-block-group > .bn-block-outer:not([data-prev-depth-changed])::before",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 7898,
+        "attempts": 4002,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-editor .bn-block-outer:has(> .bn-block > [data-content-type=\"paragraph\"])",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 7846,
+        "attempts": 4002,
+        "matches": 4002
+      },
+      {
+        "selector": ".bn-editor [class*=\"slashMenu\"]",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 7696,
+        "attempts": 20351,
+        "matches": 0
+      },
+      {
+        "selector": ":where(.divide-border\\/60 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 7499,
+        "attempts": 41442,
+        "matches": 0
+      },
+      {
+        "selector": ":where(.divide-y > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 7451,
+        "attempts": 20721,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-editor [data-content-type=\"codeBlock\"] .bn-inline-content",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 7281,
+        "attempts": 4002,
+        "matches": 0
+      },
+      {
+        "selector": ":where(.space-y-8 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 7095,
+        "attempts": 21111,
+        "matches": 0
+      },
+      {
+        "selector": ".bn-editor [class*=\"slashMenu\"] [class*=\"item\"]:hover",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 6857,
+        "attempts": 41240,
+        "matches": 0
+      },
+      {
+        "selector": "p",
+        "stylesheet": "ua-style-sheet",
+        "us": 6773,
+        "attempts": 8196,
+        "matches": 8196
+      },
+      {
+        "selector": "::before",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 6732,
+        "attempts": 21111,
+        "matches": 21104
+      },
+      {
+        "selector": ":where(.divide-border\\/60 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 6632,
+        "attempts": 42222,
+        "matches": 0
+      },
+      {
+        "selector": ":where(.divide-border\\/70 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 6404,
+        "attempts": 42222,
+        "matches": 0
+      },
+      {
+        "selector": "p",
+        "stylesheet": "style-sheet-799099-1",
+        "us": 6256,
+        "attempts": 4098,
+        "matches": 4098
+      },
+      {
+        "selector": ":where(.space-y-8 > :not(:last-child))",
+        "stylesheet": "style-sheet-799099-6",
+        "us": 6080,
+        "attempts": 20721,
+        "matches": 0
+      }
+    ]
+  },
+  "excludedExperiment": {
+    "name": "CSS fragment normalization via browser response interception",
+    "result": "Unchanged baseline control timed out before editor readiness after 90 seconds. No valid before/after samples; no speedup inferred.",
+    "log": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nlocator.waitFor: Timeout 90000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.bn-editor .bn-block-outer[data-id=\"p-1999\"]') to be visible\u001b[22m\n\n    at run (/tmp/worktable-css-dedupe-measure.mjs:12:100)\n    at async file:///tmp/worktable-css-dedupe-measure.mjs:15:95 {\n  log: [\n    `  - waiting for locator('.bn-editor .bn-block-outer[data-id=\"p-1999\"]') to be visible`\n  ],\n  name: 'TimeoutError'\n}\n\nNode.js v24.13.0\n"
+  }
+}

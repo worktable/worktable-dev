@@ -78,3 +78,9 @@ bun docs/audits/document-loading-experiments/catalog-benchmark.ts
 This isolated benchmark creates and deletes its own temporary workspace, with no server/watcher. It writes `/tmp/worktable-pure-catalog.json`.
 
 The retained evidence is from the investigation's actual runs, not newly invented results from these portable copies. These scripts are outside product code and do not represent regression coverage.
+
+## Follow-up research diagnostics
+
+`node docs/audits/document-loading-experiments/inspect-stylesheets.mjs` opens the existing editor prototype on port 43009 and inventories loaded main stylesheet contents through Chrome's CSS domain. It writes `/tmp/worktable-css-inventory.json` and verifies the small document reaches its last editor block.
+
+`node docs/audits/document-loading-experiments/profile-selectors.mjs` records the 2,000-block editor with selector-statistics categories enabled at **1× CPU**, retaining the previous network profile. It writes `/tmp/worktable-selector-timeline.json` and `/tmp/worktable-selector-context.json`. This is an expensive diagnostic, not a speed benchmark; the raw trace can exceed 100 MB and can contain events from other shared-browser tabs. Analyze only the target navigation's renderer and do not publish the unfiltered trace. The checked-in research evidence retains only the tested renderer's selector summary. These scripts currently use the same local CDP endpoint and prototype port as the original run.

@@ -108,7 +108,8 @@ describe("background update check honors settings.updates.autoCheck", () => {
     await backgroundUpdateCheck()
     expect(hits).toBe(1)
 
-    const stop = startBackgroundUpdateCheckScheduler({ intervalMs: 100 })
+    // Stop immediately; use the normal cache lifetime instead of racing a short TTL.
+    const stop = startBackgroundUpdateCheckScheduler()
     await stop()
     expect(hits).toBe(1)
   })

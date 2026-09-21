@@ -118,6 +118,19 @@ export function ThemeProvider({
       const root = document.documentElement
       const resolvedTheme =
         nextTheme === "system" ? getSystemTheme() : nextTheme
+      document
+        .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+        ?.setAttribute("content", THEME_SHELL_COLORS[resolvedTheme])
+      // The initial HTML already applies the saved theme before first paint.
+      // Reapplying it would invalidate styles and temporarily restyle every
+      // element just as the document and sidebar are mounting.
+      const otherTheme = resolvedTheme === "dark" ? "light" : "dark"
+      if (
+        root.classList.contains(resolvedTheme) &&
+        !root.classList.contains(otherTheme) &&
+        root.style.colorScheme === resolvedTheme
+      )
+        return
       const restoreTransitions = disableTransitionOnChange
         ? disableTransitionsTemporarily()
         : null
@@ -125,9 +138,6 @@ export function ThemeProvider({
       root.classList.remove("light", "dark")
       root.classList.add(resolvedTheme)
       root.style.colorScheme = resolvedTheme
-      document
-        .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-        ?.setAttribute("content", THEME_SHELL_COLORS[resolvedTheme])
 
       if (restoreTransitions) {
         restoreTransitions()

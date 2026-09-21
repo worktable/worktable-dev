@@ -1,0 +1,8 @@
+/* One root-owned stylesheet. Importing it as a URL keeps Vite's dynamic
+   module preloads from installing a second copy of the global rules. */
+@import "@worktable/ui/globals.css";
+@import "@blocknote/shadcn/style.css";
+@import "./blocknote.css";
+@import "./animations.css";
+@import "./markdown.css";
+@import "./print.css";

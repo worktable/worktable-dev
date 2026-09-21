@@ -18,7 +18,7 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { useRecordCollections, useRecords, useSpace, spaceQueryOptions } from "@/lib/queries"
-import { useSpaceDocs, spaceDocsQueryOptions } from "@/lib/docs-queries"
+import { useSpaceDocs } from "@/lib/docs-queries"
 import { useSpaceAttention } from "@/lib/annotations-queries"
 import type { AttentionSignal } from "@/lib/annotations-queries"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -61,12 +61,12 @@ function attentionLink(
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
-  // Warm the detail and document caches without delaying SPA-shell hydration.
+  // Warm space details without delaying SPA-shell hydration. Overview-only
+  // document/collection queries start when the overview actually mounts.
   // Awaiting here makes the first client tree contain live data while the static
   // shell still contains its pending UI, which React correctly rejects.
   beforeLoad: ({ context, params }) => {
     void context.queryClient.prefetchQuery(spaceQueryOptions(params.spaceId))
-    void context.queryClient.prefetchQuery(spaceDocsQueryOptions(params.spaceId))
   },
   component: SpaceDetailPage,
 })
@@ -543,8 +543,6 @@ function StaleMark({ doc }: { doc: DocListEntry }) {
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
   const { data, isLoading } = useSpace(spaceId)
-  const { data: docs } = useSpaceDocs(spaceId)
-  const { data: recordCollections } = useRecordCollections(spaceId)
   const matchRoute = useMatchRoute()
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
@@ -648,16 +646,28 @@ function SpaceDetailPage() {
           restoring={restoring}
         />
       )}
-      <SpaceOverview
+      <SpaceOverviewWithData
         spaceId={spaceId}
         spaceName={space.name}
         spaceDescription={space.description}
         spaceIcon={space.icon}
         spaceCreatedBy={space.createdBy}
-        docs={docs ?? []}
         widgets={data.widgets ?? []}
-        recordCollections={recordCollections ?? []}
       />
     </>
+  )
+}
+
+function SpaceOverviewWithData(
+  props: Omit<Parameters<typeof SpaceOverview>[0], "docs" | "recordCollections">
+) {
+  const { data: docs } = useSpaceDocs(props.spaceId)
+  const { data: recordCollections } = useRecordCollections(props.spaceId)
+  return (
+    <SpaceOverview
+      {...props}
+      docs={docs ?? []}
+      recordCollections={recordCollections ?? []}
+    />
   )
 }

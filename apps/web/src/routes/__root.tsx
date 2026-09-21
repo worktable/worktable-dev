@@ -1,12 +1,21 @@
 /// <reference types="vite/client" />
-import "@worktable/ui/globals.css"
-import "@blocknote/shadcn/style.css"
-import "@/styles/blocknote.css"
-import "@/styles/animations.css"
-import "@/styles/markdown.css"
-import "@/styles/print.css"
+import appStylesheet from "@/styles/app.css?url"
+import {
+  DocumentOpening,
+  DocumentOpeningData,
+  documentOpeningLayoutScript,
+  documentOpeningPreloadScript,
+} from "@/components/document-opening"
 
-import { Fragment, useState, useCallback, useEffect, useRef } from "react"
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react"
 import type { CSSProperties, ReactNode } from "react"
 import {
   createRootRouteWithContext,
@@ -41,7 +50,11 @@ import {
   DropdownMenuSeparator,
 } from "@worktable/ui/components/dropdown-menu"
 import { Toaster } from "@worktable/ui/components/sonner"
-import { AppSidebar } from "@/components/app-sidebar"
+const AppSidebar = lazy(() =>
+  import("@/components/app-sidebar").then((module) => ({
+    default: module.AppSidebar,
+  }))
+)
 import { UpdateNudge } from "@/components/update-nudge"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { ShareDocumentAction } from "@/components/share-document-action"
@@ -63,7 +76,11 @@ import { PageMetaContext, usePageMeta } from "@/hooks/use-page-meta"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
-import { Onboarding } from "@/components/onboarding/onboarding"
+const Onboarding = lazy(() =>
+  import("@/components/onboarding/onboarding").then((module) => ({
+    default: module.Onboarding,
+  }))
+)
 
 interface RouterContext {
   queryClient: QueryClient
@@ -97,6 +114,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       },
     ],
     links: [
+      { rel: "stylesheet", href: appStylesheet },
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
       {
         rel: "icon",
@@ -118,6 +136,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   shellComponent: RootShell,
   component: RootLayoutWithProviders,
   pendingComponent: InitialLoader,
+  // Do not retain the startup logo after hydration/data are already ready.
+  pendingMinMs: 0,
 })
 
 // ── HTML Shell (always SSRed / prerendered) ──────────────────
@@ -134,8 +154,15 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <DocumentOpeningData />
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+        <script
+          dangerouslySetInnerHTML={{ __html: documentOpeningLayoutScript }}
+        />
+        <script
+          dangerouslySetInnerHTML={{ __html: documentOpeningPreloadScript }}
+        />
         <style
           dangerouslySetInnerHTML={{
             __html: `
@@ -143,6 +170,8 @@ function RootShell({ children }: { children: ReactNode }) {
               html.light { background-color: ${THEME_SHELL_COLORS.light}; color-scheme: light; }
               body { margin: 0; overflow: hidden; }
               body.loaded { overflow: auto; }
+              #worktable-opening-preview:not(:empty) { position: fixed; inset: calc(3rem + env(safe-area-inset-top, 0px)) 0 0; z-index: 10000; background: var(--background); }
+              @media (min-width: 768px) { #worktable-opening-preview:not(:empty) { left: var(--worktable-opening-sidebar, 288px); } }
               .initial-loader {
                 display: flex;
                 align-items: center;
@@ -170,6 +199,7 @@ function RootShell({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
+        <DocumentOpening />
         {children}
         <Scripts />
       </body>
@@ -536,7 +566,9 @@ function MobileSidebarOverlay({
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <AppSidebar />
+        <Suspense fallback={null}>
+          <AppSidebar />
+        </Suspense>
       </div>
     </>
   )
@@ -739,7 +771,9 @@ function RootLayout() {
   if (workspace?.onboarding?.status === "pending") {
     return (
       <>
-        <Onboarding workspace={workspace} />
+        <Suspense fallback={<InitialLoader />}>
+          <Onboarding workspace={workspace} />
+        </Suspense>
         <Toaster theme={theme} />
       </>
     )
@@ -775,7 +809,9 @@ function RootLayout() {
                 className="glass h-full"
                 style={{ width: sidebarResize.size }}
               >
-                <AppSidebar />
+                <Suspense fallback={null}>
+                  <AppSidebar />
+                </Suspense>
               </div>
             </aside>
           )}

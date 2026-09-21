@@ -85,8 +85,6 @@ export const serverSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...BlockNoteSchema.create().blockSpecs,
     codeBlock: createCodeBlockSpec(worktableCodeBlockOptions),
-    // 0.46.x createBlockSpec returns a factory; 0.51+ returns the spec
-    // directly (drop the call when upgrading).
     mermaid: serverMermaidSpec(),
   },
 });

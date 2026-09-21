@@ -84,3 +84,33 @@ The retained evidence is from the investigation's actual runs, not newly invente
 `node docs/audits/document-loading-experiments/inspect-stylesheets.mjs` opens the existing editor prototype on port 43009 and inventories loaded main stylesheet contents through Chrome's CSS domain. It writes `/tmp/worktable-css-inventory.json` and verifies the small document reaches its last editor block.
 
 `node docs/audits/document-loading-experiments/profile-selectors.mjs` records the 2,000-block editor with selector-statistics categories enabled at **1× CPU**, retaining the previous network profile. It writes `/tmp/worktable-selector-timeline.json` and `/tmp/worktable-selector-context.json`. This is an expensive diagnostic, not a speed benchmark; the raw trace can exceed 100 MB and can contain events from other shared-browser tabs. Analyze only the target navigation's renderer and do not publish the unfiltered trace. The checked-in research evidence retains only the tested renderer's selector summary. These scripts currently use the same local CDP endpoint and prototype port as the original run.
+
+## Reading, warm reloads, and input checks
+
+`measure-reading-and-input.mjs` tests the production fixture above with normal
+(100 ms / 10 Mbps / 4× CPU) and constrained (400 ms / 1.6 Mbps / 4× CPU) profiles.
+It captures a two-frame reading boundary, browser paint entries, editor/HTML/Markdown
+readiness, long tasks, and Event Timing entries. For rich documents it types a
+character and undoes it, so **use only an isolated fixture workspace**.
+
+```sh
+AUDIT_ORIGIN=http://192.168.2.211:39083 \
+AUDIT_PASSWORD='your-review-password' \
+node docs/audits/document-loading-experiments/measure-reading-and-input.mjs
+```
+
+Omit `AUDIT_PASSWORD` for a loopback fixture. `AUDIT_PROFILES=constrained` and
+`AUDIT_TARGETS=rich-10,html-audit` narrow the run. `AUDIT_OUTPUT` selects the output
+JSON. The password is not written to results. Do not run builds or other browser
+checks concurrently with timing runs. These short sessions do not establish field
+INP or p75 performance.
+
+`throttled-fixture-proxy.mjs` exports a loopback-only HTTP proxy restricted to one
+fixture origin. It applies request latency and a shared response-byte budget to
+both the parent page and sandboxed iframe requests. Browser contexts can use its
+`url` as their proxy; do not also enable CDP network throttling. Authenticate the
+context before timing (the proxy deliberately does not support HTTPS CONNECT).
+Always close the browser context and then call the proxy's `close()`.
+WebSocket bodies pass through after a delayed handshake, so this helper verifies
+HTML delivery; it is not a Yjs-throughput simulator. It is a diagnostic, not a
+production server or an internet-facing proxy.

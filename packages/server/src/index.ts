@@ -3,6 +3,12 @@ import { linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { compressApiResponse } from "./http-compression.ts";
+import { acceptsGzip } from "./http-compression.ts";
+import { injectDocumentOpening } from "./document-opening.ts";
+import { readDocumentPreloads } from "./document-preloads.ts";
+import { readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { existsSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { healthRouter } from "./routes/health.ts";
@@ -205,6 +211,7 @@ app.use("*", async (c, next) => {
   return wildcardCors(c, next);
 });
 app.use("*", logger());
+app.use("/api/*", compressApiResponse);
 
 // A replacement closes this gate before stopping the listener. Every admitted
 // workspace mutation is held until its complete route lifecycle settles, so a
@@ -405,8 +412,22 @@ if (HAS_STATIC) {
   // SPA fallback: any non-API, non-WS route serves the shell HTML
   // TanStack Start uses _shell.html; older builds use index.html
   const shellPath = STATIC_ASSETS.shellPath!;
+  const shellTemplate = readFileSync(shellPath, "utf8");
+  const documentPreloads = readDocumentPreloads(staticDir);
 
   app.get("*", async (c) => {
+    const opening = await injectDocumentOpening(c.req.raw, shellTemplate, documentPreloads);
+    if (opening) {
+      const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "");
+      return new Response(compressed ? gzipSync(opening) : opening, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "private, no-store",
+          "Vary": "Cookie, Authorization, Accept-Encoding",
+          ...(compressed ? { "Content-Encoding": "gzip" } : {}),
+        },
+      });
+    }
     return (
       createStaticFileResponse(staticDir, `/${shellPath.slice(staticDir.length + 1)}`, {
         "Content-Type": "text/html; charset=utf-8",

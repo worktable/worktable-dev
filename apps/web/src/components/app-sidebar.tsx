@@ -1,5 +1,13 @@
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
-import { useState, useEffect, useMemo, useRef } from "react"
+import {
+  lazy,
+  Suspense,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   ChevronRight,
@@ -47,8 +55,16 @@ import {
   queryKeys,
 } from "@/lib/queries"
 import { createRecordCollection } from "@/lib/records-api"
-import { NewCollectionDialog } from "@/components/records/new-collection-dialog"
-import { NewDrawingDialog } from "@/components/new-drawing-dialog"
+const NewCollectionDialog = lazy(() =>
+  import("@/components/records/new-collection-dialog").then((module) => ({
+    default: module.NewCollectionDialog,
+  }))
+)
+const NewDrawingDialog = lazy(() =>
+  import("@/components/new-drawing-dialog").then((module) => ({
+    default: module.NewDrawingDialog,
+  }))
+)
 import type { WidgetListEntry } from "@/lib/widgets-api"
 import { docQueryKeys, useSpaceDocs } from "@/lib/docs-queries"
 import { useSpaceEvents } from "@/hooks/use-space-events"
@@ -65,8 +81,16 @@ import {
   archiveSpace,
   restoreSpace,
 } from "@/lib/api"
-import { NewSpaceDialog } from "@/components/spaces/new-space-dialog"
-import { SettingsDialog } from "@/components/settings/settings-dialog"
+const NewSpaceDialog = lazy(() =>
+  import("@/components/spaces/new-space-dialog").then((module) => ({
+    default: module.NewSpaceDialog,
+  }))
+)
+const SettingsDialog = lazy(() =>
+  import("@/components/settings/settings-dialog").then((module) => ({
+    default: module.SettingsDialog,
+  }))
+)
 import {
   SidebarSearchInput,
   SidebarSearchResults,
@@ -283,11 +307,13 @@ function SettingsButton() {
           <UpdateIndicatorDot className="absolute top-2 right-2" />
         )}
       </button>
-      <SettingsDialog
-        open={open}
-        onOpenChange={setOpen}
-        initialSection={section}
-      />
+      <DeferredDialog active={open}>
+        <SettingsDialog
+          open={open}
+          onOpenChange={setOpen}
+          initialSection={section}
+        />
+      </DeferredDialog>
     </>
   )
 }
@@ -736,25 +762,29 @@ function SpaceSection({
         </CollapsibleContent>
       </Collapsible>
       {newDrawingOpen && (
-        <NewDrawingDialog
-          spaceId={space.id}
-          onClose={() => setNewDrawingOpen(false)}
-          onCreated={() => {
-            setExpanded(true)
-            if (isMobile) setOpen(false)
-          }}
-        />
+        <Suspense fallback={null}>
+          <NewDrawingDialog
+            spaceId={space.id}
+            onClose={() => setNewDrawingOpen(false)}
+            onCreated={() => {
+              setExpanded(true)
+              if (isMobile) setOpen(false)
+            }}
+          />
+        </Suspense>
       )}
       <NewWidgetDialog
         open={newWidgetOpen}
         onClose={() => setNewWidgetOpen(false)}
         onCreate={handleCreateWidgetShell}
       />
-      <NewCollectionDialog
-        open={newCollectionOpen}
-        onClose={() => setNewCollectionOpen(false)}
-        onCreate={handleCreateCollection}
-      />
+      <DeferredDialog active={newCollectionOpen}>
+        <NewCollectionDialog
+          open={newCollectionOpen}
+          onClose={() => setNewCollectionOpen(false)}
+          onCreate={handleCreateCollection}
+        />
+      </DeferredDialog>
     </>
   )
 }
@@ -3022,12 +3052,14 @@ export function AppSidebar() {
       </div>
 
       {/* New space dialog */}
-      <NewSpaceDialog
-        open={newSpaceOpen}
-        onClose={() => setNewSpaceOpen(false)}
-        onCreate={handleCreateSpace}
-        defaultGroup={activeGroup}
-      />
+      <DeferredDialog active={newSpaceOpen}>
+        <NewSpaceDialog
+          open={newSpaceOpen}
+          onClose={() => setNewSpaceOpen(false)}
+          onCreate={handleCreateSpace}
+          defaultGroup={activeGroup}
+        />
+      </DeferredDialog>
     </div>
   )
 }
@@ -3048,4 +3080,18 @@ function SpaceSectionWithViews({
       currentPath={currentPath}
     />
   )
+}
+
+// Load closed dialog code only on first use, then keep it mounted so exit
+// animations and state transitions continue to follow the dialog primitive.
+function DeferredDialog({
+  active,
+  children,
+}: {
+  active: boolean
+  children: ReactNode
+}) {
+  const [requested, setRequested] = useState(active)
+  if (active && !requested) setRequested(true)
+  return requested ? <Suspense fallback={null}>{children}</Suspense> : null
 }

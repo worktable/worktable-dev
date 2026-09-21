@@ -784,7 +784,10 @@ function DocEditorPage({
 
   if (error || !docData) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div
+        data-document-state
+        className="flex h-full items-center justify-center"
+      >
         <div className="text-center">
           <p className="text-lg font-medium text-muted-foreground">
             Doc not found
@@ -1515,11 +1518,13 @@ function BlockNoteDocPage({
           )}
           <div
             ref={editorPaneRef}
-            className={`h-full ${editorReadable ? "" : "invisible"}`}
+            className={`h-full ${Array.isArray(doc.content) && doc.content.length > 200 ? "worktable-large-document" : ""} ${editorReadable ? "" : "invisible"}`}
             inert={!editorReadable}
             aria-hidden={!editorReadable}
           >
-            {provider && collabDoc && (
+            {/* Build the editor once its first usable Yjs state exists. Mounting an
+                empty editor first runs its normalization/plugins again on sync. */}
+            {provider && collabDoc && readyContent === provider && (
               <Suspense fallback={<EditorSkeleton />}>
                 <Editor
                   onReady={handleEditorReady}

@@ -241,7 +241,7 @@ function DocumentState({
   detail: string
 }) {
   return (
-    <div className="flex h-full items-center justify-center px-6 py-12">
+    <div data-document-state className="flex h-full items-center justify-center px-6 py-12">
       <div className="max-w-md text-center">
         <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
           <Icon className="size-5" />

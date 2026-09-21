@@ -3,7 +3,7 @@ import {
   BlockNoteSchema,
   createCodeBlockSpec,
 } from "@blocknote/core"
-import { yXmlFragmentToBlocks } from "@blocknote/core/yjs"
+import { withCollaboration, yXmlFragmentToBlocks } from "@blocknote/core/yjs"
 import {
   useCreateBlockNote,
   SuggestionMenuController,
@@ -28,9 +28,7 @@ import {
   SideMenuExtension,
 } from "@blocknote/core/extensions"
 import { BlockNoteView } from "@blocknote/shadcn"
-import { codeBlockOptions } from "@blocknote/code-block"
-import { createParser } from "prosemirror-highlight/shiki"
-import type { HighlighterGeneric, CodeToTokensOptions } from "@shikijs/types"
+import { codeBlockOptions, syntaxHighlighter } from "@blocknote/code-block"
 import type { Block } from "@blocknote/core"
 import type * as Y from "yjs"
 import { ySyncPluginKey } from "y-prosemirror"
@@ -72,35 +70,8 @@ const worktableCodeBlockOptions = {
   ),
 }
 
-// ── Pre-seed shiki parser with dual themes ───────────────────
-// BlockNote's default parser uses a single theme (the first loaded).
-// We pre-create a dual-theme parser so shiki outputs CSS variables
-// (--shiki-light, --shiki-dark) that we can swap with CSS.
-// The parser is cached globally via Symbol.for("blocknote.shikiParser").
-type BundledLanguage = "typescript" | "ts" | "javascript" | "js" | "vue"
-type BundledTheme = "github-light" | "github-dark"
-type Highlighter = HighlighterGeneric<BundledLanguage, BundledTheme>
-
-const SHIKI_PARSER_KEY = Symbol.for("blocknote.shikiParser")
-const SHIKI_HIGHLIGHTER_KEY = Symbol.for("blocknote.shikiHighlighterPromise")
-
-const globalSymbolStore = globalThis as unknown as Record<symbol, unknown>
-if (!globalSymbolStore[SHIKI_PARSER_KEY]) {
-  const highlighterPromise: Promise<Highlighter> =
-    (globalSymbolStore[SHIKI_HIGHLIGHTER_KEY] as Promise<Highlighter>) ??
-    codeBlockOptions.createHighlighter()
-  globalSymbolStore[SHIKI_HIGHLIGHTER_KEY] = highlighterPromise
-  highlighterPromise.then((highlighter: Highlighter) => {
-    const options: CodeToTokensOptions<BundledLanguage, BundledTheme> = {
-      themes: {
-        light: "github-light",
-        dark: "github-dark",
-      },
-    }
-    globalSymbolStore[SHIKI_PARSER_KEY] = createParser(highlighter, options)
-  })
-}
-
+// Upstream highlighting loads its parser on demand and supports both themes.
+// Ordinary documents no longer start a highlighter during module evaluation.
 let cachedSchema: ReturnType<typeof BlockNoteSchema.create> | null = null
 
 function getSchema() {
@@ -271,8 +242,9 @@ function EditorInner({
     [initialContent]
   )
 
-  const editor = useCreateBlockNote({
+  const baseOptions = {
     schema,
+    extensions: [syntaxHighlighter],
     _tiptapOptions: {
       editorProps: {
         attributes: {
@@ -282,8 +254,11 @@ function EditorInner({
         },
       },
     },
-    ...(collaboration
-      ? {
+  }
+  const editor = useCreateBlockNote(
+    collaboration
+      ? withCollaboration({
+          ...baseOptions,
           collaboration: {
             provider: collaboration.provider,
             fragment: collaboration.ydoc.getXmlFragment(
@@ -291,11 +266,12 @@ function EditorInner({
             ),
             user: { name: "You", color: "#0d7377" },
           },
-        }
+        })
       : {
+          ...baseOptions,
           initialContent: getBlockNoteCreationContent(normalizedInitialContent),
-        }),
-  })
+        }
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -720,6 +696,18 @@ function AnnotationBadges({
   >([])
 
   useEffect(() => {
+    // No badges means no model traversal, forced layout, timer, or resize work.
+    if (
+      !annotations.some(
+        (annotation) =>
+          annotation.status !== "resolved" &&
+          "blockId" in annotation.target &&
+          annotation.target.blockId
+      )
+    ) {
+      setPositions((previous) => (previous.length ? [] : previous))
+      return
+    }
     const update = () => {
       const container = containerRef.current
       if (!container) return

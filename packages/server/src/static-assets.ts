@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { gzipSync } from "node:zlib"
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve, sep } from "node:path";
+import { acceptsGzip } from "./http-compression.ts";
 
 export type StaticAssetsSource =
   | "env"
@@ -151,20 +152,6 @@ const assetCache = new Map<
   { identity: string; body: Buffer; gzip?: Buffer; etag: string; bytes: number }
 >()
 let assetCacheBytes = 0
-
-function acceptsGzip(value: string): boolean {
-  const codings = new Map(
-    value
-      .toLowerCase()
-      .split(",")
-      .map((entry) => {
-        const [name, ...params] = entry.trim().split(";")
-        const quality = params.find((param) => param.trim().startsWith("q="))
-        return [name, quality ? Number(quality.trim().slice(2)) : 1] as const
-      })
-  )
-  return (codings.get("gzip") ?? codings.get("*") ?? 0) > 0
-}
 
 export function createStaticFileResponse(
   staticDir: string,

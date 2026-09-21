@@ -18,12 +18,15 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@blocknote/code-block": "0.51.4",
-    "@blocknote/core": "0.51.4",
-    "@blocknote/server-util": "0.51.4",
+    "@blocknote/code-block": "0.54.2",
+    "@blocknote/core": "0.54.2",
+    "@blocknote/server-util": "0.54.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@worktable/hosted-contract": "workspace:*",
     "@worktable/types": "workspace:*",
+    "@worktable/ui": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "hono": "^4.7.4",
     "htmlparser2": "^10.1.0",
     "jose": "^6.2.1",

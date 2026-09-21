@@ -189,6 +189,12 @@ test.afterAll(async () => {
 test("a cold rich-text doc completes its first websocket sync without refresh", async ({
   page,
 }) => {
+  // Trace DOM snapshots query styles throughout the entire editor, forcing
+  // skipped content-visibility subtrees to lay out between every assertion.
+  // Keep visual/network diagnostics without changing the rendering behavior
+  // this 5,000-block regression is intended to exercise.
+  await page.context().tracing.stop()
+  await page.context().tracing.start({ screenshots: true, snapshots: false })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await page
     .getByRole("button", { name: "Link Regression", exact: true })
@@ -198,17 +204,21 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
   await expect(page).toHaveURL(
     /\/spaces\/link-regression\/documents\/cold-sync-proof$/
   )
-  await expect(
-    page.locator(".bn-editor")
-      .getByText("Cold sync paragraph 0", { exact: true })
-  ).toBeVisible({
-    timeout: 30_000,
-  })
-  await expect(
-    page
-      .locator(".bn-editor")
-      .getByText("Cold sync paragraph 4999", { exact: true })
-  ).toBeVisible({ timeout: 30_000 })
+  const firstParagraph = page.locator(
+    '.bn-editor .bn-block-outer[data-id="cold-sync-0"] .bn-inline-content'
+  )
+  await expect(firstParagraph).toBeVisible({ timeout: 30_000 })
+  await expect(firstParagraph).toHaveText("Cold sync paragraph 0")
+  // Long documents keep offscreen blocks mounted while deferring their layout.
+  // Address the fixture IDs directly rather than repeatedly walking all 5,000
+  // text subtrees, then verify the last paragraph after actually scrolling there.
+  const lastBlock = page.locator(
+    '.bn-editor .bn-block-outer[data-id="cold-sync-4999"]'
+  )
+  await expect(lastBlock).toBeAttached()
+  await lastBlock.evaluate((element) => element.scrollIntoView())
+  await expect(lastBlock.locator(".bn-inline-content")).toBeVisible()
+  await expect(lastBlock).toHaveText("Cold sync paragraph 4999")
   await expect(page.locator('[contenteditable="true"]')).toBeVisible()
   await expect(page.getByText("Syncing", { exact: true })).toHaveCount(0, {
     timeout: 30_000,
@@ -266,9 +276,12 @@ test("an already-amplified link opens without further rewriting", async ({
   await page.clock.install()
   const sourceBefore = await readFile(corruptedSourcePath)
 
-  await page.goto(appUrl("/spaces/link-regression/documents/corrupted-source"), {
-    waitUntil: "domcontentloaded",
-  })
+  await page.goto(
+    appUrl("/spaces/link-regression/documents/corrupted-source"),
+    {
+      waitUntil: "domcontentloaded",
+    }
+  )
   const docLink = page.getByRole("link", { name: "the damaged target" })
   await expect(docLink).toBeVisible({ timeout: 30_000 })
   await expect(docLink).toHaveAttribute(

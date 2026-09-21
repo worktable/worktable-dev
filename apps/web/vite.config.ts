@@ -2,6 +2,7 @@ import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import { sharedIconChunk } from "./shared-icon-chunk"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import type { ManifestOptions } from "vite-plugin-pwa"
@@ -68,6 +69,15 @@ export const navigateFallbackDenylist = [
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    manifest: true,
+    rollupOptions: {
+      output: {
+        manualChunks: sharedIconChunk(),
+        onlyExplicitManualChunks: true,
+      },
+    },
+  },
   plugins: [
     // TanStack Start must come before react plugin
     tanstackStart({
@@ -121,6 +131,7 @@ export default defineConfig({
     // ProseMirror and Yjs rely on singletons; a second copy in the module
     // graph breaks the BlockNote editor (seen as dup-ProseMirror in dev).
     dedupe: [
+      "@base-ui/react",
       "prosemirror-model",
       "prosemirror-state",
       "prosemirror-view",

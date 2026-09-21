@@ -4,6 +4,8 @@ The changes in `4eb2adf` fix real delivery and loading-state defects, but **they
 
 ## Open and inspect it
 
+For review from another computer on the LAN, use the network listeners: [current application](http://192.168.2.211:45747/spaces/loading-audit/documents/rich-10), [reading prototype](http://192.168.2.211:45551/rich-10), and [editor prototype](http://192.168.2.211:43009/spaces/loading-audit/documents/rich-2000). The application listeners use password-protected copies of the fixture workspaces; the temporary review password was provided in the conversation, not committed here. Login and document rendering were checked through these LAN URLs. The original loopback URLs below remain for same-machine access.
+
 These local servers were left running for review. They contain disposable fixture documents, not the user's workspace:
 
 - [Current saved application](http://127.0.0.1:45747/spaces/loading-audit/documents/rich-10), including sidebar links to Markdown, HTML, and 500/2,000-paragraph rich documents.

@@ -57,7 +57,11 @@ import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
 
-type MermaidBlockModule = typeof import("./worktable-mermaid-block")
+import {
+  WorktableMermaidBlock,
+  insertWorktableMermaid,
+} from "./worktable-mermaid-block"
+import { EditorSkeleton } from "./editor-skeleton"
 
 const worktableCodeBlockOptions = {
   ...codeBlockOptions,
@@ -97,26 +101,6 @@ if (!globalSymbolStore[SHIKI_PARSER_KEY]) {
   })
 }
 
-// ── Lazy Mermaid Block Loading ───────────────────────────────
-
-let mermaidBlockSpec: MermaidBlockModule["WorktableMermaidBlock"] | null = null
-let insertMermaidItem: MermaidBlockModule["insertWorktableMermaid"] | null =
-  null
-let mermaidLoadPromise: Promise<void> | null = null
-
-function loadMermaidBlock(): Promise<void> {
-  if (mermaidBlockSpec && insertMermaidItem) return Promise.resolve()
-  if (mermaidLoadPromise) return mermaidLoadPromise
-
-  mermaidLoadPromise = import("./worktable-mermaid-block").then((module) => {
-    mermaidBlockSpec = module.WorktableMermaidBlock
-    insertMermaidItem = module.insertWorktableMermaid
-    cachedSchema = null
-  })
-
-  return mermaidLoadPromise
-}
-
 let cachedSchema: ReturnType<typeof BlockNoteSchema.create> | null = null
 
 function getSchema() {
@@ -127,9 +111,7 @@ function getSchema() {
     codeBlock: createCodeBlockSpec(worktableCodeBlockOptions),
   }
 
-  if (mermaidBlockSpec) {
-    blockSpecs.mermaid = mermaidBlockSpec()
-  }
+  blockSpecs.mermaid = WorktableMermaidBlock()
 
   cachedSchema = BlockNoteSchema.create({
     blockSpecs,
@@ -139,12 +121,8 @@ function getSchema() {
 }
 
 export async function blocksFromCollaborationDoc(ydoc: Y.Doc) {
-  await loadMermaidBlock()
   const editor = BlockNoteEditor.create({ schema: getSchema() })
-  return yXmlFragmentToBlocks(
-    editor,
-    ydoc.getXmlFragment("document-store")
-  )
+  return yXmlFragmentToBlocks(editor, ydoc.getXmlFragment("document-store"))
 }
 
 type EditorBlock = Block
@@ -205,6 +183,7 @@ interface AnnotationCapableEditor {
 }
 
 interface EditorProps {
+  onReady?: () => void
   initialContent?: EditorBlock[]
   onChange?: (blocks: EditorBlock[]) => void
   editable?: boolean
@@ -215,18 +194,8 @@ interface EditorProps {
   onSelectAnnotation?: (annotation: Annotation) => void
 }
 
-function EditorLoadingState() {
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-card">
-      <div className="flex animate-pulse flex-col items-center gap-3">
-        <div className="h-8 w-8 rounded-full bg-muted" />
-        <div className="h-2 w-24 rounded bg-muted" />
-      </div>
-    </div>
-  )
-}
-
 export function Editor({
+  onReady,
   initialContent,
   onChange,
   editable = true,
@@ -236,7 +205,6 @@ export function Editor({
   onCreateAnnotation,
   onSelectAnnotation,
 }: EditorProps) {
-  const [mermaidReady, setMermaidReady] = useState(!!mermaidBlockSpec)
   const [mounted, setMounted] = useState(false)
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -245,11 +213,6 @@ export function Editor({
   // recreates the editor. See EditorInner's spellcheck effect.
   const spellcheck = useServerSettings().data?.editor.spellcheck ?? false
 
-  useEffect(() => {
-    if (mermaidReady) return
-    loadMermaidBlock().then(() => setMermaidReady(true))
-  }, [mermaidReady])
-
   const resolvedTheme =
     theme === "system"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -257,12 +220,9 @@ export function Editor({
         : "light"
       : theme
 
-  if (!mermaidReady) {
-    return <EditorLoadingState />
-  }
-
   return (
     <EditorInner
+      onReady={onReady}
       initialContent={initialContent}
       onChange={onChange}
       editable={editable}
@@ -281,6 +241,7 @@ export function Editor({
 }
 
 function EditorInner({
+  onReady,
   initialContent,
   onChange,
   editable,
@@ -339,6 +300,10 @@ function EditorInner({
   useEffect(() => {
     setMounted(true)
   }, [setMounted])
+
+  useEffect(() => {
+    if (mounted) onReady?.()
+  }, [mounted, onReady])
 
   // Reactively apply the spellcheck preference to the live ProseMirror node
   // (`editor.domElement`, the same node editorProps.attributes seeds). Setting
@@ -441,9 +406,7 @@ function EditorInner({
         const items: DefaultReactSuggestionItem[] = [
           ...getDefaultReactSlashMenuItems(editor),
           ...annotationItems,
-          ...(insertMermaidItem
-            ? [insertMermaidItem() as DefaultReactSuggestionItem]
-            : []),
+          insertWorktableMermaid() as DefaultReactSuggestionItem,
         ]
         return filterSuggestionItems(items, query)
       },
@@ -476,7 +439,7 @@ function EditorInner({
   }, [mounted])
 
   if (!mounted) {
-    return <EditorLoadingState />
+    return <EditorSkeleton />
   }
 
   return (

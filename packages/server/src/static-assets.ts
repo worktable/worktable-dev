@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+import { gzipSync } from "node:zlib"
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve, sep } from "node:path";
 
@@ -137,13 +139,38 @@ export function resolveStaticFilePath(
 }
 
 function contentTypeFor(path: string): string {
-  return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
+  return (
+    CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream"
+  )
+}
+
+// Bound retained buffers across release changes and large asset collections.
+const MAX_ASSET_CACHE_BYTES = 32 * 1024 * 1024
+const assetCache = new Map<
+  string,
+  { identity: string; body: Buffer; gzip?: Buffer; etag: string; bytes: number }
+>()
+let assetCacheBytes = 0
+
+function acceptsGzip(value: string): boolean {
+  const codings = new Map(
+    value
+      .toLowerCase()
+      .split(",")
+      .map((entry) => {
+        const [name, ...params] = entry.trim().split(";")
+        const quality = params.find((param) => param.trim().startsWith("q="))
+        return [name, quality ? Number(quality.trim().slice(2)) : 1] as const
+      })
+  )
+  return (codings.get("gzip") ?? codings.get("*") ?? 0) > 0
 }
 
 export function createStaticFileResponse(
   staticDir: string,
   requestPath: string,
-  headers?: HeadersInit
+  headers?: HeadersInit,
+  request?: Request
 ): Response | null {
   const filePath = resolveStaticFilePath(staticDir, requestPath);
   if (!filePath) return null;
@@ -156,11 +183,82 @@ export function createStaticFileResponse(
   }
   if (!stats.isFile()) return null;
 
-  const body = readFileSync(filePath);
+  const identity = `${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`
+  let asset = assetCache.get(filePath)
+  if (asset && asset.identity !== identity) {
+    assetCacheBytes -= asset.bytes
+    assetCache.delete(filePath)
+    asset = undefined
+  }
+  if (!asset) {
+    const body = readFileSync(filePath)
+    asset = {
+      identity,
+      body,
+      etag: createHash("sha256").update(body).digest("hex"),
+      bytes: body.length,
+    }
+  }
   const responseHeaders = new Headers(headers);
   if (!responseHeaders.has("Content-Type")) {
     responseHeaders.set("Content-Type", contentTypeFor(filePath));
   }
-  responseHeaders.set("Content-Length", String(stats.size));
-  return new Response(body, { headers: responseHeaders });
+  const compressible =
+    /^(text\/|application\/(json|manifest\+json)|image\/svg\+xml)/.test(
+      responseHeaders.get("Content-Type")!
+    )
+  const compressed =
+    compressible &&
+    asset.body.length >= 1024 &&
+    acceptsGzip(request?.headers.get("accept-encoding") ?? "")
+  if (compressible) responseHeaders.append("Vary", "Accept-Encoding")
+  if (compressed && !asset.gzip) {
+    asset.gzip = gzipSync(asset.body, { level: 6 })
+    if (assetCache.has(filePath)) assetCacheBytes += asset.gzip.length
+    asset.bytes += asset.gzip.length
+  }
+  // Refresh LRU position, and evict even when an existing entry grew a gzip buffer.
+  if (asset.bytes <= MAX_ASSET_CACHE_BYTES) {
+    if (!assetCache.has(filePath)) assetCacheBytes += asset.bytes
+    assetCache.delete(filePath)
+    assetCache.set(filePath, asset)
+  }
+  while (assetCacheBytes > MAX_ASSET_CACHE_BYTES || assetCache.size > 128) {
+    const oldest = assetCache.keys().next().value!
+    assetCacheBytes -= assetCache.get(oldest)!.bytes
+    assetCache.delete(oldest)
+  }
+
+  if (!responseHeaders.has("Cache-Control")) {
+    responseHeaders.set(
+      "Cache-Control",
+      /^\/assets\/[^/]+-[\w-]{8,}\.[a-z0-9]+$/i.test(requestPath)
+        ? "public, max-age=31536000, immutable"
+        : "no-cache"
+    )
+  }
+  const etag = `"${asset.etag}${compressed ? "-gzip" : ""}"`
+  responseHeaders.set("ETag", etag)
+  if (compressed) responseHeaders.set("Content-Encoding", "gzip")
+  const ifNoneMatch = request?.headers.get("if-none-match")
+  if (
+    ifNoneMatch
+      ?.split(",")
+      .some(
+        (tag) => tag.trim() === "*" || tag.trim().replace(/^W\//, "") === etag
+      )
+  ) {
+    responseHeaders.delete("Content-Length")
+    return new Response(null, { status: 304, headers: responseHeaders })
+  }
+  const body = compressed ? asset.gzip! : asset.body
+  responseHeaders.set("Content-Length", String(body.length));
+  return new Response(
+    request?.method === "HEAD"
+      ? null
+      : new Uint8Array(
+          body.buffer as ArrayBuffer,
+          body.byteOffset,
+          body.byteLength
+        ), { headers: responseHeaders });
 }

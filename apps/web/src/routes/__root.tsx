@@ -52,6 +52,7 @@ import { SidebarContext } from "@/hooks/use-sidebar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
+import { themeBootstrapScript } from "@/lib/theme"
 import { ThemeProvider, useTheme } from "@/components/theme-provider"
 import {
   usePageLifecyclePersistence,
@@ -84,8 +85,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       },
       {
         name: "theme-color",
-        content: THEME_SHELL_COLORS.light,
-        media: "(prefers-color-scheme: light)",
+        content: THEME_SHELL_COLORS.dark,
       },
       {
         name: "apple-mobile-web-app-capable",
@@ -132,22 +132,15 @@ function InitialLoader() {
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
-        {/* TanStack deduplicates meta by name, so we inject dark theme-color manually */}
-        <meta
-          name="theme-color"
-          content={THEME_SHELL_COLORS.dark}
-          media="(prefers-color-scheme: dark)"
-        />
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <style
           dangerouslySetInnerHTML={{
             __html: `
-              html { background-color: ${THEME_SHELL_COLORS.light}; color-scheme: light; }
-              @media (prefers-color-scheme: dark) {
-                html { background-color: ${THEME_SHELL_COLORS.dark}; }
-              }
+              html { background-color: ${THEME_SHELL_COLORS.dark}; color-scheme: dark; }
+              html.light { background-color: ${THEME_SHELL_COLORS.light}; color-scheme: light; }
               body { margin: 0; overflow: hidden; }
               body.loaded { overflow: auto; }
               .initial-loader {
@@ -161,12 +154,13 @@ function RootShell({ children }: { children: ReactNode }) {
               .initial-loader-icon {
                 width: 40px;
                 height: 40px;
-                animation: pulse 1.5s ease-in-out infinite;
+                animation: worktable-startup 1.5s ease-in-out infinite;
               }
-              @keyframes pulse {
-                0%, 100% { opacity: 0.6; transform: scale(1); }
-                50% { opacity: 1; transform: scale(1.05); }
+              @keyframes worktable-startup {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
               }
+              @media (prefers-reduced-motion: reduce) { .initial-loader-icon { animation: none; } }
               @keyframes loading-bar {
                 0% { transform: translateX(-100%); }
                 100% { transform: translateX(200%); }

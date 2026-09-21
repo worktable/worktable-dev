@@ -199,12 +199,15 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
     /\/spaces\/link-regression\/documents\/cold-sync-proof$/
   )
   await expect(
-    page.getByText("Cold sync paragraph 0", { exact: true })
+    page.locator(".bn-editor")
+      .getByText("Cold sync paragraph 0", { exact: true })
   ).toBeVisible({
     timeout: 30_000,
   })
   await expect(
-    page.getByText("Cold sync paragraph 4999", { exact: true })
+    page
+      .locator(".bn-editor")
+      .getByText("Cold sync paragraph 4999", { exact: true })
   ).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('[contenteditable="true"]')).toBeVisible()
   await expect(page.getByText("Syncing", { exact: true })).toHaveCount(0, {
@@ -391,4 +394,23 @@ test("mobile navigation opens the new-space sheet and returns to navigation", as
   await expect(page.getByRole("heading", { name: "New Space" })).toBeVisible()
   await page.getByRole("button", { name: "Cancel" }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toHaveCount(0)
+})
+
+test("markdown document links navigate without restarting the application", async ({
+  page,
+}) => {
+  await writeFile(
+    harness.workspacePath("spaces/link-regression/docs/markdown-links.md"),
+    "# Navigation\n\n[Open target](./target)\n"
+  )
+  await page.goto(appUrl("/spaces/link-regression/documents/markdown-links"))
+  const link = page.getByRole("link", { name: "Open target", exact: true })
+  await expect(link).toBeVisible()
+  const timeOrigin = await page.evaluate(() => performance.timeOrigin)
+  await link.click()
+  await expect(page).toHaveURL(/\/documents\/target$/)
+  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+    timeout: 30_000,
+  })
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin)
 })

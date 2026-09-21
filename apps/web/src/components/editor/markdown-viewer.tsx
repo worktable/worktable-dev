@@ -13,6 +13,7 @@ import {
   type ErrorInfo,
   type ReactNode,
 } from "react"
+import { useRouter } from "@tanstack/react-router"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { AlertTriangle } from "lucide-react"
@@ -99,6 +100,7 @@ export function MarkdownViewer({
   spaceId,
   docPath,
 }: MarkdownViewerProps) {
+  const router = useRouter()
   const scrollRef = useScrollFade<HTMLDivElement>(8, { top: false })
   const { theme } = useTheme()
   const worktableOrigins = useMemo(
@@ -134,6 +136,39 @@ export function MarkdownViewer({
                     <a
                       {...props}
                       href={renderedHref}
+                      onClick={(event) => {
+                        props.onClick?.(event)
+                        if (
+                          event.defaultPrevented ||
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        )
+                          return
+                        if (renderedHref.startsWith("#")) return
+                        const anchor = event.currentTarget
+                        if (
+                          anchor.hasAttribute("download") ||
+                          (anchor.target && anchor.target !== "_self")
+                        )
+                          return
+                        const url = new URL(anchor.href)
+                        // Only app document routes belong to the client router.
+                        // Attachments, fragments and external URLs retain browser behavior.
+                        if (
+                          url.origin !== window.location.origin ||
+                          !/^\/spaces\/[^/]+\/(?:documents|docs|widgets)\//.test(
+                            url.pathname
+                          )
+                        )
+                          return
+                        event.preventDefault()
+                        void router.navigate({
+                          href: url.pathname + url.search + url.hash,
+                        })
+                      }}
                       {...externalLinkProps(renderedHref, worktableOrigins)}
                     />
                   )

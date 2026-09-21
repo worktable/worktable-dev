@@ -110,6 +110,10 @@ export default defineConfig({
       },
     }),
   ],
+  // Keep the dynamic catalog out of the dev prebundle. Otherwise esbuild
+  // splits the static icon barrel into thousands of shared chunks, making
+  // ordinary named icon imports fetch the entire catalog during startup.
+  optimizeDeps: { exclude: ["lucide-react/dynamic.mjs"] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

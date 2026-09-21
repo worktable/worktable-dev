@@ -161,15 +161,16 @@ test("rich-doc block handles remain usable after annotation composer closes", as
     { waitUntil: "domcontentloaded" }
   )
 
-  const firstBlock = page.getByText(
+  const editor = page.locator(".bn-editor")
+  const firstBlock = editor.getByText(
     "Worktable is most useful when the shape of the work matches what you need to do. You do not need every feature for every project.",
     { exact: true }
   )
-  const secondBlock = page.getByRole("heading", {
+  const secondBlock = editor.getByRole("heading", {
     name: "Find what works",
     exact: true,
   })
-  const thirdBlock = page.getByRole("heading", {
+  const thirdBlock = editor.getByRole("heading", {
     name: "How the pieces fit together",
     exact: true,
   })
@@ -697,4 +698,53 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await expect(popup.getByRole("heading", { name: "Move Note" })).toBeVisible()
   await popup.close()
+})
+
+test("HTML documents become readable from the runtime ready signal", async ({
+  page,
+}) => {
+  // Disable only the parent's iframe load fallback. The real sandboxed runtime
+  // must reveal the document through its source- and token-checked ready message.
+  await page.addInitScript(() => {
+    if (window !== window.top) return
+    document.addEventListener(
+      "load",
+      (event) => {
+        if (
+          event.target instanceof HTMLIFrameElement &&
+          event.target.hasAttribute("data-worktable-widget-frame")
+        ) {
+          document.documentElement.dataset.frameLoadIntercepted = "true"
+          event.stopImmediatePropagation()
+        }
+      },
+      true
+    )
+  })
+  const created = await page.request.post(
+    `${harness.apiUrl}/api/spaces/welcome/widgets`,
+    {
+      data: {
+        id: "runtime-ready",
+        name: "Runtime ready",
+        html: "<!doctype html><body><h1>Readable parsed markup</h1></body>",
+      },
+    }
+  )
+  expect(created.ok(), await created.text()).toBe(true)
+  await page.goto(
+    new URL("/spaces/welcome/documents/runtime-ready", harness.webUrl).href,
+    { waitUntil: "domcontentloaded" }
+  )
+  const frame = page.frameLocator("iframe[data-worktable-widget-frame]")
+  await expect(
+    frame.getByRole("heading", { name: "Readable parsed markup" })
+  ).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-frame-load-intercepted",
+    "true"
+  )
+  await expect(
+    page.getByRole("status", { name: "Opening document" })
+  ).toBeHidden()
 })

@@ -833,7 +833,10 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
   );
   const collaborationCacheEpochHistory =
     await getDocCollaborationCacheEpochHistory(spaceId, docPath);
-  const markdownCompatible =
+  // Opening the browser editor does not require a markdown serialize/parse
+  // roundtrip. The conversion mutation always rechecks content and annotations.
+  // Keep the default response compatible for existing API consumers.
+  const markdownCompatible = c.req.query("conversionCheck") === "skip" ? null :
     result.storedAs === "json" &&
     Array.isArray(result.data) &&
     (await prepareMarkdownStorageConversion(result.data)).safe &&

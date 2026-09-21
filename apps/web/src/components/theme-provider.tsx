@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import * as React from "react"
+import { DEFAULT_THEME, THEME_STORAGE_KEY } from "@/lib/theme"
+import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 
 type Theme = "dark" | "light" | "system"
 type ResolvedTheme = "dark" | "light"
@@ -82,16 +84,18 @@ function isEditableTarget(target: EventTarget | null) {
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark",
-  storageKey = "theme",
+  defaultTheme = DEFAULT_THEME,
+  storageKey = THEME_STORAGE_KEY,
   disableTransitionOnChange = true,
   ...props
 }: ThemeProviderProps) {
   const [theme, setThemeState] = React.useState<Theme>(() => {
     if (!isBrowser) return defaultTheme
-    const storedTheme = localStorage.getItem(storageKey)
-    if (isTheme(storedTheme)) {
-      return storedTheme
+    try {
+      const storedTheme = localStorage.getItem(storageKey)
+      if (isTheme(storedTheme)) return storedTheme
+    } catch {
+      /* Keep the default when storage is unavailable. */
     }
 
     return defaultTheme
@@ -99,7 +103,11 @@ export function ThemeProvider({
 
   const setTheme = React.useCallback(
     (nextTheme: Theme) => {
-      if (isBrowser) localStorage.setItem(storageKey, nextTheme)
+      try {
+        if (isBrowser) localStorage.setItem(storageKey, nextTheme)
+      } catch {
+        /* Theme still works in memory. */
+      }
       setThemeState(nextTheme)
     },
     [storageKey]
@@ -116,6 +124,10 @@ export function ThemeProvider({
 
       root.classList.remove("light", "dark")
       root.classList.add(resolvedTheme)
+      root.style.colorScheme = resolvedTheme
+      document
+        .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+        ?.setAttribute("content", THEME_SHELL_COLORS[resolvedTheme])
 
       if (restoreTransitions) {
         restoreTransitions()
@@ -171,7 +183,11 @@ export function ThemeProvider({
                 ? "light"
                 : "dark"
 
-        localStorage.setItem(storageKey, nextTheme)
+        try {
+          localStorage.setItem(storageKey, nextTheme)
+        } catch {
+          /* Theme still works in memory. */
+        }
         return nextTheme
       })
     }

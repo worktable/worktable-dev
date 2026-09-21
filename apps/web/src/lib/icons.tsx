@@ -1,47 +1,48 @@
-import type { ReactNode } from "react";
-import { icons, Folder, FileText } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType, ReactNode } from "react"
+import { Folder, FileText } from "lucide-react"
+import type { LucideProps } from "lucide-react"
+import { DynamicIcon, iconNames, type IconName } from "lucide-react/dynamic.mjs"
 
-/** Convert kebab-case icon name to PascalCase (e.g. "flask-conical" → "FlaskConical") */
-function kebabToPascal(name: string): string {
-  return name
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("");
-}
+// Names are cheap; SVG definitions load individually when rendered. Importing
+// lucide's `icons` namespace forces the entire catalog into the startup bundle.
+export const ALL_ICON_NAMES = [...iconNames].sort()
+const knownIcons = new Set<string>(ALL_ICON_NAMES)
+const iconCache = new Map<string, ComponentType<LucideProps>>()
 
-/** Simple LRU cache for resolved icons to avoid repeated lookups */
-const iconCache = new Map<string, LucideIcon | null>();
-
-/**
- * Look up any Lucide icon by kebab-case name.
- * Uses the full `icons` export from lucide-react (~1700 icons).
- */
-export function getIcon(name: string): LucideIcon | null {
-  if (iconCache.has(name)) return iconCache.get(name)!;
-
-  const pascal = kebabToPascal(name);
-  const icon = (icons as Record<string, LucideIcon>)[pascal] ?? null;
-  iconCache.set(name, icon);
-  return icon;
+export function getIcon(name: string): ComponentType<LucideProps> | null {
+  if (!knownIcons.has(name)) return null
+  let component = iconCache.get(name)
+  if (!component) {
+    component = function NamedIcon(props: LucideProps) {
+      return (
+        <DynamicIcon
+          {...props}
+          name={name as IconName}
+          fallback={() => <Folder {...props} />}
+        />
+      )
+    }
+    iconCache.set(name, component)
+  }
+  return component
 }
 
 /** Resolve a string icon key to a rendered element. Supports any Lucide icon name. */
 export function resolveIcon(
   icon: string | undefined,
-  className = "size-4",
+  className = "size-4"
 ): ReactNode {
-  if (!icon) return <Folder className={className} />;
+  if (!icon) return <Folder className={className} />
 
   // Emoji (starts with non-ASCII) — render as Folder icon instead
   if (/^[^\x00-\x7F]/.test(icon)) {
-    return <Folder className={className} />;
+    return <Folder className={className} />
   }
 
-  const IconComponent = getIcon(icon);
+  const IconComponent = getIcon(icon)
   if (IconComponent) {
-    return <IconComponent className={className} />;
+    return <IconComponent className={className} />
   }
 
-  return <FileText className={className} />;
+  return <FileText className={className} />
 }

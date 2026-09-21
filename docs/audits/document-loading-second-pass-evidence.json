@@ -1,0 +1,3164 @@
+{
+  "method": {
+    "server": "actual Worktable server serving existing production build",
+    "fixture": "isolated V2 workspace; 10-paragraph rich-text document and static HTML",
+    "remoteProfile": {
+      "latencyMs": 100,
+      "downloadMbps": 10,
+      "cpuSlowdown": 4
+    },
+    "limitations": [
+      "Shared host, synthetic data, not production percentiles.",
+      "Fresh Chrome contexts and screenshot instrumentation.",
+      "Gzip experiment changes delivery only, not application code."
+    ]
+  },
+  "runs": {
+    "baseline": {
+      "ready": 3899,
+      "readyError": null,
+      "states": [
+        {
+          "at": 387,
+          "theme": "",
+          "logo": true,
+          "bodyBg": "oklch(0.955 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 1416,
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 1719,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 1988,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 2,
+          "pulseClass": "h-7 w-48 animate-pulse rounded-lg bg-muted/30",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 2243,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 2385,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 3458,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 1,
+          "pulseClass": "flex animate-pulse flex-col items-center gap-3",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 3760,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": true,
+          "editorText": "Audit rich 10 paragraph 0Audit rich 10 paragraph 1Audit rich 10 p",
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 65.30000001192093,
+          "duration": 73.19999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-zy1XOX2u.js",
+          "start": 66.20000004768372,
+          "duration": 157.5999999642372,
+          "size": 1934874,
+          "transfer": 1935174
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/index-Dcth7aHX.js",
+          "start": 66.5,
+          "duration": 102.30000001192093,
+          "size": 6189,
+          "transfer": 6489
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css#",
+          "start": 66.60000002384186,
+          "duration": 88.10000002384186,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 176.5,
+          "duration": 154.70000004768372,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 176.80000001192093,
+          "duration": 133.19999998807907,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_spaceId-Ck-OzI90.js",
+          "start": 1183.300000011921,
+          "duration": 37.30000001192093,
+          "size": 15338,
+          "transfer": 15638
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_-DPse9BYI.js",
+          "start": 1183.6000000238419,
+          "duration": 37.19999998807907,
+          "size": 4204,
+          "transfer": 4504
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit",
+          "start": 1297,
+          "duration": 900.7000000476837,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 1301.2000000476837,
+          "duration": 267.7999999523163,
+          "size": 1445,
+          "transfer": 1745
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 1304.4000000357628,
+          "duration": 347.69999998807907,
+          "size": 735,
+          "transfer": 1035
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 1352.4000000357628,
+          "duration": 37.09999996423721,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/workspace",
+          "start": 1402.1000000238419,
+          "duration": 48,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 1407.2000000476837,
+          "duration": 58.69999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces?includeArchived=true",
+          "start": 1688.2000000476837,
+          "duration": 575.8999999761581,
+          "size": 1576,
+          "transfer": 1876
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/deployment",
+          "start": 1711.7000000476837,
+          "duration": 50.59999996423721,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/records",
+          "start": 1912.800000011921,
+          "duration": 53.19999998807907,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/version?cached=1",
+          "start": 2027.1000000238419,
+          "duration": 69.5,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css",
+          "start": 2217.7000000476837,
+          "duration": 20.599999964237213,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 2514.2000000476837,
+          "duration": 34.89999997615814,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs/rich-10",
+          "start": 2545.7000000476837,
+          "duration": 301,
+          "size": 2649,
+          "transfer": 2949
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 2861.7000000476837,
+          "duration": 146.89999997615814,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/editor-BYpUoQpo.js",
+          "start": 3018.400000035763,
+          "duration": 135.5,
+          "size": 1087201,
+          "transfer": 1087501
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/mermaid-D3o5coJa.js",
+          "start": 3019.7000000476837,
+          "duration": 92.39999997615814,
+          "size": 9744,
+          "transfer": 10044
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-dark-BFhhNueA.js",
+          "start": 3451.900000035763,
+          "duration": 19.599999964237213,
+          "size": 11486,
+          "transfer": 11786
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-light-lKoG2_DG.js",
+          "start": 3453,
+          "duration": 23.80000001192093,
+          "size": 11265,
+          "transfer": 11565
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/settings",
+          "start": 3465.2000000476837,
+          "duration": 43,
+          "size": 140,
+          "transfer": 440
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-block-DyjWs-3N.js",
+          "start": 3467.800000011921,
+          "duration": 62.30000001192093,
+          "size": 632209,
+          "transfer": 632509
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+          "start": 3470.2000000476837,
+          "duration": 42.5,
+          "size": 6500,
+          "transfer": 6800
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 346.2000000476837,
+          "duration": 53
+        },
+        {
+          "start": 419.2000000476837,
+          "duration": 106
+        },
+        {
+          "start": 529.5,
+          "duration": 547
+        },
+        {
+          "start": 1113.1000000238419,
+          "duration": 191
+        },
+        {
+          "start": 1555.5,
+          "duration": 161
+        },
+        {
+          "start": 1796.5,
+          "duration": 187
+        },
+        {
+          "start": 2313.2000000476837,
+          "duration": 75
+        },
+        {
+          "start": 2388.5,
+          "duration": 134
+        },
+        {
+          "start": 2580.5,
+          "duration": 91
+        },
+        {
+          "start": 3005.300000011921,
+          "duration": 245
+        },
+        {
+          "start": 3285.7000000476837,
+          "duration": 64
+        },
+        {
+          "start": 3659.5,
+          "duration": 99
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 572,
+          "duration": 0,
+          "paintTime": 386.9000000357628,
+          "presentationTime": 572
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 572,
+          "duration": 0,
+          "paintTime": 386.9000000357628,
+          "presentationTime": 572
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:36431/spaces/loading-audit/documents/rich-10",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 1101,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 4.900000035762787,
+          "domainLookupStart": 10.700000047683716,
+          "domainLookupEnd": 10.700000047683716,
+          "connectStart": 10.700000047683716,
+          "secureConnectionStart": 0,
+          "connectEnd": 10.900000035762787,
+          "requestStart": 12.100000023841858,
+          "responseStart": 15.700000047683716,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 15.700000047683716,
+          "responseEnd": 16.5,
+          "transferSize": 6727,
+          "encodedBodySize": 6427,
+          "decodedBodySize": 6427,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 526.2000000476837,
+          "domContentLoadedEventStart": 526.3000000119209,
+          "domContentLoadedEventEnd": 526.9000000357628,
+          "domComplete": 1100.9000000357628,
+          "loadEventStart": 1101,
+          "loadEventEnd": 1101,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    },
+    "remote": {
+      "ready": 9859,
+      "readyError": null,
+      "states": [
+        {
+          "at": 960,
+          "theme": "",
+          "logo": true,
+          "bodyBg": "oklch(0.955 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4249,
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4761,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 2,
+          "pulseClass": "h-7 w-48 animate-pulse rounded-lg bg-muted/30",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4887,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5668,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 8015,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 1,
+          "pulseClass": "flex animate-pulse flex-col items-center gap-3",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 9607,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": true,
+          "editorText": "Audit rich 10 paragraph 0Audit rich 10 paragraph 1Audit rich 10 p",
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 166.19999998807907,
+          "duration": 118.19999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-zy1XOX2u.js",
+          "start": 179.30000001192093,
+          "duration": 2172.399999976158,
+          "size": 1934874,
+          "transfer": 1935174
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/index-Dcth7aHX.js",
+          "start": 182.0999999642372,
+          "duration": 147.70000004768372,
+          "size": 6189,
+          "transfer": 6489
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css#",
+          "start": 183.30000001192093,
+          "duration": 545.3999999761581,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 737.8000000119209,
+          "duration": 162,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 738.5999999642372,
+          "duration": 138.20000004768372,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 1204.300000011921,
+          "duration": 112.79999995231628,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_spaceId-Ck-OzI90.js",
+          "start": 3811,
+          "duration": 127.39999997615814,
+          "size": 15338,
+          "transfer": 15638
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_-DPse9BYI.js",
+          "start": 3813.5,
+          "duration": 115.39999997615814,
+          "size": 4204,
+          "transfer": 4504
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit",
+          "start": 3855.399999976158,
+          "duration": 106.90000003576279,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 3862.399999976158,
+          "duration": 108.40000003576279,
+          "size": 1445,
+          "transfer": 1745
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 3873.599999964237,
+          "duration": 105.5,
+          "size": 735,
+          "transfer": 1035
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/workspace",
+          "start": 4218.699999988079,
+          "duration": 105.30000001192093,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 4230.699999988079,
+          "duration": 107.69999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces?includeArchived=true",
+          "start": 4695,
+          "duration": 109.80000001192093,
+          "size": 1576,
+          "transfer": 1876
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/deployment",
+          "start": 4701.899999976158,
+          "duration": 111.40000003576279,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/records",
+          "start": 4715,
+          "duration": 113.5,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css",
+          "start": 4812.5,
+          "duration": 376.39999997615814,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 5370.899999976158,
+          "duration": 112.10000002384186,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/version?cached=1",
+          "start": 5376.899999976158,
+          "duration": 113.80000001192093,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs/rich-10",
+          "start": 5939.5,
+          "duration": 106,
+          "size": 2649,
+          "transfer": 2949
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 6074.599999964237,
+          "duration": 106.60000002384186,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/editor-BYpUoQpo.js",
+          "start": 6206,
+          "duration": 1248.3999999761581,
+          "size": 1087201,
+          "transfer": 1087501
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/mermaid-D3o5coJa.js",
+          "start": 6207.5,
+          "duration": 125.30000001192093,
+          "size": 9744,
+          "transfer": 10044
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-dark-BFhhNueA.js",
+          "start": 7927.899999976158,
+          "duration": 127.10000002384186,
+          "size": 11486,
+          "transfer": 11786
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-light-lKoG2_DG.js",
+          "start": 7935.899999976158,
+          "duration": 125.10000002384186,
+          "size": 11265,
+          "transfer": 11565
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/settings",
+          "start": 7967.099999964237,
+          "duration": 109.30000001192093,
+          "size": 140,
+          "transfer": 440
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-block-DyjWs-3N.js",
+          "start": 7984.099999964237,
+          "duration": 731.4000000357628,
+          "size": 632209,
+          "transfer": 632509
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+          "start": 8002.699999988079,
+          "duration": 120.5,
+          "size": 6500,
+          "transfer": 6800
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 129.19999998807907,
+          "duration": 132
+        },
+        {
+          "start": 905.1999999880791,
+          "duration": 60
+        },
+        {
+          "start": 2685.399999976158,
+          "duration": 995
+        },
+        {
+          "start": 3731,
+          "duration": 145
+        },
+        {
+          "start": 4132.699999988079,
+          "duration": 98
+        },
+        {
+          "start": 4391,
+          "duration": 343
+        },
+        {
+          "start": 4783.800000011921,
+          "duration": 98
+        },
+        {
+          "start": 5180,
+          "duration": 233
+        },
+        {
+          "start": 5462.300000011921,
+          "duration": 233
+        },
+        {
+          "start": 5741.899999976158,
+          "duration": 136
+        },
+        {
+          "start": 6186.800000011921,
+          "duration": 146
+        },
+        {
+          "start": 6435.599999964237,
+          "duration": 119
+        },
+        {
+          "start": 7794.099999964237,
+          "duration": 142
+        },
+        {
+          "start": 7952.300000011921,
+          "duration": 51
+        },
+        {
+          "start": 8890.099999964237,
+          "duration": 140
+        },
+        {
+          "start": 9037.399999976158,
+          "duration": 238
+        },
+        {
+          "start": 9298.800000011921,
+          "duration": 305
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 1040,
+          "duration": 0,
+          "paintTime": 960.5,
+          "presentationTime": 1040
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 1040,
+          "duration": 0,
+          "paintTime": 960.5,
+          "presentationTime": 1040
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:36431/spaces/loading-audit/documents/rich-10",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 1190,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 6.199999988079071,
+          "domainLookupStart": 12,
+          "domainLookupEnd": 12.099999964237213,
+          "connectStart": 12.099999964237213,
+          "secureConnectionStart": 0,
+          "connectEnd": 12.399999976158142,
+          "requestStart": 12.599999964237213,
+          "responseStart": 14.399999976158142,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 14.399999976158142,
+          "responseEnd": 121.09999996423721,
+          "transferSize": 6727,
+          "encodedBodySize": 6427,
+          "decodedBodySize": 6427,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 977.3999999761581,
+          "domContentLoadedEventStart": 977.8000000119209,
+          "domContentLoadedEventEnd": 978.6999999880791,
+          "domComplete": 1190,
+          "loadEventStart": 1190,
+          "loadEventEnd": 1190,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    },
+    "remote-gzip": {
+      "ready": 7279,
+      "readyError": null,
+      "states": [
+        {
+          "at": 709,
+          "theme": "",
+          "logo": true,
+          "bodyBg": "oklch(0.955 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 3351,
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 3901,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 2,
+          "pulseClass": "h-7 w-48 animate-pulse rounded-lg bg-muted/30",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4188,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5984,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 1,
+          "pulseClass": "flex animate-pulse flex-col items-center gap-3",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 7092,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": true,
+          "editorText": "Audit rich 10 paragraph 0Audit rich 10 paragraph 1Audit rich 10 p",
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 168.60000002384186,
+          "duration": 112,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-zy1XOX2u.js",
+          "start": 171.9000000357628,
+          "duration": 810.7999999523163,
+          "size": 567361,
+          "transfer": 567661
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/index-Dcth7aHX.js",
+          "start": 173.69999998807907,
+          "duration": 136.80000001192093,
+          "size": 2162,
+          "transfer": 2462
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-iedexEVd.css#",
+          "start": 173.9000000357628,
+          "duration": 194.79999995231628,
+          "size": 39783,
+          "transfer": 40083
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 457.69999998807907,
+          "duration": 172.4000000357628,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 459.19999998807907,
+          "duration": 147.60000002384186,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 1054.199999988079,
+          "duration": 131.9000000357628,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/_spaceId-Ck-OzI90.js",
+          "start": 2709.5,
+          "duration": 126.30000001192093,
+          "size": 4128,
+          "transfer": 4428
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/_-DPse9BYI.js",
+          "start": 2710.900000035763,
+          "duration": 124.69999998807907,
+          "size": 1786,
+          "transfer": 2086
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit",
+          "start": 2748.600000023842,
+          "duration": 310.80000001192093,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 2750.100000023842,
+          "duration": 122.30000001192093,
+          "size": 1443,
+          "transfer": 1743
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 2755.900000035763,
+          "duration": 216,
+          "size": 735,
+          "transfer": 1035
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/workspace",
+          "start": 3292,
+          "duration": 119.10000002384186,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 3308.600000023842,
+          "duration": 113.69999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces?includeArchived=true",
+          "start": 3823.300000011921,
+          "duration": 113.60000002384186,
+          "size": 1574,
+          "transfer": 1874
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/deployment",
+          "start": 3836.400000035763,
+          "duration": 110.19999998807907,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/records",
+          "start": 3858.199999988079,
+          "duration": 107.60000002384186,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-iedexEVd.css",
+          "start": 3950.400000035763,
+          "duration": 4.5,
+          "size": 39783,
+          "transfer": 0
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 4699.600000023842,
+          "duration": 116,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/version?cached=1",
+          "start": 4730.199999988079,
+          "duration": 112.60000002384186,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/docs/rich-10",
+          "start": 4918.400000035763,
+          "duration": 111.59999996423721,
+          "size": 2656,
+          "transfer": 2956
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 5156.199999988079,
+          "duration": 110,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/editor-BYpUoQpo.js",
+          "start": 5242.800000011921,
+          "duration": 487.19999998807907,
+          "size": 330996,
+          "transfer": 331296
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/mermaid-D3o5coJa.js",
+          "start": 5251.100000023842,
+          "duration": 112.80000001192093,
+          "size": 2282,
+          "transfer": 2582
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/github-dark-BFhhNueA.js",
+          "start": 5945.100000023842,
+          "duration": 107.09999996423721,
+          "size": 2610,
+          "transfer": 2910
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/github-light-lKoG2_DG.js",
+          "start": 5951.100000023842,
+          "duration": 109.5,
+          "size": 2567,
+          "transfer": 2867
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/settings",
+          "start": 6005.199999988079,
+          "duration": 107.10000002384186,
+          "size": 140,
+          "transfer": 440
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/worktable-mermaid-block-DyjWs-3N.js",
+          "start": 6019.800000011921,
+          "duration": 320.10000002384186,
+          "size": 208285,
+          "transfer": 208585
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+          "start": 6029.100000023842,
+          "duration": 111.30000001192093,
+          "size": 2625,
+          "transfer": 2925
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 128.4000000357628,
+          "duration": 73
+        },
+        {
+          "start": 643.6000000238419,
+          "duration": 95
+        },
+        {
+          "start": 1302.300000011921,
+          "duration": 1194
+        },
+        {
+          "start": 2585.800000011921,
+          "duration": 170
+        },
+        {
+          "start": 3206,
+          "duration": 102
+        },
+        {
+          "start": 3476.5,
+          "duration": 404
+        },
+        {
+          "start": 4037.600000023842,
+          "duration": 162
+        },
+        {
+          "start": 4367,
+          "duration": 386
+        },
+        {
+          "start": 4920.300000011921,
+          "duration": 163
+        },
+        {
+          "start": 5238.199999988079,
+          "duration": 158
+        },
+        {
+          "start": 5519.100000023842,
+          "duration": 133
+        },
+        {
+          "start": 5839.5,
+          "duration": 112
+        },
+        {
+          "start": 6404.600000023842,
+          "duration": 122
+        },
+        {
+          "start": 6533.100000023842,
+          "duration": 168
+        },
+        {
+          "start": 6727.600000023842,
+          "duration": 363
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 832,
+          "duration": 0,
+          "paintTime": 710,
+          "presentationTime": 832
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 832,
+          "duration": 0,
+          "paintTime": 710,
+          "presentationTime": 832
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:34331/spaces/loading-audit/documents/rich-10",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 990.6000000238419,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.699999988079071,
+          "domainLookupStart": 7.600000023841858,
+          "domainLookupEnd": 7.699999988079071,
+          "connectStart": 7.699999988079071,
+          "secureConnectionStart": 0,
+          "connectEnd": 7.800000011920929,
+          "requestStart": 7.900000035762787,
+          "responseStart": 94.90000003576279,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 94.90000003576279,
+          "responseEnd": 120.90000003576279,
+          "transferSize": 6727,
+          "encodedBodySize": 6427,
+          "decodedBodySize": 6427,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 797.1999999880791,
+          "domContentLoadedEventStart": 797.1999999880791,
+          "domContentLoadedEventEnd": 801.1999999880791,
+          "domComplete": 990.3000000119209,
+          "loadEventStart": 990.5,
+          "loadEventEnd": 990.6000000238419,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    },
+    "remote-html-verified": {
+      "ready": 5802,
+      "readyError": null,
+      "states": [
+        {
+          "at": 903,
+          "visibility": "visible",
+          "theme": "",
+          "logo": true,
+          "bodyBg": "oklch(0.955 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4011,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4364,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4461,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 2,
+          "pulseClass": "h-7 w-48 animate-pulse rounded-lg bg-muted/30",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 4560,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5019,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5349,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": true,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5531,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": true,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 146.20000004768372,
+          "duration": 110.09999996423721,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-zy1XOX2u.js",
+          "start": 151.30000001192093,
+          "duration": 2106.199999988079,
+          "size": 1934874,
+          "transfer": 1935174
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/index-Dcth7aHX.js",
+          "start": 152.70000004768372,
+          "duration": 128.69999998807907,
+          "size": 6189,
+          "transfer": 6489
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css#",
+          "start": 153.9000000357628,
+          "duration": 537.8000000119209,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 704,
+          "duration": 146.80000001192093,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 705.2000000476837,
+          "duration": 140.89999997615814,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 1146.800000011921,
+          "duration": 113,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_spaceId-Ck-OzI90.js",
+          "start": 3644.800000011921,
+          "duration": 121.19999998807907,
+          "size": 15338,
+          "transfer": 15638
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_-DPse9BYI.js",
+          "start": 3645.300000011921,
+          "duration": 109.30000001192093,
+          "size": 4204,
+          "transfer": 4504
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit",
+          "start": 3704.600000023842,
+          "duration": 128.39999997615814,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 3708,
+          "duration": 106.90000003576279,
+          "size": 1443,
+          "transfer": 1743
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 3718.7000000476837,
+          "duration": 130.5,
+          "size": 749,
+          "transfer": 1049
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/workspace",
+          "start": 3995.7000000476837,
+          "duration": 104,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 4003.400000035763,
+          "duration": 104.59999996423721,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces?includeArchived=true",
+          "start": 4327.100000023842,
+          "duration": 105.19999998807907,
+          "size": 1574,
+          "transfer": 1874
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/deployment",
+          "start": 4338.400000035763,
+          "duration": 106.59999996423721,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/records",
+          "start": 4426.700000047684,
+          "duration": 105.29999995231628,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css",
+          "start": 4480.900000035763,
+          "duration": 319.89999997615814,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 4815.5,
+          "duration": 103.80000001192093,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/version?cached=1",
+          "start": 4829.400000035763,
+          "duration": 105.5,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 5144.800000011921,
+          "duration": 103.80000001192093,
+          "size": 570,
+          "transfer": 870
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 5161.5,
+          "duration": 103.70000004768372,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 5281.800000011921,
+          "duration": 105.80000001192093,
+          "size": 749,
+          "transfer": 1049
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 5450.200000047684,
+          "duration": 47.09999996423721,
+          "size": 14484,
+          "transfer": 14784
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 114.40000003576279,
+          "duration": 81
+        },
+        {
+          "start": 858.2000000476837,
+          "duration": 53
+        },
+        {
+          "start": 2642.5,
+          "duration": 911
+        },
+        {
+          "start": 3581.300000011921,
+          "duration": 139
+        },
+        {
+          "start": 3919.600000023842,
+          "duration": 83
+        },
+        {
+          "start": 4107.400000035763,
+          "duration": 240
+        },
+        {
+          "start": 4386.5,
+          "duration": 51
+        },
+        {
+          "start": 4603.900000035763,
+          "duration": 252
+        },
+        {
+          "start": 4896.400000035763,
+          "duration": 148
+        },
+        {
+          "start": 5131.800000011921,
+          "duration": 173
+        },
+        {
+          "start": 5377.700000047684,
+          "duration": 153
+        },
+        {
+          "start": 5543.400000035763,
+          "duration": 97
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 996,
+          "duration": 0,
+          "paintTime": 903.6000000238419,
+          "presentationTime": 996
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 996,
+          "duration": 0,
+          "paintTime": 903.6000000238419,
+          "presentationTime": 996
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:36431/spaces/loading-audit/documents/html-audit",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 1131.6000000238419,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.2000000476837158,
+          "domainLookupStart": 5.5,
+          "domainLookupEnd": 5.5,
+          "connectStart": 5.5,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.800000011920929,
+          "requestStart": 5.900000035762787,
+          "responseStart": 10.300000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 10.300000011920929,
+          "responseEnd": 114.80000001192093,
+          "transferSize": 6727,
+          "encodedBodySize": 6427,
+          "decodedBodySize": 6427,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 916.3000000119209,
+          "domContentLoadedEventStart": 916.4000000357628,
+          "domContentLoadedEventEnd": 916.7000000476837,
+          "domComplete": 1131,
+          "loadEventStart": 1131.6000000238419,
+          "loadEventEnd": 1131.6000000238419,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    },
+    "visualfix-ws": {
+      "ready": 10113,
+      "readyError": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Audit rich 10 paragraph 9', { exact: true }) to be visible\u001b[22m\n",
+      "states": [
+        {
+          "at": 295,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(23, 25, 29)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 832,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(23, 25, 29)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 1167,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(23, 25, 29)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 1908,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(23, 25, 29)",
+          "skeletons": 0,
+          "pulses": 1,
+          "pulseClass": "flex animate-pulse flex-col items-center gap-3",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 2040,
+          "visibility": "visible",
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(23, 25, 29)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": true,
+          "editorText": "",
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 89.40000003576279,
+          "duration": 43.30000001192093,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-zy1XOX2u.js",
+          "start": 90.80000001192093,
+          "duration": 65,
+          "size": 1934874,
+          "transfer": 1935174
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/index-Dcth7aHX.js",
+          "start": 91.10000002384186,
+          "duration": 51.5,
+          "size": 6189,
+          "transfer": 6489
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css#",
+          "start": 91.30000001192093,
+          "duration": 59.19999998807907,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 158,
+          "duration": 105.70000004768372,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 163.9000000357628,
+          "duration": 106.69999998807907,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_spaceId-Ck-OzI90.js",
+          "start": 621.7000000476837,
+          "duration": 40.59999996423721,
+          "size": 15338,
+          "transfer": 15638
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/_-DPse9BYI.js",
+          "start": 623.6000000238419,
+          "duration": 38.80000001192093,
+          "size": 4204,
+          "transfer": 4504
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit",
+          "start": 637.6000000238419,
+          "duration": 86.89999997615814,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 638.8000000119209,
+          "duration": 50.69999998807907,
+          "size": 1443,
+          "transfer": 1743
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 640.2000000476837,
+          "duration": 66.69999998807907,
+          "size": 735,
+          "transfer": 1035
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 641.8000000119209,
+          "duration": 47.80000001192093,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/workspace",
+          "start": 721.9000000357628,
+          "duration": 34,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:36431/favicon.svg",
+          "start": 725.3000000119209,
+          "duration": 43,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces?includeArchived=true",
+          "start": 821.8000000119209,
+          "duration": 42.30000001192093,
+          "size": 1574,
+          "transfer": 1874
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/deployment",
+          "start": 824.6000000238419,
+          "duration": 10.399999976158142,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/version?cached=1",
+          "start": 848.7000000476837,
+          "duration": 12,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/records",
+          "start": 911,
+          "duration": 32.5,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 914.5,
+          "duration": 42.60000002384186,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/main-iedexEVd.css",
+          "start": 1136.9000000357628,
+          "duration": 9,
+          "size": 261350,
+          "transfer": 261650
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 1149.5,
+          "duration": 32.700000047683716,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 1149.800000011921,
+          "duration": 56.90000003576279,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/docs/rich-10",
+          "start": 1441.800000011921,
+          "duration": 69.10000002384186,
+          "size": 2656,
+          "transfer": 2956
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 1532.300000011921,
+          "duration": 45.40000003576279,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/editor-BYpUoQpo.js",
+          "start": 1559,
+          "duration": 57.30000001192093,
+          "size": 1087201,
+          "transfer": 1087501
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/mermaid-D3o5coJa.js",
+          "start": 1559.800000011921,
+          "duration": 50,
+          "size": 9744,
+          "transfer": 10044
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-dark-BFhhNueA.js",
+          "start": 1709.9000000357628,
+          "duration": 6.599999964237213,
+          "size": 11486,
+          "transfer": 11786
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/github-light-lKoG2_DG.js",
+          "start": 1710.4000000357628,
+          "duration": 7.899999976158142,
+          "size": 11265,
+          "transfer": 11565
+        },
+        {
+          "url": "http://127.0.0.1:36431/api/system/settings",
+          "start": 1875.1000000238419,
+          "duration": 13.199999988079071,
+          "size": 140,
+          "transfer": 440
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-block-DyjWs-3N.js",
+          "start": 1877.7000000476837,
+          "duration": 19.5,
+          "size": 632209,
+          "transfer": 632509
+        },
+        {
+          "url": "http://127.0.0.1:36431/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+          "start": 1879.6000000238419,
+          "duration": 19.100000023841858,
+          "size": 6500,
+          "transfer": 6800
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 325,
+          "duration": 51
+        },
+        {
+          "start": 378.30000001192093,
+          "duration": 193
+        },
+        {
+          "start": 587.7000000476837,
+          "duration": 52
+        },
+        {
+          "start": 762.7000000476837,
+          "duration": 64
+        },
+        {
+          "start": 869.7000000476837,
+          "duration": 57
+        },
+        {
+          "start": 1989,
+          "duration": 50
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 416,
+          "duration": 0,
+          "paintTime": 295.30000001192093,
+          "presentationTime": 416
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 416,
+          "duration": 0,
+          "paintTime": 295.30000001192093,
+          "presentationTime": 416
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:36431/spaces/loading-audit/documents/rich-10",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 578.6000000238419,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.100000023841858,
+          "domainLookupStart": 1.100000023841858,
+          "domainLookupEnd": 1.100000023841858,
+          "connectStart": 1.100000023841858,
+          "secureConnectionStart": 0,
+          "connectEnd": 1.100000023841858,
+          "requestStart": 1.100000023841858,
+          "responseStart": 73.10000002384186,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 0,
+          "responseEnd": 73.10000002384186,
+          "transferSize": 7070,
+          "encodedBodySize": 6770,
+          "decodedBodySize": 6770,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 317.30000001192093,
+          "domContentLoadedEventStart": 320,
+          "domContentLoadedEventEnd": 324.4000000357628,
+          "domComplete": 578.5,
+          "loadEventStart": 578.6000000238419,
+          "loadEventEnd": 578.6000000238419,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    },
+    "remote-gzip-preload": {
+      "ready": 60181,
+      "readyError": "TimeoutError: locator.waitFor: Timeout 60000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Audit rich 10 paragraph 9', { exact: true }) to be visible\u001b[22m\n",
+      "states": [
+        {
+          "at": 993,
+          "theme": "",
+          "logo": true,
+          "bodyBg": "oklch(0.955 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 2930,
+          "theme": "dark",
+          "logo": true,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 3322,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 3438,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 2,
+          "pulseClass": "h-7 w-48 animate-pulse rounded-lg bg-muted/30",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#"
+          ]
+        },
+        {
+          "at": 3525,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "1",
+                  "transform": "scale(1.05)"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "0.6",
+                  "transform": "scale(1)"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 4218,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 18,
+          "pulses": 19,
+          "pulseClass": "mx-auto w-full max-w-3xl px-6 pt-20 pb-8 sm:px-8 md:px-12 space-y-6 animate-pulse",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5166,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 1,
+          "pulseClass": "flex animate-pulse flex-col items-center gap-3",
+          "animations": [
+            {
+              "name": "pulse",
+              "keys": [
+                {
+                  "offset": 0,
+                  "opacity": "1"
+                },
+                {
+                  "offset": 0.5,
+                  "opacity": "0.5"
+                },
+                {
+                  "offset": 1,
+                  "opacity": "1"
+                }
+              ]
+            }
+          ],
+          "editor": false,
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        },
+        {
+          "at": 5733,
+          "theme": "dark",
+          "logo": false,
+          "bodyBg": "oklch(0.165 0.006 250)",
+          "htmlBg": "rgb(238, 241, 244)",
+          "skeletons": 0,
+          "pulses": 0,
+          "editor": true,
+          "editorText": "",
+          "iframe": false,
+          "loadingHTML": false,
+          "styles": [
+            "/assets/main-iedexEVd.css#",
+            "/assets/main-iedexEVd.css"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 130.60000002384186,
+          "duration": 193.19999998807907,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-zy1XOX2u.js",
+          "start": 131.30000001192093,
+          "duration": 1278.199999988079,
+          "size": 567361,
+          "transfer": 567661
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/index-Dcth7aHX.js",
+          "start": 134.69999998807907,
+          "duration": 207.4000000357628,
+          "size": 2162,
+          "transfer": 2462
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-iedexEVd.css#",
+          "start": 138.80000001192093,
+          "duration": 310.5,
+          "size": 39783,
+          "transfer": 40083
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/editor-BYpUoQpo.js",
+          "start": 139.39999997615814,
+          "duration": 984.7000000476837,
+          "size": 330996,
+          "transfer": 331296
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/worktable-mermaid-block-DyjWs-3N.js",
+          "start": 139.5,
+          "duration": 796.3000000119209,
+          "size": 208285,
+          "transfer": 208585
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 532.1999999880791,
+          "duration": 354.10000002384186,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 532.3000000119209,
+          "duration": 333.80000001192093,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 1424.8999999761581,
+          "duration": 188.30000001192093,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/_spaceId-Ck-OzI90.js",
+          "start": 2562.5,
+          "duration": 170.10000002384186,
+          "size": 4128,
+          "transfer": 4428
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/_-DPse9BYI.js",
+          "start": 2564.800000011921,
+          "duration": 171.5999999642372,
+          "size": 1786,
+          "transfer": 2086
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit",
+          "start": 2597.100000023842,
+          "duration": 135.19999998807907,
+          "size": 651,
+          "transfer": 951
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 2605.399999976158,
+          "duration": 137.30000001192093,
+          "size": 1443,
+          "transfer": 1743
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 2615.399999976158,
+          "duration": 120.80000001192093,
+          "size": 735,
+          "transfer": 1035
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/workspace",
+          "start": 2908.199999988079,
+          "duration": 117.90000003576279,
+          "size": 252,
+          "transfer": 552
+        },
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 2915.800000011921,
+          "duration": 112.80000001192093,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/favicon.svg",
+          "start": 3073,
+          "duration": 356.5,
+          "size": 939,
+          "transfer": 1239
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces?includeArchived=true",
+          "start": 3285.800000011921,
+          "duration": 148.0999999642372,
+          "size": 1574,
+          "transfer": 1874
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/deployment",
+          "start": 3299.399999976158,
+          "duration": 138.9000000357628,
+          "size": 263,
+          "transfer": 563
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/records",
+          "start": 3393.399999976158,
+          "duration": 129.10000002384186,
+          "size": 18,
+          "transfer": 318
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/main-iedexEVd.css",
+          "start": 3460.899999976158,
+          "duration": 161.5,
+          "size": 39783,
+          "transfer": 40083
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 3780.699999988079,
+          "duration": 149.19999998807907,
+          "size": 1182,
+          "transfer": 1482
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/version?cached=1",
+          "start": 3795.699999988079,
+          "duration": 136.80000001192093,
+          "size": 197,
+          "transfer": 497
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 3837.399999976158,
+          "duration": 140.70000004768372,
+          "size": 0,
+          "transfer": 0
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 3838.699999988079,
+          "duration": 142.4000000357628,
+          "size": 885,
+          "transfer": 1185
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/docs/rich-10",
+          "start": 4317.699999988079,
+          "duration": 115.10000002384186,
+          "size": 2656,
+          "transfer": 2956
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 4484.300000011921,
+          "duration": 119.39999997615814,
+          "size": 28,
+          "transfer": 328
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/mermaid-D3o5coJa.js",
+          "start": 4585.800000011921,
+          "duration": 210.5,
+          "size": 2282,
+          "transfer": 2582
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/github-dark-BFhhNueA.js",
+          "start": 4990.399999976158,
+          "duration": 114.70000004768372,
+          "size": 2610,
+          "transfer": 2910
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/github-light-lKoG2_DG.js",
+          "start": 4993.199999988079,
+          "duration": 113.19999998807907,
+          "size": 2567,
+          "transfer": 2867
+        },
+        {
+          "url": "http://127.0.0.1:34331/api/system/settings",
+          "start": 5043.5,
+          "duration": 132.80000001192093,
+          "size": 140,
+          "transfer": 440
+        },
+        {
+          "url": "http://127.0.0.1:34331/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+          "start": 5061.300000011921,
+          "duration": 120.19999998807907,
+          "size": 2625,
+          "transfer": 2925
+        }
+      ],
+      "longtasks": [
+        {
+          "start": 105.39999997615814,
+          "duration": 69
+        },
+        {
+          "start": 894.3999999761581,
+          "duration": 56
+        },
+        {
+          "start": 953.3000000119209,
+          "duration": 56
+        },
+        {
+          "start": 1194,
+          "duration": 206
+        },
+        {
+          "start": 1609.699999988079,
+          "duration": 857
+        },
+        {
+          "start": 2505.300000011921,
+          "duration": 111
+        },
+        {
+          "start": 2839.399999976158,
+          "duration": 76
+        },
+        {
+          "start": 3044.699999988079,
+          "duration": 267
+        },
+        {
+          "start": 3351.399999976158,
+          "duration": 55
+        },
+        {
+          "start": 3563.800000011921,
+          "duration": 252
+        },
+        {
+          "start": 3958.899999976158,
+          "duration": 103
+        },
+        {
+          "start": 4074.399999976158,
+          "duration": 157
+        },
+        {
+          "start": 4442.5,
+          "duration": 50
+        },
+        {
+          "start": 4575,
+          "duration": 113
+        },
+        {
+          "start": 4740,
+          "duration": 88
+        },
+        {
+          "start": 4902.699999988079,
+          "duration": 91
+        },
+        {
+          "start": 5192.699999988079,
+          "duration": 92
+        },
+        {
+          "start": 5292.399999976158,
+          "duration": 149
+        },
+        {
+          "start": 5463.199999988079,
+          "duration": 266
+        },
+        {
+          "start": 39582,
+          "duration": 63
+        }
+      ],
+      "errors": [],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 1232,
+          "duration": 0,
+          "paintTime": 994.3000000119209,
+          "presentationTime": 1232
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 1232,
+          "duration": 0,
+          "paintTime": 994.3000000119209,
+          "presentationTime": 1232
+        }
+      ],
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:34331/spaces/loading-audit/documents/rich-10",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 1392.800000011921,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "",
+          "renderBlockingStatus": "non-blocking",
+          "contentEncoding": "",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 0.8999999761581421,
+          "domainLookupStart": 0.8999999761581421,
+          "domainLookupEnd": 0.8999999761581421,
+          "connectStart": 0.8999999761581421,
+          "secureConnectionStart": 0,
+          "connectEnd": 0.8999999761581421,
+          "requestStart": 0.8999999761581421,
+          "responseStart": 92.19999998807907,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 0,
+          "responseEnd": 92.19999998807907,
+          "transferSize": 6864,
+          "encodedBodySize": 6564,
+          "decodedBodySize": 6564,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 894.3999999761581,
+          "domContentLoadedEventStart": 894.5,
+          "domContentLoadedEventEnd": 894.8000000119209,
+          "domComplete": 1392.699999988079,
+          "loadEventStart": 1392.800000011921,
+          "loadEventEnd": 1392.800000011921,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ]
+    }
+  },
+  "markdownLink": {
+    "before": 1790002894410.7,
+    "after": {
+      "timeOrigin": 1790002896389,
+      "sentinel": false
+    },
+    "mainRequests": [
+      "http://127.0.0.1:36431/spaces/loading-audit/documents/rich-10"
+    ],
+    "ms": 2657
+  }
+}

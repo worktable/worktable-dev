@@ -20,9 +20,8 @@ import {
   Rocket,
   Target,
   Church,
-  icons,
 } from "lucide-react"
-import { getIcon } from "@/lib/icons"
+import { getIcon, ALL_ICON_NAMES } from "@/lib/icons"
 import { useSpaces } from "@/lib/queries"
 
 // Icon hints for known group slugs
@@ -40,14 +39,6 @@ function formatGroupLabel(slug: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ")
 }
-
-/** Convert PascalCase to kebab-case */
-function toKebab(str: string): string {
-  return str.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()
-}
-
-/** All icon names in kebab-case, computed once */
-const ALL_ICON_NAMES = Object.keys(icons).map(toKebab).sort()
 
 /** Popular icons shown before user searches */
 const POPULAR_ICONS = [

@@ -23,11 +23,22 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
         // A cached handle must never authorize mounting an editor after a
         // concurrent move. Refresh the exact path before the route renders;
         // the normal observer may then reuse this just-established result.
-        await context.queryClient.fetchQuery({
+        const page = await context.queryClient.fetchQuery({
           ...options,
           staleTime: 0,
           retry: false,
         })
+        // Fetch renderer code while the app shell is still starting up.
+        // This does not mount it or bypass the renderer's fresh path checks.
+        if (
+          typeof window !== "undefined" &&
+          page.kind !== "conflict" &&
+          page.renderer
+        ) {
+          void browserDocumentRenderer(page.renderer)
+            ?.preload(page.document.format.id)
+            .catch(() => {})
+        }
       } catch {
         // fetchQuery preserves prior data on a failed refresh. Remove it so a
         // missing or unreachable path cannot fall through to a stale renderer.
@@ -38,6 +49,9 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
       }
     }
   },
+  pendingComponent: EditorSkeleton,
+  pendingMs: 0,
+  pendingMinMs: 0,
   component: DocumentPageRoute,
 })
 
@@ -112,7 +126,11 @@ function DocumentPageRoute() {
   const Renderer = renderer.component
   return (
     <Suspense fallback={<EditorSkeleton />}>
-      <Renderer spaceId={spaceId} documentPath={page.document.path} />
+      <Renderer
+        spaceId={spaceId}
+        documentPath={page.document.path}
+        formatId={page.document.format.id}
+      />
     </Suspense>
   )
 }

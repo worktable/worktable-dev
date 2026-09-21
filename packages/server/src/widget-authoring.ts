@@ -457,6 +457,12 @@ window.addEventListener('message',function(event){
   const cb=__wtPending[d.id]; if(!cb) return; delete __wtPending[d.id]; cb(d);
 });
 postToParent({type:'worktable.navigation.handshake',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken},'*');
+// Reveal parsed markup without waiting for images or other non-blocking assets.
+function announceDocumentReady(){
+  postToParent({type:'worktable.document.ready',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken},'*');
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',announceDocumentReady,{once:true});
+else queueMicrotask(announceDocumentReady);
 function revokeNavigationAuthority(){
   postToParent({type:'worktable.navigation.frame-leaving',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken},'*');
 }

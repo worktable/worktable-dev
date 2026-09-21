@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { workspaceQueryOptions } from "./lib/queries";
 
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -11,6 +12,12 @@ export function getRouter() {
       },
     },
   });
+
+  // The prerendered root match can skip beforeLoad during initial hydration.
+  // Start browser workspace discovery here so it overlaps document resolution.
+  if (typeof window !== "undefined") {
+    void queryClient.prefetchQuery(workspaceQueryOptions());
+  }
 
   const router = createRouter({
     routeTree,

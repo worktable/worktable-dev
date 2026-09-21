@@ -12,11 +12,11 @@ workspace that you can review, continue, and move between deployments.
 
 ## Choose how to use Worktable
 
-| Path                                            | Best for                                                                  | Where the workspace runs                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **[Worktable Desktop](/start/desktop/)**        | The simplest native experience on an Apple Silicon Mac                    | On your Mac, on a self-hosted server, or in Worktable Cloud |
-| **[Worktable Cloud](/guides/worktable-cloud/)** | A managed workspace available from any browser and supported agent client | Hosted for you                                              |
-| **[CLI install](/start/install/)**              | Linux, Intel Macs, servers, and self-hosting                              | On a machine or server you control                          |
+| Path                                            | Best for                                                               | Where the workspace runs                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **[CLI install](/start/install/)**              | Recommended for new installations on macOS or Linux                    | On a machine or server you control                          |
+| **[Worktable Cloud](/guides/worktable-cloud/)** | A managed workspace for your browser and supported agent clients       | Hosted for you                                              |
+| **[Worktable Desktop](/start/desktop/)**        | Existing native macOS installations; see current download availability | On your Mac, on a self-hosted server, or in Worktable Cloud |
 
 All three use the same content model and agent tools. Local and self-hosted
 workspaces expose their files directly; Cloud keeps the live workspace hosted

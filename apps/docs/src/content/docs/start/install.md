@@ -3,10 +3,10 @@ title: Install Worktable from the CLI
 description: Install local or self-hosted Worktable on macOS or Linux with one command.
 ---
 
-Use the command-line install for Linux, Intel Macs, servers, or when you prefer
-to run Worktable as a local service. On an Apple Silicon Mac, the
-[native Desktop app](/start/desktop/) is the simplest starting point. If you do
-not want to operate a machine or server, use [Worktable Cloud](/guides/worktable-cloud/).
+Use the command-line install on macOS or Linux to run Worktable locally in your
+browser, or on a server you control. It is the recommended starting point for
+the current release. If you do not want to operate a machine or server, use
+[Worktable Cloud](/guides/worktable-cloud/).
 
 ```sh
 curl -fsSL https://worktable.dev/install | sh

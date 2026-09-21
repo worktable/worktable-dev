@@ -6,3 +6,6 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/worktable/worktable-dev/security/advisories/new
     about: Please report vulnerabilities privately, not as public issues.
+  - name: Questions and help
+    url: https://github.com/worktable/worktable-dev/discussions/categories/q-a
+    about: Ask about setup and using Worktable.

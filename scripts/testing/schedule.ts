@@ -16,7 +16,7 @@ const portableCompanions = new Set([
 // desktop, host, and unknown future lanes retain exclusive execution.
 export async function runSuiteSchedule<T extends NamedSuite>(
   selected: T[],
-  execute: (suite: T, signal: AbortSignal) => Promise<boolean>
+  execute: (suite: T, signal: AbortSignal, fail: () => void) => Promise<boolean>
 ): Promise<boolean> {
   const server = selected.filter((suite) => suite.id === "bun-server")
   const companions = selected.filter((suite) =>
@@ -34,7 +34,7 @@ export async function runSuiteSchedule<T extends NamedSuite>(
     for (const suite of suites) {
       if (failed) return
       try {
-        if (await execute(suite, cancellation.signal)) fail()
+        if (await execute(suite, cancellation.signal, fail)) fail()
       } catch (error) {
         fail()
         throw error

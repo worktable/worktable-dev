@@ -309,7 +309,8 @@ const portfolioRssTimer = setInterval(() => {
 
 async function executeSuite(
   suite: TestSuite,
-  signal: AbortSignal
+  signal: AbortSignal,
+  fail: () => void
 ): Promise<boolean> {
   const owned = ownedTestFiles(suite)
   const files = selectedTestFiles(
@@ -339,17 +340,18 @@ async function executeSuite(
     command,
     ceilingMs,
     join(resultDirectory, `${suite.id}.resource.txt`),
-    signal
+    signal,
+    fail
   )
   const result: LaneResult = {
     suite: suite.id,
     title: suite.title,
     profile: options.profile,
     classification: suite.classification,
-    status: outcome.cancelled
-      ? "cancelled"
-      : outcome.timedOut
-        ? "timed-out"
+    status: outcome.timedOut
+      ? "timed-out"
+      : outcome.cancelled
+        ? "cancelled"
         : outcome.exitCode === 0
           ? "passed"
           : "failed",

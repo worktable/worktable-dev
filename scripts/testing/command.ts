@@ -20,7 +20,7 @@ export async function runCommand(
   timeoutMs: number,
   rssPath: string,
   signal?: AbortSignal,
-  onTimeout?: () => void
+  onFailure?: () => void
 ): Promise<{
   exitCode: number
   timedOut: boolean
@@ -53,6 +53,7 @@ export async function runCommand(
   const rssTimer = setInterval(sampleRss, 500)
   let timedOut = false
   let cancelled = false
+  let failedExit = false
   const trackedProcessGroups = new Set<number>()
   let forceKillTimer: ReturnType<typeof setTimeout> | undefined
   let forceKillSent = false
@@ -73,23 +74,31 @@ export async function runCommand(
     () => {
       timedOut = true
       terminate()
-      onTimeout?.()
+      onFailure?.()
     },
     Math.max(1, timeoutMs)
   )
   const onAbort = () => {
-    if (!timedOut) cancelled = true
+    if (!timedOut && !failedExit) cancelled = true
     clearTimeout(timer)
     terminate()
   }
   signal?.addEventListener("abort", onAbort, { once: true })
   if (signal?.aborted) onAbort()
+  // Observe failure before buffered stdout or resource/evidence I/O completes.
+  const exited = processHandle.exited.then((exitCode) => {
+    if (exitCode !== 0 && !timedOut && !cancelled) {
+      failedExit = true
+      onFailure?.()
+    }
+    return exitCode
+  })
   let captured = ""
   if (command.captureStdout && processHandle.stdout) {
     captured = await new Response(processHandle.stdout).text()
     process.stdout.write(captured)
   }
-  const exitCode = await processHandle.exited
+  const exitCode = await exited
   clearTimeout(timer)
   signal?.removeEventListener("abort", onAbort)
   if (forceKillTimer !== undefined) {

@@ -50,7 +50,7 @@ test("checks rendered Markdown destinations without treating code examples as li
   writeFileSync(join(root, "docs", "a file.md"), "# Present\n")
   writeFileSync(
     join(root, "README.md"),
-    "[ok][ref]\n\n[ref]: docs/a%20file.md#heading\n\n`[sample](missing.md)`\n\n```md\n[example](missing.md)\n```\n\n[external](https://example.test/)\n"
+    "[root](/docs/a%20file.md)\n\n[ok][ref]\n\n[ref]: docs/a%20file.md#heading\n\n`[sample](missing.md)`\n\n```md\n[example](missing.md)\n```\n\n[external](https://example.test/)\n"
   )
   expect(checkRepositoryDocument(root, "README.md")).toEqual([])
   writeFileSync(
@@ -58,6 +58,16 @@ test("checks rendered Markdown destinations without treating code examples as li
     "![image](missing.png)\n[bad](../outside.md)\n"
   )
   expect(checkRepositoryDocument(root, "README.md")).toHaveLength(2)
+  // Export-only inputs may be declared by the source checkout. The actual
+  // public checkout uses no declarations and therefore still rejects absence.
+  expect(
+    checkRepositoryDocument(
+      root,
+      "README.md",
+      "README.md",
+      new Set(["missing.png"])
+    )
+  ).toHaveLength(1)
   writeFileSync(join(root, "overlay.md"), "[guide](docs/a%20file.md)\n")
   expect(checkRepositoryDocument(root, "overlay.md", "README.md")).toEqual([])
 })
@@ -66,6 +76,8 @@ test("rejects malformed intake YAML and unresolved conflicts", () => {
   const root = fixture()
   writeFileSync(join(root, "bug.yml"), "name: [unterminated\n")
   expect(checkRepositoryDocument(root, "bug.yml")).toHaveLength(1)
+  writeFileSync(join(root, "README.md"), "A valid heading\n=======\n")
+  expect(checkRepositoryDocument(root, "README.md")).toEqual([])
   writeFileSync(
     join(root, "README.md"),
     "<<<<<<< branch\ntext\n=======\nother\n>>>>>>> main\n"
@@ -109,4 +121,16 @@ test("Git classification retains the product side of a rename and falls back on 
   git("commit", "-m", "docs")
   expect(classify(head, git("rev-parse", "HEAD"))).toBe("documentation")
   expect(classify("0".repeat(40), head)).toBe("full")
+  const missingOverlay = Bun.spawnSync(
+    [
+      "bun",
+      resolve(import.meta.dir, "repository-docs.ts"),
+      "--overlay",
+      "missing.md",
+      "README.md",
+    ],
+    { cwd: root }
+  )
+  expect(missingOverlay.exitCode).not.toBe(0)
+  expect(missingOverlay.stderr.toString()).toContain("Missing required overlay")
 })

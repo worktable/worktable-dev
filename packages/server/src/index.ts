@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
+import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { compressApiResponse } from "./http-compression.ts";
@@ -1537,6 +1538,7 @@ export function startServer(
   credentialTimer.unref?.();
   activeServer = server;
   const stopLinked = startLinkedRuntime();
+  const stopBackupNotifier = startWorkspaceBackupNotifier();
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
   }
@@ -1633,6 +1635,7 @@ export function startServer(
         // below, so the listener boundary itself is always force-closed.
         await settle(() => stopSocket(true));
         await settle(stopLinked);
+        await settle(stopBackupNotifier);
         await settle(() => credentialCheck ?? Promise.resolve());
         credentialSockets.clear();
         await settle(async () => {
@@ -1691,7 +1694,8 @@ export function startServer(
             replacement.stagingPath,
             replacement.backupPath,
             replacement.contentCheckpoint,
-            destinationContentCheckpoint
+            destinationContentCheckpoint,
+            replacement.options
           );
           await notifyWorkspaceChangeAndWaitOrThrow({
             type: "workspaceReset",

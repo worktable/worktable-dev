@@ -23,7 +23,8 @@ export function setWorkspaceExportSnapshot(
  * the same capture directly.
  */
 export async function withWorkspaceExportSnapshot<T>(
-  capture: () => Promise<T>
+  capture: () => Promise<T>,
+  options: { onBarrierComplete?: (durationMs: number) => void } = {}
 ): Promise<T> {
   const previous = snapshotQueue
   let release!: () => void
@@ -31,6 +32,7 @@ export async function withWorkspaceExportSnapshot<T>(
     release = resolve
   })
   await previous
+  const startedAt = performance.now()
   try {
     const work = async () => {
       await flushBeforeExport?.()
@@ -41,5 +43,6 @@ export async function withWorkspaceExportSnapshot<T>(
       : await work()
   } finally {
     release()
+    options.onBarrierComplete?.(performance.now() - startedAt)
   }
 }

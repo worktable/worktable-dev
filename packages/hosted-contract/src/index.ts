@@ -114,6 +114,9 @@ export const ENV = {
   BROWSER_ASSERTION_KEYRING: "WORKTABLE_BROWSER_ASSERTION_KEYRING",
   /** Per-tenant gateway admission secret (see GATEWAY_HEADER). */
   GATEWAY_SECRET: "WORKTABLE_GATEWAY_SECRET",
+  BACKUP_REPORT_URL: "WORKTABLE_BACKUP_REPORT_URL",
+  BACKUP_RUNTIME_ID: "WORKTABLE_BACKUP_RUNTIME_ID",
+  BACKUP_PROVIDER_ID: "WORKTABLE_BACKUP_PROVIDER_ID",
   /** Public origin where unlisted document links are opened. */
   SHARE_BASE_URL: "WORKTABLE_SHARE_BASE_URL",
   /** Separate, disposable origin used only for executable shared HTML. */
@@ -481,6 +484,19 @@ export const TenantProvisionInput = z
     /** Both sharing origins are optional together, keeping rollout disabled by default. */
     shareBaseUrl: httpUrl.optional(),
     htmlShareBaseUrl: httpUrl.optional(),
+    backupReporting: z
+      .object({
+        url: z
+          .string()
+          .url()
+          .refine((value) => {
+            const url = new URL(value)
+            return url.protocol === "https:" && !url.username && !url.password
+          }),
+        runtimeId: z.string().min(1),
+        providerId: z.string().min(1),
+      })
+      .optional(),
   })
   .superRefine((input, ctx) => {
     if (
@@ -508,7 +524,7 @@ export const TenantProvisionInput = z
         ctx.addIssue({
           code: "custom",
           path: ["htmlShareBaseUrl"],
-        message: "shared HTML projections must use a separate origin",
+          message: "shared HTML projections must use a separate origin",
         })
       }
     }
@@ -545,6 +561,13 @@ export function buildTenantEnv(
       parsed.browserAssertionKeyring
     ),
     [ENV.GATEWAY_SECRET]: parsed.gatewaySecret,
+    ...(parsed.backupReporting
+      ? {
+          [ENV.BACKUP_REPORT_URL]: parsed.backupReporting.url,
+          [ENV.BACKUP_RUNTIME_ID]: parsed.backupReporting.runtimeId,
+          [ENV.BACKUP_PROVIDER_ID]: parsed.backupReporting.providerId,
+        }
+      : {}),
     ...(parsed.shareBaseUrl && parsed.htmlShareBaseUrl
       ? {
           [ENV.SHARE_BASE_URL]: new URL(parsed.shareBaseUrl).origin,
@@ -556,3 +579,9 @@ export function buildTenantEnv(
 export * from "./linked-access.ts"
 
 export * from "./public-share-policy.ts"
+
+export {
+  CloudBackupStatus,
+  type BackupWorkerInput,
+  type BackupWorkerResult,
+} from "./backups.ts"

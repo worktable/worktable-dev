@@ -46,9 +46,32 @@ test("compiled notice gate follows real bundle contributors and rejects source o
     const manifest = readFileSync(manifestPath)
     const license = readFileSync(licensePath)
     const pkg = JSON.parse(manifest.toString())
+    const secondDependency = join(root, "node_modules/nanoid")
+    cpSync(join(import.meta.dir, "../node_modules/nanoid"), secondDependency, {
+      recursive: true,
+      dereference: true,
+    })
+    const secondEntry = join(root, "second.ts")
+    writeFileSync(
+      secondEntry,
+      'import { nanoid } from "nanoid"; console.log(nanoid());'
+    )
+    const secondBuild = await Bun.build({
+      entrypoints: [secondEntry],
+      target: "bun",
+      metafile: true,
+    })
+    expect(secondBuild.success).toBe(true)
+    const secondPkg = JSON.parse(
+      readFileSync(join(secondDependency, "package.json"), "utf8")
+    )
     const destination = join(root, "release")
     const write = () =>
-      writeCompiledJsNotices(build.metafile!, process.cwd(), destination)
+      writeCompiledJsNotices(
+        [build.metafile!, secondBuild.metafile!],
+        process.cwd(),
+        destination
+      )
     write()
     expect(verifyCompiledJsNotices(destination)).toBe(2)
     // Public metadata has only the schema and contributing package identities.
@@ -60,7 +83,10 @@ test("compiled notice gate follows real bundle contributors and rejects source o
     )
     expect(JSON.parse(readFileSync(recordPath, "utf8"))).toEqual({
       schemaVersion: 1,
-      packages: [`${pkg.name}@${pkg.version}`],
+      packages: [
+        `${pkg.name}@${pkg.version}`,
+        `${secondPkg.name}@${secondPkg.version}`,
+      ].sort(),
     })
     const record = readFileSync(recordPath)
     const notices = readFileSync(noticePath)

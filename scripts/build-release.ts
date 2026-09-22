@@ -73,6 +73,8 @@ function copySkillPackage(destination: string): void {
 const sourceMetadata = resolveSourceMetadata(root)
 assertReviewedBunRuntime(Bun)
 
+const compiledMetafiles = new Map<string, Bun.BuildMetafile[]>()
+
 async function buildExecutable(
   target: ReleaseTarget,
   outfile: string,
@@ -110,11 +112,13 @@ async function buildExecutable(
     for (const log of result.logs) console.error(log)
     throw new Error(`bun build --compile failed for ${target.bunTarget}`)
   }
-  writeCompiledJsNotices(
+  const destination = dirname(dirname(outfile))
+  const metafiles = [
+    ...(compiledMetafiles.get(destination) ?? []),
     result.metafile!,
-    process.cwd(),
-    dirname(dirname(outfile))
-  )
+  ]
+  compiledMetafiles.set(destination, metafiles)
+  writeCompiledJsNotices(metafiles, process.cwd(), destination)
   writeBunRuntimeNotices(Bun, target.bunTarget, dirname(dirname(outfile)))
 }
 
@@ -305,6 +309,13 @@ for (const target of selectedTargets.server) {
     join(root, "packages", "server", "src", "index.ts")
   )
   assertPortableExecutable(executable)
+  const backupWorker = join(binDir, "worktable-backup")
+  await buildExecutable(
+    target,
+    backupWorker,
+    join(root, "packages", "server", "src", "workspace-backup-worker.ts")
+  )
+  assertPortableExecutable(backupWorker)
 
   cpSync(webDist, webDir, { recursive: true })
   // Hosted tenants serve /connect.sh + /connect.mjs like any install (the

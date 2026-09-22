@@ -1,7 +1,10 @@
+import type { BeginWorkspaceReplacementOptions } from "./workspace-replacement.ts"
+
 export interface ScheduledWorkspaceReplacement {
   stagingPath: string
   backupPath: string
   contentCheckpoint: string
+  options?: BeginWorkspaceReplacementOptions
   onSucceeded(): Promise<void>
   onFailed(
     error: unknown,

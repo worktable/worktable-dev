@@ -17,7 +17,7 @@ export const DOCUMENT_STORAGE_MIGRATION_RECEIPT_TTL_MS =
 
 interface RecoverableJob {
   id: string
-  kind: "import" | "document-storage-v2"
+  kind: "import" | "document-storage-v2" | "snapshot"
   state: string
   updatedAt: string
   expiresAt: string
@@ -152,7 +152,9 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
   for (const entry of readdirSync(jobsRoot, { withFileTypes: true })) {
     if (
       !entry.isDirectory() ||
-      (!entry.name.startsWith("wtx_") && !entry.name.startsWith("wsm_"))
+      (!entry.name.startsWith("wtx_") &&
+        !entry.name.startsWith("wsm_") &&
+        !entry.name.startsWith("wss_"))
     ) {
       continue
     }
@@ -165,7 +167,9 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
     }
     if (
       job.id !== entry.name ||
-      (job.kind !== "import" && job.kind !== "document-storage-v2") ||
+      (job.kind !== "import" &&
+        job.kind !== "document-storage-v2" &&
+        job.kind !== "snapshot") ||
       !["replacing", "complete", "failed"].includes(job.state)
     ) {
       continue
@@ -212,7 +216,7 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
     const rollbackMarker = `${backup}.rollback`
     const failedReplacement = `${staging}.failed`
     const cleanupCommitted = () => {
-      if (job.kind === "import") removeWorkspaceTreeSync(committed)
+      if (job.kind !== "document-storage-v2") removeWorkspaceTreeSync(committed)
       rmSync(rollbackMarker, { force: true })
       removeWorkspaceTreeSync(failedReplacement)
     }

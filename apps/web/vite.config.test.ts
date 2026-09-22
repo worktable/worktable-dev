@@ -39,6 +39,8 @@ describe("PWA manifest configuration", () => {
 
     expect(denied("/logout")).toBe(true)
     expect(denied("/logout?from=settings")).toBe(true)
+    expect(denied("/backups")).toBe(true)
+    expect(denied("/backups/restore?checkpoint=saved")).toBe(true)
     expect(denied("/signed-out")).toBe(true)
     expect(denied("/signed-out?done=1")).toBe(true)
     expect(denied("/spaces/logout-notes")).toBe(false)

@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { runServerMaintenance } from "./server-maintenance.ts"
@@ -15,6 +23,9 @@ import {
   setWorkspaceRootOverride,
 } from "./workspace.ts"
 import { writeDoc } from "./store.ts"
+import { inspectWorkspaceSnapshot } from "./workspace-snapshot.ts"
+import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
+import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 
 let root: string
 let workspace: string
@@ -49,6 +60,108 @@ afterEach(async () => {
 })
 
 describe("server maintenance entrypoint", () => {
+  it("captures through the live capability and rejects restoring over edits made after the safety capture", async () => {
+    const server = startServer(0, "127.0.0.1")
+    process.env["PORT"] = String(server.port)
+    const output: string[] = []
+    await runServerMaintenance(
+      ["workspace-snapshot", "live-capture-test"],
+      (value) => output.push(value)
+    )
+    const saved = JSON.parse(output[0]!)
+    const capture = join(
+      await operatorSnapshotDirectory("live-capture-test"),
+      "capture"
+    )
+    await expect(inspectWorkspaceSnapshot(capture)).resolves.toMatchObject({
+      sourceCheckpoint: saved.sourceCheckpoint,
+    })
+    const prepare = async (id: string) => {
+      const dir = await operatorSnapshotDirectory(id)
+      await cp(capture, join(dir, "download"), { recursive: true })
+      return join(
+        root,
+        "app",
+        "workspace-transfers",
+        "jobs",
+        `wss_${id}`,
+        "job.json"
+      )
+    }
+    const changed = await writeDoc("notes", "hello", "# New edit\n", {
+      updatedBy: "test",
+      source: "test",
+    })
+    expect(changed.ok).toBe(true)
+    const failedJob = await prepare("restore-stale-test")
+    await restoreLiveWorkspaceSnapshot({
+      operationId: "restore-stale-test",
+      workspaceId: saved.workspaceId,
+      sourceCheckpoint: saved.sourceCheckpoint,
+      safetyCheckpoint: saved.sourceCheckpoint,
+    })
+    const waitJob = async (path: string) => {
+      for (let i = 0; i < 200; i++) {
+        const job = JSON.parse(await readFile(path, "utf8"))
+        if (job.state !== "replacing") return job
+        // test-policy: external-readiness-backoff (durable restore/admission state)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      throw new Error("restore did not finish")
+    }
+    expect((await waitJob(failedJob)).state).toBe("failed")
+    expect(
+      await readFile(
+        join(workspace, "spaces", "notes", "docs", "hello.md"),
+        "utf8"
+      )
+    ).toContain("New edit")
+    const latest: string[] = []
+    for (let i = 0; i < 200 && latest.length === 0; i++) {
+      try {
+        await runServerMaintenance(
+          ["workspace-snapshot", "live-safety-test"],
+          (value) => latest.push(value)
+        )
+      } catch {
+        // The durable outcome can precede recovery cleanup and admission.
+        // test-policy: external-readiness-backoff (durable restore/admission state)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+    }
+    expect(latest).toHaveLength(1)
+    const completedJob = await prepare("restore-current-test")
+    await restoreLiveWorkspaceSnapshot({
+      operationId: "restore-current-test",
+      workspaceId: saved.workspaceId,
+      sourceCheckpoint: saved.sourceCheckpoint,
+      safetyCheckpoint: JSON.parse(latest[0]!).sourceCheckpoint,
+    })
+    expect((await waitJob(completedJob)).state).toBe("complete")
+    const status: string[] = []
+    const statusArgs = [
+      "workspace-snapshot-restore-status",
+      "restore-current-test",
+      saved.workspaceId,
+      saved.sourceCheckpoint,
+      JSON.parse(latest[0]!).sourceCheckpoint,
+    ]
+    await runServerMaintenance(statusArgs, (value) => status.push(value))
+    expect(JSON.parse(status[0]!)).toMatchObject({
+      operationId: "restore-current-test",
+      state: "complete",
+    })
+    await expect(
+      runServerMaintenance([...statusArgs.slice(0, -1), "a".repeat(64)])
+    ).rejects.toThrow("identity mismatch")
+
+    expect(
+      await readFile(
+        join(workspace, "spaces", "notes", "docs", "hello.md"),
+        "utf8"
+      )
+    ).toContain("Hello")
+  })
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(
       root,

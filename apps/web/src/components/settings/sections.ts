@@ -2,6 +2,7 @@ import type { ComponentType } from "react"
 import type { LucideIcon } from "lucide-react"
 import {
   Bot,
+  Archive,
   CircleHelp,
   History,
   MonitorCog,
@@ -16,6 +17,7 @@ import { CloudSection } from "./sections/cloud"
 import { GeneralSection } from "./sections/general"
 import { AppearanceSection } from "./sections/appearance"
 import { EditorSection } from "./sections/editor"
+import { BackupsSection } from "./sections/backups"
 import { HistorySection } from "./sections/history"
 import { AgentsSection } from "./sections/agents"
 import { HelpSection } from "./sections/help"
@@ -30,6 +32,7 @@ export type SettingsSectionId =
   | "appearance"
   | "editor"
   | "history"
+  | "backups"
   | "portability"
   | "agents"
   | "help"
@@ -141,6 +144,13 @@ export function getSettingsSections(
       APPEARANCE,
       ...(capabilities.editorSettings ? [EDITOR] : []),
       ...(capabilities.historySettings ? [HISTORY] : []),
+      {
+        id: "backups",
+        label: "Backups",
+        description: "",
+        icon: Archive,
+        component: BackupsSection,
+      },
       ...(capabilities.workspacePortability ? [PORTABILITY] : []),
       AGENTS,
       HELP,
@@ -149,7 +159,13 @@ export function getSettingsSections(
   }
   return [
     ...(capabilities.workspaceName ? [GENERAL] : []),
-    { id: "cloud", label: "Worktable Cloud", description: "AI connections and document sharing.", icon: UserRound, component: CloudSection },
+    {
+      id: "cloud",
+      label: "Worktable Cloud",
+      description: "AI connections and document sharing.",
+      icon: UserRound,
+      component: CloudSection,
+    },
     APPEARANCE,
     ...(capabilities.editorSettings ? [EDITOR] : []),
     ...(capabilities.historySettings ? [HISTORY] : []),

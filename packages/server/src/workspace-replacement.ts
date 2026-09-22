@@ -53,7 +53,9 @@ export interface BeginWorkspaceReplacementOptions {
    * Imports retain the destination identity. Storage migrations instead admit
    * the verified manifest already present in the staged workspace.
    */
-  manifest?: "preserve-destination" | "use-staged"
+  manifest?: "preserve-destination" | "use-staged" | "checkpoint"
+  /** Checkpoint restores are bound to a validated full tree, including its manifest. */
+  expectedSourceCheckpoint?: string
   /** Imports use portable paths; local migrations preserve legacy filesystem names. */
   checkpointPaths?: "portable" | "local"
   /** Final caller-owned validation after preparation and before the first rename. */
@@ -329,9 +331,8 @@ export async function beginPreparedWorkspaceReplacement(
   }
   const calculateCheckpoint = async (root: string): Promise<string> =>
     options.checkpointPaths === "local"
-      ? (
-          await calculateLocalWorkspaceContentCheckpoints(root)
-        ).workspaceContentCheckpoint
+      ? (await calculateLocalWorkspaceContentCheckpoints(root))
+          .workspaceContentCheckpoint
       : calculateWorkspaceContentCheckpoint(root)
   const currentContentCheckpoint = await calculateCheckpoint(resolvedStaging)
   if (currentContentCheckpoint !== expectedContentCheckpoint) {
@@ -348,6 +349,18 @@ export async function beginPreparedWorkspaceReplacement(
       : isWorkspaceManifest(replacementManifest)
   if (!stagedManifestAdmitted) {
     throw new Error("prepared replacement no longer has a valid manifest")
+  }
+  if (options.manifest === "checkpoint") {
+    const { inspectPortableWorkspaceTree, portableWorkspaceCheckpoint } =
+      await import("./workspace-transfer-v2.ts")
+    if (
+      !options.expectedSourceCheckpoint ||
+      portableWorkspaceCheckpoint(
+        await inspectPortableWorkspaceTree(resolvedStaging)
+      ) !== options.expectedSourceCheckpoint
+    ) {
+      throw new Error("prepared checkpoint changed after validation")
+    }
   }
   const backup = resolve(
     backupPath ??
@@ -389,6 +402,25 @@ export async function beginPreparedWorkspaceReplacement(
   if ((options.manifest ?? "preserve-destination") === "preserve-destination") {
     const current = await readCurrentManifest()
     writeWorkspaceManifestBytesAt(resolvedStaging, current.bytes)
+  } else if (options.manifest === "checkpoint") {
+    const current = await readCurrentManifest()
+    const saved = replacementManifest as WorkspaceManifest
+    if (saved.id !== current.value.id)
+      throw new Error("checkpoint belongs to another workspace")
+    // Layout and content travel together. Keep only current identity/access
+    // fields; copying the entire destination manifest can mislabel V1 as V2.
+    writeWorkspaceManifestBytesAt(
+      resolvedStaging,
+      Buffer.from(
+        JSON.stringify({
+          ...saved,
+          id: current.value.id,
+          name: current.value.name,
+          createdAt: current.value.createdAt,
+          cloud: current.value.cloud,
+        }) + "\n"
+      )
+    )
   }
   await chmod(resolvedStaging, workspaceInfo.mode & 0o777)
   await options.validateBeforeSwap?.()

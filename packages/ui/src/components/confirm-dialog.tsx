@@ -22,6 +22,7 @@ interface ConfirmDialogProps {
   icon?: ReactNode
   children?: ReactNode
   loading?: boolean
+  confirmDisabled?: boolean
   loadingLabel?: string
   onConfirm: () => void | Promise<void>
 }
@@ -37,6 +38,7 @@ export function ConfirmDialog({
   icon,
   children,
   loading = false,
+  confirmDisabled = false,
   loadingLabel = "Working...",
   onConfirm,
 }: ConfirmDialogProps) {
@@ -76,7 +78,7 @@ export function ConfirmDialog({
           <Button
             variant={variant === "destructive" ? "destructive" : "default"}
             onClick={() => void handleConfirm()}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
           >
             {loading ? loadingLabel : confirmLabel}
           </Button>

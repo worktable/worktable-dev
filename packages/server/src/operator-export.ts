@@ -13,6 +13,9 @@ import { ensureAppDir } from "./app-storage.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import { withWorkspaceExportLease } from "./workspace-replacement-coordinator.ts"
 import { writeWorkspaceExportV2 } from "./workspace-transfer-v2.ts"
+import { LOCAL_OPERATOR_SNAPSHOT_PATH } from "./operator-snapshot.ts"
+import { LOCAL_OPERATOR_SNAPSHOT_RESTORE_PATH } from "./workspace-snapshot-restore.ts"
+import { LOCAL_OPERATOR_BACKUP_AUDIT_PATH } from "./workspace-backup-notifier.ts"
 
 export const LOCAL_OPERATOR_EXPORT_PATH = "/internal/operator/workspace-export"
 export const LOCAL_OPERATOR_TOKEN_HEADER = "x-worktable-local-operator"
@@ -68,7 +71,12 @@ export function isAuthorizedLocalOperatorRequest(request: Request): boolean {
   const url = new URL(request.url)
   if (
     request.method !== "POST" ||
-    url.pathname !== LOCAL_OPERATOR_EXPORT_PATH
+    ![
+      LOCAL_OPERATOR_EXPORT_PATH,
+      LOCAL_OPERATOR_SNAPSHOT_PATH,
+      LOCAL_OPERATOR_SNAPSHOT_RESTORE_PATH,
+      LOCAL_OPERATOR_BACKUP_AUDIT_PATH,
+    ].includes(url.pathname)
   ) {
     return false
   }

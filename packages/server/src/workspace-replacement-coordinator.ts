@@ -6,6 +6,8 @@ export interface ScheduledWorkspaceReplacement {
   contentCheckpoint: string
   options?: BeginWorkspaceReplacementOptions
   expectedDestinationContentCheckpoint?: string
+  /** Required committed-state work before requests reopen; failure requires recovery. */
+  onCommitted?(): Promise<void>
   onSucceeded(): Promise<void>
   onFailed(
     error: unknown,

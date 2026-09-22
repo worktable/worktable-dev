@@ -57,7 +57,8 @@ export async function acceptWorkspaceContentEpoch(
     changed = true
     setWorkspaceWritesFrozen(true)
     if (!resetting) {
-      window.dispatchEvent(new Event("worktable:workspace-changed"))
+      if (wasMounted)
+        window.dispatchEvent(new Event("worktable:workspace-changed"))
       resetting = resetBrowserWorkspace(id, previous).finally(() => {
         try {
           sessionStorage.setItem(`worktable-content-epoch:${id}`, epoch)

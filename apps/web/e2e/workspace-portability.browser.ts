@@ -116,4 +116,15 @@ test("clearing a workspace discards stale drafts and reloads another tab", async
   expect(
     await other.evaluate((key) => sessionStorage.getItem(key), draftKey)
   ).toBeNull()
+  // A restored tab can start with storage from before the clear. It must finish
+  // loading the new workspace as well as discard the obsolete draft.
+  await other.evaluate(({ id, epoch, key }) => {
+    sessionStorage.setItem(`worktable-content-epoch:${id}`, epoch)
+    sessionStorage.setItem(key, "obsolete draft")
+  }, { id: before.id, epoch: before.contentEpoch, key: draftKey })
+  await other.reload({ waitUntil: "domcontentloaded" })
+  await openPortability(other)
+  expect(
+    await other.evaluate((key) => sessionStorage.getItem(key), draftKey)
+  ).toBeNull()
 })

@@ -1,5 +1,6 @@
 import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts";
 import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts";
+import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts";
 import { Hono } from "hono";
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
@@ -836,11 +837,17 @@ export function startServer(
   try {
     if (!replacementRestartInProgress) {
       workspaceReplacementRecoveryHookForTests?.();
-      const recovered = recoverInterruptedWorkspaceReplacements();
+      const recovered = recoverInterruptedWorkspaceReplacements({ details: true });
       if (recovered.length > 0) {
         retireWorkspaceDerivedFiles();
         recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({
           type: "workspaceReset",
+        }).then(async () => {
+          // A committed clear must revoke old downloads before boot serves requests.
+          for (const job of recovered) {
+            if (job.kind === "clear" && job.state === "complete")
+              await finalizeWorkspaceClearJob(job.id);
+          }
         }).catch((error) => {
           workspaceRejected = true;
           console.error("[workspace] recovered state could not be initialized", error);
@@ -1744,7 +1751,6 @@ export function startServer(
             replacementRestartInProgress = false;
           }
           await transaction.commit();
-          resumeWorkspaceRequestAdmission();
         } catch (error) {
           let failure = error;
           let recoveryIncomplete = false;
@@ -1801,6 +1807,19 @@ export function startServer(
           }
           return;
         }
+        // This work belongs after the irreversible commit, outside rollback handling.
+        // Keep admission closed on failure so boot recovery can finish it durably.
+        try {
+          await replacement.onCommitted?.();
+        } catch (error) {
+          try {
+            await activeServer?.stop();
+          } finally {
+            terminateAfterWorkspaceReplacementRecoveryFailure(error);
+          }
+          return;
+        }
+        resumeWorkspaceRequestAdmission();
         try {
           await replacement.onSucceeded();
         } catch (error) {

@@ -228,7 +228,7 @@ export async function confirmWorkspaceClearJob(
           manifest: "clear-content",
         },
         expectedDestinationContentCheckpoint: prepared.destinationCheckpoint,
-        async onSucceeded() {
+        async onCommitted() {
           const current = await getWorkspaceClearJob(id)
           await updateWorkspaceTransferJob(current, {
             state: "complete",
@@ -237,6 +237,9 @@ export async function confirmWorkspaceClearJob(
               Date.now() + WORKSPACE_TRANSFER_TTL_MS
             ).toISOString(),
           })
+          await revokeWorkspaceExports()
+        },
+        async onSucceeded() {
           await finalizeWorkspaceClearJob(id)
         },
         async onFailed(error, options) {

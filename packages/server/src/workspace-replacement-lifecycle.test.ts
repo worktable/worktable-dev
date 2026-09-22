@@ -860,6 +860,14 @@ describe("live workspace clear", () => {
     expect(await readFile(join(bad, "snapshot.json"), "utf8")).toBe(
       "old history"
     )
+    let downloadDuringReplacement: number | undefined
+    setWorkspaceReplacementCommitHookForTests(async () => {
+      const download = await fetch(
+        `${origin}/api/workspace/transfers/exports/${exported.id}/download`
+      )
+      downloadDuringReplacement = download.status
+      await download.body?.cancel()
+    })
     expect(
       (
         await confirmWorkspaceClearJob(
@@ -870,6 +878,7 @@ describe("live workspace clear", () => {
       ).state
     ).toBe("replacing")
     expect((await waitForClear(reviewed.id, true)).state).toBe("complete")
+    expect(downloadDuringReplacement).toBe(503)
     expect(ensureWorkspaceManifest()).toMatchObject({
       id: original.id,
       name: original.name,

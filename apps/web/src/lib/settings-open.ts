@@ -29,3 +29,20 @@ export function onOpenSettings(
   window.addEventListener(OPEN_SETTINGS_EVENT, listener)
   return () => window.removeEventListener(OPEN_SETTINGS_EVENT, listener)
 }
+
+// Read imperatively when an operation finishes: its visible status should not
+// also announce itself in a toast. SettingsBody owns this lifetime.
+let visibleSection: SettingsSectionId | null = null
+
+export function markSettingsSectionVisible(
+  section: SettingsSectionId
+): () => void {
+  visibleSection = section
+  return () => {
+    if (visibleSection === section) visibleSection = null
+  }
+}
+
+export function getVisibleSettingsSection(): SettingsSectionId | null {
+  return visibleSection
+}

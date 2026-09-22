@@ -1,10 +1,22 @@
-import { useEffect, useRef, useState } from "react"
+import { OperationStatus } from "../operation-status"
+import { SettingsGroup } from "../settings-group"
+import { WorkspaceClearGroup } from "./workspace-clear"
+import {
+  recoverWorkspaceExport,
+  workspaceExportDiagnosticsUrl,
+} from "@/lib/workspace-transfer-api"
+import { useRef, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArchiveRestore, Download, Upload } from "lucide-react"
+import { ArchiveRestore, ChevronDown, Download, Upload } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { Callout } from "@worktable/ui/components/callout"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@worktable/ui/components/collapsible"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { Progress } from "@worktable/ui/components/progress"
+import { SettingRow } from "@worktable/ui/components/setting-row"
 import {
   Select,
   SelectContent,
@@ -13,9 +25,6 @@ import {
   SelectValue,
 } from "@worktable/ui/components/select"
 import { toast } from "@worktable/ui/components/sonner"
-import { clearPersistedThreadDrafts } from "@/lib/thread-drafts"
-import { clearPersistedDrawingDrafts } from "@/lib/drawing-drafts"
-import { useWorkspace } from "@/lib/queries"
 import {
   canResumeWorkspaceImport,
   createWorkspaceExport,
@@ -74,6 +83,7 @@ export function PortabilitySection() {
     <div className="flex flex-col gap-6">
       <ExportGroup />
       <ImportGroup />
+      <WorkspaceClearGroup />
     </div>
   )
 }
@@ -81,14 +91,12 @@ export function PortabilitySection() {
 function ExportGroup() {
   const [option, setOption] = useState("all")
   const queryClient = useQueryClient()
-  const announced = useRef<string | null>(null)
   const policy =
     EXPORT_OPTIONS.find((candidate) => candidate.value === option)?.policy ??
     EXPORT_OPTIONS[0]!.policy
   const create = useMutation({
     mutationFn: () => createWorkspaceExport(policy),
     onSuccess: (job) => {
-      announced.current = null
       queryClient.setQueryData(["workspace-transfer", "export", "current"], job)
     },
     onError: (error) =>
@@ -101,109 +109,169 @@ function ExportGroup() {
     queryFn: getCurrentWorkspaceExportJob,
     refetchInterval: (query) => {
       const state = query.state.data?.state
-      return state === "queued" || state === "running" ? 750 : false
+      return query.state.error
+        ? 3000
+        : state === "queued" || state === "running"
+          ? 750
+          : false
     },
   })
 
-  useEffect(() => {
-    if (job.data?.state === "complete" && announced.current !== job.data.id) {
-      announced.current = job.data.id
-      toast.success("Worktable export is ready to download.")
-    } else if (
-      job.data?.state === "failed" &&
-      announced.current !== job.data.id
-    ) {
-      announced.current = job.data.id
-      toast.error(job.data.error ?? "Worktable export failed.")
-    }
-  }, [job.data])
+  const recover = useMutation({
+    mutationFn: (id: string) => recoverWorkspaceExport(id),
+    onSuccess: (next) =>
+      queryClient.setQueryData(
+        ["workspace-transfer", "export", "current"],
+        next
+      ),
+    onError: (error) => toast.error(error.message),
+  })
 
   const working =
     create.isPending ||
+    recover.isPending ||
     job.data?.state === "queued" ||
     job.data?.state === "running"
   const completedJob = job.data?.state === "complete" ? job.data : null
 
+  const failedJob = !working && job.data?.state === "failed" ? job.data : null
+  const recoveryAvailable = Boolean(failedJob?.failure?.recoveryFingerprint)
+
   return (
-    <section className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium text-foreground">Export</h3>
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-        <div className="flex max-w-52 flex-col gap-1.5">
-          <span className="text-xs font-medium tracking-wide text-foreground/70">
-            Version history
-          </span>
-          <Select
-            value={option}
-            onValueChange={(value) => {
-              if (value) setOption(value)
-            }}
-            disabled={working}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue>
-                {EXPORT_OPTIONS.find((candidate) => candidate.value === option)
-                  ?.label ?? "All history"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {EXPORT_OPTIONS.map((candidate) => (
-                <SelectItem key={candidate.value} value={candidate.value}>
-                  {candidate.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {completedJob ? (
+    <SettingsGroup title="Export">
+      <SettingRow label="Version history" htmlFor="export-history">
+        <Select
+          value={option}
+          onValueChange={(value) => {
+            if (value) setOption(value)
+          }}
+          disabled={working}
+        >
+          <SelectTrigger id="export-history" className="w-44">
+            <SelectValue>
+              {EXPORT_OPTIONS.find((candidate) => candidate.value === option)
+                ?.label ?? "All history"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {EXPORT_OPTIONS.map((candidate) => (
+              <SelectItem key={candidate.value} value={candidate.value}>
+                {candidate.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      {job.isError ? (
+        <OperationStatus state="attention">Reconnecting…</OperationStatus>
+      ) : working ? (
+        <OperationStatus state="working">
+          {job.data?.state === "queued"
+            ? "Waiting to export…"
+            : EXPORT_PHASES[job.data?.progress ?? "inventory"]}
+        </OperationStatus>
+      ) : completedJob ? (
+        <OperationStatus state="success">
+          {completedJob.manifest?.history.recovery
+            ? `Export ready — ${completedJob.manifest.history.recovery.omittedFiles.toLocaleString()} history ${completedJob.manifest.history.recovery.omittedFiles === 1 ? "file" : "files"} omitted.`
+            : "Export ready."}
+          {completedJob.bytes ? (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {humanBytes(completedJob.bytes)}
+            </span>
+          ) : null}
+        </OperationStatus>
+      ) : failedJob ? (
+        <OperationStatus state={failedJob.failure ? "attention" : "error"}>
+          {failedJob.failure?.code === "NON_PORTABLE_HISTORY"
+            ? `${failedJob.failure.affectedFiles.toLocaleString()} history ${failedJob.failure.affectedFiles === 1 ? "file blocks" : "files block"} export.`
+            : failedJob.failure
+              ? "Some filenames need attention."
+              : "Export failed."}
+        </OperationStatus>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        {completedJob ? (
+          <>
             <Button
               nativeButton={false}
               render={<a href={workspaceExportDownloadUrl(completedJob.id)} />}
             >
               <Download className="size-4" />
-              Download {completedJob.downloadName ?? "worktable.wtb"}
+              Download
             </Button>
-          ) : (
-            <Button onClick={() => create.mutate()} disabled={working}>
-              <Download className="size-4" />
-              {working ? "Preparing export…" : "Export Worktable"}
-            </Button>
-          )}
-          {completedJob?.bytes ? (
-            <span className="text-xs text-muted-foreground">
-              {humanBytes(completedJob.bytes)}
-            </span>
-          ) : null}
-          {completedJob ? (
             <Button
-              variant="ghost"
+              variant="outline"
               onClick={() => create.mutate()}
-              disabled={create.isPending}
+              disabled={working}
             >
-              Create another
+              New export
             </Button>
-          ) : null}
-        </div>
-        {job.data?.state === "failed" ? (
-          <Callout variant="danger">
-            {job.data.error ?? "Worktable export failed."} You can try the
-            export again.
-          </Callout>
-        ) : null}
-        <p className="text-xs text-muted-foreground">
-          Import to another Worktable or extract it plainly as a ZIP file.
-        </p>
+          </>
+        ) : (
+          <>
+            <Button
+              variant={recoveryAvailable ? "outline" : "default"}
+              onClick={() => create.mutate()}
+              disabled={working}
+            >
+              <Download className="size-4" />
+              Export
+            </Button>
+            {recoveryAvailable && failedJob ? (
+              <Button
+                onClick={() => recover.mutate(failedJob.id)}
+                disabled={working}
+              >
+                Skip files
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
-    </section>
+      {failedJob ? (
+        <TransferDetails title="Details">
+          {failedJob.failure ? (
+            <>
+              <ul className="flex max-h-48 flex-col gap-2 overflow-auto">
+                {failedJob.failure.issues.map((issue) => (
+                  <li key={issue.path}>
+                    <code className="text-xs break-all whitespace-pre-wrap">
+                      {displayExportPath(issue.path)}
+                    </code>
+                    <span className="block text-xs text-muted-foreground">
+                      {issue.code.replaceAll("-", " ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {failedJob.failure.truncated ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Showing {failedJob.failure.issues.length} of{" "}
+                  {failedJob.failure.issueCount} issues.
+                </p>
+              ) : null}
+              <a
+                className="mt-3 inline-block whitespace-nowrap underline"
+                href={workspaceExportDiagnosticsUrl(failedJob.id)}
+              >
+                Download report
+              </a>
+            </>
+          ) : (
+            <p className="text-muted-foreground">
+              {failedJob.error ?? "Try exporting again."}
+            </p>
+          )}
+        </TransferDetails>
+      ) : null}
+    </SettingsGroup>
   )
 }
 
 function ImportGroup() {
   const queryClient = useQueryClient()
-  const workspaceQuery = useWorkspace()
   const inputRef = useRef<HTMLInputElement>(null)
-  const announced = useRef<string | null>(null)
-  const autoPrepared = useRef<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [confirming, setConfirming] = useState(false)
   const queryKey = ["workspace-transfer", "import", "current"] as const
@@ -284,41 +352,12 @@ function ImportGroup() {
         (existing: WorkspaceImportCreated | null | undefined) =>
           existing ? { ...existing, ...replacing } : existing
       )
-      toast.message("Replacing Worktable. Reconnecting shortly.")
     },
     onError: (error) =>
       toast.error(
         error instanceof Error ? error.message : "Worktable replacement failed."
       ),
   })
-
-  useEffect(() => {
-    if (
-      job.data?.state === "uploaded" &&
-      autoPrepared.current !== job.data.id
-    ) {
-      autoPrepared.current = job.data.id
-      prepare.mutate(job.data.id)
-    }
-  }, [job.data, prepare])
-
-  useEffect(() => {
-    if (job.data?.state === "complete" && announced.current !== job.data.id) {
-      announced.current = job.data.id
-      if (workspaceQuery.data?.id) {
-        clearPersistedThreadDrafts(workspaceQuery.data.id)
-        clearPersistedDrawingDrafts(workspaceQuery.data.id)
-      }
-      toast.success("Worktable imported. Name and account preserved.")
-      void queryClient.invalidateQueries()
-    } else if (
-      job.data?.state === "failed" &&
-      announced.current !== job.data.id
-    ) {
-      announced.current = job.data.id
-      toast.error(job.data.error ?? "Worktable replacement failed.")
-    }
-  }, [job.data, queryClient, workspaceQuery.data?.id])
 
   const ready = job.data?.state === "ready" ? job.data : null
   const uploadingJob = job.data?.state === "uploading" ? job.data : null
@@ -337,19 +376,38 @@ function ImportGroup() {
     job.data?.state === "verifying" ||
     job.data?.state === "preparing"
 
-  return (
-    <section className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium text-foreground">
-        Import and replace
-      </h3>
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-        <Callout variant="warning">
-          Imports replace all content and history.
-        </Callout>
+  const chooseLabel =
+    uploadingJob && uploadingJob.receivedBytes > 0
+      ? "Resume upload…"
+      : ready
+        ? "Choose another…"
+        : "Choose file…"
 
+  return (
+    <SettingsGroup title="Import">
+      {job.isError ? (
+        <OperationStatus state="attention">Reconnecting…</OperationStatus>
+      ) : null}
+      <SettingRow label="Workspace package">
+        <Button
+          variant="outline"
+          aria-label={chooseLabel}
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload className="size-4" />
+          {chooseLabel}
+        </Button>
+      </SettingRow>
+      <div
+        className={
+          job.data || upload.isPending ? "flex flex-col gap-3" : "hidden"
+        }
+      >
         <input
           ref={inputRef}
-          className="sr-only"
+          className="hidden"
+          aria-label="Import package"
           type="file"
           accept=".wtb,.zip,application/zip,application/vnd.worktable.workspace+zip"
           disabled={busy}
@@ -379,22 +437,21 @@ function ImportGroup() {
         {job.data?.state === "verifying" ||
         job.data?.state === "preparing" ||
         job.data?.state === "uploaded" ? (
-          <p className="text-sm text-muted-foreground" aria-live="polite">
+          <OperationStatus state="working">
             {job.data.state === "verifying"
-              ? "Verifying package integrity…"
-              : "Preparing a safe replacement…"}
-          </p>
+              ? "Verifying package…"
+              : "Preparing import…"}
+          </OperationStatus>
         ) : null}
 
         {job.data?.state === "failed" ? (
-          <Callout variant="danger">
-            {job.data.error ?? "Worktable import failed."} Choose the package
-            again to retry.
-          </Callout>
+          <OperationStatus state="error">
+            {job.data.error ?? "Import failed."}
+          </OperationStatus>
         ) : null}
 
         {ready?.state === "ready" && ready.prepared ? (
-          <div className="rounded-lg bg-muted/60 p-3 text-sm">
+          <div className="text-sm">
             <p className="font-medium text-foreground">
               {ready.prepared.source.workspaceName}
             </p>
@@ -403,72 +460,97 @@ function ImportGroup() {
               {humanBytes(ready.prepared.bytes)} ·{" "}
               {ready.prepared.files.toLocaleString()} files
             </p>
-            <p className="mt-1 text-muted-foreground">
-              {historySummary(ready)}
-            </p>
           </div>
         ) : null}
 
         <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
-          >
-            <Upload className="size-4" />
-            {uploadingJob && uploadingJob.receivedBytes > 0
-              ? "Reselect package to continue"
-              : ready?.state === "ready"
-                ? "Choose a different package"
-                : "Choose .wtb package"}
-          </Button>
           {ready?.state === "ready" ? (
-            <Button
-              variant="destructive"
-              disabled={busy}
-              onClick={() => setConfirming(true)}
-            >
+            <Button disabled={busy} onClick={() => setConfirming(true)}>
               <ArchiveRestore className="size-4" />
               Replace Worktable
             </Button>
           ) : null}
-          {uploadedJob && prepare.isError ? (
+          {uploadedJob ? (
             <Button
               variant="outline"
               disabled={busy}
               onClick={() => prepare.mutate(uploadedJob.id)}
             >
-              Try preparation again
+              Retry
             </Button>
           ) : null}
           {job.data?.state === "replacing" ? (
-            <span className="self-center text-sm text-muted-foreground">
+            <OperationStatus state="working">
               Reconnecting after replacement…
-            </span>
+            </OperationStatus>
           ) : null}
         </div>
       </div>
 
+      {ready?.state === "ready" && ready.prepared ? (
+        <TransferDetails title="History details">
+          <p className="text-muted-foreground">{historySummary(ready)}</p>
+        </TransferDetails>
+      ) : null}
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
         variant="destructive"
         title="Replace this Worktable?"
-        description="This replaces all portable content and version history; it does not merge and can’t be undone."
+        description={`Replace all content and history with ${ready?.prepared?.source.workspaceName ?? "this package"}? This can’t be undone.`}
         confirmLabel="Replace Worktable"
         loading={replace.isPending}
         loadingLabel="Starting replacement…"
         onConfirm={() => {
           if (ready?.id) replace.mutate(ready.id)
         }}
-      >
-        {ready?.prepared ? (
-          <p className="text-sm text-muted-foreground">
-            Import <strong>{ready.prepared.source.workspaceName}</strong> while
-            keeping this Worktable&rsquo;s name and Cloud account.
-          </p>
-        ) : null}
-      </ConfirmDialog>
-    </section>
+      />
+    </SettingsGroup>
   )
+}
+
+function TransferDetails({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <Collapsible className="-mx-4 -mb-4 border-t border-border/60">
+      <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 [&[data-panel-open]>svg]:rotate-180">
+        {title}
+        <ChevronDown
+          className="size-4 shrink-0 transition-transform motion-reduce:transition-none"
+          aria-hidden
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="px-4 pb-4 text-sm">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+const EXPORT_PHASES = {
+  inventory: "Preparing export…",
+  history: "Preparing export…",
+  capture: "Preparing export…",
+  viewer: "Preparing export…",
+  archive: "Creating export…",
+  finalize: "Finalizing export…",
+} as const
+
+function displayExportPath(path: string): string {
+  return path
+    .split("/")
+    .map((part) => part.replace(/ +$/u, (spaces) => "␠".repeat(spaces.length)))
+    .join("/")
+    .split("")
+    .map((char) =>
+      char.charCodeAt(0) < 32
+        ? `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+        : char
+    )
+    .join("")
 }

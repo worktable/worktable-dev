@@ -1,3 +1,6 @@
+import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts";
+import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts";
+import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts";
 import { Hono } from "hono";
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
@@ -101,7 +104,10 @@ import {
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts";
 import { runServerMaintenance } from "./server-maintenance.ts";
 import { beginPreparedWorkspaceReplacement } from "./workspace-replacement.ts";
-import { calculateWorkspaceContentCheckpoint } from "./workspace-transfer-v2.ts";
+import {
+  calculateLocalWorkspaceContentCheckpoints,
+  calculateWorkspaceContentCheckpoint,
+} from "./workspace-transfer-v2.ts";
 import {
   setWorkspaceReplacementExecutor,
   waitForActiveWorkspaceExports,
@@ -110,7 +116,10 @@ import {
   setWorkspaceExportFlush,
   setWorkspaceExportSnapshot,
 } from "./workspace-export-coordinator.ts";
-import { recoverInterruptedWorkspaceReplacements } from "./workspace-replacement-recovery.ts";
+import {
+  acknowledgeWorkspaceReplacementResets,
+  recoverInterruptedWorkspaceReplacements,
+} from "./workspace-replacement-recovery.ts";
 import {
   reconcileRecoveredDocumentLifecycles,
   recoverInterruptedDocumentLifecycles,
@@ -170,7 +179,7 @@ const sameOriginCredentialedCors = cors({
   },
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Worktable-Content-Epoch"],
 });
 
 const wildcardCors = cors({
@@ -314,6 +323,7 @@ app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
 app.use("/api/*", trustedLocalIdentity());
+app.use("/api/*", requireWorkspaceContentEpoch);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
 // login and status work unauthenticated (the login page must be reachable with
@@ -790,6 +800,7 @@ export function startServer(
   }
 
   let workspaceRejected = false;
+  let recoveredWorkspaceReset: Promise<void> | null = null;
   let recoveredDocuments: ReturnType<
     typeof recoverInterruptedDocumentLifecycles
   > = [];
@@ -829,8 +840,23 @@ export function startServer(
   try {
     if (!replacementRestartInProgress) {
       workspaceReplacementRecoveryHookForTests?.();
-      const recovered = recoverInterruptedWorkspaceReplacements();
+      const recovered = recoverInterruptedWorkspaceReplacements({ details: true })
+        .filter((job) => job.resetRequired);
       if (recovered.length > 0) {
+        retireWorkspaceDerivedFiles();
+        recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({
+          type: "workspaceReset",
+        }).then(async () => {
+          // A committed clear must revoke old downloads before boot serves requests.
+          for (const job of recovered) {
+            if (job.kind === "clear" && job.state === "complete")
+              await finalizeWorkspaceClearJob(job.id);
+          }
+          acknowledgeWorkspaceReplacementResets(recovered.map((job) => job.id));
+        }).catch((error) => {
+          workspaceRejected = true;
+          console.error("[workspace] recovered state could not be initialized", error);
+        });
         console.warn(
           `[Worktable] recovered ${recovered.length} interrupted workspace replacement${recovered.length === 1 ? "" : "s"}`
         );
@@ -1298,6 +1324,14 @@ export function startServer(
         );
       }
 
+      if (recoveredWorkspaceReset && url.pathname !== "/health") {
+        await recoveredWorkspaceReset;
+        if (workspaceRejected) {
+          return new Response("Workspace recovery failed; restart Worktable.", {
+            status: 503,
+          });
+        }
+      }
       const pendingRecoveredDocument = recoveredDocumentTask;
       if (pendingRecoveredDocument && url.pathname !== "/health") {
         await pendingRecoveredDocument;
@@ -1690,9 +1724,15 @@ export function startServer(
         try {
           await stopWorkspaceRequestAdmissionAndDrain();
           await waitForActiveWorkspaceExports();
-          const destinationContentCheckpoint =
-            await calculateWorkspaceContentCheckpoint(getWorkspaceRoot());
+          // Stop and flush every accepted writer before checking the reviewed tree.
           await server.stop();
+          const destinationContentCheckpoint =
+            replacement.expectedDestinationContentCheckpoint ??
+            ((replacement.options?.destinationCheckpointPaths ?? replacement.options?.checkpointPaths) === "local"
+              ? (await calculateLocalWorkspaceContentCheckpoints(
+                  getWorkspaceRoot()
+                )).workspaceContentCheckpoint
+              : await calculateWorkspaceContentCheckpoint(getWorkspaceRoot()));
           await workspaceReplacementAfterCheckpointHookForTests?.();
           transaction = await beginPreparedWorkspaceReplacement(
             replacement.stagingPath,
@@ -1701,6 +1741,7 @@ export function startServer(
             destinationContentCheckpoint,
             replacement.options
           );
+          retireWorkspaceDerivedFiles();
           await notifyWorkspaceChangeAndWaitOrThrow({
             type: "workspaceReset",
           });
@@ -1715,13 +1756,18 @@ export function startServer(
             replacementRestartInProgress = false;
           }
           await transaction.commit();
-          resumeWorkspaceRequestAdmission();
         } catch (error) {
           let failure = error;
           let recoveryIncomplete = false;
           try {
             if (transaction && activeServer) await activeServer.stop();
             await transaction?.rollback();
+            if (transaction) {
+              retireWorkspaceDerivedFiles();
+              await notifyWorkspaceChangeAndWaitOrThrow({
+                type: "workspaceReset",
+              });
+            }
             if (!activeServer) {
               recoverWorkspaceRootBeforeReplacementRestart();
               replacementRestartInProgress = true;
@@ -1766,6 +1812,19 @@ export function startServer(
           }
           return;
         }
+        // This work belongs after the irreversible commit, outside rollback handling.
+        // Keep admission closed on failure so boot recovery can finish it durably.
+        try {
+          await replacement.onCommitted?.();
+        } catch (error) {
+          try {
+            await activeServer?.stop();
+          } finally {
+            terminateAfterWorkspaceReplacementRecoveryFailure(error);
+          }
+          return;
+        }
+        resumeWorkspaceRequestAdmission();
         try {
           await replacement.onSucceeded();
         } catch (error) {

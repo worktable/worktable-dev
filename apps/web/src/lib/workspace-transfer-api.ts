@@ -22,6 +22,7 @@ export interface TransferHistorySummary {
   oldestIncludedAt?: string
   newestIncludedAt?: string
   warnings: string[]
+  recovery?: { omittedFiles: number; omittedBytes: number; issueCount: number }
 }
 
 export interface TransferManifestSummary {
@@ -52,6 +53,22 @@ interface TransferBase {
 
 export interface WorkspaceExportJob extends TransferBase {
   kind: "export"
+  progress?:
+    | "inventory"
+    | "history"
+    | "capture"
+    | "viewer"
+    | "archive"
+    | "finalize"
+  failure?: {
+    code: "NON_PORTABLE_HISTORY" | "NON_PORTABLE_CONTENT"
+    issues: Array<{ code: string; path: string; relatedPaths?: string[] }>
+    issueCount: number
+    truncated: boolean
+    affectedFiles: number
+    affectedBytes: number
+    recoveryFingerprint?: string
+  }
   state: "queued" | "running" | "complete" | "failed"
   history: ExportHistoryPolicy
   downloadName?: string
@@ -335,3 +352,61 @@ export function replaceWorkspaceFromImport(id: string) {
     }
   )
 }
+
+export function recoverWorkspaceExport(id: string) {
+  return fetchJSON<WorkspaceExportJob>(
+    `/api/workspace/transfers/exports/${encodeURIComponent(id)}/recover`,
+    { method: "POST", body: JSON.stringify({ recovery: "omit-history" }) }
+  )
+}
+
+export function workspaceExportDiagnosticsUrl(id: string) {
+  return `${BASE_URL}/api/workspace/transfers/exports/${encodeURIComponent(id)}/diagnostics`
+}
+
+export interface WorkspaceClearJob extends TransferBase {
+  kind: "clear"
+  state: "preparing" | "ready" | "replacing" | "complete" | "failed"
+  workspaceId: string
+  workspaceName: string
+  confirmationText: string
+  reviewRevision?: string
+  files?: number
+  bytes?: number
+  cleanupPending?: boolean
+}
+
+export function createWorkspaceClear() {
+  return fetchJSON<WorkspaceClearJob>("/api/workspace/clear", {
+    method: "POST",
+    body: "{}",
+  })
+}
+
+export async function getCurrentWorkspaceClearJob() {
+  return (
+    await fetchJSON<{ job: WorkspaceClearJob | null }>(
+      "/api/workspace/clear/current"
+    )
+  ).job
+}
+
+export function confirmWorkspaceClear(
+  job: WorkspaceClearJob,
+  confirmation: string
+) {
+  return fetchJSON<WorkspaceClearJob>(
+    `/api/workspace/clear/${encodeURIComponent(job.id)}/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        confirmation,
+        reviewRevision: job.reviewRevision,
+      }),
+    }
+  )
+}
+
+export const exportJobKey = ["workspace-transfer", "export", "current"] as const
+export const importJobKey = ["workspace-transfer", "import", "current"] as const
+export const clearJobKey = ["workspace-transfer", "clear", "current"] as const

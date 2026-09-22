@@ -30,8 +30,15 @@
   transition: height 250ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 
-[data-slot="collapsible-content"][data-state="closed"] {
+[data-slot="collapsible-content"][data-starting-style],
+[data-slot="collapsible-content"][data-ending-style] {
   height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="collapsible-content"] {
+    transition: none;
+  }
 }
 
 /* Border pulse for updated blocks */

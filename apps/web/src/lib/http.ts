@@ -1,3 +1,9 @@
+import {
+  workspaceContentEpoch,
+  workspaceContentChanged,
+  isBrowserContentMutation,
+  fenceChangedWorkspace,
+} from "./workspace-content-epoch";
 // Shared REST fetch helper for the web app.
 //
 // One module so the credentials/401 behavior can't drift across the per-domain
@@ -104,8 +110,21 @@ export async function authenticatedFetch(
   init: RequestInit = {}
 ): Promise<Response> {
   const method = init.method ?? (input instanceof Request ? input.method : "GET");
+  const contentMutation = isBrowserContentMutation(method, input);
+  if (contentMutation && workspaceContentChanged()) {
+    return new Response(JSON.stringify({
+      code: "WORKSPACE_CHANGED",
+      error: "Workspace changed. Reload before editing.",
+    }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  // Capture once: a CSRF retry must not silently rebase an old mutation.
+  const epoch = workspaceContentEpoch();
   const send = (token: string | null) => {
     const headers = new Headers(init.headers);
+    if (contentMutation && epoch) headers.set("X-Worktable-Content-Epoch", epoch);
     if (unsafe(method) && token) headers.set("X-Worktable-CSRF", token);
     return fetch(input, { ...init, method, headers, credentials: "include" });
   };
@@ -114,6 +133,10 @@ export async function authenticatedFetch(
   if (unsafe(method) && (await csrfFailure(response))) {
     const token = await acquireCsrfToken();
     if (token) response = await send(token);
+  }
+  if (contentMutation && response.status === 409) {
+    const body = await response.clone().json().catch(() => null);
+    if (body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace();
   }
   return response;
 }

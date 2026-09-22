@@ -1,3 +1,4 @@
+import { workspaceWritesFrozen } from "@/lib/workspace-content-state"
 import { useEffect, useRef, useState } from "react"
 import { useBlocker, useNavigate } from "@tanstack/react-router"
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
@@ -111,7 +112,7 @@ function DrawingEditor({
         snapshot: instance.editor.store.getSnapshot(),
       })
     const keepDraft = (source?: string) => {
-      if (!dirty.current || !drawing) return
+      if (!dirty.current || !drawing || workspaceWritesFrozen()) return
       try {
         ownDraft = JSON.stringify({
           revision,

@@ -1,3 +1,4 @@
+import { markSettingsSectionVisible } from "@/lib/settings-open"
 import {
   createContext,
   useContext,
@@ -101,6 +102,7 @@ function SettingsBody({
   onSelect: (id: SettingsSectionId) => void
 }) {
   const { isMobile } = useResponsiveDialog()
+  useEffect(() => markSettingsSectionVisible(activeId), [activeId])
   const deploymentQuery = useDeploymentInfo()
   const updateAvailable = useUpdateAvailability() !== null
   const sections = deploymentQuery.data
@@ -173,7 +175,7 @@ function SettingsBody({
           <ResponsiveDialogDescription
             className={active.description ? undefined : "sr-only"}
           >
-            {active.description || "Manage settings."}
+            {active.description ?? active.label}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <SettingsTabsMobile
@@ -215,11 +217,11 @@ function SettingsBody({
           <h3 className="text-lg leading-tight font-semibold">
             {active.label}
           </h3>
-          {active.description && (
+          {active.description ? (
             <p className="mt-1 text-sm text-muted-foreground">
               {active.description}
             </p>
-          )}
+          ) : null}
         </header>
         {content}
       </div>

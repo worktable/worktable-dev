@@ -42,7 +42,7 @@ export interface SettingsSection {
   id: SettingsSectionId
   label: string
   /** One-liner under the section title in the content-pane header. */
-  description: string
+  description?: string
   icon: LucideIcon
   component: ComponentType
 }
@@ -92,7 +92,6 @@ const HISTORY: SettingsSection = {
 const PORTABILITY: SettingsSection = {
   id: "portability",
   label: "Import & Export",
-  description: "Move or browse a portable Worktable package.",
   icon: PackageOpen,
   component: PortabilitySection,
 }

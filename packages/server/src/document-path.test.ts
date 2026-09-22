@@ -27,6 +27,9 @@ describe("document path authority", () => {
       { path: "notes/percent%mark", diagnostic: "invalid-encoding" },
       { path: longPath, diagnostic: "path-too-long" },
       { path: "notes/a:b", diagnostic: "windows-invalid-character" },
+      { path: "notes/legacy-note ", diagnostic: "trailing-dot-or-space" },
+      { path: "notes/COM¹", diagnostic: "windows-reserved" },
+      { path: "notes/LPT².txt", diagnostic: "windows-reserved" },
     ] as const
 
     for (const entry of cases) {

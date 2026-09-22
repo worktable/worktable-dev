@@ -292,6 +292,7 @@ mkdir -p "$sdest"
 tar -xzf "$RELEASE_DIR/$SERVER_ARTIFACT" -C "$sdest"
 
 [ -x "$sdest/bin/worktable-server" ] || fail "$SERVER_ARTIFACT: missing bin/worktable-server"
+[ -x "$sdest/bin/worktable-backup" ] || fail "$SERVER_ARTIFACT: missing bin/worktable-backup"
 [ -d "$sdest/web" ] || fail "$SERVER_ARTIFACT: missing web/"
 [ -f "$sdest/integrations/worktable-claude-desktop.mcpb" ] || fail "$SERVER_ARTIFACT: missing Claude Desktop MCPB"
 [ -f "$sdest/manifest.json" ] || fail "$SERVER_ARTIFACT: missing manifest.json"
@@ -316,12 +317,14 @@ sbin=$(manifest_value "$smanifest" binRelative)
 [ -x "$sdest/$sbin" ] || fail "$SERVER_ARTIFACT: manifest binRelative '$sbin' is not an executable in the tarball"
 
 assert_portable_binary "$sdest/bin/worktable-server"
+assert_portable_binary "$sdest/bin/worktable-backup"
 
 # Boot smoke: a tenant that cannot serve is the whole failure this artifact
 # exists to prevent. WORKTABLE_HOSTED=1 is the posture a sprite runs it in —
 # it must bind non-loopback with NO owner password (M1 replaced that with
 # AS-issued bearers) and answer /health.
 if [ "$HOST_OS" = "Linux" ] && [ "$HOST_ARCH" = "x86_64" ]; then
+  [ "$("$sdest/bin/worktable-backup" --version)" = "worktable-backup protocol 1" ] || fail "$SERVER_ARTIFACT: backup worker cannot run"
   sport=8791
   mkdir -p "$sdest/data/workspace" "$sdest/data/app"
   WORKTABLE_HOSTED=1 \

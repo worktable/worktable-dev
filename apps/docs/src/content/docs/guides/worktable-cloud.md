@@ -70,6 +70,20 @@ Shared HTML docs keep their layout and safe external links. Scripts, forms,
 Records access, saved interface state, and links to private Worktable content
 do not work in the shared version.
 
+## Back up and restore a hosted workspace
+
+Open **Settings → Backups** to see saved backups or choose **Back up now**.
+When automatic backups are enabled, changed workspaces are backed up hourly.
+Check the last successful backup in Settings.
+
+Choose the restore icon beside a backup to restore the whole workspace for
+everyone. Editing pauses during replacement. Use **Undo** after a restore to
+return to the content saved just before it.
+
+Backups cover content hosted in Worktable Cloud. Files on linked local or
+self-hosted installations are not included. If your hosted workspace cannot
+open, contact [support](https://www.worktable.cloud/support) for recovery.
+
 ## Move a workspace into or out of Cloud
 
 Open **Settings → Import & Export** to download a standard `.wtb` package

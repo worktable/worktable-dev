@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { createHash, randomBytes } from "node:crypto"
 import {
   constants as fsConstants,
@@ -44,6 +45,7 @@ import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { isAtomicWriteTemporaryFileName } from "./atomic-file.ts"
 import { blocksToMarkdownSafe } from "./markdown.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import { readBoundedRegularFile } from "./bounded-file.ts"
 import {
   assertDocumentGenerationFormatOwnership,
   documentGenerationManifestContentHash,
@@ -534,13 +536,15 @@ const WORKSPACE_TRANSACTION_ARTIFACT_PATTERNS = [
 function isWorkspaceTransactionArtifact(path: string): boolean {
   return (
     isAtomicWriteTemporaryFileName(basename(path)) ||
-    WORKSPACE_TRANSACTION_ARTIFACT_PATTERNS.some((pattern) => pattern.test(path))
+    WORKSPACE_TRANSACTION_ARTIFACT_PATTERNS.some((pattern) =>
+      pattern.test(path)
+    )
   )
 }
 
 async function listSourceEntries(
   root: string,
-  options: { paths?: "portable" | "local" } = {}
+  options: { paths?: "portable" | "local"; signal?: AbortSignal } = {}
 ): Promise<SourceInventory> {
   const canonicalRoot = await realpath(root)
   const rootInfo = await lstat(root)
@@ -554,6 +558,7 @@ async function listSourceEntries(
     const children = await readdir(directory, { withFileTypes: true })
     children.sort((left, right) => comparePortableText(left.name, right.name))
     for (const child of children) {
+      options.signal?.throwIfAborted()
       const absolute = join(directory, child.name)
       const info = await lstat(absolute)
       const localPath = portablePath(root, absolute)
@@ -751,11 +756,7 @@ async function classifyVersion(
           const manifest = DocumentGenerationManifestV2Schema.parse(
             JSON.parse(
               (
-                await readSourceFile(
-                  manifestEntry,
-                  inventory,
-                  directories
-                )
+                await readSourceFile(manifestEntry, inventory, directories)
               ).toString("utf8")
             )
           )
@@ -938,29 +939,6 @@ async function verifyV2GenerationForClassification(
   )
 }
 
-async function mapWithConcurrency<T, R>(
-  values: T[],
-  concurrency: number,
-  operation: (value: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(values.length)
-  let cursor = 0
-  const worker = async () => {
-    while (true) {
-      const index = cursor
-      cursor += 1
-      if (index >= values.length) return
-      results[index] = await operation(values[index]!)
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, values.length) }, async () =>
-      worker()
-    )
-  )
-  return results
-}
-
 function unclassifiedVersion(entry: SourceEntry): VersionCandidate {
   const id = basename(entry.path, ".json")
   return {
@@ -1081,8 +1059,7 @@ async function selectEntries(
     for (const group of byGroup.values()) {
       group.sort(
         (left, right) =>
-          (right.candidate.timestamp ?? 0) -
-            (left.candidate.timestamp ?? 0) ||
+          (right.candidate.timestamp ?? 0) - (left.candidate.timestamp ?? 0) ||
           comparePortableText(right.candidate.id, left.candidate.id)
       )
       for (const [index, unit] of group.entries()) {
@@ -1154,8 +1131,10 @@ async function copyAndHash(
   source: SourceEntry,
   destination: string,
   inventory: SourceInventory,
-  directories: Map<string, SourceEntry>
+  directories: Map<string, SourceEntry>,
+  signal?: AbortSignal
 ): Promise<string> {
+  signal?.throwIfAborted()
   await assertSourceAncestors(source, inventory, directories)
   const before = await lstat(source.absolute)
   if (
@@ -1187,7 +1166,8 @@ async function copyAndHash(
       createWriteStream(destination, {
         flags: "wx",
         mode: source.mode,
-      })
+      }),
+      { signal }
     )
     const after = await handle.stat()
     if (
@@ -1245,14 +1225,21 @@ async function hashSourceEntry(
   }
 }
 
-async function captureEntries(
-  entries: SourceEntry[],
-  inventory: SourceInventory
-): Promise<{
+interface CapturedWorkspace {
   root: string
   directories: WorkspaceExportV2Directory[]
   files: CapturedEntry[]
-}> {
+}
+interface CaptureOptions {
+  signal?: AbortSignal
+  deferCleanup?: (capture: CapturedWorkspace) => void
+}
+
+async function captureEntries(
+  entries: SourceEntry[],
+  inventory: SourceInventory,
+  options: CaptureOptions = {}
+): Promise<CapturedWorkspace> {
   const transfers = workspaceExportCapturesRoot()
   await mkdir(transfers, { recursive: true, mode: 0o700 })
   const root = await mkdtemp(join(transfers, "export-"))
@@ -1267,45 +1254,58 @@ async function captureEntries(
       .map((entry) => [entry.path, entry])
   )
   try {
-    for (const entry of entries) {
-      const output = join(root, ...entry.path.split("/"))
-      if (entry.kind === "directory") {
-        await assertSourceAncestors(entry, inventory, sourceDirectories)
-        const current = await lstat(entry.absolute)
-        if (
-          !current.isDirectory() ||
-          current.isSymbolicLink() ||
-          !sameSourceIdentity(entry, current)
-        ) {
-          throw new WorkspaceChangedDuringExportError(entry.path)
+    await mapWithConcurrency(entries, 8, async (entry) => {
+      options.signal?.throwIfAborted()
+      try {
+        const output = join(root, ...entry.path.split("/"))
+        if (entry.kind === "directory") {
+          await assertSourceAncestors(entry, inventory, sourceDirectories)
+          const current = await lstat(entry.absolute)
+          if (
+            !current.isDirectory() ||
+            current.isSymbolicLink() ||
+            !sameSourceIdentity(entry, current)
+          ) {
+            throw new WorkspaceChangedDuringExportError(entry.path)
+          }
+          await mkdir(output, { recursive: true, mode: 0o700 })
+          directories.push({
+            path: entry.path,
+            mode: entry.mode,
+            mtime: entry.mtime.toISOString(),
+          })
+        } else {
+          const hash = await copyAndHash(
+            entry,
+            output,
+            inventory,
+            sourceDirectories,
+            options.signal
+          )
+          files.push({
+            path: entry.path,
+            absolute: output,
+            size: entry.size,
+            mode: entry.mode,
+            mtime: entry.mtime.toISOString(),
+            sha256: hash,
+          })
         }
-        await mkdir(output, { recursive: true, mode: 0o700 })
-        directories.push({
+        await captureEntryHookForTests?.({
           path: entry.path,
-          mode: entry.mode,
-          mtime: entry.mtime.toISOString(),
+          kind: entry.kind,
         })
-      } else {
-        const hash = await copyAndHash(
-          entry,
-          output,
-          inventory,
-          sourceDirectories
+        options.signal?.throwIfAborted()
+      } catch (error) {
+        if (
+          ["ENOENT", "ENOTDIR", "ELOOP"].includes(
+            (error as NodeJS.ErrnoException).code ?? ""
+          )
         )
-        files.push({
-          path: entry.path,
-          absolute: output,
-          size: entry.size,
-          mode: entry.mode,
-          mtime: entry.mtime.toISOString(),
-          sha256: hash,
-        })
+          throw new WorkspaceChangedDuringExportError(entry.path)
+        throw error
       }
-      await captureEntryHookForTests?.({
-        path: entry.path,
-        kind: entry.kind,
-      })
-    }
+    })
     for (const directory of [...directories].sort(
       (left, right) =>
         right.path.split("/").length - left.path.split("/").length
@@ -1321,6 +1321,10 @@ async function captureEntries(
     files.sort((left, right) => comparePortableText(left.path, right.path))
     return { root, directories, files }
   } catch (error) {
+    if (options.deferCleanup) {
+      options.deferCleanup({ root, directories, files })
+      throw error
+    }
     for (const directory of [...directories].sort(
       (left, right) =>
         left.path.split("/").length - right.path.split("/").length
@@ -1457,14 +1461,18 @@ function assertSourceInventoryUnchanged(
 async function captureConsistentWorkspace(
   sourceRoot: string,
   historyPolicy: WorkspaceExportHistoryPolicy,
-  exportedAt: Date
+  exportedAt: Date,
+  options: CaptureOptions = {}
 ): Promise<{
   selected: Awaited<ReturnType<typeof selectEntries>>
   capture: Awaited<ReturnType<typeof captureEntries>>
 }> {
   let capture: Awaited<ReturnType<typeof captureEntries>> | null = null
   try {
-    const inventory = await listSourceEntries(sourceRoot)
+    options.signal?.throwIfAborted()
+    const inventory = await listSourceEntries(sourceRoot, {
+      signal: options.signal,
+    })
     const selected = await selectEntries(inventory, historyPolicy, exportedAt)
     const expandedBytes = selected.entries.reduce(
       (sum, entry) => sum + (entry.kind === "file" ? entry.size : 0),
@@ -1473,10 +1481,10 @@ async function captureConsistentWorkspace(
     if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
       throw new Error("workspace export exceeds the v2 expanded-size limit")
     }
-    capture = await captureEntries(selected.entries, inventory)
+    capture = await captureEntries(selected.entries, inventory, options)
     let current: SourceInventory
     try {
-      current = await listSourceEntries(sourceRoot)
+      current = await listSourceEntries(sourceRoot, { signal: options.signal })
     } catch (error) {
       throw new WorkspaceChangedDuringExportError(
         error instanceof Error ? error.message : "workspace inventory"
@@ -1485,20 +1493,23 @@ async function captureConsistentWorkspace(
     assertSourceInventoryUnchanged(inventory, current)
     return { selected, capture }
   } catch (error) {
-    if (capture) await removeCapture(capture)
+    if (capture) {
+      if (options.deferCleanup) options.deferCleanup(capture)
+      else await removeCapture(capture)
+    }
     throw error
   }
 }
 
-/**
- * Recompute the portable-content checkpoint without trusting a previously
- * prepared path. The workspace identity manifest is intentionally excluded:
- * replacement preserves the destination workspace identity immediately after
- * this check.
- */
-export async function calculateWorkspaceContentCheckpoint(
+export interface PortableWorkspaceInventory {
+  directories: WorkspaceExportV2Directory[]
+  files: WorkspaceExportV2File[]
+}
+
+/** Hash an admitted tree, including its identity manifest, without copying it. */
+export async function inspectPortableWorkspaceTree(
   workspaceRoot: string
-): Promise<string> {
+): Promise<PortableWorkspaceInventory> {
   const inventory = await listSourceEntries(resolve(workspaceRoot))
   const directoryEntries = inventory.entries.filter(
     (entry): entry is SourceEntry & { kind: "directory" } =>
@@ -1508,8 +1519,7 @@ export async function calculateWorkspaceContentCheckpoint(
     directoryEntries.map((entry) => [entry.path, entry])
   )
   const fileEntries = inventory.entries.filter(
-    (entry): entry is SourceEntry & { kind: "file" } =>
-      entry.kind === "file" && entry.path !== "worktable.workspace.json"
+    (entry): entry is SourceEntry & { kind: "file" } => entry.kind === "file"
   )
   const files = await mapWithConcurrency(
     fileEntries,
@@ -1531,15 +1541,116 @@ export async function calculateWorkspaceContentCheckpoint(
     )
   }
   assertSourceInventoryUnchanged(inventory, current)
-  return canonicalCheckpoint(
-    directoryEntries
+  return {
+    directories: directoryEntries
       .map((entry) => ({
         path: entry.path,
         mode: entry.mode,
         mtime: entry.mtime.toISOString(),
       }))
       .sort((left, right) => comparePortableText(left.path, right.path)),
-    files.sort((left, right) => comparePortableText(left.path, right.path))
+    files: files.sort((left, right) =>
+      comparePortableText(left.path, right.path)
+    ),
+  }
+}
+
+export function portableWorkspaceCheckpoint(
+  inventory: PortableWorkspaceInventory
+): string {
+  return canonicalCheckpoint(inventory.directories, inventory.files)
+}
+
+/** Replacement deliberately preserves destination identity separately. */
+export async function calculateWorkspaceContentCheckpoint(
+  workspaceRoot: string
+): Promise<string> {
+  const inventory = await inspectPortableWorkspaceTree(workspaceRoot)
+  return canonicalCheckpoint(
+    inventory.directories,
+    inventory.files.filter((file) => file.path !== "worktable.workspace.json")
+  )
+}
+
+/**
+ * Share export's exact full-history capture with directory snapshot consumers.
+ * The mutation barrier covers only flush/capture. The capture lock protects its
+ * private lifetime from the export janitor until the consumer finishes.
+ */
+export async function withPortableWorkspaceCapture<T>(
+  consume: (
+    capture: PortableWorkspaceInventory & {
+      root: string
+      manifest: WorkspaceManifest
+    }
+  ) => Promise<T>,
+  options: {
+    workspaceRoot?: string
+    withCaptureBarrier?: <R>(work: () => Promise<R>) => Promise<R>
+    signal?: AbortSignal
+  } = {}
+): Promise<T> {
+  const sourceRoot = resolve(options.workspaceRoot ?? getWorkspaceRoot())
+  const canonicalRoot = await realpath(sourceRoot)
+  const appData = await canonicalPotentialPath(resolve(getAppDir()))
+  if (isInside(canonicalRoot, appData))
+    throw new Error(
+      "workspace app storage must be outside the portable workspace"
+    )
+  return withCrossProcessLock(
+    workspaceExportCaptureLockPath(),
+    {
+      label: "Workspace snapshot capture",
+      staleMs: 0,
+      retryMs: 100,
+      timeoutMs: EXPORT_CAPTURE_LOCK_TIMEOUT_MS,
+    },
+    async () => {
+      let pendingCleanup: CapturedWorkspace | undefined
+      const work = () =>
+        captureConsistentWorkspace(sourceRoot, { mode: "all" }, new Date(), {
+          signal: options.signal,
+          deferCleanup: (capture) => {
+            pendingCleanup = capture
+          },
+        })
+      try {
+        const { capture } = options.withCaptureBarrier
+          ? await options.withCaptureBarrier(work)
+          : await work()
+        pendingCleanup = capture
+        const manifestFile = capture.files.find(
+          (file) => file.path === "worktable.workspace.json"
+        )
+        if (!manifestFile) throw new Error("workspace snapshot has no manifest")
+        const manifest: unknown = JSON.parse(
+          await readBoundedRegularFile(
+            manifestFile.absolute,
+            WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES
+          )
+        )
+        if (!isWorkspaceManifest(manifest))
+          throw new Error("workspace manifest is invalid or unsupported")
+        const files = capture.files.map(
+          ({ path, size, mode, mtime, sha256 }) => ({
+            path,
+            size,
+            mode,
+            mtime,
+            sha256,
+          })
+        )
+        assertPortableOwnerAccess(capture.directories, files)
+        return await consume({
+          root: capture.root,
+          manifest,
+          directories: capture.directories,
+          files,
+        })
+      } finally {
+        if (pendingCleanup) await removeCapture(pendingCleanup)
+      }
+    }
   )
 }
 

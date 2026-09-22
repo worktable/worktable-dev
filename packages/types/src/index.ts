@@ -129,3 +129,5 @@ export interface AgentAttribution {
   timestamp: ISOTimestamp;
 }
 export * from "./quickdraw-document.ts";
+
+export * from "./workspace-layout";

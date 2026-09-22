@@ -65,6 +65,7 @@ export const navigateFallbackDenylist = [
   /^\/ws/,
   /^\/yjs/,
   /^\/(?:logout|signed-out)(?:\?|$)/,
+  /^\/backups(?:\/|\?|$)/,
 ]
 
 // https://vite.dev/config/
@@ -105,6 +106,10 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
         navigateFallbackDenylist,
         runtimeCaching: [
+          {
+            urlPattern: /\/api\/backups(?:[/?]|$)/,
+            handler: "NetworkOnly",
+          },
           {
             urlPattern: /^\/api\/.*/i,
             handler: "NetworkFirst",

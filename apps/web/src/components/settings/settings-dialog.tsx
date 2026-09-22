@@ -170,8 +170,10 @@ function SettingsBody({
       <div className="flex min-h-0 flex-1 flex-col">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Settings</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            {active.description}
+          <ResponsiveDialogDescription
+            className={active.description ? undefined : "sr-only"}
+          >
+            {active.description || "Manage settings."}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <SettingsTabsMobile
@@ -213,9 +215,11 @@ function SettingsBody({
           <h3 className="text-lg leading-tight font-semibold">
             {active.label}
           </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {active.description}
-          </p>
+          {active.description && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {active.description}
+            </p>
+          )}
         </header>
         {content}
       </div>

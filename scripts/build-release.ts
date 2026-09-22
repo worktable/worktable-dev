@@ -8,7 +8,7 @@ import {
 } from "node:fs"
 import { createHash } from "node:crypto"
 import { dirname, join } from "node:path"
-import type { BunPlugin } from "bun"
+import { jsdomBundlePlugin } from "./jsdom-bundle.ts"
 import rootPackage from "../package.json" with { type: "json" }
 import { resolveSourceMetadata } from "./release-source.ts"
 import skillInventory from "../plugins/worktable/skill-inventory.json" with { type: "json" }
@@ -43,25 +43,6 @@ const outputNames = releaseOutputNames(profile)
 const outDir = join(root, "dist", outputNames.artifacts)
 const workDir = join(root, "dist", outputNames.work)
 const webDist = join(root, "apps", "web", "dist", "client")
-
-const jsdomSyncXhrPlugin: BunPlugin = {
-  name: "worktable-jsdom-sync-xhr-worker-disable",
-  setup(build) {
-    build.onLoad(
-      { filter: /jsdom\/lib\/jsdom\/living\/xhr\/XMLHttpRequest-impl\.js$/ },
-      async (args) => {
-        const source = await Bun.file(args.path).text()
-        return {
-          contents: source.replace(
-            /const syncWorkerFile = require\.resolve \? require\.resolve\([^)]*xhr-sync-worker\.js[^)]*\) : null;/,
-            "const syncWorkerFile = null;"
-          ),
-          loader: "js",
-        }
-      }
-    )
-  },
-}
 
 function run(cmd: string[], cwd = root): void {
   const result = Bun.spawnSync(cmd, {
@@ -120,7 +101,7 @@ async function buildExecutable(
             : ""
         ),
       },
-      plugins: [jsdomSyncXhrPlugin],
+      plugins: [jsdomBundlePlugin],
     })
   } finally {
     clearInterval(heartbeat)

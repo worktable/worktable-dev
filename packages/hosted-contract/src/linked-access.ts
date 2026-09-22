@@ -34,6 +34,7 @@ const LinkedHostReplyBase = z.object({
     "revoked",
     "superseded",
   ]),
+  paused: z.boolean().optional(),
   installationId: z.string().optional(),
   destinationId: z
     .string()

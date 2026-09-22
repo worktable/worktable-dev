@@ -239,7 +239,7 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
   expect(citation.pathname).toBe(
     `/linked/open/${ingress.binding.destinationId}`
   )
-  expect(citation.searchParams.get("path")).toContain("/spaces/space/")
+  expect(citation.search).toBe("")
   const createdSpace = await fetch(
     await createLinkedRequest({
       origin: server.url.origin,

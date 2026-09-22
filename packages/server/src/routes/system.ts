@@ -22,7 +22,8 @@ import {
 } from "../settings-store.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
 import { hasOwnerPassword } from "../session-store.ts";
-import { getHostedDocumentSharingConfig, isHosted } from "../hosted.ts";
+import { isHosted } from "../hosted.ts";
+import { getDocumentSharingConfig } from "../linked-sharing.ts";
 import { runRetentionSweep } from "../version-retention.ts";
 import {
   localMcpEndpoint,
@@ -160,7 +161,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       historySettings: true,
       softwareUpdates: !cloud,
       updateChecks: !cloud,
-      documentSharing: getHostedDocumentSharingConfig() !== null,
+      documentSharing: getDocumentSharingConfig() !== null,
     },
   };
 }

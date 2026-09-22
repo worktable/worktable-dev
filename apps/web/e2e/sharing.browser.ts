@@ -63,7 +63,7 @@ function deferred() {
 
 async function mockCloudSharing(
   page: Page,
-  options: { createGate?: Promise<void> } = {}
+  options: { createGate?: Promise<void>; sharingEnabled?: () => boolean } = {}
 ) {
   let share: { url: string; createdAt: string } | null = null
   const mutations: Array<{ method: string; body: unknown }> = []
@@ -71,7 +71,18 @@ async function mockCloudSharing(
   await page.route("**/api/system/deployment", (route) =>
     route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(cloudDeployment),
+      body: JSON.stringify(
+        options.sharingEnabled
+          ? {
+              ...cloudDeployment,
+              mode: "self-managed",
+              capabilities: {
+                ...cloudDeployment.capabilities,
+                documentSharing: options.sharingEnabled(),
+              },
+            }
+          : cloudDeployment
+      ),
     })
   )
   await page.route(/\/api\/shares(?:\?.*)?$/, async (route) => {
@@ -138,9 +149,11 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   page,
   context,
 }) => {
+  let sharingEnabled = false
   const createGate = deferred()
   const mutations = await mockCloudSharing(page, {
     createGate: createGate.promise,
+    sharingEnabled: () => sharingEnabled,
   })
   await context.grantPermissions(["clipboard-read", "clipboard-write"], {
     origin: harness.webUrl,
@@ -150,6 +163,11 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   })
 
   const shareButton = page.getByRole("button", { name: "Share document" })
+  await expect(page.getByRole("button", { name: "More actions" })).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(shareButton).toBeHidden()
+  sharingEnabled = true
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
   await expect(shareButton.locator("svg")).toHaveClass(/lucide-share-2/)
   const docActions = await headerActionLabels(page)
@@ -203,6 +221,9 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   ).toBeVisible()
   await dialog.getByRole("button", { name: "Cancel" }).click()
   await expect(shareButton).toHaveAttribute("title", "Share document")
+
+  sharingEnabled = false
+  await expect(shareButton).toBeHidden({ timeout: 10_000 })
 
   expect(mutations).toEqual([
     {

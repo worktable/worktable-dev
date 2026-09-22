@@ -3,11 +3,13 @@ import { getDeploymentInfo } from "@/lib/system-api"
 
 export const DEPLOYMENT_QUERY_KEY = ["system", "deployment"] as const
 
-/** A running server cannot change deployment mode without restarting. */
+/** Linked sharing can change while the local server remains online. */
 export function useDeploymentInfo() {
   return useQuery({
     queryKey: DEPLOYMENT_QUERY_KEY,
     queryFn: getDeploymentInfo,
-    staleTime: Infinity,
+    staleTime: 5000,
+    refetchInterval: (query) =>
+      query.state.data?.mode === "self-managed" ? 5000 : false,
   })
 }

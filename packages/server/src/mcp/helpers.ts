@@ -42,7 +42,7 @@ export function mkAuthErr(
   requiredScope: string
 ) {
   const resourceMetadata = new URL(
-    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource" + (/^\/api\/mcp\/d\/[a-f0-9]{32}$/.test(new URL(origin).pathname) ? new URL(origin).pathname : ""),
     origin
   ).toString()
   return {

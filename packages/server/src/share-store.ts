@@ -5,7 +5,6 @@ import { z } from "zod"
 import { ensureAppDir } from "./app-storage.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { isHosted } from "./hosted.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
@@ -345,7 +344,6 @@ onWorkspaceChange((event) => {
   if (event.type === "workspaceReset") {
     return invalidateAllDocumentShares()
   }
-  if (!isHosted()) return
   if (event.type === "space") {
     return import("./shared-artifact.ts").then(
       async ({ sharedSpaceIdentityIsCurrent }) => {

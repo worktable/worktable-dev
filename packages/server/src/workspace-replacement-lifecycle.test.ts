@@ -697,6 +697,7 @@ describe("live workspace replacement", () => {
 
   it("waits for an overlapping real HTTP write before swapping roots", async () => {
     expect(isWorkspaceRequest("POST", "/api/shares")).toBe(true)
+    expect(isWorkspaceRequest("POST", "/api/linked")).toBe(true)
 
     const archive = await writeWorkspaceExportV2(join(root, "incoming"), {
       workspaceRoot: source,

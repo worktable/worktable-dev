@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono"
-import { isHostedBrowserOwner } from "../auth.ts"
-import { getHostedDocumentSharingConfig } from "../hosted.ts"
+import { requireHumanWorkspaceOwner } from "../auth.ts"
+import { getDocumentSharingConfig } from "../linked-sharing.ts"
 import {
   createDocumentShareIfEligible,
   getDocumentShare,
@@ -17,19 +17,18 @@ import {
 export const sharesRouter = new Hono()
 
 sharesRouter.use("*", async (c, next) => {
-  if (!getHostedDocumentSharingConfig()) {
+  if (!getDocumentSharingConfig()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   }
-  if (!isHostedBrowserOwner(c)) {
-    return c.json({ error: "Forbidden", code: "FORBIDDEN" }, 403)
-  }
+  const denied = await requireHumanWorkspaceOwner()(c, async () => {})
+  if (denied) return denied
   c.header("Cache-Control", "no-store")
   return next()
 })
 
 function publicShare(
   share: DocumentShare,
-  config: NonNullable<ReturnType<typeof getHostedDocumentSharingConfig>>
+  config: NonNullable<ReturnType<typeof getDocumentSharingConfig>>
 ) {
   return {
     url: `${config.shareOrigin}/s/${encodeURIComponent(config.workspaceId)}/${share.token}`,
@@ -61,7 +60,7 @@ sharesRouter.get("/", async (c) => {
     return c.json({ share: null })
   }
   return c.json({
-    share: publicShare(share, getHostedDocumentSharingConfig()!),
+    share: publicShare(share, getDocumentSharingConfig()!),
   })
 })
 
@@ -81,7 +80,7 @@ sharesRouter.post("/", async (c) => {
     return c.json({ error: "Artifact not found", code: "NOT_FOUND" }, 404)
   }
   return c.json(
-    { share: publicShare(share, getHostedDocumentSharingConfig()!) },
+    { share: publicShare(share, getDocumentSharingConfig()!) },
     201
   )
 })

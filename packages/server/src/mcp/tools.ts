@@ -261,9 +261,13 @@ export function registerTools(
   }
 ): void {
   const scopes = options?.scopes ?? ["*"]
-  const configuredUrlOrigin = options?.urlOrigin
+  let configuredUrlOrigin = options?.urlOrigin
     ? asHttpOrigin(options.urlOrigin)
     : null
+  if (options?.urlOrigin) {
+    const resource = new URL(options.urlOrigin)
+    if (resource.protocol === "https:" && !resource.username && !resource.password && !resource.search && !resource.hash && /^\/api\/mcp\/d\/[a-f0-9]{32}$/.test(resource.pathname)) configuredUrlOrigin = resource.href
+  }
   if (options?.urlOrigin && !configuredUrlOrigin) {
     throw new Error("urlOrigin must be an absolute HTTP(S) URL")
   }

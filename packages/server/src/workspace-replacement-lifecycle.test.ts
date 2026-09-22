@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import {
   mkdir,
+  readdir,
   mkdtemp,
   readFile,
   rename,
@@ -44,6 +45,17 @@ import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
 } from "./workspace.ts"
+import {
+  createWorkspaceClearJob,
+  getWorkspaceClearJob,
+  confirmWorkspaceClearJob,
+  type WorkspaceClearJob,
+} from "./workspace-clear-jobs.ts"
+import {
+  writeWorkspaceTransferJob,
+  createWorkspaceExportJob,
+} from "./workspace-transfer-jobs.ts"
+import { seedStarterWorkspace } from "./seed.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 
 const originalEnv = { ...process.env }
@@ -774,4 +786,182 @@ describe("live workspace replacement", () => {
       await readFile(join(active, "spaces", "notes", "docs", "note.md"), "utf8")
     ).toBe("# After\n\nAfterOnly [new](new.md)\n")
   }, 15_000)
+})
+
+async function waitForClear(
+  id: string,
+  terminal = false
+): Promise<WorkspaceClearJob> {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const job = await getWorkspaceClearJob(id)
+    if (
+      terminal
+        ? (job.state === "complete" || job.state === "failed") && !job.prepared
+        : job.state !== "preparing"
+    )
+      return job
+    // test-policy: external-readiness-backoff
+    await Bun.sleep(20)
+  }
+  throw new Error("Clear job did not settle")
+}
+
+describe("live workspace clear", () => {
+  it("expires a clear review without changing the workspace", async () => {
+    startServer(0, "127.0.0.1")
+    const reviewed = await waitForClear((await createWorkspaceClearJob()).id)
+    await writeWorkspaceTransferJob({
+      ...reviewed,
+      expiresAt: new Date(0).toISOString(),
+    })
+    await expect(
+      confirmWorkspaceClearJob(
+        reviewed.id,
+        reviewed.confirmationText,
+        reviewed.reviewRevision
+      )
+    ).rejects.toThrow("review expired")
+    expect(
+      await readFile(join(active, "spaces/notes/docs/old.md"), "utf8")
+    ).toBe("# Old\n")
+  })
+
+  it("reviews, confirms, clears legacy names, revokes exports, fences stale writes, and stays empty on restart", async () => {
+    const server = startServer(0, "127.0.0.1")
+    const origin = `http://127.0.0.1:${server.port}`
+    const original = ensureWorkspaceManifest()
+    const oldEpoch = await getWorkspaceCollaborationEpoch()
+    const exported = await waitForWorkspaceExportJob(
+      (await createWorkspaceExportJob({ mode: "none" })).id
+    )
+    expect(exported.state).toBe("complete")
+    const bad = join(active, "versions/test-space/docs/legacy-note ")
+    await mkdir(bad, { recursive: true })
+    await writeFile(join(bad, "snapshot.json"), "old history")
+    const response = await fetch(`${origin}/api/workspace/clear`, {
+      method: "POST",
+    })
+    expect(response.status).toBe(202)
+    const publicJob = (await response.json()) as WorkspaceClearJob
+    expect(publicJob.preparation).toBeUndefined()
+    const reviewed = await waitForClear(publicJob.id)
+    expect(reviewed.state).toBe("ready")
+    await expect(
+      confirmWorkspaceClearJob(reviewed.id, "wrong", reviewed.reviewRevision)
+    ).rejects.toThrow("exact confirmation")
+    await expect(
+      confirmWorkspaceClearJob(
+        reviewed.id,
+        reviewed.confirmationText,
+        "old revision"
+      )
+    ).rejects.toThrow("exact confirmation")
+    expect(await readFile(join(bad, "snapshot.json"), "utf8")).toBe(
+      "old history"
+    )
+    let downloadDuringReplacement: number | undefined
+    setWorkspaceReplacementCommitHookForTests(async () => {
+      const download = await fetch(
+        `${origin}/api/workspace/transfers/exports/${exported.id}/download`
+      )
+      downloadDuringReplacement = download.status
+      await download.body?.cancel()
+    })
+    expect(
+      (
+        await confirmWorkspaceClearJob(
+          reviewed.id,
+          reviewed.confirmationText,
+          reviewed.reviewRevision
+        )
+      ).state
+    ).toBe("replacing")
+    expect((await waitForClear(reviewed.id, true)).state).toBe("complete")
+    expect(downloadDuringReplacement).toBe(503)
+    expect(ensureWorkspaceManifest()).toMatchObject({
+      id: original.id,
+      name: original.name,
+      starterSeed: { version: 1, status: "suppressed" },
+    })
+    for (const name of ["spaces", "threads", "versions"])
+      expect(await readdir(join(active, name))).toEqual([])
+    expect(await getWorkspaceCollaborationEpoch()).not.toBe(oldEpoch)
+    await expect(openWorkspaceExportDownload(exported.id)).rejects.toThrow()
+    const stale = await fetch(`${origin}/api/spaces`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/json",
+        "X-Worktable-Content-Epoch": oldEpoch,
+      },
+      body: JSON.stringify({ name: "Stale content" }),
+    })
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toMatchObject({ code: "WORKSPACE_CHANGED" })
+    await writeFile(join(active, "after-clear.txt"), "new data")
+    expect(
+      (
+        await confirmWorkspaceClearJob(
+          reviewed.id,
+          reviewed.confirmationText,
+          reviewed.reviewRevision
+        )
+      ).state
+    ).toBe("complete")
+    expect(await readFile(join(active, "after-clear.txt"), "utf8")).toBe(
+      "new data"
+    )
+    await stopActiveServer()
+    delete process.env["WORKTABLE_SKIP_STARTER_SEED"]
+    expect(await seedStarterWorkspace()).toBe(false)
+    const restarted = startServer(0, "127.0.0.1")
+    expect(
+      (await fetch(`http://127.0.0.1:${restarted.port}/api/spaces`)).status
+    ).toBe(200)
+    expect(await readdir(join(active, "spaces"))).toEqual([])
+  })
+
+  it("rejects a review when content changed, preserving the newer content", async () => {
+    startServer(0, "127.0.0.1")
+    const reviewed = await waitForClear((await createWorkspaceClearJob()).id)
+    await writeFile(
+      join(active, "spaces/notes/docs/new-after-review.md"),
+      "preserve this"
+    )
+    await confirmWorkspaceClearJob(
+      reviewed.id,
+      reviewed.confirmationText,
+      reviewed.reviewRevision
+    )
+    const result = await waitForClear(reviewed.id, true)
+    expect(result.state).toBe("failed")
+    expect(result.error).toContain("changed")
+    expect(
+      await readFile(
+        join(active, "spaces/notes/docs/new-after-review.md"),
+        "utf8"
+      )
+    ).toBe("preserve this")
+  })
+
+  it("rolls back a failed clear restart without losing content or suppressing starter state", async () => {
+    startServer(0, "127.0.0.1")
+    const original = ensureWorkspaceManifest()
+    const reviewed = await waitForClear((await createWorkspaceClearJob()).id)
+    setWorkspaceReplacementRestartHookForTests((stage) => {
+      if (stage === "replacement")
+        throw new Error("injected clear restart failure")
+    })
+    await confirmWorkspaceClearJob(
+      reviewed.id,
+      reviewed.confirmationText,
+      reviewed.reviewRevision
+    )
+    expect((await waitForClear(reviewed.id, true)).state).toBe("failed")
+    expect(ensureWorkspaceManifest()).toEqual(original)
+    expect(
+      await readFile(join(active, "spaces/notes/docs/old.md"), "utf8")
+    ).toBe("# Old\n")
+  })
 })

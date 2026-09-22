@@ -1,3 +1,4 @@
+import { StatusRow } from "../operation-status"
 import { SourceCodeLink } from "@/components/source-code-link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -620,21 +621,6 @@ function UpdateBody({
           </Button>
         ) : null}
       </div>
-    </div>
-  )
-}
-
-function StatusRow({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-start gap-2.5 text-sm text-foreground">
-      <span className="mt-0.5 shrink-0">{icon}</span>
-      <div>{children}</div>
     </div>
   )
 }

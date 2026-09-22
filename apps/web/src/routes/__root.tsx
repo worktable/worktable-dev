@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
 import appStylesheet from "@/styles/app.css?url"
 import {
   DocumentOpening,
@@ -640,6 +641,12 @@ function RootLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
+  const [workspaceChanged, setWorkspaceChanged] = useState(false)
+  useEffect(() => {
+    const reset = () => setWorkspaceChanged(true)
+    window.addEventListener("worktable:workspace-changed", reset)
+    return () => window.removeEventListener("worktable:workspace-changed", reset)
+  }, [])
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>()
@@ -792,7 +799,7 @@ function RootLayout() {
     return <Outlet />
   }
 
-  if (workspaceQuery.isPending) return <InitialLoader />
+  if (workspaceQuery.isPending || workspaceChanged) return <InitialLoader />
 
   if (workspace?.onboarding?.status === "pending") {
     return (
@@ -808,6 +815,7 @@ function RootLayout() {
   return (
     <PageMetaContext.Provider value={{ pageMeta, setPageMeta }}>
       <SidebarContext.Provider value={sidebarCtx}>
+        <WorkspaceOperationObserver />
         <ReconnectingOverlay show={reconnecting} />
         <div
           data-worktable-app-shell

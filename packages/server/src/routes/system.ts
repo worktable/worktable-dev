@@ -142,6 +142,7 @@ export interface DeploymentInfo {
     editorSettings: boolean;
     historySettings: boolean;
     softwareUpdates: boolean;
+    workspaceClear?: boolean;
     updateChecks: boolean;
     documentSharing: boolean;
   };
@@ -160,6 +161,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       editorSettings: true,
       historySettings: true,
       softwareUpdates: !cloud,
+      workspaceClear: !cloud,
       updateChecks: !cloud,
       documentSharing: getDocumentSharingConfig() !== null,
     },

@@ -19,6 +19,7 @@ import {
   type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
 import {
+  clearedWorkspaceManifest,
   getWorkspaceRoot,
   isWorkspaceManifest,
   writeWorkspaceManifestBytesAt,
@@ -53,11 +54,16 @@ export interface BeginWorkspaceReplacementOptions {
    * Imports retain the destination identity. Storage migrations instead admit
    * the verified manifest already present in the staged workspace.
    */
-  manifest?: "preserve-destination" | "use-staged" | "checkpoint"
+  manifest?:
+    | "preserve-destination"
+    | "use-staged"
+    | "checkpoint"
+    | "clear-content"
   /** Checkpoint restores are bound to a validated full tree, including its manifest. */
   expectedSourceCheckpoint?: string
   /** Imports use portable paths; local migrations preserve legacy filesystem names. */
   checkpointPaths?: "portable" | "local"
+  destinationCheckpointPaths?: "portable" | "local"
   /** Final caller-owned validation after preparation and before the first rename. */
   validateBeforeSwap?: () => Promise<void>
 }
@@ -329,8 +335,11 @@ export async function beginPreparedWorkspaceReplacement(
   ) {
     throw new Error("workspace replacement path escaped its parent")
   }
-  const calculateCheckpoint = async (root: string): Promise<string> =>
-    options.checkpointPaths === "local"
+  const calculateCheckpoint = async (
+    root: string,
+    paths = options.checkpointPaths
+  ): Promise<string> =>
+    paths === "local"
       ? (await calculateLocalWorkspaceContentCheckpoints(root))
           .workspaceContentCheckpoint
       : calculateWorkspaceContentCheckpoint(root)
@@ -390,8 +399,10 @@ export async function beginPreparedWorkspaceReplacement(
   // Preparation happens while the current workspace remains online. Capture
   // destination identity only after its writers have stopped so changes made
   // while the user reviews the package cannot be reverted.
-  const currentDestinationContentCheckpoint =
-    await calculateCheckpoint(workspaceRoot)
+  const currentDestinationContentCheckpoint = await calculateCheckpoint(
+    workspaceRoot,
+    options.destinationCheckpointPaths ?? options.checkpointPaths
+  )
   if (
     currentDestinationContentCheckpoint !== expectedDestinationContentCheckpoint
   ) {
@@ -401,7 +412,18 @@ export async function beginPreparedWorkspaceReplacement(
   }
   if ((options.manifest ?? "preserve-destination") === "preserve-destination") {
     const current = await readCurrentManifest()
-    writeWorkspaceManifestBytesAt(resolvedStaging, current.bytes)
+    const staged = replacementManifest as WorkspaceManifest
+    writeWorkspaceManifestBytesAt(
+      resolvedStaging,
+      staged.starterSeed?.status === "suppressed"
+        ? Buffer.from(
+            JSON.stringify({
+              ...current.value,
+              starterSeed: staged.starterSeed,
+            }) + "\n"
+          )
+        : current.bytes
+    )
   } else if (options.manifest === "checkpoint") {
     const current = await readCurrentManifest()
     const saved = replacementManifest as WorkspaceManifest
@@ -419,6 +441,14 @@ export async function beginPreparedWorkspaceReplacement(
           createdAt: current.value.createdAt,
           cloud: current.value.cloud,
         }) + "\n"
+      )
+    )
+  } else if (options.manifest === "clear-content") {
+    const current = await readCurrentManifest()
+    writeWorkspaceManifestBytesAt(
+      resolvedStaging,
+      Buffer.from(
+        JSON.stringify(clearedWorkspaceManifest(current.value), null, 2) + "\n"
       )
     )
   }

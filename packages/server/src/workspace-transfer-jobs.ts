@@ -1,3 +1,9 @@
+import { ensureWorkspaceManifest, workspaceCacheKey } from "./workspace.ts"
+import {
+  WorkspaceExportPathError,
+  type WorkspaceExportDiagnostics,
+} from "./workspace-package-path.ts"
+import type { WorkspaceClearJob } from "./workspace-clear-jobs.ts"
 import { createHash, randomBytes } from "node:crypto"
 import {
   chmod,
@@ -32,6 +38,7 @@ import {
   cleanupAbandonedWorkspaceExportCaptures,
   writeWorkspaceExportV2,
   WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES,
+  type WorkspaceExportPhase,
   type WorkspaceExportHistoryPolicy,
   type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
@@ -54,7 +61,9 @@ type ImportState =
   | "complete"
   | "failed"
 
-interface TransferJobBase {
+export interface TransferJobBase {
+  resetPending?: boolean
+  workspaceKey?: string
   version: 1
   id: string
   createdAt: string
@@ -65,6 +74,11 @@ interface TransferJobBase {
 
 export interface WorkspaceExportJob extends TransferJobBase {
   kind: "export"
+  failure?: WorkspaceExportDiagnostics
+  progress?: WorkspaceExportPhase
+  recoveryFingerprint?: string
+  recoveryJobId?: string
+  revoked?: boolean
   state: ExportState
   history: WorkspaceExportHistoryPolicy
   downloadName?: string
@@ -87,7 +101,11 @@ export interface WorkspaceImportJob extends TransferJobBase {
   prepared?: PreparedWorkspaceReplacement
 }
 
-export type WorkspaceTransferJob = WorkspaceExportJob | WorkspaceImportJob
+export type WorkspaceTransferJob =
+  | WorkspaceExportJob
+  | WorkspaceImportJob
+  | WorkspaceClearJob
+export const activeClearJobs = new Set<string>()
 
 const exportRuns = new Map<string, Promise<void>>()
 const transferLocks = new Map<string, Promise<unknown>>()
@@ -190,6 +208,12 @@ async function writeJob(job: WorkspaceTransferJob): Promise<void> {
   await chmod(jobPath(job.id), 0o600)
 }
 
+class ForeignWorkspaceTransferError extends Error {
+  constructor() {
+    super("workspace transfer not found")
+  }
+}
+
 async function readJob(id: string): Promise<WorkspaceTransferJob> {
   let parsed: unknown
   try {
@@ -206,11 +230,16 @@ async function readJob(id: string): Promise<WorkspaceTransferJob> {
     !("id" in parsed) ||
     parsed.id !== id ||
     !("kind" in parsed) ||
-    (parsed.kind !== "export" && parsed.kind !== "import")
+    (parsed.kind !== "export" &&
+      parsed.kind !== "import" &&
+      parsed.kind !== "clear")
   ) {
     throw new Error("workspace transfer state is invalid")
   }
-  return parsed as WorkspaceTransferJob
+  const job = parsed as WorkspaceTransferJob
+  if (job.workspaceKey && job.workspaceKey !== workspaceCacheKey())
+    throw new ForeignWorkspaceTransferError()
+  return job
 }
 
 async function updateJob<T extends WorkspaceTransferJob>(
@@ -241,7 +270,13 @@ async function withTransferLock<T>(
 }
 
 function isExpiredAndInactive(job: WorkspaceTransferJob, now: number): boolean {
-  if (Date.parse(job.expiresAt) > now) return false
+  if (
+    Date.parse(job.expiresAt) > now ||
+    job.resetPending ||
+    activeClearJobs.has(job.id) ||
+    (job.kind === "clear" && job.cleanupPending)
+  )
+    return false
   if (job.kind === "export" && exportDownloadLeases.has(job.id)) return false
   if (job.kind === "export" && job.state === "running") {
     return !exportRuns.has(job.id)
@@ -260,10 +295,16 @@ async function removeExpiredJob(
   now: number
 ): Promise<void> {
   if (!isExpiredAndInactive(job, now)) return
-  if (job.kind === "import" && job.preparation?.stagingPath) {
+  if (
+    (job.kind === "import" || job.kind === "clear") &&
+    job.preparation?.stagingPath
+  ) {
     await discardPreparedWorkspaceReplacement(job.preparation.stagingPath)
   }
-  if (job.kind === "import" && job.prepared?.stagingPath) {
+  if (
+    (job.kind === "import" || job.kind === "clear") &&
+    job.prepared?.stagingPath
+  ) {
     if (job.state === "complete") {
       await discardCommittedWorkspaceReplacement(
         job.prepared.stagingPath,
@@ -287,7 +328,8 @@ export async function cleanupExpiredWorkspaceTransfers(): Promise<void> {
     let job: WorkspaceTransferJob
     try {
       job = await readJob(entry.name)
-    } catch {
+    } catch (error) {
+      if (error instanceof ForeignWorkspaceTransferError) continue
       let info
       try {
         info = await stat(join(transfersRoot(), entry.name))
@@ -347,23 +389,35 @@ function safeDownloadName(manifest: WorkspaceExportV2Manifest): string {
 function runExport(id: string): void {
   if (exportRuns.has(id)) return
   const running = withTransferLock(id, async () => {
-    let job = await readJob(id)
-    if (job.kind !== "export" || job.state === "complete") return
+    const stored = await readJob(id)
+    if (
+      stored.kind !== "export" ||
+      stored.state === "complete" ||
+      stored.revoked
+    )
+      return
+    let job: WorkspaceExportJob = stored
     job = await updateJob(job, {
       state: "running",
       error: undefined,
+      failure: undefined,
     })
     try {
       await exportRunHookForTests?.()
       const result = await withWorkspaceExportLease(() =>
         writeWorkspaceExportV2(packagePath(id), {
           history: job.history,
+          recoveryFingerprint: job.recoveryFingerprint,
+          onProgress: async (progress) => {
+            job = await updateJob(job, { progress })
+          },
           force: true,
           withCaptureBarrier: withWorkspaceExportSnapshot,
         })
       )
       await updateJob(job, {
         state: "complete",
+        progress: undefined,
         bytes: result.bytes,
         sha256: result.sha256,
         manifest: result.manifest,
@@ -376,6 +430,11 @@ function runExport(id: string): void {
       await rm(packagePath(id), { force: true }).catch(() => undefined)
       await updateJob(job, {
         state: "failed",
+        progress: undefined,
+        failure:
+          error instanceof WorkspaceExportPathError
+            ? error.diagnostics
+            : undefined,
         error: errorMessage(error),
         expiresAt: new Date(
           Date.now() + WORKSPACE_TRANSFER_TTL_MS
@@ -396,13 +455,16 @@ function runExport(id: string): void {
 }
 
 export async function createWorkspaceExportJob(
-  history: WorkspaceExportHistoryPolicy
+  history: WorkspaceExportHistoryPolicy,
+  options: { recoveryFingerprint?: string; id?: string } = {}
 ): Promise<WorkspaceExportJob> {
   scheduleWorkspaceTransferCleanup()
   const createdAt = nowIso()
   const job: WorkspaceExportJob = {
     version: 1,
-    id: makeId(),
+    id: options.id ?? makeId(),
+    workspaceKey: workspaceCacheKey(),
+    recoveryFingerprint: options.recoveryFingerprint,
     kind: "export",
     state: "queued",
     history,
@@ -451,6 +513,7 @@ async function latestWorkspaceTransferJob(
     }
     if (
       job.kind !== kind ||
+      (job.kind === "export" && job.revoked) ||
       (Date.parse(job.expiresAt) <= now && isExpiredAndInactive(job, now))
     ) {
       continue
@@ -505,7 +568,7 @@ export async function openWorkspaceExportDownload(id: string): Promise<{
 }> {
   return withTransferLock(id, async () => {
     let job = await getWorkspaceExportJob(id)
-    if (job.state !== "complete") {
+    if (job.state !== "complete" || job.revoked) {
       throw new Error("workspace export is not ready")
     }
     const handle = await open(packagePath(id), "r")
@@ -528,6 +591,11 @@ export async function openWorkspaceExportDownload(id: string): Promise<{
         if (remaining > 0) exportDownloadLeases.set(id, remaining)
         else exportDownloadLeases.delete(id)
         await handle.close().catch(() => undefined)
+        if (!remaining) {
+          const current = await readJob(id).catch(() => null)
+          if (current?.kind === "export" && current.revoked)
+            await rm(packagePath(id), { force: true }).catch(() => undefined)
+        }
       }
       let position = 0
       const body = new ReadableStream<Uint8Array>({
@@ -596,6 +664,7 @@ export async function createWorkspaceImportJob(input: {
     version: 1,
     id: makeId(),
     kind: "import",
+    workspaceKey: workspaceCacheKey(),
     state: "uploading",
     fileName: basename(input.fileName).slice(0, 255) || "workspace.wtb",
     expectedBytes: input.bytes,
@@ -938,6 +1007,7 @@ export async function replaceWorkspaceImportJob(
     const scheduled = job
     try {
       scheduleWorkspaceReplacement({
+        options: { destinationCheckpointPaths: "local" },
         stagingPath: scheduled.prepared!.stagingPath,
         backupPath: scheduled.prepared!.backupPath,
         contentCheckpoint: scheduled.prepared!.contentCheckpoint,
@@ -1022,6 +1092,7 @@ export async function recoverInterruptedWorkspaceTransferJobs(): Promise<
     try {
       const job = await withTransferLock(entry.name, async () => {
         let job = await readJob(entry.name)
+        if (job.kind === "clear") return job
         if (job.kind !== "import") return
         if (
           job.state === "verifying" ||
@@ -1034,6 +1105,14 @@ export async function recoverInterruptedWorkspaceTransferJobs(): Promise<
         return job
       })
       if (!job) continue
+      if (job.kind === "clear") {
+        const clear = await import("./workspace-clear-jobs.ts")
+        if (job.state === "complete" && job.prepared)
+          await clear.finalizeWorkspaceClearJob(job.id)
+        else if (job.state === "preparing")
+          await clear.getWorkspaceClearJob(job.id)
+        continue
+      }
       if (job.state === "verifying") {
         startWorkspaceImportVerification(job.id)
         recovered.push(job.id)
@@ -1098,4 +1177,63 @@ export function startWorkspaceTransferMaintenance(
     cancel(timer)
     await activeRun
   }
+}
+
+/** Recovery consent is derived from the persisted failed job, never client-supplied paths. */
+export async function recoverWorkspaceExportJob(
+  id: string
+): Promise<WorkspaceExportJob> {
+  return withTransferLock(id, async () => {
+    const job = await getWorkspaceExportJob(id)
+    if (job.recoveryJobId) {
+      try {
+        return await getWorkspaceExportJob(job.recoveryJobId)
+      } catch {
+        /* interrupted before child creation */
+      }
+    }
+    if (
+      job.state !== "failed" ||
+      !job.failure?.recoveryFingerprint ||
+      Date.parse(job.expiresAt) <= Date.now()
+    )
+      throw new Error("workspace export recovery is not ready; export again")
+    const childId = job.recoveryJobId ?? makeId()
+    await updateJob(job, { recoveryJobId: childId })
+    return createWorkspaceExportJob(job.history, {
+      recoveryFingerprint: job.failure.recoveryFingerprint,
+      id: childId,
+    })
+  })
+}
+
+/** Revocation is durable before deletion; open streams retain their existing lease. */
+export async function revokeWorkspaceExports(): Promise<void> {
+  await mkdir(transfersRoot(), { recursive: true, mode: 0o700 })
+  for (const entry of await readdir(transfersRoot(), { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith("wtx_")) continue
+    const job = await readJob(entry.name).catch(() => null)
+    if (job?.kind !== "export") continue
+    if (
+      !job.workspaceKey &&
+      job.manifest?.source.workspaceId !== ensureWorkspaceManifest().id
+    )
+      continue
+    await withTransferLock(job.id, async () => {
+      const current = await readJob(job.id)
+      if (current.kind !== "export") return
+      await updateJob(current, { revoked: true })
+      if (!exportDownloadLeases.has(job.id))
+        await rm(packagePath(job.id), { force: true })
+    })
+  }
+}
+
+export {
+  makeId as createWorkspaceTransferId,
+  writeJob as writeWorkspaceTransferJob,
+  readJob as readWorkspaceTransferJob,
+  updateJob as updateWorkspaceTransferJob,
+  withTransferLock as withWorkspaceTransferLock,
+  latestWorkspaceTransferJob,
 }

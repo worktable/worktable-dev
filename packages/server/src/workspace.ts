@@ -11,7 +11,10 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { workspaceStorageLayoutFromManifest } from "./workspace-storage-v2.ts";
+import {
+  validStarterSeed,
+  workspaceStorageLayoutFromManifest,
+} from "@worktable/types";
 
 // ============================================================
 // Workspace root resolution
@@ -65,6 +68,8 @@ export interface WorkspaceManifest {
   cloud: {
     status: "unlinked";
   };
+  /** A deliberately cleared workspace must not recreate starter content. */
+  starterSeed?: { version: 1; status: "suppressed" };
   /**
    * Portable first-run state. Absence means an existing workspace that
    * predates onboarding and is therefore already set up.
@@ -238,7 +243,8 @@ export function isWorkspaceManifest(
     typeof candidate["name"] === "string" &&
     typeof candidate["createdAt"] === "string" &&
     cloud?.["status"] === "unlinked" &&
-    validOnboarding
+    validOnboarding &&
+    validStarterSeed(candidate["starterSeed"])
   );
 }
 
@@ -556,3 +562,17 @@ export const workspace: WorkspaceProvider = {
   spacesDir: getSpacesDir,
   versionsDir: getVersionsDir,
 };
+
+export function clearedWorkspaceManifest(
+  manifest: WorkspaceManifest
+): WorkspaceManifest {
+  return {
+    ...manifest,
+    starterSeed: { version: 1, status: "suppressed" },
+    onboarding: {
+      version: 1,
+      status: "complete",
+      completedAt: manifest.onboarding?.completedAt ?? new Date().toISOString(),
+    },
+  };
+}

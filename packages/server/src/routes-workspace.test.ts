@@ -931,3 +931,27 @@ describe("concurrent manifest patches", () => {
     })
   })
 })
+
+describe("workspace clear authorization", () => {
+  it("rejects cross-origin browsers and agent tokens before creating a clear review", async () => {
+    seed()
+    const { token } = await createToken({
+      scopes: ["docs:read"],
+      agent: "claude",
+    })
+    for (const headers of [
+      { Origin: "https://attacker.example" },
+      { Authorization: `Bearer ${token}` },
+    ] as Record<string, string>[]) {
+      const response = await app().fetch(
+        new Request("http://localhost/api/workspace/clear", {
+          method: "POST",
+          headers,
+        })
+      )
+      expect([401, 403]).toContain(response.status)
+    }
+    expect(existsSync(join(appDir, "workspace-transfers", "jobs"))).toBe(false)
+    expect(readManifest()).toMatchObject({ id: base.id, name: base.name })
+  })
+})

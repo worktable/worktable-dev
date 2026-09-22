@@ -8,6 +8,13 @@ let admissionHookForTests:
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
 export function isWorkspaceRequest(method: string, pathname: string): boolean {
+  // Downloads expose workspace content even though they do not mutate it.
+  // Drain admission through replacement commit and export revocation.
+  if (
+    method.toUpperCase() === "GET" &&
+    /^\/api\/workspace\/transfers\/exports\/[^/]+\/download$/.test(pathname)
+  )
+    return true
   if (
     method.toUpperCase() === "GET" &&
     pathname === "/api/linked/account/callback"

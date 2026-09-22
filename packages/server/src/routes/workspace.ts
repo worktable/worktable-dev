@@ -1,3 +1,11 @@
+import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
+import { isHosted } from "../hosted.ts"
+import {
+  createWorkspaceClearJob,
+  getCurrentWorkspaceClearJob,
+  getWorkspaceClearJob,
+  confirmWorkspaceClearJob,
+} from "../workspace-clear-jobs.ts"
 import { Hono } from "hono"
 import type { Context } from "hono"
 import {
@@ -12,6 +20,7 @@ import { hasScope } from "../token-store.ts"
 import {
   appendWorkspaceImportChunk,
   createWorkspaceExportJob,
+  recoverWorkspaceExportJob,
   createWorkspaceImportJob,
   getCurrentWorkspaceExportJob,
   getCurrentWorkspaceImportJob,
@@ -104,15 +113,30 @@ function canReadWorkspaceRoot(c: Context): boolean {
  * unrecognized provenance block reports "daily"); `provenance` carries the detail
  * (source label/path, snapshotAt, one-way/disposable flags) for non-daily workspaces.
  */
-workspaceRouter.get("/", (c) => {
-  return c.json(
-    publicView(ensureWorkspaceManifest(), {
+workspaceRouter.get("/", async (c) => {
+  return c.json({
+    ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
-    })
-  )
+    }),
+    contentEpoch: await getWorkspaceCollaborationEpoch(),
+    canManage:
+      canManageUserSettings(c) && c.get("identity")?.principal.type === "human",
+  })
 })
 
 function transferView(job: WorkspaceTransferJob) {
+  if (job.kind === "clear") {
+    const {
+      prepared: _prepared,
+      preparation: _preparation,
+      workspaceKey: _workspaceKey,
+      ...view
+    } = job
+    void _prepared
+    void _preparation
+    void _workspaceKey
+    return view
+  }
   const manifest = job.manifest
     ? {
         exportId: job.manifest.exportId,
@@ -131,7 +155,17 @@ function transferView(job: WorkspaceTransferJob) {
   if (job.kind === "export") {
     const { manifest: _manifest, ...publicJob } = job
     void _manifest
-    return { ...publicJob, manifest }
+    return {
+      ...publicJob,
+      failure: job.failure
+        ? {
+            ...job.failure,
+            issues: job.failure.issues.slice(0, 100),
+            truncated: job.failure.issueCount > 100,
+          }
+        : undefined,
+      manifest,
+    }
   }
   const {
     preparation: _preparation,
@@ -326,6 +360,66 @@ async function readWorkspaceImportChunk(
   return output
 }
 
+function clearOwner(c: Context): Response | null {
+  return (
+    transferOwner(c) ??
+    (isHosted()
+      ? c.json(
+          { error: "Workspace clear is unavailable on this deployment" },
+          403
+        )
+      : null)
+  )
+}
+
+workspaceRouter.post("/clear", async (c) => {
+  const forbidden = clearOwner(c)
+  if (forbidden) return forbidden
+  try {
+    return c.json(transferView(await createWorkspaceClearJob()), 202)
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+workspaceRouter.get("/clear/current", async (c) => {
+  const forbidden = clearOwner(c)
+  if (forbidden) return forbidden
+  try {
+    const job = await getCurrentWorkspaceClearJob()
+    return c.json({ job: job ? transferView(job) : null })
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+workspaceRouter.get("/clear/:id", async (c) => {
+  const forbidden = clearOwner(c)
+  if (forbidden) return forbidden
+  try {
+    return c.json(transferView(await getWorkspaceClearJob(c.req.param("id"))))
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+workspaceRouter.post("/clear/:id/confirm", async (c) => {
+  const forbidden = clearOwner(c)
+  if (forbidden) return forbidden
+  try {
+    const body = await c.req.json()
+    return c.json(
+      transferView(
+        await confirmWorkspaceClearJob(
+          c.req.param("id"),
+          body.confirmation,
+          body.reviewRevision
+        )
+      ),
+      202
+    )
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+
 workspaceRouter.post("/transfers/exports", async (c) => {
   const forbidden = transferOwner(c)
   if (forbidden) return forbidden
@@ -354,6 +448,39 @@ workspaceRouter.get("/transfers/exports/:id", async (c) => {
   if (forbidden) return forbidden
   try {
     return c.json(transferView(await getWorkspaceExportJob(c.req.param("id"))))
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+
+workspaceRouter.post("/transfers/exports/:id/recover", async (c) => {
+  const forbidden = transferOwner(c)
+  if (forbidden) return forbidden
+  try {
+    const body = await c.req.json()
+    if (body.recovery !== "omit-history")
+      throw new Error("invalid export recovery request")
+    return c.json(
+      transferView(await recoverWorkspaceExportJob(c.req.param("id"))),
+      202
+    )
+  } catch (error) {
+    return transferError(c, error)
+  }
+})
+
+workspaceRouter.get("/transfers/exports/:id/diagnostics", async (c) => {
+  const forbidden = transferOwner(c)
+  if (forbidden) return forbidden
+  try {
+    const job = await getWorkspaceExportJob(c.req.param("id"))
+    if (!job.failure) throw new Error("export diagnostics not found")
+    c.header(
+      "Content-Disposition",
+      'attachment; filename="export-diagnostics.json"'
+    )
+    c.header("Cache-Control", "private, no-store")
+    return c.json(job.failure)
   } catch (error) {
     return transferError(c, error)
   }

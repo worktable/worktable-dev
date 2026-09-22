@@ -11,7 +11,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { recordIndex } from "./record-index.ts"
-import { setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  clearedWorkspaceManifest,
+  ensureWorkspaceManifest,
+  writeWorkspaceManifest,
+  setWorkspaceRootOverride,
+} from "./workspace.ts"
 import {
   seedStarterWorkspace,
   setStarterSeedBeforePublishHookForTests,
@@ -34,8 +39,9 @@ let workspaceDir: string
 
 beforeEach(() => {
   workspaceDir = mkdtempSync(join(tmpdir(), "worktable-seed-"))
-  mkdirSync(join(workspaceDir, "spaces"), { recursive: true })
   setWorkspaceRootOverride(workspaceDir)
+  ensureWorkspaceManifest()
+  mkdirSync(join(workspaceDir, "spaces"), { recursive: true })
 })
 
 afterEach(() => {
@@ -47,6 +53,12 @@ afterEach(() => {
 })
 
 describe("starter workspace seeding", () => {
+  it("never seeds a workspace explicitly cleared by its owner", async () => {
+    writeWorkspaceManifest(clearedWorkspaceManifest(ensureWorkspaceManifest()))
+    expect(await seedStarterWorkspace()).toBe(false)
+    expect(await listSpaces()).toEqual([])
+  })
+
   it("seeds the complete Welcome to Worktable experience on an empty workspace", async () => {
     expect(await starterWorkspaceReady()).toBe(false)
     expect(await seedStarterWorkspace()).toBe(true)

@@ -66,6 +66,8 @@ Hosted service operations and the marketing sites are not included here.
 
 ## Verify a change
 
+See [AGENTS.md](../AGENTS.md) for testing and review principles.
+
 Run commands from the repository root:
 
 ```sh

@@ -12,6 +12,24 @@
   background: transparent !important;
 }
 
+/* Keep the complete ProseMirror document mounted, but defer offscreen block
+   layout/paint in long documents. Unlike removing editor nodes, this preserves
+   selection, collaboration, browser find and accessibility traversal. The auto
+   intrinsic size remembers measured heights after a block has been visited. */
+@supports (content-visibility: auto) {
+  .worktable-large-document .bn-editor > .bn-block-group > .bn-block-outer {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 2.25rem;
+  }
+
+  @media print {
+    .worktable-large-document .bn-editor > .bn-block-group > .bn-block-outer {
+      content-visibility: visible;
+      contain-intrinsic-block-size: none;
+    }
+  }
+}
+
 /* ============================================
    Base Editor Styles
    ============================================ */
@@ -211,11 +229,12 @@
   background: transparent !important;
 }
 
-/* Shiki dual-theme token colors.
-   With themes: { light, dark }, shiki outputs:
-   style="color: #light-value; --shiki-dark: #dark-value"
-   The inline color is already correct for light mode.
-   In dark mode, override with the --shiki-dark CSS variable. */
+/* Upstream provides both token variables but defaults code to a dark surface.
+   Our code surface follows the app theme, so select its matching token color. */
+.bn-container[data-color-scheme="light"] .shiki {
+  color: var(--shiki-light) !important;
+}
+
 .bn-container[data-color-scheme="dark"] .shiki {
   color: var(--shiki-dark) !important;
 }

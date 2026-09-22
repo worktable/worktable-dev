@@ -3,6 +3,12 @@ import { linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { compressApiResponse } from "./http-compression.ts";
+import { acceptsGzip } from "./http-compression.ts";
+import { injectDocumentOpening } from "./document-opening.ts";
+import { readDocumentPreloads } from "./document-preloads.ts";
+import { readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { existsSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { healthRouter } from "./routes/health.ts";
@@ -205,6 +211,7 @@ app.use("*", async (c, next) => {
   return wildcardCors(c, next);
 });
 app.use("*", logger());
+app.use("/api/*", compressApiResponse);
 
 // A replacement closes this gate before stopping the listener. Every admitted
 // workspace mutation is held until its complete route lifecycle settles, so a
@@ -370,18 +377,18 @@ const REGISTER_SW_CLEANUP = `if("serviceWorker" in navigator){window.addEventLis
 
 if (HAS_STATIC) {
   const staticDir = STATIC_ASSETS.staticDir!;
-  const staticFile = (requestPath: string, headers?: HeadersInit) =>
-    createStaticFileResponse(staticDir, requestPath, headers) ??
+  const staticFile = (requestPath: string, request: Request, headers?: HeadersInit) =>
+    createStaticFileResponse(staticDir, requestPath, headers, request) ??
     new Response("Not found", { status: 404 });
 
   // Serve static assets (js, css, images, fonts)
-  app.get("/assets/*", (c) => staticFile(c.req.path));
+  app.get("/assets/*", (c) => staticFile(c.req.path, c.req.raw));
 
   // PWA files: service worker, manifest, registerSW, icons, favicons, robots
   if (existsSync(join(staticDir, "sw.js"))) {
-    app.get("/sw.js", (c) => staticFile(c.req.path));
-    app.get("/workbox-*.js", (c) => staticFile(c.req.path));
-    app.get("/registerSW.js", (c) => staticFile(c.req.path));
+    app.get("/sw.js", (c) => staticFile(c.req.path, c.req.raw));
+    app.get("/workbox-*.js", (c) => staticFile(c.req.path, c.req.raw));
+    app.get("/registerSW.js", (c) => staticFile(c.req.path, c.req.raw));
   } else {
     // The PWA plugin can emit registerSW.js without sw.js for this TanStack Start build.
     // Never let /sw.js fall through to the HTML shell: browsers reject it as a service
@@ -391,26 +398,40 @@ if (HAS_STATIC) {
     app.get("/registerSW.js", (c) => c.text(REGISTER_SW_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
   }
   app.get("/manifest.webmanifest", (c) =>
-    staticFile(c.req.path, { "Content-Type": "application/manifest+json" })
+    staticFile(c.req.path, c.req.raw, { "Content-Type": "application/manifest+json" })
   );
-  app.get("/favicon.ico", (c) => staticFile(c.req.path));
-  app.get("/favicon.svg", (c) => staticFile(c.req.path));
-  app.get("/apple-touch-icon-180x180.png", (c) => staticFile(c.req.path));
-  app.get("/pwa-64x64.png", (c) => staticFile(c.req.path));
-  app.get("/pwa-192x192.png", (c) => staticFile(c.req.path));
-  app.get("/pwa-512x512.png", (c) => staticFile(c.req.path));
-  app.get("/maskable-icon-512x512.png", (c) => staticFile(c.req.path));
-  app.get("/robots.txt", (c) => staticFile(c.req.path));
+  app.get("/favicon.ico", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/favicon.svg", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/apple-touch-icon-180x180.png", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/pwa-64x64.png", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/pwa-192x192.png", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/pwa-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/maskable-icon-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
+  app.get("/robots.txt", (c) => staticFile(c.req.path, c.req.raw));
 
   // SPA fallback: any non-API, non-WS route serves the shell HTML
   // TanStack Start uses _shell.html; older builds use index.html
   const shellPath = STATIC_ASSETS.shellPath!;
+  const shellTemplate = readFileSync(shellPath, "utf8");
+  const documentPreloads = readDocumentPreloads(staticDir);
 
   app.get("*", async (c) => {
+    const opening = await injectDocumentOpening(c.req.raw, shellTemplate, documentPreloads);
+    if (opening) {
+      const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "");
+      return new Response(compressed ? gzipSync(opening) : opening, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "private, no-store",
+          "Vary": "Cookie, Authorization, Accept-Encoding",
+          ...(compressed ? { "Content-Encoding": "gzip" } : {}),
+        },
+      });
+    }
     return (
       createStaticFileResponse(staticDir, `/${shellPath.slice(staticDir.length + 1)}`, {
         "Content-Type": "text/html; charset=utf-8",
-      }) ??
+      }, c.req.raw) ??
       c.text("Static shell not found", 500)
     );
   });

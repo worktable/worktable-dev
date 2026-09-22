@@ -38,8 +38,7 @@ import {
   Clock3,
   GripVertical,
 } from "lucide-react"
-import { getIcon } from "@/lib/icons"
-import { icons } from "lucide-react"
+import { getIcon, ALL_ICON_NAMES } from "@/lib/icons"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSpaces } from "@/lib/queries"
 import type { DocSortMode } from "@/lib/tree"
@@ -376,14 +375,6 @@ function SpaceDeleteDialog({
 }
 
 // ── Icon Picker Dialog ───────────────────────────────────────
-
-/** Convert PascalCase to kebab-case */
-function toKebab(str: string): string {
-  return str.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()
-}
-
-/** All icon names in kebab-case, computed once */
-const ALL_ICON_NAMES = Object.keys(icons).map(toKebab).sort()
 
 /** Popular/common icons shown by default before searching */
 const POPULAR_ICONS = [

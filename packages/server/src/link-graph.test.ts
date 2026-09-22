@@ -46,6 +46,25 @@ const write = (path: string, md: string) =>
   writeDoc(SPACE, path, md, { updatedBy: "test", source: "rest-api" });
 
 describe("link graph", () => {
+  it("shares a graph rebuild across concurrent readers", async () => {
+    await write("source", "[target](target)")
+    await write("target", "Target")
+    let builds = 0
+    setLinkGraphRebuildHookForTests(async () => {
+      builds += 1
+    })
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => getSpaceLinkGraph(SPACE))
+      )
+      expect(builds).toBe(1)
+      expect(results.every((result) => result === results[0])).toBe(true)
+      expect(results[0]!.inbound.get("target")).toEqual(["source"])
+    } finally {
+      setLinkGraphRebuildHookForTests(null)
+    }
+  })
+
   beforeEach(async () => {
     setWorkspaceRootOverride(testDir);
     setAppDirOverride(appDir);

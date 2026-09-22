@@ -2,6 +2,7 @@ import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
+import { sharedIconChunk } from "./shared-icon-chunk"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import type { ManifestOptions } from "vite-plugin-pwa"
@@ -68,6 +69,15 @@ export const navigateFallbackDenylist = [
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    manifest: true,
+    rollupOptions: {
+      output: {
+        manualChunks: sharedIconChunk(),
+        onlyExplicitManualChunks: true,
+      },
+    },
+  },
   plugins: [
     // TanStack Start must come before react plugin
     tanstackStart({
@@ -110,6 +120,10 @@ export default defineConfig({
       },
     }),
   ],
+  // Keep the dynamic catalog out of the dev prebundle. Otherwise esbuild
+  // splits the static icon barrel into thousands of shared chunks, making
+  // ordinary named icon imports fetch the entire catalog during startup.
+  optimizeDeps: { exclude: ["lucide-react/dynamic.mjs"] },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -117,6 +131,7 @@ export default defineConfig({
     // ProseMirror and Yjs rely on singletons; a second copy in the module
     // graph breaks the BlockNote editor (seen as dup-ProseMirror in dev).
     dedupe: [
+      "@base-ui/react",
       "prosemirror-model",
       "prosemirror-state",
       "prosemirror-view",

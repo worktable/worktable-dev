@@ -3,7 +3,7 @@ import {
   BlockNoteSchema,
   createCodeBlockSpec,
 } from "@blocknote/core"
-import { yXmlFragmentToBlocks } from "@blocknote/core/yjs"
+import { withCollaboration, yXmlFragmentToBlocks } from "@blocknote/core/yjs"
 import {
   useCreateBlockNote,
   SuggestionMenuController,
@@ -28,9 +28,7 @@ import {
   SideMenuExtension,
 } from "@blocknote/core/extensions"
 import { BlockNoteView } from "@blocknote/shadcn"
-import { codeBlockOptions } from "@blocknote/code-block"
-import { createParser } from "prosemirror-highlight/shiki"
-import type { HighlighterGeneric, CodeToTokensOptions } from "@shikijs/types"
+import { codeBlockOptions, syntaxHighlighter } from "@blocknote/code-block"
 import type { Block } from "@blocknote/core"
 import type * as Y from "yjs"
 import { ySyncPluginKey } from "y-prosemirror"
@@ -57,7 +55,10 @@ import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
 
-type MermaidBlockModule = typeof import("./worktable-mermaid-block")
+import {
+  WorktableMermaidBlock,
+  insertWorktableMermaid,
+} from "./worktable-mermaid-block"
 
 const worktableCodeBlockOptions = {
   ...codeBlockOptions,
@@ -68,55 +69,8 @@ const worktableCodeBlockOptions = {
   ),
 }
 
-// ── Pre-seed shiki parser with dual themes ───────────────────
-// BlockNote's default parser uses a single theme (the first loaded).
-// We pre-create a dual-theme parser so shiki outputs CSS variables
-// (--shiki-light, --shiki-dark) that we can swap with CSS.
-// The parser is cached globally via Symbol.for("blocknote.shikiParser").
-type BundledLanguage = "typescript" | "ts" | "javascript" | "js" | "vue"
-type BundledTheme = "github-light" | "github-dark"
-type Highlighter = HighlighterGeneric<BundledLanguage, BundledTheme>
-
-const SHIKI_PARSER_KEY = Symbol.for("blocknote.shikiParser")
-const SHIKI_HIGHLIGHTER_KEY = Symbol.for("blocknote.shikiHighlighterPromise")
-
-const globalSymbolStore = globalThis as unknown as Record<symbol, unknown>
-if (!globalSymbolStore[SHIKI_PARSER_KEY]) {
-  const highlighterPromise: Promise<Highlighter> =
-    (globalSymbolStore[SHIKI_HIGHLIGHTER_KEY] as Promise<Highlighter>) ??
-    codeBlockOptions.createHighlighter()
-  globalSymbolStore[SHIKI_HIGHLIGHTER_KEY] = highlighterPromise
-  highlighterPromise.then((highlighter: Highlighter) => {
-    const options: CodeToTokensOptions<BundledLanguage, BundledTheme> = {
-      themes: {
-        light: "github-light",
-        dark: "github-dark",
-      },
-    }
-    globalSymbolStore[SHIKI_PARSER_KEY] = createParser(highlighter, options)
-  })
-}
-
-// ── Lazy Mermaid Block Loading ───────────────────────────────
-
-let mermaidBlockSpec: MermaidBlockModule["WorktableMermaidBlock"] | null = null
-let insertMermaidItem: MermaidBlockModule["insertWorktableMermaid"] | null =
-  null
-let mermaidLoadPromise: Promise<void> | null = null
-
-function loadMermaidBlock(): Promise<void> {
-  if (mermaidBlockSpec && insertMermaidItem) return Promise.resolve()
-  if (mermaidLoadPromise) return mermaidLoadPromise
-
-  mermaidLoadPromise = import("./worktable-mermaid-block").then((module) => {
-    mermaidBlockSpec = module.WorktableMermaidBlock
-    insertMermaidItem = module.insertWorktableMermaid
-    cachedSchema = null
-  })
-
-  return mermaidLoadPromise
-}
-
+// Upstream highlighting loads its parser on demand and supports both themes.
+// Ordinary documents no longer start a highlighter during module evaluation.
 let cachedSchema: ReturnType<typeof BlockNoteSchema.create> | null = null
 
 function getSchema() {
@@ -127,9 +81,7 @@ function getSchema() {
     codeBlock: createCodeBlockSpec(worktableCodeBlockOptions),
   }
 
-  if (mermaidBlockSpec) {
-    blockSpecs.mermaid = mermaidBlockSpec()
-  }
+  blockSpecs.mermaid = WorktableMermaidBlock()
 
   cachedSchema = BlockNoteSchema.create({
     blockSpecs,
@@ -139,12 +91,8 @@ function getSchema() {
 }
 
 export async function blocksFromCollaborationDoc(ydoc: Y.Doc) {
-  await loadMermaidBlock()
   const editor = BlockNoteEditor.create({ schema: getSchema() })
-  return yXmlFragmentToBlocks(
-    editor,
-    ydoc.getXmlFragment("document-store")
-  )
+  return yXmlFragmentToBlocks(editor, ydoc.getXmlFragment("document-store"))
 }
 
 type EditorBlock = Block
@@ -205,6 +153,7 @@ interface AnnotationCapableEditor {
 }
 
 interface EditorProps {
+  onReady?: () => void
   initialContent?: EditorBlock[]
   onChange?: (blocks: EditorBlock[]) => void
   editable?: boolean
@@ -215,18 +164,8 @@ interface EditorProps {
   onSelectAnnotation?: (annotation: Annotation) => void
 }
 
-function EditorLoadingState() {
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-card">
-      <div className="flex animate-pulse flex-col items-center gap-3">
-        <div className="h-8 w-8 rounded-full bg-muted" />
-        <div className="h-2 w-24 rounded bg-muted" />
-      </div>
-    </div>
-  )
-}
-
 export function Editor({
+  onReady,
   initialContent,
   onChange,
   editable = true,
@@ -236,19 +175,12 @@ export function Editor({
   onCreateAnnotation,
   onSelectAnnotation,
 }: EditorProps) {
-  const [mermaidReady, setMermaidReady] = useState(!!mermaidBlockSpec)
-  const [mounted, setMounted] = useState(false)
   const { theme } = useTheme()
   const isMobile = useIsMobile()
   // Server-backed editor preference; default false until the query resolves.
   // Applied to the live editor DOM (not baked at creation), so a flip never
   // recreates the editor. See EditorInner's spellcheck effect.
   const spellcheck = useServerSettings().data?.editor.spellcheck ?? false
-
-  useEffect(() => {
-    if (mermaidReady) return
-    loadMermaidBlock().then(() => setMermaidReady(true))
-  }, [mermaidReady])
 
   const resolvedTheme =
     theme === "system"
@@ -257,12 +189,9 @@ export function Editor({
         : "light"
       : theme
 
-  if (!mermaidReady) {
-    return <EditorLoadingState />
-  }
-
   return (
     <EditorInner
+      onReady={onReady}
       initialContent={initialContent}
       onChange={onChange}
       editable={editable}
@@ -272,8 +201,6 @@ export function Editor({
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
       resolvedTheme={resolvedTheme}
-      mounted={mounted}
-      setMounted={setMounted}
       isMobile={isMobile}
       spellcheck={spellcheck}
     />
@@ -281,6 +208,7 @@ export function Editor({
 }
 
 function EditorInner({
+  onReady,
   initialContent,
   onChange,
   editable,
@@ -290,14 +218,10 @@ function EditorInner({
   onCreateAnnotation,
   onSelectAnnotation,
   resolvedTheme,
-  mounted,
-  setMounted,
   isMobile,
   spellcheck,
 }: EditorProps & {
   resolvedTheme: "light" | "dark"
-  mounted: boolean
-  setMounted: (value: boolean) => void
   isMobile: boolean
   spellcheck: boolean
 }) {
@@ -310,8 +234,9 @@ function EditorInner({
     [initialContent]
   )
 
-  const editor = useCreateBlockNote({
+  const baseOptions = {
     schema,
+    extensions: [syntaxHighlighter],
     _tiptapOptions: {
       editorProps: {
         attributes: {
@@ -321,8 +246,11 @@ function EditorInner({
         },
       },
     },
-    ...(collaboration
-      ? {
+  }
+  const editor = useCreateBlockNote(
+    collaboration
+      ? withCollaboration({
+          ...baseOptions,
           collaboration: {
             provider: collaboration.provider,
             fragment: collaboration.ydoc.getXmlFragment(
@@ -330,24 +258,28 @@ function EditorInner({
             ),
             user: { name: "You", color: "#0d7377" },
           },
-        }
+        })
       : {
+          ...baseOptions,
           initialContent: getBlockNoteCreationContent(normalizedInitialContent),
-        }),
-  })
+        }
+  )
 
+  // This editor is only rendered by client-side document routes. BlockNote
+  // mounts its DOM in a ref callback, before this passive readiness effect;
+  // a separate mount-state skeleton would add another unnecessary commit.
   useEffect(() => {
-    setMounted(true)
-  }, [setMounted])
+    onReady?.()
+  }, [onReady])
 
   // Reactively apply the spellcheck preference to the live ProseMirror node
   // (`editor.domElement`, the same node editorProps.attributes seeds). Setting
   // the attribute in place never touches document content, so toggling the
-  // preference — collab or non-collab — can't lose edits. `mounted` re-runs it
-  // once the DOM node exists.
+  // preference — collab or non-collab — can't lose edits. The DOM ref is
+  // attached before effects run.
   useEffect(() => {
     editor.domElement?.setAttribute("spellcheck", spellcheck ? "true" : "false")
-  }, [editor, spellcheck, mounted])
+  }, [editor, spellcheck])
 
   useEffect(() => {
     if (!onChange || collaboration) return
@@ -392,10 +324,10 @@ function EditorInner({
 
   useEffect(() => {
     if (collaboration) return
-    if (normalizedInitialContent !== undefined && mounted) {
+    if (normalizedInitialContent !== undefined) {
       editor.replaceBlocks(editor.document, normalizedInitialContent)
     }
-  }, [normalizedInitialContent, editor, mounted, collaboration])
+  }, [normalizedInitialContent, editor, collaboration])
 
   const getSlashMenuItems = useMemo(
     () =>
@@ -441,9 +373,7 @@ function EditorInner({
         const items: DefaultReactSuggestionItem[] = [
           ...getDefaultReactSlashMenuItems(editor),
           ...annotationItems,
-          ...(insertMermaidItem
-            ? [insertMermaidItem() as DefaultReactSuggestionItem]
-            : []),
+          insertWorktableMermaid() as DefaultReactSuggestionItem,
         ]
         return filterSuggestionItems(items, query)
       },
@@ -471,13 +401,9 @@ function EditorInner({
   }, [])
 
   useEffect(() => {
-    if (!mounted || !editorContainerRef.current) return
+    if (!editorContainerRef.current) return
     return initMermaidTouchHandler(editorContainerRef.current)
-  }, [mounted])
-
-  if (!mounted) {
-    return <EditorLoadingState />
-  }
+  }, [])
 
   return (
     <div
@@ -493,7 +419,7 @@ function EditorInner({
     >
       <div
         ref={editorContainerRef}
-        className="worktable-editor-content relative mx-auto w-full max-w-3xl px-6 py-8 sm:px-8 md:px-12"
+        className="worktable-editor-content worktable-document-content"
       >
         <AnnotationBadges
           annotations={annotations}
@@ -757,6 +683,18 @@ function AnnotationBadges({
   >([])
 
   useEffect(() => {
+    // No badges means no model traversal, forced layout, timer, or resize work.
+    if (
+      !annotations.some(
+        (annotation) =>
+          annotation.status !== "resolved" &&
+          "blockId" in annotation.target &&
+          annotation.target.blockId
+      )
+    ) {
+      setPositions((previous) => (previous.length ? [] : previous))
+      return
+    }
     const update = () => {
       const container = containerRef.current
       if (!container) return

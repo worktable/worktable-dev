@@ -1,0 +1,6719 @@
+{
+  "profile": {
+    "latencyMs": 400,
+    "downloadMbps": 1.6,
+    "uploadMbps": 0.75,
+    "cpuSlowdown": 4
+  },
+  "caveat": "The sandboxed HTML iframe content fetch did not inherit the top-page CDP network delay (observed 66\u201384 ms despite 400 ms setting). HTML values compare the top-level startup changes but are optimistic for a fully constrained end-to-end delivery path.",
+  "runs": [
+    {
+      "label": "stage4-1",
+      "target": "html-audit",
+      "kind": "editor",
+      "ready": 8154,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": null,
+      "longtasks": [
+        {
+          "start": 427.10000002384186,
+          "duration": 66
+        },
+        {
+          "start": 2296.5,
+          "duration": 50
+        },
+        {
+          "start": 2795.800000011921,
+          "duration": 536
+        },
+        {
+          "start": 3424.699999988079,
+          "duration": 143
+        },
+        {
+          "start": 5354.399999976158,
+          "duration": 176
+        },
+        {
+          "start": 5566.399999976158,
+          "duration": 94
+        },
+        {
+          "start": 5673.100000023842,
+          "duration": 57
+        },
+        {
+          "start": 7132.5,
+          "duration": 303
+        },
+        {
+          "start": 7446.899999976158,
+          "duration": 248
+        },
+        {
+          "start": 7740.399999976158,
+          "duration": 69
+        },
+        {
+          "start": 7902.399999976158,
+          "duration": 71
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 447.69999998807907,
+          "duration": 408.19999998807907,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 449.60000002384186,
+          "duration": 2288.5,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 450.60000002384186,
+          "duration": 471.5,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 451.10000002384186,
+          "duration": 1109.3999999761581,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 453.10000002384186,
+          "duration": 441,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 453.30000001192093,
+          "duration": 464.5,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 453.39999997615814,
+          "duration": 890.5,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 453.60000002384186,
+          "duration": 905,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 455.5,
+          "duration": 911.1999999880791,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 455.69999998807907,
+          "duration": 1308.1000000238419,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 457.10000002384186,
+          "duration": 1358.7999999523163,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1824.699999988079,
+          "duration": 464.19999998807907,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1826.1000000238419,
+          "duration": 448,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2362.800000011921,
+          "duration": 419.80000001192093,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2364.600000023842,
+          "duration": 410.89999997615814,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2367.600000023842,
+          "duration": 423.5999999642372,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2368.199999988079,
+          "duration": 430.30000001192093,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2372.300000011921,
+          "duration": 435.80000001192093,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2374.899999976158,
+          "duration": 775.5,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2375.399999976158,
+          "duration": 805.5,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2375.699999988079,
+          "duration": 879.5,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2376,
+          "duration": 827.6000000238419,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2376.300000011921,
+          "duration": 842.3999999761581,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2376.399999976158,
+          "duration": 857,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2376.800000011921,
+          "duration": 1179.5,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2377.100000023842,
+          "duration": 1212.199999988079,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2381.399999976158,
+          "duration": 1234.4000000357628,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2383.5,
+          "duration": 1239.3999999761581,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2383.899999976158,
+          "duration": 1254.4000000357628,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2387.600000023842,
+          "duration": 1273.5999999642372,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2388.800000011921,
+          "duration": 1572.5999999642372,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2390,
+          "duration": 1607.8999999761581,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/code-25e9T1t4.js",
+          "start": 2390.5,
+          "duration": 1629.800000011921,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2393.399999976158,
+          "duration": 1634.800000011921,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 2393.699999988079,
+          "duration": 1649.6000000238419,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/minimize-DdoagS-K.js",
+          "start": 2394.300000011921,
+          "duration": 1670.8999999761581,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/maximize-B4LAQMDe.js",
+          "start": 2394.699999988079,
+          "duration": 1970.800000011921,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2395.100000023842,
+          "duration": 2008,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2395.399999976158,
+          "duration": 2030.6000000238419,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2395.899999976158,
+          "duration": 2037.4000000357628,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2396.199999988079,
+          "duration": 2052,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/html-document-DTZLQbbx.js",
+          "start": 2400.5,
+          "duration": 2115.300000011921,
+          "bytes": 9949
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3423,
+          "duration": 1348.199999988079,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3455.800000011921,
+          "duration": 1352.300000011921,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3508.399999976158,
+          "duration": 1359.5,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3510.399999976158,
+          "duration": 1335.5,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3512.300000011921,
+          "duration": 1349,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3514.699999988079,
+          "duration": 1406,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3516.600000023842,
+          "duration": 1661.3999999761581,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3520.5,
+          "duration": 1700.1000000238419,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3523.300000011921,
+          "duration": 1727.5,
+          "bytes": 439
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 3527.399999976158,
+          "duration": 1738.7000000476837,
+          "bytes": 336
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3557.100000023842,
+          "duration": 1716.5999999642372,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3568.199999988079,
+          "duration": 1757.4000000357628,
+          "bytes": 749
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 5396.899999976158,
+          "duration": 573.2000000476837,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 5398.800000011921,
+          "duration": 474.19999998807907,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 5403,
+          "duration": 417.80000001192093,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 5406.199999988079,
+          "duration": 430,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 5408.899999976158,
+          "duration": 434.4000000357628,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 5412.300000011921,
+          "duration": 445.89999997615814,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 5415.600000023842,
+          "duration": 810.5,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 5418.699999988079,
+          "duration": 822.1999999880791,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 5420.899999976158,
+          "duration": 828.3000000119209,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 5424.100000023842,
+          "duration": 839.3999999761581,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 5426.5,
+          "duration": 851.6999999880791,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 5428.100000023842,
+          "duration": 948,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 5430.100000023842,
+          "duration": 1201.0999999642372,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 5432.199999988079,
+          "duration": 1213.9000000357628,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 5434.800000011921,
+          "duration": 1218.800000011921,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 5436.5,
+          "duration": 1232.300000011921,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 5438.600000023842,
+          "duration": 1244.2999999523163,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 5441.300000011921,
+          "duration": 1339.8999999761581,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 5443.800000011921,
+          "duration": 1592.5,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 5446.300000011921,
+          "duration": 1604.8999999761581,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 5520.199999988079,
+          "duration": 1538.4000000357628,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 5960.899999976158,
+          "duration": 1112,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5968.899999976158,
+          "duration": 1118.9000000357628,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 6103.100000023842,
+          "duration": 1083,
+          "bytes": 749
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 7104.100000023842,
+          "duration": 404.89999997615814,
+          "bytes": 939
+        },
+        {
+          "path": "/api/system/version",
+          "start": 7119.800000011921,
+          "duration": 403.30000001192093,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 7239.100000023842,
+          "duration": 70.5,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3365.300000011921,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1,
+        "domainLookupStart": 3.5,
+        "domainLookupEnd": 3.600000023841858,
+        "connectStart": 3.600000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 6.399999976158142,
+        "requestStart": 6.5,
+        "responseStart": 62.89999997615814,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 62.89999997615814,
+        "responseEnd": 428.30000001192093,
+        "transferSize": 2832,
+        "encodedBodySize": 2532,
+        "decodedBodySize": 6076,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2347.399999976158,
+        "domContentLoadedEventStart": 2347.600000023842,
+        "domContentLoadedEventEnd": 2351.800000011921,
+        "domComplete": 3364.699999988079,
+        "loadEventStart": 3365.300000011921,
+        "loadEventEnd": 3365.300000011921,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2420,
+          "duration": 0,
+          "paintTime": 2336.5,
+          "presentationTime": 2420
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2420,
+          "duration": 0,
+          "paintTime": 2336.5,
+          "presentationTime": 2420
+        }
+      ]
+    },
+    {
+      "label": "stage5-1",
+      "target": "html-audit",
+      "kind": "editor",
+      "ready": 6138,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": null,
+      "longtasks": [
+        {
+          "start": 422.5,
+          "duration": 71
+        },
+        {
+          "start": 2238.899999976158,
+          "duration": 59
+        },
+        {
+          "start": 2861.899999976158,
+          "duration": 455
+        },
+        {
+          "start": 3416.199999988079,
+          "duration": 138
+        },
+        {
+          "start": 4078.899999976158,
+          "duration": 230
+        },
+        {
+          "start": 4948.799999952316,
+          "duration": 95
+        },
+        {
+          "start": 5079.799999952316,
+          "duration": 52
+        },
+        {
+          "start": 5159.399999976158,
+          "duration": 269
+        },
+        {
+          "start": 5469.899999976158,
+          "duration": 104
+        },
+        {
+          "start": 5654.199999988079,
+          "duration": 70
+        },
+        {
+          "start": 5760.899999976158,
+          "duration": 164
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 448.7999999523163,
+          "duration": 408.4000000357628,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 451.19999998807907,
+          "duration": 2370.399999976158,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 453,
+          "duration": 1514.199999988079,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 454.5999999642372,
+          "duration": 657.1999999880791,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 454.89999997615814,
+          "duration": 476.69999998807907,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 455,
+          "duration": 1662.0999999642372,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 455.2999999523163,
+          "duration": 912.2000000476837,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 458.0999999642372,
+          "duration": 1238.300000011921,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1707,
+          "duration": 463.2999999523163,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1707.2999999523163,
+          "duration": 447.7000000476837,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2246.2999999523163,
+          "duration": 455.60000002384186,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2247.699999988079,
+          "duration": 432.30000001192093,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2248.099999964237,
+          "duration": 438.60000002384186,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2248.5,
+          "duration": 446,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2253,
+          "duration": 456.7999999523163,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2257,
+          "duration": 828,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2259.699999988079,
+          "duration": 907.0999999642372,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2263.399999976158,
+          "duration": 843.8000000119209,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2269.699999988079,
+          "duration": 852.1999999880791,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2270,
+          "duration": 874.7999999523163,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2270.2999999523163,
+          "duration": 956.8000000119209,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2276.5,
+          "duration": 1213,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2279,
+          "duration": 1234.0999999642372,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/html-document-BngbOvTh.js",
+          "start": 2283.099999964237,
+          "duration": 1288.800000011921,
+          "bytes": 9763
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3414.5,
+          "duration": 405.19999998807907,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3447.5,
+          "duration": 409.39999997615814,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3507.699999988079,
+          "duration": 454.39999997615814,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3508.7999999523163,
+          "duration": 430.9000000357628,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3542.7999999523163,
+          "duration": 411.5,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3553.899999976158,
+          "duration": 423.19999998807907,
+          "bytes": 749
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4119.5,
+          "duration": 539.6999999880791,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4122.899999976158,
+          "duration": 446.5,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4295.799999952316,
+          "duration": 408.5,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 4532.199999988079,
+          "duration": 405.30000001192093,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 4540.899999976158,
+          "duration": 411.30000001192093,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 4733.299999952316,
+          "duration": 406,
+          "bytes": 749
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4840.899999976158,
+          "duration": 404.19999998807907,
+          "bytes": 939
+        },
+        {
+          "path": "/api/system/version",
+          "start": 4857.799999952316,
+          "duration": 409.5,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5112.199999988079,
+          "duration": 409.69999998807907,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 5281,
+          "duration": 65.69999998807907,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3353.199999988079,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 2.199999988079071,
+        "domainLookupStart": 10.099999964237213,
+        "domainLookupEnd": 10.099999964237213,
+        "connectStart": 10.099999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 10.399999976158142,
+        "requestStart": 10.5,
+        "responseStart": 40.89999997615814,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 40.89999997615814,
+        "responseEnd": 425.5,
+        "transferSize": 2595,
+        "encodedBodySize": 2295,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2237.5,
+        "domContentLoadedEventStart": 2237.599999964237,
+        "domContentLoadedEventEnd": 2238.599999964237,
+        "domComplete": 3353.099999964237,
+        "loadEventStart": 3353.199999988079,
+        "loadEventEnd": 3353.199999988079,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2308,
+          "duration": 0,
+          "paintTime": 2230.199999988079,
+          "presentationTime": 2308
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2308,
+          "duration": 0,
+          "paintTime": 2230.199999988079,
+          "presentationTime": 2308
+        }
+      ]
+    },
+    {
+      "label": "stage5-2",
+      "target": "html-audit",
+      "kind": "editor",
+      "ready": 6103,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": null,
+      "longtasks": [
+        {
+          "start": 424.19999998807907,
+          "duration": 82
+        },
+        {
+          "start": 2216.5,
+          "duration": 53
+        },
+        {
+          "start": 2910.400000035763,
+          "duration": 434
+        },
+        {
+          "start": 3420.600000023842,
+          "duration": 153
+        },
+        {
+          "start": 4125.100000023842,
+          "duration": 199
+        },
+        {
+          "start": 4748.300000011921,
+          "duration": 61
+        },
+        {
+          "start": 5000,
+          "duration": 89
+        },
+        {
+          "start": 5113,
+          "duration": 384
+        },
+        {
+          "start": 5520.900000035763,
+          "duration": 108
+        },
+        {
+          "start": 5783.699999988079,
+          "duration": 168
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 447.60000002384186,
+          "duration": 418.89999997615814,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 453.80000001192093,
+          "duration": 2414.699999988079,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 454.9000000357628,
+          "duration": 1521.0999999642372,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 455.10000002384186,
+          "duration": 666.0999999642372,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 455.30000001192093,
+          "duration": 486.60000002384186,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 455.5,
+          "duration": 1663.300000011921,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 458.80000001192093,
+          "duration": 918.6000000238419,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 460.30000001192093,
+          "duration": 1223.5,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1694.9000000357628,
+          "duration": 464,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1696.6000000238419,
+          "duration": 445.5999999642372,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2224.400000035763,
+          "duration": 457,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2225.900000035763,
+          "duration": 426.0999999642372,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2226.300000011921,
+          "duration": 433.10000002384186,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2228.800000011921,
+          "duration": 437.69999998807907,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2229.100000023842,
+          "duration": 444.5,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2229.400000035763,
+          "duration": 827.0999999642372,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2232.800000011921,
+          "duration": 906,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2235.199999988079,
+          "duration": 844.2000000476837,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2238.199999988079,
+          "duration": 856.4000000357628,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2239.5,
+          "duration": 876.6000000238419,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2240,
+          "duration": 1034,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2241.199999988079,
+          "duration": 1221.5,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2242.300000011921,
+          "duration": 1242,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/html-document-BngbOvTh.js",
+          "start": 2242.5,
+          "duration": 1301.9000000357628,
+          "bytes": 9763
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3460.600000023842,
+          "duration": 406.19999998807907,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3524.5,
+          "duration": 454,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3529.900000035763,
+          "duration": 426.39999997615814,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3562.600000023842,
+          "duration": 409,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3573,
+          "duration": 413.4000000357628,
+          "bytes": 749
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3601.900000035763,
+          "duration": 406.7999999523163,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4165.600000023842,
+          "duration": 540.3999999761581,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4168,
+          "duration": 440.80000001192093,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4316.199999988079,
+          "duration": 405.60000002384186,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 4556.199999988079,
+          "duration": 405.7000000476837,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 4558.900000035763,
+          "duration": 412.7999999523163,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 4786.300000011921,
+          "duration": 410.10000002384186,
+          "bytes": 749
+        },
+        {
+          "path": "/api/system/version",
+          "start": 4901.100000023842,
+          "duration": 423.89999997615814,
+          "bytes": 197
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 4921.699999988079,
+          "duration": 421.4000000357628,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5144.199999988079,
+          "duration": 412,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 5255.5,
+          "duration": 83.69999998807907,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3395.100000023842,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1,
+        "domainLookupStart": 11.100000023841858,
+        "domainLookupEnd": 11.100000023841858,
+        "connectStart": 11.100000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 11.300000011920929,
+        "requestStart": 12.699999988079071,
+        "responseStart": 29.19999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 29.19999998807907,
+        "responseEnd": 424.30000001192093,
+        "transferSize": 2595,
+        "encodedBodySize": 2295,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2214.300000011921,
+        "domContentLoadedEventStart": 2214.400000035763,
+        "domContentLoadedEventEnd": 2215.699999988079,
+        "domComplete": 3395.100000023842,
+        "loadEventStart": 3395.100000023842,
+        "loadEventEnd": 3395.100000023842,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2284,
+          "duration": 0,
+          "paintTime": 2209.199999988079,
+          "presentationTime": 2284
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2284,
+          "duration": 0,
+          "paintTime": 2209.199999988079,
+          "presentationTime": 2284
+        }
+      ]
+    },
+    {
+      "label": "stage4-2",
+      "target": "html-audit",
+      "kind": "editor",
+      "ready": 8030,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": null,
+      "longtasks": [
+        {
+          "start": 423.60000002384186,
+          "duration": 71
+        },
+        {
+          "start": 2360.899999976158,
+          "duration": 52
+        },
+        {
+          "start": 2778.399999976158,
+          "duration": 511
+        },
+        {
+          "start": 3409.899999976158,
+          "duration": 146
+        },
+        {
+          "start": 5361.199999988079,
+          "duration": 192
+        },
+        {
+          "start": 5592.100000023842,
+          "duration": 91
+        },
+        {
+          "start": 5696.100000023842,
+          "duration": 52
+        },
+        {
+          "start": 7142,
+          "duration": 284
+        },
+        {
+          "start": 7446.800000011921,
+          "duration": 240
+        },
+        {
+          "start": 7738.399999976158,
+          "duration": 52
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 449.19999998807907,
+          "duration": 414.80000001192093,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 452.89999997615814,
+          "duration": 2293.400000035763,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 453.89999997615814,
+          "duration": 470.5,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 455.19999998807907,
+          "duration": 1113.4000000357628,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 457,
+          "duration": 445,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 458.69999998807907,
+          "duration": 450.30000001192093,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 460.19999998807907,
+          "duration": 868.6000000238419,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 461,
+          "duration": 883,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 461.30000001192093,
+          "duration": 905.6999999880791,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 464.10000002384186,
+          "duration": 1285.0999999642372,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 466,
+          "duration": 1357.199999988079,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1834.699999988079,
+          "duration": 454.60000002384186,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1834.800000011921,
+          "duration": 463.30000001192093,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2366.699999988079,
+          "duration": 432.9000000357628,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2367.800000011921,
+          "duration": 418.39999997615814,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2369.699999988079,
+          "duration": 422.5,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2371.600000023842,
+          "duration": 435.2999999523163,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2371.899999976158,
+          "duration": 442.7000000476837,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2373.800000011921,
+          "duration": 777.3999999761581,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2374.100000023842,
+          "duration": 814.2999999523163,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2374.199999988079,
+          "duration": 889.1000000238419,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2374.399999976158,
+          "duration": 836.6000000238419,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2374.600000023842,
+          "duration": 851.3999999761581,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2375,
+          "duration": 859,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2375.199999988079,
+          "duration": 1180.800000011921,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2375.399999976158,
+          "duration": 1218.300000011921,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2375.600000023842,
+          "duration": 1248.8999999761581,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2375.699999988079,
+          "duration": 1255.800000011921,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2379.100000023842,
+          "duration": 1260.699999988079,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2381.5,
+          "duration": 1287.300000011921,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2382.899999976158,
+          "duration": 1578.300000011921,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2383.699999988079,
+          "duration": 1614.800000011921,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/code-25e9T1t4.js",
+          "start": 2384.5,
+          "duration": 1644.6000000238419,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2385.399999976158,
+          "duration": 1650.7000000476837,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 2387.199999988079,
+          "duration": 1656.699999988079,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/minimize-DdoagS-K.js",
+          "start": 2387.800000011921,
+          "duration": 1685.5999999642372,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/maximize-B4LAQMDe.js",
+          "start": 2391.399999976158,
+          "duration": 1974.800000011921,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2392.300000011921,
+          "duration": 2011.699999988079,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2392.399999976158,
+          "duration": 2041.1000000238419,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2392.600000023842,
+          "duration": 2049.199999988079,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2392.699999988079,
+          "duration": 2056,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/html-document-DTZLQbbx.js",
+          "start": 2392.800000011921,
+          "duration": 2131.199999988079,
+          "bytes": 9949
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3409.100000023842,
+          "duration": 1362.3999999761581,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3435.600000023842,
+          "duration": 1372.5999999642372,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3488.399999976158,
+          "duration": 1387.2000000476837,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3492.100000023842,
+          "duration": 1361.8999999761581,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3494,
+          "duration": 1375.6000000238419,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3495.899999976158,
+          "duration": 1433,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3500.800000011921,
+          "duration": 1675.3999999761581,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3505.100000023842,
+          "duration": 1716,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3508.100000023842,
+          "duration": 1751.199999988079,
+          "bytes": 439
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 3511.300000011921,
+          "duration": 1770.5,
+          "bytes": 336
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3547.300000011921,
+          "duration": 1741.199999988079,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3556.5,
+          "duration": 1777.1000000238419,
+          "bytes": 749
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 5403,
+          "duration": 568,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 5406,
+          "duration": 475.5,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 5410.399999976158,
+          "duration": 419.4000000357628,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 5412.300000011921,
+          "duration": 432.19999998807907,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 5415.600000023842,
+          "duration": 436,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 5418.300000011921,
+          "duration": 440.39999997615814,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 5421.199999988079,
+          "duration": 813.1000000238419,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 5426,
+          "duration": 823.3000000119209,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 5429.600000023842,
+          "duration": 827.3999999761581,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 5433.699999988079,
+          "duration": 830.1000000238419,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 5436.300000011921,
+          "duration": 850,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 5439,
+          "duration": 937.3999999761581,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 5439.600000023842,
+          "duration": 1199.5,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 5440.100000023842,
+          "duration": 1213.5,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 5440.699999988079,
+          "duration": 1223.199999988079,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 5441.100000023842,
+          "duration": 1228.699999988079,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 5445.199999988079,
+          "duration": 1248,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 5446.899999976158,
+          "duration": 1334.9000000357628,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 5449,
+          "duration": 1594.699999988079,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 5450.600000023842,
+          "duration": 1608.2999999523163,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 5541.100000023842,
+          "duration": 1533.0999999642372,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 5991.899999976158,
+          "duration": 1089.6000000238419,
+          "bytes": 570
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5998.399999976158,
+          "duration": 1105,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 6129.100000023842,
+          "duration": 1057.3999999761581,
+          "bytes": 749
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 7104,
+          "duration": 404.5,
+          "bytes": 939
+        },
+        {
+          "path": "/api/system/version",
+          "start": 7128.100000023842,
+          "duration": 410.69999998807907,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content",
+          "start": 7251.600000023842,
+          "duration": 51.5,
+          "bytes": 5045
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3357.5,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.100000023841858,
+        "domainLookupStart": 5.199999988079071,
+        "domainLookupEnd": 5.199999988079071,
+        "connectStart": 5.199999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.600000023841858,
+        "requestStart": 8.699999988079071,
+        "responseStart": 28.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 28.69999998807907,
+        "responseEnd": 421.80000001192093,
+        "transferSize": 2832,
+        "encodedBodySize": 2532,
+        "decodedBodySize": 6076,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2358.600000023842,
+        "domContentLoadedEventStart": 2359.5,
+        "domContentLoadedEventEnd": 2359.600000023842,
+        "domComplete": 3357.5,
+        "loadEventStart": 3357.5,
+        "loadEventEnd": 3357.5,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2420,
+          "duration": 0,
+          "paintTime": 2351.800000011921,
+          "presentationTime": 2420
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2420,
+          "duration": 0,
+          "paintTime": 2351.800000011921,
+          "presentationTime": 2420
+        }
+      ]
+    },
+    {
+      "label": "stage4-1",
+      "target": "rich-10",
+      "kind": "editor",
+      "ready": 10259,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2457.2999999523163,
+      "previewAvailableMs": 2308.199999988079,
+      "longtasks": [
+        {
+          "start": 414.19999998807907,
+          "duration": 69
+        },
+        {
+          "start": 2306.099999964237,
+          "duration": 65
+        },
+        {
+          "start": 2379.599999964237,
+          "duration": 85
+        },
+        {
+          "start": 2820.699999988079,
+          "duration": 581
+        },
+        {
+          "start": 3539.899999976158,
+          "duration": 142
+        },
+        {
+          "start": 6217.799999952316,
+          "duration": 180
+        },
+        {
+          "start": 6482.099999964237,
+          "duration": 69
+        },
+        {
+          "start": 6623.899999976158,
+          "duration": 76
+        },
+        {
+          "start": 7600.799999952316,
+          "duration": 155
+        },
+        {
+          "start": 8241.299999952316,
+          "duration": 64
+        },
+        {
+          "start": 8416.299999952316,
+          "duration": 191
+        },
+        {
+          "start": 8633.199999988079,
+          "duration": 72
+        },
+        {
+          "start": 8837.799999952316,
+          "duration": 131
+        },
+        {
+          "start": 9287.599999964237,
+          "duration": 161
+        },
+        {
+          "start": 9517.399999976158,
+          "duration": 73
+        },
+        {
+          "start": 9666.299999952316,
+          "duration": 230
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 432.69999998807907,
+          "duration": 426.0999999642372,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 435.69999998807907,
+          "duration": 2297.800000011921,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 437.5,
+          "duration": 474.5,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 438.7999999523163,
+          "duration": 1117.1000000238419,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 439.5999999642372,
+          "duration": 450.4000000357628,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 441,
+          "duration": 455.5,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 441.7999999523163,
+          "duration": 875.2000000476837,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 442.89999997615814,
+          "duration": 888.8000000119209,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 444.5999999642372,
+          "duration": 909.6999999880791,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 445,
+          "duration": 1292,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 445.19999998807907,
+          "duration": 1373.0999999642372,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1829.2999999523163,
+          "duration": 462.4000000357628,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1830.699999988079,
+          "duration": 446,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2390.2999999523163,
+          "duration": 412,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2393.7999999523163,
+          "duration": 415.9000000357628,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2395.7999999523163,
+          "duration": 420.9000000357628,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2397.399999976158,
+          "duration": 449.60000002384186,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2397.7999999523163,
+          "duration": 437.4000000357628,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/external-links-CKeRLg1-.js",
+          "start": 2397.899999976158,
+          "duration": 1018.6000000238419,
+          "bytes": 47754
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-B-BppWAK.js",
+          "start": 2398.2999999523163,
+          "duration": 816.2000000476837,
+          "bytes": 851
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2398.5,
+          "duration": 831,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2398.7999999523163,
+          "duration": 838.9000000357628,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2399.099999964237,
+          "duration": 854.1000000238419,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2402.5,
+          "duration": 864.1999999880791,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2402.7999999523163,
+          "duration": 1215.9000000357628,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2403.099999964237,
+          "duration": 1231,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2403.2999999523163,
+          "duration": 1253.1000000238419,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2403.5,
+          "duration": 1261.0999999642372,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2403.7999999523163,
+          "duration": 1267.6000000238419,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2407.2999999523163,
+          "duration": 1414.4000000357628,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2407.7999999523163,
+          "duration": 1691,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2408.5,
+          "duration": 1638.5,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2408.699999988079,
+          "duration": 1660.699999988079,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2409,
+          "duration": 1675,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2418.899999976158,
+          "duration": 1673.1000000238419,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/arrow-right-left-BOrd8D1d.js",
+          "start": 2421.7999999523163,
+          "duration": 1804.800000011921,
+          "bytes": 352
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 2423.7999999523163,
+          "duration": 2028,
+          "bytes": 336
+        },
+        {
+          "path": "/assets/printer-ChC3HpRt.js",
+          "start": 2426.7999999523163,
+          "duration": 2047.7000000476837,
+          "bytes": 423
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2429.599999964237,
+          "duration": 2060,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2431.2999999523163,
+          "duration": 2065.800000011921,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/wifi-off-B-mE_cuC.js",
+          "start": 2432.7999999523163,
+          "duration": 2071.400000035763,
+          "bytes": 564
+        },
+        {
+          "path": "/assets/wifi-FU0HPJRP.js",
+          "start": 2434.5,
+          "duration": 2196.899999976158,
+          "bytes": 384
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2436.599999964237,
+          "duration": 2419.900000035763,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2438.899999976158,
+          "duration": 2440,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/doc-document-D5EqFPbH.js",
+          "start": 2439.899999976158,
+          "duration": 2731.399999976158,
+          "bytes": 43303
+        },
+        {
+          "path": "/assets/TooltipProvider-DlvRgSS1.js",
+          "start": 2442.699999988079,
+          "duration": 2533.300000011921,
+          "bytes": 4862
+        },
+        {
+          "path": "/assets/PopoverPopup-B4rr8hn8.js",
+          "start": 2444.099999964237,
+          "duration": 2525.300000011921,
+          "bytes": 3641
+        },
+        {
+          "path": "/assets/AvatarFallback-iTXaBwtk.js",
+          "start": 2446.099999964237,
+          "duration": 2598.400000035763,
+          "bytes": 973
+        },
+        {
+          "path": "/assets/use-server-settings-zwMFK6ex.js",
+          "start": 2449.099999964237,
+          "duration": 2812.100000023842,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2451.099999964237,
+          "duration": 2840.300000011921,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/workflow-Cf1ajwoe.js",
+          "start": 2452.399999976158,
+          "duration": 2921.399999976158,
+          "bytes": 369
+        },
+        {
+          "path": "/assets/message-square-plus-D7j-qdfM.js",
+          "start": 2455.2999999523163,
+          "duration": 2926.7000000476837,
+          "bytes": 414
+        },
+        {
+          "path": "/assets/editor-D8Gl0-Ka.js",
+          "start": 2455.899999976158,
+          "duration": 5070.300000011921,
+          "bytes": 347944
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3568.7999999523163,
+          "duration": 2015.5,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3615.599999964237,
+          "duration": 2110.600000023842,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3617.699999988079,
+          "duration": 2094.300000011921,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3621.699999988079,
+          "duration": 2165,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3624.2999999523163,
+          "duration": 2177.300000011921,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3626.699999988079,
+          "duration": 2370.599999964237,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3630.099999964237,
+          "duration": 2508.900000035763,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3632.899999976158,
+          "duration": 2514,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3668.699999988079,
+          "duration": 2530.5,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3680.399999976158,
+          "duration": 2534.100000023842,
+          "bytes": 735
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3693.899999976158,
+          "duration": 2717.600000023842,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 6258.899999976158,
+          "duration": 682.3999999761581,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 6262.699999988079,
+          "duration": 476.39999997615814,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 6267,
+          "duration": 428.19999998807907,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 6270,
+          "duration": 439.69999998807907,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 6272.099999964237,
+          "duration": 556.8000000119209,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 6274.799999952316,
+          "duration": 832.1000000238419,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 6277.199999988079,
+          "duration": 844.5999999642372,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 6279.199999988079,
+          "duration": 872.8000000119209,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 6281,
+          "duration": 960.3999999761581,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 6283.199999988079,
+          "duration": 1070.699999988079,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 6285.5,
+          "duration": 1234.2999999523163,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 6287.799999952316,
+          "duration": 1246.1000000238419,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 6290.099999964237,
+          "duration": 1269.9000000357628,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 6291.599999964237,
+          "duration": 1371.199999988079,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 6292.799999952316,
+          "duration": 1466,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 6294.899999976158,
+          "duration": 1629.199999988079,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 6296.799999952316,
+          "duration": 1634.6000000238419,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 6300.299999952316,
+          "duration": 1640.2000000476837,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 6302.399999976158,
+          "duration": 1667.199999988079,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 6305.299999952316,
+          "duration": 1768.800000011921,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 6308,
+          "duration": 1856.0999999642372,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 6385.199999988079,
+          "duration": 1944.5999999642372,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-10",
+          "start": 6846.099999964237,
+          "duration": 1490.300000011921,
+          "bytes": 578
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 8188.199999988079,
+          "duration": 411.30000001192093,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 8348.5,
+          "duration": 407.7999999523163,
+          "bytes": 702
+        },
+        {
+          "path": "/api/system/version",
+          "start": 8412.299999952316,
+          "duration": 404,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 8592.299999952316,
+          "duration": 404.7000000476837,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 8934.599999964237,
+          "duration": 407.30000001192093,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 8946,
+          "duration": 410.5,
+          "bytes": 566
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 8956.299999952316,
+          "duration": 407.9000000357628,
+          "bytes": 265
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 9662.099999964237,
+          "duration": 407,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3472.599999964237,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.7999999523162842,
+        "domainLookupStart": 2.099999964237213,
+        "domainLookupEnd": 2.099999964237213,
+        "connectStart": 2.099999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 2.299999952316284,
+        "requestStart": 2.599999964237213,
+        "responseStart": 19.099999964237213,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 19.099999964237213,
+        "responseEnd": 424.39999997615814,
+        "transferSize": 3374,
+        "encodedBodySize": 3074,
+        "decodedBodySize": 8522,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2374.5,
+        "domContentLoadedEventStart": 2374.599999964237,
+        "domContentLoadedEventEnd": 2375.899999976158,
+        "domComplete": 3472.599999964237,
+        "loadEventStart": 3472.599999964237,
+        "loadEventEnd": 3472.599999964237,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2428,
+          "duration": 0,
+          "paintTime": 2363.7999999523163,
+          "presentationTime": 2428
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2428,
+          "duration": 0,
+          "paintTime": 2363.7999999523163,
+          "presentationTime": 2428
+        }
+      ]
+    },
+    {
+      "label": "stage5-1",
+      "target": "rich-10",
+      "kind": "editor",
+      "ready": 8311,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2384,
+      "previewAvailableMs": 2183,
+      "longtasks": [
+        {
+          "start": 428.19999998807907,
+          "duration": 72
+        },
+        {
+          "start": 2180.599999964237,
+          "duration": 84
+        },
+        {
+          "start": 2277.899999976158,
+          "duration": 119
+        },
+        {
+          "start": 2821.099999964237,
+          "duration": 378
+        },
+        {
+          "start": 3284.5,
+          "duration": 128
+        },
+        {
+          "start": 4516.099999964237,
+          "duration": 66
+        },
+        {
+          "start": 4604.199999988079,
+          "duration": 214
+        },
+        {
+          "start": 5440.599999964237,
+          "duration": 77
+        },
+        {
+          "start": 5586.099999964237,
+          "duration": 196
+        },
+        {
+          "start": 5807.199999988079,
+          "duration": 84
+        },
+        {
+          "start": 6033.099999964237,
+          "duration": 139
+        },
+        {
+          "start": 6401.800000011921,
+          "duration": 99
+        },
+        {
+          "start": 7369.599999964237,
+          "duration": 83
+        },
+        {
+          "start": 7504.199999988079,
+          "duration": 149
+        },
+        {
+          "start": 7721.5,
+          "duration": 287
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 452.19999998807907,
+          "duration": 405.30000001192093,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 455.30000001192093,
+          "duration": 2337.199999988079,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 456.30000001192093,
+          "duration": 1518.8999999761581,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 456.5999999642372,
+          "duration": 663.2000000476837,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 456.89999997615814,
+          "duration": 483.19999998807907,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 460.30000001192093,
+          "duration": 1656.7999999523163,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 461.5,
+          "duration": 914.5999999642372,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 462.5,
+          "duration": 1227.5999999642372,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1700.300000011921,
+          "duration": 462.7999999523163,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1701.199999988079,
+          "duration": 448.69999998807907,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2280.800000011921,
+          "duration": 429.0999999642372,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2281.199999988079,
+          "duration": 436.80000001192093,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2281.599999964237,
+          "duration": 444,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2288.800000011921,
+          "duration": 482.0999999642372,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2292.800000011921,
+          "duration": 459.19999998807907,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/external-links-CCmBC82G.js",
+          "start": 2296.5,
+          "duration": 1103.5,
+          "bytes": 47757
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-fBbkzhOf.js",
+          "start": 2300.699999988079,
+          "duration": 829.8000000119209,
+          "bytes": 860
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2304.800000011921,
+          "duration": 840.8999999761581,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2305.399999976158,
+          "duration": 862.6999999880791,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2310.399999976158,
+          "duration": 872.4000000357628,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2319.800000011921,
+          "duration": 900.5999999642372,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2330.5,
+          "duration": 1204.300000011921,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2332.399999976158,
+          "duration": 1217.699999988079,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2339.599999964237,
+          "duration": 1285.4000000357628,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2348.5,
+          "duration": 1246.699999988079,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/doc-document-D6ivy0nh.js",
+          "start": 2358.399999976158,
+          "duration": 1513.699999988079,
+          "bytes": 43004
+        },
+        {
+          "path": "/assets/TooltipProvider-Gl2VecLQ.js",
+          "start": 2367.800000011921,
+          "duration": 1489.7999999523163,
+          "bytes": 4890
+        },
+        {
+          "path": "/assets/PopoverPopup-C7NRo61Z.js",
+          "start": 2370.800000011921,
+          "duration": 1584.0999999642372,
+          "bytes": 3671
+        },
+        {
+          "path": "/assets/AvatarFallback-eY3fF-c6.js",
+          "start": 2371.199999988079,
+          "duration": 1591.300000011921,
+          "bytes": 1014
+        },
+        {
+          "path": "/assets/use-server-settings-Bqas05fB.js",
+          "start": 2371.599999964237,
+          "duration": 1629,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2379.599999964237,
+          "duration": 1658.4000000357628,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/editor-DEnUlbni.js",
+          "start": 2382.399999976158,
+          "duration": 3898.199999988079,
+          "bytes": 346716
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3311.699999988079,
+          "duration": 974.6000000238419,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3372.199999988079,
+          "duration": 1062.699999988079,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3373.300000011921,
+          "duration": 1031,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3402.199999988079,
+          "duration": 1026,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3412.399999976158,
+          "duration": 1037.9000000357628,
+          "bytes": 735
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3422.5,
+          "duration": 1275.5,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4639.099999964237,
+          "duration": 681,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4640.5,
+          "duration": 469,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4806.899999976158,
+          "duration": 431.19999998807907,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-10",
+          "start": 5045.899999976158,
+          "duration": 409.19999998807907,
+          "bytes": 580
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5272.099999964237,
+          "duration": 417,
+          "bytes": 197
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 5362.699999988079,
+          "duration": 415.60000002384186,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5557.800000011921,
+          "duration": 415.19999998807907,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5776.199999988079,
+          "duration": 416.30000001192093,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 6154.800000011921,
+          "duration": 1025.199999988079,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 6160.099999964237,
+          "duration": 1050.7000000476837,
+          "bytes": 563
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 6166.199999988079,
+          "duration": 1060.5,
+          "bytes": 267
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 7707.599999964237,
+          "duration": 409.5,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3245.300000011921,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.8999999761581421,
+        "domainLookupStart": 8.199999988079071,
+        "domainLookupEnd": 8.199999988079071,
+        "connectStart": 8.199999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.5,
+        "requestStart": 12.300000011920929,
+        "responseStart": 57.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 57.80000001192093,
+        "responseEnd": 437.69999998807907,
+        "transferSize": 3087,
+        "encodedBodySize": 2787,
+        "decodedBodySize": 7871,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2270.899999976158,
+        "domContentLoadedEventStart": 2271.5,
+        "domContentLoadedEventEnd": 2271.599999964237,
+        "domComplete": 3245.199999988079,
+        "loadEventStart": 3245.300000011921,
+        "loadEventEnd": 3245.300000011921,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2380,
+          "duration": 0,
+          "paintTime": 2257,
+          "presentationTime": 2380
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2380,
+          "duration": 0,
+          "paintTime": 2257,
+          "presentationTime": 2380
+        }
+      ]
+    },
+    {
+      "label": "stage5-2",
+      "target": "rich-10",
+      "kind": "editor",
+      "ready": 7601,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2293.5,
+      "previewAvailableMs": 2193.699999988079,
+      "longtasks": [
+        {
+          "start": 420.4000000357628,
+          "duration": 77
+        },
+        {
+          "start": 2192.100000023842,
+          "duration": 54
+        },
+        {
+          "start": 2251.5,
+          "duration": 57
+        },
+        {
+          "start": 2855.300000011921,
+          "duration": 388
+        },
+        {
+          "start": 3325.900000035763,
+          "duration": 119
+        },
+        {
+          "start": 4490.199999988079,
+          "duration": 139
+        },
+        {
+          "start": 4720.800000011921,
+          "duration": 84
+        },
+        {
+          "start": 4879,
+          "duration": 78
+        },
+        {
+          "start": 5388.300000011921,
+          "duration": 70
+        },
+        {
+          "start": 5557.900000035763,
+          "duration": 250
+        },
+        {
+          "start": 5834.699999988079,
+          "duration": 87
+        },
+        {
+          "start": 5978.300000011921,
+          "duration": 168
+        },
+        {
+          "start": 6333.900000035763,
+          "duration": 86
+        },
+        {
+          "start": 6551.400000035763,
+          "duration": 86
+        },
+        {
+          "start": 6762,
+          "duration": 153
+        },
+        {
+          "start": 7068.600000023842,
+          "duration": 215
+        },
+        {
+          "start": 7289.100000023842,
+          "duration": 53
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 445.4000000357628,
+          "duration": 406.5999999642372,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 448.60000002384186,
+          "duration": 2368.599999964237,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 449.69999998807907,
+          "duration": 1519.9000000357628,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 451.9000000357628,
+          "duration": 662.5999999642372,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 453.10000002384186,
+          "duration": 481.5,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 454.9000000357628,
+          "duration": 1657.3999999761581,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 456.30000001192093,
+          "duration": 914.3000000119209,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 458,
+          "duration": 1241,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1711,
+          "duration": 446.60000002384186,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1712.199999988079,
+          "duration": 454.30000001192093,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2260.900000035763,
+          "duration": 413.89999997615814,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2263.600000023842,
+          "duration": 418.5999999642372,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2264.600000023842,
+          "duration": 432.89999997615814,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2264.800000011921,
+          "duration": 477.5,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2265.100000023842,
+          "duration": 455.19999998807907,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/external-links-CCmBC82G.js",
+          "start": 2265.199999988079,
+          "duration": 1098.9000000357628,
+          "bytes": 47757
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-fBbkzhOf.js",
+          "start": 2265.5,
+          "duration": 830,
+          "bytes": 860
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2265.699999988079,
+          "duration": 843.7000000476837,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2266,
+          "duration": 868.1000000238419,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2266.199999988079,
+          "duration": 888.3000000119209,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2266.5,
+          "duration": 978.5,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2266.800000011921,
+          "duration": 1232.3999999761581,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2272.100000023842,
+          "duration": 1242.3999999761581,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2275,
+          "duration": 1314.9000000357628,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2277.199999988079,
+          "duration": 1289.6000000238419,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/doc-document-D6ivy0nh.js",
+          "start": 2278.600000023842,
+          "duration": 1611.0999999642372,
+          "bytes": 43004
+        },
+        {
+          "path": "/assets/TooltipProvider-Gl2VecLQ.js",
+          "start": 2280.100000023842,
+          "duration": 1541.699999988079,
+          "bytes": 4890
+        },
+        {
+          "path": "/assets/PopoverPopup-C7NRo61Z.js",
+          "start": 2282,
+          "duration": 1637.4000000357628,
+          "bytes": 3671
+        },
+        {
+          "path": "/assets/AvatarFallback-eY3fF-c6.js",
+          "start": 2286.699999988079,
+          "duration": 1640.7000000476837,
+          "bytes": 1014
+        },
+        {
+          "path": "/assets/use-server-settings-Bqas05fB.js",
+          "start": 2289.199999988079,
+          "duration": 1682.5,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2289.600000023842,
+          "duration": 1712.3999999761581,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/editor-DEnUlbni.js",
+          "start": 2293.300000011921,
+          "duration": 3944.100000023842,
+          "bytes": 346716
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3323.400000035763,
+          "duration": 979.3999999761581,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3350.100000023842,
+          "duration": 982.0999999642372,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3403,
+          "duration": 997.1000000238419,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3406.199999988079,
+          "duration": 1008.5,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3436.800000011921,
+          "duration": 985.8999999761581,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3443.400000035763,
+          "duration": 1271,
+          "bytes": 735
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4535.900000035763,
+          "duration": 665.7999999523163,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4539.699999988079,
+          "duration": 467.5,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4616.199999988079,
+          "duration": 421.4000000357628,
+          "bytes": 263
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5058.800000011921,
+          "duration": 413.10000002384186,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-10",
+          "start": 5100.800000011921,
+          "duration": 409.69999998807907,
+          "bytes": 580
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 5286.199999988079,
+          "duration": 411.2000000476837,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5504.300000011921,
+          "duration": 410.19999998807907,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5798.699999988079,
+          "duration": 416.7000000476837,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 6108.300000011921,
+          "duration": 406.69999998807907,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 6122.699999988079,
+          "duration": 406.5,
+          "bytes": 563
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 6132.600000023842,
+          "duration": 405,
+          "bytes": 267
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 7042.199999988079,
+          "duration": 409.9000000357628,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3274.199999988079,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.100000023841858,
+        "domainLookupStart": 4.900000035762787,
+        "domainLookupEnd": 4.900000035762787,
+        "connectStart": 4.900000035762787,
+        "secureConnectionStart": 0,
+        "connectEnd": 5.100000023841858,
+        "requestStart": 5.199999988079071,
+        "responseStart": 44.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 44.69999998807907,
+        "responseEnd": 424.10000002384186,
+        "transferSize": 3087,
+        "encodedBodySize": 2787,
+        "decodedBodySize": 7871,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2247.900000035763,
+        "domContentLoadedEventStart": 2248,
+        "domContentLoadedEventEnd": 2248.100000023842,
+        "domComplete": 3274.100000023842,
+        "loadEventStart": 3274.199999988079,
+        "loadEventEnd": 3274.199999988079,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2316,
+          "duration": 0,
+          "paintTime": 2236.300000011921,
+          "presentationTime": 2316
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2316,
+          "duration": 0,
+          "paintTime": 2236.300000011921,
+          "presentationTime": 2316
+        }
+      ]
+    },
+    {
+      "label": "stage4-2",
+      "target": "rich-10",
+      "kind": "editor",
+      "ready": 10884,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2433,
+      "previewAvailableMs": 2333.5,
+      "longtasks": [
+        {
+          "start": 416.89999997615814,
+          "duration": 77
+        },
+        {
+          "start": 2331.399999976158,
+          "duration": 55
+        },
+        {
+          "start": 2790.300000011921,
+          "duration": 514
+        },
+        {
+          "start": 3487.199999988079,
+          "duration": 135
+        },
+        {
+          "start": 6272.300000011921,
+          "duration": 176
+        },
+        {
+          "start": 6527.399999976158,
+          "duration": 80
+        },
+        {
+          "start": 6667.800000011921,
+          "duration": 71
+        },
+        {
+          "start": 7664.300000011921,
+          "duration": 90
+        },
+        {
+          "start": 8313,
+          "duration": 76
+        },
+        {
+          "start": 8500.199999988079,
+          "duration": 226
+        },
+        {
+          "start": 8750.099999964237,
+          "duration": 67
+        },
+        {
+          "start": 8895.099999964237,
+          "duration": 217
+        },
+        {
+          "start": 9415.199999988079,
+          "duration": 137
+        },
+        {
+          "start": 9602.599999964237,
+          "duration": 92
+        },
+        {
+          "start": 9814.300000011921,
+          "duration": 374
+        },
+        {
+          "start": 10207,
+          "duration": 62
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 444.5,
+          "duration": 422.89999997615814,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 447,
+          "duration": 2295.300000011921,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 447.89999997615814,
+          "duration": 471.60000002384186,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 448.39999997615814,
+          "duration": 1115.6000000238419,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 449.5,
+          "duration": 447.80000001192093,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 450.69999998807907,
+          "duration": 453.89999997615814,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 451.5999999642372,
+          "duration": 873.4000000357628,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 452.30000001192093,
+          "duration": 887.0999999642372,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 452.80000001192093,
+          "duration": 909.2999999523163,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 453.80000001192093,
+          "duration": 1291.199999988079,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 455.39999997615814,
+          "duration": 1371,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1843.300000011921,
+          "duration": 448.69999998807907,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1844.300000011921,
+          "duration": 463.0999999642372,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2402.199999988079,
+          "duration": 408.30000001192093,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2403.099999964237,
+          "duration": 417.4000000357628,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2403.399999976158,
+          "duration": 420.69999998807907,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2405,
+          "duration": 441.19999998807907,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2407.300000011921,
+          "duration": 436.19999998807907,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/external-links-CKeRLg1-.js",
+          "start": 2407.699999988079,
+          "duration": 1017.6000000238419,
+          "bytes": 47754
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-B-BppWAK.js",
+          "start": 2407.899999976158,
+          "duration": 813.9000000357628,
+          "bytes": 851
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2408.099999964237,
+          "duration": 829,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2408.300000011921,
+          "duration": 836.0999999642372,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2408.5,
+          "duration": 851.5,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2411.699999988079,
+          "duration": 855.1999999880791,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2413,
+          "duration": 1213.800000011921,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2414.800000011921,
+          "duration": 1227.2999999523163,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2415.099999964237,
+          "duration": 1241.7000000476837,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2415.199999988079,
+          "duration": 1249.699999988079,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2415.399999976158,
+          "duration": 1256.6000000238419,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2415.599999964237,
+          "duration": 1422.1000000238419,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2415.800000011921,
+          "duration": 1691,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2416,
+          "duration": 1639,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2416.099999964237,
+          "duration": 1653.1000000238419,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2419.300000011921,
+          "duration": 1665.3999999761581,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2419.599999964237,
+          "duration": 1672,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/arrow-right-left-BOrd8D1d.js",
+          "start": 2419.800000011921,
+          "duration": 1822.5999999642372,
+          "bytes": 352
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 2420,
+          "duration": 2039.5999999642372,
+          "bytes": 336
+        },
+        {
+          "path": "/assets/printer-ChC3HpRt.js",
+          "start": 2420.099999964237,
+          "duration": 2054,
+          "bytes": 423
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2420.300000011921,
+          "duration": 2068.7999999523163,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2420.399999976158,
+          "duration": 2076.900000035763,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/wifi-off-B-mE_cuC.js",
+          "start": 2420.5,
+          "duration": 2093.099999964237,
+          "bytes": 564
+        },
+        {
+          "path": "/assets/wifi-FU0HPJRP.js",
+          "start": 2420.699999988079,
+          "duration": 2226.699999988079,
+          "bytes": 384
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2420.800000011921,
+          "duration": 2443.5,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2425.5,
+          "duration": 2454.099999964237,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/doc-document-D5EqFPbH.js",
+          "start": 2425.800000011921,
+          "duration": 2745.5,
+          "bytes": 43303
+        },
+        {
+          "path": "/assets/TooltipProvider-DlvRgSS1.js",
+          "start": 2426,
+          "duration": 2542.899999976158,
+          "bytes": 4862
+        },
+        {
+          "path": "/assets/PopoverPopup-B4rr8hn8.js",
+          "start": 2426.099999964237,
+          "duration": 2550.600000023842,
+          "bytes": 3641
+        },
+        {
+          "path": "/assets/AvatarFallback-iTXaBwtk.js",
+          "start": 2426.199999988079,
+          "duration": 2633.399999976158,
+          "bytes": 973
+        },
+        {
+          "path": "/assets/use-server-settings-zwMFK6ex.js",
+          "start": 2426.5,
+          "duration": 2843,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2426.599999964237,
+          "duration": 2865.600000023842,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/workflow-Cf1ajwoe.js",
+          "start": 2426.699999988079,
+          "duration": 2947.800000011921,
+          "bytes": 369
+        },
+        {
+          "path": "/assets/message-square-plus-D7j-qdfM.js",
+          "start": 2431,
+          "duration": 2950.699999988079,
+          "bytes": 414
+        },
+        {
+          "path": "/assets/editor-D8Gl0-Ka.js",
+          "start": 2431.800000011921,
+          "duration": 5102.599999964237,
+          "bytes": 347944
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3484.099999964237,
+          "duration": 2102.2000000476837,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3529.5,
+          "duration": 2152.199999988079,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3577.899999976158,
+          "duration": 2171.800000011921,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3580.599999964237,
+          "duration": 2206.600000023842,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3581.899999976158,
+          "duration": 2219.900000035763,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3583.699999988079,
+          "duration": 2413.699999988079,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3585.199999988079,
+          "duration": 2509.199999988079,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3587,
+          "duration": 2589.800000011921,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3589.099999964237,
+          "duration": 2611,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3613.199999988079,
+          "duration": 2601.600000023842,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3621.899999976158,
+          "duration": 2787.900000035763,
+          "bytes": 735
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 6317,
+          "duration": 684.8999999761581,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 6320.899999976158,
+          "duration": 478.5,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 6324.5,
+          "duration": 430.19999998807907,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 6327.300000011921,
+          "duration": 434.89999997615814,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 6331,
+          "duration": 498.69999998807907,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 6334.599999964237,
+          "duration": 832.4000000357628,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 6337.899999976158,
+          "duration": 844.5,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 6339.800000011921,
+          "duration": 872,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 6340.199999988079,
+          "duration": 902.3000000119209,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 6340.599999964237,
+          "duration": 1074.2000000476837,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 6340.800000011921,
+          "duration": 1231.5,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 6341.099999964237,
+          "duration": 1247.5,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 6341.300000011921,
+          "duration": 1294.5,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 6341.599999964237,
+          "duration": 1310.1000000238419,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 6347.199999988079,
+          "duration": 1472.199999988079,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 6350.399999976158,
+          "duration": 1589,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 6353,
+          "duration": 1624.0999999642372,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 6356.099999964237,
+          "duration": 1635.9000000357628,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 6358.800000011921,
+          "duration": 1685.3999999761581,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 6360.699999988079,
+          "duration": 1698.8999999761581,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 6361.300000011921,
+          "duration": 1862.8999999761581,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 6438.199999988079,
+          "duration": 1906.5,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-10",
+          "start": 6906.899999976158,
+          "duration": 1475.300000011921,
+          "bytes": 578
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 8260.699999988079,
+          "duration": 406.19999998807907,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 8441.399999976158,
+          "duration": 405.9000000357628,
+          "bytes": 702
+        },
+        {
+          "path": "/api/system/version",
+          "start": 8491.599999964237,
+          "duration": 407.7000000476837,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 8717,
+          "duration": 407.89999997615814,
+          "bytes": 28
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 9060.199999988079,
+          "duration": 409.80000001192093,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 9075,
+          "duration": 409.5,
+          "bytes": 566
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 9089.300000011921,
+          "duration": 411.0999999642372,
+          "bytes": 265
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 9797.599999964237,
+          "duration": 415.9000000357628,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3382.599999964237,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.199999988079071,
+        "domainLookupStart": 3.699999988079071,
+        "domainLookupEnd": 3.699999988079071,
+        "connectStart": 3.699999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 3.899999976158142,
+        "requestStart": 4,
+        "responseStart": 22.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 22.80000001192093,
+        "responseEnd": 424.0999999642372,
+        "transferSize": 3374,
+        "encodedBodySize": 3074,
+        "decodedBodySize": 8522,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2389.5,
+        "domContentLoadedEventStart": 2390.5,
+        "domContentLoadedEventEnd": 2391.399999976158,
+        "domComplete": 3382.5,
+        "loadEventStart": 3382.5,
+        "loadEventEnd": 3382.599999964237,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2440,
+          "duration": 0,
+          "paintTime": 2377.5,
+          "presentationTime": 2440
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2440,
+          "duration": 0,
+          "paintTime": 2377.5,
+          "presentationTime": 2440
+        }
+      ]
+    },
+    {
+      "label": "stage4-1",
+      "target": "rich-2000",
+      "kind": "editor",
+      "ready": 16125,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2455.699999988079,
+      "previewAvailableMs": 2317.399999976158,
+      "longtasks": [
+        {
+          "start": 424.5999999642372,
+          "duration": 67
+        },
+        {
+          "start": 2316.199999988079,
+          "duration": 76
+        },
+        {
+          "start": 2400.099999964237,
+          "duration": 63
+        },
+        {
+          "start": 2800.099999964237,
+          "duration": 524
+        },
+        {
+          "start": 3454.099999964237,
+          "duration": 123
+        },
+        {
+          "start": 6276.399999976158,
+          "duration": 204
+        },
+        {
+          "start": 6568.899999976158,
+          "duration": 75
+        },
+        {
+          "start": 6698.299999952316,
+          "duration": 96
+        },
+        {
+          "start": 7646.099999964237,
+          "duration": 94
+        },
+        {
+          "start": 8323.299999952316,
+          "duration": 86
+        },
+        {
+          "start": 8563.699999988079,
+          "duration": 281
+        },
+        {
+          "start": 8872.599999964237,
+          "duration": 88
+        },
+        {
+          "start": 9051.899999976158,
+          "duration": 144
+        },
+        {
+          "start": 9346.199999988079,
+          "duration": 57
+        },
+        {
+          "start": 9602.199999988079,
+          "duration": 79
+        },
+        {
+          "start": 12915.599999964237,
+          "duration": 420
+        },
+        {
+          "start": 13458.699999988079,
+          "duration": 114
+        },
+        {
+          "start": 13740.799999952316,
+          "duration": 1247
+        },
+        {
+          "start": 14988,
+          "duration": 119
+        },
+        {
+          "start": 15188.399999976158,
+          "duration": 243
+        },
+        {
+          "start": 15431.599999964237,
+          "duration": 59
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 447.2999999523163,
+          "duration": 415.5,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 450.5,
+          "duration": 2301.7999999523163,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 450.89999997615814,
+          "duration": 473.69999998807907,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 454.39999997615814,
+          "duration": 1115.199999988079,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 454.69999998807907,
+          "duration": 446.69999998807907,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 455,
+          "duration": 453.5999999642372,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 455.2999999523163,
+          "duration": 873.1000000238419,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 455.5,
+          "duration": 887.5999999642372,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 458.89999997615814,
+          "duration": 906.3999999761581,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 461.0999999642372,
+          "duration": 1287.5,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 461.39999997615814,
+          "duration": 1361.300000011921,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1835.7999999523163,
+          "duration": 444.80000001192093,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1838.3999999761581,
+          "duration": 457.30000001192093,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2403.7999999523163,
+          "duration": 409.30000001192093,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2404.099999964237,
+          "duration": 416.30000001192093,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2407.7999999523163,
+          "duration": 419.9000000357628,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2408.099999964237,
+          "duration": 442.60000002384186,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2409.5,
+          "duration": 433.69999998807907,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/external-links-CKeRLg1-.js",
+          "start": 2412.5,
+          "duration": 1023,
+          "bytes": 47754
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-B-BppWAK.js",
+          "start": 2414.199999988079,
+          "duration": 811,
+          "bytes": 851
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2415.899999976158,
+          "duration": 825.3999999761581,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2417.699999988079,
+          "duration": 830.5999999642372,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2418,
+          "duration": 845.1999999880791,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2418.099999964237,
+          "duration": 852.4000000357628,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2418.2999999523163,
+          "duration": 1212.7000000476837,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2420.599999964237,
+          "duration": 1224.5,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2420.899999976158,
+          "duration": 1239.800000011921,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2426.699999988079,
+          "duration": 1240.8999999761581,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2429.7999999523163,
+          "duration": 1246.2000000476837,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2432.2999999523163,
+          "duration": 1407.800000011921,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2435.7999999523163,
+          "duration": 1674.5,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2436.099999964237,
+          "duration": 1621.6000000238419,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2438.099999964237,
+          "duration": 1635.300000011921,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2438.699999988079,
+          "duration": 1649.5,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2439.7999999523163,
+          "duration": 1656.4000000357628,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/arrow-right-left-BOrd8D1d.js",
+          "start": 2441.599999964237,
+          "duration": 1803.800000011921,
+          "bytes": 352
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 2442.2999999523163,
+          "duration": 2020.9000000357628,
+          "bytes": 336
+        },
+        {
+          "path": "/assets/printer-ChC3HpRt.js",
+          "start": 2442.399999976158,
+          "duration": 2035.8999999761581,
+          "bytes": 423
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2442.699999988079,
+          "duration": 2050.800000011921,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2446.2999999523163,
+          "duration": 2054.600000023842,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/wifi-off-B-mE_cuC.js",
+          "start": 2449.7999999523163,
+          "duration": 2065.600000023842,
+          "bytes": 564
+        },
+        {
+          "path": "/assets/wifi-FU0HPJRP.js",
+          "start": 2450,
+          "duration": 2201.5,
+          "bytes": 384
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2450.2999999523163,
+          "duration": 2418.400000035763,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2450.5,
+          "duration": 2432.7999999523163,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/doc-document-D5EqFPbH.js",
+          "start": 2450.599999964237,
+          "duration": 2724.400000035763,
+          "bytes": 43303
+        },
+        {
+          "path": "/assets/TooltipProvider-DlvRgSS1.js",
+          "start": 2450.7999999523163,
+          "duration": 2522.300000011921,
+          "bytes": 4862
+        },
+        {
+          "path": "/assets/PopoverPopup-B4rr8hn8.js",
+          "start": 2451,
+          "duration": 2528.699999988079,
+          "bytes": 3641
+        },
+        {
+          "path": "/assets/AvatarFallback-iTXaBwtk.js",
+          "start": 2451.099999964237,
+          "duration": 2612.400000035763,
+          "bytes": 973
+        },
+        {
+          "path": "/assets/use-server-settings-zwMFK6ex.js",
+          "start": 2451.399999976158,
+          "duration": 2822,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2451.5,
+          "duration": 2844.5,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/workflow-Cf1ajwoe.js",
+          "start": 2451.699999988079,
+          "duration": 2926.599999964237,
+          "bytes": 369
+        },
+        {
+          "path": "/assets/message-square-plus-D7j-qdfM.js",
+          "start": 2451.899999976158,
+          "duration": 2933.300000011921,
+          "bytes": 414
+        },
+        {
+          "path": "/assets/editor-D8Gl0-Ka.js",
+          "start": 2455.599999964237,
+          "duration": 5082.800000011921,
+          "bytes": 347944
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3442.899999976158,
+          "duration": 2145.800000011921,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3484.199999988079,
+          "duration": 2201.899999976158,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3531.5,
+          "duration": 2220.899999976158,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3534.5,
+          "duration": 2255.7999999523163,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3535.5,
+          "duration": 2270.699999988079,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3538.399999976158,
+          "duration": 2463,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3541,
+          "duration": 2557.399999976158,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3543.599999964237,
+          "duration": 2636.800000011921,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3545.599999964237,
+          "duration": 2658.199999988079,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3570.599999964237,
+          "duration": 2648.100000023842,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3577,
+          "duration": 2836.5,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 6323.699999988079,
+          "duration": 681.3000000119209,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 6327.5,
+          "duration": 483,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 6331.599999964237,
+          "duration": 427.30000001192093,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 6334.199999988079,
+          "duration": 439.80000001192093,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 6338.399999976158,
+          "duration": 494.80000001192093,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 6341.5,
+          "duration": 828.8999999761581,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 6344.599999964237,
+          "duration": 841.3000000119209,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 6346.699999988079,
+          "duration": 876.5,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 6349.299999952316,
+          "duration": 896.4000000357628,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 6351.299999952316,
+          "duration": 1067.300000011921,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 6353.099999964237,
+          "duration": 1223.300000011921,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 6357.099999964237,
+          "duration": 1233.6000000238419,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 6361.099999964237,
+          "duration": 1269.1000000238419,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 6362.5,
+          "duration": 1289.5,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 6365.399999976158,
+          "duration": 1457.699999988079,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 6369.199999988079,
+          "duration": 1573.699999988079,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 6371.5,
+          "duration": 1608.8999999761581,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 6374,
+          "duration": 1621.699999988079,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 6376.899999976158,
+          "duration": 1663.199999988079,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 6380.699999988079,
+          "duration": 1674.699999988079,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 6382.5,
+          "duration": 1845.2999999523163,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 6468.399999976158,
+          "duration": 1879.300000011921,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-2000",
+          "start": 6940.5,
+          "duration": 1505.199999988079,
+          "bytes": 13209
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 8256.099999964237,
+          "duration": 406.69999998807907,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 8466.699999988079,
+          "duration": 406.19999998807907,
+          "bytes": 702
+        },
+        {
+          "path": "/api/system/version",
+          "start": 8559.799999952316,
+          "duration": 411.10000002384186,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 8833.799999952316,
+          "duration": 406.80000001192093,
+          "bytes": 542
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 9160.199999988079,
+          "duration": 410,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 9172,
+          "duration": 406.5,
+          "bytes": 566
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 9181.5,
+          "duration": 404,
+          "bytes": 265
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 13719.099999964237,
+          "duration": 403.9000000357628,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3389.699999988079,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.7999999523162842,
+        "domainLookupStart": 3.399999976158142,
+        "domainLookupEnd": 3.5,
+        "connectStart": 3.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 3.599999964237213,
+        "requestStart": 3.699999988079071,
+        "responseStart": 26.5,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 26.5,
+        "responseEnd": 428.19999998807907,
+        "transferSize": 3928,
+        "encodedBodySize": 3628,
+        "decodedBodySize": 19078,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2393.899999976158,
+        "domContentLoadedEventStart": 2394,
+        "domContentLoadedEventEnd": 2395.7999999523163,
+        "domComplete": 3389.599999964237,
+        "loadEventStart": 3389.699999988079,
+        "loadEventEnd": 3389.699999988079,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2460,
+          "duration": 0,
+          "paintTime": 2383.5,
+          "presentationTime": 2460
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2460,
+          "duration": 0,
+          "paintTime": 2383.5,
+          "presentationTime": 2460
+        }
+      ]
+    },
+    {
+      "label": "stage5-1",
+      "target": "rich-2000",
+      "kind": "editor",
+      "ready": 13555,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2295.399999976158,
+      "previewAvailableMs": 2188.899999976158,
+      "longtasks": [
+        {
+          "start": 413.39999997615814,
+          "duration": 79
+        },
+        {
+          "start": 2186.899999976158,
+          "duration": 78
+        },
+        {
+          "start": 2267.599999964237,
+          "duration": 64
+        },
+        {
+          "start": 2879.099999964237,
+          "duration": 412
+        },
+        {
+          "start": 3436.5,
+          "duration": 128
+        },
+        {
+          "start": 4510.300000011921,
+          "duration": 134
+        },
+        {
+          "start": 4726.899999976158,
+          "duration": 66
+        },
+        {
+          "start": 4831.399999976158,
+          "duration": 66
+        },
+        {
+          "start": 5384,
+          "duration": 83
+        },
+        {
+          "start": 5673,
+          "duration": 247
+        },
+        {
+          "start": 5947.199999988079,
+          "duration": 69
+        },
+        {
+          "start": 6063.399999976158,
+          "duration": 135
+        },
+        {
+          "start": 6479.099999964237,
+          "duration": 50
+        },
+        {
+          "start": 6652.099999964237,
+          "duration": 94
+        },
+        {
+          "start": 6761.899999976158,
+          "duration": 78
+        },
+        {
+          "start": 9992.5,
+          "duration": 384
+        },
+        {
+          "start": 10500.099999964237,
+          "duration": 119
+        },
+        {
+          "start": 10786,
+          "duration": 1511
+        },
+        {
+          "start": 12297.399999976158,
+          "duration": 163
+        },
+        {
+          "start": 12547.399999976158,
+          "duration": 276
+        },
+        {
+          "start": 12824.199999988079,
+          "duration": 75
+        },
+        {
+          "start": 12908.199999988079,
+          "duration": 51
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 442.30000001192093,
+          "duration": 431.2999999523163,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 445.39999997615814,
+          "duration": 2376.699999988079,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 446.39999997615814,
+          "duration": 1535.699999988079,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 448.89999997615814,
+          "duration": 678.6000000238419,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 450.89999997615814,
+          "duration": 497.4000000357628,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 452,
+          "duration": 1673,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 453.5,
+          "duration": 929.3000000119209,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 454.5,
+          "duration": 1235.699999988079,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1700.8999999761581,
+          "duration": 462.19999998807907,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1701.5999999642372,
+          "duration": 449.2000000476837,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2280,
+          "duration": 415.39999997615814,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2281.300000011921,
+          "duration": 428.7999999523163,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2281.699999988079,
+          "duration": 436.19999998807907,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2282,
+          "duration": 474.39999997615814,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2282.300000011921,
+          "duration": 451,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/external-links-CCmBC82G.js",
+          "start": 2282.699999988079,
+          "duration": 1102.3999999761581,
+          "bytes": 47757
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-fBbkzhOf.js",
+          "start": 2283.199999988079,
+          "duration": 839.3999999761581,
+          "bytes": 860
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2283.5,
+          "duration": 854.3000000119209,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2283.800000011921,
+          "duration": 869.5999999642372,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2284.099999964237,
+          "duration": 884.5,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2287.699999988079,
+          "duration": 963.1000000238419,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2288,
+          "duration": 1239.8999999761581,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2288.300000011921,
+          "duration": 1255.199999988079,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2288.599999964237,
+          "duration": 1321.2000000476837,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2289,
+          "duration": 1291.199999988079,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/doc-document-D6ivy0nh.js",
+          "start": 2289.399999976158,
+          "duration": 1606.5,
+          "bytes": 43004
+        },
+        {
+          "path": "/assets/TooltipProvider-Gl2VecLQ.js",
+          "start": 2289.599999964237,
+          "duration": 1553.300000011921,
+          "bytes": 4890
+        },
+        {
+          "path": "/assets/PopoverPopup-C7NRo61Z.js",
+          "start": 2289.899999976158,
+          "duration": 1657.6000000238419,
+          "bytes": 3671
+        },
+        {
+          "path": "/assets/AvatarFallback-eY3fF-c6.js",
+          "start": 2290.199999988079,
+          "duration": 1665.6000000238419,
+          "bytes": 1014
+        },
+        {
+          "path": "/assets/use-server-settings-Bqas05fB.js",
+          "start": 2294.5,
+          "duration": 1690.800000011921,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2294.899999976158,
+          "duration": 1729.1000000238419,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/editor-DEnUlbni.js",
+          "start": 2295.199999988079,
+          "duration": 4019.399999976158,
+          "bytes": 346716
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3433.5,
+          "duration": 875,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3459.399999976158,
+          "duration": 901.1000000238419,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3518.599999964237,
+          "duration": 916.5,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3523.099999964237,
+          "duration": 904.6000000238419,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3554.599999964237,
+          "duration": 896.1000000238419,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3564.199999988079,
+          "duration": 1156.6000000238419,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4550,
+          "duration": 672.3999999761581,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4553.800000011921,
+          "duration": 466.2999999523163,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4635,
+          "duration": 423.5999999642372,
+          "bytes": 263
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5074.899999976158,
+          "duration": 410.60000002384186,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-2000",
+          "start": 5095.399999976158,
+          "duration": 532.3000000119209,
+          "bytes": 13215
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 5267.800000011921,
+          "duration": 413.0999999642372,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5497.199999988079,
+          "duration": 416.69999998807907,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5910.399999976158,
+          "duration": 422,
+          "bytes": 542
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 6160.800000011921,
+          "duration": 405,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 6171.599999964237,
+          "duration": 410.10000002384186,
+          "bytes": 563
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 6183.399999976158,
+          "duration": 407.10000002384186,
+          "bytes": 267
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 10764.899999976158,
+          "duration": 405,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3350.599999964237,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.800000011920929,
+        "domainLookupStart": 4.099999964237213,
+        "domainLookupEnd": 4.099999964237213,
+        "connectStart": 4.099999964237213,
+        "secureConnectionStart": 0,
+        "connectEnd": 4.399999976158142,
+        "requestStart": 4.599999964237213,
+        "responseStart": 36.80000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 36.80000001192093,
+        "responseEnd": 423.0999999642372,
+        "transferSize": 3639,
+        "encodedBodySize": 3339,
+        "decodedBodySize": 18427,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2349.899999976158,
+        "domContentLoadedEventStart": 2349.899999976158,
+        "domContentLoadedEventEnd": 2350,
+        "domComplete": 3349.899999976158,
+        "loadEventStart": 3350.599999964237,
+        "loadEventEnd": 3350.599999964237,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2344,
+          "duration": 0,
+          "paintTime": 2253.899999976158,
+          "presentationTime": 2344
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2344,
+          "duration": 0,
+          "paintTime": 2253.899999976158,
+          "presentationTime": 2344
+        }
+      ]
+    },
+    {
+      "label": "stage5-2",
+      "target": "rich-2000",
+      "kind": "editor",
+      "ready": 13222,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2324.300000011921,
+      "previewAvailableMs": 2186.5,
+      "longtasks": [
+        {
+          "start": 419.60000002384186,
+          "duration": 64
+        },
+        {
+          "start": 2184.899999976158,
+          "duration": 70
+        },
+        {
+          "start": 2262.699999988079,
+          "duration": 69
+        },
+        {
+          "start": 2845.800000011921,
+          "duration": 371
+        },
+        {
+          "start": 3328.399999976158,
+          "duration": 107
+        },
+        {
+          "start": 4479.199999988079,
+          "duration": 128
+        },
+        {
+          "start": 4712.899999976158,
+          "duration": 67
+        },
+        {
+          "start": 4838.100000023842,
+          "duration": 72
+        },
+        {
+          "start": 5371.399999976158,
+          "duration": 74
+        },
+        {
+          "start": 5673.699999988079,
+          "duration": 248
+        },
+        {
+          "start": 5939.800000011921,
+          "duration": 93
+        },
+        {
+          "start": 6079.399999976158,
+          "duration": 142
+        },
+        {
+          "start": 6468.399999976158,
+          "duration": 59
+        },
+        {
+          "start": 6638.899999976158,
+          "duration": 79
+        },
+        {
+          "start": 9957.5,
+          "duration": 379
+        },
+        {
+          "start": 10490.100000023842,
+          "duration": 116
+        },
+        {
+          "start": 10770.699999988079,
+          "duration": 1302
+        },
+        {
+          "start": 12073.300000011921,
+          "duration": 135
+        },
+        {
+          "start": 12301.100000023842,
+          "duration": 207
+        },
+        {
+          "start": 12509.699999988079,
+          "duration": 62
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 443.30000001192093,
+          "duration": 417.5,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/main-DaQ6stPm.js",
+          "start": 445.60000002384186,
+          "duration": 2364,
+          "bytes": 194255
+        },
+        {
+          "path": "/assets/react-runtime-BSZOUHax.js",
+          "start": 447.19999998807907,
+          "duration": 1522.800000011921,
+          "bytes": 60605
+        },
+        {
+          "path": "/assets/shared-icons-BfZSxiVc.js",
+          "start": 448.30000001192093,
+          "duration": 665.8999999761581,
+          "bytes": 11416
+        },
+        {
+          "path": "/assets/index-Wfb568jq.js",
+          "start": 449.30000001192093,
+          "duration": 486.0999999642372,
+          "bytes": 2230
+        },
+        {
+          "path": "/assets/icons-DSDpoeYX.js",
+          "start": 449.80000001192093,
+          "duration": 1662.3999999761581,
+          "bytes": 52857
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 450.60000002384186,
+          "duration": 919.3999999761581,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 451.39999997615814,
+          "duration": 1226,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1693.800000011921,
+          "duration": 465.80000001192093,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1695,
+          "duration": 453,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-CrC-DIDd.js",
+          "start": 2271.5,
+          "duration": 411.69999998807907,
+          "bytes": 543
+        },
+        {
+          "path": "/assets/annotations-queries-DxyAJxGl.js",
+          "start": 2272.699999988079,
+          "duration": 417.19999998807907,
+          "bytes": 1041
+        },
+        {
+          "path": "/assets/doc-freshness-Cqj4wevd.js",
+          "start": 2274.899999976158,
+          "duration": 430.5,
+          "bytes": 587
+        },
+        {
+          "path": "/assets/ws-KneEwdDG.js",
+          "start": 2277.199999988079,
+          "duration": 465.80000001192093,
+          "bytes": 2447
+        },
+        {
+          "path": "/assets/use-space-events-BWVAhd2i.js",
+          "start": 2279.699999988079,
+          "duration": 440.80000001192093,
+          "bytes": 379
+        },
+        {
+          "path": "/assets/external-links-CCmBC82G.js",
+          "start": 2280.300000011921,
+          "duration": 1092.300000011921,
+          "bytes": 47757
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-fBbkzhOf.js",
+          "start": 2280.699999988079,
+          "duration": 821.6000000238419,
+          "bytes": 860
+        },
+        {
+          "path": "/assets/useRender-BoTU0FVg.js",
+          "start": 2284.699999988079,
+          "duration": 832.8000000119209,
+          "bytes": 184
+        },
+        {
+          "path": "/assets/badge-DO2YFfIr.js",
+          "start": 2286.899999976158,
+          "duration": 845.7000000476837,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/textarea-DQAmMHcI.js",
+          "start": 2288.800000011921,
+          "duration": 866.5,
+          "bytes": 777
+        },
+        {
+          "path": "/assets/annotation-panel-Di13pbZo.js",
+          "start": 2298.100000023842,
+          "duration": 939.1999999880791,
+          "bytes": 1800
+        },
+        {
+          "path": "/assets/desktop-context-panel-kWhpGjgc.js",
+          "start": 2298.600000023842,
+          "duration": 1208.699999988079,
+          "bytes": 951
+        },
+        {
+          "path": "/assets/scrollEdges-GNZlfods.js",
+          "start": 2302.800000011921,
+          "duration": 1219.699999988079,
+          "bytes": 741
+        },
+        {
+          "path": "/assets/select-m3497BQn.js",
+          "start": 2306.300000011921,
+          "duration": 1283.5999999642372,
+          "bytes": 10024
+        },
+        {
+          "path": "/assets/confirm-dialog-BvH-jc8X.js",
+          "start": 2307.899999976158,
+          "duration": 1259.4000000357628,
+          "bytes": 620
+        },
+        {
+          "path": "/assets/doc-document-D6ivy0nh.js",
+          "start": 2308.300000011921,
+          "duration": 1573.800000011921,
+          "bytes": 43004
+        },
+        {
+          "path": "/assets/TooltipProvider-Gl2VecLQ.js",
+          "start": 2312.899999976158,
+          "duration": 1516.9000000357628,
+          "bytes": 4890
+        },
+        {
+          "path": "/assets/PopoverPopup-C7NRo61Z.js",
+          "start": 2314.899999976158,
+          "duration": 1612.7000000476837,
+          "bytes": 3671
+        },
+        {
+          "path": "/assets/AvatarFallback-eY3fF-c6.js",
+          "start": 2318.100000023842,
+          "duration": 1616.7999999523163,
+          "bytes": 1014
+        },
+        {
+          "path": "/assets/use-server-settings-Bqas05fB.js",
+          "start": 2320.199999988079,
+          "duration": 1652.4000000357628,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2321.800000011921,
+          "duration": 1681,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/editor-DEnUlbni.js",
+          "start": 2323.5,
+          "duration": 3973.5,
+          "bytes": 346716
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3326.800000011921,
+          "duration": 968.5,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3354.899999976158,
+          "duration": 985,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-D09r3eWh.js",
+          "start": 3404,
+          "duration": 1003.1000000238419,
+          "bytes": 4269
+        },
+        {
+          "path": "/assets/_-c-OkxOCx.js",
+          "start": 3406.800000011921,
+          "duration": 1008,
+          "bytes": 1581
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3427.899999976158,
+          "duration": 1002.4000000357628,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3434.5,
+          "duration": 1272.800000011921,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/app-sidebar-CbMzYb4_.js",
+          "start": 4513.100000023842,
+          "duration": 666.3999999761581,
+          "bytes": 22514
+        },
+        {
+          "path": "/assets/collapsible-CEysD79O.js",
+          "start": 4514.199999988079,
+          "duration": 463.10000002384186,
+          "bytes": 2744
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 4595.5,
+          "duration": 419.5,
+          "bytes": 263
+        },
+        {
+          "path": "/api/system/version",
+          "start": 5035.300000011921,
+          "duration": 414.69999998807907,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-2000",
+          "start": 5080.199999988079,
+          "duration": 534.4000000357628,
+          "bytes": 13215
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 5238.399999976158,
+          "duration": 414.60000002384186,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 5480.600000023842,
+          "duration": 413,
+          "bytes": 702
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 5912.100000023842,
+          "duration": 415.89999997615814,
+          "bytes": 542
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 6179.199999988079,
+          "duration": 410.30000001192093,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 6181.199999988079,
+          "duration": 416.4000000357628,
+          "bytes": 563
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 6201.399999976158,
+          "duration": 411.4000000357628,
+          "bytes": 267
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 10747.199999988079,
+          "duration": 410.60000002384186,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3276.399999976158,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.300000011920929,
+        "domainLookupStart": 5.100000023841858,
+        "domainLookupEnd": 5.100000023841858,
+        "connectStart": 5.100000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 5.199999988079071,
+        "requestStart": 5.399999976158142,
+        "responseStart": 47.30000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 47.30000001192093,
+        "responseEnd": 424.89999997615814,
+        "transferSize": 3639,
+        "encodedBodySize": 3339,
+        "decodedBodySize": 18427,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2256.899999976158,
+        "domContentLoadedEventStart": 2257,
+        "domContentLoadedEventEnd": 2258.399999976158,
+        "domComplete": 3276.399999976158,
+        "loadEventStart": 3276.399999976158,
+        "loadEventEnd": 3276.399999976158,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2324,
+          "duration": 0,
+          "paintTime": 2245.100000023842,
+          "presentationTime": 2324
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2324,
+          "duration": 0,
+          "paintTime": 2245.100000023842,
+          "presentationTime": 2324
+        }
+      ]
+    },
+    {
+      "label": "stage4-2",
+      "target": "rich-2000",
+      "kind": "editor",
+      "ready": 16434,
+      "errors": [],
+      "stylesheets": [
+        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+      ],
+      "previewMs": 2479.100000023842,
+      "previewAvailableMs": 2336.400000035763,
+      "longtasks": [
+        {
+          "start": 427.60000002384186,
+          "duration": 83
+        },
+        {
+          "start": 2335.900000035763,
+          "duration": 68
+        },
+        {
+          "start": 2409.800000011921,
+          "duration": 76
+        },
+        {
+          "start": 2813.800000011921,
+          "duration": 522
+        },
+        {
+          "start": 3444.900000035763,
+          "duration": 162
+        },
+        {
+          "start": 6308.400000035763,
+          "duration": 216
+        },
+        {
+          "start": 6622.900000035763,
+          "duration": 77
+        },
+        {
+          "start": 6766.900000035763,
+          "duration": 71
+        },
+        {
+          "start": 7627.800000011921,
+          "duration": 73
+        },
+        {
+          "start": 8331,
+          "duration": 64
+        },
+        {
+          "start": 8549.800000011921,
+          "duration": 215
+        },
+        {
+          "start": 8786.400000035763,
+          "duration": 77
+        },
+        {
+          "start": 8922.700000047684,
+          "duration": 133
+        },
+        {
+          "start": 9463.200000047684,
+          "duration": 82
+        },
+        {
+          "start": 12793.300000011921,
+          "duration": 339
+        },
+        {
+          "start": 13242.300000011921,
+          "duration": 130
+        },
+        {
+          "start": 13545.800000011921,
+          "duration": 1609
+        },
+        {
+          "start": 15155.600000023842,
+          "duration": 140
+        },
+        {
+          "start": 15409.300000011921,
+          "duration": 339
+        },
+        {
+          "start": 15749.100000023842,
+          "duration": 66
+        },
+        {
+          "start": 15824.400000035763,
+          "duration": 54
+        }
+      ],
+      "resources": [
+        {
+          "path": "/favicon.svg",
+          "start": 455.30000001192093,
+          "duration": 428,
+          "bytes": 939
+        },
+        {
+          "path": "/assets/index-CNG8I3fA.js",
+          "start": 455.7000000476837,
+          "duration": 488.89999997615814,
+          "bytes": 2251
+        },
+        {
+          "path": "/assets/main-C_PqD12k.js",
+          "start": 455.7000000476837,
+          "duration": 2310.5,
+          "bytes": 259605
+        },
+        {
+          "path": "/assets/icons-I5wfg2UW.js",
+          "start": 455.80000001192093,
+          "duration": 1132.9000000357628,
+          "bytes": 54620
+        },
+        {
+          "path": "/assets/document-views-CWr6wGGC.js",
+          "start": 456,
+          "duration": 465.4000000357628,
+          "bytes": 527
+        },
+        {
+          "path": "/assets/search-DtLexhtX.js",
+          "start": 456.10000002384186,
+          "duration": 472.30000001192093,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/archive-GI5wF0_q.js",
+          "start": 462.2000000476837,
+          "duration": 886.5,
+          "bytes": 357
+        },
+        {
+          "path": "/assets/file-search-D4Txrme_.js",
+          "start": 468.4000000357628,
+          "duration": 895.1999999880791,
+          "bytes": 480
+        },
+        {
+          "path": "/assets/file-text-D9F5ASfy.js",
+          "start": 469,
+          "duration": 917.6000000238419,
+          "bytes": 489
+        },
+        {
+          "path": "/assets/file-BwL7kKRf.js",
+          "start": 469.30000001192093,
+          "duration": 1299.6000000238419,
+          "bytes": 374
+        },
+        {
+          "path": "/assets/app-DADxpsXa.css",
+          "start": 469.5,
+          "duration": 1374.5,
+          "bytes": 41728
+        },
+        {
+          "path": "/v2/css",
+          "start": 1855.5,
+          "duration": 461.4000000357628,
+          "bytes": 0
+        },
+        {
+          "path": "/css2",
+          "start": 1855.7000000476837,
+          "duration": 445.5,
+          "bytes": 885
+        },
+        {
+          "path": "/assets/profile-RBtw8YqV.js",
+          "start": 2418.5,
+          "duration": 407.7000000476837,
+          "bytes": 544
+        },
+        {
+          "path": "/assets/annotations-queries-BJvhyJc9.js",
+          "start": 2421,
+          "duration": 413,
+          "bytes": 1043
+        },
+        {
+          "path": "/assets/doc-freshness-CbWKyWjj.js",
+          "start": 2423.900000035763,
+          "duration": 417.30000001192093,
+          "bytes": 588
+        },
+        {
+          "path": "/assets/ws-BoocDC4i.js",
+          "start": 2426.2000000476837,
+          "duration": 437.5999999642372,
+          "bytes": 2426
+        },
+        {
+          "path": "/assets/use-space-events-CXOK-qss.js",
+          "start": 2428.5,
+          "duration": 428.30000001192093,
+          "bytes": 370
+        },
+        {
+          "path": "/assets/external-links-CKeRLg1-.js",
+          "start": 2430.400000035763,
+          "duration": 1017.8999999761581,
+          "bytes": 47754
+        },
+        {
+          "path": "/assets/use-scroll-fade-x-B-BppWAK.js",
+          "start": 2432.600000023842,
+          "duration": 806.1000000238419,
+          "bytes": 851
+        },
+        {
+          "path": "/assets/useRender-BkMD-73z.js",
+          "start": 2434.400000035763,
+          "duration": 820.0999999642372,
+          "bytes": 189
+        },
+        {
+          "path": "/assets/badge-DqCIxeTg.js",
+          "start": 2436.5,
+          "duration": 824.9000000357628,
+          "bytes": 743
+        },
+        {
+          "path": "/assets/textarea-DtGW4BUF.js",
+          "start": 2438.600000023842,
+          "duration": 837.3000000119209,
+          "bytes": 736
+        },
+        {
+          "path": "/assets/sparkles-CLi6McAu.js",
+          "start": 2440.900000035763,
+          "duration": 843.1999999880791,
+          "bytes": 598
+        },
+        {
+          "path": "/assets/circle-DD0wwuSR.js",
+          "start": 2442.900000035763,
+          "duration": 1201.199999988079,
+          "bytes": 234
+        },
+        {
+          "path": "/assets/arrow-up-CJOqPVfV.js",
+          "start": 2444.400000035763,
+          "duration": 1218.5,
+          "bytes": 266
+        },
+        {
+          "path": "/assets/annotation-panel-BiwiJeF9.js",
+          "start": 2445.900000035763,
+          "duration": 1228.199999988079,
+          "bytes": 1813
+        },
+        {
+          "path": "/assets/desktop-context-panel-tNIv2bpm.js",
+          "start": 2448.7000000476837,
+          "duration": 1232.699999988079,
+          "bytes": 910
+        },
+        {
+          "path": "/assets/chevron-down-CIyodUfo.js",
+          "start": 2450.300000011921,
+          "duration": 1239,
+          "bytes": 232
+        },
+        {
+          "path": "/assets/scrollEdges-BEjOrIq-.js",
+          "start": 2453,
+          "duration": 1400.5,
+          "bytes": 732
+        },
+        {
+          "path": "/assets/select-C6f-lNzM.js",
+          "start": 2458.600000023842,
+          "duration": 1665.699999988079,
+          "bytes": 10002
+        },
+        {
+          "path": "/assets/confirm-dialog-Bsc7_WNe.js",
+          "start": 2459,
+          "duration": 1620.2000000476837,
+          "bytes": 579
+        },
+        {
+          "path": "/assets/rotate-ccw-BMRoxygl.js",
+          "start": 2459.300000011921,
+          "duration": 1635.5,
+          "bytes": 304
+        },
+        {
+          "path": "/assets/history-DeTojPtM.js",
+          "start": 2459.600000023842,
+          "duration": 1642.3999999761581,
+          "bytes": 341
+        },
+        {
+          "path": "/assets/badge-check-fTeuSXDy.js",
+          "start": 2459.800000011921,
+          "duration": 1657.1000000238419,
+          "bytes": 420
+        },
+        {
+          "path": "/assets/arrow-right-left-BOrd8D1d.js",
+          "start": 2460.100000023842,
+          "duration": 1799.300000011921,
+          "bytes": 352
+        },
+        {
+          "path": "/assets/download-Dd82mQzj.js",
+          "start": 2460.400000035763,
+          "duration": 2032.3999999761581,
+          "bytes": 336
+        },
+        {
+          "path": "/assets/printer-ChC3HpRt.js",
+          "start": 2460.600000023842,
+          "duration": 2045.300000011921,
+          "bytes": 423
+        },
+        {
+          "path": "/assets/chevrons-left-CPmpG0RE.js",
+          "start": 2460.900000035763,
+          "duration": 2053.599999964237,
+          "bytes": 278
+        },
+        {
+          "path": "/assets/rotate-cw-DUbUENfq.js",
+          "start": 2465.2000000476837,
+          "duration": 2055.599999964237,
+          "bytes": 305
+        },
+        {
+          "path": "/assets/wifi-off-B-mE_cuC.js",
+          "start": 2468.300000011921,
+          "duration": 2067.800000011921,
+          "bytes": 564
+        },
+        {
+          "path": "/assets/wifi-FU0HPJRP.js",
+          "start": 2471,
+          "duration": 2192.600000023842,
+          "bytes": 384
+        },
+        {
+          "path": "/assets/save-BPN_R6cp.js",
+          "start": 2473.100000023842,
+          "duration": 2423,
+          "bytes": 431
+        },
+        {
+          "path": "/assets/chevrons-right-BIAJevkP.js",
+          "start": 2475,
+          "duration": 2436.300000011921,
+          "bytes": 277
+        },
+        {
+          "path": "/assets/doc-document-D5EqFPbH.js",
+          "start": 2475.2000000476837,
+          "duration": 2720.399999976158,
+          "bytes": 43303
+        },
+        {
+          "path": "/assets/TooltipProvider-DlvRgSS1.js",
+          "start": 2476.5,
+          "duration": 2516.5,
+          "bytes": 4862
+        },
+        {
+          "path": "/assets/PopoverPopup-B4rr8hn8.js",
+          "start": 2477.400000035763,
+          "duration": 2523.300000011921,
+          "bytes": 3641
+        },
+        {
+          "path": "/assets/AvatarFallback-iTXaBwtk.js",
+          "start": 2477.7000000476837,
+          "duration": 2598.5,
+          "bytes": 973
+        },
+        {
+          "path": "/assets/use-server-settings-zwMFK6ex.js",
+          "start": 2477.800000011921,
+          "duration": 2824.199999988079,
+          "bytes": 238
+        },
+        {
+          "path": "/assets/mermaid-DBeYi24p.js",
+          "start": 2478.2000000476837,
+          "duration": 2845.5,
+          "bytes": 2282
+        },
+        {
+          "path": "/assets/workflow-Cf1ajwoe.js",
+          "start": 2478.5,
+          "duration": 2920.5,
+          "bytes": 369
+        },
+        {
+          "path": "/assets/message-square-plus-D7j-qdfM.js",
+          "start": 2478.7000000476837,
+          "duration": 2928,
+          "bytes": 414
+        },
+        {
+          "path": "/assets/editor-D8Gl0-Ka.js",
+          "start": 2478.900000035763,
+          "duration": 5072.199999988079,
+          "bytes": 347944
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 3443,
+          "duration": 2166.100000023842,
+          "bytes": 939
+        },
+        {
+          "path": "/api/workspace",
+          "start": 3481.5,
+          "duration": 2231.900000035763,
+          "bytes": 249
+        },
+        {
+          "path": "/assets/_spaceId-DASTxF0d.js",
+          "start": 3547.400000035763,
+          "duration": 2233.899999976158,
+          "bytes": 4334
+        },
+        {
+          "path": "/assets/bot-BSdarOsf.js",
+          "start": 3550.7000000476837,
+          "duration": 2260.5,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/database-Dzv6cHPB.js",
+          "start": 3553.7000000476837,
+          "duration": 2272.899999976158,
+          "bytes": 347
+        },
+        {
+          "path": "/assets/message-circle-Brkhz_EX.js",
+          "start": 3556.100000023842,
+          "duration": 2465.5,
+          "bytes": 345
+        },
+        {
+          "path": "/assets/layers-DEA6N6s0.js",
+          "start": 3557.900000035763,
+          "duration": 2568.899999976158,
+          "bytes": 525
+        },
+        {
+          "path": "/assets/_-8-vOzV4y.js",
+          "start": 3561.900000035763,
+          "duration": 2647,
+          "bytes": 1580
+        },
+        {
+          "path": "/assets/file-question-mark-BALRXClV.js",
+          "start": 3564.900000035763,
+          "duration": 2659.099999964237,
+          "bytes": 439
+        },
+        {
+          "path": "/api/spaces/loading-audit",
+          "start": 3598.7000000476837,
+          "duration": 2640.2999999523163,
+          "bytes": 651
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents/page",
+          "start": 3605.5,
+          "duration": 2828.7000000476837,
+          "bytes": 739
+        },
+        {
+          "path": "/assets/app-sidebar-B2T2jBOZ.js",
+          "start": 6357.100000023842,
+          "duration": 684.1000000238419,
+          "bytes": 23309
+        },
+        {
+          "path": "/assets/collapsible-VJH2SraJ.js",
+          "start": 6359.600000023842,
+          "duration": 478.80000001192093,
+          "bytes": 2720
+        },
+        {
+          "path": "/assets/ellipsis-vertical-WJb_wTa4.js",
+          "start": 6363.300000011921,
+          "duration": 431.69999998807907,
+          "bytes": 339
+        },
+        {
+          "path": "/assets/smile-JJWyVmj6.js",
+          "start": 6368,
+          "duration": 434.60000002384186,
+          "bytes": 397
+        },
+        {
+          "path": "/assets/folder-open-C0XKFwel.js",
+          "start": 6371.400000035763,
+          "duration": 489.5999999642372,
+          "bytes": 396
+        },
+        {
+          "path": "/assets/layout-grid-B7e2b-uv.js",
+          "start": 6374.300000011921,
+          "duration": 839.8000000119209,
+          "bytes": 450
+        },
+        {
+          "path": "/assets/arrow-up-down-CCz9CIYW.js",
+          "start": 6377.900000035763,
+          "duration": 844.3999999761581,
+          "bytes": 349
+        },
+        {
+          "path": "/assets/grip-vertical-wBxKWrDO.js",
+          "start": 6380.900000035763,
+          "duration": 870.5999999642372,
+          "bytes": 475
+        },
+        {
+          "path": "/assets/arrow-down-a-z-Bbo01p90.js",
+          "start": 6384.600000023842,
+          "duration": 889.1999999880791,
+          "bytes": 412
+        },
+        {
+          "path": "/assets/trash-BXBaWq5M.js",
+          "start": 6387.400000035763,
+          "duration": 1066.5,
+          "bytes": 356
+        },
+        {
+          "path": "/assets/trash-2-BmcO50sI.js",
+          "start": 6390.200000047684,
+          "duration": 1228.8999999761581,
+          "bytes": 432
+        },
+        {
+          "path": "/assets/file-plus-7QM4i64f.js",
+          "start": 6393.300000011921,
+          "duration": 1233,
+          "bytes": 453
+        },
+        {
+          "path": "/assets/arrow-right-5SVlLDq0.js",
+          "start": 6396.200000047684,
+          "duration": 1259.7999999523163,
+          "bytes": 269
+        },
+        {
+          "path": "/assets/layout-dashboard-CYRxN35H.js",
+          "start": 6399.200000047684,
+          "duration": 1280.3999999761581,
+          "bytes": 455
+        },
+        {
+          "path": "/assets/plus-DT4DRB7w.js",
+          "start": 6404.100000023842,
+          "duration": 1455,
+          "bytes": 257
+        },
+        {
+          "path": "/assets/settings-DHClFvi2.js",
+          "start": 6406.700000047684,
+          "duration": 1549.3999999761581,
+          "bytes": 591
+        },
+        {
+          "path": "/assets/church-ChYLPV8F.js",
+          "start": 6409.800000011921,
+          "duration": 1613.9000000357628,
+          "bytes": 542
+        },
+        {
+          "path": "/assets/rocket-BP9g3ohX.js",
+          "start": 6412.800000011921,
+          "duration": 1618.199999988079,
+          "bytes": 556
+        },
+        {
+          "path": "/assets/target-mAM44_nZ.js",
+          "start": 6416.300000011921,
+          "duration": 1645.199999988079,
+          "bytes": 330
+        },
+        {
+          "path": "/assets/briefcase-D1Ms5_pL.js",
+          "start": 6420.200000047684,
+          "duration": 1663.3999999761581,
+          "bytes": 324
+        },
+        {
+          "path": "/assets/monitor-Cktcrwnh.js",
+          "start": 6423.200000047684,
+          "duration": 1840.5999999642372,
+          "bytes": 363
+        },
+        {
+          "path": "/api/system/deployment",
+          "start": 6513.300000011921,
+          "duration": 1848.300000011921,
+          "bytes": 263
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs/rich-2000",
+          "start": 6997.700000047684,
+          "duration": 1491.0999999642372,
+          "bytes": 13209
+        },
+        {
+          "path": "/favicon.svg",
+          "start": 8288.800000011921,
+          "duration": 409.80000001192093,
+          "bytes": 939
+        },
+        {
+          "path": "/api/spaces",
+          "start": 8443.200000047684,
+          "duration": 405.5,
+          "bytes": 702
+        },
+        {
+          "path": "/api/system/version",
+          "start": 8495.400000035763,
+          "duration": 407,
+          "bytes": 197
+        },
+        {
+          "path": "/api/spaces/loading-audit/annotations",
+          "start": 8758.200000047684,
+          "duration": 405.69999998807907,
+          "bytes": 542
+        },
+        {
+          "path": "/api/spaces/loading-audit/records",
+          "start": 9019.5,
+          "duration": 407.30000001192093,
+          "bytes": 18
+        },
+        {
+          "path": "/api/spaces/loading-audit/docs",
+          "start": 9034.200000047684,
+          "duration": 407.5,
+          "bytes": 566
+        },
+        {
+          "path": "/api/spaces/loading-audit/documents",
+          "start": 9045.400000035763,
+          "duration": 403.80000001192093,
+          "bytes": 265
+        },
+        {
+          "path": "/api/system/settings",
+          "start": 13516.5,
+          "duration": 409.9000000357628,
+          "bytes": 140
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-2000",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 3392.100000023842,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 4.300000011920929,
+        "domainLookupStart": 10.5,
+        "domainLookupEnd": 10.5,
+        "connectStart": 10.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 10.700000047683716,
+        "requestStart": 10.800000011920929,
+        "responseStart": 69,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 69,
+        "responseEnd": 433.7000000476837,
+        "transferSize": 3928,
+        "encodedBodySize": 3628,
+        "decodedBodySize": 19078,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 2405.600000023842,
+        "domContentLoadedEventStart": 2406.7000000476837,
+        "domContentLoadedEventEnd": 2407.300000011921,
+        "domComplete": 3392,
+        "loadEventStart": 3392.100000023842,
+        "loadEventEnd": 3392.100000023842,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 2476,
+          "duration": 0,
+          "paintTime": 2392.600000023842,
+          "presentationTime": 2476
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 2476,
+          "duration": 0,
+          "paintTime": 2392.600000023842,
+          "presentationTime": 2476
+        }
+      ]
+    }
+  ]
+}

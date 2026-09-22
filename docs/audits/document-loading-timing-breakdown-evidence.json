@@ -1,0 +1,1001 @@
+{
+  "originalUnprofiledRun": {
+    "label": "editor-prototype-1",
+    "readyMs": 12311,
+    "previewMs": 4284,
+    "longTasksTotalMs": 9626,
+    "longTasksAfterPreviewMs": 7108.0,
+    "resources": [
+      {
+        "path": "/favicon.svg",
+        "start": 135.10000002384186,
+        "duration": 126.79999995231628,
+        "bytes": 939
+      },
+      {
+        "path": "/assets/main-CqbG3Vys.js",
+        "start": 140.39999997615814,
+        "duration": 626.8000000119209,
+        "bytes": 369973
+      },
+      {
+        "path": "/assets/index-giNB9WJ2.js",
+        "start": 141.69999998807907,
+        "duration": 161.10000002384186,
+        "bytes": 0
+      },
+      {
+        "path": "/assets/main-s3sQKeml.css",
+        "start": 144,
+        "duration": 188.39999997615814,
+        "bytes": 39783
+      },
+      {
+        "path": "/v2/css",
+        "start": 354.39999997615814,
+        "duration": 150.20000004768372,
+        "bytes": 0
+      },
+      {
+        "path": "/css2",
+        "start": 357.10000002384186,
+        "duration": 141.69999998807907,
+        "bytes": 885
+      },
+      {
+        "path": "/api/workspace",
+        "start": 1636.3999999761581,
+        "duration": 106,
+        "bytes": 252
+      },
+      {
+        "path": "/assets/_spaceId-D4LjL8NK.js",
+        "start": 1707.199999988079,
+        "duration": 122.69999998807907,
+        "bytes": 4192
+      },
+      {
+        "path": "/assets/annotations-queries-rm90R1Ic.js",
+        "start": 1709.3999999761581,
+        "duration": 104.30000001192093,
+        "bytes": 1062
+      },
+      {
+        "path": "/assets/_-Al8dCv2G.js",
+        "start": 1710.300000011921,
+        "duration": 112.89999997615814,
+        "bytes": 1578
+      },
+      {
+        "path": "/assets/file-question-mark-PWFpoBOG.js",
+        "start": 1710.800000011921,
+        "duration": 107.5,
+        "bytes": 495
+      },
+      {
+        "path": "/api/spaces/loading-audit",
+        "start": 1746.1000000238419,
+        "duration": 143.69999998807907,
+        "bytes": 651
+      },
+      {
+        "path": "/api/spaces/loading-audit/docs",
+        "start": 1752.3999999761581,
+        "duration": 106.5,
+        "bytes": 1909
+      },
+      {
+        "path": "/api/spaces/loading-audit/documents/page",
+        "start": 1764.3999999761581,
+        "duration": 155.60000002384186,
+        "bytes": 739
+      },
+      {
+        "path": "/favicon.svg",
+        "start": 1786,
+        "duration": 141.80000001192093,
+        "bytes": 939
+      },
+      {
+        "path": "/api/spaces",
+        "start": 2264.300000011921,
+        "duration": 105.80000001192093,
+        "bytes": 2046
+      },
+      {
+        "path": "/api/system/deployment",
+        "start": 2274,
+        "duration": 105.19999998807907,
+        "bytes": 263
+      },
+      {
+        "path": "/favicon.svg",
+        "start": 2303.300000011921,
+        "duration": 104.39999997615814,
+        "bytes": 939
+      },
+      {
+        "path": "/assets/doc-document-BO0RUrZ8.js",
+        "start": 2450.800000011921,
+        "duration": 179,
+        "bytes": 42949
+      },
+      {
+        "path": "/assets/external-links-Be1wYIWI.js",
+        "start": 2454,
+        "duration": 188.89999997615814,
+        "bytes": 47792
+      },
+      {
+        "path": "/assets/annotation-panel-CvRD3EUr.js",
+        "start": 2455.600000023842,
+        "duration": 108.89999997615814,
+        "bytes": 1829
+      },
+      {
+        "path": "/assets/textarea-B5DxD6j-.js",
+        "start": 2459.100000023842,
+        "duration": 106.29999995231628,
+        "bytes": 783
+      },
+      {
+        "path": "/assets/sparkles-qxsI0Vqd.js",
+        "start": 2461.399999976158,
+        "duration": 108.90000003576279,
+        "bytes": 644
+      },
+      {
+        "path": "/assets/circle-DNBg_ZuD.js",
+        "start": 2463.300000011921,
+        "duration": 112.30000001192093,
+        "bytes": 278
+      },
+      {
+        "path": "/assets/arrow-up-DFnVEo8v.js",
+        "start": 2465.199999988079,
+        "duration": 203.19999998807907,
+        "bytes": 312
+      },
+      {
+        "path": "/assets/desktop-context-panel-C2fCHWPS.js",
+        "start": 2465.699999988079,
+        "duration": 205.4000000357628,
+        "bytes": 970
+      },
+      {
+        "path": "/assets/badge-check-HgO2DMsD.js",
+        "start": 2470.399999976158,
+        "duration": 205.30000001192093,
+        "bytes": 469
+      },
+      {
+        "path": "/assets/arrow-right-left-B7artWrV.js",
+        "start": 2474.399999976158,
+        "duration": 207.4000000357628,
+        "bytes": 406
+      },
+      {
+        "path": "/assets/printer-BoebC1dL.js",
+        "start": 2480,
+        "duration": 254.89999997615814,
+        "bytes": 468
+      },
+      {
+        "path": "/assets/chevrons-left-ZTF8ZV1m.js",
+        "start": 2482.800000011921,
+        "duration": 265.69999998807907,
+        "bytes": 329
+      },
+      {
+        "path": "/assets/rotate-cw-DgzYhyGm.js",
+        "start": 2486.100000023842,
+        "duration": 292.19999998807907,
+        "bytes": 352
+      },
+      {
+        "path": "/assets/wifi-off-BXt7AIvT.js",
+        "start": 2490.5,
+        "duration": 295.69999998807907,
+        "bytes": 610
+      },
+      {
+        "path": "/assets/wifi-1xrfShN0.js",
+        "start": 2493.100000023842,
+        "duration": 297.2999999523163,
+        "bytes": 426
+      },
+      {
+        "path": "/assets/save-DL4I5qQq.js",
+        "start": 2493.699999988079,
+        "duration": 297.30000001192093,
+        "bytes": 473
+      },
+      {
+        "path": "/assets/chevrons-right-B54sKFok.js",
+        "start": 2494.100000023842,
+        "duration": 343.5999999642372,
+        "bytes": 329
+      },
+      {
+        "path": "/api/spaces/loading-audit/records",
+        "start": 2577.100000023842,
+        "duration": 277.19999998807907,
+        "bytes": 18
+      },
+      {
+        "path": "/api/spaces/loading-audit/documents",
+        "start": 2968,
+        "duration": 105.10000002384186,
+        "bytes": 1182
+      },
+      {
+        "path": "/api/system/version",
+        "start": 2984.199999988079,
+        "duration": 104.30000001192093,
+        "bytes": 197
+      },
+      {
+        "path": "/assets/editor-V4eOs9U0.js",
+        "start": 3249.5,
+        "duration": 466.5,
+        "bytes": 332034
+      },
+      {
+        "path": "/assets/main-s3sQKeml.css",
+        "start": 3252.699999988079,
+        "duration": 2.699999988079071,
+        "bytes": 39783
+      },
+      {
+        "path": "/assets/mermaid-D3o5coJa.js",
+        "start": 3256.199999988079,
+        "duration": 111,
+        "bytes": 2313
+      },
+      {
+        "path": "/assets/workflow-CSRaIvvi.js",
+        "start": 3259.199999988079,
+        "duration": 107.80000001192093,
+        "bytes": 415
+      },
+      {
+        "path": "/assets/message-square-plus-DtcN8Pcj.js",
+        "start": 3262.399999976158,
+        "duration": 107.20000004768372,
+        "bytes": 471
+      },
+      {
+        "path": "/api/spaces/loading-audit/docs/rich-2000",
+        "start": 3567.300000011921,
+        "duration": 512,
+        "bytes": 422391
+      },
+      {
+        "path": "/assets/github-dark-BFhhNueA.js",
+        "start": 3994.300000011921,
+        "duration": 107.30000001192093,
+        "bytes": 2643
+      },
+      {
+        "path": "/assets/github-light-lKoG2_DG.js",
+        "start": 3997.199999988079,
+        "duration": 108.60000002384186,
+        "bytes": 2602
+      },
+      {
+        "path": "/api/spaces/loading-audit/annotations",
+        "start": 4269.199999988079,
+        "duration": 104.69999998807907,
+        "bytes": 542
+      },
+      {
+        "path": "/api/system/settings",
+        "start": 5023.5,
+        "duration": 112,
+        "bytes": 140
+      }
+    ],
+    "longtasks": [
+      {
+        "start": 116.80000001192093,
+        "duration": 59
+      },
+      {
+        "start": 544.6000000238419,
+        "duration": 120
+      },
+      {
+        "start": 865.6999999880791,
+        "duration": 684
+      },
+      {
+        "start": 1603.699999988079,
+        "duration": 160
+      },
+      {
+        "start": 1968.6000000238419,
+        "duration": 366
+      },
+      {
+        "start": 2447.399999976158,
+        "duration": 141
+      },
+      {
+        "start": 2711.5,
+        "duration": 309
+      },
+      {
+        "start": 3145.300000011921,
+        "duration": 99
+      },
+      {
+        "start": 3314.300000011921,
+        "duration": 157
+      },
+      {
+        "start": 3581.5,
+        "duration": 135
+      },
+      {
+        "start": 3864.300000011921,
+        "duration": 134
+      },
+      {
+        "start": 4122.5,
+        "duration": 154
+      },
+      {
+        "start": 4306.5,
+        "duration": 122
+      },
+      {
+        "start": 4530,
+        "duration": 68
+      },
+      {
+        "start": 4737.699999988079,
+        "duration": 211
+      },
+      {
+        "start": 5024.699999988079,
+        "duration": 51
+      },
+      {
+        "start": 5076.899999976158,
+        "duration": 335
+      },
+      {
+        "start": 5808.300000011921,
+        "duration": 1451
+      },
+      {
+        "start": 7321.399999976158,
+        "duration": 1518
+      },
+      {
+        "start": 8903.600000023842,
+        "duration": 2776
+      },
+      {
+        "start": 11680.300000011921,
+        "duration": 93
+      },
+      {
+        "start": 11775.100000023842,
+        "duration": 483
+      }
+    ]
+  },
+  "newDiagnosticRun": {
+    "readyMs": 33876,
+    "previewMs": 8699.699999988079,
+    "errors": [],
+    "conditions": "Same network/CPU settings; simultaneous tracing and CPU profiling, shared host running unrelated builds. Diagnostic attribution only; not comparable timing baseline.",
+    "traceEventTotals": {
+      "UpdateLayoutTree": {
+        "inclusiveTotalMs": 11805,
+        "maxMs": 8986
+      },
+      "Layout": {
+        "inclusiveTotalMs": 926,
+        "maxMs": 776
+      },
+      "Paint": {
+        "inclusiveTotalMs": 197,
+        "maxMs": 28
+      },
+      "PrePaint": {
+        "inclusiveTotalMs": 288,
+        "maxMs": 172
+      },
+      "FunctionCall": {
+        "inclusiveTotalMs": 12867,
+        "maxMs": 5983
+      },
+      "EvaluateScript": {
+        "inclusiveTotalMs": 184,
+        "maxMs": 127
+      },
+      "v8.evaluateModule": {
+        "inclusiveTotalMs": 1157,
+        "maxMs": 849
+      },
+      "RunTask": {
+        "inclusiveTotalMs": 33026,
+        "maxMs": 9359
+      }
+    },
+    "largeEvents": [
+      {
+        "name": "FunctionCall",
+        "startMs": 3799,
+        "durationMs": 773,
+        "args": {
+          "data": {
+            "columnNumber": 10165,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "functionName": "B",
+            "isolate": "4254215791647571227",
+            "lineNumber": 2,
+            "sampleTraceId": 8918379136048423,
+            "scriptId": "7",
+            "url": "http://127.0.0.1:43009/assets/main-CqbG3Vys.js"
+          }
+        }
+      },
+      {
+        "name": "FunctionCall",
+        "startMs": 5487,
+        "durationMs": 1031,
+        "args": {
+          "data": {
+            "columnNumber": 125543,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "functionName": "",
+            "isolate": "4254215791647571227",
+            "lineNumber": 9,
+            "sampleTraceId": 8918379136041882,
+            "scriptId": "7",
+            "url": "http://127.0.0.1:43009/assets/main-CqbG3Vys.js"
+          }
+        }
+      },
+      {
+        "name": "FunctionCall",
+        "startMs": 9322,
+        "durationMs": 540,
+        "args": {
+          "data": {
+            "columnNumber": 10165,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "functionName": "B",
+            "isolate": "4254215791647571227",
+            "lineNumber": 2,
+            "sampleTraceId": 8918379136042984,
+            "scriptId": "7",
+            "url": "http://127.0.0.1:43009/assets/main-CqbG3Vys.js"
+          }
+        }
+      },
+      {
+        "name": "FunctionCall",
+        "startMs": 10223,
+        "durationMs": 835,
+        "args": {
+          "data": {
+            "columnNumber": 10165,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "functionName": "B",
+            "isolate": "4254215791647571227",
+            "lineNumber": 2,
+            "sampleTraceId": 8918379136042661,
+            "scriptId": "7",
+            "url": "http://127.0.0.1:43009/assets/main-CqbG3Vys.js"
+          }
+        }
+      },
+      {
+        "name": "FunctionCall",
+        "startMs": 12285,
+        "durationMs": 5983,
+        "args": {
+          "data": {
+            "columnNumber": 689,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "functionName": "Co.e.onmessage",
+            "isolate": "4254215791647571227",
+            "lineNumber": 7,
+            "sampleTraceId": 8918379136043472,
+            "scriptId": "29",
+            "url": "http://127.0.0.1:43009/assets/doc-document-BO0RUrZ8.js"
+          }
+        }
+      },
+      {
+        "name": "UpdateLayoutTree",
+        "startMs": 18373,
+        "durationMs": 1698,
+        "args": {
+          "beginData": {
+            "frame": "186F8168713183B9F4694D0799F9C425"
+          },
+          "elementCount": 10002
+        }
+      },
+      {
+        "name": "Layout",
+        "startMs": 20071,
+        "durationMs": 776,
+        "args": {
+          "beginData": {
+            "dirtyObjects": 14016,
+            "frame": "186F8168713183B9F4694D0799F9C425",
+            "partialLayout": false,
+            "totalObjects": 14680
+          },
+          "endData": {
+            "layoutRoots": [
+              {
+                "depth": 1,
+                "nodeId": 4,
+                "nodeName": "#document",
+                "quads": [
+                  [
+                    0.0,
+                    0.0,
+                    1280.0,
+                    0.0,
+                    1280.0,
+                    900.0,
+                    0.0,
+                    900.0
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "UpdateLayoutTree",
+        "startMs": 21229,
+        "durationMs": 8986,
+        "args": {
+          "beginData": {
+            "frame": "186F8168713183B9F4694D0799F9C425"
+          },
+          "elementCount": 10015
+        }
+      }
+    ],
+    "resources": [
+      {
+        "url": "http://127.0.0.1:43009/favicon.svg",
+        "start": 271.19999998807907,
+        "duration": 104.69999998807907,
+        "bytes": 939
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/main-CqbG3Vys.js",
+        "start": 277.0999999642372,
+        "duration": 599.6000000238419,
+        "bytes": 369973
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/index-giNB9WJ2.js",
+        "start": 280.80000001192093,
+        "duration": 288.7999999523163,
+        "bytes": 0
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/main-s3sQKeml.css#",
+        "start": 300.5,
+        "duration": 179.80000001192093,
+        "bytes": 39783
+      },
+      {
+        "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "start": 528.1999999880791,
+        "duration": 189.10000002384186,
+        "bytes": 0
+      },
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+        "start": 528.5,
+        "duration": 172.5,
+        "bytes": 885
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/workspace",
+        "start": 2253.800000011921,
+        "duration": 108.5,
+        "bytes": 252
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/_spaceId-D4LjL8NK.js",
+        "start": 2312.5,
+        "duration": 109.09999996423721,
+        "bytes": 4192
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/annotations-queries-rm90R1Ic.js",
+        "start": 2315.899999976158,
+        "duration": 109,
+        "bytes": 1062
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/_-Al8dCv2G.js",
+        "start": 2319.300000011921,
+        "duration": 115.29999995231628,
+        "bytes": 1578
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/file-question-mark-PWFpoBOG.js",
+        "start": 2321.300000011921,
+        "duration": 113.69999998807907,
+        "bytes": 495
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit",
+        "start": 2350.300000011921,
+        "duration": 311.5999999642372,
+        "bytes": 651
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/docs?includeArchived=true",
+        "start": 2355,
+        "duration": 114.19999998807907,
+        "bytes": 1909
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/documents/page?path=rich-2000",
+        "start": 2365,
+        "duration": 170.5,
+        "bytes": 739
+      },
+      {
+        "url": "http://127.0.0.1:43009/favicon.svg",
+        "start": 2367.199999988079,
+        "duration": 167,
+        "bytes": 939
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/doc-document-BO0RUrZ8.js",
+        "start": 2596.699999988079,
+        "duration": 188.89999997615814,
+        "bytes": 42949
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/external-links-Be1wYIWI.js",
+        "start": 2606.300000011921,
+        "duration": 189,
+        "bytes": 47792
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/annotation-panel-CvRD3EUr.js",
+        "start": 2616.099999964237,
+        "duration": 112.80000001192093,
+        "bytes": 1829
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/textarea-B5DxD6j-.js",
+        "start": 2624.399999976158,
+        "duration": 108.60000002384186,
+        "bytes": 783
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/sparkles-qxsI0Vqd.js",
+        "start": 2631.699999988079,
+        "duration": 108.30000001192093,
+        "bytes": 644
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/circle-DNBg_ZuD.js",
+        "start": 2639.800000011921,
+        "duration": 128.29999995231628,
+        "bytes": 278
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/arrow-up-DFnVEo8v.js",
+        "start": 2647.099999964237,
+        "duration": 193,
+        "bytes": 312
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/desktop-context-panel-C2fCHWPS.js",
+        "start": 2650.199999988079,
+        "duration": 193.10000002384186,
+        "bytes": 970
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/badge-check-HgO2DMsD.js",
+        "start": 2660.099999964237,
+        "duration": 188.20000004768372,
+        "bytes": 469
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/arrow-right-left-B7artWrV.js",
+        "start": 2668.599999964237,
+        "duration": 205.20000004768372,
+        "bytes": 406
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/printer-BoebC1dL.js",
+        "start": 2669.099999964237,
+        "duration": 221.9000000357628,
+        "bytes": 468
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/chevrons-left-ZTF8ZV1m.js",
+        "start": 2669.300000011921,
+        "duration": 229.39999997615814,
+        "bytes": 329
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/rotate-cw-DgzYhyGm.js",
+        "start": 2669.699999988079,
+        "duration": 277,
+        "bytes": 352
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/wifi-off-BXt7AIvT.js",
+        "start": 2669.899999976158,
+        "duration": 280,
+        "bytes": 610
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/wifi-1xrfShN0.js",
+        "start": 2670.199999988079,
+        "duration": 286,
+        "bytes": 426
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/save-DL4I5qQq.js",
+        "start": 2674.5,
+        "duration": 308.69999998807907,
+        "bytes": 473
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/chevrons-right-B54sKFok.js",
+        "start": 2682.599999964237,
+        "duration": 315.5,
+        "bytes": 329
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/editor-V4eOs9U0.js",
+        "start": 3606.199999988079,
+        "duration": 576.8000000119209,
+        "bytes": 332034
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/main-s3sQKeml.css",
+        "start": 3614.899999976158,
+        "duration": 2.600000023841858,
+        "bytes": 39783
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/mermaid-D3o5coJa.js",
+        "start": 3620.699999988079,
+        "duration": 125.5,
+        "bytes": 2313
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/workflow-CSRaIvvi.js",
+        "start": 3626,
+        "duration": 131.5,
+        "bytes": 415
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/message-square-plus-DtcN8Pcj.js",
+        "start": 3626.699999988079,
+        "duration": 124.89999997615814,
+        "bytes": 471
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces?includeArchived=true",
+        "start": 4485.699999988079,
+        "duration": 284.89999997615814,
+        "bytes": 2046
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/system/deployment",
+        "start": 4506.300000011921,
+        "duration": 107.5,
+        "bytes": 263
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/records",
+        "start": 4530.800000011921,
+        "duration": 114.59999996423721,
+        "bytes": 18
+      },
+      {
+        "url": "http://127.0.0.1:43009/favicon.svg",
+        "start": 4575.800000011921,
+        "duration": 109.09999996423721,
+        "bytes": 939
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/system/version?cached=1",
+        "start": 5423.899999976158,
+        "duration": 113.69999998807907,
+        "bytes": 197
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/documents?includeArchived=true",
+        "start": 6489.300000011921,
+        "duration": 105.79999995231628,
+        "bytes": 1182
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/github-dark-BFhhNueA.js",
+        "start": 6895.199999988079,
+        "duration": 113.30000001192093,
+        "bytes": 2643
+      },
+      {
+        "url": "http://127.0.0.1:43009/assets/github-light-lKoG2_DG.js",
+        "start": 6903,
+        "duration": 113.89999997615814,
+        "bytes": 2602
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/docs/rich-2000?conversionCheck=skip",
+        "start": 7414,
+        "duration": 573,
+        "bytes": 422391
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/spaces/loading-audit/annotations?docPath=rich-2000&includeResolved=true",
+        "start": 8671.300000011921,
+        "duration": 207.0999999642372,
+        "bytes": 542
+      },
+      {
+        "url": "http://127.0.0.1:43009/api/system/settings",
+        "start": 10064.399999976158,
+        "duration": 112.40000003576279,
+        "bytes": 140
+      }
+    ],
+    "longtasks": [
+      {
+        "start": 163.5999999642372,
+        "duration": 194
+      },
+      {
+        "start": 949.5999999642372,
+        "duration": 91
+      },
+      {
+        "start": 1322,
+        "duration": 865
+      },
+      {
+        "start": 2233.800000011921,
+        "duration": 131
+      },
+      {
+        "start": 2595.699999988079,
+        "duration": 105
+      },
+      {
+        "start": 3491.699999988079,
+        "duration": 135
+      },
+      {
+        "start": 3684.199999988079,
+        "duration": 52
+      },
+      {
+        "start": 3798.199999988079,
+        "duration": 851
+      },
+      {
+        "start": 4667.099999964237,
+        "duration": 54
+      },
+      {
+        "start": 4996.899999976158,
+        "duration": 131
+      },
+      {
+        "start": 5389.899999976158,
+        "duration": 65
+      },
+      {
+        "start": 5485,
+        "duration": 1093
+      },
+      {
+        "start": 6589.399999976158,
+        "duration": 91
+      },
+      {
+        "start": 6681.099999964237,
+        "duration": 229
+      },
+      {
+        "start": 7016.099999964237,
+        "duration": 53
+      },
+      {
+        "start": 7296.5,
+        "duration": 76
+      },
+      {
+        "start": 7373.5,
+        "duration": 55
+      },
+      {
+        "start": 7428.599999964237,
+        "duration": 368
+      },
+      {
+        "start": 7798.300000011921,
+        "duration": 177
+      },
+      {
+        "start": 8293.300000011921,
+        "duration": 404
+      },
+      {
+        "start": 8716.099999964237,
+        "duration": 148
+      },
+      {
+        "start": 9009.800000011921,
+        "duration": 70
+      },
+      {
+        "start": 9137,
+        "duration": 57
+      },
+      {
+        "start": 9226.099999964237,
+        "duration": 56
+      },
+      {
+        "start": 9322,
+        "duration": 542
+      },
+      {
+        "start": 10090.199999988079,
+        "duration": 82
+      },
+      {
+        "start": 10222.5,
+        "duration": 854
+      },
+      {
+        "start": 11278.199999988079,
+        "duration": 172
+      },
+      {
+        "start": 12248.899999976158,
+        "duration": 6019
+      },
+      {
+        "start": 18371.899999976158,
+        "duration": 2692
+      },
+      {
+        "start": 21064.69999998808,
+        "duration": 89
+      },
+      {
+        "start": 21228.69999998808,
+        "duration": 9357
+      },
+      {
+        "start": 30602.5,
+        "duration": 181
+      },
+      {
+        "start": 30796.399999976158,
+        "duration": 2939
+      }
+    ]
+  },
+  "warning": "Trace totals are inclusive and may overlap. Do not sum across event names or transplant diagnostic task timings into the earlier run."
+}

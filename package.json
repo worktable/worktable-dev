@@ -75,6 +75,7 @@
     "fast-check": "^4.6.0",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
+    "react-icons": "5.6.0",
     "sharp": "0.35.3",
     "turbo": "^2.8.8",
     "typescript": "5.9.3"
@@ -84,6 +85,7 @@
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {
-    "@quickdrawjs/core@0.2.0": "patches/@quickdrawjs%2Fcore@0.2.0.patch"
+    "@quickdrawjs/core@0.2.0": "patches/@quickdrawjs%2Fcore@0.2.0.patch",
+    "@blocknote/core@0.54.2": "patches/@blocknote%2Fcore@0.54.2.patch"
   }
 }

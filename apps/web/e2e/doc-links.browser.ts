@@ -189,6 +189,12 @@ test.afterAll(async () => {
 test("a cold rich-text doc completes its first websocket sync without refresh", async ({
   page,
 }) => {
+  // Trace DOM snapshots query styles throughout the entire editor, forcing
+  // skipped content-visibility subtrees to lay out between every assertion.
+  // Keep visual/network diagnostics without changing the rendering behavior
+  // this 5,000-block regression is intended to exercise.
+  await page.context().tracing.stop()
+  await page.context().tracing.start({ screenshots: true, snapshots: false })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await page
     .getByRole("button", { name: "Link Regression", exact: true })
@@ -198,14 +204,21 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
   await expect(page).toHaveURL(
     /\/spaces\/link-regression\/documents\/cold-sync-proof$/
   )
-  await expect(
-    page.getByText("Cold sync paragraph 0", { exact: true })
-  ).toBeVisible({
-    timeout: 30_000,
-  })
-  await expect(
-    page.getByText("Cold sync paragraph 4999", { exact: true })
-  ).toBeVisible({ timeout: 30_000 })
+  const firstParagraph = page.locator(
+    '.bn-editor .bn-block-outer[data-id="cold-sync-0"] .bn-inline-content'
+  )
+  await expect(firstParagraph).toBeVisible({ timeout: 30_000 })
+  await expect(firstParagraph).toHaveText("Cold sync paragraph 0")
+  // Long documents keep offscreen blocks mounted while deferring their layout.
+  // Address the fixture IDs directly rather than repeatedly walking all 5,000
+  // text subtrees, then verify the last paragraph after actually scrolling there.
+  const lastBlock = page.locator(
+    '.bn-editor .bn-block-outer[data-id="cold-sync-4999"]'
+  )
+  await expect(lastBlock).toBeAttached()
+  await lastBlock.evaluate((element) => element.scrollIntoView())
+  await expect(lastBlock.locator(".bn-inline-content")).toBeVisible()
+  await expect(lastBlock).toHaveText("Cold sync paragraph 4999")
   await expect(page.locator('[contenteditable="true"]')).toBeVisible()
   await expect(page.getByText("Syncing", { exact: true })).toHaveCount(0, {
     timeout: 30_000,
@@ -257,15 +270,64 @@ test("an internal link settles without hanging or rewriting the document", async
   })
 })
 
+test("document navigation keeps the current page until the next path is verified", async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  await page.goto(appUrl("/spaces/link-regression/documents/source"))
+  const sourceLink = page.getByRole("link", { name: "the target" })
+  await expect(sourceLink).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[contenteditable="true"]')).toBeVisible()
+
+  let releasePage!: () => void
+  const heldPage = new Promise<void>((resolve) => {
+    releasePage = resolve
+  })
+  await page.route(
+    "**/api/spaces/link-regression/documents/page?path=target",
+    async (route) => {
+      await heldPage
+      await route.continue()
+    }
+  )
+  try {
+    const pageStarted = page.waitForRequest((request) =>
+      request.url().endsWith("/documents/page?path=target")
+    )
+    await page
+      .locator('a[href="/spaces/link-regression/documents/target"]')
+      .click()
+    await pageStarted
+    // Advance beyond the router's default pending threshold while metadata is
+    // held. A slow path check must not replace the open document with a pending
+    // route match (which can outlive its load promise during concurrent renders).
+    await page.clock.install()
+    await page.clock.runFor(1_500)
+    await expect(sourceLink).toBeVisible()
+    await expect(page.locator('[data-document-loading]')).toHaveCount(0)
+  } finally {
+    releasePage()
+  }
+  await expect(page).toHaveURL(/\/documents\/target$/)
+  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+    timeout: 30_000,
+  })
+  expect(errors).toEqual([])
+})
+
 test("an already-amplified link opens without further rewriting", async ({
   page,
 }) => {
   await page.clock.install()
   const sourceBefore = await readFile(corruptedSourcePath)
 
-  await page.goto(appUrl("/spaces/link-regression/documents/corrupted-source"), {
-    waitUntil: "domcontentloaded",
-  })
+  await page.goto(
+    appUrl("/spaces/link-regression/documents/corrupted-source"),
+    {
+      waitUntil: "domcontentloaded",
+    }
+  )
   const docLink = page.getByRole("link", { name: "the damaged target" })
   await expect(docLink).toBeVisible({ timeout: 30_000 })
   await expect(docLink).toHaveAttribute(
@@ -392,3 +454,123 @@ test("mobile navigation opens the new-space sheet and returns to navigation", as
   await page.getByRole("button", { name: "Cancel" }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toHaveCount(0)
 })
+
+test("markdown document links navigate without restarting the application", async ({
+  page,
+}) => {
+  await writeFile(
+    harness.workspacePath("spaces/link-regression/docs/markdown-links.md"),
+    "# Navigation\n\n[Open target](./target)\n"
+  )
+  await page.goto(appUrl("/spaces/link-regression/documents/markdown-links"))
+  const link = page.getByRole("link", { name: "Open target", exact: true })
+  await expect(link).toBeVisible()
+  const timeOrigin = await page.evaluate(() => performance.timeOrigin)
+  await link.click()
+  await expect(page).toHaveURL(/\/documents\/target$/)
+  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+    timeout: 30_000,
+  })
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin)
+})
+
+
+test("pasting nested blocks assigns new IDs and preserves existing identities", async ({ page }) => {
+  const response = await fetch(`${harness.apiUrl}/api/spaces/link-regression/docs/id-regression`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: [
+      { id: "original-parent", type: "paragraph", content: "Parent text", children: [
+        { id: "original-child", type: "paragraph", content: "Nested text" },
+      ] },
+      { id: "paste-target", type: "paragraph", content: "Paste here" },
+    ] }),
+  });
+  expect(response.ok).toBe(true);
+  await page.goto(appUrl("/spaces/link-regression/documents/id-regression"));
+  const editor = page.locator('.bn-editor[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  const parent = editor.locator('.bn-block-outer[data-id="original-parent"]');
+  const html = await parent.evaluate((node) => node.outerHTML);
+  const target = editor.locator('.bn-block-outer[data-id="paste-target"] .bn-inline-content');
+  for (let i = 0; i < 2; i++) {
+    const last = editor.locator('.bn-inline-content').last();
+    await last.click();
+    // Use a DOM range: the shared browser's platform key bindings can make
+    // End a no-op, leaving the caret in the middle of the clicked paragraph.
+    await last.evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    });
+    await page.keyboard.press("Enter");
+    await editor.evaluate((node, html) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("blocknote/html", html);
+      clipboardData.setData("text/plain", "Parent text\nNested text");
+      node.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+    }, html);
+    await expect(editor.getByText("Nested text", { exact: true })).toHaveCount(i + 2);
+  }
+  const allIds = await editor.locator('.bn-block-outer[data-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id")));
+  expect(new Set(allIds).size).toBe(allIds.length);
+  expect(allIds.every(Boolean)).toBe(true);
+  await expect(parent.locator('.bn-block-outer[data-id="original-child"]')).toHaveText("Nested text");
+  await expect(target).toHaveText("Paste here");
+  await flushDocPersist("id-regression");
+  await page.reload();
+  await expect(editor).toBeVisible();
+  await expect(editor.getByText("Nested text", { exact: true })).toHaveCount(3);
+  const savedIds = await editor.locator('.bn-block-outer[data-id]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-id")));
+  expect(savedIds).toEqual(allIds);
+
+  // Exercise the installed ID plugin on a multi-step transaction, including
+  // nested inserts and a later change to an already-inserted block. Each new
+  // block must receive exactly one ID; existing annotation anchors stay intact.
+  const transactionResult = await editor.evaluate((element) => {
+    const tiptap = (element as HTMLElement & {
+      editor: import("@tiptap/core").Editor
+    }).editor;
+    const view = tiptap.view;
+    const source = view.state.doc.firstChild!.firstChild!;
+    type NodeJSON = { attrs?: Record<string, unknown>; content?: NodeJSON[] };
+    const copy: NodeJSON = structuredClone(source.toJSON());
+    const clearIds = (node: NodeJSON) => {
+      if (node.attrs && "id" in node.attrs) node.attrs.id = null;
+      node.content?.forEach(clearIds);
+    };
+    clearIds(copy);
+    const inserted = view.state.schema.nodeFromJSON(copy);
+    const tr = view.state.tr.insert(1, inserted);
+    tr.insert(tr.doc.content.size - 1, view.state.schema.nodeFromJSON(copy));
+    tr.insertText("Edited ", 3);
+    tr.setNodeMarkup(1, undefined, { ...tr.doc.nodeAt(1)!.attrs, id: null });
+    const plugin = view.state.plugins.find((candidate) =>
+      (candidate as unknown as { key: string }).key.startsWith("uniqueID$")
+    )!;
+    const append = plugin.spec.appendTransaction!;
+    let assigned = 0;
+    plugin.spec.appendTransaction = (...args) => {
+      const result = append.apply(plugin, args);
+      if (result) assigned += result.steps.length;
+      return result;
+    };
+    try {
+      view.dispatch(tr);
+    } finally {
+      plugin.spec.appendTransaction = append;
+    }
+    const ids: string[] = [];
+    view.state.doc.descendants((node) => {
+      if (node.type.name === "blockContainer") ids.push(node.attrs.id);
+    });
+    return { assigned, ids };
+  });
+  expect(transactionResult.assigned).toBe(4);
+  expect(transactionResult.ids.length).toBe(savedIds.length + 4);
+  expect(new Set(transactionResult.ids).size, JSON.stringify(transactionResult)).toBe(transactionResult.ids.length);
+  expect(transactionResult.ids.every(Boolean)).toBe(true);
+  expect(savedIds.every((id) => transactionResult.ids.includes(id!))).toBe(true);
+});

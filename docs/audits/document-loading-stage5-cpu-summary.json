@@ -1,0 +1,914 @@
+{
+  "note": "Diagnostic CPU sampling with 4x CPU and 100ms/10Mbps network. Instrumentation overhead means these are not benchmark durations. Self-time includes native calls attributed to the sampled JavaScript frame. Stage5 unpatched editor; opening 2000 paragraphs and a separate click/type/undo interaction.",
+  "errors": [],
+  "opening": {
+    "sampleCount": 11248,
+    "topSelfTime": [
+      {
+        "selfMs": 1579.23,
+        "frame": {
+          "functionName": "(program)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 1467.8,
+        "frame": {
+          "functionName": "(idle)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 239.83,
+        "frame": {
+          "functionName": "",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 6,
+          "columnNumber": 21766
+        }
+      },
+      {
+        "selfMs": 203.5,
+        "frame": {
+          "functionName": "a",
+          "scriptId": "7",
+          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "lineNumber": 55,
+          "columnNumber": 40540
+        }
+      },
+      {
+        "selfMs": 157.72,
+        "frame": {
+          "functionName": "(garbage collector)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 140.21,
+        "frame": {
+          "functionName": "",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 87,
+          "columnNumber": 50375
+        }
+      },
+      {
+        "selfMs": 79.05,
+        "frame": {
+          "functionName": "query",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5446,
+          "columnNumber": 20
+        }
+      },
+      {
+        "selfMs": 75.86,
+        "frame": {
+          "functionName": "La",
+          "scriptId": "55",
+          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "lineNumber": 1,
+          "columnNumber": 28463
+        }
+      },
+      {
+        "selfMs": 69.4,
+        "frame": {
+          "functionName": "renderHTML",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 182,
+          "columnNumber": 14850
+        }
+      },
+      {
+        "selfMs": 64.74,
+        "frame": {
+          "functionName": "",
+          "scriptId": "55",
+          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "lineNumber": 1,
+          "columnNumber": 6972
+        }
+      },
+      {
+        "selfMs": 58.93,
+        "frame": {
+          "functionName": "Ie",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 91,
+          "columnNumber": 1668
+        }
+      },
+      {
+        "selfMs": 56.69,
+        "frame": {
+          "functionName": "appendChild",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 54.07,
+        "frame": {
+          "functionName": "child",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11257
+        }
+      },
+      {
+        "selfMs": 51.96,
+        "frame": {
+          "functionName": "a",
+          "scriptId": "7",
+          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "lineNumber": 55,
+          "columnNumber": 40540
+        }
+      },
+      {
+        "selfMs": 51.4,
+        "frame": {
+          "functionName": "Zf",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 47731
+        }
+      },
+      {
+        "selfMs": 48.59,
+        "frame": {
+          "functionName": "get nodeSize",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 21849
+        }
+      },
+      {
+        "selfMs": 48.4,
+        "frame": {
+          "functionName": "",
+          "scriptId": "7",
+          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      },
+      {
+        "selfMs": 46.02,
+        "frame": {
+          "functionName": "",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 0,
+          "columnNumber": 0
+        }
+      },
+      {
+        "selfMs": 44.1,
+        "frame": {
+          "functionName": "get nodeSize",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 21849
+        }
+      },
+      {
+        "selfMs": 43.37,
+        "frame": {
+          "functionName": "uf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 91,
+          "columnNumber": 5197
+        }
+      },
+      {
+        "selfMs": 35.01,
+        "frame": {
+          "functionName": "integrate",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 5,
+          "columnNumber": 16469
+        }
+      },
+      {
+        "selfMs": 34.63,
+        "frame": {
+          "functionName": "child",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11257
+        }
+      },
+      {
+        "selfMs": 28.74,
+        "frame": {
+          "functionName": "kc",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 1,
+          "columnNumber": 12340
+        }
+      },
+      {
+        "selfMs": 27.58,
+        "frame": {
+          "functionName": "Nc",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 1,
+          "columnNumber": 15778
+        }
+      },
+      {
+        "selfMs": 27.45,
+        "frame": {
+          "functionName": "Zf",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 47731
+        }
+      },
+      {
+        "selfMs": 23.85,
+        "frame": {
+          "functionName": "Zf",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 47731
+        }
+      },
+      {
+        "selfMs": 22.79,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 24156
+        }
+      },
+      {
+        "selfMs": 22.16,
+        "frame": {
+          "functionName": "Nc",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 1,
+          "columnNumber": 15778
+        }
+      },
+      {
+        "selfMs": 22.14,
+        "frame": {
+          "functionName": "Pe",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 87,
+          "columnNumber": 53945
+        }
+      },
+      {
+        "selfMs": 21.18,
+        "frame": {
+          "functionName": "kc",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 1,
+          "columnNumber": 12340
+        }
+      },
+      {
+        "selfMs": 18.98,
+        "frame": {
+          "functionName": "findIndex",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11608
+        }
+      },
+      {
+        "selfMs": 18.96,
+        "frame": {
+          "functionName": "mv",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 116512
+        }
+      },
+      {
+        "selfMs": 18.47,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 24156
+        }
+      },
+      {
+        "selfMs": 17.44,
+        "frame": {
+          "functionName": "td",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 6,
+          "columnNumber": 8530
+        }
+      },
+      {
+        "selfMs": 17.25,
+        "frame": {
+          "functionName": "",
+          "scriptId": "55",
+          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "lineNumber": 1,
+          "columnNumber": 13848
+        }
+      },
+      {
+        "selfMs": 17.23,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 2,
+          "columnNumber": 4424
+        }
+      },
+      {
+        "selfMs": 16.75,
+        "frame": {
+          "functionName": "kc",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 1,
+          "columnNumber": 12340
+        }
+      },
+      {
+        "selfMs": 15.84,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 2,
+          "columnNumber": 4424
+        }
+      },
+      {
+        "selfMs": 15.01,
+        "frame": {
+          "functionName": "ch",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 3,
+          "columnNumber": 12906
+        }
+      },
+      {
+        "selfMs": 14.66,
+        "frame": {
+          "functionName": "findIndex",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11608
+        }
+      },
+      {
+        "selfMs": 14.53,
+        "frame": {
+          "functionName": "s",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 13,
+          "columnNumber": 6592
+        }
+      },
+      {
+        "selfMs": 14.38,
+        "frame": {
+          "functionName": "Ht",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 10,
+          "columnNumber": 73181
+        }
+      },
+      {
+        "selfMs": 14.31,
+        "frame": {
+          "functionName": "",
+          "scriptId": "27",
+          "url": "http://192.168.2.211:39085/spaces/loading-audit/documents/rich-2000",
+          "lineNumber": 0,
+          "columnNumber": 10502
+        }
+      },
+      {
+        "selfMs": 13.97,
+        "frame": {
+          "functionName": "a",
+          "scriptId": "7",
+          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "lineNumber": 55,
+          "columnNumber": 40540
+        }
+      },
+      {
+        "selfMs": 13.41,
+        "frame": {
+          "functionName": "ul",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 12861
+        }
+      }
+    ]
+  },
+  "input": {
+    "sampleCount": 3777,
+    "topSelfTime": [
+      {
+        "selfMs": 1234.89,
+        "frame": {
+          "functionName": "(program)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 156.77,
+        "frame": {
+          "functionName": "(idle)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 131.04,
+        "frame": {
+          "functionName": "",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 87,
+          "columnNumber": 50375
+        }
+      },
+      {
+        "selfMs": 51.54,
+        "frame": {
+          "functionName": "parentElementOrShadowHost",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 2755,
+          "columnNumber": 34
+        }
+      },
+      {
+        "selfMs": 45.4,
+        "frame": {
+          "functionName": "child",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11257
+        }
+      },
+      {
+        "selfMs": 43.95,
+        "frame": {
+          "functionName": "query",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5446,
+          "columnNumber": 20
+        }
+      },
+      {
+        "selfMs": 30.32,
+        "frame": {
+          "functionName": "parentElementOrShadowHost",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 2755,
+          "columnNumber": 34
+        }
+      },
+      {
+        "selfMs": 28.22,
+        "frame": {
+          "functionName": "(garbage collector)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 28.0,
+        "frame": {
+          "functionName": "$1",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 95193
+        }
+      },
+      {
+        "selfMs": 27.79,
+        "frame": {
+          "functionName": "_matchesSimple",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5309,
+          "columnNumber": 16
+        }
+      },
+      {
+        "selfMs": 27.13,
+        "frame": {
+          "functionName": "_cached",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5227,
+          "columnNumber": 9
+        }
+      },
+      {
+        "selfMs": 26.17,
+        "frame": {
+          "functionName": "$1",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 95193
+        }
+      },
+      {
+        "selfMs": 24.73,
+        "frame": {
+          "functionName": "findIndex",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11608
+        }
+      },
+      {
+        "selfMs": 23.36,
+        "frame": {
+          "functionName": "elementsFromPoint",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 22.44,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 2,
+          "columnNumber": 4424
+        }
+      },
+      {
+        "selfMs": 21.36,
+        "frame": {
+          "functionName": "",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5360,
+          "columnNumber": 138
+        }
+      },
+      {
+        "selfMs": 21.19,
+        "frame": {
+          "functionName": "child",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11257
+        }
+      },
+      {
+        "selfMs": 20.95,
+        "frame": {
+          "functionName": "query",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5446,
+          "columnNumber": 20
+        }
+      },
+      {
+        "selfMs": 17.94,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 24156
+        }
+      },
+      {
+        "selfMs": 17.94,
+        "frame": {
+          "functionName": "get nodeSize",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 21849
+        }
+      },
+      {
+        "selfMs": 16.53,
+        "frame": {
+          "functionName": "findIndex",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 11608
+        }
+      },
+      {
+        "selfMs": 16.16,
+        "frame": {
+          "functionName": "collapse",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 16.14,
+        "frame": {
+          "functionName": "_cached",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5227,
+          "columnNumber": 9
+        }
+      },
+      {
+        "selfMs": 13.04,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 2,
+          "columnNumber": 4424
+        }
+      },
+      {
+        "selfMs": 12.94,
+        "frame": {
+          "functionName": "apply",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 97,
+          "columnNumber": 71172
+        }
+      },
+      {
+        "selfMs": 10.72,
+        "frame": {
+          "functionName": "get isLeaf",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 24156
+        }
+      },
+      {
+        "selfMs": 10.61,
+        "frame": {
+          "functionName": "Ld.afterTransactionHandler",
+          "scriptId": "46",
+          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "lineNumber": 3,
+          "columnNumber": 24695
+        }
+      },
+      {
+        "selfMs": 10.0,
+        "frame": {
+          "functionName": "qb",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 184,
+          "columnNumber": 33055
+        }
+      },
+      {
+        "selfMs": 9.72,
+        "frame": {
+          "functionName": "getBoundingClientRect",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 9.38,
+        "frame": {
+          "functionName": "hv",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 117684
+        }
+      },
+      {
+        "selfMs": 9.21,
+        "frame": {
+          "functionName": "elementsFromPoint",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 8.85,
+        "frame": {
+          "functionName": "s",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 185,
+          "columnNumber": 14347
+        }
+      },
+      {
+        "selfMs": 8.48,
+        "frame": {
+          "functionName": "Y7",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 185,
+          "columnNumber": 15666
+        }
+      },
+      {
+        "selfMs": 8.27,
+        "frame": {
+          "functionName": "_cached",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5227,
+          "columnNumber": 9
+        }
+      },
+      {
+        "selfMs": 7.91,
+        "frame": {
+          "functionName": "$1",
+          "scriptId": "8",
+          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "lineNumber": 7,
+          "columnNumber": 95193
+        }
+      },
+      {
+        "selfMs": 7.72,
+        "frame": {
+          "functionName": "elementFromPoint",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 7.4,
+        "frame": {
+          "functionName": "get nodeSize",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 1,
+          "columnNumber": 21849
+        }
+      },
+      {
+        "selfMs": 7.25,
+        "frame": {
+          "functionName": "_matchesSimple",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5309,
+          "columnNumber": 16
+        }
+      },
+      {
+        "selfMs": 7.04,
+        "frame": {
+          "functionName": "",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 184,
+          "columnNumber": 29256
+        }
+      },
+      {
+        "selfMs": 6.9,
+        "frame": {
+          "functionName": "",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5231,
+          "columnNumber": 49
+        }
+      },
+      {
+        "selfMs": 6.89,
+        "frame": {
+          "functionName": "Qs",
+          "scriptId": "52",
+          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "lineNumber": 184,
+          "columnNumber": 48740
+        }
+      },
+      {
+        "selfMs": 6.87,
+        "frame": {
+          "functionName": "",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5360,
+          "columnNumber": 138
+        }
+      },
+      {
+        "selfMs": 6.83,
+        "frame": {
+          "functionName": "caretPositionFromPoint",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 6.79,
+        "frame": {
+          "functionName": "elementFromPoint",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "selfMs": 6.59,
+        "frame": {
+          "functionName": "_matchesParents",
+          "scriptId": "6",
+          "url": "",
+          "lineNumber": 5357,
+          "columnNumber": 17
+        }
+      }
+    ]
+  }
+}

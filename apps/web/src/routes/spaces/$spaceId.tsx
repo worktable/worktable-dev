@@ -18,7 +18,7 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { useRecordCollections, useRecords, useSpace, spaceQueryOptions } from "@/lib/queries"
-import { useSpaceDocs, spaceDocsQueryOptions } from "@/lib/docs-queries"
+import { useSpaceDocs } from "@/lib/docs-queries"
 import { useSpaceAttention } from "@/lib/annotations-queries"
 import type { AttentionSignal } from "@/lib/annotations-queries"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -61,12 +61,12 @@ function attentionLink(
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
-  // Warm the detail and document caches without delaying SPA-shell hydration.
+  // Warm space details without delaying SPA-shell hydration. Overview-only
+  // document/collection queries start when the overview actually mounts.
   // Awaiting here makes the first client tree contain live data while the static
   // shell still contains its pending UI, which React correctly rejects.
   beforeLoad: ({ context, params }) => {
     void context.queryClient.prefetchQuery(spaceQueryOptions(params.spaceId))
-    void context.queryClient.prefetchQuery(spaceDocsQueryOptions(params.spaceId))
   },
   component: SpaceDetailPage,
 })
@@ -543,8 +543,6 @@ function StaleMark({ doc }: { doc: DocListEntry }) {
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
   const { data, isLoading } = useSpace(spaceId)
-  const { data: docs } = useSpaceDocs(spaceId)
-  const { data: recordCollections } = useRecordCollections(spaceId)
   const matchRoute = useMatchRoute()
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
@@ -591,21 +589,9 @@ function SpaceDetailPage() {
     hasRecordsRoute ||
     hasThreadsRoute
 
-  if (!mounted || isLoading) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-        <div className="mb-6 space-y-2">
-          <div className="h-7 w-48 animate-pulse rounded-lg bg-muted/30" />
-          <div className="h-4 w-72 animate-pulse rounded bg-muted/20" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!data) return null
-
-  const { space } = data
-  const archiveInfo = getSpaceArchiveInfo(space.settings)
+  const archiveInfo = data
+    ? getSpaceArchiveInfo(data.space.settings)
+    : undefined
 
   const handleRestore = async () => {
     setRestoring(true)
@@ -636,6 +622,21 @@ function SpaceDetailPage() {
     )
   }
 
+  if (!mounted || isLoading) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+        <div className="mb-6 space-y-2">
+          <div className="h-7 w-48 animate-pulse rounded-lg bg-muted/30" />
+          <div className="h-4 w-72 animate-pulse rounded bg-muted/20" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  const { space } = data
+
   return (
     <>
       {archiveInfo && (
@@ -645,16 +646,28 @@ function SpaceDetailPage() {
           restoring={restoring}
         />
       )}
-      <SpaceOverview
+      <SpaceOverviewWithData
         spaceId={spaceId}
         spaceName={space.name}
         spaceDescription={space.description}
         spaceIcon={space.icon}
         spaceCreatedBy={space.createdBy}
-        docs={docs ?? []}
         widgets={data.widgets ?? []}
-        recordCollections={recordCollections ?? []}
       />
     </>
+  )
+}
+
+function SpaceOverviewWithData(
+  props: Omit<Parameters<typeof SpaceOverview>[0], "docs" | "recordCollections">
+) {
+  const { data: docs } = useSpaceDocs(props.spaceId)
+  const { data: recordCollections } = useRecordCollections(props.spaceId)
+  return (
+    <SpaceOverview
+      {...props}
+      docs={docs ?? []}
+      recordCollections={recordCollections ?? []}
+    />
   )
 }

@@ -9,9 +9,8 @@ import {
 import type { ComponentProps, Components } from "@blocknote/react";
 import {
   components as shadcnComponents,
-  ShadCNDefaultComponents,
-  useShadCNComponentsContext,
 } from "@blocknote/shadcn";
+import { mobileToolbarPrimitives } from "./mobile-toolbar-primitives";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { Check, ChevronDown } from "lucide-react";
@@ -67,7 +66,7 @@ function cloneTriggerChild(children: ReactNode, props: Record<string, unknown>) 
 }
 
 function useShadCN() {
-  return useShadCNComponentsContext() ?? ShadCNDefaultComponents;
+  return mobileToolbarPrimitives;
 }
 
 // BlockNote positions ("bottom-start", …) map 1:1 onto Radix side/align.

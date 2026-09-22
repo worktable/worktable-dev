@@ -1,0 +1,112 @@
+{
+  "path": "rich-blocks-verification",
+  "errors": [],
+  "consoleErrors": [],
+  "diagram": true,
+  "tableEditUndo": true,
+  "theme": "light",
+  "codeBefore": [
+    {
+      "text": "const",
+      "style": "--shiki-light: #D73A49; --shiki-dark: #F97583;",
+      "color": "rgb(249, 117, 131)"
+    },
+    {
+      "text": " ",
+      "style": "--shiki-light: #24292E; --shiki-dark: #E1E4E8;",
+      "color": "rgb(225, 228, 232)"
+    },
+    {
+      "text": "answer",
+      "style": "--shiki-light: #005CC5; --shiki-dark: #79B8FF;",
+      "color": "rgb(121, 184, 255)"
+    },
+    {
+      "text": ":",
+      "style": "--shiki-light: #D73A49; --shiki-dark: #F97583;",
+      "color": "rgb(249, 117, 131)"
+    },
+    {
+      "text": " ",
+      "style": "--shiki-light: #24292E; --shiki-dark: #E1E4E8;",
+      "color": "rgb(225, 228, 232)"
+    },
+    {
+      "text": "number",
+      "style": "--shiki-light: #005CC5; --shiki-dark: #79B8FF;",
+      "color": "rgb(121, 184, 255)"
+    },
+    {
+      "text": " ",
+      "style": "--shiki-light: #24292E; --shiki-dark: #E1E4E8;",
+      "color": "rgb(225, 228, 232)"
+    },
+    {
+      "text": "=",
+      "style": "--shiki-light: #D73A49; --shiki-dark: #F97583;",
+      "color": "rgb(249, 117, 131)"
+    },
+    {
+      "text": " ",
+      "style": "--shiki-light: #24292E; --shiki-dark: #E1E4E8;",
+      "color": "rgb(225, 228, 232)"
+    },
+    {
+      "text": "42",
+      "style": "--shiki-light: #005CC5; --shiki-dark: #79B8FF;",
+      "color": "rgb(121, 184, 255)"
+    },
+    {
+      "text": ";",
+      "style": "--shiki-light: #24292E; --shiki-dark: #E1E4E8;",
+      "color": "rgb(225, 228, 232)"
+    }
+  ],
+  "codeAfter": [
+    {
+      "text": "const",
+      "color": "rgb(215, 58, 73)"
+    },
+    {
+      "text": " ",
+      "color": "rgb(36, 41, 46)"
+    },
+    {
+      "text": "answer",
+      "color": "rgb(0, 92, 197)"
+    },
+    {
+      "text": ":",
+      "color": "rgb(215, 58, 73)"
+    },
+    {
+      "text": " ",
+      "color": "rgb(36, 41, 46)"
+    },
+    {
+      "text": "number",
+      "color": "rgb(0, 92, 197)"
+    },
+    {
+      "text": " ",
+      "color": "rgb(36, 41, 46)"
+    },
+    {
+      "text": "=",
+      "color": "rgb(215, 58, 73)"
+    },
+    {
+      "text": " ",
+      "color": "rgb(36, 41, 46)"
+    },
+    {
+      "text": "42",
+      "color": "rgb(0, 92, 197)"
+    },
+    {
+      "text": ";",
+      "color": "rgb(36, 41, 46)"
+    }
+  ],
+  "settingsOpened": true
+}

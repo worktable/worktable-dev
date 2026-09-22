@@ -1,0 +1,16 @@
+[
+  {
+    "failMetadata": false,
+    "initialSkeleton": true,
+    "authoredHtmlInParent": false,
+    "openingCleared": true,
+    "errors": []
+  },
+  {
+    "failMetadata": true,
+    "initialSkeleton": true,
+    "authoredHtmlInParent": false,
+    "openingCleared": true,
+    "errors": []
+  }
+]

@@ -2,13 +2,23 @@ import { documentReferenceHref } from "@worktable/types"
 import { sanitizeDocPath } from "../store.ts"
 import type { ResultLinkKind } from "./operations.ts"
 
+/** Linked destinations have no remote browsing surface. Keep citations tied to
+ * their device and present an authenticated open-locally instruction page. */
+export function mcpContentUrl(origin: string, path: string): string {
+  const url = new URL(origin)
+  const destination = /^\/api\/mcp\/d\/([a-f0-9]{32})$/.exec(url.pathname)?.[1]
+  return destination
+    ? `${url.origin}/linked/open/${destination}?path=${encodeURIComponent(path)}`
+    : new URL(path, origin).href
+}
+
 export function docUrlToSendInChat(
   origin: string,
   spaceId: string,
   docPath: string
 ): string {
   const path = sanitizeDocPath(docPath)
-  return new URL(documentReferenceHref(spaceId, path), origin).href
+  return mcpContentUrl(origin, documentReferenceHref(spaceId, path))
 }
 
 export function widgetUrlToSendInChat(
@@ -16,7 +26,7 @@ export function widgetUrlToSendInChat(
   spaceId: string,
   widgetId: string
 ): string {
-  return new URL(documentReferenceHref(spaceId, widgetId), origin).href
+  return mcpContentUrl(origin, documentReferenceHref(spaceId, widgetId))
 }
 
 export function recordUrlToSendInChat(
@@ -25,7 +35,7 @@ export function recordUrlToSendInChat(
   collectionId: string,
   recordId: string
 ): string {
-  return `${new URL(origin).origin}/spaces/${encodeURIComponent(spaceId)}/records/${encodeURIComponent(collectionId)}/${encodeURIComponent(recordId)}`
+  return mcpContentUrl(origin, `/spaces/${encodeURIComponent(spaceId)}/records/${encodeURIComponent(collectionId)}/${encodeURIComponent(recordId)}`)
 }
 
 /**

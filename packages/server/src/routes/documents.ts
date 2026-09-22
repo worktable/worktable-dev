@@ -8,7 +8,7 @@ import {
 } from "@worktable/types"
 import {
   canManageUserSettings,
-  isHostedBrowserOwner,
+  isHumanWorkspaceOwner,
   requireScope,
 } from "../auth.ts"
 import { setDocumentFolderArchived } from "../document-folder-archive.ts"
@@ -23,7 +23,7 @@ import {
 } from "../document-page-service.ts"
 import { analyzeDocumentPath } from "../document-path.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
-import { getHostedDocumentSharingConfig } from "../hosted.ts"
+import { getDocumentSharingConfig } from "../linked-sharing.ts"
 import { readSpace, slugifyDocPath } from "../store.ts"
 import { hasScope } from "../token-store.ts"
 import {
@@ -251,7 +251,7 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       "annotations:read"
     ),
     sharingAuthorized:
-      isHostedBrowserOwner(c) && Boolean(getHostedDocumentSharingConfig()),
+      isHumanWorkspaceOwner(c) && Boolean(getDocumentSharingConfig()),
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

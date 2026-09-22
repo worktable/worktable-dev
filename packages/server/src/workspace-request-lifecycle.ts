@@ -18,6 +18,8 @@ export function isWorkspaceRequest(method: string, pathname: string): boolean {
     pathname.startsWith("/api/workspace/") ||
     pathname === "/api/shares" ||
     pathname.startsWith("/api/shares/") ||
+    pathname === "/api/linked" ||
+    pathname.startsWith("/api/linked/") ||
     pathname === "/api/spaces" ||
     pathname.startsWith("/api/spaces/") ||
     pathname === "/api/threads" ||

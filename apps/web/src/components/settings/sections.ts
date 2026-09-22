@@ -12,6 +12,7 @@ import {
   UserRound,
 } from "lucide-react"
 import { AccountSection } from "./sections/account"
+import { CloudSection } from "./sections/cloud"
 import { GeneralSection } from "./sections/general"
 import { AppearanceSection } from "./sections/appearance"
 import { EditorSection } from "./sections/editor"
@@ -25,6 +26,7 @@ import type { DeploymentInfo } from "@/lib/system-api"
 export type SettingsSectionId =
   | "general"
   | "account"
+  | "cloud"
   | "appearance"
   | "editor"
   | "history"
@@ -147,6 +149,7 @@ export function getSettingsSections(
   }
   return [
     ...(capabilities.workspaceName ? [GENERAL] : []),
+    { id: "cloud", label: "Worktable Cloud", description: "AI connections and document sharing.", icon: UserRound, component: CloudSection },
     APPEARANCE,
     ...(capabilities.editorSettings ? [EDITOR] : []),
     ...(capabilities.historySettings ? [HISTORY] : []),

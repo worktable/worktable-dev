@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { linkedRouter } from "./routes/linked.ts";
+import { startLinkedRuntime } from "./linked-runtime.ts";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { existsSync, lstatSync } from "node:fs";
@@ -314,6 +316,7 @@ app.route("/api/workspace", workspaceRouter);
 app.route("/api/profile", profileRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
+app.route("/api/linked", linkedRouter);
 app.route("/api/spaces", spacesRouter);
 app.route("/api/spaces/:spaceId/documents", documentsRouter);
 app.route("/api/spaces/:spaceId/docs", docsRouter);
@@ -1512,6 +1515,7 @@ export function startServer(
   const credentialTimer = setInterval(() => { void checkRealtimeCredentials(); }, 1000);
   credentialTimer.unref?.();
   activeServer = server;
+  const stopLinked = startLinkedRuntime();
   if (options.resumeWorkspaceRequests !== false) {
     resumeWorkspaceRequestAdmission();
   }
@@ -1607,6 +1611,7 @@ export function startServer(
         // open upgraded connection. Worktable drains its own durable work
         // below, so the listener boundary itself is always force-closed.
         await settle(() => stopSocket(true));
+        await settle(stopLinked);
         await settle(() => credentialCheck ?? Promise.resolve());
         credentialSockets.clear();
         await settle(async () => {

@@ -12,6 +12,12 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-22
+
+### Added
+
+- **Linked devices:** A limited Cloud rollout connects AI apps and read-only document sharing to up to three local or self-hosted installations while online.
+
 ### Fixed
 
 - **Local installation:** Installation links point to the supported CLI setup while signed Desktop downloads are unavailable in the current release.

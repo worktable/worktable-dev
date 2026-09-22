@@ -3,10 +3,14 @@ title: Worktable Cloud accounts and agents
 description: Use the hosted workspace, share documents, connect agents, move portable content, and manage your account.
 ---
 
-Worktable Cloud is the hosted way to use Worktable. Open it in a browser or add
-it as a connection in Worktable Desktop; the service manages the public address,
-updates, and authentication. Your workspace uses the same content model and can
-move through the same `.wtb` package as local and self-hosted Worktable.
+Worktable Cloud brings hosting, AI access, and document sharing into one
+subscription. Open your hosted Worktable in a browser or add it as a connection
+in Worktable Desktop. Your documents use the same portable format as local and
+self-hosted Worktable.
+
+Device linking is being tested in a limited rollout. When enabled, it connects
+up to three local or self-hosted installations to AI apps and public document
+sharing through your Cloud account.
 
 ## Manage a Cloud subscription
 
@@ -24,13 +28,39 @@ billing help.
 After a renewal payment fails, your workspace remains fully available for seven
 days. If payment does not recover, normal workspace access is suspended. You
 can still manage billing, sign out, and download a full workspace export.
-Local and self-hosted installs do not show Cloud subscription controls.
+For a linked device, use **Settings → Worktable Cloud → Manage devices** to
+open your Cloud account. Your local documents remain accessible if your Cloud
+subscription ends.
+
+## Link a local or self-hosted device
+
+When device linking is enabled:
+
+1. Open **Settings → Worktable Cloud** on the device and choose **Link with Worktable Cloud**.
+2. Choose **Continue in browser**, sign in, and approve that device. If needed,
+   complete the subscription checkout and return to the approval screen.
+3. Return to Settings. When connected, copy the **MCP URL** into your AI app's
+   custom connector setup and choose OAuth authentication.
+4. Sign in with the same Worktable Cloud account and approve the connection.
+
+The AI app can read and change documents on that linked device. Keep Worktable
+running and the device online; a sleeping laptop cannot serve requests. Each
+device has its own MCP URL and approved AI connections. Content stays on that
+device, and authorized requests pass through Cloud without creating a hosted
+copy. This does not synchronize the device with your hosted Worktable or open
+its full interface remotely.
+
+Choose **Manage devices** to pause or resume access, disconnect an AI app, or
+unlink the device. Pausing preserves its links and connections for resuming.
+Unlinking ends access for that device; linking it again creates a new MCP URL.
+Replacing the local workspace also requires linking it again.
 
 ## Share a document
 
-Open a Doc or HTML doc in Worktable Cloud and choose **Share** in the document
+Open a Doc or HTML doc in your hosted Worktable or a connected device and choose **Share** in the document
 header. Choose **Create link**, then **Copy**. Anyone with the link can view the
 document without signing in. Shared links are unlisted and not searchable.
+For a linked device, the device must remain online and access must be active.
 
 A shared Doc reflects its latest saved content. Choose **Stop sharing** to
 disable the link. Moving, renaming, archiving, or deleting the document also
@@ -64,7 +94,8 @@ client receives the access it needs without a Worktable token for you to copy.
 An always-on participant may be limited to conversations. Follow the setup
 shown in Settings for the client you chose. Local and self-hosted installs use
 the token and pairing flows described in
-[remote access](/guides/remote-access/) instead.
+[remote access](/guides/remote-access/), or the device linking flow above when
+it is enabled for your Cloud account.
 
 ## Sign out of the browser
 

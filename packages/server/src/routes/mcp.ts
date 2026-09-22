@@ -62,7 +62,11 @@ mcpRouter.use(
 mcpRouter.use("*", requireIdentity())
 
 // MCP endpoint — stateless: new server + transport per request
-mcpRouter.all("/", async (c) => {
+export async function handleRemoteMcpRequest(
+  request: Request,
+  identity: TokenIdentity,
+  origin: string
+): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless mode
     // Answer POSTs with plain application/json instead of SSE (spec-legal:
@@ -74,9 +78,12 @@ mcpRouter.all("/", async (c) => {
     // surfaced as the whole server being unreachable.
     enableJsonResponse: true,
   })
-  const identity = c.get("identity")
-  const { origin } = resolveWorkspaceOriginForRequest(c.req.raw)
   const server = createRemoteMcpServer(identity, origin)
   await server.connect(transport)
-  return transport.handleRequest(c.req.raw)
+  return transport.handleRequest(request)
+}
+
+mcpRouter.all("/", async (c) => {
+  const { origin } = resolveWorkspaceOriginForRequest(c.req.raw)
+  return handleRemoteMcpRequest(c.req.raw, c.get("identity"), origin)
 })

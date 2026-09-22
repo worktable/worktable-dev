@@ -178,6 +178,9 @@ try {
         assert.equal(initial.first.top - initial.article.top, 64)
         assert.equal(initial.pill?.state, "opening")
         assert.equal(initial.pill.left, width < 768 ? 16 : 304)
+        await p
+          .locator("#worktable-opening-preview [data-document-preview]")
+          .evaluate((e) => (e.scrollTop = 180))
         releaseMain()
         const rich = path !== "spacing-markdown"
         if (rich) {
@@ -189,6 +192,13 @@ try {
               !document.getElementById("worktable-opening-preview")
                 ?.childElementCount
           )
+          const clientPreview = p.locator("main [data-document-preview]")
+          assert.equal(
+            await clientPreview.evaluate((e) => e.scrollTop),
+            180,
+            "Initial HTML reading position reaches the client preview"
+          )
+          await clientPreview.evaluate((e) => (e.scrollTop = 0))
           await p.waitForTimeout(2100)
           pending = await measure()
           assert.equal(
@@ -232,6 +242,13 @@ try {
           await p.waitForFunction(
             () => !document.querySelector("[data-document-preview]")
           )
+          const scrollRoot = p.locator("main [data-document-scroll-root]")
+          assert.equal(
+            await scrollRoot.evaluate((e) => e.scrollTop),
+            180,
+            "Initial HTML reading position reaches the Markdown scroll container"
+          )
+          await scrollRoot.evaluate((e) => (e.scrollTop = 0))
         }
         const ready = await measure()
         assert.equal(ready.first.top - ready.article.top, 64)

@@ -83,3 +83,18 @@ for every document: delayed fonts, rich embeds, lists/tables and the bounded
 keeps its body paragraph rhythm; its page origin and heading metrics match rich
 text. Prior performance results and outstanding large-document limits remain in
 `document-loading-results.md`.
+
+## PR review follow-up
+
+The outgoing review found that the initial HTML handoff targeted Markdown's
+article rather than its scrolling parent. The reader now marks its scroll root
+explicitly. The production probe scrolls the initial HTML by 180 px before
+releasing application code and verifies the transferred position for both rich
+text and Markdown, in addition to the client-preview-to-editor handoff.
+
+Post-rebase validation uses the repository-pinned Bun 1.3.14. All 67 focused
+server/UI checks and both compiled/browser notice tests passed. The BlockNote
+upgrade removed its transitive `react-icons` dependency; the existing browser
+license test intentionally consumes that package's metadata and license, so it
+is now an explicit pinned development dependency. License assertions remain
+unchanged.

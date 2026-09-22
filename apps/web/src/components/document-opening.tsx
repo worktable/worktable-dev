@@ -43,7 +43,7 @@ export function DocumentOpening() {
     if (!opening?.html) return
     const check = () => {
       const next = document.querySelector<HTMLElement>(
-        'main [data-document-preview], main .worktable-markdown, main [data-document-ready="true"], [data-document-state]'
+        'main [data-document-preview], main [data-document-scroll-root], main [data-document-ready="true"], [data-document-state]'
       )
       if (!next && location.pathname === opening.pathname) return
       // Preserve reading position as the validated in-app preview takes over.

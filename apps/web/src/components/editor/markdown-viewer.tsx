@@ -122,6 +122,7 @@ export function MarkdownViewer({
       {/* Scrollable content area with scroll fade (matches BlockNote editor) */}
       <div
         ref={scrollRef}
+        data-document-scroll-root
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
         <article className="worktable-markdown worktable-document-content">

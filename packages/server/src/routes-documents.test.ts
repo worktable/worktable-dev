@@ -15,6 +15,7 @@ import {
   type SpaceFile,
   type WidgetFile,
 } from "@worktable/types"
+import { setLinkedSharing } from "./linked-sharing.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { HOSTED_BROWSER_RUNTIME_SCOPES } from "./hosted-auth.ts"
@@ -144,6 +145,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  setLinkedSharing(null)
   setWorkspaceRootOverride(null)
   await rm(root, { recursive: true, force: true })
 })
@@ -303,6 +305,24 @@ describe("format-neutral document route", () => {
       },
     })
 
+    setLinkedSharing({
+      workspaceId: "d-test",
+      shareOrigin: "https://share.worktable.cloud",
+      htmlShareOrigin: "https://html.worktable.cloud",
+    })
+    for (const path of ["notes/readme", "notes/status"]) {
+      for (const [scopes, sharing] of [
+        ["*", true],
+        ["documents:read", false],
+      ] as const) {
+        const response = await instance.request(
+          `/api/spaces/${spaceId}/documents/page?path=${encodeURIComponent(path)}`,
+          { headers: { "x-test-scopes": scopes } }
+        )
+        expect((await response.json()).page.capabilities.sharing).toBe(sharing)
+      }
+    }
+    setLinkedSharing(null)
     const scopedSource = await instance.request(
       `/api/spaces/${spaceId}/documents/source?path=${encodeURIComponent(
         "notes/readme"

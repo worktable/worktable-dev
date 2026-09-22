@@ -545,10 +545,16 @@ export function requireWorkspaceOwner() {
   }
 }
 
+export function isHumanWorkspaceOwner(c: Context): boolean {
+  return isHosted()
+    ? isHostedBrowserOwner(c)
+    : isLocalOwner(c) && c.get("identity")?.principal.type === "human"
+}
+
 /** Human review is stronger than content-write permission, even for agents with `*`. */
 export function requireHumanWorkspaceOwner() {
   return async (c: Context, next: Next) => {
-    if (!canManageUserSettings(c) || c.get("identity")?.principal.type !== "human") {
+    if (!isHumanWorkspaceOwner(c)) {
       return c.json({ error: "Forbidden", required: "human-owner" }, 403)
     }
     return next()

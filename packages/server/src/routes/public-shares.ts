@@ -12,8 +12,6 @@ import {
 import { withResolvedDocumentShare } from "../share-store.ts"
 import { readSharedArtifact } from "../shared-artifact.ts"
 
-export const publicSharesRouter = new Hono()
-
 const COMMON_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
   "Referrer-Policy": "no-referrer",
@@ -67,12 +65,13 @@ function htmlResponse(
   })
 }
 
-function unavailable(request: Request, content = false): Response {
-  const config = getHostedDocumentSharingConfig()
+function unavailable(
+  request: Request,
+  content = false,
+  shareOrigin?: string
+): Response {
   const headers =
-    content && config
-      ? contentHeaders(config.shareOrigin)
-      : projectionHeaders()
+    content && shareOrigin ? contentHeaders(shareOrigin) : projectionHeaders()
   return htmlResponse(request, "", 404, headers)
 }
 
@@ -96,64 +95,82 @@ async function resolveRequest(request: Request) {
   })
 }
 
-publicSharesRouter.onError((error, c) => {
-  console.error(
-    "[public-share] unavailable:",
-    error instanceof Error ? error.name : "error"
-  )
-  return unavailable(c.req.raw, c.req.path.endsWith("/content"))
-})
-
-async function renderOuterShare(c: Context): Promise<Response> {
-  const config = getHostedDocumentSharingConfig()
-  if (!config) return unavailable(c.req.raw)
-  const resolved = await resolveRequest(c.req.raw)
-  if (!resolved) return unavailable(c.req.raw)
-
-  if (resolved.artifact.kind === "doc") {
-    const projection = await renderPublicDocProjection(
-      resolved.artifact.content,
-      resolved.artifact.format
+/** The caller must admit requests before mounting this capability-only router. */
+export function createPublicSharesRouter(
+  getShareOrigin: () => string | null = () =>
+    getHostedDocumentSharingConfig()?.shareOrigin ?? null
+): Hono {
+  const router = new Hono()
+  router.onError((error, c) => {
+    console.error(
+      "[public-share] unavailable:",
+      error instanceof Error ? error.name : "error"
     )
+    return unavailable(
+      c.req.raw,
+      c.req.path.endsWith("/content"),
+      getShareOrigin() ?? undefined
+    )
+  })
+
+  async function renderOuterShare(c: Context): Promise<Response> {
+    const shareOrigin = getShareOrigin()
+    if (!shareOrigin) return unavailable(c.req.raw)
+    const resolved = await resolveRequest(c.req.raw)
+    if (!resolved) return unavailable(c.req.raw)
+
+    if (resolved.artifact.kind === "doc") {
+      const projection = await renderPublicDocProjection(
+        resolved.artifact.content,
+        resolved.artifact.format
+      )
+      return projectionResponse(
+        c.req.raw,
+        PublicShareProjection.parse({
+          kind: "doc",
+          sourceUrl: SOURCE_URL,
+          format: resolved.artifact.format,
+          title: resolved.artifact.title,
+          projectionHtml: projection,
+        })
+      )
+    }
+
     return projectionResponse(
       c.req.raw,
       PublicShareProjection.parse({
-        kind: "doc",
+        kind: "html",
         sourceUrl: SOURCE_URL,
-        format: resolved.artifact.format,
         title: resolved.artifact.title,
-        projectionHtml: projection,
       })
     )
   }
 
-  return projectionResponse(
-    c.req.raw,
-    PublicShareProjection.parse({
-      kind: "html",
-      sourceUrl: SOURCE_URL,
-      title: resolved.artifact.title,
-    })
-  )
-}
-
-async function renderHtmlContent(c: Context): Promise<Response> {
-  const config = getHostedDocumentSharingConfig()
-  if (!config) return unavailable(c.req.raw, true)
-  const resolved = await resolveRequest(c.req.raw)
-  if (!resolved || resolved.artifact.kind !== "html") {
-    return unavailable(c.req.raw, true)
+  async function renderHtmlContent(c: Context): Promise<Response> {
+    const shareOrigin = getShareOrigin()
+    if (!shareOrigin) return unavailable(c.req.raw, true)
+    const resolved = await resolveRequest(c.req.raw)
+    if (!resolved || resolved.artifact.kind !== "html") {
+      return unavailable(c.req.raw, true, shareOrigin)
+    }
+    return htmlResponse(
+      c.req.raw,
+      renderPublicHtmlProjection(resolved.artifact.html),
+      200,
+      contentHeaders(shareOrigin)
+    )
   }
-  return htmlResponse(
-    c.req.raw,
-    renderPublicHtmlProjection(resolved.artifact.html),
-    200,
-    contentHeaders(config.shareOrigin)
+
+  router.on(["GET", "HEAD"], "/", renderOuterShare)
+  router.on(["GET", "HEAD"], "/content", renderHtmlContent)
+  router.all("*", (c) =>
+    unavailable(
+      c.req.raw,
+      c.req.path.endsWith("/content"),
+      getShareOrigin() ?? undefined
+    )
   )
+  return router
 }
 
-publicSharesRouter.on(["GET", "HEAD"], "/", renderOuterShare)
-publicSharesRouter.on(["GET", "HEAD"], "/content", renderHtmlContent)
-publicSharesRouter.all("*", (c) =>
-  unavailable(c.req.raw, c.req.path.endsWith("/content"))
-)
+export const publicSharesRouter = createPublicSharesRouter()

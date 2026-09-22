@@ -20,7 +20,7 @@ import {
   sanitizeDocPath,
 } from "../store.ts"
 import { hasScope } from "../token-store.ts"
-import { docUrlToSendInChat, recordUrlToSendInChat } from "./chat-links.ts"
+import { docUrlToSendInChat, recordUrlToSendInChat, mcpContentUrl } from "./chat-links.ts"
 import { mkAuthErr, mkErr, ok } from "./helpers.ts"
 import { oauthToolMetadata } from "./openai-tool-auth.ts"
 
@@ -164,7 +164,7 @@ async function ensureVisibleSpace(spaceId: string): Promise<string | null> {
 }
 
 function spaceUrlToSendInChat(origin: string, spaceId: string): string {
-  return `${new URL(origin).origin}/spaces/${encodeURIComponent(spaceId)}`
+  return mcpContentUrl(origin, `/spaces/${encodeURIComponent(spaceId)}`)
 }
 
 function commonDocumentUrl(
@@ -172,7 +172,7 @@ function commonDocumentUrl(
   spaceId: string,
   path: string
 ): string {
-  return new URL(documentReferenceHref(spaceId, path), origin).href
+  return mcpContentUrl(origin, documentReferenceHref(spaceId, path))
 }
 
 export function registerCompanyKnowledgeTools(

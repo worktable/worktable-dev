@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import fc from "fast-check"
 import {
+  chmodSync,
   cpSync,
   mkdtempSync,
   readFileSync,
@@ -39,6 +40,9 @@ test("compiled notice gate follows real bundle contributors and rejects source o
     expect(build.success).toBe(true)
     const manifestPath = join(dependency, "package.json")
     const licensePath = join(dependency, "LICENSE")
+    // Package-manager caches may be read-only. Only the disposable copies mutate.
+    chmodSync(manifestPath, 0o600)
+    chmodSync(licensePath, 0o600)
     const manifest = readFileSync(manifestPath)
     const license = readFileSync(licensePath)
     const pkg = JSON.parse(manifest.toString())

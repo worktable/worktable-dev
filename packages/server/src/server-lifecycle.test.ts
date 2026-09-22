@@ -33,6 +33,7 @@ import {
   onWorkspaceChange,
 } from "./workspace-events.ts"
 import { notifyDocContentChanged } from "./content-events.ts"
+import { beginLink } from "./linked-runtime.ts"
 import { lintScheduler } from "./wiki-lint.ts"
 import { withVersionKeyLock } from "./version-store.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
@@ -80,6 +81,47 @@ describe("server lifecycle", () => {
     setAppDirOverride(null)
     for (const dir of [workspaceDir, appDir]) {
       if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("closes the listener while a linked enrollment is still draining", async () => {
+    server = startServer(0, "127.0.0.1")
+    const url = `http://127.0.0.1:${server.port}/api/linked`
+    const realFetch = globalThis.fetch
+    let release!: () => void
+    let started!: () => void
+    const requested = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const provider = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1]
+    ) => {
+      if (String(input).endsWith("/linked/enroll")) {
+        started()
+        await held
+        return Response.json({
+          url: "https://app.worktable.cloud/linked/approve?request=test",
+        })
+      }
+      return realFetch(input, init)
+    }) as typeof fetch)
+    const enrollment = beginLink()
+    let stopping: Promise<void> | undefined
+    try {
+      await requested
+      stopping = server.stop(true)
+      await expect(
+        realFetch(url, { signal: AbortSignal.timeout(1000) })
+      ).rejects.toThrow()
+    } finally {
+      release()
+      await enrollment
+      await stopping
+      provider.mockRestore()
     }
   })
 

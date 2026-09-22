@@ -72,12 +72,34 @@ test("availability decorates Settings without hijacking its destination", async 
     })
   )
 
+  // The shell can announce an update before the deferred sidebar arrives.
+  // Its action must open Settings without waiting for the sidebar owner.
+  let releaseSidebar!: () => void
+  const sidebarGate = new Promise<void>((resolve) => {
+    releaseSidebar = resolve
+  })
+  await page.route("**/src/components/app-sidebar.tsx", async (route) => {
+    await sidebarGate
+    await route.continue()
+  })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 15_000 })
   await expect(page.getByText("Worktable 9.9.9 is available")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Review update" })
   ).toBeVisible()
+
+  try {
+    await page.getByRole("button", { name: "Review update" }).click()
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: "Update to 9.9.9" })
+    ).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+  } finally {
+    releaseSidebar()
+    await page.unroute("**/src/components/app-sidebar.tsx")
+  }
 
   await page.getByRole("button", { name: "Settings, update available" }).click()
   const settings = page.getByRole("dialog")

@@ -1,7 +1,7 @@
 import type { SettingsSectionId } from "@/components/settings/sections"
 
 // Imperative "open Settings at a section" channel. The dialog is owned by the
-// sidebar's SettingsButton; surfaces that live elsewhere in the tree (e.g. the
+// app shell; surfaces that live elsewhere in the tree (e.g. the
 // update-nudge toast) dispatch this event instead of threading dialog state
 // through the app shell.
 

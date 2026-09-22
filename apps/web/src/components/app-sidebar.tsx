@@ -86,18 +86,12 @@ const NewSpaceDialog = lazy(() =>
     default: module.NewSpaceDialog,
   }))
 )
-const SettingsDialog = lazy(() =>
-  import("@/components/settings/settings-dialog").then((module) => ({
-    default: module.SettingsDialog,
-  }))
-)
 import {
   SidebarSearchInput,
   SidebarSearchResults,
   type SidebarSearchResultsHandle,
 } from "@/components/sidebar-search"
-import type { SettingsSectionId } from "@/components/settings/sections"
-import { onOpenSettings } from "@/lib/settings-open"
+import { openSettings } from "@/lib/settings-open"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { SpaceContextMenuButton } from "@/components/spaces/space-context-menu"
@@ -270,8 +264,6 @@ async function atCurrentHtmlDocumentPath<T>(
 // ── Settings entry point (sidebar footer) ────────────────────
 
 function SettingsButton() {
-  const [open, setOpen] = useState(false)
-  const [section, setSection] = useState<SettingsSectionId | undefined>()
   // Passive (cache-only) signal — a dot on the entry point is the durable
   // "an update is waiting" indicator; the one-time toast lives in the shell.
   const updateAvailable = useUpdateAvailability() !== null
@@ -279,42 +271,19 @@ function SettingsButton() {
     ? "Settings, update available"
     : "Settings"
 
-  // Other surfaces (the update-nudge toast) open the dialog through this
-  // channel, landing on the section they name.
-  useEffect(
-    () =>
-      onOpenSettings((requested) => {
-        setSection(requested)
-        setOpen(true)
-      }),
-    []
-  )
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setSection(undefined)
-          setOpen(true)
-        }}
-        aria-label={settingsLabel}
-        title={settingsLabel}
-        className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-all duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground"
-      >
-        <Settings className="size-4" />
-        {updateAvailable && (
-          <UpdateIndicatorDot className="absolute top-2 right-2" />
-        )}
-      </button>
-      <DeferredMount active={open}>
-        <SettingsDialog
-          open={open}
-          onOpenChange={setOpen}
-          initialSection={section}
-        />
-      </DeferredMount>
-    </>
+    <button
+      type="button"
+      onClick={() => openSettings()}
+      aria-label={settingsLabel}
+      title={settingsLabel}
+      className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-all duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground"
+    >
+      <Settings className="size-4" />
+      {updateAvailable && (
+        <UpdateIndicatorDot className="absolute top-2 right-2" />
+      )}
+    </button>
   )
 }
 

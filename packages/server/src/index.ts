@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { linkedRouter } from "./routes/linked.ts";
+import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { cors } from "hono/cors";
@@ -211,7 +211,10 @@ app.use("*", async (c, next) => {
   }
   return wildcardCors(c, next);
 });
-app.use("*", logger());
+const requestLogger = logger();
+app.use("*", (c, next) =>
+  c.req.path === "/api/linked/account/callback" ? next() : requestLogger(c, next)
+);
 app.use("/api/*", compressApiResponse);
 
 // A replacement closes this gate before stopping the listener. Every admitted
@@ -309,6 +312,7 @@ app.route("/api/pairing", pairingRouter);
 // the router's trustedLocalIdentity → mint-auth → scope chain.
 app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
+app.route("/api/linked", cloudCallbackRouter);
 app.use("/api/*", trustedLocalIdentity());
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so

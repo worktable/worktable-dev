@@ -8,7 +8,7 @@ subscription. Open your hosted Worktable in a browser or add it as a connection
 in Worktable Desktop. Your documents use the same portable format as local and
 self-hosted Worktable.
 
-Device linking is being tested in a limited rollout. When enabled, it connects
+Worktable Link is being tested in a limited rollout. When enabled, it connects
 up to three local or self-hosted installations to AI apps and public document
 sharing through your Cloud account.
 
@@ -34,12 +34,13 @@ subscription ends.
 
 ## Link a local or self-hosted device
 
-When device linking is enabled:
+Remote self-hosted instances need an HTTPS address.
 
-1. Open **Settings → Worktable Cloud** on the device and choose **Link with Worktable Cloud**.
-2. Choose **Continue in browser**, sign in, and approve that device. If needed,
-   complete the subscription checkout and return to the approval screen.
-3. Return to Settings. When connected, copy the **MCP URL** into your AI app's
+1. Open **Settings → Worktable Cloud** on the device and choose **Sign in to Worktable Cloud**.
+2. Sign in in your browser. For a remote self-hosted instance, confirm its address
+   before continuing. Return to Settings and turn on **Worktable Link**.
+   Sign-in alone does not enable remote access. If needed, choose **Manage subscription** first.
+3. When connected, copy the **MCP URL** into your AI app's
    custom connector setup and choose OAuth authentication.
 4. Sign in with the same Worktable Cloud account and approve the connection.
 
@@ -50,10 +51,15 @@ device, and authorized requests pass through Cloud without creating a hosted
 copy. This does not synchronize the device with your hosted Worktable or open
 its full interface remotely.
 
-Choose **Manage devices** to pause or resume access, disconnect an AI app, or
-unlink the device. Pausing preserves its links and connections for resuming.
-Unlinking ends access for that device; linking it again creates a new MCP URL.
-Replacing the local workspace also requires linking it again.
+Turn off **Worktable Link** in Settings to pause AI access and document sharing.
+Turning it on again restores access with the same MCP URL, share links, and approved
+connections. You can also pause or resume from **Manage devices**, or disconnect
+an individual AI app there.
+
+**Unlink** is separate: it ends access for that device, and linking it again
+creates a new MCP URL. Replacing the local workspace also requires linking it
+again. Signing out of the Cloud account in local Settings does not unlink the
+device; pause access or unlink first if you want to stop remote access.
 
 ## Share a document
 

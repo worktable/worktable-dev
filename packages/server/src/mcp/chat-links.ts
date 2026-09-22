@@ -3,12 +3,12 @@ import { sanitizeDocPath } from "../store.ts"
 import type { ResultLinkKind } from "./operations.ts"
 
 /** Linked destinations have no remote browsing surface. Keep citations tied to
- * their device and present an authenticated open-locally instruction page. */
+ * their device and present an authenticated unavailable-document page without disclosing a path. */
 export function mcpContentUrl(origin: string, path: string): string {
   const url = new URL(origin)
   const destination = /^\/api\/mcp\/d\/([a-f0-9]{32})$/.exec(url.pathname)?.[1]
   return destination
-    ? `${url.origin}/linked/open/${destination}?path=${encodeURIComponent(path)}`
+    ? `${url.origin}/linked/open/${destination}`
     : new URL(path, origin).href
 }
 

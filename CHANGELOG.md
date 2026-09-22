@@ -14,15 +14,13 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [0.1.10] - 2026-09-22
 
-### Changed
-
-- **Worktable Link settings:** Sign in to Cloud locally, then pause or resume remote access while keeping your MCP URL and share links.
-
-## [0.1.9] - 2026-09-22
-
 ### Added
 
 - **Cloud workspace backups:** Save and restore whole-workspace backups from Settings, with hourly backups for changed workspaces and Undo after restoring.
+
+### Changed
+
+- **Worktable Link settings:** Sign in to Cloud locally, then pause or resume remote access while keeping your MCP URL and share links.
 
 ## [0.1.8] - 2026-09-22
 

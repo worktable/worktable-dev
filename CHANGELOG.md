@@ -12,6 +12,17 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-22
+
+### Changed
+
+- **Faster document opening:** Saved document content appears sooner while the editor prepares, with smaller initial downloads and faster large-document initialization.
+
+### Fixed
+
+- **Consistent loading:** Documents and HTML docs use coordinated loading states, with the opening status in the existing sync indicator and matching document spacing.
+- **Document navigation:** Renamed documents and folders open reliably, and the editor preserves the reading position when it becomes ready.
+
 ## [0.1.6] - 2026-09-22
 
 ### Added

@@ -23,11 +23,22 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
         // A cached handle must never authorize mounting an editor after a
         // concurrent move. Refresh the exact path before the route renders;
         // the normal observer may then reuse this just-established result.
-        await context.queryClient.fetchQuery({
+        const page = await context.queryClient.fetchQuery({
           ...options,
           staleTime: 0,
           retry: false,
         })
+        // Fetch renderer code while the app shell is still starting up.
+        // This does not mount it or bypass the renderer's fresh path checks.
+        if (
+          typeof window !== "undefined" &&
+          page.kind !== "conflict" &&
+          page.renderer
+        ) {
+          void browserDocumentRenderer(page.renderer)
+            ?.preload(page.document.format.id)
+            .catch(() => {})
+        }
       } catch {
         // fetchQuery preserves prior data on a failed refresh. Remove it so a
         // missing or unreachable path cannot fall through to a stale renderer.
@@ -38,6 +49,13 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
       }
     }
   },
+  pendingComponent: EditorSkeleton,
+  // Keep the current page and the shell's progress bar while validating the
+  // next path. Committing a pending match here also exposes a TanStack 1.167
+  // race: concurrent renders can see it after its load promise was cleared.
+  // Initial hydration and renderer Suspense still use the shared skeleton.
+  pendingMs: Infinity,
+  pendingMinMs: 0,
   component: DocumentPageRoute,
 })
 
@@ -112,7 +130,11 @@ function DocumentPageRoute() {
   const Renderer = renderer.component
   return (
     <Suspense fallback={<EditorSkeleton />}>
-      <Renderer spaceId={spaceId} documentPath={page.document.path} />
+      <Renderer
+        spaceId={spaceId}
+        documentPath={page.document.path}
+        formatId={page.document.format.id}
+      />
     </Suspense>
   )
 }
@@ -223,7 +245,7 @@ function DocumentState({
   detail: string
 }) {
   return (
-    <div className="flex h-full items-center justify-center px-6 py-12">
+    <div data-document-state className="flex h-full items-center justify-center px-6 py-12">
       <div className="max-w-md text-center">
         <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
           <Icon className="size-5" />

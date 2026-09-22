@@ -94,6 +94,7 @@ export function extractDocLinkTargets(content: string | unknown[]): string[] {
 // ── Graph cache (mirrors search-index lifecycle) ─────────────
 
 const graphs = new Map<string, SpaceLinkGraph>();
+const building = new Map<string, { generation: number; promise: Promise<SpaceLinkGraph> }>();
 let dirty = true;
 let generation = 0;
 
@@ -177,7 +178,17 @@ export async function getSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph
     if (cached) return cached;
 
     const expectedGeneration = generation;
-    const graph = await buildSpaceLinkGraph(spaceId);
+    let pending = building.get(spaceId);
+    if (!pending || pending.generation !== expectedGeneration) {
+      pending = { generation: expectedGeneration, promise: buildSpaceLinkGraph(spaceId) };
+      building.set(spaceId, pending);
+    }
+    let graph: SpaceLinkGraph;
+    try {
+      graph = await pending.promise;
+    } finally {
+      if (building.get(spaceId) === pending) building.delete(spaceId);
+    }
     if (generation !== expectedGeneration) {
       continue;
     }

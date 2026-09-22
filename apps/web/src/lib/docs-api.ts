@@ -45,7 +45,7 @@ export interface DocMeta {
   collaborationEpoch: string;
   collaborationCacheEpoch: string;
   collaborationCacheEpochHistory?: string[];
-  markdownCompatible: boolean;
+  markdownCompatible: boolean | null;
   archived?: ArchiveInfo;
   provenance?: {
     updatedAt: string;
@@ -97,7 +97,7 @@ export async function resolveDocumentReferences(spaceId: string, paths: unknown[
 
 export function readDoc(spaceId: string, docPath: string): Promise<DocMeta> {
   return fetchJSON<DocMeta>(
-    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`
+    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}?conversionCheck=skip`
   );
 }
 

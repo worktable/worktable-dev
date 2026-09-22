@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib"
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,4 +123,90 @@ describe("static file responses", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-});
+})
+
+describe("static asset delivery", () => {
+  it("compresses hashed assets, negotiates gzip, and revalidates each representation", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worktable-delivery-"))
+    try {
+      mkdirSync(join(dir, "assets"))
+      const path = "/assets/main-abcdefgh.js"
+      const source = "console.log('asset');\n".repeat(200)
+      writeFileSync(join(dir, path), source)
+      const request = (headers: HeadersInit) =>
+        new Request("http://localhost" + path, { headers })
+      const compressed = createStaticFileResponse(
+        dir,
+        path,
+        undefined,
+        request({ "accept-encoding": "br, gzip" })
+      )!
+      expect(compressed.headers.get("cache-control")).toBe(
+        "public, max-age=31536000, immutable"
+      )
+      expect(compressed.headers.get("vary")).toContain("Accept-Encoding")
+      expect(compressed.headers.get("content-encoding")).toBe("gzip")
+      const bytes = Buffer.from(await compressed.arrayBuffer())
+      expect(bytes.length).toBe(
+        Number(compressed.headers.get("content-length"))
+      )
+      expect(bytes.length).toBeLessThan(source.length / 2)
+      expect(gunzipSync(bytes).toString()).toBe(source)
+      const plain = createStaticFileResponse(
+        dir,
+        path,
+        undefined,
+        request({ "accept-encoding": "gzip;q=0, *;q=1" })
+      )!
+      expect(plain.headers.get("content-encoding")).toBeNull()
+      expect(await plain.text()).toBe(source)
+      expect(plain.headers.get("etag")).not.toBe(compressed.headers.get("etag"))
+      const revalidated = createStaticFileResponse(
+        dir,
+        path,
+        undefined,
+        request({
+          "accept-encoding": "gzip",
+          "if-none-match": compressed.headers.get("etag")!,
+        })
+      )!
+      expect(revalidated.status).toBe(304)
+      expect(await revalidated.text()).toBe("")
+      expect(revalidated.headers.get("content-length")).toBeNull()
+      expect(
+        createStaticFileResponse(
+          dir,
+          path,
+          undefined,
+          request({ "if-none-match": compressed.headers.get("etag")! })
+        )!.status
+      ).toBe(200)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps shells fresh and isolates cached bytes by file identity and root", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worktable-delivery-"))
+    try {
+      writeFileSync(join(dir, "_shell.html"), "first")
+      const first = createStaticFileResponse(dir, "/_shell.html")!
+      expect(first.headers.get("cache-control")).toBe("no-cache")
+      expect(await first.text()).toBe("first")
+      writeFileSync(join(dir, "_shell.html"), "second")
+      const second = createStaticFileResponse(dir, "/_shell.html")!
+      expect(await second.text()).toBe("second")
+      expect(second.headers.get("etag")).not.toBe(first.headers.get("etag"))
+      mkdirSync(join(dir, "other"))
+      writeFileSync(join(dir, "other", "_shell.html"), "other")
+      expect(
+        await createStaticFileResponse(
+          join(dir, "other"),
+          "/_shell.html"
+        )!.text()
+      ).toBe("other")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

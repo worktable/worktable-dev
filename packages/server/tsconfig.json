@@ -1,6 +1,7 @@
 {
   "extends": "@worktable/config-typescript/base.json",
   "compilerOptions": {
+    "jsx": "react-jsx",
     "outDir": "dist",
     "types": ["bun-types"]
   },

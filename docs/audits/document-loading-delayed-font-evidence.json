@@ -1,0 +1,3730 @@
+{
+  "fontDelayMs": 8000,
+  "profile": {
+    "latencyMs": 100,
+    "downloadMbps": 10,
+    "cpu": 4
+  },
+  "note": "Controlled font CSS fault injection, empty CSS response after 8 seconds. Top-page network throttle; iframe limitation applies.",
+  "runs": [
+    {
+      "label": "stage6",
+      "target": "rich-10",
+      "iteration": 1,
+      "readyMs": 12350,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8620,
+          "duration": 0,
+          "paintTime": 8547.100000023842,
+          "presentationTime": 8620
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8620,
+          "duration": 0,
+          "paintTime": 8547.100000023842,
+          "presentationTime": 8620
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8616.699999988079,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.9000000357627869,
+        "domainLookupStart": 15.699999988079071,
+        "domainLookupEnd": 15.699999988079071,
+        "connectStart": 15.699999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 15.800000011920929,
+        "requestStart": 15.900000035762787,
+        "responseStart": 43.90000003576279,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 43.90000003576279,
+        "responseEnd": 122.19999998807907,
+        "transferSize": 3100,
+        "encodedBodySize": 2800,
+        "decodedBodySize": 7871,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8554.5,
+        "domContentLoadedEventStart": 8555.5,
+        "domContentLoadedEventEnd": 8555.600000023842,
+        "domComplete": 8616.699999988079,
+        "loadEventStart": 8616.699999988079,
+        "loadEventEnd": 8616.699999988079,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 149.60000002384186,
+          "duration": 149.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 152.9000000357628,
+          "duration": 477.2999999523163
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 154.69999998807907,
+          "duration": 318.7000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 156.4000000357628,
+          "duration": 193.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 158.10000002384186,
+          "duration": 178
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 158.30000001192093,
+          "duration": 366.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 158.5,
+          "duration": 283
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 161.69999998807907,
+          "duration": 272.5
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 446.4000000357628,
+          "duration": 8041.899999976158
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 447.4000000357628,
+          "duration": 8045.599999964237
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8565.400000035763,
+          "duration": 142.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8567.5,
+          "duration": 146.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8569.199999988079,
+          "duration": 144.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8569.400000035763,
+          "duration": 160.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8570.900000035763,
+          "duration": 155.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/external-links-Dqfes48x.js",
+          "start": 8571.800000011921,
+          "duration": 209.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-scroll-fade-x-1YsXefQD.js",
+          "start": 8572.400000035763,
+          "duration": 238.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8573.100000023842,
+          "duration": 243.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8574.100000023842,
+          "duration": 245.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8580.199999988079,
+          "duration": 252.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8580.600000023842,
+          "duration": 258.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8580.900000035763,
+          "duration": 311.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8585.5,
+          "duration": 328.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8586.800000011921,
+          "duration": 342.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8587,
+          "duration": 336.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-document-BjP2ueIv.js",
+          "start": 8587.300000011921,
+          "duration": 392.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/TooltipProvider-9YtMEjIy.js",
+          "start": 8587.600000023842,
+          "duration": 362.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/PopoverPopup-DeO4DMBQ.js",
+          "start": 8587.800000011921,
+          "duration": 411.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/AvatarFallback-CwFvb1Zr.js",
+          "start": 8588,
+          "duration": 430.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-server-settings-B7y1UkQP.js",
+          "start": 8588.100000023842,
+          "duration": 438.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/mermaid-DHZQyLc8.js",
+          "start": 8588.400000035763,
+          "duration": 449.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/editor-Bj__rKXz.js",
+          "start": 8588.600000023842,
+          "duration": 825.3000000119209
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9238.100000023842,
+          "duration": 127.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9294,
+          "duration": 135
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9371.199999988079,
+          "duration": 170.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9375.600000023842,
+          "duration": 164.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9405.400000035763,
+          "duration": 135.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 9414,
+          "duration": 126.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9801.699999988079,
+          "duration": 266.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9805.100000023842,
+          "duration": 242.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9905.699999988079,
+          "duration": 139.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 10275.5,
+          "duration": 108
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10305.699999988079,
+          "duration": 115.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10523.900000035763,
+          "duration": 140.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs/rich-10?conversionCheck=skip",
+          "start": 10544.300000011921,
+          "duration": 124.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 10908.300000011921,
+          "duration": 149.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 10923.400000035763,
+          "duration": 138.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 10936.699999988079,
+          "duration": 128.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 11104,
+          "duration": 145.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/settings",
+          "start": 11889.5,
+          "duration": 111.10000002384186
+        }
+      ]
+    },
+    {
+      "label": "stage7",
+      "target": "rich-10",
+      "iteration": 1,
+      "readyMs": 5429,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 612,
+          "duration": 0,
+          "paintTime": 514.3000000119209,
+          "presentationTime": 612
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 612,
+          "duration": 0,
+          "paintTime": 514.3000000119209,
+          "presentationTime": 612
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.100000023841858,
+        "domainLookupStart": 13.100000023841858,
+        "domainLookupEnd": 13.199999988079071,
+        "connectStart": 13.199999988079071,
+        "secureConnectionStart": 0,
+        "connectEnd": 13.5,
+        "requestStart": 13.600000023841858,
+        "responseStart": 65.40000003576279,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 65.40000003576279,
+        "responseEnd": 123.19999998807907,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 572.1999999880791,
+        "domContentLoadedEventStart": 572.3000000119209,
+        "domContentLoadedEventEnd": 572.6000000238419,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 152,
+          "duration": 146.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 155.30000001192093,
+          "duration": 464.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 157.19999998807907,
+          "duration": 310.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 159,
+          "duration": 186.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 160.5,
+          "duration": 157
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 162.19999998807907,
+          "duration": 350.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 162.5,
+          "duration": 261.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 164.10000002384186,
+          "duration": 257.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 598.4000000357628,
+          "duration": 175.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 604.6999999880791,
+          "duration": 174.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 611.1999999880791,
+          "duration": 168.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 614,
+          "duration": 173.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 615.6000000238419,
+          "duration": 171.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/external-links-Dqfes48x.js",
+          "start": 616,
+          "duration": 223.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-scroll-fade-x-1YsXefQD.js",
+          "start": 616.3000000119209,
+          "duration": 261.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 616.6000000238419,
+          "duration": 268.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 621.3000000119209,
+          "duration": 264.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 625.5,
+          "duration": 268
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 627.3000000119209,
+          "duration": 270
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 630.1999999880791,
+          "duration": 312.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 634.6999999880791,
+          "duration": 346
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 637.1999999880791,
+          "duration": 353.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 638.5,
+          "duration": 363.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 642,
+          "duration": 356.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-document-BSPEC09X.js",
+          "start": 644.4000000357628,
+          "duration": 401.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/TooltipProvider-CSfrkOGc.js",
+          "start": 646.1999999880791,
+          "duration": 404.2000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/PopoverPopup-BjpXh1Gg.js",
+          "start": 649.5,
+          "duration": 440.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/AvatarFallback-CpdYvTVT.js",
+          "start": 651.1000000238419,
+          "duration": 454.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-server-settings-B2-9ocg9.js",
+          "start": 653.4000000357628,
+          "duration": 456.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/mermaid-DHZQyLc8.js",
+          "start": 656,
+          "duration": 455.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/editor-ss6AmCme.js",
+          "start": 658.1999999880791,
+          "duration": 835.6000000238419
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1392.199999988079,
+          "duration": 246.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1470.699999988079,
+          "duration": 181.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1476.1000000238419,
+          "duration": 172.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1519.6000000238419,
+          "duration": 160.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 1527.6000000238419,
+          "duration": 125.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 2026.6000000238419,
+          "duration": 232.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 2027.300000011921,
+          "duration": 221.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 2101.800000011921,
+          "duration": 145.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2346.699999988079,
+          "duration": 111.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2669.300000011921,
+          "duration": 139.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs/rich-10?conversionCheck=skip",
+          "start": 2691,
+          "duration": 123.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 3058.800000011921,
+          "duration": 164.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 3079.600000023842,
+          "duration": 148.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 3096.600000023842,
+          "duration": 136.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 3228.300000011921,
+          "duration": 139.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/settings",
+          "start": 5008.900000035763,
+          "duration": 107.09999996423721
+        }
+      ]
+    },
+    {
+      "label": "stage7",
+      "target": "rich-10",
+      "iteration": 2,
+      "readyMs": 4359,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 748,
+          "duration": 0,
+          "paintTime": 632.1000000238419,
+          "presentationTime": 748
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 748,
+          "duration": 0,
+          "paintTime": 632.1000000238419,
+          "presentationTime": 748
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1,
+        "domainLookupStart": 20.80000001192093,
+        "domainLookupEnd": 20.80000001192093,
+        "connectStart": 20.80000001192093,
+        "secureConnectionStart": 0,
+        "connectEnd": 21.100000023841858,
+        "requestStart": 21.30000001192093,
+        "responseStart": 85.20000004768372,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 85.20000004768372,
+        "responseEnd": 126.80000001192093,
+        "transferSize": 3305,
+        "encodedBodySize": 3005,
+        "decodedBodySize": 8414,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 782.8000000119209,
+        "domContentLoadedEventStart": 782.8000000119209,
+        "domContentLoadedEventEnd": 782.9000000357628,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 163.30000001192093,
+          "duration": 160.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 164.5,
+          "duration": 488.7000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 168.10000002384186,
+          "duration": 322.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 168.5,
+          "duration": 193.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 168.70000004768372,
+          "duration": 185.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 171.5,
+          "duration": 376.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 171.70000004768372,
+          "duration": 290.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 172,
+          "duration": 281.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 724.7000000476837,
+          "duration": 199.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 726.6000000238419,
+          "duration": 216.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 729.4000000357628,
+          "duration": 212.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 730.3000000119209,
+          "duration": 215.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 730.5,
+          "duration": 211.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/external-links-Dqfes48x.js",
+          "start": 730.7000000476837,
+          "duration": 256.2999999523163
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-scroll-fade-x-1YsXefQD.js",
+          "start": 730.8000000119209,
+          "duration": 296.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 731,
+          "duration": 320.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 731.1000000238419,
+          "duration": 324.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 731.3000000119209,
+          "duration": 329.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 731.4000000357628,
+          "duration": 333.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 731.5,
+          "duration": 360.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 736.6000000238419,
+          "duration": 395.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 739.6000000238419,
+          "duration": 415.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 744.2000000476837,
+          "duration": 423
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 749.3000000119209,
+          "duration": 414.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-document-BSPEC09X.js",
+          "start": 756.9000000357628,
+          "duration": 456.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/TooltipProvider-CSfrkOGc.js",
+          "start": 759.4000000357628,
+          "duration": 441.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/PopoverPopup-BjpXh1Gg.js",
+          "start": 762.7000000476837,
+          "duration": 476.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/AvatarFallback-CpdYvTVT.js",
+          "start": 766.9000000357628,
+          "duration": 492
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-server-settings-B2-9ocg9.js",
+          "start": 767.7000000476837,
+          "duration": 501.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/mermaid-DHZQyLc8.js",
+          "start": 768.1000000238419,
+          "duration": 505.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/editor-ss6AmCme.js",
+          "start": 768.4000000357628,
+          "duration": 887
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1464,
+          "duration": 255.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1548.4000000357628,
+          "duration": 184.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1549.6000000238419,
+          "duration": 183.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1592.4000000357628,
+          "duration": 140.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 1604.9000000357628,
+          "duration": 128.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 2146.900000035763,
+          "duration": 241.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 2147.600000023842,
+          "duration": 217.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 2230.7000000476837,
+          "duration": 132.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2438.300000011921,
+          "duration": 109.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2759.800000011921,
+          "duration": 129
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs/rich-10?conversionCheck=skip",
+          "start": 2772.900000035763,
+          "duration": 118.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 3117.400000035763,
+          "duration": 148.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 3127.100000023842,
+          "duration": 142.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 3137.600000023842,
+          "duration": 132.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 3246.2000000476837,
+          "duration": 133.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/settings",
+          "start": 3951.5,
+          "duration": 110.90000003576279
+        }
+      ]
+    },
+    {
+      "label": "stage6",
+      "target": "rich-10",
+      "iteration": 2,
+      "readyMs": 12399,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8704,
+          "duration": 0,
+          "paintTime": 8632.200000047684,
+          "presentationTime": 8704
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8704,
+          "duration": 0,
+          "paintTime": 8632.200000047684,
+          "presentationTime": 8704
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-10",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8694.700000047684,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1,
+        "domainLookupStart": 10.300000011920929,
+        "domainLookupEnd": 10.300000011920929,
+        "connectStart": 10.300000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 10.5,
+        "requestStart": 10.600000023841858,
+        "responseStart": 30.200000047683716,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 30.200000047683716,
+        "responseEnd": 120,
+        "transferSize": 3100,
+        "encodedBodySize": 2800,
+        "decodedBodySize": 7871,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8637.600000023842,
+        "domContentLoadedEventStart": 8638.5,
+        "domContentLoadedEventEnd": 8638.700000047684,
+        "domComplete": 8694.700000047684,
+        "loadEventStart": 8694.700000047684,
+        "loadEventEnd": 8694.700000047684,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 148.5,
+          "duration": 167.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 150.80000001192093,
+          "duration": 483.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 152.5,
+          "duration": 333.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 153.70000004768372,
+          "duration": 202.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 155.60000002384186,
+          "duration": 176.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 155.9000000357628,
+          "duration": 316.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 158.4000000357628,
+          "duration": 282.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 158.70000004768372,
+          "duration": 362.2999999523163
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 537.7000000476837,
+          "duration": 8040.099999964237
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 539.1000000238419,
+          "duration": 8039.399999976158
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8647.100000023842,
+          "duration": 151.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8648.600000023842,
+          "duration": 154.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8649.800000011921,
+          "duration": 159.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8651.200000047684,
+          "duration": 164.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8652.800000011921,
+          "duration": 160.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/external-links-Dqfes48x.js",
+          "start": 8654.200000047684,
+          "duration": 216.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-scroll-fade-x-1YsXefQD.js",
+          "start": 8655.800000011921,
+          "duration": 247.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8657.100000023842,
+          "duration": 253.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8657.400000035763,
+          "duration": 256.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8658.800000011921,
+          "duration": 259.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8659,
+          "duration": 263.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8659,
+          "duration": 315.2000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8659.200000047684,
+          "duration": 347.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8659.400000035763,
+          "duration": 367.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8659.900000035763,
+          "duration": 357.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-document-BjP2ueIv.js",
+          "start": 8660.300000011921,
+          "duration": 408.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/TooltipProvider-9YtMEjIy.js",
+          "start": 8660.600000023842,
+          "duration": 373.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/PopoverPopup-DeO4DMBQ.js",
+          "start": 8660.900000035763,
+          "duration": 420.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/AvatarFallback-CwFvb1Zr.js",
+          "start": 8661,
+          "duration": 449.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-server-settings-B7y1UkQP.js",
+          "start": 8661.100000023842,
+          "duration": 461.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/mermaid-DHZQyLc8.js",
+          "start": 8664.400000035763,
+          "duration": 467.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/editor-Bj__rKXz.js",
+          "start": 8665.400000035763,
+          "duration": 814.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9279.200000047684,
+          "duration": 109.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9332.5,
+          "duration": 131.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9405.5,
+          "duration": 168
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9410.700000047684,
+          "duration": 158.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9445.600000023842,
+          "duration": 122
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=rich-10",
+          "start": 9453.5,
+          "duration": 113.90000003576279
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9837.400000035763,
+          "duration": 210.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9839.700000047684,
+          "duration": 192.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9908.200000047684,
+          "duration": 121.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 10134.900000035763,
+          "duration": 107.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10195.5,
+          "duration": 107.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10354.700000047684,
+          "duration": 182.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10475.100000023842,
+          "duration": 139.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs/rich-10?conversionCheck=skip",
+          "start": 10490.200000047684,
+          "duration": 130.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 10874.900000035763,
+          "duration": 159.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 10883.100000023842,
+          "duration": 174.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 10903,
+          "duration": 160.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+          "start": 11115.600000023842,
+          "duration": 177.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/settings",
+          "start": 11991.800000011921,
+          "duration": 108.10000002384186
+        }
+      ]
+    },
+    {
+      "label": "stage6",
+      "target": "html-audit",
+      "iteration": 1,
+      "readyMs": 11626,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8664,
+          "duration": 0,
+          "paintTime": 8565.800000011921,
+          "presentationTime": 8664
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8664,
+          "duration": 0,
+          "paintTime": 8565.800000011921,
+          "presentationTime": 8664
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8659,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.8999999761581421,
+        "domainLookupStart": 17.599999964237213,
+        "domainLookupEnd": 17.69999998807907,
+        "connectStart": 17.69999998807907,
+        "secureConnectionStart": 0,
+        "connectEnd": 17.80000001192093,
+        "requestStart": 18.099999964237213,
+        "responseStart": 48.89999997615814,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 48.89999997615814,
+        "responseEnd": 127.59999996423721,
+        "transferSize": 2604,
+        "encodedBodySize": 2304,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8576.399999976158,
+        "domContentLoadedEventStart": 8576.899999976158,
+        "domContentLoadedEventEnd": 8577.800000011921,
+        "domComplete": 8659,
+        "loadEventStart": 8659,
+        "loadEventEnd": 8659,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 171.80000001192093,
+          "duration": 155.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 173.5,
+          "duration": 475.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 175.0999999642372,
+          "duration": 311.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 176.89999997615814,
+          "duration": 200.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 177.80000001192093,
+          "duration": 164.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 177.89999997615814,
+          "duration": 360.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 179.80000001192093,
+          "duration": 270
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 180.80000001192093,
+          "duration": 264.89999997615814
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 459.89999997615814,
+          "duration": 8054.100000023842
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 462.0999999642372,
+          "duration": 8053.200000047684
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8587.800000011921,
+          "duration": 161.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8589.899999976158,
+          "duration": 155.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8591.899999976158,
+          "duration": 156.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8594,
+          "duration": 157.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8596.699999988079,
+          "duration": 157.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8599.5,
+          "duration": 160.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8600,
+          "duration": 264.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8602.800000011921,
+          "duration": 253.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8606,
+          "duration": 254.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8608.699999988079,
+          "duration": 257.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8610.899999976158,
+          "duration": 253.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8612,
+          "duration": 260.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8615.300000011921,
+          "duration": 346.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/html-document-D3zo6IaG.js",
+          "start": 8624.699999988079,
+          "duration": 347.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9274.300000011921,
+          "duration": 132.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9356.099999964237,
+          "duration": 149.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9360.5,
+          "duration": 148.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9385.800000011921,
+          "duration": 120.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 9393.699999988079,
+          "duration": 117.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9397,
+          "duration": 117
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9687,
+          "duration": 236.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9688.699999988079,
+          "duration": 219
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9780.800000011921,
+          "duration": 122.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 10042.099999964237,
+          "duration": 111.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10082.899999976158,
+          "duration": 107.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10226.699999988079,
+          "duration": 185.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10347.099999964237,
+          "duration": 182.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 10364.599999964237,
+          "duration": 173.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 10381.199999988079,
+          "duration": 159.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 10497.800000011921,
+          "duration": 120.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 10885.099999964237,
+          "duration": 172.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 10898.599999964237,
+          "duration": 175.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 10918.5,
+          "duration": 156.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 11101.599999964237,
+          "duration": 70.5
+        }
+      ]
+    },
+    {
+      "label": "stage7",
+      "target": "html-audit",
+      "iteration": 1,
+      "readyMs": 3499,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 688,
+          "duration": 0,
+          "paintTime": 623,
+          "presentationTime": 688
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 688,
+          "duration": 0,
+          "paintTime": 623,
+          "presentationTime": 688
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.800000011920929,
+        "domainLookupStart": 8.600000023841858,
+        "domainLookupEnd": 8.600000023841858,
+        "connectStart": 8.600000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 8.800000011920929,
+        "requestStart": 8.900000035762787,
+        "responseStart": 16.700000047683716,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 16.700000047683716,
+        "responseEnd": 113.5,
+        "transferSize": 2806,
+        "encodedBodySize": 2506,
+        "decodedBodySize": 6082,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 629,
+        "domContentLoadedEventStart": 629,
+        "domContentLoadedEventEnd": 632.4000000357628,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 145,
+          "duration": 164.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 148.70000004768372,
+          "duration": 474.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 150.80000001192093,
+          "duration": 341.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 153.5,
+          "duration": 197.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 154.60000002384186,
+          "duration": 178
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 155.30000001192093,
+          "duration": 317.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 156,
+          "duration": 283.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 157.10000002384186,
+          "duration": 359.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 655,
+          "duration": 164.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 658.4000000357628,
+          "duration": 151.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 658.7000000476837,
+          "duration": 153
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 658.8000000119209,
+          "duration": 160.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 659.1000000238419,
+          "duration": 160.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 662.6000000238419,
+          "duration": 164.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 663.5,
+          "duration": 263.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 668.1000000238419,
+          "duration": 250.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 668.6000000238419,
+          "duration": 256.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 672.4000000357628,
+          "duration": 265.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 674.6000000238419,
+          "duration": 262.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 677.1000000238419,
+          "duration": 264.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 677.5,
+          "duration": 353.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 683.7000000476837,
+          "duration": 348.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/html-document-BcE0B2Sn.js",
+          "start": 686.4000000357628,
+          "duration": 356.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1238.6000000238419,
+          "duration": 205.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1292.800000011921,
+          "duration": 158.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1298.7000000476837,
+          "duration": 152.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1323.7000000476837,
+          "duration": 125.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 1333.1000000238419,
+          "duration": 118.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 1628.5,
+          "duration": 253.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 1634.800000011921,
+          "duration": 229.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 1730.7000000476837,
+          "duration": 129.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2003.800000011921,
+          "duration": 111
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2280.600000023842,
+          "duration": 156.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 2298.5,
+          "duration": 148.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 2310.5,
+          "duration": 137.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 2362,
+          "duration": 156.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 2769.2000000476837,
+          "duration": 173
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 2781.2000000476837,
+          "duration": 168.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 2794.400000035763,
+          "duration": 238.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 2966.2000000476837,
+          "duration": 145.69999998807907
+        }
+      ]
+    },
+    {
+      "label": "stage7",
+      "target": "html-audit",
+      "iteration": 2,
+      "readyMs": 3656,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 804,
+          "duration": 0,
+          "paintTime": 713.1000000238419,
+          "presentationTime": 804
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 804,
+          "duration": 0,
+          "paintTime": 713.1000000238419,
+          "presentationTime": 804
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.699999988079071,
+        "domainLookupStart": 18.399999976158142,
+        "domainLookupEnd": 18.399999976158142,
+        "connectStart": 18.399999976158142,
+        "secureConnectionStart": 0,
+        "connectEnd": 18.600000023841858,
+        "requestStart": 18.80000001192093,
+        "responseStart": 27.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 27.69999998807907,
+        "responseEnd": 122.80000001192093,
+        "transferSize": 2806,
+        "encodedBodySize": 2506,
+        "decodedBodySize": 6082,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 721.3000000119209,
+        "domContentLoadedEventStart": 721.3000000119209,
+        "domContentLoadedEventEnd": 722,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 142.10000002384186,
+          "duration": 164.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 149.19999998807907,
+          "duration": 520.1000000238419
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 151.30000001192093,
+          "duration": 363.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 152.60000002384186,
+          "duration": 216.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 153.60000002384186,
+          "duration": 201.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 154.60000002384186,
+          "duration": 353.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 157,
+          "duration": 309.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 158,
+          "duration": 375.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 773.1999999880791,
+          "duration": 177.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 776.8999999761581,
+          "duration": 173.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 782.8000000119209,
+          "duration": 183.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 785,
+          "duration": 181.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 785.6000000238419,
+          "duration": 180.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 788.8999999761581,
+          "duration": 177.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 792.1999999880791,
+          "duration": 271.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 800.6000000238419,
+          "duration": 256.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 802.5,
+          "duration": 268
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 802.8999999761581,
+          "duration": 282.7000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 805,
+          "duration": 270.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 806.8000000119209,
+          "duration": 279.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 807.1999999880791,
+          "duration": 355.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 809.3999999761581,
+          "duration": 357
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/html-document-BcE0B2Sn.js",
+          "start": 814.6000000238419,
+          "duration": 370.7999999523163
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1348.6000000238419,
+          "duration": 220.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1416.1000000238419,
+          "duration": 164.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1421.199999988079,
+          "duration": 158.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1451.800000011921,
+          "duration": 124.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 1461.699999988079,
+          "duration": 118.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 1779.300000011921,
+          "duration": 244.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 1782.6000000238419,
+          "duration": 223.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 1879.5,
+          "duration": 123.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2120.100000023842,
+          "duration": 112.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2439,
+          "duration": 174.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 2457.199999988079,
+          "duration": 157.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 2474.199999988079,
+          "duration": 145.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 2543.600000023842,
+          "duration": 127.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 2979.699999988079,
+          "duration": 152
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 2993,
+          "duration": 175.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 3004.199999988079,
+          "duration": 164.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 3129.699999988079,
+          "duration": 81.10000002384186
+        }
+      ]
+    },
+    {
+      "label": "stage6",
+      "target": "html-audit",
+      "iteration": 2,
+      "readyMs": 11767,
+      "errors": [],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8684,
+          "duration": 0,
+          "paintTime": 8541.600000023842,
+          "presentationTime": 8684
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8684,
+          "duration": 0,
+          "paintTime": 8541.600000023842,
+          "presentationTime": 8684
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8670.600000023842,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.7000000476837158,
+        "domainLookupStart": 10.900000035762787,
+        "domainLookupEnd": 11,
+        "connectStart": 11,
+        "secureConnectionStart": 0,
+        "connectEnd": 11.100000023841858,
+        "requestStart": 11.400000035762787,
+        "responseStart": 27.700000047683716,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 27.700000047683716,
+        "responseEnd": 117.30000001192093,
+        "transferSize": 2604,
+        "encodedBodySize": 2304,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8553.400000035763,
+        "domContentLoadedEventStart": 8553.5,
+        "domContentLoadedEventEnd": 8553.900000035763,
+        "domComplete": 8670.600000023842,
+        "loadEventStart": 8670.600000023842,
+        "loadEventEnd": 8670.600000023842,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 145.4000000357628,
+          "duration": 160.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 149.20000004768372,
+          "duration": 483.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 150.30000001192093,
+          "duration": 329.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 151,
+          "duration": 202
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 151.30000001192093,
+          "duration": 172.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 151.4000000357628,
+          "duration": 372.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 153.30000001192093,
+          "duration": 279.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 153.4000000357628,
+          "duration": 275.19999998807907
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 441.80000001192093,
+          "duration": 8041.699999988079
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 443.60000002384186,
+          "duration": 8040.300000011921
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8557,
+          "duration": 197.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8557.300000011921,
+          "duration": 211.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8557.700000047684,
+          "duration": 217.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8558.400000035763,
+          "duration": 230.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8559.5,
+          "duration": 229.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8560,
+          "duration": 229.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8563.900000035763,
+          "duration": 318
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8564.5,
+          "duration": 314.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8573,
+          "duration": 321.7000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8573.5,
+          "duration": 329.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8573.900000035763,
+          "duration": 330.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8594.400000035763,
+          "duration": 315.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8598.5,
+          "duration": 392
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/html-document-D3zo6IaG.js",
+          "start": 8603.400000035763,
+          "duration": 400.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9433.700000047684,
+          "duration": 110.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9482.700000047684,
+          "duration": 126.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9558,
+          "duration": 172.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9566.200000047684,
+          "duration": 160.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9594.400000035763,
+          "duration": 133.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 9608.200000047684,
+          "duration": 122.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9874.900000035763,
+          "duration": 207.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9876.200000047684,
+          "duration": 188.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9939.5,
+          "duration": 123.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 10215.900000035763,
+          "duration": 109.09999996423721
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10285.700000047684,
+          "duration": 107
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10443.800000011921,
+          "duration": 188
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10579,
+          "duration": 170.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 10601.100000023842,
+          "duration": 150.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 10617.800000011921,
+          "duration": 138.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 10720.5,
+          "duration": 120.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 11067.900000035763,
+          "duration": 175.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 11079.300000011921,
+          "duration": 169.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 11100.400000035763,
+          "duration": 151.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 11266,
+          "duration": 68.30000001192093
+        }
+      ]
+    }
+  ],
+  "excludedRuns": [
+    {
+      "label": "stage6",
+      "target": "html-audit",
+      "iteration": 1,
+      "readyMs": 11475,
+      "errors": [
+        "SecurityError: Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag."
+      ],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8644,
+          "duration": 0,
+          "paintTime": 8573,
+          "presentationTime": 8644
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8644,
+          "duration": 0,
+          "paintTime": 8573,
+          "presentationTime": 8644
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8631,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 0.8999999761581421,
+        "domainLookupStart": 7.100000023841858,
+        "domainLookupEnd": 7.100000023841858,
+        "connectStart": 7.100000023841858,
+        "secureConnectionStart": 0,
+        "connectEnd": 7.300000011920929,
+        "requestStart": 7.399999976158142,
+        "responseStart": 20.19999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 20.19999998807907,
+        "responseEnd": 113,
+        "transferSize": 2604,
+        "encodedBodySize": 2304,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8579.100000023842,
+        "domContentLoadedEventStart": 8579.199999988079,
+        "domContentLoadedEventEnd": 8580.300000011921,
+        "domComplete": 8631,
+        "loadEventStart": 8631,
+        "loadEventEnd": 8631,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "low"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 147.80000001192093,
+          "duration": 170.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 151.60000002384186,
+          "duration": 482.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 153.60000002384186,
+          "duration": 338.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 155.69999998807907,
+          "duration": 222.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 157.19999998807907,
+          "duration": 184.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 158.80000001192093,
+          "duration": 381.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 159.89999997615814,
+          "duration": 290.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 164.19999998807907,
+          "duration": 296.10000002384186
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 477.30000001192093,
+          "duration": 8042.5
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 478.60000002384186,
+          "duration": 8043.199999988079
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8587.100000023842,
+          "duration": 133.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8587.399999976158,
+          "duration": 141.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8587.600000023842,
+          "duration": 145
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8587.800000011921,
+          "duration": 147.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8588,
+          "duration": 157.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8588.199999988079,
+          "duration": 156.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8594.100000023842,
+          "duration": 240.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8596.399999976158,
+          "duration": 236.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8598.5,
+          "duration": 240.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8601,
+          "duration": 241.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8602.199999988079,
+          "duration": 249.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8603.800000011921,
+          "duration": 250.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8604.100000023842,
+          "duration": 332.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/html-document-D3zo6IaG.js",
+          "start": 8604.300000011921,
+          "duration": 341.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9195.199999988079,
+          "duration": 150.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9266.899999976158,
+          "duration": 138.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9342.199999988079,
+          "duration": 143.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9342.800000011921,
+          "duration": 139.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9357.199999988079,
+          "duration": 123.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 9368.300000011921,
+          "duration": 115.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9640.600000023842,
+          "duration": 249.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9643.899999976158,
+          "duration": 228.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9742.800000011921,
+          "duration": 125.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 10046.100000023842,
+          "duration": 108.5
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10089.899999976158,
+          "duration": 105.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10228.100000023842,
+          "duration": 200.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10378,
+          "duration": 147.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 10394.5,
+          "duration": 136
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 10405.100000023842,
+          "duration": 127.59999996423721
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 10491.300000011921,
+          "duration": 119.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 10815.399999976158,
+          "duration": 161.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 10828.699999988079,
+          "duration": 161
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 10843,
+          "duration": 146.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 10952.600000023842,
+          "duration": 77.39999997615814
+        }
+      ],
+      "excludedBecause": "The measurement initScript incorrectly touched sandboxed iframe localStorage. Corrected and repeated; not used for results."
+    },
+    {
+      "label": "stage7",
+      "target": "html-audit",
+      "iteration": 1,
+      "readyMs": 3528,
+      "errors": [
+        "SecurityError: Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag."
+      ],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 668,
+          "duration": 0,
+          "paintTime": 583,
+          "presentationTime": 668
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 668,
+          "duration": 0,
+          "paintTime": 583,
+          "presentationTime": 668
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.100000023841858,
+        "domainLookupStart": 22.5,
+        "domainLookupEnd": 22.5,
+        "connectStart": 22.5,
+        "secureConnectionStart": 0,
+        "connectEnd": 22.69999998807907,
+        "requestStart": 22.80000001192093,
+        "responseStart": 38.69999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 38.69999998807907,
+        "responseEnd": 126.40000003576279,
+        "transferSize": 2806,
+        "encodedBodySize": 2506,
+        "decodedBodySize": 6082,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 592.4000000357628,
+        "domContentLoadedEventStart": 592.5,
+        "domContentLoadedEventEnd": 592.6999999880791,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 157,
+          "duration": 149.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 160.9000000357628,
+          "duration": 480.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 162.4000000357628,
+          "duration": 326.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 163.80000001192093,
+          "duration": 200.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 165,
+          "duration": 175.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 165.5,
+          "duration": 369.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 166.4000000357628,
+          "duration": 283.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 167.80000001192093,
+          "duration": 274.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 627.5,
+          "duration": 166.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 630.6000000238419,
+          "duration": 156.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 633.8000000119209,
+          "duration": 154.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 635.6999999880791,
+          "duration": 158.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 638.6999999880791,
+          "duration": 159.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 644.1999999880791,
+          "duration": 154.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 648.6999999880791,
+          "duration": 252.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 650.4000000357628,
+          "duration": 245.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 653.6999999880791,
+          "duration": 250.70000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 663.6000000238419,
+          "duration": 248.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 665.9000000357628,
+          "duration": 244.79999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 669.8000000119209,
+          "duration": 243.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 671.6000000238419,
+          "duration": 330.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 675.1999999880791,
+          "duration": 329.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/html-document-BcE0B2Sn.js",
+          "start": 677.8000000119209,
+          "duration": 338.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1240.6000000238419,
+          "duration": 224.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1296.9000000357628,
+          "duration": 187.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1301.800000011921,
+          "duration": 169.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1333.199999988079,
+          "duration": 138
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 1339.5,
+          "duration": 169.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 1766.4000000357628,
+          "duration": 196.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 1766.9000000357628,
+          "duration": 176.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 1815.9000000357628,
+          "duration": 126.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2051.900000035763,
+          "duration": 108.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2334.400000035763,
+          "duration": 150
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 2352.699999988079,
+          "duration": 143.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 2365,
+          "duration": 141.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 2398.300000011921,
+          "duration": 139.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 2765.800000011921,
+          "duration": 159
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 2779.100000023842,
+          "duration": 148.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 2793.300000011921,
+          "duration": 137.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 2988.100000023842,
+          "duration": 77
+        }
+      ],
+      "excludedBecause": "The measurement initScript incorrectly touched sandboxed iframe localStorage. Corrected and repeated; not used for results."
+    },
+    {
+      "label": "stage7",
+      "target": "html-audit",
+      "iteration": 2,
+      "readyMs": 3704,
+      "errors": [
+        "SecurityError: Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag."
+      ],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 680,
+          "duration": 0,
+          "paintTime": 597.6999999880791,
+          "presentationTime": 680
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 680,
+          "duration": 0,
+          "paintTime": 597.6999999880791,
+          "presentationTime": 680
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 0,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 2,
+        "domainLookupStart": 9,
+        "domainLookupEnd": 9,
+        "connectStart": 9,
+        "secureConnectionStart": 0,
+        "connectEnd": 9.100000023841858,
+        "requestStart": 9.199999988079071,
+        "responseStart": 23.30000001192093,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 23.30000001192093,
+        "responseEnd": 118.90000003576279,
+        "transferSize": 2806,
+        "encodedBodySize": 2506,
+        "decodedBodySize": 6082,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 618,
+        "domContentLoadedEventStart": 619.4000000357628,
+        "domContentLoadedEventEnd": 620.1000000238419,
+        "domComplete": 0,
+        "loadEventStart": 0,
+        "loadEventEnd": 0,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [
+        {
+          "href": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "media": "print"
+        },
+        {
+          "href": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "media": "print"
+        }
+      ],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39087/favicon.svg",
+          "start": 190.69999998807907,
+          "duration": 172
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/main-CXukinDW.js",
+          "start": 195.19999998807907,
+          "duration": 487.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/react-runtime-L6PJ5PCP.js",
+          "start": 198.19999998807907,
+          "duration": 332.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/shared-icons-t7LFKJeB.js",
+          "start": 200.80000001192093,
+          "duration": 218.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/index-nCVbnVDz.js",
+          "start": 202.69999998807907,
+          "duration": 188.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/icons-78HQ9Zlx.js",
+          "start": 204,
+          "duration": 374.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/document-views-Dc7r_WnC.js",
+          "start": 206.30000001192093,
+          "duration": 292.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+          "start": 206.69999998807907,
+          "duration": 285.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/ws-B8gavDto.js",
+          "start": 642.8000000119209,
+          "duration": 142.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/use-space-events-DGq1e_e7.js",
+          "start": 646.6999999880791,
+          "duration": 143.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/doc-freshness-BQP1tK1_.js",
+          "start": 649.5,
+          "duration": 151.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/confirm-dialog-CKciIQRU.js",
+          "start": 649.8000000119209,
+          "duration": 151.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/textarea-L71LUzOn.js",
+          "start": 650.1999999880791,
+          "duration": 157.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/scrollEdges-CKYTJo_8.js",
+          "start": 650.4000000357628,
+          "duration": 157.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/select-BNS_98i0.js",
+          "start": 650.6999999880791,
+          "duration": 248.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/useRender-D24sAACb.js",
+          "start": 651,
+          "duration": 242.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/badge-BiyBDy73.js",
+          "start": 651.3000000119209,
+          "duration": 253.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotation-panel-DKR9hGPG.js",
+          "start": 651.9000000357628,
+          "duration": 257.2999999523163
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/deferred-mount-DXpbOUM2.js",
+          "start": 652.5,
+          "duration": 260.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/desktop-context-panel-pGUnDboB.js",
+          "start": 652.9000000357628,
+          "duration": 263.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/profile-CjRAQae9.js",
+          "start": 653.5,
+          "duration": 344.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/annotations-queries-ChlMObou.js",
+          "start": 654,
+          "duration": 351.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/html-document-BcE0B2Sn.js",
+          "start": 654.5,
+          "duration": 361.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/workspace",
+          "start": 1329.4000000357628,
+          "duration": 199.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_spaceId-DIDFVbZZ.js",
+          "start": 1385.5,
+          "duration": 155
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/_-B0CpIqVu.js",
+          "start": 1389,
+          "duration": 154.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit",
+          "start": 1417.6000000238419,
+          "duration": 131
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 1423.6000000238419,
+          "duration": 125.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/app-sidebar-BykvVI1d.js",
+          "start": 1719.5,
+          "duration": 235.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/assets/collapsible-B_10hkzJ.js",
+          "start": 1722.4000000357628,
+          "duration": 209.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/deployment",
+          "start": 1804.199999988079,
+          "duration": 127.40000003576279
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/system/version?cached=1",
+          "start": 2116.5,
+          "duration": 116.5
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces?includeArchived=true",
+          "start": 2465.300000011921,
+          "duration": 159.60000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 2485.199999988079,
+          "duration": 151.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 2497.800000011921,
+          "duration": 143
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 2582.400000035763,
+          "duration": 132.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/records",
+          "start": 2992.100000023842,
+          "duration": 179.30000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 3009.5,
+          "duration": 165.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 3033.100000023842,
+          "duration": 150
+        },
+        {
+          "url": "http://192.168.2.211:39087/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 3187.600000023842,
+          "duration": 60.30000001192093
+        }
+      ],
+      "excludedBecause": "The measurement initScript incorrectly touched sandboxed iframe localStorage. Corrected and repeated; not used for results."
+    },
+    {
+      "label": "stage6",
+      "target": "html-audit",
+      "iteration": 2,
+      "readyMs": 11395,
+      "errors": [
+        "SecurityError: Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'allow-same-origin' flag."
+      ],
+      "fontRequests": [
+        "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+        "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      ],
+      "paints": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 8700,
+          "duration": 0,
+          "paintTime": 8625.600000023842,
+          "presentationTime": 8700
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 8700,
+          "duration": 0,
+          "paintTime": 8625.600000023842,
+          "presentationTime": 8700
+        }
+      ],
+      "navigation": {
+        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/html-audit",
+        "entryType": "navigation",
+        "startTime": 0,
+        "duration": 8681.400000035763,
+        "initiatorType": "navigation",
+        "deliveryType": "",
+        "nextHopProtocol": "http/1.1",
+        "renderBlockingStatus": "non-blocking",
+        "contentEncoding": "gzip",
+        "workerStart": 0,
+        "workerRouterEvaluationStart": 0,
+        "workerCacheLookupStart": 0,
+        "workerMatchedSourceType": "",
+        "workerFinalSourceType": "",
+        "redirectStart": 0,
+        "redirectEnd": 0,
+        "fetchStart": 1.199999988079071,
+        "domainLookupStart": 7.800000011920929,
+        "domainLookupEnd": 7.800000011920929,
+        "connectStart": 7.800000011920929,
+        "secureConnectionStart": 0,
+        "connectEnd": 8,
+        "requestStart": 8,
+        "responseStart": 21.19999998807907,
+        "firstInterimResponseStart": 0,
+        "finalResponseHeadersStart": 21.19999998807907,
+        "responseEnd": 114.90000003576279,
+        "transferSize": 2604,
+        "encodedBodySize": 2304,
+        "decodedBodySize": 5539,
+        "responseStatus": 200,
+        "serverTiming": [],
+        "unloadEventStart": 0,
+        "unloadEventEnd": 0,
+        "domInteractive": 8632.300000011921,
+        "domContentLoadedEventStart": 8632.300000011921,
+        "domContentLoadedEventEnd": 8633.400000035763,
+        "domComplete": 8681.300000011921,
+        "loadEventStart": 8681.300000011921,
+        "loadEventEnd": 8681.400000035763,
+        "type": "navigate",
+        "redirectCount": 0,
+        "activationStart": 0,
+        "criticalCHRestart": 0,
+        "notRestoredReasons": null,
+        "confidence": {
+          "randomizedTriggerRate": 0.4994798,
+          "value": "high"
+        }
+      },
+      "fontLinks": [],
+      "resources": [
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 151.60000002384186,
+          "duration": 158
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/main-BtGVvSxs.js",
+          "start": 158.19999998807907,
+          "duration": 460.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/react-runtime-L6PJ5PCP.js",
+          "start": 160,
+          "duration": 326.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/shared-icons-t7LFKJeB.js",
+          "start": 162.5,
+          "duration": 186.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/index-CUTbqEQq.js",
+          "start": 165.4000000357628,
+          "duration": 172.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/icons-D8l6UP7W.js",
+          "start": 167.4000000357628,
+          "duration": 313.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/document-views-Dc7r_WnC.js",
+          "start": 169.10000002384186,
+          "duration": 276.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-BhNVCYiC.css",
+          "start": 170.69999998807907,
+          "duration": 347.9000000357628
+        },
+        {
+          "url": "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
+          "start": 533.6999999880791,
+          "duration": 8040.400000035763
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
+          "start": 533.9000000357628,
+          "duration": 8040.699999988079
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/ws-CaF3Nm_N.js",
+          "start": 8641.699999988079,
+          "duration": 157.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/use-space-events-CFHIUHpK.js",
+          "start": 8643.400000035763,
+          "duration": 160.0999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/doc-freshness-DCxv8P_U.js",
+          "start": 8646.900000035763,
+          "duration": 160.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/confirm-dialog-9PM2GruI.js",
+          "start": 8648.800000011921,
+          "duration": 164.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/textarea-B6LWnanV.js",
+          "start": 8650.900000035763,
+          "duration": 162.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/scrollEdges-CKYTJo_8.js",
+          "start": 8653.600000023842,
+          "duration": 159.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/select-DIR2L9qL.js",
+          "start": 8655.5,
+          "duration": 257.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/useRender-CRUnhqqw.js",
+          "start": 8657.5,
+          "duration": 249.4000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/badge-kZb_85-M.js",
+          "start": 8660,
+          "duration": 250.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotation-panel-B2eCSs0Z.js",
+          "start": 8662.300000011921,
+          "duration": 260.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/desktop-context-panel-C7oQKSqd.js",
+          "start": 8663.400000035763,
+          "duration": 257.2999999523163
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/profile-0V9aYTQ2.js",
+          "start": 8663.699999988079,
+          "duration": 258.2000000476837
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/annotations-queries-CXTzzTMN.js",
+          "start": 8667.199999988079,
+          "duration": 343.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/html-document-D3zo6IaG.js",
+          "start": 8668,
+          "duration": 353
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 9200.199999988079,
+          "duration": 107.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/workspace",
+          "start": 9232.900000035763,
+          "duration": 127.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_spaceId-pD9EJi_q.js",
+          "start": 9294.5,
+          "duration": 153.9000000357628
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/_-Bun-TsP-.js",
+          "start": 9298.699999988079,
+          "duration": 144.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit",
+          "start": 9324.400000035763,
+          "duration": 122.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 9331.300000011921,
+          "duration": 117.39999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/app-sidebar-RCK9qfL-.js",
+          "start": 9573.900000035763,
+          "duration": 221.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/assets/collapsible-DbSxFoJv.js",
+          "start": 9575.400000035763,
+          "duration": 199.5999999642372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/deployment",
+          "start": 9650.300000011921,
+          "duration": 121.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/system/version?cached=1",
+          "start": 9804,
+          "duration": 109.19999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10036.300000011921,
+          "duration": 108.69999998807907
+        },
+        {
+          "url": "http://192.168.2.211:39086/favicon.svg",
+          "start": 10196.199999988079,
+          "duration": 185.20000004768372
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces?includeArchived=true",
+          "start": 10323.600000023842,
+          "duration": 165.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+          "start": 10340.800000011921,
+          "duration": 153.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+          "start": 10357.699999988079,
+          "duration": 137.10000002384186
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents/page?path=html-audit",
+          "start": 10438.400000035763,
+          "duration": 122.29999995231628
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/records",
+          "start": 10792.300000011921,
+          "duration": 146
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/docs?includeArchived=true",
+          "start": 10806.400000035763,
+          "duration": 147.89999997615814
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/documents?includeArchived=true",
+          "start": 10817.699999988079,
+          "duration": 136.80000001192093
+        },
+        {
+          "url": "http://192.168.2.211:39086/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+          "start": 10933.900000035763,
+          "duration": 58.799999952316284
+        }
+      ],
+      "excludedBecause": "The measurement initScript incorrectly touched sandboxed iframe localStorage. Corrected and repeated; not used for results."
+    }
+  ]
+}

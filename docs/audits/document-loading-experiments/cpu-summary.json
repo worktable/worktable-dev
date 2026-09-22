@@ -1,0 +1,690 @@
+{
+  "label": "large",
+  "ready": 14804,
+  "topSelf": [
+    {
+      "source": "(runtime)",
+      "name": "(program)",
+      "line": 0,
+      "selfMs": 3194,
+      "totalMs": 3194
+    },
+    {
+      "source": "../../../src/components/editor/editor.tsx",
+      "name": "a",
+      "line": 723,
+      "selfMs": 2309,
+      "totalMs": 2319
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "nodesBetween",
+      "line": 85,
+      "selfMs": 622,
+      "totalMs": 2189
+    },
+    {
+      "source": "(runtime)",
+      "name": "(idle)",
+      "line": 0,
+      "selfMs": 511,
+      "totalMs": 511
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "(anonymous)",
+      "line": 1284,
+      "selfMs": 256,
+      "totalMs": 368
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "nodesBetween",
+      "line": 85,
+      "selfMs": 254,
+      "totalMs": 899
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "nodesBetween",
+      "line": 85,
+      "selfMs": 200,
+      "totalMs": 377
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "get nodeSize",
+      "line": 1195,
+      "selfMs": 181,
+      "totalMs": 280
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "(anonymous)",
+      "line": 29,
+      "selfMs": 172,
+      "totalMs": 172
+    },
+    {
+      "source": "(runtime)",
+      "name": "(garbage collector)",
+      "line": 0,
+      "selfMs": 159,
+      "totalMs": 159
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "L",
+      "line": 686,
+      "selfMs": 141,
+      "totalMs": 195
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "renderHTML",
+      "line": 2255,
+      "selfMs": 140,
+      "totalMs": 194
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "nodesBetween",
+      "line": 1224,
+      "selfMs": 119,
+      "totalMs": 2378
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "k",
+      "line": 305,
+      "selfMs": 101,
+      "totalMs": 208
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "isInGroup",
+      "line": 2135,
+      "selfMs": 85,
+      "totalMs": 85
+    },
+    {
+      "source": "(runtime)",
+      "name": "query",
+      "line": 5447,
+      "selfMs": 80,
+      "totalMs": 89
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "(anonymous)",
+      "line": 1284,
+      "selfMs": 79,
+      "totalMs": 174
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "child",
+      "line": 231,
+      "selfMs": 71,
+      "totalMs": 71
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "(anonymous)",
+      "line": 1284,
+      "selfMs": 70,
+      "totalMs": 70
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "get isLeaf",
+      "line": 1420,
+      "selfMs": 65,
+      "totalMs": 99
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "(anonymous)",
+      "line": 1284,
+      "selfMs": 65,
+      "totalMs": 145
+    },
+    {
+      "source": "http://127.0.0.1:45747/assets/editor-BYuO-YVy.js",
+      "name": "(anonymous)",
+      "line": 1,
+      "selfMs": 64,
+      "totalMs": 123
+    },
+    {
+      "source": "../../../src/components/doc-document.tsx",
+      "name": "(anonymous)",
+      "line": 1274,
+      "selfMs": 61,
+      "totalMs": 61
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "isInGroup",
+      "line": 2135,
+      "selfMs": 60,
+      "totalMs": 60
+    },
+    {
+      "source": "../../../../../node_modules/react-dom/cjs/react-dom-client.production.js",
+      "name": "(anonymous)",
+      "line": 12455,
+      "selfMs": 58,
+      "totalMs": 108
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "child",
+      "line": 231,
+      "selfMs": 58,
+      "totalMs": 58
+    },
+    {
+      "source": "../../../../../node_modules/react-dom/cjs/react-dom-client.production.js",
+      "name": "renderWithHooks",
+      "line": 4333,
+      "selfMs": 57,
+      "totalMs": 326
+    },
+    {
+      "source": "../../../src/hooks/use-scroll-fade.ts",
+      "name": "f",
+      "line": 32,
+      "selfMs": 57,
+      "totalMs": 57
+    },
+    {
+      "source": "../../../src/components/spaces/space-context-menu.tsx",
+      "name": "IconPickerDialog",
+      "line": 422,
+      "selfMs": 55,
+      "totalMs": 55
+    },
+    {
+      "source": "../../../src/hooks/use-scroll-fade.ts",
+      "name": "f",
+      "line": 32,
+      "selfMs": 55,
+      "totalMs": 55
+    },
+    {
+      "source": "http://127.0.0.1:45747/assets/main-Dwf_bbb6.js",
+      "name": "(anonymous)",
+      "line": 1,
+      "selfMs": 54,
+      "totalMs": 387
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "get nodeSize",
+      "line": 1195,
+      "selfMs": 54,
+      "totalMs": 93
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "isInGroup",
+      "line": 2135,
+      "selfMs": 51,
+      "totalMs": 51
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "D",
+      "line": 209,
+      "selfMs": 51,
+      "totalMs": 53
+    },
+    {
+      "source": "(runtime)",
+      "name": "createElement",
+      "line": 0,
+      "selfMs": 48,
+      "totalMs": 48
+    },
+    {
+      "source": "../../../../../node_modules/@base-ui/react/esm/scroll-area/viewport/ScrollAreaViewport.js",
+      "name": "(anonymous)",
+      "line": 95,
+      "selfMs": 44,
+      "totalMs": 47
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "get nodeSize",
+      "line": 1195,
+      "selfMs": 43,
+      "totalMs": 70
+    },
+    {
+      "source": "(runtime)",
+      "name": "appendChild",
+      "line": 0,
+      "selfMs": 41,
+      "totalMs": 41
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "e",
+      "line": 56,
+      "selfMs": 40,
+      "totalMs": 40
+    },
+    {
+      "source": "(runtime)",
+      "name": "appendChild",
+      "line": 0,
+      "selfMs": 37,
+      "totalMs": 37
+    },
+    {
+      "source": "../../../../../node_modules/react-dom/cjs/react-dom-client.production.js",
+      "name": "getNearestMountedFiber",
+      "line": 39,
+      "selfMs": 36,
+      "totalMs": 36
+    },
+    {
+      "source": "../../../../../node_modules/react-dom/cjs/react-dom-client.production.js",
+      "name": "getListener",
+      "line": 1517,
+      "selfMs": 36,
+      "totalMs": 36
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "get isLeaf",
+      "line": 2125,
+      "selfMs": 34,
+      "totalMs": 34
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "Yt",
+      "line": 1289,
+      "selfMs": 34,
+      "totalMs": 94
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "Ut",
+      "line": 429,
+      "selfMs": 32,
+      "totalMs": 2611
+    }
+  ],
+  "topTotal": [
+    {
+      "source": "../../../../../node_modules/y-websocket/src/y-websocket.js",
+      "name": "event",
+      "line": 183,
+      "selfMs": 0,
+      "totalMs": 4787
+    },
+    {
+      "source": "../../../../../node_modules/y-websocket/src/y-websocket.js",
+      "name": "_o",
+      "line": 114,
+      "selfMs": 0,
+      "totalMs": 4787
+    },
+    {
+      "source": "../../../../../node_modules/y-websocket/src/y-websocket.js",
+      "name": "Bt.<computed>",
+      "line": 31,
+      "selfMs": 1,
+      "totalMs": 4786
+    },
+    {
+      "source": "../../../../../node_modules/y-prosemirror/src/plugins/sync-plugin.js",
+      "name": "(anonymous)",
+      "line": 603,
+      "selfMs": 4,
+      "totalMs": 4465
+    },
+    {
+      "source": "../../../../../node_modules/y-prosemirror/src/plugins/sync-plugin.js",
+      "name": "_typeChanged",
+      "line": 592,
+      "selfMs": 0,
+      "totalMs": 4465
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "k0.dispatch",
+      "line": 5821,
+      "selfMs": 0,
+      "totalMs": 4382
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateState",
+      "line": 5448,
+      "selfMs": 0,
+      "totalMs": 3929
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateStateInner",
+      "line": 5451,
+      "selfMs": 0,
+      "totalMs": 3929
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "update",
+      "line": 1461,
+      "selfMs": 0,
+      "totalMs": 3924
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateInner",
+      "line": 1468,
+      "selfMs": 0,
+      "totalMs": 3924
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateChildren",
+      "line": 1371,
+      "selfMs": 0,
+      "totalMs": 3924
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateChildren",
+      "line": 1371,
+      "selfMs": 11,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "iterDeco",
+      "line": 2053,
+      "selfMs": 0,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "(anonymous)",
+      "line": 1385,
+      "selfMs": 0,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateNextNode",
+      "line": 1889,
+      "selfMs": 0,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "update",
+      "line": 1461,
+      "selfMs": 0,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateInner",
+      "line": 1468,
+      "selfMs": 0,
+      "totalMs": 3923
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "iterDeco",
+      "line": 2053,
+      "selfMs": 16,
+      "totalMs": 3900
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "(anonymous)",
+      "line": 1385,
+      "selfMs": 5,
+      "totalMs": 3875
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "addNode",
+      "line": 1945,
+      "selfMs": 8,
+      "totalMs": 3794
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "updateChildren",
+      "line": 1371,
+      "selfMs": 3,
+      "totalMs": 3473
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "iterDeco",
+      "line": 2053,
+      "selfMs": 7,
+      "totalMs": 3451
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "(anonymous)",
+      "line": 1385,
+      "selfMs": 4,
+      "totalMs": 3437
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "addNode",
+      "line": 1945,
+      "selfMs": 13,
+      "totalMs": 3431
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-view/dist/index.js",
+      "name": "create",
+      "line": 1292,
+      "selfMs": 9,
+      "totalMs": 3272
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "n",
+      "line": 393,
+      "selfMs": 7,
+      "totalMs": 3191
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "qe",
+      "line": 296,
+      "selfMs": 12,
+      "totalMs": 2898
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "getBlock",
+      "line": 3079,
+      "selfMs": 4,
+      "totalMs": 2675
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "getBlock",
+      "line": 460,
+      "selfMs": 2,
+      "totalMs": 2671
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "transact",
+      "line": 3023,
+      "selfMs": 6,
+      "totalMs": 2669
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "transact",
+      "line": 2666,
+      "selfMs": 16,
+      "totalMs": 2661
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "t",
+      "line": 461,
+      "selfMs": 2,
+      "totalMs": 2613
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      "name": "Ut",
+      "line": 429,
+      "selfMs": 32,
+      "totalMs": 2611
+    },
+    {
+      "source": "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      "name": "Jt",
+      "line": 1282,
+      "selfMs": 3,
+      "totalMs": 2380
+    },
+    {
+      "source": "../../../../../node_modules/prosemirror-model/dist/index.js",
+      "name": "nodesBetween",
+      "line": 1224,
+      "selfMs": 119,
+      "totalMs": 2378
+    }
+  ],
+  "bySource": [
+    [
+      "(runtime)",
+      4382
+    ],
+    [
+      "../../../../../node_modules/prosemirror-model/dist/index.js",
+      2401
+    ],
+    [
+      "../../../src/components/editor/editor.tsx",
+      2332
+    ],
+    [
+      "../../../../../node_modules/@blocknote/core/dist/blocks-DGsP5WKr.js",
+      1310
+    ],
+    [
+      "../../../../../node_modules/react-dom/cjs/react-dom-client.production.js",
+      963
+    ],
+    [
+      "../../../../../node_modules/prosemirror-view/dist/index.js",
+      310
+    ],
+    [
+      "../../../../../node_modules/@tiptap/core/dist/index.js",
+      299
+    ],
+    [
+      "../../../../../node_modules/@blocknote/core/dist/src-Bcud0PIg.js",
+      254
+    ],
+    [
+      "../../../../../node_modules/yjs/dist/yjs.mjs",
+      210
+    ],
+    [
+      "../../../src/hooks/use-scroll-fade.ts",
+      134
+    ],
+    [
+      "../../../src/components/doc-document.tsx",
+      107
+    ],
+    [
+      "../../../../../node_modules/zod/v4/classic/schemas.js",
+      98
+    ],
+    [
+      "../../../../../node_modules/lib0/decoding.js",
+      81
+    ],
+    [
+      "../../../../../node_modules/tailwind-merge/dist/bundle-mjs.mjs",
+      78
+    ],
+    [
+      "../../../../../node_modules/lib0/encoding.js",
+      74
+    ],
+    [
+      "../../../../../node_modules/@tanstack/router-core/dist/esm/router.js",
+      72
+    ],
+    [
+      "http://127.0.0.1:45747/assets/editor-BYuO-YVy.js",
+      64
+    ],
+    [
+      "../../../src/components/spaces/space-context-menu.tsx",
+      56
+    ],
+    [
+      "http://127.0.0.1:45747/assets/main-Dwf_bbb6.js",
+      55
+    ],
+    [
+      "../../../../../node_modules/prosemirror-state/dist/index.js",
+      55
+    ],
+    [
+      "../../../../../node_modules/zod/v4/core/core.js",
+      53
+    ],
+    [
+      "../../../../../node_modules/@base-ui/react/esm/scroll-area/viewport/ScrollAreaViewport.js",
+      50
+    ],
+    [
+      "../../../src/lib/http.ts",
+      44
+    ],
+    [
+      "../../../../../node_modules/react/cjs/react.production.js",
+      41
+    ],
+    [
+      "../../../../../node_modules/zod/v4/core/schemas.js",
+      39
+    ],
+    [
+      "../../../../../node_modules/y-prosemirror/src/plugins/sync-plugin.js",
+      28
+    ],
+    [
+      "../../../../../node_modules/zod/v4/core/util.js",
+      27
+    ],
+    [
+      "../../../../../node_modules/@tanstack/query-core/build/modern/queryObserver.js",
+      27
+    ],
+    [
+      "../../../src/components/app-sidebar.tsx",
+      26
+    ],
+    [
+      "../../../../../node_modules/prosemirror-transform/dist/index.js",
+      26
+    ]
+  ]
+}

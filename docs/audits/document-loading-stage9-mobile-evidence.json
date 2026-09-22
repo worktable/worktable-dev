@@ -1,0 +1,23 @@
+{
+  "errors": [],
+  "first": {
+    "id": "mobile-first",
+    "type": "paragraph",
+    "props": {
+      "backgroundColor": "default",
+      "textColor": "default",
+      "textAlignment": "left"
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Mobile verified",
+        "styles": {
+          "textColor": "red"
+        }
+      }
+    ],
+    "children": []
+  },
+  "colorAndTextPersisted": true
+}

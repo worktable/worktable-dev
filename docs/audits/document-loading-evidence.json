@@ -1,0 +1,1004 @@
+{
+  "method": "Synthetic V2 workspace, production frontend assets via Vite preview, visible Chrome CDP, service workers blocked. Final browser pass did not overlap the separate conversion/catalog benchmarks. Shared host, not production percentiles.",
+  "api": [
+    {
+      "path": "documents/page?path=plain",
+      "status": 200,
+      "bytes": 498,
+      "times": [
+        17,
+        6,
+        11,
+        6
+      ]
+    },
+    {
+      "path": "docs/plain",
+      "status": 200,
+      "bytes": 419,
+      "times": [
+        3,
+        9,
+        2,
+        2
+      ]
+    },
+    {
+      "path": "documents/page?path=rich-10",
+      "status": 200,
+      "bytes": 503,
+      "times": [
+        13,
+        6,
+        15,
+        16
+      ]
+    },
+    {
+      "path": "docs/rich-10",
+      "status": 200,
+      "bytes": 2417,
+      "times": [
+        25,
+        34,
+        20,
+        41
+      ]
+    },
+    {
+      "path": "docs/rich-500",
+      "status": 200,
+      "bytes": 104658,
+      "times": [
+        370,
+        295,
+        181,
+        255
+      ]
+    },
+    {
+      "path": "docs/rich-2000",
+      "status": 200,
+      "bytes": 422159,
+      "times": [
+        833,
+        795,
+        831,
+        808
+      ]
+    },
+    {
+      "path": "documents/page?path=html-audit",
+      "status": 200,
+      "bytes": 749,
+      "times": [
+        54,
+        41,
+        32,
+        32
+      ]
+    },
+    {
+      "path": "widgets/__document/aHRtbC1hdWRpdA",
+      "status": 200,
+      "bytes": 570,
+      "times": [
+        27,
+        18,
+        20,
+        18
+      ]
+    },
+    {
+      "path": "widgets/__document/aHRtbC1hdWRpdA/content",
+      "status": 200,
+      "bytes": 14484,
+      "times": [
+        16,
+        15,
+        14,
+        14
+      ]
+    }
+  ],
+  "catalog": [
+    {
+      "count": 10,
+      "entries": 10,
+      "times": [
+        18,
+        4,
+        4,
+        6
+      ]
+    },
+    {
+      "count": 100,
+      "entries": 100,
+      "times": [
+        34,
+        27,
+        26,
+        24
+      ]
+    },
+    {
+      "count": 500,
+      "entries": 500,
+      "times": [
+        98,
+        96,
+        95,
+        156
+      ]
+    },
+    {
+      "count": 1000,
+      "entries": 1000,
+      "times": [
+        220,
+        187,
+        170,
+        169
+      ]
+    }
+  ],
+  "browser": {
+    "results": [
+      {
+        "label": "Rich 10",
+        "total": 1094,
+        "states": [
+          {
+            "at": 1,
+            "state": {
+              "text": "Search\nInclude archived\nRecent Activity\n\nYour latest spaces across all projects\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 248,
+            "state": {
+              "text": "",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 612,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\n\nNo open annotations\n\nUse /comment or /instruct",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 883,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\n\nNo open annotations\n\nUse /comment or /instruct",
+              "skeletons": 0,
+              "pulses": 1,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 1070,
+            "state": {
+              "text": "Audit rich 10 paragraph 0\n\nAudit rich 10 paragraph 1\n\nAudit rich 10 paragraph 2\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          }
+        ],
+        "resources": [
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-10",
+            "start": 92,
+            "duration": 14,
+            "size": 503
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-10",
+            "start": 144,
+            "duration": 26,
+            "size": 503
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/_spaceId-Ck-OzI90.js",
+            "start": 146,
+            "duration": 16,
+            "size": 4128
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/_-DPse9BYI.js",
+            "start": 147,
+            "duration": 17,
+            "size": 1786
+          },
+          {
+            "url": "http://127.0.0.1:34416/favicon.svg",
+            "start": 150,
+            "duration": 6,
+            "size": 939
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/main-iedexEVd.css",
+            "start": 194,
+            "duration": 5,
+            "size": 39783
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/docs/rich-10",
+            "start": 504,
+            "duration": 19,
+            "size": 2417
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+            "start": 531,
+            "duration": 10,
+            "size": 28
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/editor-BYpUoQpo.js",
+            "start": 558,
+            "duration": 65,
+            "size": 330996
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/mermaid-D3o5coJa.js",
+            "start": 558,
+            "duration": 7,
+            "size": 2282
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/github-dark-BFhhNueA.js",
+            "start": 666,
+            "duration": 5,
+            "size": 2610
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/github-light-lKoG2_DG.js",
+            "start": 666,
+            "duration": 8,
+            "size": 2567
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/system/settings",
+            "start": 873,
+            "duration": 7,
+            "size": 140
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/worktable-mermaid-block-DyjWs-3N.js",
+            "start": 876,
+            "duration": 50,
+            "size": 208285
+          },
+          {
+            "url": "http://127.0.0.1:34416/assets/worktable-mermaid-renderer-Cqzi3Rmf.js",
+            "start": 878,
+            "duration": 14,
+            "size": 2625
+          }
+        ],
+        "events": [
+          {
+            "event": "response",
+            "at": 8,
+            "url": "/api/spaces/loading-audit",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 167,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10"
+          },
+          {
+            "event": "response",
+            "at": 168,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 179,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10"
+          },
+          {
+            "event": "request",
+            "at": 180,
+            "url": "/assets/_spaceId-Ck-OzI90.js"
+          },
+          {
+            "event": "request",
+            "at": 181,
+            "url": "/assets/_-DPse9BYI.js"
+          },
+          {
+            "event": "request",
+            "at": 182,
+            "url": "/favicon.svg"
+          },
+          {
+            "event": "response",
+            "at": 215,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 223,
+            "url": "/assets/main-iedexEVd.css"
+          },
+          {
+            "event": "request",
+            "at": 531,
+            "url": "/api/spaces/loading-audit/docs/rich-10"
+          },
+          {
+            "event": "response",
+            "at": 548,
+            "url": "/api/spaces/loading-audit/docs/rich-10",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 559,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true"
+          },
+          {
+            "event": "response",
+            "at": 569,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 617,
+            "url": "/assets/editor-BYpUoQpo.js"
+          },
+          {
+            "event": "request",
+            "at": 619,
+            "url": "/assets/mermaid-D3o5coJa.js"
+          },
+          {
+            "event": "request",
+            "at": 694,
+            "url": "/assets/github-dark-BFhhNueA.js"
+          },
+          {
+            "event": "request",
+            "at": 695,
+            "url": "/assets/github-light-lKoG2_DG.js"
+          },
+          {
+            "event": "request",
+            "at": 917,
+            "url": "/api/system/settings"
+          },
+          {
+            "event": "request",
+            "at": 918,
+            "url": "/assets/worktable-mermaid-block-DyjWs-3N.js"
+          },
+          {
+            "event": "request",
+            "at": 922,
+            "url": "/assets/worktable-mermaid-renderer-Cqzi3Rmf.js"
+          },
+          {
+            "event": "response",
+            "at": 925,
+            "url": "/api/system/settings",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "label": "Audit HTML",
+        "total": 1062,
+        "states": [
+          {
+            "at": 0,
+            "state": {
+              "text": "Audit rich 10 paragraph 0\n\nAudit rich 10 paragraph 1\n\nAudit rich 10 paragraph 2\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          },
+          {
+            "at": 212,
+            "state": {
+              "text": "",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 539,
+            "state": {
+              "text": "Loading HTML doc...",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 792,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\nComment on this HTML doc\n\nNo open annotations\n\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": true
+            }
+          }
+        ],
+        "resources": [
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=html-audit",
+            "start": 77,
+            "duration": 83,
+            "size": 749
+          },
+          {
+            "url": "http://127.0.0.1:34416/favicon.svg",
+            "start": 117,
+            "duration": 4,
+            "size": 939
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=html-audit",
+            "start": 167,
+            "duration": 79,
+            "size": 749
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+            "start": 500,
+            "duration": 142,
+            "size": 570
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+            "start": 504,
+            "duration": 349,
+            "size": 28
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=html-audit",
+            "start": 548,
+            "duration": 376,
+            "size": 749
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+            "start": 672,
+            "duration": 274,
+            "size": 14484
+          }
+        ],
+        "events": [
+          {
+            "event": "request",
+            "at": 113,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit"
+          },
+          {
+            "event": "request",
+            "at": 121,
+            "url": "/favicon.svg"
+          },
+          {
+            "event": "response",
+            "at": 165,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 198,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit"
+          },
+          {
+            "event": "response",
+            "at": 255,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 525,
+            "url": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA"
+          },
+          {
+            "event": "request",
+            "at": 533,
+            "url": "/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true"
+          },
+          {
+            "event": "request",
+            "at": 569,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit"
+          },
+          {
+            "event": "response",
+            "at": 650,
+            "url": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 701,
+            "url": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f"
+          },
+          {
+            "event": "response",
+            "at": 867,
+            "url": "/api/spaces/loading-audit/annotations?widgetId=html-audit&includeResolved=true",
+            "status": 200
+          },
+          {
+            "event": "response",
+            "at": 940,
+            "url": "/api/spaces/loading-audit/documents/page?path=html-audit",
+            "status": 200
+          },
+          {
+            "event": "response",
+            "at": 955,
+            "url": "/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "label": "Audit Markdown",
+        "total": 252,
+        "states": [
+          {
+            "at": 0,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\nComment on this HTML doc\n\nNo open annotations\n\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": true
+            }
+          },
+          {
+            "at": 128,
+            "state": {
+              "text": "",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 240,
+            "state": {
+              "text": "Audit Markdown\n\nReadable audit content.\n\nAnnotations\n0 open\nShow resolved\n\nNo op",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": false
+            }
+          }
+        ],
+        "resources": [
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=plain",
+            "start": 37,
+            "duration": 15,
+            "size": 498
+          },
+          {
+            "url": "http://127.0.0.1:34416/favicon.svg",
+            "start": 77,
+            "duration": 13,
+            "size": 939
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/docs/plain",
+            "start": 89,
+            "duration": 19,
+            "size": 419
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=plain",
+            "start": 131,
+            "duration": 27,
+            "size": 498
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/annotations?docPath=plain&includeResolved=true",
+            "start": 203,
+            "duration": 20,
+            "size": 28
+          }
+        ],
+        "events": [
+          {
+            "event": "request",
+            "at": 70,
+            "url": "/api/spaces/loading-audit/documents/page?path=plain"
+          },
+          {
+            "event": "response",
+            "at": 89,
+            "url": "/api/spaces/loading-audit/documents/page?path=plain",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 93,
+            "url": "/favicon.svg"
+          },
+          {
+            "event": "request",
+            "at": 123,
+            "url": "/api/spaces/loading-audit/docs/plain"
+          },
+          {
+            "event": "request",
+            "at": 145,
+            "url": "/api/spaces/loading-audit/documents/page?path=plain"
+          },
+          {
+            "event": "response",
+            "at": 156,
+            "url": "/api/spaces/loading-audit/docs/plain",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 216,
+            "url": "https://fonts.gstatic.com/s/fraunces/v38/6NU78FyLNQOQZAnv9bYEvDiIdE9Ea92uemAk_WBq8U_9v0c2Wa0KxC9TeA.woff2"
+          },
+          {
+            "event": "request",
+            "at": 217,
+            "url": "/api/spaces/loading-audit/annotations?docPath=plain&includeResolved=true"
+          },
+          {
+            "event": "response",
+            "at": 220,
+            "url": "/api/spaces/loading-audit/documents/page?path=plain",
+            "status": 200
+          },
+          {
+            "event": "response",
+            "at": 245,
+            "url": "/api/spaces/loading-audit/annotations?docPath=plain&includeResolved=true",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "label": "Rich 2000",
+        "total": 2215,
+        "states": [
+          {
+            "at": 0,
+            "state": {
+              "text": "Audit Markdown\n\nReadable audit content.\n\nAnnotations\n0 open\nShow resolved\n\nNo op",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 145,
+            "state": {
+              "text": "",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 1177,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\n\nNo open annotations\n\nUse /comment or /instruct",
+              "skeletons": 0,
+              "pulses": 1,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 1224,
+            "state": {
+              "text": "\n\n\nAnnotations\n0 open\nShow resolved\n\nNo open annotations\n\nUse /comment or /instr",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          },
+          {
+            "at": 2208,
+            "state": {
+              "text": "Audit rich 2000 paragraph 0\n\nAudit rich 2000 paragraph 1\n\nAudit rich 2000 paragr",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          }
+        ],
+        "resources": [
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-2000",
+            "start": 64,
+            "duration": 12,
+            "size": 507
+          },
+          {
+            "url": "http://127.0.0.1:34416/favicon.svg",
+            "start": 90,
+            "duration": 5,
+            "size": 939
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/docs/rich-2000",
+            "start": 104,
+            "duration": 1017,
+            "size": 422159
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-2000",
+            "start": 151,
+            "duration": 908,
+            "size": 507
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/annotations?docPath=rich-2000&includeResolved=true",
+            "start": 1133,
+            "duration": 118,
+            "size": 542
+          }
+        ],
+        "events": [
+          {
+            "event": "request",
+            "at": 92,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-2000"
+          },
+          {
+            "event": "response",
+            "at": 94,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-2000",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 98,
+            "url": "/favicon.svg"
+          },
+          {
+            "event": "request",
+            "at": 115,
+            "url": "/api/spaces/loading-audit/docs/rich-2000"
+          },
+          {
+            "event": "request",
+            "at": 161,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-2000"
+          },
+          {
+            "event": "response",
+            "at": 1075,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-2000",
+            "status": 200
+          },
+          {
+            "event": "response",
+            "at": 1121,
+            "url": "/api/spaces/loading-audit/docs/rich-2000",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 1142,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-2000&includeResolved=true"
+          },
+          {
+            "event": "response",
+            "at": 2181,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-2000&includeResolved=true",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "label": "Rich 10",
+        "total": 731,
+        "states": [
+          {
+            "at": 1,
+            "state": {
+              "text": "Audit rich 2000 paragraph 0\n\nAudit rich 2000 paragraph 1\n\nAudit rich 2000 paragr",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          },
+          {
+            "at": 459,
+            "state": {
+              "text": "",
+              "skeletons": 18,
+              "pulses": 19,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 579,
+            "state": {
+              "text": "Annotations\n0 open\nShow resolved\n\nNo open annotations\n\nUse /comment or /instruct",
+              "skeletons": 0,
+              "pulses": 1,
+              "editor": false,
+              "iframe": false
+            }
+          },
+          {
+            "at": 626,
+            "state": {
+              "text": "Audit rich 10 paragraph 0\n\nAudit rich 10 paragraph 1\n\nAudit rich 10 paragraph 2\n",
+              "skeletons": 0,
+              "pulses": 0,
+              "editor": true,
+              "iframe": false
+            }
+          }
+        ],
+        "resources": [
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-10",
+            "start": 121,
+            "duration": 17,
+            "size": 503
+          },
+          {
+            "url": "http://127.0.0.1:34416/favicon.svg",
+            "start": 154,
+            "duration": 13,
+            "size": 939
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/docs/rich-10",
+            "start": 422,
+            "duration": 71,
+            "size": 2417
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=rich-10",
+            "start": 460,
+            "duration": 43,
+            "size": 503
+          },
+          {
+            "url": "http://127.0.0.1:34416/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+            "start": 506,
+            "duration": 37,
+            "size": 28
+          }
+        ],
+        "events": [
+          {
+            "event": "request",
+            "at": 156,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10"
+          },
+          {
+            "event": "response",
+            "at": 161,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 168,
+            "url": "/favicon.svg"
+          },
+          {
+            "event": "request",
+            "at": 460,
+            "url": "/api/spaces/loading-audit/docs/rich-10"
+          },
+          {
+            "event": "request",
+            "at": 471,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10"
+          },
+          {
+            "event": "response",
+            "at": 510,
+            "url": "/api/spaces/loading-audit/docs/rich-10",
+            "status": 200
+          },
+          {
+            "event": "request",
+            "at": 519,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true"
+          },
+          {
+            "event": "response",
+            "at": 521,
+            "url": "/api/spaces/loading-audit/documents/page?path=rich-10",
+            "status": 200
+          },
+          {
+            "event": "response",
+            "at": 587,
+            "url": "/api/spaces/loading-audit/annotations?docPath=rich-10&includeResolved=true",
+            "status": 200
+          }
+        ]
+      }
+    ],
+    "errors": [
+      "SecurityError: Failed to read the 'serviceWorker' property from 'Navigator': Service worker is disabled because the context is sandboxed and lacks the 'allow-same-origin' flag."
+    ]
+  },
+  "missingDocument": {
+    "events": [
+      {
+        "event": "request",
+        "at": 611,
+        "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=does-not-exist"
+      },
+      {
+        "event": "response",
+        "at": 662,
+        "status": 404
+      },
+      {
+        "event": "request",
+        "at": 1221,
+        "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=does-not-exist"
+      },
+      {
+        "event": "response",
+        "at": 1252,
+        "status": 404
+      },
+      {
+        "event": "request",
+        "at": 2311,
+        "url": "http://127.0.0.1:34416/api/spaces/loading-audit/documents/page?path=does-not-exist"
+      },
+      {
+        "event": "response",
+        "at": 2324,
+        "status": 404
+      }
+    ],
+    "total": 2520
+  }
+}

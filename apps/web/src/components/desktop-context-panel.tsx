@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { cn } from "@worktable/ui/lib/utils"
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 
 const PANEL_GUTTER = 12
 
@@ -49,7 +50,7 @@ export function DesktopContextPanel({
           )}
           data-worktable-context-panel
         >
-          {children}
+          <DeferredMount active={open}>{children}</DeferredMount>
         </div>
       </div>
     </div>

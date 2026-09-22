@@ -49,12 +49,11 @@ export function useScrollFade<T extends HTMLElement = HTMLElement>(
         })
       }
 
-      // Initial state
-      update()
-
       node.addEventListener("scroll", onScroll, { passive: true })
 
-      // Observe both container and first child for content size changes
+      // ResizeObserver also delivers the initial measurement after layout.
+      // Reading scrollHeight in the ref callback would force layout repeatedly
+      // while React is still mounting the document and surrounding panels.
       const ro = new ResizeObserver(() => update())
       ro.observe(node)
       if (node.firstElementChild) {

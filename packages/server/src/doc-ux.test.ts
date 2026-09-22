@@ -206,6 +206,16 @@ describe("doc UX routes", () => {
         collaborationCacheEpoch: string;
       };
       expect(beforeMeta.markdownCompatible).toBe(true);
+      const fastRead = await req(
+        app,
+        "GET",
+        "/api/spaces/doc-ux-space/docs/safe-rich?conversionCheck=skip"
+      );
+      expect(fastRead.status).toBe(200);
+      expect(fastRead.json).toEqual({
+        ...(before.json as object),
+        markdownCompatible: null,
+      });
 
       const converted = await req(
         app,

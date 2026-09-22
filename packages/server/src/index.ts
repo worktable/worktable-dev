@@ -116,7 +116,10 @@ import {
   setWorkspaceExportFlush,
   setWorkspaceExportSnapshot,
 } from "./workspace-export-coordinator.ts";
-import { recoverInterruptedWorkspaceReplacements } from "./workspace-replacement-recovery.ts";
+import {
+  acknowledgeWorkspaceReplacementResets,
+  recoverInterruptedWorkspaceReplacements,
+} from "./workspace-replacement-recovery.ts";
 import {
   reconcileRecoveredDocumentLifecycles,
   recoverInterruptedDocumentLifecycles,
@@ -838,7 +841,7 @@ export function startServer(
     if (!replacementRestartInProgress) {
       workspaceReplacementRecoveryHookForTests?.();
       const recovered = recoverInterruptedWorkspaceReplacements({ details: true })
-        .filter((job) => !job.retained);
+        .filter((job) => job.resetRequired);
       if (recovered.length > 0) {
         retireWorkspaceDerivedFiles();
         recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({
@@ -849,6 +852,7 @@ export function startServer(
             if (job.kind === "clear" && job.state === "complete")
               await finalizeWorkspaceClearJob(job.id);
           }
+          acknowledgeWorkspaceReplacementResets(recovered.map((job) => job.id));
         }).catch((error) => {
           workspaceRejected = true;
           console.error("[workspace] recovered state could not be initialized", error);

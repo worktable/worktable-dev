@@ -15,7 +15,10 @@ import {
   beginPreparedWorkspaceReplacement,
   prepareWorkspaceReplacement,
 } from "./workspace-replacement.ts"
-import { recoverInterruptedWorkspaceReplacements } from "./workspace-replacement-recovery.ts"
+import {
+  acknowledgeWorkspaceReplacementResets,
+  recoverInterruptedWorkspaceReplacements,
+} from "./workspace-replacement-recovery.ts"
 import {
   calculateWorkspaceContentCheckpoint,
   writeWorkspaceExportV2,
@@ -78,9 +81,14 @@ describe("interrupted replacement recovery", () => {
     )
   })
 
-  it.each(["import", "clear"])(
-    "rolls back a swapped %s before normal startup can adopt it",
-    async (kind) => {
+  it.each([
+    ["import", false],
+    ["import", true],
+    ["clear", false],
+    ["clear", true],
+  ] as const)(
+    "%s preserves original content before commit (swapped=%s)",
+    async (kind, swapped) => {
       const archive = await writeWorkspaceExportV2(join(root, "incoming"), {
         workspaceRoot: source,
       })
@@ -105,17 +113,28 @@ describe("interrupted replacement recovery", () => {
         })}\n`
       )
 
-      // Simulate a host/process crash after both swap renames but before commit.
-      await rename(active, prepared.backupPath)
-      await rename(prepared.stagingPath, active)
+      // Recovery must distinguish confirmation alone from a changed active tree.
+      if (swapped) {
+        await rename(active, prepared.backupPath)
+        await rename(prepared.stagingPath, active)
+      }
       expect(
         await readFile(
           join(active, "spaces", "notes", "docs", "note.md"),
           "utf8"
         )
-      ).toBe("# Replacement\n")
+      ).toBe(swapped ? "# Replacement\n" : "# Original\n")
 
-      expect(recoverInterruptedWorkspaceReplacements()).toEqual([id])
+      expect(
+        recoverInterruptedWorkspaceReplacements({ details: true })
+      ).toEqual([{ id, kind, state: "failed", resetRequired: swapped }])
+      // Cleanup must not lose a pending reset if startup dies before applying it.
+      setWorkspaceRootOverride(source)
+      expect(recoverInterruptedWorkspaceReplacements()).toEqual([])
+      setWorkspaceRootOverride(active)
+      expect(recoverInterruptedWorkspaceReplacements()).toEqual(swapped ? [id] : [])
+      if (swapped) acknowledgeWorkspaceReplacementResets([id])
+      expect(recoverInterruptedWorkspaceReplacements()).toEqual([])
       expect(
         await readFile(
           join(active, "spaces", "notes", "docs", "note.md"),
@@ -127,7 +146,9 @@ describe("interrupted replacement recovery", () => {
       ) as { state: string; error: string; expiresAt: string }
       expect(recoveredJob).toMatchObject({
         state: "failed",
-        error: expect.stringContaining("recovered the original workspace"),
+        error: expect.stringContaining(swapped
+          ? "recovered the original workspace"
+          : "interrupted before the atomic swap"),
       })
       expect(Date.parse(recoveredJob.expiresAt)).toBeGreaterThan(Date.now())
     }
@@ -214,7 +235,10 @@ describe("interrupted replacement recovery", () => {
       kind: "document-storage-v2",
       state: "complete",
       backupPath,
+      resetRequired: true,
     })
+    expect(recoverInterruptedWorkspaceReplacements()).toEqual([id])
+    acknowledgeWorkspaceReplacementResets([id])
     expect(
       recoverInterruptedWorkspaceReplacements({ details: true })
     ).toContainEqual({
@@ -222,7 +246,7 @@ describe("interrupted replacement recovery", () => {
       kind: "document-storage-v2",
       state: "complete",
       backupPath,
-      retained: true,
+      resetRequired: false,
     })
     expect(
       JSON.parse(await readFile(join(jobDirectory, "job.json"), "utf8"))

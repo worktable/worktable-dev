@@ -62,6 +62,7 @@ type ImportState =
   | "failed"
 
 export interface TransferJobBase {
+  resetPending?: boolean
   workspaceKey?: string
   version: 1
   id: string
@@ -271,6 +272,7 @@ async function withTransferLock<T>(
 function isExpiredAndInactive(job: WorkspaceTransferJob, now: number): boolean {
   if (
     Date.parse(job.expiresAt) > now ||
+    job.resetPending ||
     activeClearJobs.has(job.id) ||
     (job.kind === "clear" && job.cleanupPending)
   )

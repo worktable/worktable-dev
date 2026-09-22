@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
   lstatSync,
   readFileSync,
@@ -23,6 +24,8 @@ interface RecoverableJob {
   expiresAt: string
   error?: string
   cleanupPending?: boolean
+  resetPending?: boolean
+  resetWorkspaceKey?: string
   prepared?: {
     stagingPath?: string
     backupPath?: string
@@ -38,8 +41,12 @@ export interface WorkspaceReplacementRecovery {
   kind: RecoverableJob["kind"]
   state: "complete" | "failed"
   backupPath?: string
-  /** An already-finalized migration backup, not work reconciled by this call. */
-  retained?: true
+  /** Includes uncertain prior swaps; excludes untouched trees and retained receipts. */
+  resetRequired: boolean
+}
+
+function resetWorkspaceKey(): string {
+  return createHash("sha256").update(resolve(getWorkspaceRoot())).digest("hex")
 }
 
 function realDirectory(path: string): boolean {
@@ -91,8 +98,13 @@ function finishRecovery(
   job: RecoverableJob,
   state: "complete" | "failed",
   error: string | undefined,
-  cleanup: () => void
+  cleanup: () => void,
+  resetRequired = job.resetPending ?? true
 ): void {
+  // Keep this requirement durable until startup has refreshed derived state.
+  // Cleanup may finish before a crash; absence of `prepared` is not an acknowledgement.
+  job.resetPending = resetRequired
+  job.resetWorkspaceKey = resetWorkspaceKey()
   job.state = state
   job.expiresAt = new Date(
     Date.now() +
@@ -126,11 +138,15 @@ function finishRecovery(
   updateJob(path, job)
 }
 
-function recoveryResult(job: RecoverableJob): WorkspaceReplacementRecovery {
+function recoveryResult(
+  job: RecoverableJob,
+  resetRequired = job.resetPending ?? true
+): WorkspaceReplacementRecovery {
   return {
     id: job.id,
     kind: job.kind,
     state: job.state === "complete" ? "complete" : "failed",
+    resetRequired,
     ...(job.recovery?.backupPath
       ? { backupPath: job.recovery.backupPath }
       : {}),
@@ -184,6 +200,11 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
       continue
     }
     if (!job.prepared) {
+      if (job.resetPending) {
+        if (job.resetWorkspaceKey === resetWorkspaceKey())
+          recovered.push(recoveryResult(job))
+        continue
+      }
       if (Date.parse(job.expiresAt) <= Date.now()) {
         rmSync(dirname(path), { recursive: true, force: true })
         continue
@@ -203,7 +224,7 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
         ) &&
         realDirectory(committed)
       ) {
-        recovered.push({ ...recoveryResult(job), retained: true })
+        recovered.push(recoveryResult(job, false))
       }
       continue
     }
@@ -314,7 +335,8 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
         job,
         "failed",
         "Workspace replacement was interrupted before the atomic swap; the original workspace is unchanged.",
-        cleanupRolledBack
+        cleanupRolledBack,
+        false
       )
       recovered.push(recoveryResult(job))
       continue
@@ -334,4 +356,18 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
     }
   }
   return options?.details ? recovered : recovered.map((entry) => entry.id)
+}
+
+/** Acknowledge only after derived-state reset and required finalization succeeded. */
+export function acknowledgeWorkspaceReplacementResets(ids: string[]): void {
+  for (const id of ids) {
+    if (!/^(?:wtx|wsm|wss)_[A-Za-z0-9_-]+$/.test(id))
+      throw new Error("invalid workspace recovery id")
+    const path = join(getAppDir(), "workspace-transfers", "jobs", id, "job.json")
+    const job = JSON.parse(readFileSync(path, "utf8")) as RecoverableJob
+    if (job.id !== id || job.resetWorkspaceKey !== resetWorkspaceKey())
+      throw new Error("workspace recovery identity changed")
+    job.resetPending = false
+    updateJob(path, job)
+  }
 }

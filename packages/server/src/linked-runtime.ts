@@ -1,3 +1,4 @@
+import { cloudLinkRequest, linkedCloudOrigin } from "./cloud-account.ts"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -43,11 +44,13 @@ export type LinkedStatus = {
     | "unlinking"
     | "error"
   cloudOrigin: string
+  enabled: boolean | null
   mcpUrl?: string
   label?: string
 }
 let status: LinkedStatus = {
-  state: "unlinked",
+  state: "connecting",
+  enabled: null,
   cloudOrigin: "https://app.worktable.cloud",
 }
 let stopRuntime: (() => Promise<void>) | null = null
@@ -78,20 +81,12 @@ async function saveLink(file: string, link: StoredLink) {
     await rm(temporary, { force: true })
   }
 }
-function cloudOrigin() {
-  const value =
-    process.env["WORKTABLE_LINKED_CLOUD_ORIGIN"] ??
-    "https://app.worktable.cloud"
-  const url = new URL(value)
-  if (url.protocol !== "https:" || url.origin !== value)
-    throw new Error("INVALID_CLOUD_ORIGIN")
-  return value
-}
+const cloudOrigin = linkedCloudOrigin
 export function linkedStatus(): LinkedStatus {
   return { ...status }
 }
 
-async function change(operation: () => Promise<unknown>) {
+async function change<T>(operation: () => Promise<T>): Promise<T> {
   const next = actions
     .catch(() => undefined)
     .then(async () => {
@@ -107,38 +102,44 @@ async function change(operation: () => Promise<unknown>) {
   return next
 }
 
-export async function beginLink(): Promise<{ url: string }> {
-  return (await change(async () => {
-    const file = path()
-    let link = await readLink(file)
-    const epoch = await getWorkspaceCollaborationEpoch()
-    if (link?.disabled)
-      throw new Error("Unlinking is still in progress. Try again shortly.")
-    if (link && link.workspaceEpoch !== epoch)
-      throw new Error("Unlink this device before connecting its replacement.")
-    if (!link) {
-      link = {
-        version: 1,
-        cloudOrigin: cloudOrigin(),
-        controlSecret: randomBytes(32).toString("hex"),
-        workspaceEpoch: epoch,
-        label: hostname().slice(0, 80) || "My device",
-        bootSequence: 0,
-        disabled: false,
-      }
-      await saveLink(file, link)
+async function prepareLink(): Promise<StoredLink> {
+  const file = path()
+  let link = await readLink(file)
+  const epoch = await getWorkspaceCollaborationEpoch()
+  if (link?.disabled)
+    throw new Error("Unlinking is still in progress. Try again shortly.")
+  if (link && link.workspaceEpoch !== epoch)
+    throw new Error("Unlink this device before connecting its replacement.")
+  if (!link) {
+    link = {
+      version: 1,
+      cloudOrigin: cloudOrigin(),
+      controlSecret: randomBytes(32).toString("hex"),
+      workspaceEpoch: epoch,
+      label: hostname().slice(0, 80) || "My device",
+      bootSequence: 0,
+      disabled: false,
     }
-    const controlHash = createHash("sha256")
-      .update(link.controlSecret)
-      .digest("hex")
+    await saveLink(file, link)
+  }
+  return link
+}
+function enrollment(link: StoredLink) {
+  return {
+    controlHash: createHash("sha256").update(link.controlSecret).digest("hex"),
+    workspaceEpoch: link.workspaceEpoch,
+    label: link.label,
+  }
+}
+
+/** Released web clients can finish their explicit browser approval after an update. */
+export async function beginLink(): Promise<{ url: string }> {
+  return change(async () => {
+    const link = await prepareLink()
     const response = await fetch(`${link.cloudOrigin}/linked/enroll`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        controlHash,
-        label: link.label,
-        workspaceEpoch: link.workspaceEpoch,
-      }),
+      body: JSON.stringify(enrollment(link)),
       signal: AbortSignal.timeout(15_000),
       redirect: "error",
     })
@@ -150,11 +151,65 @@ export async function beginLink(): Promise<{ url: string }> {
       throw new Error("Invalid linking response")
     status = {
       state: "awaiting_approval",
+      enabled: false,
       cloudOrigin: link.cloudOrigin,
       label: link.label,
     }
     return data
-  })) as { url: string }
+  })
+}
+
+async function enableLink(): Promise<LinkedStatus> {
+  return change(async () => {
+    const link = await prepareLink()
+    const data = await cloudLinkRequest(link.cloudOrigin, {
+      action: "enable",
+      enrollment: enrollment(link),
+    })
+    const destinationId = z
+      .string()
+      .regex(/^[a-f0-9]{32}$/)
+      .parse(data["destinationId"])
+    if (data["state"] === "paused")
+      await cloudLinkRequest(link.cloudOrigin, {
+        action: "pause",
+        enrollment: enrollment(link),
+        paused: false,
+      })
+    status = {
+      state: "connecting",
+      enabled: true,
+      cloudOrigin: link.cloudOrigin,
+      label: link.label,
+      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
+    }
+    return linkedStatus()
+  })
+}
+
+export async function setLinkEnabled(enabled: boolean): Promise<LinkedStatus> {
+  if (enabled) return enableLink()
+  return change(async () => {
+    const link = await readLink(path())
+    if (!link || link.disabled) throw new Error("This device is not linked.")
+    const data = await cloudLinkRequest(link.cloudOrigin, {
+      action: "pause",
+      paused: true,
+      enrollment: enrollment(link),
+    })
+    const destinationId = z
+      .string()
+      .regex(/^[a-f0-9]{32}$/)
+      .parse(data["destinationId"])
+    status = {
+      state: "paused",
+      enabled: false,
+      cloudOrigin: link.cloudOrigin,
+      label: link.label,
+      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
+    }
+    return linkedStatus()
+  })
 }
 
 export async function disconnectLink(): Promise<void> {
@@ -164,8 +219,13 @@ export async function disconnectLink(): Promise<void> {
     await invalidateAllDocumentShares()
     if (link) {
       await saveLink(file, { ...link, disabled: true })
-      status = { state: "unlinking", cloudOrigin: link.cloudOrigin }
-    } else status = { state: "unlinked", cloudOrigin: cloudOrigin() }
+      status = {
+        state: "unlinking",
+        enabled: false,
+        cloudOrigin: link.cloudOrigin,
+      }
+    } else
+      status = { state: "unlinked", enabled: false, cloudOrigin: cloudOrigin() }
   })
 }
 
@@ -249,7 +309,7 @@ function launch(): void {
   const work = (async () => {
     const initial = await readLink(file)
     if (!initial) {
-      status = { state: "unlinked", cloudOrigin: cloudOrigin() }
+      status = { state: "unlinked", enabled: false, cloudOrigin: cloudOrigin() }
       return
     }
     await withCrossProcessLock(
@@ -277,14 +337,22 @@ function launch(): void {
         while (!controller.signal.aborted && getWorkspaceRoot() === root) {
           try {
             if (link.disabled) {
-              status = { state: "unlinking", cloudOrigin: link.cloudOrigin }
+              status = {
+                state: "unlinking",
+                enabled: false,
+                cloudOrigin: link.cloudOrigin,
+              }
               const response = await fetch(
                 `${link.cloudOrigin}/linked/disconnect`,
                 { method: "POST", headers, signal: signal(), redirect: "error" }
               )
               if (!response.ok) throw new Error("DISCONNECT_FAILED")
               await rm(file, { force: true })
-              status = { state: "unlinked", cloudOrigin: link.cloudOrigin }
+              status = {
+                state: "unlinked",
+                enabled: false,
+                cloudOrigin: link.cloudOrigin,
+              }
               return
             }
             if (
@@ -346,7 +414,11 @@ function launch(): void {
             if (controller.signal.aborted) break
             if (reply.state === "revoked" || reply.state === "superseded") {
               fence()
-              status = { state: "revoked", cloudOrigin: link.cloudOrigin }
+              status = {
+                state: "revoked",
+                enabled: false,
+                cloudOrigin: link.cloudOrigin,
+              }
               return
             }
             if (reply.state === "locked" || reply.state === "paused") {
@@ -356,10 +428,22 @@ function launch(): void {
               ingress = null
               stopConnector()
               setLinkedSharing(null)
-              status = { state: reply.state, cloudOrigin: link.cloudOrigin }
+              status = {
+                ...status,
+                state: reply.state,
+                enabled: reply.state !== "paused" && !reply.paused,
+                cloudOrigin: link.cloudOrigin,
+                ...(reply.destinationId
+                  ? {
+                      mcpUrl: `${link.cloudOrigin}/api/mcp/d/${reply.destinationId}`,
+                    }
+                  : {}),
+                label: link.label,
+              }
             } else if (reply.state === "pending") {
               status = {
                 state: "awaiting_approval",
+                enabled: false,
                 cloudOrigin: link.cloudOrigin,
                 label: link.label,
               }
@@ -457,6 +541,7 @@ function launch(): void {
               }
               status = {
                 state: connected && reply.ready ? "online" : "connecting",
+                enabled: true,
                 cloudOrigin: link.cloudOrigin,
                 mcpUrl,
                 label: link.label,
@@ -502,6 +587,7 @@ function launch(): void {
 
 /** The server owns this lifecycle, including when Desktop owns the server process. */
 export function startLinkedRuntime(): () => Promise<void> {
+  status = { state: "connecting", enabled: null, cloudOrigin: cloudOrigin() }
   running = true
   launch()
   return async () => {

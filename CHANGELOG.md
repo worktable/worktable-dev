@@ -12,6 +12,12 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-09-22
+
+### Changed
+
+- **Worktable Link settings:** Sign in to Cloud locally, then pause or resume remote access while keeping your MCP URL and share links.
+
 ## [0.1.9] - 2026-09-22
 
 ### Added

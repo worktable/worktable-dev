@@ -1,6 +1,6 @@
 [package]
 name = "worktable-desktop"
-version = "0.1.9"
+version = "0.1.10"
 description = "Native Tauri host for Worktable Desktop"
 authors = ["Worktable contributors"]
 edition = "2021"

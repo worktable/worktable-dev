@@ -316,7 +316,7 @@ body::before {
 .unavailable { width: min(100%, 32rem); }
 .unavailable .large-mark { width: 3.75rem; height: 3.75rem; display: grid; place-items: center; margin: 0 auto 1.5rem; }
 .unavailable .large-mark svg { display: block; width: 100%; height: 100%; }
-.unavailable h1 { margin: 0; font-family: var(--font-display); font-size: clamp(1.9rem, 6vw, 2.4rem); font-weight: 520; line-height: 1.12; letter-spacing: -.02em; }
+.unavailable h1 { margin: 0; font-family: var(--font-display); font-size: 1.75rem; font-weight: 400; line-height: 1.2; letter-spacing: -.02em; }
 .unavailable p { max-width: 28rem; margin: .875rem auto 0; color: var(--muted-foreground); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: var(--scrollbar-thumb); background-clip: padding-box; }

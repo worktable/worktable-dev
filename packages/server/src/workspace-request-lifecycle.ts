@@ -8,6 +8,11 @@ let admissionHookForTests:
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
 export function isWorkspaceRequest(method: string, pathname: string): boolean {
+  if (
+    method.toUpperCase() === "GET" &&
+    pathname === "/api/linked/account/callback"
+  )
+    return true
   if (SAFE_METHODS.has(method.toUpperCase())) return false
   return (
     pathname === "/mcp" ||

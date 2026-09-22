@@ -3141,6 +3141,7 @@ fn configured_sidecar<R: Runtime>(
         .env("WORKTABLE_RELEASE_DIR", &runtime.packaged.release_root)
         .env("WORKTABLE_STATIC_DIR", &runtime.packaged.static_root)
         .env("WORKTABLE_VERSION", &runtime.packaged.version)
+        .env("WORKTABLE_LINKED_CLOUD_ORIGIN", WORKTABLE_CLOUD_ORIGIN)
         .env("WORKTABLE_NO_UPDATE_CHECK", "1");
     if let Some(path) = &runtime.local_app_data_root {
         command = command.env("WORKTABLE_APP_DIR", path);
@@ -7754,6 +7755,9 @@ mod tests {
         ));
         assert!(!inherited_sidecar_env_allowed(
             "WORKTABLE_OWNER_PASSWORD".as_ref()
+        ));
+        assert!(!inherited_sidecar_env_allowed(
+            "WORKTABLE_LINKED_CLOUD_ORIGIN".as_ref()
         ));
         assert!(!inherited_sidecar_env_allowed(
             "WORKTABLE_HOST_VERIFICATION_TOKEN".as_ref()

@@ -50,7 +50,11 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
     }
   },
   pendingComponent: EditorSkeleton,
-  pendingMs: 0,
+  // Keep the current page and the shell's progress bar while validating the
+  // next path. Committing a pending match here also exposes a TanStack 1.167
+  // race: concurrent renders can see it after its load promise was cleared.
+  // Initial hydration and renderer Suspense still use the shared skeleton.
+  pendingMs: Infinity,
   pendingMinMs: 0,
   component: DocumentPageRoute,
 })

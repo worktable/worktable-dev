@@ -140,3 +140,25 @@ Reproduction scripts are in [document-loading-experiments](document-loading-expe
 `measure-proxy-html.mjs`, and `measure-delayed-fonts.mjs`. Use isolated fixtures,
 keep builds/tests out of timed measurements, preserve failed runs, and do not
 interpret a warm browser or already-running server as a fully cold deployment.
+
+## PR navigation follow-up
+
+Full PR CI exposed intermittent blank pages after drawing and HTML-folder renames.
+Both browser traces reported an undefined value thrown by TanStack Router's
+`MatchInnerImpl`; the destination metadata requests had succeeded. The immediate
+pending transition could expose a pending match after its non-reactive load promise
+had been cleared during concurrent rendering.
+
+Document navigation now retains the current page while the fresh destination path
+check runs (`pendingMs: Infinity`), with the existing shell progress bar providing
+feedback. This avoids committing that intermediate pending match and removes a
+skeleton transition. It does not postpone ready content: the destination commits as
+soon as validation finishes. Initial hydration and lazy renderer loading retain
+the shared skeleton, and the saved initial-HTML preview is unchanged. No Router
+upgrade, dependency patch, or longer test timeout was needed.
+
+The browser regression holds the destination metadata request beyond the Router's
+normal pending threshold, checks that the source remains visible, then releases it
+and checks the destination editor and absence of page errors. It fails with the
+previous immediate-pending setting. The existing drawing and nested HTML lifecycle
+tests additionally cover the rename workflows that failed in CI.

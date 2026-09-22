@@ -18,9 +18,11 @@ async function pointer(
   x: number,
   y: number
 ) {
-  await page.getByLabel("Drawing canvas").evaluate(
-    (root, input) => {
-      root.querySelector("canvas")!.dispatchEvent(
+  // The renderer can mount after its container during a route handoff. Wait
+  // for the actual input surface, as a user must, before dispatching a stroke.
+  await page.getByLabel("Drawing canvas").locator("canvas.qd-canvas").evaluate(
+    (canvas, input) => {
+      canvas.dispatchEvent(
         new PointerEvent(input.type, {
           ...input,
           bubbles: true,
@@ -159,9 +161,18 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   await expect(
     page.getByRole("button", { name: "Renaming…", exact: true })
   ).toBeDisabled()
+  // The address updates before the retained page hands off to the destination.
+  // Wait for the renamed editor's own source read before observing its Saved
+  // state or installing the slow-read interception used by the next scenario.
+  const renamedSource = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/documents/editable-source?path=drawings%2Frenamed") &&
+      response.status() === 200
+  )
   releaseSave()
   holdSave = null
   await expect(page).toHaveURL(/documents\/drawings\/renamed$/)
+  await renamedSource
   await expect(page.getByRole("status")).toHaveText("Saved")
   const moved = await request.get(
     `${harness.apiUrl}/api/spaces/drawing-input/documents/editable-source?path=drawings/renamed`

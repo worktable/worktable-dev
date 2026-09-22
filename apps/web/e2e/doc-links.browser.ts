@@ -270,6 +270,52 @@ test("an internal link settles without hanging or rewriting the document", async
   })
 })
 
+test("document navigation keeps the current page until the next path is verified", async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  await page.goto(appUrl("/spaces/link-regression/documents/source"))
+  const sourceLink = page.getByRole("link", { name: "the target" })
+  await expect(sourceLink).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[contenteditable="true"]')).toBeVisible()
+
+  let releasePage!: () => void
+  const heldPage = new Promise<void>((resolve) => {
+    releasePage = resolve
+  })
+  await page.route(
+    "**/api/spaces/link-regression/documents/page?path=target",
+    async (route) => {
+      await heldPage
+      await route.continue()
+    }
+  )
+  try {
+    const pageStarted = page.waitForRequest((request) =>
+      request.url().endsWith("/documents/page?path=target")
+    )
+    await page
+      .locator('a[href="/spaces/link-regression/documents/target"]')
+      .click()
+    await pageStarted
+    // Advance beyond the router's default pending threshold while metadata is
+    // held. A slow path check must not replace the open document with a pending
+    // route match (which can outlive its load promise during concurrent renders).
+    await page.clock.install()
+    await page.clock.runFor(1_500)
+    await expect(sourceLink).toBeVisible()
+    await expect(page.locator('[data-document-loading]')).toHaveCount(0)
+  } finally {
+    releasePage()
+  }
+  await expect(page).toHaveURL(/\/documents\/target$/)
+  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+    timeout: 30_000,
+  })
+  expect(errors).toEqual([])
+})
+
 test("an already-amplified link opens without further rewriting", async ({
   page,
 }) => {

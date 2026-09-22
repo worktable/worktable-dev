@@ -837,7 +837,8 @@ export function startServer(
   try {
     if (!replacementRestartInProgress) {
       workspaceReplacementRecoveryHookForTests?.();
-      const recovered = recoverInterruptedWorkspaceReplacements({ details: true });
+      const recovered = recoverInterruptedWorkspaceReplacements({ details: true })
+        .filter((job) => !job.retained);
       if (recovered.length > 0) {
         retireWorkspaceDerivedFiles();
         recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({

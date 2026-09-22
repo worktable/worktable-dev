@@ -38,6 +38,8 @@ export interface WorkspaceReplacementRecovery {
   kind: RecoverableJob["kind"]
   state: "complete" | "failed"
   backupPath?: string
+  /** An already-finalized migration backup, not work reconciled by this call. */
+  retained?: true
 }
 
 function realDirectory(path: string): boolean {
@@ -201,7 +203,7 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
         ) &&
         realDirectory(committed)
       ) {
-        recovered.push(recoveryResult(job))
+        recovered.push({ ...recoveryResult(job), retained: true })
       }
       continue
     }

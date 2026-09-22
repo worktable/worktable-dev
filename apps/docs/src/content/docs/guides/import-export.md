@@ -62,8 +62,9 @@ review require a new review.
 
 Clearing permanently removes spaces, documents, records, threads, attachments,
 and version history. Export first if you need a copy. The workspace keeps its
-identity, name, account attachment, connections, preferences, and storage format.
-It remains empty after restart; starter content is not recreated.
+identity, name, local preferences, and storage format. You will need to sign in
+to Worktable Cloud and reconnect Worktable Link again. It remains empty after
+restart; starter content is not recreated.
 
 If replacement or restart fails before the clear commits, Worktable restores
 the original content. A completed clear cannot be undone. Previously generated
@@ -82,6 +83,8 @@ the same file to continue.
 Select **Replace Worktable** and confirm only after reviewing that
 summary. Worktable replaces the portable content, restarts on the same address,
 and keeps the destination workspace identity and account attachment.
+On local installations, sign in to Worktable Cloud and reconnect Worktable Link
+after replacement.
 
 This replaces current portable content and version history. It is not a merge
 and it does not create background sync. Export the newer side and deliberately

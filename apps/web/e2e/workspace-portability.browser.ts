@@ -96,12 +96,8 @@ test("clearing a workspace discards stale drafts and reloads another tab", async
   const after = await (
     await page.request.get(`${harness.apiUrl}/api/workspace`)
   ).json()
-  // Headless tabs may remain visible; dispatch visibilitychange explicitly to
-  // exercise the same handler used when returning to a stale tab.
-  await other.bringToFront()
-  await other.evaluate(() =>
-    document.dispatchEvent(new Event("visibilitychange"))
-  )
+  // A visible home tab has no content socket and can miss a fast replacement's
+  // intermediate states. Its background poll must refresh without a focus event.
   await expect.poll(() => reloads, { timeout: 20_000 }).toBeGreaterThan(0)
   await expect
     .poll(

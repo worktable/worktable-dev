@@ -81,14 +81,20 @@ export function WorkspaceOperationObserver() {
       if (!job) continue
       const previous = seen.current.get(job.id)
       seen.current.set(job.id, job.state)
+      // Another tab can miss every intermediate state of a fast replacement.
+      // Refresh content identity independently of transition-only notifications.
+      if (
+        job.kind !== "export" &&
+        previous !== job.state &&
+        ["complete", "failed"].includes(job.state)
+      )
+        void client.invalidateQueries({ queryKey: ["workspace"] })
       if (
         !previous ||
         previous === job.state ||
         !["complete", "failed"].includes(job.state)
       )
         continue
-      if (job.kind !== "export")
-        void client.invalidateQueries({ queryKey: ["workspace"] })
       const marker = `worktable-operation:${workspace.data?.id}:${job.id}:${job.state}`
       try {
         if (localStorage.getItem(marker)) continue

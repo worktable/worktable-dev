@@ -459,6 +459,7 @@ describe("document storage V2 migration", () => {
         kind: "document-storage-v2",
         state: "complete",
         backupPath: result.backupPath,
+        retained: true,
       },
     ])
 

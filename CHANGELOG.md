@@ -14,7 +14,7 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ### Added
 
-- **Clear workspace:** Remove workspace content and history from Settings with typed confirmation while keeping your account and preferences.
+- **Clear workspace:** Remove workspace content and history from Settings with typed confirmation while keeping your workspace identity and preferences.
 
 ### Fixed
 

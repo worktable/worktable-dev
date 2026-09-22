@@ -115,7 +115,7 @@ export function WorkspaceClearGroup() {
         }}
         variant="destructive"
         title={`Clear ${job.data?.workspaceName ?? "workspace"}?`}
-        description="All content and history will be permanently deleted."
+        description="Permanently deletes all content and history and disconnects Worktable Cloud."
         confirmLabel="Clear workspace"
         confirmDisabled={!ready || phrase !== job.data?.confirmationText}
         loading={confirm.isPending}

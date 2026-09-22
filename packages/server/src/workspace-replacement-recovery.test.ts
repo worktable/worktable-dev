@@ -222,6 +222,7 @@ describe("interrupted replacement recovery", () => {
       kind: "document-storage-v2",
       state: "complete",
       backupPath,
+      retained: true,
     })
     expect(
       JSON.parse(await readFile(join(jobDirectory, "job.json"), "utf8"))

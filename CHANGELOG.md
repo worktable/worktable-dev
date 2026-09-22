@@ -12,6 +12,12 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-22
+
+### Fixed
+
+- **Settings startup:** Update notifications and other shortcuts open Settings reliably while the sidebar is still loading.
+
 ## [0.1.7] - 2026-09-22
 
 ### Changed

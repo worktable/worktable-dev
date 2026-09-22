@@ -9,14 +9,17 @@ const noticeFile = "bundled-javascript-NOTICES.md"
 const inventoryFile = "bundled-javascript.json"
 
 export function writeCompiledJsNotices(
-  metafile: Bun.BuildMetafile,
+  metafile: Bun.BuildMetafile | readonly Bun.BuildMetafile[],
   buildCwd: string,
   destination: string
 ): void {
-  const inputs = Object.values(metafile.outputs).flatMap((output) =>
-    Object.entries(output.inputs)
-      .filter(([, contribution]) => contribution.bytesInOutput > 0)
-      .map(([input]) => input)
+  const metafiles = "outputs" in metafile ? [metafile] : metafile
+  const inputs = metafiles.flatMap((file) =>
+    Object.values(file.outputs).flatMap((output) =>
+      Object.entries(output.inputs)
+        .filter(([, contribution]) => contribution.bytesInOutput > 0)
+        .map(([input]) => input)
+    )
   )
   const packages = contributingPackages(inputs, buildCwd)
   const keys = packages.map((entry) => entry.key)

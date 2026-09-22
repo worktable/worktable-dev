@@ -1,3 +1,5 @@
+import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts";
+import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts";
 import { Hono } from "hono";
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
@@ -101,7 +103,10 @@ import {
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts";
 import { runServerMaintenance } from "./server-maintenance.ts";
 import { beginPreparedWorkspaceReplacement } from "./workspace-replacement.ts";
-import { calculateWorkspaceContentCheckpoint } from "./workspace-transfer-v2.ts";
+import {
+  calculateLocalWorkspaceContentCheckpoints,
+  calculateWorkspaceContentCheckpoint,
+} from "./workspace-transfer-v2.ts";
 import {
   setWorkspaceReplacementExecutor,
   waitForActiveWorkspaceExports,
@@ -170,7 +175,7 @@ const sameOriginCredentialedCors = cors({
   },
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Worktable-Content-Epoch"],
 });
 
 const wildcardCors = cors({
@@ -314,6 +319,7 @@ app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
 app.use("/api/*", trustedLocalIdentity());
+app.use("/api/*", requireWorkspaceContentEpoch);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
 // login and status work unauthenticated (the login page must be reachable with
@@ -790,6 +796,7 @@ export function startServer(
   }
 
   let workspaceRejected = false;
+  let recoveredWorkspaceReset: Promise<void> | null = null;
   let recoveredDocuments: ReturnType<
     typeof recoverInterruptedDocumentLifecycles
   > = [];
@@ -831,6 +838,13 @@ export function startServer(
       workspaceReplacementRecoveryHookForTests?.();
       const recovered = recoverInterruptedWorkspaceReplacements();
       if (recovered.length > 0) {
+        retireWorkspaceDerivedFiles();
+        recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({
+          type: "workspaceReset",
+        }).catch((error) => {
+          workspaceRejected = true;
+          console.error("[workspace] recovered state could not be initialized", error);
+        });
         console.warn(
           `[Worktable] recovered ${recovered.length} interrupted workspace replacement${recovered.length === 1 ? "" : "s"}`
         );
@@ -1298,6 +1312,14 @@ export function startServer(
         );
       }
 
+      if (recoveredWorkspaceReset && url.pathname !== "/health") {
+        await recoveredWorkspaceReset;
+        if (workspaceRejected) {
+          return new Response("Workspace recovery failed; restart Worktable.", {
+            status: 503,
+          });
+        }
+      }
       const pendingRecoveredDocument = recoveredDocumentTask;
       if (pendingRecoveredDocument && url.pathname !== "/health") {
         await pendingRecoveredDocument;
@@ -1690,9 +1712,15 @@ export function startServer(
         try {
           await stopWorkspaceRequestAdmissionAndDrain();
           await waitForActiveWorkspaceExports();
-          const destinationContentCheckpoint =
-            await calculateWorkspaceContentCheckpoint(getWorkspaceRoot());
+          // Stop and flush every accepted writer before checking the reviewed tree.
           await server.stop();
+          const destinationContentCheckpoint =
+            replacement.expectedDestinationContentCheckpoint ??
+            ((replacement.options?.destinationCheckpointPaths ?? replacement.options?.checkpointPaths) === "local"
+              ? (await calculateLocalWorkspaceContentCheckpoints(
+                  getWorkspaceRoot()
+                )).workspaceContentCheckpoint
+              : await calculateWorkspaceContentCheckpoint(getWorkspaceRoot()));
           await workspaceReplacementAfterCheckpointHookForTests?.();
           transaction = await beginPreparedWorkspaceReplacement(
             replacement.stagingPath,
@@ -1701,6 +1729,7 @@ export function startServer(
             destinationContentCheckpoint,
             replacement.options
           );
+          retireWorkspaceDerivedFiles();
           await notifyWorkspaceChangeAndWaitOrThrow({
             type: "workspaceReset",
           });
@@ -1722,6 +1751,12 @@ export function startServer(
           try {
             if (transaction && activeServer) await activeServer.stop();
             await transaction?.rollback();
+            if (transaction) {
+              retireWorkspaceDerivedFiles();
+              await notifyWorkspaceChangeAndWaitOrThrow({
+                type: "workspaceReset",
+              });
+            }
             if (!activeServer) {
               recoverWorkspaceRootBeforeReplacementRestart();
               replacementRestartInProgress = true;

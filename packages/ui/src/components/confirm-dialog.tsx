@@ -21,8 +21,8 @@ interface ConfirmDialogProps {
   variant?: "default" | "destructive"
   icon?: ReactNode
   children?: ReactNode
-  loading?: boolean
   confirmDisabled?: boolean
+  loading?: boolean
   loadingLabel?: string
   onConfirm: () => void | Promise<void>
 }
@@ -37,17 +37,22 @@ export function ConfirmDialog({
   variant = "default",
   icon,
   children,
-  loading = false,
   confirmDisabled = false,
+  loading = false,
   loadingLabel = "Working...",
   onConfirm,
 }: ConfirmDialogProps) {
   const handleConfirm = async () => {
-    await onConfirm()
+    if (!loading && !confirmDisabled) await onConfirm()
   }
 
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!loading) onOpenChange(next)
+      }}
+    >
       <ResponsiveDialogContent>
         <ResponsiveDialogHeader>
           <div

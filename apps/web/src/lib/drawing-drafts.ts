@@ -1,3 +1,4 @@
+import { currentWorkspaceContentEpoch } from "./workspace-content-state"
 // Drawings share the origin's storage, but drafts belong to a Worktable and
 // durable document identity. Moving a path must not strand unsaved ink.
 function draftPrefix(workspaceId: string) {
@@ -5,13 +6,24 @@ function draftPrefix(workspaceId: string) {
 }
 
 export function drawingDraftKey(workspaceId: string, documentId: string) {
-  return `${draftPrefix(workspaceId)}${documentId}`
+  const epoch = currentWorkspaceContentEpoch()
+  return `${draftPrefix(workspaceId)}${epoch ? `${epoch}/` : ""}${documentId}`
 }
 
-export function clearPersistedDrawingDrafts(workspaceId: string) {
+export function clearPersistedDrawingDrafts(
+  workspaceId: string,
+  oldEpoch?: string
+) {
   try {
     for (const key of Object.keys(localStorage)) {
-      if (key.startsWith(draftPrefix(workspaceId))) localStorage.removeItem(key)
+      if (!key.startsWith(draftPrefix(workspaceId))) continue
+      const suffix = key.slice(draftPrefix(workspaceId).length)
+      if (
+        !oldEpoch ||
+        suffix.startsWith(`${oldEpoch}/`) ||
+        !suffix.includes("/")
+      )
+        localStorage.removeItem(key)
     }
   } catch {
     // Browser storage may be unavailable.

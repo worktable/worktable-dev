@@ -7,8 +7,8 @@ Open **Settings → Import & Export** in any Worktable deployment.
 
 ## Export a portable package
 
-Choose how much available version history to include, then select **Export
-workspace**. Current content is always included.
+Choose how much available version history to include, then select **Export**.
+Current content is always included.
 
 - **All history** is the complete snapshot and the default.
 - **Last 30 days** also keeps each item's newest version and meaningful
@@ -33,14 +33,53 @@ Inside the extracted folder:
 The offline browser does not run HTML-doc scripts or make network requests.
 Large or unusual files remain available as raw files.
 
+## Recover an export with incompatible history filenames
+
+Older history may contain filenames that cannot be unpacked on every supported
+filesystem. Choosing **No history** excludes those history files before filename
+checks. It still includes all current content.
+
+If selected history has incompatible filenames, Worktable shows the affected
+file count and offers **Skip files**. Review the filename
+issues or download the diagnostic report before choosing that option. Trailing
+spaces appear as `␠` in the review. Recovery leaves the original files untouched
+and records the omitted history in the package. If the affected files change,
+Worktable asks for a new review.
+
+Current content with incompatible filenames must be corrected before exporting;
+recovery never silently drops current documents. Symlinks, unreadable files,
+archive limits, and integrity failures still stop an export.
+
+You can close Settings while export preparation continues. Reopen **Import &
+Export** to check progress and download the result.
+
+## Clear the current workspace
+
+On local, Desktop, and self-hosted installations, **Clear workspace…** opens a
+review of the content to remove. Type the exact `CLEAR <workspace name>` phrase
+and confirm. Reviews expire after ten minutes; changes to the workspace after
+review require a new review.
+
+Clearing permanently removes spaces, documents, records, threads, attachments,
+and version history. Export first if you need a copy. The workspace keeps its
+identity, name, account attachment, connections, preferences, and storage format.
+It remains empty after restart; starter content is not recreated.
+
+If replacement or restart fails before the clear commits, Worktable restores
+the original content. A completed clear cannot be undone. Previously generated
+exports on the server are revoked; copies already downloaded remain yours.
+Open tabs refresh and discard drafts from the old workspace content.
+
+Clear is not yet available in Cloud.
+
 ## Import by replacing a workspace
 
-Choose a `.wtb` package under **Import and replace**. Worktable verifies it and
+Choose a `.wtb` package under **Import**. Worktable verifies it and
 shows the source workspace, export time, size, file count, and history summary
 before anything changes. If the page reloads during a large upload, reselect
 the same file to continue.
 
-Select **Replace this workspace** and confirm only after reviewing that
+Select **Replace Worktable** and confirm only after reviewing that
 summary. Worktable replaces the portable content, restarts on the same address,
 and keeps the destination workspace identity and account attachment.
 

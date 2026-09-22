@@ -5,6 +5,7 @@ export interface ScheduledWorkspaceReplacement {
   backupPath: string
   contentCheckpoint: string
   options?: BeginWorkspaceReplacementOptions
+  expectedDestinationContentCheckpoint?: string
   onSucceeded(): Promise<void>
   onFailed(
     error: unknown,

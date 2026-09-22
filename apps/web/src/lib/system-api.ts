@@ -131,6 +131,7 @@ export interface DeploymentInfo {
     workspaceName: boolean
     workspacePath: boolean
     workspaceUrl: boolean
+    workspaceClear?: boolean
     workspacePortability: boolean
     editorSettings: boolean
     historySettings: boolean

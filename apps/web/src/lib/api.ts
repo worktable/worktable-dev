@@ -1,3 +1,4 @@
+import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
   SearchResult,
   SpaceFile,
@@ -9,6 +10,8 @@ import { fetchJSON, fetchVoid } from "./http.ts"
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
 
 export interface WorkspaceInfo {
+  contentEpoch?: string
+  canManage?: boolean
   id: string
   name: string
   createdAt: string
@@ -31,8 +34,10 @@ export interface WorkspaceInfo {
   }
 }
 
-export function getWorkspace() {
-  return fetchJSON<WorkspaceInfo>("/api/workspace")
+export async function getWorkspace() {
+  const workspace = await fetchJSON<WorkspaceInfo>("/api/workspace")
+  await acceptWorkspaceContentEpoch(workspace.id, workspace.contentEpoch)
+  return workspace
 }
 
 /**

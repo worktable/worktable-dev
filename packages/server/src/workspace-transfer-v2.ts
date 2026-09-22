@@ -1,4 +1,9 @@
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import {
+  analyzePackagePath,
+  WorkspaceExportPathError,
+  type PackagePathIssue,
+} from "./workspace-package-path.ts"
 import { createHash, randomBytes } from "node:crypto"
 import {
   constants as fsConstants,
@@ -28,7 +33,6 @@ import {
   dirname,
   isAbsolute,
   join,
-  posix,
   relative,
   resolve,
   sep,
@@ -142,6 +146,11 @@ export interface WorkspaceExportV2Manifest {
     oldestIncludedAt?: string
     newestIncludedAt?: string
     warnings: string[]
+    recovery?: {
+      omittedFiles: number
+      omittedBytes: number
+      issueCount: number
+    }
   }
   integrity: {
     sourceCheckpoint: string
@@ -420,35 +429,16 @@ async function canonicalPotentialPath(value: string): Promise<string> {
 export function validateWorkspaceExportV2Path(value: unknown): string {
   if (
     typeof value !== "string" ||
-    value.length === 0 ||
+    !value ||
     Buffer.byteLength(value, "utf8") > 1024 ||
     value.includes("\\") ||
     value.includes("\0") ||
     value.startsWith("/") ||
     value.normalize("NFC") !== value
-  ) {
+  )
     throw new Error("workspace package contains an invalid path")
-  }
-  const normalized = posix.normalize(value)
-  const parts = value.split("/")
-  if (
-    normalized !== value ||
-    normalized === "." ||
-    normalized === ".." ||
-    normalized.startsWith("../") ||
-    parts.some(
-      (part) =>
-        Buffer.byteLength(part, "utf8") > 255 ||
-        // Windows rejects these characters and control bytes in path
-        // components, even though Unix filesystems permit them.
-        // eslint-disable-next-line no-control-regex -- portable paths exclude C0 controls
-        /[<>:"|?*\u0000-\u001f]/u.test(part) ||
-        /[. ]$/u.test(part) ||
-        /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(part)
-    )
-  ) {
+  if (analyzePackagePath(value))
     throw new Error(`workspace package contains an unsafe path: ${value}`)
-  }
   return value
 }
 
@@ -596,7 +586,10 @@ async function listSourceEntries(
         })
         await visit(absolute)
       } else if (info.isFile()) {
-        if (info.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES) {
+        if (
+          options.paths !== "local" &&
+          info.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
+        ) {
           throw new Error(`workspace file exceeds the v2 limit: ${path}`)
         }
         if (
@@ -956,7 +949,8 @@ function unclassifiedVersion(entry: SourceEntry): VersionCandidate {
 async function selectEntries(
   inventory: SourceInventory,
   policy: WorkspaceExportHistoryPolicy,
-  exportedAt: Date
+  exportedAt: Date,
+  recoveryFingerprint?: string
 ): Promise<{
   entries: SourceEntry[]
   history: WorkspaceExportV2Manifest["history"]
@@ -1082,6 +1076,111 @@ async function selectEntries(
     )
   }
 
+  const provisionalDirectories = new Set<string>()
+  for (const path of included) {
+    let parent = dirname(path)
+    while (parent !== ".") {
+      provisionalDirectories.add(parent)
+      parent = dirname(parent)
+    }
+  }
+  const provisional = [
+    ...current,
+    ...versionDirectories.filter((entry) =>
+      provisionalDirectories.has(entry.path)
+    ),
+    ...versionFiles.filter((entry) => included.has(entry.path)),
+  ]
+  const issues = new Map<string, PackagePathIssue>()
+  const foldedPaths = new Map<string, string>()
+  for (const entry of provisional) {
+    const issue = analyzePackagePath(entry.path)
+    if (issue) issues.set(issue.path, issue)
+    const folded = entry.path.toLocaleLowerCase("en-US")
+    const previous = foldedPaths.get(folded)
+    if (previous && previous !== entry.path) {
+      // Omit both sides of a collision; traversal order must never choose a winner.
+      issues.set(previous, {
+        code: "case-collision",
+        path: previous,
+        relatedPaths: [entry.path],
+      })
+      issues.set(entry.path, {
+        code: "case-collision",
+        path: entry.path,
+        relatedPaths: [previous],
+      })
+    }
+    foldedPaths.set(folded, entry.path)
+  }
+  let recovery: WorkspaceExportV2Manifest["history"]["recovery"]
+  if (issues.size) {
+    const roots = [...issues.keys()]
+    const affected = (path: string) => {
+      let cursor = path
+      while (cursor !== ".") {
+        if (issues.has(cursor)) return true
+        cursor = dirname(cursor)
+      }
+      return false
+    }
+    const units = new Set(
+      provisional
+        .filter((entry) => affected(entry.path))
+        .map((entry) => v2GenerationLocation(entry.path)?.unit ?? entry.path)
+    )
+    const omitted = provisional.filter(
+      (entry) =>
+        affected(entry.path) ||
+        units.has(v2GenerationLocation(entry.path)?.unit ?? entry.path)
+    )
+    const files = omitted.filter((entry) => entry.kind === "file")
+    const onlyHistory =
+      roots.every((path) => path.startsWith("versions/")) &&
+      omitted.every((entry) => entry.path.startsWith("versions/"))
+    const fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify(
+          omitted
+            .map((entry) => [
+              entry.path,
+              entry.kind,
+              entry.size,
+              entry.dev,
+              entry.ino,
+              entry.ctimeMs,
+              entry.mtimeMs,
+            ])
+            .sort((a, b) => comparePortableText(String(a[0]), String(b[0])))
+        )
+      )
+      .digest("hex")
+    const diagnostics = {
+      code: onlyHistory
+        ? ("NON_PORTABLE_HISTORY" as const)
+        : ("NON_PORTABLE_CONTENT" as const),
+      issues: [...issues.values()]
+        .sort((a, b) => comparePortableText(a.path, b.path))
+        .slice(0, 1000),
+      issueCount: issues.size,
+      truncated: issues.size > 1000,
+      affectedFiles: files.length,
+      affectedBytes: files.reduce((sum, file) => sum + file.size, 0),
+      ...(onlyHistory ? { recoveryFingerprint: fingerprint } : {}),
+    }
+    if (!onlyHistory || recoveryFingerprint !== fingerprint)
+      throw new WorkspaceExportPathError(diagnostics)
+    for (const entry of omitted) included.delete(entry.path)
+    recovery = {
+      omittedFiles: diagnostics.affectedFiles,
+      omittedBytes: diagnostics.affectedBytes,
+      issueCount: diagnostics.issueCount,
+    }
+    warnings.push(
+      `Omitted ${recovery.omittedFiles} history files with incompatible filenames by explicit request.`
+    )
+  }
+
   const includedHistory = versionFiles.filter((file) => included.has(file.path))
   const omittedHistory = versionFiles.filter((file) => !included.has(file.path))
   const includedDirectoryPaths = new Set<string>()
@@ -1105,6 +1204,7 @@ async function selectEntries(
       (left, right) => comparePortableText(left.path, right.path)
     ),
     history: {
+      ...(recovery ? { recovery } : {}),
       requested: policy,
       complete: omittedHistory.length === 0,
       includedFiles: includedHistory.length,
@@ -1462,7 +1562,7 @@ async function captureConsistentWorkspace(
   sourceRoot: string,
   historyPolicy: WorkspaceExportHistoryPolicy,
   exportedAt: Date,
-  options: CaptureOptions = {}
+  options: CaptureOptions & WorkspaceExportV2WriteOptions = {}
 ): Promise<{
   selected: Awaited<ReturnType<typeof selectEntries>>
   capture: Awaited<ReturnType<typeof captureEntries>>
@@ -1470,10 +1570,26 @@ async function captureConsistentWorkspace(
   let capture: Awaited<ReturnType<typeof captureEntries>> | null = null
   try {
     options.signal?.throwIfAborted()
+    await options.onProgress?.("inventory")
     const inventory = await listSourceEntries(sourceRoot, {
+      paths: "local",
       signal: options.signal,
     })
-    const selected = await selectEntries(inventory, historyPolicy, exportedAt)
+    await options.onProgress?.("history")
+    const selected = await selectEntries(
+      inventory,
+      historyPolicy,
+      exportedAt,
+      options.recoveryFingerprint
+    )
+    for (const entry of selected.entries) {
+      validateWorkspaceExportV2Path(entry.path)
+      if (
+        entry.kind === "file" &&
+        entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
+      )
+        throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
+    }
     const expandedBytes = selected.entries.reduce(
       (sum, entry) => sum + (entry.kind === "file" ? entry.size : 0),
       0
@@ -1481,10 +1597,14 @@ async function captureConsistentWorkspace(
     if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
       throw new Error("workspace export exceeds the v2 expanded-size limit")
     }
+    await options.onProgress?.("capture")
     capture = await captureEntries(selected.entries, inventory, options)
     let current: SourceInventory
     try {
-      current = await listSourceEntries(sourceRoot, { signal: options.signal })
+      current = await listSourceEntries(sourceRoot, {
+        paths: "local",
+        signal: options.signal,
+      })
     } catch (error) {
       throw new WorkspaceChangedDuringExportError(
         error instanceof Error ? error.message : "workspace inventory"
@@ -2182,7 +2302,17 @@ async function hashFile(path: string): Promise<string> {
   return hash.digest("hex")
 }
 
+export type WorkspaceExportPhase =
+  | "inventory"
+  | "history"
+  | "capture"
+  | "viewer"
+  | "archive"
+  | "finalize"
+
 type WorkspaceExportV2WriteOptions = {
+  recoveryFingerprint?: string
+  onProgress?: (phase: WorkspaceExportPhase) => Promise<void>
   force?: boolean
   history?: WorkspaceExportHistoryPolicy
   workspaceRoot?: string
@@ -2270,7 +2400,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
 
   const exportedAt = new Date()
   const captureWorkspace = () =>
-    captureConsistentWorkspace(sourceRoot, historyPolicy, exportedAt)
+    captureConsistentWorkspace(sourceRoot, historyPolicy, exportedAt, options)
   const { selected, capture } = options.withCaptureBarrier
     ? await options.withCaptureBarrier(captureWorkspace)
     : await captureWorkspace()
@@ -2316,6 +2446,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     const contentDirectories = capture.directories.filter(
       (directory) => directory.path !== "."
     )
+    await options.onProgress?.("viewer")
     const viewer = await generateViewerBundle(
       capture.files,
       selected.history,
@@ -2365,6 +2496,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
       throw new Error("workspace export manifest exceeds the v2 limit")
     }
 
+    await options.onProgress?.("archive")
     const zip = new yazl.ZipFile()
     pipelineStartHookForTests?.()
     const writing = pipeZip(zip, temporary, archiveLimit)
@@ -2401,6 +2533,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
       comment: "Worktable workspace export v2",
     })
     await writing
+    await options.onProgress?.("finalize")
     await chmod(temporary, 0o600)
     const bytes = (await stat(temporary)).size
     if (bytes > archiveLimit) {
@@ -2579,6 +2712,20 @@ function parseManifest(value: unknown): WorkspaceExportV2Manifest {
   manifest.source = validateWorkspaceExportSource(manifest.source)
   validateWorkspaceExportV2Path(manifest.archive.root)
   validateHistoryPolicy(manifest.history.requested)
+  if (manifest.history.recovery !== undefined) {
+    const recovery = manifest.history.recovery
+    if (
+      !recovery ||
+      ![
+        recovery.omittedFiles,
+        recovery.omittedBytes,
+        recovery.issueCount,
+      ].every((value) => Number.isSafeInteger(value) && value >= 0) ||
+      recovery.omittedFiles > manifest.history.omittedFiles ||
+      recovery.omittedBytes > manifest.history.omittedBytes
+    )
+      throw new Error("invalid workspace history recovery summary")
+  }
   if (
     typeof manifest.history.complete !== "boolean" ||
     !Number.isSafeInteger(manifest.history.includedFiles) ||

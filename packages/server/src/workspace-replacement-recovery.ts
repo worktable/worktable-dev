@@ -17,11 +17,12 @@ export const DOCUMENT_STORAGE_MIGRATION_RECEIPT_TTL_MS =
 
 interface RecoverableJob {
   id: string
-  kind: "import" | "document-storage-v2" | "snapshot"
+  kind: "import" | "document-storage-v2" | "snapshot" | "clear"
   state: string
   updatedAt: string
   expiresAt: string
   error?: string
+  cleanupPending?: boolean
   prepared?: {
     stagingPath?: string
     backupPath?: string
@@ -113,6 +114,11 @@ function finishRecovery(
   // removed. A crash during cleanup therefore retries cleanup, never
   // reclassifies the workspace.
   updateJob(path, job)
+  if (job.kind === "clear" && state === "complete") {
+    job.cleanupPending = true
+    updateJob(path, job)
+    return
+  }
   cleanup()
   delete job.prepared
   updateJob(path, job)
@@ -169,7 +175,8 @@ export function recoverInterruptedWorkspaceReplacements(options?: {
       job.id !== entry.name ||
       (job.kind !== "import" &&
         job.kind !== "document-storage-v2" &&
-        job.kind !== "snapshot") ||
+        job.kind !== "snapshot" &&
+        job.kind !== "clear") ||
       !["replacing", "complete", "failed"].includes(job.state)
     ) {
       continue

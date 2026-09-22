@@ -1,3 +1,4 @@
+import { WorkspaceExportPathError } from "./workspace-package-path.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   chmod,
@@ -191,6 +192,96 @@ afterEach(async () => {
 })
 
 describe("workspace export v2", () => {
+  it("excludes incompatible history before portability validation and preserves source bytes", async () => {
+    const bad = join(source, "versions/notes/docs/legacy-note ")
+    await mkdir(bad, { recursive: true })
+    await writeFile(join(bad, "snapshot.json"), '{"content":"keep me"}')
+    const result = await writeWorkspaceExportV2(join(root, "no-history"), {
+      history: { mode: "none" },
+    })
+    const inspected = await inspectWorkspaceExportV2(result.destination)
+    expect(inspected.manifest.history).toMatchObject({
+      includedFiles: 0,
+      omittedFiles: 1,
+      complete: false,
+    })
+    expect(await readFile(join(bad, "snapshot.json"), "utf8")).toBe(
+      '{"content":"keep me"}'
+    )
+    expect(
+      inspected.manifest.integrity.files.some((file) =>
+        file.path.startsWith("versions/")
+      )
+    ).toBe(false)
+  })
+
+  it("requires reviewed history recovery, retains whole V2 generations, and rejects expanded consent", async () => {
+    const unit = await addV2Generation("2026-01-01T00:00:00.000Z", "bad")
+    await writeFile(join(source, unit, "trailing "), "legacy companion")
+    await addVersion("2026-01-02T00:00:00.000Z", "good", true)
+    let failure: WorkspaceExportPathError | undefined
+    try {
+      await writeWorkspaceExportV2(join(root, "strict"))
+    } catch (error) {
+      expect(error).toBeInstanceOf(WorkspaceExportPathError)
+      failure = error as WorkspaceExportPathError
+    }
+    expect(failure?.diagnostics.code).toBe("NON_PORTABLE_HISTORY")
+    const fingerprint = failure!.diagnostics.recoveryFingerprint!
+    const result = await writeWorkspaceExportV2(join(root, "recovered"), {
+      recoveryFingerprint: fingerprint,
+    })
+    const inspected = await inspectWorkspaceExportV2(result.destination)
+    expect(
+      inspected.manifest.integrity.files.some((file) =>
+        file.path.startsWith(unit)
+      )
+    ).toBe(false)
+    expect(inspected.manifest.history.includedFiles).toBe(1)
+    expect(inspected.manifest.history.recovery?.omittedFiles).toBe(3)
+    expect(inspected.manifest.history.meaningfulCheckpoints).toBe(1)
+    await importWorkspaceExportV2(result.destination, join(root, "restored"))
+    await writeFile(join(source, unit, "second bad "), "new")
+    await expect(
+      writeWorkspaceExportV2(join(root, "changed"), {
+        recoveryFingerprint: fingerprint,
+      })
+    ).rejects.toBeInstanceOf(WorkspaceExportPathError)
+  })
+
+  it("never offers recovery for current content and omits both sides of a history collision", async () => {
+    await mkdir(join(source, "versions/notes/docs/Name"), { recursive: true })
+    await mkdir(join(source, "versions/notes/docs/name"), { recursive: true })
+    await writeFile(join(source, "versions/notes/docs/Name/one.json"), "{}")
+    await writeFile(join(source, "versions/notes/docs/name/two.json"), "{}")
+    const failed = await writeWorkspaceExportV2(join(root, "collision")).then(
+      () => {
+        throw new Error("expected export failure")
+      },
+      (error) => error as WorkspaceExportPathError
+    )
+    expect(failed.diagnostics.affectedFiles).toBe(2)
+    const result = await writeWorkspaceExportV2(
+      join(root, "without-collision"),
+      { recoveryFingerprint: failed.diagnostics.recoveryFingerprint }
+    )
+    expect(result.manifest.history).toMatchObject({
+      includedFiles: 0,
+      omittedFiles: 2,
+    })
+    await writeFile(join(source, "spaces/notes/docs/bad "), "current")
+    const blocked = await writeWorkspaceExportV2(join(root, "current-bad"), {
+      history: { mode: "none" },
+    }).then(
+      () => {
+        throw new Error("expected export failure")
+      },
+      (error) => error as WorkspaceExportPathError
+    )
+    expect(blocked.diagnostics.code).toBe("NON_PORTABLE_CONTENT")
+    expect(blocked.diagnostics.recoveryFingerprint).toBeUndefined()
+  })
+
   it("publishes the supported transfer envelope as one coherent contract", () => {
     expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBe(2 * 1024 ** 3)
     expect(WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES).toBe(8 * 1024 ** 3)
@@ -476,14 +567,8 @@ describe("workspace export v2", () => {
       "old-v2",
       true
     )
-    await addV2Generation(
-      "2020-01-02T00:00:00.000Z",
-      "old2-v2"
-    )
-    const recentV2 = await addV2Generation(
-      new Date().toISOString(),
-      "new-v2"
-    )
+    await addV2Generation("2020-01-02T00:00:00.000Z", "old2-v2")
+    const recentV2 = await addV2Generation(new Date().toISOString(), "new-v2")
     const retiredDocumentId = "doc_RRRRRRRRRRRRRRRRRRRRRR" as DocumentId
     const oldMeaningfulRetired = await addV2Generation(
       "2020-01-01T00:00:00.000Z",
@@ -556,9 +641,7 @@ describe("workspace export v2", () => {
     expect(
       agePaths.filter((path) => path.startsWith(oldMeaningfulV2))
     ).toHaveLength(2)
-    expect(agePaths.filter((path) => path.startsWith(recentV2))).toHaveLength(
-      2
-    )
+    expect(agePaths.filter((path) => path.startsWith(recentV2))).toHaveLength(2)
     expect(
       agePaths.filter((path) =>
         path.startsWith(retiredPath(oldMeaningfulRetired))
@@ -597,10 +680,7 @@ describe("workspace export v2", () => {
       "2020-01-02T00:00:00.000Z",
       "old2-v2"
     )
-    const recentV2 = await addV2Generation(
-      new Date().toISOString(),
-      "new-v2"
-    )
+    const recentV2 = await addV2Generation(new Date().toISOString(), "new-v2")
     const documentId = "doc_VVVVVVVVVVVVVVVVVVVVVV" as DocumentId
     const invalidOwnershipId = "2030-01-01T00-00-00-000Z-invalid-owner"
     const invalidOwnershipV2 = `versions/notes/documents/${documentId}/${invalidOwnershipId}`
@@ -622,9 +702,7 @@ describe("workspace export v2", () => {
       companions: [
         {
           key: BUILTIN_DOCUMENT_COMPANIONS.htmlPermissions,
-          entries: [
-            { path: "permissions.json", bytes: Buffer.from("{}") },
-          ],
+          entries: [{ path: "permissions.json", bytes: Buffer.from("{}") }],
         },
       ],
     })
@@ -1139,6 +1217,8 @@ describe("workspace export v2", () => {
   it("rejects paths that cannot round-trip onto Windows filesystems", () => {
     for (const path of [
       "spaces/CON.md",
+      "spaces/COM¹.txt",
+      "spaces/LPT²",
       "spaces/notes/a:b.md",
       "spaces/notes/trailing.",
       "spaces/notes/trailing ",

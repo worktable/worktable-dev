@@ -2,7 +2,7 @@ import { z } from "zod"
 import { RESERVED_DOCUMENT_SOURCE_SUFFIXES } from "./document-storage-profile.ts"
 
 const WINDOWS_RESERVED_SEGMENT =
-  /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
+  /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/i
 const WINDOWS_INVALID_SEGMENT_CHARACTER = /[<>:"|?*]/
 const ENCODED_SEPARATOR = /%2f|%5c/i
 
@@ -52,8 +52,7 @@ export function documentPathKeyIsAtOrBelow(
   ancestorKey: string
 ): boolean {
   return (
-    candidateKey === ancestorKey ||
-    candidateKey.startsWith(`${ancestorKey}/`)
+    candidateKey === ancestorKey || candidateKey.startsWith(`${ancestorKey}/`)
   )
 }
 
@@ -79,16 +78,11 @@ export function remapDocumentPathPrefix(
   if (
     !candidate.comparisonKey ||
     !ancestor.comparisonKey ||
-    !documentPathKeyIsAtOrBelow(
-      candidate.comparisonKey,
-      ancestor.comparisonKey
-    )
+    !documentPathKeyIsAtOrBelow(candidate.comparisonKey, ancestor.comparisonKey)
   ) {
     return null
   }
-  const suffix = candidatePath
-    .split("/")
-    .slice(ancestorPath.split("/").length)
+  const suffix = candidatePath.split("/").slice(ancestorPath.split("/").length)
   return [replacementPath, ...suffix].join("/")
 }
 

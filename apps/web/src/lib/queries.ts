@@ -44,7 +44,10 @@ export const spacesQueryOptions = () =>
   queryOptions({
     queryKey: queryKeys.spaces,
     queryFn: getSpaces,
-    staleTime: 5 * 60_000,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
   })
 
 export const workspaceQueryOptions = () =>

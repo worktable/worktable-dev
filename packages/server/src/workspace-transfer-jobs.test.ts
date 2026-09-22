@@ -6,6 +6,7 @@ import {
   readdir,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -24,6 +25,8 @@ import {
   getWorkspaceImportJob,
   openWorkspaceExportDownload,
   prepareWorkspaceImportJob,
+  recoverWorkspaceExportJob,
+  getWorkspaceExportJob,
   recoverInterruptedWorkspaceTransferJobs,
   replaceWorkspaceImportJob,
   runWorkspaceTransferMaintenance,
@@ -87,6 +90,37 @@ afterEach(async () => {
 })
 
 describe("durable workspace transfer jobs", () => {
+  it("persists reviewed recovery and returns one child job for concurrent retries", async () => {
+    const bad = join(active, "versions/test-space/docs/legacy-note ")
+    await mkdir(bad, { recursive: true })
+    await writeFile(join(bad, "snapshot.json"), "history")
+    const failed = await waitForWorkspaceExportJob(
+      (await createWorkspaceExportJob({ mode: "all" })).id
+    )
+    expect(failed.failure?.code).toBe("NON_PORTABLE_HISTORY")
+    const [first, second] = await Promise.all([
+      recoverWorkspaceExportJob(failed.id),
+      recoverWorkspaceExportJob(failed.id),
+    ])
+    expect(first.id).toBe(second.id)
+    const recovered = await waitForWorkspaceExportJob(first.id)
+    expect(recovered).toMatchObject({
+      state: "complete",
+      manifest: { history: { recovery: { omittedFiles: 1 } } },
+    })
+    expect(await readFile(join(bad, "snapshot.json"), "utf8")).toBe("history")
+    await utimes(
+      join(root, "app/workspace-transfers/jobs", first.id),
+      new Date(0),
+      new Date(0)
+    )
+    setWorkspaceRootOverride(source)
+    await expect(getWorkspaceExportJob(first.id)).rejects.toThrow("not found")
+    await cleanupExpiredWorkspaceTransfers()
+    setWorkspaceRootOverride(active)
+    expect((await getWorkspaceExportJob(first.id)).state).toBe("complete")
+  })
+
   it("reports best-effort cleanup failures without rejecting job creation", async () => {
     await createWorkspaceImportJob({
       fileName: "existing.wtb",

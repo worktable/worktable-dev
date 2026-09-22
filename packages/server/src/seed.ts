@@ -1,3 +1,4 @@
+import { ensureWorkspaceManifest } from "./workspace.ts"
 import { randomUUID } from "node:crypto"
 import type { SpaceFile, WidgetFile } from "@worktable/types"
 import {
@@ -107,6 +108,8 @@ async function discardStarterPreparation(preparedId: string): Promise<void> {
  * discarded so the next launch can retry cleanly.
  */
 export async function seedStarterWorkspace(): Promise<boolean> {
+  if (ensureWorkspaceManifest().starterSeed?.status === "suppressed")
+    return false
   const existing = await listSpaces()
   if (existing.length > 0) return false
 
@@ -210,8 +213,7 @@ export async function seedStarterWorkspace(): Promise<boolean> {
 
     return true
   } catch (error) {
-    if (preparedDirectoryCreated)
-      await discardStarterPreparation(preparedId)
+    if (preparedDirectoryCreated) await discardStarterPreparation(preparedId)
     throw error
   }
 }

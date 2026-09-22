@@ -12,6 +12,14 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Added
+
+- **Clear workspace:** Remove workspace content and history from Settings with typed confirmation while keeping your account and preferences.
+
+### Fixed
+
+- **Workspace exports:** Excluded history no longer blocks exports, and incompatible history can be skipped explicitly without changing original files.
+
 ## [0.1.10] - 2026-09-22
 
 ### Added

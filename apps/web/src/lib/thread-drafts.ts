@@ -1,3 +1,7 @@
+import {
+  workspaceWritesFrozen,
+  currentWorkspaceContentEpoch,
+} from "./workspace-content-state"
 import type { ThreadDraftState } from "./thread-submission"
 
 export const THREAD_DRAFTS_STORAGE_KEY = "worktable:thread-drafts:v1"
@@ -66,7 +70,8 @@ interface SessionStorageLike {
 }
 
 export function threadDraftsStorageKey(workspaceId: string): string {
-  return `${THREAD_DRAFTS_STORAGE_KEY}:${encodeURIComponent(workspaceId)}`
+  const epoch = currentWorkspaceContentEpoch()
+  return `${THREAD_DRAFTS_STORAGE_KEY}:${encodeURIComponent(workspaceId)}${epoch ? `:${epoch}` : ""}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,6 +233,7 @@ export function persistThreadDrafts(
   drafts: ThreadDraftCollection,
   storage?: SessionStorageLike
 ): void {
+  if (workspaceWritesFrozen()) return
   try {
     const target =
       storage ??
@@ -252,6 +258,12 @@ export function clearPersistedThreadDrafts(
       storage ??
       (typeof window === "undefined" ? undefined : window.sessionStorage)
     target?.removeItem(threadDraftsStorageKey(workspaceId))
+    const legacy = `${THREAD_DRAFTS_STORAGE_KEY}:${encodeURIComponent(workspaceId)}`
+    target?.removeItem(legacy)
+    if (!storage && typeof window !== "undefined") {
+      for (const key of Object.keys(window.sessionStorage))
+        if (key.startsWith(`${legacy}:`)) window.sessionStorage.removeItem(key)
+    }
   } catch {
     // Replacement still proceeds when storage is blocked or unavailable.
   }

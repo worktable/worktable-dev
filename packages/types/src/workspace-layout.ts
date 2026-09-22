@@ -30,6 +30,15 @@ function validOnboarding(value: unknown): boolean {
   )
 }
 
+export function validStarterSeed(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (object(value) &&
+      value["version"] === 1 &&
+      value["status"] === "suppressed")
+  )
+}
+
 function validManifestHeader(value: unknown, version: 1 | 2): boolean {
   if (!object(value) || !object(value["cloud"])) return false
   return (
@@ -39,7 +48,8 @@ function validManifestHeader(value: unknown, version: 1 | 2): boolean {
     typeof value["name"] === "string" &&
     typeof value["createdAt"] === "string" &&
     value["cloud"]["status"] === "unlinked" &&
-    validOnboarding(value["onboarding"])
+    validOnboarding(value["onboarding"]) &&
+    validStarterSeed(value["starterSeed"])
   )
 }
 

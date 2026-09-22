@@ -124,7 +124,7 @@ export function MarkdownViewer({
         ref={scrollRef}
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
-        <article className="worktable-markdown mx-auto w-full max-w-3xl px-6 py-8 sm:px-8 md:px-12">
+        <article className="worktable-markdown worktable-document-content">
           <MarkdownErrorBoundary>
             <Markdown
               remarkPlugins={[remarkGfm]}

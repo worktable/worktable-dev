@@ -419,7 +419,7 @@ function EditorInner({
     >
       <div
         ref={editorContainerRef}
-        className="worktable-editor-content relative mx-auto w-full max-w-3xl px-6 py-8 sm:px-8 md:px-12"
+        className="worktable-editor-content worktable-document-content"
       >
         <AnnotationBadges
           annotations={annotations}

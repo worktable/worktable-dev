@@ -10,8 +10,6 @@ import {
 import { Navigate, useNavigate, useRouter } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Wifi,
-  WifiOff,
   Loader2,
   Archive,
   BadgeCheck,
@@ -82,6 +80,10 @@ import {
   type AnnotationDraft,
 } from "@/components/annotations/annotation-composer"
 import { Button } from "@worktable/ui/components/button"
+import {
+  DocumentStatus,
+  type DocumentStatusState,
+} from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import { Input } from "@worktable/ui/components/input"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
@@ -143,12 +145,22 @@ export function DocDocumentRenderer({
 
 type SyncState = "connecting" | "synced" | "disconnected"
 
-function SyncStatusPill({ provider }: { provider: WebsocketProvider }) {
+function SyncStatusPill({
+  provider,
+  ready,
+}: {
+  provider: WebsocketProvider | null
+  ready: boolean
+}) {
   const [state, setState] = useState<SyncState>("connecting")
 
   useEffect(() => {
+    if (!provider) {
+      setState("connecting")
+      return
+    }
     const onSync = (isSynced: boolean) => {
-      if (isSynced) setState("synced")
+      setState(isSynced ? "synced" : "connecting")
     }
     const onStatus = ({ status }: { status: string }) => {
       if (status === "connected") {
@@ -166,7 +178,7 @@ function SyncStatusPill({ provider }: { provider: WebsocketProvider }) {
     // Set initial state
     if (provider.synced) {
       setState("synced")
-    } else if (provider.wsconnected) {
+    } else {
       setState("connecting")
     }
 
@@ -176,64 +188,26 @@ function SyncStatusPill({ provider }: { provider: WebsocketProvider }) {
     }
   }, [provider])
 
-  const config = {
-    connecting: {
-      icon: Loader2,
-      text: "Syncing",
-      className: "text-muted-foreground",
-      iconClassName: "animate-spin",
-    },
-    synced: {
-      icon: Wifi,
-      text: "Synced",
-      className: "text-emerald-600 dark:text-emerald-400",
-      iconClassName: "",
-    },
-    disconnected: {
-      icon: WifiOff,
-      text: "Offline",
-      className: "text-amber-600 dark:text-amber-400",
-      iconClassName: "",
-    },
-  }[state]
+  // A synced socket is not proof that the editor is visible yet.
+  const displayState: DocumentStatusState =
+    state === "disconnected"
+      ? "offline"
+      : !ready
+        ? "opening"
+        : state === "synced"
+          ? "synced"
+          : "syncing"
 
-  const Icon = config.icon
-
-  // Hide the pill after being synced for a while
   const [visible, setVisible] = useState(true)
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   useEffect(() => {
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    setVisible(true)
+    if (displayState !== "synced") return
+    const timer = setTimeout(() => setVisible(false), 1800)
+    return () => clearTimeout(timer)
+  }, [displayState])
 
-    if (state === "synced") {
-      hideTimerRef.current = setTimeout(() => setVisible(false), 1800)
-    } else {
-      setVisible(true)
-    }
-
-    return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    }
-  }, [state])
-
-  if (!visible) return null
-
-  return (
-    <div
-      // --app-sidebar-width (set by the root layout) tracks the live sidebar
-      // width — 0 when collapsed or on mobile — so the pill clears the
-      // sidebar at any drag-resized width.
-      className="fixed bottom-4 left-[calc(var(--app-sidebar-width,0px)+1rem)] z-40 rounded-full bg-popover/95 px-3 py-1.5 shadow-lg ring-1 ring-border/60 backdrop-blur-sm transition-all duration-200"
-    >
-      <div
-        className={`flex items-center gap-1.5 text-xs font-medium transition-colors duration-200 ${config.className}`}
-      >
-        <Icon className={`h-3.5 w-3.5 ${config.iconClassName}`} />
-        <span>{config.text}</span>
-      </div>
-    </div>
-  )
+  if (!visible && displayState === "synced") return null
+  return <DocumentStatus state={displayState} />
 }
 
 // ── Main Page ────────────────────────────────────────────────
@@ -1513,6 +1487,7 @@ function BlockNoteDocPage({
           {!editorReadable && (
             <div className="absolute inset-0 z-10">
               <DocumentPreview
+                showStatus={false}
                 content={doc.content}
                 onScroll={(top) => {
                   previewScrollTop.current = top
@@ -1711,7 +1686,7 @@ function BlockNoteDocPage({
         }}
       />
 
-      {provider && <SyncStatusPill provider={provider} />}
+      <SyncStatusPill provider={provider} ready={editorReadable} />
     </div>
   )
 }

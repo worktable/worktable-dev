@@ -6,11 +6,10 @@ export function DocumentSkeleton() {
       data-document-loading="true"
       role="status"
       aria-label="Opening document"
-      className="mx-auto w-full max-w-3xl space-y-6 px-6 pt-20 pb-8 sm:px-8 md:px-12"
+      className="worktable-document-content space-y-6"
     >
-      {/* Title skeleton — extra top padding accounts for BlockNote's
-          internal block spacing above the first content element */}
-      <div className="space-y-3">
+      {/* Match the title's visible ink within its shared line box. */}
+      <div className="space-y-3 pt-4">
         <Skeleton className="h-9 w-2/5 rounded-lg motion-reduce:animate-none" />
       </div>
 

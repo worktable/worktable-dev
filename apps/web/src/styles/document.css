@@ -1,0 +1,94 @@
+/* One page frame for saved content, Markdown, the editor, and its skeleton. */
+.worktable-document-content {
+  @apply relative mx-auto w-full max-w-3xl px-6 pt-16 pb-8 sm:px-8 md:px-12;
+  --document-heading-line-height: 1.5;
+  /* BlockNote's block inset; keep the first body line stable at handoff. */
+  --document-block-inset: 3px;
+}
+
+.worktable-document-content.worktable-markdown p {
+  letter-spacing: 0.02em;
+}
+
+.worktable-rich-preview [data-preview-block] > :is(p, h1, h2, h3, h4, h5, h6) {
+  margin-bottom: 0;
+  padding-block: var(--document-block-inset);
+  white-space: pre-wrap;
+  font-variant-ligatures: none;
+}
+
+.worktable-rich-preview [data-preview-block] > :is(h1, h2, h3, h4, h5, h6) {
+  padding-top: 0;
+  border-bottom: 0;
+}
+
+.worktable-rich-preview [data-preview-block] > h1 {
+  margin-top: 2rem;
+}
+.worktable-rich-preview [data-preview-block] > h2 {
+  margin-top: 1.25rem;
+}
+.worktable-rich-preview [data-preview-block] > h3 {
+  margin-top: 1rem;
+}
+
+/* The frame owns the opening gap. A first block must not add another one. */
+.worktable-document-content.worktable-markdown > :first-child,
+.worktable-document-content.worktable-markdown
+  > [data-preview-block]:first-child
+  > :first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.worktable-document-content
+  .bn-editor
+  > .bn-block-group
+  > .bn-block-outer:first-child {
+  margin-top: 0 !important;
+}
+
+.worktable-document-content
+  .bn-editor
+  > .bn-block-group
+  > .bn-block-outer:first-child
+  > .bn-block
+  > .bn-block-content {
+  padding-top: 0;
+}
+
+/* Match rich-text title metrics, including titles that wrap on mobile. */
+.worktable-document-content.worktable-markdown :is(h1, h2, h3, h4, h5, h6) {
+  letter-spacing: -0.005em;
+}
+
+/* Preview spans must inherit their heading's tracking, not the body-text rule. */
+.worktable-rich-preview :is(h1, h2, h3, h4, h5, h6, p) span {
+  letter-spacing: inherit;
+}
+
+.worktable-document-content.worktable-markdown :is(h1, h2, h3, h4, h5, h6),
+.worktable-document-content .bn-editor [data-content-type="heading"] {
+  line-height: var(--document-heading-line-height);
+}
+
+.worktable-document-status {
+  position: fixed;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  left: calc(
+    var(--app-sidebar-width, var(--worktable-opening-sidebar, 288px)) + 1rem
+  );
+  z-index: 40;
+}
+
+@media (max-width: 767px) {
+  .worktable-document-status {
+    left: 1rem;
+  }
+}
+
+@media print {
+  .worktable-document-status {
+    display: none;
+  }
+}

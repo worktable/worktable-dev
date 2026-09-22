@@ -1,6 +1,7 @@
 import { createElement, type ReactNode, type UIEvent } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { DocumentStatus } from "./components/document-status"
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -116,7 +117,10 @@ function blocks(
     }
     return createElement(
       "div",
-      { key: typeof block.id === "string" ? block.id : index },
+      {
+        key: typeof block.id === "string" ? block.id : index,
+        "data-preview-block": true,
+      },
       body,
       Array.isArray(block.children) &&
         block.children.length > 0 &&
@@ -131,9 +135,11 @@ function blocks(
 export function DocumentReadingPreview({
   content,
   onScroll,
+  showStatus = true,
 }: {
   content: unknown[] | string
   onScroll?: (top: number) => void
+  showStatus?: boolean
 }) {
   // Keep the opening preview bounded even for thousands of blocks. The full
   // editor still receives the complete document through collaboration.
@@ -160,17 +166,8 @@ export function DocumentReadingPreview({
     createElement(
       "article",
       {
-        className:
-          "worktable-markdown mx-auto w-full max-w-3xl px-6 py-8 sm:px-8 md:px-12",
+        className: `worktable-markdown worktable-document-content${Array.isArray(content) ? " worktable-rich-preview" : ""}`,
       },
-      createElement(
-        "div",
-        {
-          role: "status",
-          className: "absolute top-2 right-4 text-xs text-muted-foreground",
-        },
-        "Saved preview \u00B7 Opening editor\u2026"
-      ),
       preview,
       budget.truncated &&
         createElement(
@@ -178,6 +175,8 @@ export function DocumentReadingPreview({
           { className: "text-sm text-muted-foreground" },
           "More content is opening\u2026"
         )
-    )
+    ),
+    showStatus &&
+      createElement(DocumentStatus, { state: "opening", announce: false })
   )
 }

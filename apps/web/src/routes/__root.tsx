@@ -42,7 +42,6 @@ import {
   Loader2,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import { fontBootstrapScript } from "@worktable/ui/lib/fonts"
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
@@ -60,11 +59,7 @@ const AppSidebar = lazy(() =>
     default: memo(module.AppSidebar),
   }))
 )
-const SettingsDialog = lazy(() =>
-  import("@/components/settings/settings-dialog").then((module) => ({
-    default: module.SettingsDialog,
-  }))
-)
+import { SettingsDialog } from "@/components/settings/settings-dialog"
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
 import { UpdateNudge } from "@/components/update-nudge"
@@ -645,7 +640,8 @@ function RootLayout() {
   useEffect(() => {
     const reset = () => setWorkspaceChanged(true)
     window.addEventListener("worktable:workspace-changed", reset)
-    return () => window.removeEventListener("worktable:workspace-changed", reset)
+    return () =>
+      window.removeEventListener("worktable:workspace-changed", reset)
   }, [])
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -659,7 +655,7 @@ function RootLayout() {
   useMobileVisualViewport(isMobile)
 
   // Settings actions can arrive before the deferred sidebar mounts. The shell
-  // owns their state; the heavy dialog still loads only when first requested.
+  // owns their state and lightweight dialog; tab contents load on first visit.
   useEffect(
     () =>
       onOpenSettings((requested) => {
@@ -1036,13 +1032,11 @@ function RootLayout() {
             </main>
           </div>
         </div>
-        <DeferredMount active={settingsOpen}>
-          <SettingsDialog
-            open={settingsOpen}
-            onOpenChange={setSettingsOpen}
-            initialSection={settingsSection}
-          />
-        </DeferredMount>
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          initialSection={settingsSection}
+        />
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />

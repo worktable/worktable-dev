@@ -325,9 +325,7 @@ function CloudManualInstallPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          Client
-        </span>
+        <span className="text-sm font-medium text-foreground">Client</span>
         <Select
           value={clientId}
           onValueChange={(value) => setClientId(value as McpSnippetClientId)}
@@ -346,7 +344,7 @@ function CloudManualInstallPanel({
       </div>
 
       <Snippet code={snippet.body} onCopied={copied} />
-      <p className="text-xs text-muted-foreground">{pasteCaption}</p>
+      <p className="text-sm text-muted-foreground">{pasteCaption}</p>
 
       <CopyField
         label="MCP endpoint"
@@ -473,7 +471,7 @@ function RemoteAgentOriginWarning({
 }) {
   if (connection.originConfigured) return null
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-sm text-muted-foreground">
       Agents on another computer require a Worktable URL in Settings → General.
     </p>
   )
@@ -544,9 +542,7 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          Agent
-        </span>
+        <span className="text-sm font-medium text-foreground">Agent</span>
         <Select
           value={clientChoice}
           onValueChange={(value) => {
@@ -584,7 +580,7 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
       ) : (
         <>
           {command ? <Snippet code={command} onCopied={copied} /> : null}
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             One use · 15 minutes · Node 18+ or Bun
           </p>
 
@@ -743,7 +739,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
 
       <div className="max-w-sm">
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium tracking-wide text-foreground/70">
+          <span className="text-sm font-medium text-foreground">
             Agent name
           </span>
           <Input
@@ -783,7 +779,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
           {command && (
             <Snippet code={command} onCopied={() => toast.success("Copied")} />
           )}
-          <p className="text-xs leading-5 text-muted-foreground">
+          <p className="text-sm leading-5 text-muted-foreground">
             One use. Expires in 15 minutes.
           </p>
           <OpenClawPairingStatus session={session} />
@@ -914,9 +910,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          Desktop app
-        </span>
+        <span className="text-sm font-medium text-foreground">Desktop app</span>
         <Select
           value={app}
           onValueChange={(value) => setApp(value as DesktopAppChoice)}
@@ -1116,9 +1110,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          Client
-        </span>
+        <span className="text-sm font-medium text-foreground">Client</span>
         <Select
           value={clientId}
           onValueChange={(value) => selectClient(value as McpSnippetClientId)}
@@ -1166,22 +1158,22 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
 
           <Snippet code={snippet.body} onCopied={copied} />
 
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {pasteCaption}
             {placeholderShown &&
               ". Generate a token above to complete this config."}
           </p>
 
           {!needsToken ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               No token needed on this computer.
             </p>
           ) : !connection.reachable && publicUrlUsed ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Public URLs require a token.
             </p>
           ) : !connection.reachable && connection.mcpTokenRequired ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               This Worktable requires a token.
             </p>
           ) : null}
@@ -1368,7 +1360,7 @@ export function AccessTokensGroup() {
                 <span className="block text-sm font-medium text-foreground">
                   Access tokens
                 </span>
-                <span className="block text-xs text-muted-foreground">
+                <span className="block text-sm text-muted-foreground">
                   {summary}
                 </span>
               </span>
@@ -1771,7 +1763,7 @@ function NewTokenDialog({
                 <div className="flex flex-col gap-1.5">
                   <label
                     htmlFor="token-agent"
-                    className="text-xs font-medium tracking-wide text-foreground/70"
+                    className="text-sm font-medium text-foreground"
                   >
                     Agent label (optional)
                   </label>
@@ -1785,7 +1777,7 @@ function NewTokenDialog({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <span className="text-xs font-medium tracking-wide text-foreground/70">
+                  <span className="text-sm font-medium text-foreground">
                     Scopes
                   </span>
                   <ScopeCheckbox

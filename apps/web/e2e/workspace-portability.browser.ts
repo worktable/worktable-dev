@@ -62,7 +62,7 @@ test("clearing a workspace discards stale drafts and reloads another tab", async
     )
     .toBe(before.contentEpoch)
   await page
-    .getByRole("button", { name: "Clear workspace…", exact: true })
+    .getByRole("button", { name: "Clear workspace", exact: true })
     .click()
   const dialog = page
     .getByRole("dialog")

@@ -1,6 +1,6 @@
 import { OperationStatus } from "../operation-status"
-import { SettingsGroup } from "../settings-group"
-import { WorkspaceClearGroup } from "./workspace-clear"
+import { Card } from "@worktable/ui/components/card"
+import { WorkspaceClearControls } from "./workspace-clear"
 import {
   recoverWorkspaceExport,
   workspaceExportDiagnosticsUrl,
@@ -80,15 +80,15 @@ function historySummary(job: WorkspaceImportJob): string {
 
 export function PortabilitySection() {
   return (
-    <div className="flex flex-col gap-6">
-      <ExportGroup />
-      <ImportGroup />
-      <WorkspaceClearGroup />
-    </div>
+    <Card className="gap-3 px-4">
+      <ExportControls />
+      <ImportControls />
+      <WorkspaceClearControls />
+    </Card>
   )
 }
 
-function ExportGroup() {
+function ExportControls() {
   const [option, setOption] = useState("all")
   const queryClient = useQueryClient()
   const policy =
@@ -138,30 +138,76 @@ function ExportGroup() {
   const recoveryAvailable = Boolean(failedJob?.failure?.recoveryFingerprint)
 
   return (
-    <SettingsGroup title="Export">
-      <SettingRow label="Version history" htmlFor="export-history">
-        <Select
-          value={option}
-          onValueChange={(value) => {
-            if (value) setOption(value)
-          }}
-          disabled={working}
-        >
-          <SelectTrigger id="export-history" className="w-44">
-            <SelectValue>
-              {EXPORT_OPTIONS.find((candidate) => candidate.value === option)
-                ?.label ?? "All history"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {EXPORT_OPTIONS.map((candidate) => (
-              <SelectItem key={candidate.value} value={candidate.value}>
-                {candidate.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </SettingRow>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col items-start gap-3">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="export-history" className="text-sm font-medium">
+            Version history
+          </label>
+          <Select
+            value={option}
+            onValueChange={(value) => {
+              if (value) setOption(value)
+            }}
+            disabled={working}
+          >
+            <SelectTrigger id="export-history" className="w-44">
+              <SelectValue>
+                {EXPORT_OPTIONS.find((candidate) => candidate.value === option)
+                  ?.label ?? "All history"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {EXPORT_OPTIONS.map((candidate) => (
+                <SelectItem key={candidate.value} value={candidate.value}>
+                  {candidate.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {completedJob ? (
+            <>
+              <Button
+                nativeButton={false}
+                render={
+                  <a href={workspaceExportDownloadUrl(completedJob.id)} />
+                }
+              >
+                <Download className="size-4" />
+                Download
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => create.mutate()}
+                disabled={working}
+              >
+                New export
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant={recoveryAvailable ? "outline" : "default"}
+                onClick={() => create.mutate()}
+                disabled={working}
+              >
+                <Download className="size-4" />
+                Export
+              </Button>
+              {recoveryAvailable && failedJob ? (
+                <Button
+                  onClick={() => recover.mutate(failedJob.id)}
+                  disabled={working}
+                >
+                  Skip files
+                </Button>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
       {job.isError ? (
         <OperationStatus state="attention">Reconnecting…</OperationStatus>
       ) : working ? (
@@ -190,45 +236,6 @@ function ExportGroup() {
               : "Export failed."}
         </OperationStatus>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        {completedJob ? (
-          <>
-            <Button
-              nativeButton={false}
-              render={<a href={workspaceExportDownloadUrl(completedJob.id)} />}
-            >
-              <Download className="size-4" />
-              Download
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => create.mutate()}
-              disabled={working}
-            >
-              New export
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant={recoveryAvailable ? "outline" : "default"}
-              onClick={() => create.mutate()}
-              disabled={working}
-            >
-              <Download className="size-4" />
-              Export
-            </Button>
-            {recoveryAvailable && failedJob ? (
-              <Button
-                onClick={() => recover.mutate(failedJob.id)}
-                disabled={working}
-              >
-                Skip files
-              </Button>
-            ) : null}
-          </>
-        )}
-      </div>
       {failedJob ? (
         <TransferDetails title="Details">
           {failedJob.failure ? (
@@ -239,14 +246,14 @@ function ExportGroup() {
                     <code className="text-xs break-all whitespace-pre-wrap">
                       {displayExportPath(issue.path)}
                     </code>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="block text-sm text-muted-foreground">
                       {issue.code.replaceAll("-", " ")}
                     </span>
                   </li>
                 ))}
               </ul>
               {failedJob.failure.truncated ? (
-                <p className="mt-2 text-xs text-muted-foreground">
+                <p className="mt-2 text-sm text-muted-foreground">
                   Showing {failedJob.failure.issues.length} of{" "}
                   {failedJob.failure.issueCount} issues.
                 </p>
@@ -265,11 +272,11 @@ function ExportGroup() {
           )}
         </TransferDetails>
       ) : null}
-    </SettingsGroup>
+    </div>
   )
 }
 
-function ImportGroup() {
+function ImportControls() {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [progress, setProgress] = useState(0)
@@ -378,17 +385,21 @@ function ImportGroup() {
 
   const chooseLabel =
     uploadingJob && uploadingJob.receivedBytes > 0
-      ? "Resume upload…"
+      ? "Resume upload"
       : ready
-        ? "Choose another…"
-        : "Choose file…"
+        ? "Choose another"
+        : "Choose file"
 
   return (
-    <SettingsGroup title="Import">
+    <div className="-mx-4 flex flex-col gap-3 border-t border-border/60 px-4 pt-3">
       {job.isError ? (
         <OperationStatus state="attention">Reconnecting…</OperationStatus>
       ) : null}
-      <SettingRow label="Workspace package">
+      <SettingRow
+        className="flex-col items-start sm:flex-row sm:items-center"
+        label="Import workspace"
+        description="Replace content from a Worktable package."
+      >
         <Button
           variant="outline"
           aria-label={chooseLabel}
@@ -500,12 +511,12 @@ function ImportGroup() {
         description={`Replace all content and history with ${ready?.prepared?.source.workspaceName ?? "this package"}? This can’t be undone.`}
         confirmLabel="Replace Worktable"
         loading={replace.isPending}
-        loadingLabel="Starting replacement…"
+        loadingLabel="Starting replacement"
         onConfirm={() => {
           if (ready?.id) replace.mutate(ready.id)
         }}
       />
-    </SettingsGroup>
+    </div>
   )
 }
 
@@ -517,8 +528,8 @@ function TransferDetails({
   children: ReactNode
 }) {
   return (
-    <Collapsible className="-mx-4 -mb-4 border-t border-border/60">
-      <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 [&[data-panel-open]>svg]:rotate-180">
+    <Collapsible className="border-t border-border/60">
+      <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-3 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 [&[data-panel-open]>svg]:rotate-180">
         {title}
         <ChevronDown
           className="size-4 shrink-0 transition-transform motion-reduce:transition-none"
@@ -526,7 +537,7 @@ function TransferDetails({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="px-4 pb-4 text-sm">{children}</div>
+        <div className="pb-1 text-sm">{children}</div>
       </CollapsibleContent>
     </Collapsible>
   )

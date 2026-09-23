@@ -132,7 +132,7 @@ export function AccountSection() {
             Sign out
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Your agents stay connected when you sign out.
         </p>
       </section>
@@ -343,7 +343,7 @@ export function SubscriptionCard({
           </CardContent>
         ) : null}
       </Card>
-      <p className="px-1 text-xs text-muted-foreground">
+      <p className="px-1 text-sm text-muted-foreground">
         <a
           className="text-primary-text underline underline-offset-4"
           href="https://www.worktable.cloud/terms#refunds"

@@ -109,7 +109,7 @@ function ThemeGroup() {
                 </span>
                 <span
                   className={cn(
-                    "text-xs",
+                    "text-sm",
                     selected ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
@@ -119,7 +119,7 @@ function ThemeGroup() {
             )
           })}
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Shortcut: press <kbd className="inline-code-accent font-mono">d</kbd>{" "}
           to toggle.
         </p>
@@ -219,7 +219,7 @@ function DisplayNameGroup() {
             }}
           />
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Shown on your comments and Threads.
         </p>
       </div>

@@ -80,6 +80,40 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("Settings opens and remains navigable while a section is still loading", async ({
+  page,
+}) => {
+  let releaseSection!: () => void
+  const sectionReady = new Promise<void>((resolve) => {
+    releaseSection = resolve
+  })
+  await page.route(
+    "**/components/settings/sections/general.tsx*",
+    async (route) => {
+      await sectionReady
+      await route.continue()
+    }
+  )
+  try {
+    const settings = await openSettings(page)
+    await expect(
+      settings.getByRole("navigation", { name: "Settings" })
+    ).toBeVisible()
+    await expect(settings.getByRole("status")).toHaveText("Loading General…")
+    await settings.getByRole("button", { name: "Editor", exact: true }).click()
+    await expect(
+      settings.getByText("Spellcheck", { exact: true })
+    ).toBeVisible()
+    await settings.getByRole("button", { name: "General", exact: true }).click()
+    releaseSection()
+    await expect(settings.getByLabel("Name", { exact: true })).toBeVisible()
+    await settings.getByRole("button", { name: "Close", exact: true }).click()
+    await expect(settings).toBeHidden()
+  } finally {
+    releaseSection()
+  }
+})
+
 test("Cloud composes relevant sections and saves human preferences", async ({
   page,
 }) => {

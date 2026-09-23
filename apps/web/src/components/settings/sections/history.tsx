@@ -113,6 +113,7 @@ export function HistorySection() {
           </p>
         ) : (
           <SettingRow
+            className="flex-col items-start sm:flex-row sm:items-center"
             label="Doc version history"
             description="Lower limits permanently delete older versions."
           >

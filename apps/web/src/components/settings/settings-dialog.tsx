@@ -1,5 +1,6 @@
 import { markSettingsSectionVisible } from "@/lib/settings-open"
 import {
+  Suspense,
   createContext,
   useContext,
   useEffect,
@@ -16,6 +17,7 @@ import {
   useResponsiveDialog,
 } from "@worktable/ui/components/responsive-dialog"
 import { Button } from "@worktable/ui/components/button"
+import { Skeleton } from "@worktable/ui/components/skeleton"
 import { Badge } from "@worktable/ui/components/badge"
 import { cn } from "@worktable/ui/lib/utils"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
@@ -30,7 +32,7 @@ import {
 } from "./sections"
 
 // Whether the section a component sits in is the one currently shown. All
-// sections stay mounted while the dialog is open (state must survive
+// visited sections stay mounted while the dialog is open (state must survive
 // switching), so queries with real-world side effects (e.g. the version query,
 // whose route may contact the release host) gate on this instead of mount.
 const SectionActiveContext = createContext(false)
@@ -80,11 +82,12 @@ export function SettingsDialog({
           override does the same for the desktop dialog. sm:max-h-none drops
           DialogContent's viewport cap so sm:h- governs. sm:p-0 lets the nav
           rail column run edge to edge; each pane brings its own padding (the
-          drawer keeps its built-in inset on mobile). */}
-      <ResponsiveDialogContent className="h-[85dvh] sm:h-[min(680px,85dvh)] sm:max-h-none sm:max-w-3xl sm:p-0">
+          drawer keeps its built-in inset on mobile). The larger md: bounds
+          match ResponsiveDialog's desktop breakpoint. */}
+      <ResponsiveDialogContent className="h-[85dvh] sm:h-[min(680px,85dvh)] sm:max-h-none sm:max-w-3xl sm:p-0 md:h-[min(800px,90dvh)] md:w-[calc(100%-3rem)] md:max-w-5xl">
         {/* Mounted only while open, so per-session state (update engagement, a
             one-time connection token) is fresh each open — a past update's
-            terminal marker can't leak in. ALL sections stay mounted while the
+            terminal marker can't leak in. Visited sections stay mounted while the
             dialog is open (inactive ones hidden): switching sections must not
             destroy a just-minted one-time token or stop in-flight update
             polling mid-restart. */}
@@ -136,7 +139,7 @@ function SettingsBody({
   // gutter (base-ui's ScrollArea can't carry either), with scroll-fade masking
   // the edges in place of hard borders. On desktop it spans the full content
   // column so the scrollbar rides the dialog's right edge instead of hugging
-  // the cards; the pr-5 keeps content clear of the thumb. Every section stays
+  // the cards; the pr-5 keeps content clear of the thumb. Each visited section stays
   // mounted (inactive hidden) so section state survives switching — see the
   // note at the mount site.
   const content = (
@@ -149,21 +152,13 @@ function SettingsBody({
         isMobile ? "-mx-5 px-5 pt-4 pb-6" : "pt-4 pr-5 pb-6 pl-6"
       )}
     >
-      {sections.map((section) => {
-        const Section = section.component
-        const isActive = section.id === active.id
-        return (
-          <div
-            key={section.id}
-            data-settings-section={section.id}
-            hidden={!isActive}
-          >
-            <SectionActiveContext.Provider value={isActive}>
-              <Section />
-            </SectionActiveContext.Provider>
-          </div>
-        )
-      })}
+      {sections.map((section) => (
+        <SettingsPanel
+          key={section.id}
+          section={section}
+          active={section.id === active.id}
+        />
+      ))}
     </div>
   )
 
@@ -190,7 +185,7 @@ function SettingsBody({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[190px_1fr]">
+    <div className="grid min-h-0 flex-1 grid-cols-[224px_1fr]">
       {/* The rail column is a full-height quiet surface so the nav reads as a
           grounded region of the dialog, not buttons floating in space. The
           dialog title lives here; the content pane header names the section. */}
@@ -225,6 +220,38 @@ function SettingsBody({
         </header>
         {content}
       </div>
+    </div>
+  )
+}
+
+// Load a section on first visit, then retain its local state and background
+// work until Settings closes (one-time tokens and import/update polling).
+function SettingsPanel({
+  section,
+  active,
+}: {
+  section: SettingsSection
+  active: boolean
+}) {
+  const [visited, setVisited] = useState(active)
+  if (active && !visited) setVisited(true)
+  if (!active && !visited) return null
+  const Section = section.component
+  return (
+    <div data-settings-section={section.id} hidden={!active}>
+      <SectionActiveContext.Provider value={active}>
+        <Suspense
+          fallback={
+            <div role="status" className="space-y-3">
+              <span className="sr-only">Loading {section.label}…</span>
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+            </div>
+          }
+        >
+          <Section />
+        </Suspense>
+      </SectionActiveContext.Provider>
     </div>
   )
 }
@@ -276,53 +303,80 @@ function SettingsNavRail({
 }) {
   const itemRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>())
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null)
+  const scrollRef = useScrollFade<HTMLElement>()
+  const sectionIds = sections.map((section) => section.id).join(",")
+  const groups = ["Workspace", "Preferences", "Data", "Support"] as const
 
   useLayoutEffect(() => {
     const el = itemRefs.current.get(activeId)
     if (!el) return
     setPill({ top: el.offsetTop, height: el.offsetHeight })
     el.scrollIntoView({ block: "nearest" })
-  }, [activeId])
+  }, [activeId, sectionIds])
 
   return (
-    <nav className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-      {pill && (
-        <div
-          aria-hidden
-          className="absolute inset-x-0 top-0 rounded-lg bg-sidebar-accent transition-[transform,height] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]"
-          style={{
-            transform: `translateY(${pill.top}px)`,
-            height: pill.height,
-          }}
-        />
-      )}
-      {sections.map((section) => {
-        const Icon = section.icon
-        const isActive = section.id === activeId
-        return (
-          <button
-            key={section.id}
-            ref={(el) => {
-              if (el) itemRefs.current.set(section.id, el)
-              else itemRefs.current.delete(section.id)
+    <nav
+      ref={scrollRef}
+      aria-label="Settings"
+      className="scroll-fade min-h-0 flex-1 overflow-y-auto"
+    >
+      <div className="relative space-y-4">
+        {pill && (
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 rounded-lg bg-sidebar-accent transition-[transform,height] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{
+              transform: `translateY(${pill.top}px)`,
+              height: pill.height,
             }}
-            type="button"
-            onClick={() => onSelect(section.id)}
-            className={cn(
-              "relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-180",
-              isActive
-                ? "font-medium text-primary-text"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            )}
-          >
-            <Icon className="size-4 shrink-0" />
-            <span className="flex-1 text-left">{section.label}</span>
-            {updateAvailable && section.id === "system" ? (
-              <Badge variant="info">Update</Badge>
-            ) : null}
-          </button>
-        )
-      })}
+          />
+        )}
+        {groups.map((group) => {
+          const groupSections = sections.filter(
+            (section) => section.group === group
+          )
+          if (groupSections.length === 0) return null
+          return (
+            <section
+              key={group}
+              aria-label={group}
+              className="flex flex-col gap-0.5"
+            >
+              <h3 className="px-2.5 pt-1 pb-1.5 text-sm font-medium text-muted-foreground">
+                {group}
+              </h3>
+              {groupSections.map((section) => {
+                const Icon = section.icon
+                const isActive = section.id === activeId
+                return (
+                  <button
+                    key={section.id}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(section.id, el)
+                      else itemRefs.current.delete(section.id)
+                    }}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => onSelect(section.id)}
+                    className={cn(
+                      "relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-180",
+                      isActive
+                        ? "font-medium text-primary-text"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="flex-1 text-left">{section.label}</span>
+                    {updateAvailable && section.id === "system" ? (
+                      <Badge variant="info">Update</Badge>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </section>
+          )
+        })}
+      </div>
     </nav>
   )
 }

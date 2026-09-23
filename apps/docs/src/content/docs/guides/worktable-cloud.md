@@ -36,7 +36,7 @@ subscription ends.
 
 Remote self-hosted instances need an HTTPS address.
 
-1. Open **Settings → Worktable Cloud** on the device and choose **Sign in to Worktable Cloud**.
+1. Open **Settings → Worktable Cloud** on the device and choose **Sign in**.
 2. Sign in in your browser. For a remote self-hosted instance, confirm its address
    before continuing. Return to Settings and turn on **Worktable Link**.
    Sign-in alone does not enable remote access. If needed, choose **Manage subscription** first.

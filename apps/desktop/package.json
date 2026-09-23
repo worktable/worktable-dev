@@ -17,7 +17,7 @@
     "release:prepare": "bun run prepare:runtime && bun run check:prepared",
     "native:build:release:prepared": "tauri build --bundles app,dmg --config src-tauri/tauri.release.conf.json",
     "native:build:staging:prepared": "tauri build --features staging --bundles app,dmg --config src-tauri/tauri.staging.conf.json && WORKTABLE_DESKTOP_EXPECTED_ENVIRONMENT=staging WORKTABLE_DESKTOP_BUNDLE_PATH='src-tauri/target/release/bundle/macos/Worktable Staging.app' bun run scripts/verify-bundle.ts",
-    "release:finalize": "bun run scripts/finalize-release-dmg.ts && bun run scripts/prepare-updater-release.ts && bun run scripts/verify-release-dmg.ts && bun run scripts/verify-release-updater.ts",
+    "release:finalize": "bun run scripts/finalize-release.ts",
     "native:build": "bun run prepare:runtime:fresh && bun run native:build:prepared",
     "native:build:staging": "bun run prepare:runtime:fresh && bun run native:build:staging:prepared",
     "ci": "bun run prepare:runtime:fresh && bun run check:prepared && bun run native:build:prepared && bun run scripts/smoke-bundle.ts"

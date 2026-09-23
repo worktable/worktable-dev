@@ -1,5 +1,9 @@
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import {
+  verifyPublicArchiveWithCache,
   validatePublicDesktopUpdaterArchive,
   validatePublicDesktopUpdaterFeed,
   verifyTauriUpdaterSignature,
@@ -163,4 +167,34 @@ describe("public Desktop updater feed verification", () => {
       )
     ).toThrow("trusted comment signature is invalid")
   })
+})
+
+test("reuses only checksum-and-signature-verified immutable archive bytes and repairs corrupt cache", async () => {
+  const root = mkdtempSync(join(tmpdir(), "worktable-updater-proof-"))
+  let downloads = 0
+  const options = {
+    checksums:
+      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  worktable-desktop-darwin-arm64.app.tar.gz",
+    signature: encodedSignature,
+    publicKey: encodedPublicKey,
+    cacheDirectory: root,
+    download: async () => {
+      downloads++
+      return new TextEncoder().encode("test")
+    },
+  }
+  try {
+    await verifyPublicArchiveWithCache(options)
+    await verifyPublicArchiveWithCache(options)
+    expect(downloads).toBe(1)
+    writeFileSync(join(root, readdirSync(root)[0]!), "corrupted")
+    await verifyPublicArchiveWithCache(options)
+    expect(downloads).toBe(2)
+    await expect(
+      verifyPublicArchiveWithCache({ ...options, signature: "invalid" })
+    ).rejects.toThrow()
+    expect(downloads).toBe(3)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

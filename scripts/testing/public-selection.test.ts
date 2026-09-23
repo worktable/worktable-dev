@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process"
 import { publicTestSuites } from "./public-suites.ts"
 import {
   needsPluginPackaging,
+  productDocsOnly,
   publicChangePaths,
   selectPublicSuiteIds,
 } from "./public-selection.ts"
@@ -45,6 +46,21 @@ describe("public evidence ownership", () => {
       expect(selectPublicSuiteIds(paths)).toEqual(all)
     }
     expect(publicChangePaths("missing", "missing")).toEqual([])
+    expect(
+      productDocsOnly(["apps/docs/src/content/docs/start.md", "README.md"])
+    ).toBe(true)
+    expect(
+      selectPublicSuiteIds(["apps/docs/src/content/docs/start.md"])
+    ).toEqual([])
+    for (const input of [
+      "mcp-tools.json",
+      "scripts/generate-docs-content.ts",
+      "apps/cli/src/index.ts",
+      "packages/server/src/widget-authoring.ts",
+    ])
+      expect(
+        productDocsOnly(["apps/docs/src/content/docs/start.md", input])
+      ).toBe(false)
   })
 
   test("packaging follows plugin and build inputs while unrelated product work avoids repeat packs", () => {

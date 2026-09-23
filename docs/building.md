@@ -30,7 +30,10 @@ bun run release:lab
 `release:lab` builds Linux CLI and skill-installer bundles for the host architecture,
 plus connector and plugin artifacts, in `dist/lab-releases`. Run
 `bun run release:local` for the full release matrix in `dist/releases`.
-Archive packaging also requires Python 3 and unzip.
+Archive packaging also requires Python 3 and unzip. Release builds write phase
+timings to `dist/release-timings-<profile>.json`, outside the published assets.
+`release:lab` already builds and verifies the OpenClaw package; callers should
+not repeat that packaging command.
 
 Archives identify the exact source commit, retain application and dependency
 notices, and omit build-runner links. A private build runner does not make its
@@ -83,3 +86,13 @@ Desktop packaging requires macOS and the Rust toolchain pinned in
 `apps/desktop/rust-toolchain.toml`. Follow the
 [Desktop contributor guide](../apps/desktop/README.md). A source build does not
 imply that a signed Desktop download is included in every application release.
+
+## CI verification receipts
+
+A successful full verification of a public `main` push publishes an exact-source
+receipt after all selected job results and raw test evidence pass. The receipt
+binds the commit, tree, lockfile, Bun/Node versions, workflow, run and attempt.
+Release automation verifies the successful originating GitHub run before reusing
+its source checks. Missing or incompatible proof runs those checks again.
+Release candidate validation, compiled artifact smoke tests, signing, publication
+and installed updater checks remain separate release guarantees.

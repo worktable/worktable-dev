@@ -1,103 +1,329 @@
+# Resolve scope once; independent heavy lanes run on separate hosts.
 name: Verify
-on:
-  pull_request:
+"on":
+  pull_request: null
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: null
   schedule:
-    - cron: "17 5 * * 1"
+    - cron: 17 5 * * 1
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  verify:
+  plan:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      CI: "true"
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+      suites: ${{ steps.scope.outputs.suites }}
+      required: ${{ steps.scope.outputs.required }}
+      desktop: ${{ steps.scope.outputs.desktop }}
+      browser: ${{ steps.scope.outputs.browser }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: "1.3.14"
-      - name: Classify change
+          bun-version: 1.3.14
+      - name: Classify immutable change
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           FULL_VERIFY: ${{ github.event_name != 'pull_request' }}
         run: bun scripts/testing/public-selection.ts
-      - name: Check repository documentation
-        if: steps.scope.outputs.scope == 'documentation'
-        run: bun scripts/repository-docs.ts
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        if: steps.scope.outputs.scope != 'documentation'
+  checks:
+    needs: plan
+    if: needs.plan.outputs.required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.15.0
-      - name: Bind source identity after the AGPL cutover
-        if: steps.scope.outputs.scope != 'documentation'
-        run: |
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Restore declared task outputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-checks-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-checks-${{ hashFiles('bun.lock') }}-
+      - name: Check source contracts
+        run: |-
+          bun run check:tools
+          bun run check:theme
+          bun run check:brand
+          bun run typecheck
+          bun run typecheck:lab
+          bun run test:policy
+  build:
+    needs: plan
+    if: needs.plan.outputs.required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Restore declared task outputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-build-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-build-${{ hashFiles('bun.lock') }}-
+      - name: Bind public source identity
+        run: |-
           if [ "$(bun -p "require('./package.json').license")" = "AGPL-3.0-only" ]; then
-            printf '%s\n' \
-              "WORKTABLE_PUBLIC_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" \
-              "WORKTABLE_PUBLIC_SOURCE_COMMIT=$GITHUB_SHA" >> "$GITHUB_ENV"
+            printf '%s\n' "WORKTABLE_PUBLIC_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" "WORKTABLE_PUBLIC_SOURCE_COMMIT=$GITHUB_SHA" >> "$GITHUB_ENV"
           fi
-      - name: Set up Rust
-        if: steps.scope.outputs.desktop == 'true'
-        run: |
+      - name: Build each production surface once
+        run: |-
+          # release:lab is the sole production web build owner; other workspace builds remain.
+          bun run build --filter='!@worktable/web'
+          bun run release:lab
+  required:
+    needs: plan
+    if: needs.plan.outputs.required == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Run required tests
+        run: bun run test:required
+      - name: Bind lane evidence
+        run:
+          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "bun-standard,bun-server,cli-boundary,packaged-boundaries"
+          --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Upload lane evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lanes-required-${{ github.run_attempt }}
+          path: test-results/canonical/
+          if-no-files-found: error
+          retention-days: 14
+  native:
+    needs: plan
+    if: needs.plan.outputs.desktop == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Install native toolchain and dependencies
+        run: |-
           rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
           rustup default 1.97.0
-      - run: bun install --frozen-lockfile
-        if: steps.scope.outputs.scope != 'documentation'
-      - name: Restore Rust build cache
-        if: steps.scope.outputs.desktop == 'true' && github.event_name != 'schedule'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev
+      - name: Restore native compilation cache
+        if: github.event_name != 'schedule'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          path: |
+          path: |-
             ~/.cargo/registry
             ~/.cargo/git
             apps/desktop/src-tauri/target
-          key: ${{ runner.os }}-rust-1.97.0-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-rust-1.97.0-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-
-      - name: Install selected browser dependencies
-        if: steps.scope.outputs.browser == 'true'
-        run: bunx playwright@1.61.1 install --with-deps chromium
-      - name: Install selected Desktop dependencies
-        if: steps.scope.outputs.desktop == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev
-      - run: bun run check:tools && bun run check:theme && bun run check:brand
-        if: steps.scope.outputs.scope != 'documentation'
-      - run: bun run build
-        if: steps.scope.outputs.scope != 'documentation'
-      - name: Full verification
-        if: steps.scope.outputs.scope == 'full'
-        run: bun run verify:full
-      - name: Verify selected product lanes
-        if: steps.scope.outputs.scope == 'selected'
-        env:
-          SELECTED_SUITES: ${{ steps.scope.outputs.suites }}
-        run: |
-          bun run typecheck
-          bun run typecheck:lab
-          bun run --cwd packages/openclaw-plugin typecheck
-          bun run test:policy
-          IFS=',' read -r -a suites <<< "$SELECTED_SUITES"
-          args=()
-          for suite in "${suites[@]}"; do args+=(--suite "$suite"); done
-          bun run test:full "${args[@]}"
-          # The standalone compiled artifacts/notices are a distinct boundary
-          # from turbo's JS build, even when browsers/native tests are unneeded.
-          bun run release:lab
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          key: ${{ runner.os }}-rust-1.97.0-native-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-rust-1.97.0-native-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-
+      - name: Run native contracts
+        run: bun run test:full --suite desktop-contracts
+      - name: Bind lane evidence
+        run:
+          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "desktop-contracts" --source
+          "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Upload lane evidence
         if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: test-evidence
-          path: test-results/
-          if-no-files-found: ignore
+          name: lanes-native-${{ github.run_attempt }}
+          path: test-results/canonical/
+          if-no-files-found: error
+          retention-days: 14
+  browsers:
+    needs: plan
+    if: needs.plan.outputs.browser == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        run: bunx playwright@1.61.1 install --with-deps chromium
+      - name: Run selected browser journeys
+        env:
+          SELECTED_SUITES: ${{ needs.plan.outputs.suites }}
+        run: |-
+          args=()
+          IFS=',' read -r -a suites <<< "$SELECTED_SUITES"
+          selected=()
+          for suite in "${suites[@]}"; do
+            if [[ "$suite" == *-browser ]]; then args+=(--suite "$suite"); selected+=("$suite"); fi
+          done
+          test "${#selected[@]}" -gt 0
+          bun run test:full "${args[@]}"
+          expected=$(IFS=,; echo "${selected[*]}")
+          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "$expected" --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Upload lane evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: lanes-browsers-${{ github.run_attempt }}
+          path: test-results/canonical/
+          if-no-files-found: error
+          retention-days: 14
+  docs:
+    needs: plan
+    if: needs.plan.outputs.scope == 'documentation' || needs.plan.outputs.scope == 'product-docs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - name: Check repository guides
+        run: bun scripts/repository-docs.ts
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: needs.plan.outputs.scope == 'product-docs'
+        with:
+          node-version: 24.15.0
+      - name: Install docs build dependencies
+        if: needs.plan.outputs.scope == 'product-docs'
+        run: bun install --frozen-lockfile
+      - name: Restore declared task outputs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-docs-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-node24.15.0-bun1.3.14-turbo-v2-docs-${{ hashFiles('bun.lock') }}-
+        if: needs.plan.outputs.scope == 'product-docs'
+      - name: Build and validate product documentation
+        if: needs.plan.outputs.scope == 'product-docs'
+        run: |-
+          bun run build:docs
+          bun run test:required --suite bun-standard --test-file scripts/generate-docs-content.test.ts
+  verify:
+    name: verify
+    needs:
+      - plan
+      - checks
+      - build
+      - required
+      - native
+      - browsers
+      - docs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.15.0
+      - name: Require every selected job
+        run: bun scripts/testing/source-verification.ts
+      - name: Download selected lane evidence
+        if: always() && needs.plan.outputs.required == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: lanes-*-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-fragments
+      - name: Validate complete source-bound portfolio
+        if: always() && needs.plan.outputs.required == 'true'
+        env:
+          SELECTED_SUITES: ${{ needs.plan.outputs.suites }}
+          SCOPE: ${{ needs.plan.outputs.scope }}
+        run: |-
+          profile=changed
+          if [ "$SCOPE" = full ]; then profile=full; fi
+          bun scripts/testing/aggregate-ci.ts aggregate --root "$RUNNER_TEMP/ci-fragments" --expected "$SELECTED_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --profile "$profile" --output test-results/canonical/"$profile"
+      - name: Upload consolidated evidence
+        if: always() && needs.plan.outputs.required == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: test-evidence-${{ github.run_attempt }}
+          path: test-results/canonical/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Record reusable complete source proof
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.scope == 'full'
+        run: bun scripts/testing/source-verification.ts "$RUNNER_TEMP/source-verification.json"
+      - name: Publish exact source proof
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.scope == 'full'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: source-verification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-verification.json
+          if-no-files-found: error
+          retention-days: 30

@@ -51,7 +51,7 @@
     "desktop:dev:isolated": "bun run --cwd apps/desktop dev:isolated",
     "desktop:build": "bun run --cwd apps/desktop native:build",
     "generate:docs-content": "bun run scripts/generate-docs-content.ts",
-    "build:docs": "bun run generate:docs-content && bun run --cwd apps/docs build",
+    "build:docs": "bun run --cwd apps/docs build",
     "dev:docs": "bun run generate:docs-content && bun run --cwd apps/docs dev:host",
     "serve:docs": "bun run --cwd apps/docs preview:host",
     "fixtures:generate": "bun run packages/server/src/fixtures/cli.ts generate",
@@ -66,7 +66,7 @@
     "test:mutation": "bunx stryker run",
     "test:policy": "bun run scripts/testing/policy.ts",
     "test:health": "bun run scripts/testing/history.ts test-results/canonical",
-    "verify:full": "bun run typecheck && bun run typecheck:lab && bun run --cwd packages/openclaw-plugin typecheck && bun run test:policy && bun run test:full && bun run release:lab && bun run --cwd packages/openclaw-plugin pack:dogfood",
+    "verify:full": "bun run typecheck && bun run typecheck:lab && bun run test:policy && bun run test:full && bun run release:lab",
     "lab": "bun run scripts/lab/index.ts"
   },
   "devDependencies": {

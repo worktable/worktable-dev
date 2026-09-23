@@ -8,10 +8,20 @@ const required = publicTestSuites
   .filter((suite) => suite.profiles.includes("required"))
   .map((suite) => suite.id)
 
+export function productDocsOnly(paths: string[]): boolean {
+  return (
+    paths.some((path) => path.startsWith("apps/docs/")) &&
+    paths.every(
+      (path) => path.startsWith("apps/docs/") || repositoryDocsOnly([path])
+    )
+  )
+}
+
 // Narrow only independent public surfaces. Shared contracts, server protocols,
 // build inputs, new packages and unknown paths retain every portable lane.
 export function selectPublicSuiteIds(paths: string[]): string[] {
   if (paths.length === 0) return [...allSuites]
+  if (productDocsOnly(paths)) return []
   const selected = new Set(required)
   for (const path of paths) {
     if (path.startsWith("apps/web/")) selected.add("web-browser")
@@ -79,17 +89,26 @@ if (import.meta.main) {
     process.env.HEAD_SHA ?? ""
   )
   const forcedFull = process.env.FULL_VERIFY === "true"
-  const suites = forcedFull ? allSuites : selectPublicSuiteIds(paths)
   const documentation = !forcedFull && repositoryDocsOnly(paths)
+  const productDocumentation = !forcedFull && productDocsOnly(paths)
+  const suites =
+    documentation || productDocumentation
+      ? []
+      : forcedFull
+        ? allSuites
+        : selectPublicSuiteIds(paths)
   const outputs = {
     scope: documentation
       ? "documentation"
-      : suites.length === allSuites.length
-        ? "full"
-        : "selected",
+      : productDocumentation
+        ? "product-docs"
+        : suites.length === allSuites.length
+          ? "full"
+          : "selected",
     browser: !documentation && suites.some((id) => id.endsWith("-browser")),
     desktop: !documentation && suites.includes("desktop-contracts"),
     plugin: needsPluginPackaging(paths),
+    required: !documentation && !productDocumentation,
     // Reuse this exact immutable diff for execution rather than discovering a
     // different base later from the merge checkout or local branch tracking.
     suites: suites.join(","),

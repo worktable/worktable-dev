@@ -95,12 +95,20 @@ tests. Keep examples synthetic and describe what you verified in the PR.
 
 Repository README, contributor guides, and issue templates use focused CI
 checks for local Markdown links, YAML parsing, and unresolved merge conflicts.
-Run `bun scripts/repository-docs.ts` to check these documents locally. Product
-changes always retain build, typecheck and required tests. Independent web,
+Run `bun scripts/repository-docs.ts` to check these documents locally. Changes confined to `apps/docs` (optionally with repository guides) build the
+documentation site and check its generated content. Changes to documentation
+generators, shared contracts, catalogs, or CLI sources retain product checks.
+Other product changes always retain build, typecheck and required tests. Independent web,
 Desktop, CLI, plugin and lab changes select their owning expensive lanes;
 shared inputs and unknown paths retain full verification. Public main, manual
 runs and the weekly schedule run full verification. The weekly run omits the
-Rust build cache to preserve cold-build evidence. Plugin distribution checks
+Rust build cache to preserve cold-build evidence. Source checks, artifact builds,
+required tests, native contracts and selected browser tests run on independent
+runners. The required `verify` result checks every planned job and combines raw
+test evidence bound to the same source, run and attempt; missing evidence fails.
+Task caches cover declared build/typecheck outputs, never passing test results.
+The release lab owns the production web build in CI, so the earlier workspace
+build omits that surface. Plugin distribution checks
 run only when plugin or build inputs change, with the required job still present.
 
 ## Generated files and docs

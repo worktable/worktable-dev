@@ -83,6 +83,15 @@ describe("canonical health policy", () => {
 
   test("an aborted un-targeted full browser portfolio resets the streak", () => {
     expect(
+      isCompleteBrowserSample(0, 3, {
+        profile: "full",
+        durationMs: 0,
+        status: "failed",
+        targeted: false,
+        schedule: "distributed-ci",
+      })
+    ).toBe(true)
+    expect(
       isCompleteBrowserSample(1, 3, {
         profile: "full",
         durationMs: 120_000,

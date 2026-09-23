@@ -80,13 +80,10 @@ const requiredSuiteIds = new Set(
     .filter((suite) => suite.profiles.includes("required"))
     .map((suite) => suite.id)
 )
-const browserSuiteIds = new Set([
-  "web-browser",
-  "desktop-browser",
-  "cloud-browser",
-])
+const browserSuiteIds = new Set(["web-browser", "desktop-browser"])
 const byDirectory = new Map<string, LaneResult[]>()
 const portfolios = await portfoliosBelow(inputRoot)
+for (const [directory] of portfolios) byDirectory.set(directory, [])
 for (const file of await laneFilesBelow(inputRoot)) {
   if (file.split(/[\\/]/).includes("benchmark")) continue
   const result = JSON.parse(await readFile(file, "utf8")) as LaneResult
@@ -133,7 +130,9 @@ const samples: Sample[] = [...byDirectory.entries()]
         required
           .map((lane) => lane.startedAt)
           .sort()
-          .at(0) ?? "",
+          .at(0) ??
+        portfolio?.startedAt ??
+        "",
     }
   })
   .filter((sample) => sample.durationMs > 0)
@@ -146,11 +145,13 @@ const browserSamples: BrowserSample[] = [...byDirectory.entries()]
     return {
       directory,
       revision: portfolio?.revision,
-      passed: isPassingCompleteBrowserSample(
-        browser.length,
-        browserSuiteIds.size,
-        browser.every((lane) => lane.status === "passed")
-      ),
+      passed:
+        portfolio?.status !== "failed" &&
+        isPassingCompleteBrowserSample(
+          browser.length,
+          browserSuiteIds.size,
+          browser.every((lane) => lane.status === "passed")
+        ),
       complete: isCompleteBrowserSample(
         browser.length,
         browserSuiteIds.size,
@@ -160,7 +161,9 @@ const browserSamples: BrowserSample[] = [...byDirectory.entries()]
         browser
           .map((lane) => lane.startedAt)
           .sort()
-          .at(0) ?? "",
+          .at(0) ??
+        portfolio?.startedAt ??
+        "",
     }
   })
   .filter((sample) => sample.startedAt !== "")
@@ -168,9 +171,12 @@ const browserSamples: BrowserSample[] = [...byDirectory.entries()]
 // Selected runs often contain only one browser lane. They are useful flake
 // evidence, but are not a "full-browser run" and must not reset or advance the
 // observation streak. Count consecutive complete portfolios only.
+const browserRevision = process.argv.includes("--distributed")
+  ? `${CANONICAL_PORTFOLIO_REVISION}-distributed`
+  : CANONICAL_PORTFOLIO_REVISION
 const currentBrowserSamples = partitionPortfolioRevisionSamples(
   browserSamples,
-  CANONICAL_PORTFOLIO_REVISION
+  browserRevision
 ).current
 const browserCleanStreak = completeBrowserCleanStreak(currentBrowserSamples)
 const fullBrowserObservationGateMet =
@@ -198,7 +204,8 @@ const resourcePassing = isPeakRssWithinBudget(
 
 const markdown = `# Required-test health history
 
-- Portfolio revision: ${CANONICAL_PORTFOLIO_REVISION}
+- Required portfolio revision: ${CANONICAL_PORTFOLIO_REVISION}
+- Browser portfolio revision: ${browserRevision}
 - Comparable passing runs: ${comparable.length}/${budgets.minimumComparableRuns} required before enforcement
 - Legacy or other revision samples retained but excluded: ${excludedRevisionSamples}
 - p50: ${p50Ms === undefined ? "n/a" : `${(p50Ms / 1000).toFixed(1)}s`}
@@ -220,6 +227,7 @@ await writeFile(
     {
       generatedAt: new Date().toISOString(),
       portfolioRevision: CANONICAL_PORTFOLIO_REVISION,
+      browserRevision,
       comparableRuns: comparable.length,
       excludedRevisionSamples,
       p50Ms,

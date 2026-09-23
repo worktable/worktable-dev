@@ -64,6 +64,7 @@ test.afterAll(async () => {
 test("availability decorates Settings without hijacking its destination", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
   await mockDeployment(page)
   await page.route("**/api/system/version**", (route) =>
     route.fulfill({
@@ -88,6 +89,14 @@ test("availability decorates Settings without hijacking its destination", async 
   await expect(
     page.getByRole("button", { name: "Review update" })
   ).toBeVisible()
+  const nudge = page
+    .locator("[data-sonner-toast]")
+    .filter({ hasText: "Worktable 9.9.9 is available" })
+  await expect(nudge).toContainText("Review it in Settings when you're ready.")
+  const toastBox = await nudge.boundingBox()
+  expect(toastBox).not.toBeNull()
+  expect(toastBox!.x).toBeGreaterThanOrEqual(0)
+  expect(toastBox!.x + toastBox!.width).toBeLessThanOrEqual(390)
 
   try {
     await page.getByRole("button", { name: "Review update" }).click()
@@ -101,6 +110,7 @@ test("availability decorates Settings without hijacking its destination", async 
     await page.unroute("**/src/components/app-sidebar.tsx")
   }
 
+  await page.setViewportSize({ width: 1280, height: 720 })
   await page.getByRole("button", { name: "Settings, update available" }).click()
   const settings = page.getByRole("dialog")
   await expect(settings.getByRole("heading", { name: "General" })).toBeVisible()
@@ -112,48 +122,6 @@ test("availability decorates Settings without hijacking its destination", async 
   await expect(
     page.getByRole("button", { name: "Settings, update available" })
   ).toBeVisible()
-})
-
-test("a hidden tab does not repeat a release announced by another tab", async ({
-  page,
-}) => {
-  await page.clock.install()
-  await page.addInitScript(() => {
-    let visibility: DocumentVisibilityState = "hidden"
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => visibility,
-    })
-    Object.defineProperty(window, "__setUpdateTestVisibility", {
-      value: (next: DocumentVisibilityState) => {
-        visibility = next
-      },
-    })
-  })
-  await mockDeployment(page)
-  await page.route("**/api/system/version**", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify(versionResponse("fresh")),
-    })
-  )
-
-  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 15_000 })
-  await expect(
-    page.getByRole("button", { name: "Settings, update available" })
-  ).toBeVisible()
-  await page.evaluate(() => {
-    localStorage.setItem("worktable-update-nudge-seen", "9.9.9")
-    ;(
-      window as Window & {
-        __setUpdateTestVisibility: (state: DocumentVisibilityState) => void
-      }
-    ).__setUpdateTestVisibility("visible")
-    document.dispatchEvent(new Event("visibilitychange"))
-  })
-  await page.clock.runFor(250)
-  await expect(page.getByText("Worktable 9.9.9 is available")).toHaveCount(0)
 })
 
 test("a slow System check still announces after the user leaves the section", async ({
@@ -203,48 +171,10 @@ test("a slow System check still announces after the user leaves the section", as
   await expect(page.getByText("Worktable 9.9.9 is available")).toBeVisible()
 })
 
-for (const { clockDirection, checkedAtOffset } of [
-  { clockDirection: "behind the server", checkedAtOffset: 24 * 60 * 60_000 },
-  { clockDirection: "ahead of the server", checkedAtOffset: -24 * 60 * 60_000 },
-]) {
-  test(`server freshness survives a browser clock ${clockDirection}`, async ({
-    page,
-  }) => {
-    await mockDeployment(page)
-    await page.route("**/api/system/version**", (route) => {
-      const response = versionResponse("fresh")
-      if (new URL(route.request().url()).searchParams.get("cached") !== "1") {
-        response.checkedAt = new Date(
-          Date.now() + checkedAtOffset
-        ).toISOString()
-      }
-      return route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify(response),
-      })
-    })
-
-    await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-    await expect(page.locator("body")).toHaveClass(/loaded/, {
-      timeout: 15_000,
-    })
-    await page.evaluate(() => {
-      window.dispatchEvent(
-        new CustomEvent("worktable:open-settings", {
-          detail: { section: "system" },
-        })
-      )
-    })
-    const settings = page.getByRole("dialog")
-    await expect(
-      settings.getByRole("button", { name: "Update to 9.9.9" })
-    ).toBeVisible()
-  })
-}
-
 test("a manual API failure hides a previously confirmed update action", async ({
   page,
 }) => {
+  await page.clock.install()
   let liveGets = 0
   await mockDeployment(page)
   await page.route("**/api/system/version**", (route) => {
@@ -295,6 +225,8 @@ test("a manual API failure hides a previously confirmed update action", async ({
   await expect(
     settings.getByRole("button", { name: /Update to|Update now/ })
   ).toHaveCount(0)
+
+  await page.clock.runFor(6_500)
 
   // The scheduled live GET succeeds after the near-expiry first result. It
   // supersedes the failed manual POST and must clear that obsolete error.

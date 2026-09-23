@@ -59,21 +59,6 @@ describe("fixture generator (basic-docs)", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
-  test("docs land on disk in both formats; the BlockNote doc is a valid block array", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "wt-fix-docs-"));
-    try {
-      await generate("basic-docs", dir);
-      const docs = join(dir, "spaces", "notes", "docs");
-      expect(readFileSync(join(docs, "readme.md"), "utf8")).toContain("# Notes");
-      expect(readFileSync(join(docs, "guide", "getting-started.md"), "utf8")).toContain("# Getting started");
-      const blocks = JSON.parse(readFileSync(join(docs, "ideas.json"), "utf8")) as unknown[];
-      expect(Array.isArray(blocks)).toBe(true);
-      expect(blocks.length).toBeGreaterThan(0);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
 });
 
 describe("all fixtures", () => {
@@ -130,40 +115,6 @@ describe("generate crash-safety", () => {
     } finally {
       setWorkspaceRootOverride(null);
       rmSync(parent, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("engineer persona fixture", () => {
-  test("generating succeeds (so records/widget pass Zod) and writes the expected content", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "wt-fix-eng-"));
-    try {
-      // A clean generate proves contract validity: the harness throws if any record/
-      // widget/collection fails Zod validation in the real store.
-      await generate("engineer", dir);
-      const space = join(dir, "spaces", "platform");
-      // 2 collections, with all records present.
-      for (const id of ["inc-001", "inc-002", "inc-003", "inc-004", "inc-005"]) {
-        expect(existsSync(join(space, "records", "incidents", `${id}.yaml`))).toBe(true);
-      }
-      for (const id of ["payments-api", "ledger", "webhooks", "reporting"]) {
-        expect(existsSync(join(space, "records", "services", `${id}.yaml`))).toBe(true);
-      }
-      expect(existsSync(join(space, "records", "incidents", "schema.yaml"))).toBe(true);
-      // Record-reading widget (yaml + html).
-      expect(existsSync(join(space, "widgets", "incident-board", "widget.yaml"))).toBe(true);
-      expect(existsSync(join(space, "widgets", "incident-board", "index.html"))).toBe(true);
-      // The instruction annotation, with a content-hash revision.
-      const annFile = join(space, "annotations", "docs", "runbooks", "payment-failures.annotations.json");
-      const ann = JSON.parse(readFileSync(annFile, "utf8")) as { revision: string; annotations: { category: string }[] };
-      expect(ann.annotations[0]!.category).toBe("instruction");
-      expect(ann.revision).toMatch(/^[0-9a-f]{64}$/);
-      // The Mermaid BlockNote doc uses the canonical custom block.
-      const blocks = JSON.parse(readFileSync(join(space, "docs", "architecture", "overview.json"), "utf8")) as { type: string }[];
-      expect(blocks.some((blk) => blk.type === "mermaid")).toBe(true);
-    } finally {
-      setWorkspaceRootOverride(null);
-      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

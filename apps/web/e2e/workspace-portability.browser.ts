@@ -4,10 +4,13 @@ import { startWebHarness, type WebHarness } from "./harness"
 let harness: WebHarness
 
 async function openPortability(page: Page) {
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
   const settings = page.getByRole("button", { name: "Settings", exact: true })
   await expect(settings).toBeVisible({ timeout: 30_000 })
   await settings.click()
-  await page.getByRole("button", { name: "Import & Export", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Import & Export", exact: true })
+    .click()
   await expect(
     page.getByRole("heading", { name: "Import & Export", exact: true })
   ).toBeVisible()

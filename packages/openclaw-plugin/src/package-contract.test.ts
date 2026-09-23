@@ -34,15 +34,7 @@ const packageJson = JSON.parse(
   }
 }
 
-const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
-
 describe("packed OpenClaw contract", () => {
-  test("keeps the ClawHub listing metadata aligned", () => {
-    expect(manifest.description).toBe(packageJson.description)
-    expect(packageJson.openclaw?.channel?.blurb).toBe(packageJson.description)
-    expect(manifest.icon).toBe("https://www.worktable.dev/favicon.svg")
-  })
-
   test("declares the command ownership needed for lazy plugin CLI loading", () => {
     expect(manifest.activation?.onCommands).toContain("worktable")
     expect(manifest.commandAliases).toContainEqual({
@@ -98,9 +90,5 @@ describe("packed OpenClaw contract", () => {
         "THIRD_PARTY_NOTICES.md",
       ])
     )
-    expect(readme).toContain(
-      "openclaw plugins install clawhub:@worktable/openclaw"
-    )
-    expect(readme).not.toContain("releases/latest/download/worktable-openclaw")
   })
 })

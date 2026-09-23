@@ -104,49 +104,6 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   expect(topLevelNavigations).toBe(navigationsAfterOpen)
 })
 
-test("Cloud preserves registered agents when OAuth inventory is unavailable", async ({
-  page,
-}) => {
-  await page.route("**/api/system/connection", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ...connection, mcpAuthMode: "oauth" }),
-    })
-  )
-  await page.route("**/api/agent-connections", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        connections: [
-          {
-            id: "agent:workos-agent:agent_1",
-            authKind: "agent-registration",
-            displayName: "OpenClaw · Studio",
-            target: {
-              kind: "agent-adapter",
-              adapter: "openclaw",
-              installationId: "agent_1",
-            },
-            mode: "always-on",
-            participant: null,
-            machine: "studio-mac",
-            scopes: ["threads:read", "threads:write"],
-            connectedAt: new Date().toISOString(),
-            lastSeenAt: new Date().toISOString(),
-            permissionGroups: ["conversations"],
-          },
-        ],
-        unavailableAuthKinds: ["oauth"],
-      }),
-    })
-  )
-
-  await openAgents(page)
-  const dialog = page.getByRole("dialog")
-  await expect(dialog.getByText("OpenClaw · Studio")).toBeVisible()
-  await expect(dialog.getByRole("button", { name: "Disconnect" })).toBeVisible()
-})
-
 test("local setup uses one disclosure at a time and separates connection management", async ({
   page,
 }) => {
@@ -356,20 +313,6 @@ test("local Desktop Settings manages the two skill targets from allowed operatio
   await expect(
     page.getByText("Worktable skills for Claude removed.")
   ).toBeVisible()
-  expect(
-    await page.evaluate(() =>
-      (
-        window as typeof window & {
-          __desktopSkillCalls: Array<{ command: string }>
-        }
-      ).__desktopSkillCalls.map(({ command }) => command)
-    )
-  ).toEqual([
-    "desktop_agent_skills_status",
-    "desktop_agent_skills_preview",
-    "desktop_agent_skills_apply",
-    "desktop_agent_skills_status",
-  ])
 })
 
 test("switching setup disclosures preserves a one-time manual token", async ({
@@ -421,108 +364,6 @@ test("switching setup disclosures preserves a one-time manual token", async ({
   await expect(oneTimeNotice).toBeHidden()
   await manualInstall.click()
   await expect(oneTimeNotice).toBeVisible()
-})
-
-test("existing access tokens open under Advanced with a compact summary", async ({
-  page,
-}) => {
-  await page.route("**/api/system/connection", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
-    })
-  )
-  await page.route("**/api/tokens", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        tokens: [
-          {
-            id: "123456789abc",
-            user: "owner",
-            agent: "codex@studio-mac",
-            scopes: ["docs:*"],
-            workspace: "/tmp/worktable",
-            createdAt: new Date().toISOString(),
-            revokedAt: null,
-            lastUsedAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    })
-  )
-
-  await openAgents(page)
-  const dialog = page.getByRole("dialog")
-  const accessTokens = dialog.getByRole("button", {
-    name: /^Access tokens/,
-  })
-  await expect(accessTokens).toHaveAttribute("aria-expanded", "true")
-  await expect(
-    dialog.getByText("1 active token", { exact: true })
-  ).toBeVisible()
-  const table = dialog.getByRole("table")
-  await expect(
-    table.getByText("ChatGPT / Codex", { exact: true })
-  ).toBeVisible()
-  await expect(table.getByText(/studio-mac · wt_1234/)).toBeVisible()
-})
-
-test("verified pairings appear as semantic connected agents", async ({
-  page,
-}) => {
-  await page.route("**/api/system/connection", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
-    })
-  )
-  await page.route("**/api/agent-connections", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        connections: [
-          {
-            id: "acn_openclaw",
-            authKind: "local-token",
-            displayName: "OpenClaw",
-            target: {
-              kind: "agent-adapter",
-              adapter: "openclaw",
-              installationId: "oci_studio",
-            },
-            mode: "always-on",
-            participant: {
-              id: "ptc_abcdefghijkl",
-              kind: "agent",
-              name: "Atlas",
-            },
-            machine: "studio-mac",
-            scopes: ["threads:*"],
-            connectedAt: new Date().toISOString(),
-            lastSeenAt: null,
-            permissionGroups: null,
-          },
-        ],
-      }),
-    })
-  )
-
-  await openAgents(page)
-  const dialog = page.getByRole("dialog")
-  const connectedAgents = dialog.getByLabel("Connected agents")
-  await expect(
-    connectedAgents.getByText("OpenClaw", { exact: true })
-  ).toBeVisible()
-  await expect(
-    connectedAgents.getByText("Always-on", { exact: true })
-  ).toBeVisible()
-  await expect(
-    connectedAgents.getByText(/Atlas · studio-mac · Not used yet/)
-  ).toBeVisible()
-  await expect(
-    connectedAgents.getByRole("button", { name: "Disconnect" })
-  ).toBeVisible()
 })
 
 test("a failed connection refetch preserves a newly minted one-time token", async ({

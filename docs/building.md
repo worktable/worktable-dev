@@ -30,7 +30,10 @@ bun run release:lab
 `release:lab` builds Linux CLI and skill-installer bundles for the host architecture,
 plus connector and plugin artifacts, in `dist/lab-releases`. Run
 `bun run release:local` for the full release matrix in `dist/releases`.
-Archive packaging also requires Python 3 and unzip.
+Archive packaging also requires Python 3 and unzip. Release builds write phase
+timings to `dist/release-timings-<profile>.json`, outside the published assets.
+`release:lab` already builds and verifies the OpenClaw package; callers should
+not repeat that packaging command.
 
 Archives identify the exact source commit, retain application and dependency
 notices, and omit build-runner links. A private build runner does not make its
@@ -62,9 +65,34 @@ require an explicit non-production origin, for example
 `bun run lab -- cloud --origin https://staging.example.test --dry-run`.
 Use a staging system you control for an actual run.
 
+## Installed CLI smoke
+
+After building the local release archive in `dist/releases`, run
+`bun run smoke:local-install`. This installs into temporary directories and checks
+compiled CLI setup, client configuration and removal, HTTP health, and stdio MCP
+with a document roundtrip. Stdio requests wait for their matching responses.
+The repository's Bun parses the resulting JSON/TOML; the installed launcher runs
+with an isolated home and a system-only PATH to verify its bundled runtime.
+
+Use `-- --keep` to retain logs or `-- --review` for a running instance. The older
+`bun run verify:local-e2e` entrypoint delegates to this same journey and preserves
+its `WORKTABLE_E2E_*` settings and options. `--service` explicitly adds the native
+user-service install/start/status/logs/stop/uninstall checks; ordinary runs do not
+install a user service.
+
 ## Desktop
 
 Desktop packaging requires macOS and the Rust toolchain pinned in
 `apps/desktop/rust-toolchain.toml`. Follow the
 [Desktop contributor guide](../apps/desktop/README.md). A source build does not
 imply that a signed Desktop download is included in every application release.
+
+## CI verification receipts
+
+A successful full verification of a public `main` push publishes an exact-source
+receipt after all selected job results and raw test evidence pass. The receipt
+binds the commit, tree, lockfile, Bun/Node versions, workflow, run and attempt.
+Release automation verifies the successful originating GitHub run before reusing
+its source checks. Missing or incompatible proof runs those checks again.
+Release candidate validation, compiled artifact smoke tests, signing, publication
+and installed updater checks remain separate release guarantees.

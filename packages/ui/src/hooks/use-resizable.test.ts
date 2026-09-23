@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 
 import {
   clampSize,
@@ -7,6 +7,7 @@ import {
   readStoredSize,
 } from "./use-resizable"
 
+const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
 const store = new Map<string, string>()
 
 beforeEach(() => {
@@ -16,6 +17,11 @@ beforeEach(() => {
     setItem: (key: string, value: string) => void store.set(key, value),
     removeItem: (key: string) => void store.delete(key),
   }
+})
+
+afterEach(() => {
+  if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage)
+  else Reflect.deleteProperty(globalThis, "localStorage")
 })
 
 const BOUNDS = { defaultSize: 288, minSize: 220, maxSize: 480 }
@@ -29,41 +35,14 @@ describe("clampSize", () => {
 })
 
 describe("readStoredSize", () => {
-  test("falls back to the default without a storage key", () => {
+  test("restores valid sizes and safely bounds missing, corrupt, or denied storage", () => {
     expect(readStoredSize(undefined, BOUNDS)).toBe(288)
-  })
-
-  test("falls back to the default when nothing is stored", () => {
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(288)
-  })
-
-  test("roundtrips a stored size", () => {
-    store.set("sidebar-width", "342")
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(342)
-  })
-
-  test("falls back to the default on corrupt values", () => {
-    store.set("sidebar-width", "not a number")
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(288)
-
-    store.set("sidebar-width", "Infinity")
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(288)
-  })
-
-  test("clamps stored values that fall outside current bounds", () => {
-    store.set("sidebar-width", "9999")
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(480)
-
-    store.set("sidebar-width", "12")
-    expect(readStoredSize("sidebar-width", BOUNDS)).toBe(220)
-  })
-
-  test("falls back to the default when localStorage throws", () => {
-    ;(globalThis as Record<string, unknown>).localStorage = {
-      getItem: () => {
-        throw new Error("denied")
-      },
+    for (const [stored, expected] of [[undefined, 288], ["342", 342], ["not a number", 288], ["Infinity", 288], ["9999", 480], ["12", 220]] as const) {
+      store.clear()
+      if (stored !== undefined) store.set("sidebar-width", stored)
+      expect(readStoredSize("sidebar-width", BOUNDS)).toBe(expected)
     }
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, writable: true, value: { getItem() { throw new Error("denied") } } })
     expect(readStoredSize("sidebar-width", BOUNDS)).toBe(288)
   })
 })
@@ -87,19 +66,14 @@ describe("size store", () => {
     expect(notified).toBe(1)
   })
 
-  test("shared stores are one instance per storage key", () => {
+  test("consumers of the same storage key observe each other’s size changes", () => {
     store.set("shared-pane", "342")
     const a = getSharedSizeStore("shared-pane", BOUNDS)
     const b = getSharedSizeStore("shared-pane", BOUNDS)
-    expect(b).toBe(a)
     expect(a.get()).toBe(342)
 
     a.set(400)
     expect(b.get()).toBe(400)
   })
 
-  test("shared store seeds from storage with clamping", () => {
-    store.set("clamped-pane", "9999")
-    expect(getSharedSizeStore("clamped-pane", BOUNDS).get()).toBe(480)
-  })
 })

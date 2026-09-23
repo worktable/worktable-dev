@@ -438,4 +438,50 @@ describe("record REST routes", () => {
     const forbidden = await req(app, "DELETE", "/api/spaces/meta/widgets/task-app/records/tasks/widget-task");
     expect(forbidden.status).toBe(403);
   });
+
+  it("accepts structured values for json fields and round-trips them", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "configs",
+      name: "Configs",
+      fields: { title: { type: "string", required: true }, payload: { type: "json" } },
+    });
+    const payload = { nested: { a: 1 }, list: [1, 2, 3] };
+    const create = await req(app, "POST", "/api/spaces/meta/records/configs", { id: "c1", data: { title: "c1", payload } });
+    expect(create.status).toBe(201);
+    const read = await req(app, "GET", "/api/spaces/meta/records/configs/c1");
+    expect(read.json.record.data.payload).toEqual(payload);
+  });
+
+  it("does not lose updates under concurrent patches to the same record", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "counters",
+      name: "Counters",
+      fields: { title: { type: "string", required: true } },
+    });
+    await req(app, "POST", "/api/spaces/meta/records/counters", { id: "c", data: { title: "c", a: 0, b: 0 } });
+    await Promise.all([
+      req(app, "PATCH", "/api/spaces/meta/records/counters/c", { data: { a: 1 } }),
+      req(app, "PATCH", "/api/spaces/meta/records/counters/c", { data: { b: 1 } }),
+    ]);
+    const read = await req(app, "GET", "/api/spaces/meta/records/counters/c");
+    // With the read-modify-write held under one lock, both patches survive.
+    expect(read.json.record.data.a).toBe(1);
+    expect(read.json.record.data.b).toBe(1);
+  });
+
+  it("derives unique ids for concurrent creates with the same title", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "notes",
+      name: "Notes",
+      fields: { title: { type: "string", required: true } },
+    });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => req(app, "POST", "/api/spaces/meta/records/notes", { data: { title: "Same Title" } }))
+    );
+    expect(results.every((r) => r.status === 201)).toBe(true);
+    const ids = new Set(results.map((r) => r.json.record.id));
+    expect(ids.size).toBe(5);
+    const list = await req(app, "POST", "/api/spaces/meta/records/notes/query", {});
+    expect(list.json.records).toHaveLength(5);
+  });
 });

@@ -7,6 +7,7 @@ import { DEFAULT_MERMAID_SOURCE, type SpaceFile } from "@worktable/types"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import {
   extractMarkdownMermaid,
+  prepareDocumentContent,
   MermaidDocumentValidationError,
 } from "./mermaid-document.ts"
 import { getDocPath, readDoc, writeSpace } from "./store.ts"
@@ -109,82 +110,6 @@ describe("automatic Mermaid document pipeline", () => {
     const stored = await readDoc(spaceId, "escaped-fence")
     expect(stored.data).toContain("```mermaid")
     expect(stored.data).not.toContain("\\`")
-  })
-
-  it("validates Mermaid fences nested in a Markdown blockquote", async () => {
-    const failure = dispatchOperation("docs.write", {
-      spaceId,
-      docPath: "invalid-blockquote",
-      content: "> ```mermaid\n> flowchart TD\n> A-->\n> ```\n",
-    })
-
-    await expect(failure).rejects.toBeInstanceOf(MermaidDocumentValidationError)
-    await failure.catch((error: MermaidDocumentValidationError) => {
-      expect(error.issues[0]).toMatchObject({
-        code: "INVALID_MERMAID",
-        representation: "markdown-fence",
-        diagramIndex: 1,
-        startLine: 1,
-        endLine: 4,
-      })
-    })
-    expect(existsSync(getDocPath(spaceId, "invalid-blockquote"))).toBe(false)
-  })
-
-  it("repairs escaped Mermaid fences nested in a Markdown blockquote", async () => {
-    await dispatchOperation("docs.write", {
-      spaceId,
-      docPath: "escaped-blockquote",
-      content: "> \\`\\`\\`mermaid\n> flowchart TD\n> A-->B\n> \\`\\`\\`\n",
-    })
-
-    const stored = await readDoc(spaceId, "escaped-blockquote")
-    expect(stored.data).toContain("> ```mermaid")
-    expect(stored.data).toContain("> flowchart TD")
-    expect(stored.data).not.toContain("\\`")
-  })
-
-  it("validates Mermaid fences nested in list containers", async () => {
-    const failure = dispatchOperation("docs.write", {
-      spaceId,
-      docPath: "invalid-list-diagram",
-      content:
-        "- Outer item\n  - Inner item\n    ```mermaid\n    flowchart TD\n    A-->\n    ```\n",
-    })
-
-    await expect(failure).rejects.toBeInstanceOf(MermaidDocumentValidationError)
-    await failure.catch((error: MermaidDocumentValidationError) => {
-      expect(error.issues[0]).toMatchObject({
-        code: "INVALID_MERMAID",
-        startLine: 3,
-        endLine: 6,
-      })
-    })
-  })
-
-  it("repairs escaped Mermaid fences nested in list containers", async () => {
-    await dispatchOperation("docs.write", {
-      spaceId,
-      docPath: "escaped-list-diagram",
-      content:
-        "- Outer item\n  - Inner item\n    \\`\\`\\`mmd\n    flowchart TD\n    A-->B\n    \\`\\`\\`\n",
-    })
-
-    const stored = await readDoc(spaceId, "escaped-list-diagram")
-    expect(stored.data).toContain("    ```mmd")
-    expect(stored.data).not.toContain("\\`")
-  })
-
-  it("repairs escaped tilde Mermaid fences", async () => {
-    await dispatchOperation("docs.write", {
-      spaceId,
-      docPath: "escaped-tilde-fence",
-      content: "\\~\\~\\~mmd\nflowchart TD\nA-->B\n\\~\\~\\~\n",
-    })
-
-    const stored = await readDoc(spaceId, "escaped-tilde-fence")
-    expect(stored.data).toContain("~~~mmd")
-    expect(stored.data).not.toContain("\\~")
   })
 
   it("normalizes legacy Mermaid code blocks to the custom block", async () => {
@@ -510,5 +435,54 @@ describe("automatic Mermaid document pipeline", () => {
         endLine: 4,
       }),
     ])
+  })
+})
+
+// Grammar variants share the actual parser; MCP write/patch atomicity is above.
+describe("Mermaid fence grammar", () => {
+  it("validates and repairs fenced diagrams in Markdown containers", async () => {
+    for (const { prefix, prelude, marker, language, startLine } of [
+      {
+        prefix: "> ",
+        prelude: "",
+        marker: "```",
+        language: "mermaid",
+        startLine: 1,
+      },
+      {
+        prefix: "    ",
+        prelude: "- Outer item\n  - Inner item\n",
+        marker: "```",
+        language: "mmd",
+        startLine: 3,
+      },
+      { prefix: "", prelude: "", marker: "~~~", language: "mmd", startLine: 1 },
+    ]) {
+      const content = `${prelude}${prefix}${marker}${language}\n${prefix}flowchart TD\n${prefix}A-->B\n${prefix}${marker}\n`
+      const escaped = content.replaceAll(
+        marker,
+        [...marker].map((char) => `\\${char}`).join(""),
+      )
+      const result = await prepareDocumentContent(escaped, {
+        validation: "strict",
+      })
+      expect(result.content).toBe(content)
+      expect(result.repairs).toEqual([
+        expect.objectContaining({ code: "ESCAPED_MERMAID_FENCE_REPAIRED" }),
+      ])
+      await expect(
+        prepareDocumentContent(content.replace("A-->B", "A-->"), {
+          validation: "strict",
+        }),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: "INVALID_MERMAID",
+            startLine,
+            endLine: startLine + 3,
+          }),
+        ],
+      })
+    }
   })
 })

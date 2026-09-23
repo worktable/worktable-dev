@@ -83,6 +83,9 @@ describe("completion install", () => {
     expect(readFileSync(join(dir, "wtb"), "utf8")).toContain(
       "complete -F __wtb_complete wtb"
     )
+    for (const name of ["worktable", "wtb"]) {
+      expect(readFileSync(join(dir, name), "utf8")).not.toContain("$bunfs")
+    }
   })
 
   it("an explicit shell argument overrides $SHELL detection", () => {
@@ -125,14 +128,5 @@ describe("completion install", () => {
     )
     expect(exitCode).not.toBe(0)
     expect(stderr).toContain("bash, zsh, fish")
-  })
-
-  it("installed files never leak Bun's /$bunfs/ virtual path", () => {
-    const { exitCode } = runCli(["completion", "install", "bash"], env)
-    expect(exitCode).toBe(0)
-    const dir = join(env["XDG_DATA_HOME"]!, "bash-completion", "completions")
-    for (const name of ["worktable", "wtb"]) {
-      expect(readFileSync(join(dir, name), "utf8")).not.toContain("$bunfs")
-    }
   })
 })

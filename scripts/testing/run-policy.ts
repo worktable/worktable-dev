@@ -102,3 +102,19 @@ export function vitestArguments(command: VitestCommand): string[] {
     `--outputFile.junit=${command.junit}`,
   ]
 }
+
+// Go exits successfully for an unmatched -run filter or a skipped live test.
+export function hasExecutedGoTests(output: string): boolean {
+  try {
+    return output
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .some((line) => {
+        const event = JSON.parse(line) as { Action?: string; Test?: string }
+        return event.Action === "pass" && Boolean(event.Test)
+      })
+  } catch {
+    return false
+  }
+}

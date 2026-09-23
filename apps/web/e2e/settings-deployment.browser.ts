@@ -236,9 +236,8 @@ test("Cloud mobile settings keeps the Account section reachable", async ({
   await expect(
     page.getByRole("button", { name: "Settings", exact: true })
   ).toBeVisible({ timeout: 30_000 })
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent("worktable:open-settings"))
-  })
+  await page.getByRole("button", { name: /^Toggle sidebar/ }).click()
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
   await settings.getByRole("button", { name: "Account", exact: true }).click()
   await expect(

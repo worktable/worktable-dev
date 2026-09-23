@@ -1203,7 +1203,7 @@ function agentConnectionName(connection: AgentConnection): string {
   return clientDisplayName(connection.displayName)
 }
 
-function ConnectedAgentsGroup() {
+export function ConnectedAgentsGroup() {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const connectionsQuery = useQuery({
@@ -1306,7 +1306,7 @@ function ConnectedAgentsGroup() {
 // future Cloud inventory belongs to the stable agent-identity roadmap rather
 // than exposing raw authorization grants through this local-token surface.
 
-function AccessTokensGroup() {
+export function AccessTokensGroup() {
   const queryClient = useQueryClient()
   const sectionActive = useSettingsSectionActive()
   const tokensQuery = useQuery({

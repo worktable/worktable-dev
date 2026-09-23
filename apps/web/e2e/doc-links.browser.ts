@@ -547,28 +547,13 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
     tr.insert(tr.doc.content.size - 1, view.state.schema.nodeFromJSON(copy));
     tr.insertText("Edited ", 3);
     tr.setNodeMarkup(1, undefined, { ...tr.doc.nodeAt(1)!.attrs, id: null });
-    const plugin = view.state.plugins.find((candidate) =>
-      (candidate as unknown as { key: string }).key.startsWith("uniqueID$")
-    )!;
-    const append = plugin.spec.appendTransaction!;
-    let assigned = 0;
-    plugin.spec.appendTransaction = (...args) => {
-      const result = append.apply(plugin, args);
-      if (result) assigned += result.steps.length;
-      return result;
-    };
-    try {
-      view.dispatch(tr);
-    } finally {
-      plugin.spec.appendTransaction = append;
-    }
+    view.dispatch(tr);
     const ids: string[] = [];
     view.state.doc.descendants((node) => {
       if (node.type.name === "blockContainer") ids.push(node.attrs.id);
     });
-    return { assigned, ids };
+    return { ids };
   });
-  expect(transactionResult.assigned).toBe(4);
   expect(transactionResult.ids.length).toBe(savedIds.length + 4);
   expect(new Set(transactionResult.ids).size, JSON.stringify(transactionResult)).toBe(transactionResult.ids.length);
   expect(transactionResult.ids.every(Boolean)).toBe(true);

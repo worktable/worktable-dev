@@ -163,6 +163,9 @@ describe("widget REST routes", () => {
     form!.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
+    const runtime = dom.window as unknown as { worktable: unknown; agentdash: unknown };
+    expect(runtime.worktable).toBeDefined();
+    expect(runtime.agentdash).toBe(runtime.worktable);
     const diagnostics = (dom.window as unknown as { __worktableDiagnostics: Array<{ code: string }> }).__worktableDiagnostics;
     expect(diagnostics.some((diagnostic) => diagnostic.code === "form_submit_intercepted")).toBe(true);
   });
@@ -366,5 +369,41 @@ describe("widget REST routes", () => {
       (await req(app, "GET", "/api/spaces/meta/widgets/lifecycle-race"))
         .status
     ).toBe(404);
+  });
+
+  it("widens widget CSP connect-src only when the network permission is granted", async () => {
+    await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "offline-widget",
+      name: "Offline",
+      html: "<!doctype html><html><head></head><body></body></html>",
+    });
+    await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "online-widget",
+      name: "Online",
+      html: "<!doctype html><html><head></head><body></body></html>",
+      permissions: { network: true },
+    });
+
+    const offline = await req(app, "GET", "/api/spaces/meta/widgets/offline-widget/content");
+    const online = await req(app, "GET", "/api/spaces/meta/widgets/online-widget/content");
+    const offlineCsp = offline.headers.get("content-security-policy") ?? "";
+    const onlineCsp = online.headers.get("content-security-policy") ?? "";
+
+    expect(offlineCsp).toContain("connect-src 'self';");
+    expect(offlineCsp).not.toContain("https:");
+    expect(onlineCsp).toContain("connect-src 'self' ws: wss: https:");
+  });
+
+  it("strips legacy workspace permissions sent by older clients instead of failing", async () => {
+    const res = await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "legacy-perms",
+      name: "Legacy",
+      html: "<!doctype html><html><head></head><body></body></html>",
+      permissions: { workspaceRead: true, workspaceWrite: true, records: {} },
+    });
+    expect(res.status).toBe(201);
+    const yaml = await readFile(join(testDir, "spaces", "meta", "widgets", "legacy-perms", "widget.yaml"), "utf8");
+    expect(yaml).not.toContain("workspaceRead");
+    expect(yaml).not.toContain("workspaceWrite");
   });
 });

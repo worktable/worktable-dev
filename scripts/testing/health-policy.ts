@@ -9,6 +9,8 @@ export interface HealthPortfolio {
   peakRssMb?: number
   targeted?: boolean
   status?: "passed" | "failed"
+  schedule?: string
+  startedAt?: string
 }
 
 export interface BrowserHealthSample {
@@ -38,7 +40,10 @@ export function isCompleteBrowserSample(
     return false
   }
   if (observedBrowserSuites === expectedBrowserSuites) return true
-  return observedBrowserSuites > 0 && portfolio.status === "failed"
+  return (
+    portfolio.status === "failed" &&
+    (observedBrowserSuites > 0 || portfolio.schedule === "distributed-ci")
+  )
 }
 
 export function isPassingCompleteBrowserSample(

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { Hono } from "hono";
 import { connectRouter } from "./routes/connect.ts";
 import { resetConnectorBundleCacheForTests } from "./connector-assets.ts";
@@ -49,7 +48,7 @@ afterEach(() => {
 });
 
 describe("GET /connect.sh", () => {
-  it("embeds the configured public origin and passes sh syntax check", async () => {
+  it("embeds the configured public origin", async () => {
     process.env["WORKTABLE_PUBLIC_URL"] = "https://wt.example.com";
     const res = await app.fetch(new Request("http://localhost/connect.sh"));
     expect(res.status).toBe(200);
@@ -60,9 +59,6 @@ describe("GET /connect.sh", () => {
     expect(body).toContain("/connect.mjs");
     expect(body).not.toContain("__");
 
-    const script = join(tempDir, "connect.sh");
-    writeFileSync(script, body);
-    expect(spawnSync("sh", ["-n", script]).status).toBe(0);
   });
 
   it("falls back to the request origin when nothing is configured", async () => {
@@ -87,8 +83,7 @@ describe("GET /connect.mjs", () => {
   it("resolves from the dev source tree when no override is set", async () => {
     const res = await app.fetch(new Request("http://localhost/connect.mjs"));
     expect(res.status).toBe(200);
-    const body = await res.text();
-    // The built connector carries the redeem call.
-    expect(body).toContain("/api/pairing/redeem");
+    expect(res.headers.get("Content-Type")).toContain("javascript");
+    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 });

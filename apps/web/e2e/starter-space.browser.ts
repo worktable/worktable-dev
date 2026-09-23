@@ -540,10 +540,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   expect(docMovedDuringRead).toBe(true)
   await racePage.unroute(racedPath)
 
-  // The stale-read scenario deliberately disables broadcasts. Folder/archive
-  // interactions below use an ordinary connected tab, as a user would.
+  // End the disconnected stale-read fixture before the folder lifecycle.
+  // Reuse the original tab so unrelated observers do not duplicate every
+  // rename/archive refresh while this single-user journey continues.
   await racePage.close()
-  racePage = await page.context().newPage()
+  racePage = page
 
   const promoted = await racePage.request.post(
     `${harness.apiUrl}/api/spaces/welcome/widgets/plans/live-status-final/move`,
@@ -684,8 +685,6 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await racePage.close()
-
   await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
 

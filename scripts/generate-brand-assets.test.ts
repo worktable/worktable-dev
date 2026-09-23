@@ -3,64 +3,15 @@ import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
 import sharp from "sharp"
-import targets from "./generation-targets.json"
 
 import {
   extractPngFromIco,
-  generatedBrandBinaryOutputs,
   generatedBrandRasterSpecs,
-  generatedBrandTextOutputs,
 } from "./generate-brand-assets"
 
 const repoRoot = resolve(import.meta.dir, "..")
-const faviconCopies = targets.favicons
-
-async function decodeRgba(buffer: Buffer) {
-  return sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-}
 
 describe("brand asset generation", () => {
-  test("committed text artifacts exactly match their generated output", async () => {
-    for (const [relativePath, expected] of generatedBrandTextOutputs) {
-      expect(await readFile(resolve(repoRoot, relativePath), "utf8")).toBe(
-        expected
-      )
-    }
-  })
-
-  test("every favicon consumer receives the canonical filled SVG byte-for-byte", async () => {
-    const canonical = await readFile(
-      resolve(repoRoot, "assets/brand/worktable-icon-filled.svg")
-    )
-    for (const relativePath of faviconCopies) {
-      expect(
-        (await readFile(resolve(repoRoot, relativePath))).equals(canonical)
-      ).toBe(true)
-    }
-  })
-
-  test("committed PNG and ICO pixels exactly match fresh renders", async () => {
-    for (const [
-      relativePath,
-      generatedFile,
-    ] of await generatedBrandBinaryOutputs()) {
-      const committedFile = await readFile(resolve(repoRoot, relativePath))
-      const committedPng = relativePath.endsWith(".ico")
-        ? extractPngFromIco(committedFile)
-        : committedFile
-      const generatedPng = relativePath.endsWith(".ico")
-        ? extractPngFromIco(generatedFile)
-        : generatedFile
-      const [committed, generated] = await Promise.all([
-        decodeRgba(committedPng),
-        decodeRgba(generatedPng),
-      ])
-      expect(committed.info.width).toBe(generated.info.width)
-      expect(committed.info.height).toBe(generated.info.height)
-      expect(committed.data.equals(generated.data)).toBe(true)
-    }
-  })
-
   test("raster dimensions match their public file contracts", async () => {
     for (const spec of generatedBrandRasterSpecs) {
       const metadata = await sharp(

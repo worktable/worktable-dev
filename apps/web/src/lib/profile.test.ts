@@ -8,6 +8,7 @@ import {
 
 const store = new Map<string, string>();
 const originalFetch = globalThis.fetch;
+const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 
 beforeEach(() => {
   store.clear();
@@ -20,6 +21,8 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+  else Reflect.deleteProperty(globalThis, "localStorage");
 });
 
 describe("profile", () => {

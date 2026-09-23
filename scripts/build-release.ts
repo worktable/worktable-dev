@@ -44,13 +44,41 @@ const outDir = join(root, "dist", outputNames.artifacts)
 const workDir = join(root, "dist", outputNames.work)
 const webDist = join(root, "apps", "web", "dist", "client")
 
+const buildStarted = performance.now()
+const timings: Array<{ phase: string; seconds: number }> = []
+function recordTiming(phase: string, started: number): void {
+  const seconds = Math.round(performance.now() - started) / 1_000
+  timings.push({ phase, seconds })
+  console.log(`[release:timing] ${phase}: ${seconds.toFixed(3)}s`)
+}
+// Kept beside, never inside, published artifacts. Failed builds retain the
+// completed phases too, so the next optimization can use measured costs.
+process.on("exit", (code) => {
+  mkdirSync(join(root, "dist"), { recursive: true })
+  writeFileSync(
+    join(root, "dist", `release-timings-${profile}.json`),
+    JSON.stringify(
+      {
+        profile,
+        status: code === 0 ? "passed" : "failed",
+        seconds: Math.round(performance.now() - buildStarted) / 1_000,
+        phases: timings,
+      },
+      null,
+      2
+    ) + "\n"
+  )
+})
+
 function run(cmd: string[], cwd = root): void {
+  const started = performance.now()
   const result = Bun.spawnSync(cmd, {
     cwd,
     stdout: "inherit",
     stderr: "inherit",
     env: { ...process.env, WORKTABLE_VERSION: version },
   })
+  recordTiming(cmd.join(" "), started)
   if (!result.success) {
     throw new Error(`${cmd.join(" ")} failed with exit code ${result.exitCode}`)
   }
@@ -81,6 +109,8 @@ async function buildExecutable(
   entrypoint = join(root, "apps", "cli", "src", "index.ts"),
   label = target.artifact
 ): Promise<void> {
+  const compileStarted = performance.now()
+  const executableLabel = `${label}:${outfile.slice(outfile.lastIndexOf("/") + 1)}`
   console.log(`[release] compiling ${label}`)
   const heartbeat = setInterval(
     () => console.log(`[release] still compiling ${label}`),
@@ -107,11 +137,13 @@ async function buildExecutable(
     })
   } finally {
     clearInterval(heartbeat)
+    recordTiming(`compile ${executableLabel}`, compileStarted)
   }
   if (!result.success) {
     for (const log of result.logs) console.error(log)
     throw new Error(`bun build --compile failed for ${target.bunTarget}`)
   }
+  const noticesStarted = performance.now()
   const destination = dirname(dirname(outfile))
   const metafiles = [
     ...(compiledMetafiles.get(destination) ?? []),
@@ -120,6 +152,7 @@ async function buildExecutable(
   compiledMetafiles.set(destination, metafiles)
   writeCompiledJsNotices(metafiles, process.cwd(), destination)
   writeBunRuntimeNotices(Bun, target.bunTarget, dirname(dirname(outfile)))
+  recordTiming(`notices ${executableLabel}`, noticesStarted)
 }
 
 function assertPortableExecutable(path: string): void {
@@ -199,6 +232,7 @@ for (const target of selectedTargets.cli) {
 
   const executable = join(binDir, "worktable")
   await buildExecutable(target, executable)
+  const assemblyStarted = performance.now()
   assertPortableExecutable(executable)
 
   cpSync(webDist, webDir, { recursive: true })
@@ -233,6 +267,7 @@ for (const target of selectedTargets.cli) {
     ) + "\n"
   )
 
+  recordTiming(`assemble ${releaseName}`, assemblyStarted)
   run([
     "python3",
     "scripts/release-archive.py",
@@ -261,6 +296,7 @@ for (const target of selectedTargets.cli) {
     join(root, "apps", "skill-installer", "src", "index.ts"),
     artifact
   )
+  const assemblyStarted = performance.now()
   assertPortableExecutable(executable)
   copySkillPackage(join(releaseDir, "skills"))
   copyReleaseLicenses(root, releaseDir, "skills")
@@ -281,6 +317,7 @@ for (const target of selectedTargets.cli) {
     ) + "\n"
   )
 
+  recordTiming(`assemble ${releaseName}`, assemblyStarted)
   run([
     "python3",
     "scripts/release-archive.py",
@@ -317,6 +354,7 @@ for (const target of selectedTargets.server) {
   )
   assertPortableExecutable(backupWorker)
 
+  const assemblyStarted = performance.now()
   cpSync(webDist, webDir, { recursive: true })
   // Hosted tenants serve /connect.sh + /connect.mjs like any install (the
   // remote-agent pairing flow); the compiled server has no source tree to
@@ -349,6 +387,7 @@ for (const target of selectedTargets.server) {
     ) + "\n"
   )
 
+  recordTiming(`assemble ${releaseName}`, assemblyStarted)
   run([
     "python3",
     "scripts/release-archive.py",

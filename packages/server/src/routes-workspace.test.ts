@@ -32,7 +32,6 @@ import { writeWorkspaceExportV2 } from "./workspace-transfer-v2.ts"
 import { WORKSPACE_TRANSFER_CHUNK_BYTES } from "./workspace-transfer-jobs.ts"
 import {
   invalidateServerSettingsCache,
-  updateServerSettings,
 } from "./settings-store.ts"
 
 let appDir: string
@@ -785,56 +784,6 @@ describe("GET /api/workspace/export", () => {
         source: { workspaceId: "ws_fixed", workspaceName: "Original" },
       },
     })
-  })
-})
-
-describe("resolveOrigin precedence (via GET /api/system/connection)", () => {
-  async function connection(headers: Record<string, string> = {}): Promise<{
-    origin: string
-    originSource: string
-    originConfigured: boolean
-  }> {
-    const res = await app().fetch(
-      new Request("http://localhost/api/system/connection", { headers })
-    )
-    return (await res.json()) as {
-      origin: string
-      originSource: string
-      originConfigured: boolean
-    }
-  }
-
-  it("env beats config (settings)", async () => {
-    seed()
-    await updateServerSettings({
-      network: { publicUrl: "https://config.example.com" },
-    })
-    process.env["WORKTABLE_PUBLIC_URL"] = "https://env.example.com"
-    const { token } = await createToken({ scopes: ["docs:read"] })
-    const c = await connection({ Authorization: `Bearer ${token}` })
-    expect(c.originSource).toBe("env")
-    expect(c.origin).toBe("https://env.example.com")
-    expect(c.originConfigured).toBe(true)
-  })
-
-  it("config (settings) beats request", async () => {
-    seed()
-    await updateServerSettings({
-      network: { publicUrl: "https://config.example.com" },
-    })
-    const { token } = await createToken({ scopes: ["docs:read"] })
-    const c = await connection({ Authorization: `Bearer ${token}` })
-    expect(c.originSource).toBe("config")
-    expect(c.origin).toBe("https://config.example.com")
-    expect(c.originConfigured).toBe(true)
-  })
-
-  it("request is used (over fallback) when neither env nor config is set", async () => {
-    seed()
-    const c = await connection()
-    expect(c.originSource).toBe("request")
-    expect(c.origin).toBe("http://localhost")
-    expect(c.originConfigured).toBe(false)
   })
 })
 

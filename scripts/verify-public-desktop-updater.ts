@@ -3,7 +3,7 @@ import {
   createPublicKey,
   verify as verifySignature,
 } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const stableVersionPattern = /^\d+\.\d+\.\d+$/
@@ -245,10 +245,50 @@ function readCommittedUpdaterPublicKey(): string {
   return publicKey
 }
 
+/** Revalidate cached bytes against current checksum/key/signature before trusting them. */
+export async function verifyPublicArchiveWithCache(options: {
+  checksums: string
+  signature: string
+  publicKey: string
+  download: () => Promise<Uint8Array>
+  cacheDirectory?: string
+}): Promise<void> {
+  const cacheKey = createHash("sha256")
+    .update(options.checksums)
+    .update(options.signature)
+    .update(options.publicKey)
+    .digest("hex")
+  const path = options.cacheDirectory
+    ? join(options.cacheDirectory, `${cacheKey}.tar.gz`)
+    : undefined
+  const verify = (bytes: Uint8Array) =>
+    validatePublicDesktopUpdaterArchive(
+      bytes,
+      options.checksums,
+      options.signature,
+      options.publicKey
+    )
+  if (path && existsSync(path)) {
+    try {
+      verify(readFileSync(path))
+      return
+    } catch {
+      // A corrupt local cache is never proof. Fetch and verify actual public bytes.
+    }
+  }
+  const bytes = await options.download()
+  verify(bytes)
+  if (path) {
+    mkdirSync(options.cacheDirectory!, { recursive: true })
+    writeFileSync(path, bytes)
+  }
+}
+
 async function fetchRequired(url: string): Promise<Response> {
   const response = await fetch(url, {
     headers: { "cache-control": "no-cache" },
     redirect: "follow",
+    signal: AbortSignal.timeout(120_000),
   })
   if (!response.ok) {
     throw new Error(`${url} returned ${response.status}`)
@@ -257,7 +297,10 @@ async function fetchRequired(url: string): Promise<Response> {
 }
 
 if (import.meta.main) {
-  const [feedUrl, expectedTag] = process.argv.slice(2)
+  const [feedUrl, expectedTag, cacheFlag, cacheDirectory] =
+    process.argv.slice(2)
+  if (cacheFlag && (cacheFlag !== "--cache-dir" || !cacheDirectory))
+    throw new Error("Expected --cache-dir <directory>")
   if (!feedUrl || !expectedTag) {
     throw new Error(
       "Usage: bun scripts/verify-public-desktop-updater.ts <feed-url> <vX.Y.Z>"
@@ -267,11 +310,10 @@ if (import.meta.main) {
   const signatureUrl = `${versionedBaseUrl}/${updaterArchiveName}.sig`
   const archiveUrl = `${versionedBaseUrl}/${updaterArchiveName}`
   const checksumsUrl = `${versionedBaseUrl}/checksums.txt`
-  const [feedResponse, signatureResponse, archiveResponse, checksumsResponse] =
+  const [feedResponse, signatureResponse, checksumsResponse] =
     await Promise.all([
       fetchRequired(feedUrl),
       fetchRequired(signatureUrl),
-      fetchRequired(archiveUrl),
       fetchRequired(checksumsUrl),
     ])
   const encodedSignature = await signatureResponse.text()
@@ -280,12 +322,14 @@ if (import.meta.main) {
     expectedTag,
     encodedSignature
   )
-  validatePublicDesktopUpdaterArchive(
-    new Uint8Array(await archiveResponse.arrayBuffer()),
-    await checksumsResponse.text(),
-    encodedSignature,
-    readCommittedUpdaterPublicKey()
-  )
+  await verifyPublicArchiveWithCache({
+    checksums: await checksumsResponse.text(),
+    signature: encodedSignature,
+    publicKey: readCommittedUpdaterPublicKey(),
+    cacheDirectory,
+    download: async () =>
+      new Uint8Array(await (await fetchRequired(archiveUrl)).arrayBuffer()),
+  })
   console.log(
     `Verified public Desktop updater feed and immutable archive ${feedUrl} for ${expectedTag}`
   )

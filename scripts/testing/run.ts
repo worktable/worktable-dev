@@ -9,6 +9,7 @@ import { aggregateResults, writeLaneResult, type LaneResult } from "./report.ts"
 import { CANONICAL_PORTFOLIO_REVISION } from "./health-policy.ts"
 import {
   bunTestArguments,
+  hasExecutedGoTests,
   canonicalResultDirectory,
   isTargetedSelection,
   selectedTestFiles,
@@ -101,26 +102,28 @@ function gitLines(args: string[]): string[] {
 function changedFiles(options: Options): string[] {
   if (options.files.length > 0) return [...new Set(options.files)].sort()
   const files = new Set<string>()
-  const candidates = [
-    options.base,
-    process.env["GITHUB_BASE_REF"]
-      ? `origin/${process.env["GITHUB_BASE_REF"]}`
-      : undefined,
-    gitValue([
-      "symbolic-ref",
-      "--quiet",
-      "--short",
-      "refs/remotes/origin/HEAD",
-    ]),
-    "origin/main",
-    "main",
-  ].filter((value): value is string => Boolean(value))
+  const candidates = options.base
+    ? [options.base]
+    : [
+        process.env["GITHUB_BASE_REF"]
+          ? `origin/${process.env["GITHUB_BASE_REF"]}`
+          : undefined,
+        gitValue([
+          "symbolic-ref",
+          "--quiet",
+          "--short",
+          "refs/remotes/origin/HEAD",
+        ]),
+        "origin/main",
+        "main",
+      ].filter((value): value is string => Boolean(value))
   let base: string | undefined
   for (const candidate of candidates) {
     if (!gitValue(["rev-parse", "--verify", "--quiet", candidate])) continue
     base = gitValue(["merge-base", candidate, "HEAD"])
     if (base) break
   }
+  if (!base) return ["<unavailable-change-base>"]
   if (base) {
     for (const path of gitLines([
       "diff",
@@ -223,11 +226,14 @@ function commandForSuite(
       "test",
       "-race",
       "-tags=worktable_host_integration",
+      "-count=1",
+      "-json",
       "-run",
-      "^TestMicrosandboxProviderWithRealBackend$",
+      "^TestRunnerScalerRejectsInvalidJITWithRealBackend$",
       "./...",
     ],
     cwd,
+    captureStdout: join(resultDirectory, `${suite.id}.go.json`),
   }
 }
 
@@ -343,6 +349,16 @@ async function executeSuite(
     signal,
     fail
   )
+  const missingHostEvidence =
+    suite.runner === "host-go" &&
+    outcome.exitCode === 0 &&
+    !hasExecutedGoTests(await Bun.file(command.captureStdout!).text())
+  if (missingHostEvidence) {
+    console.error(
+      `[${suite.id}] no host test executed; refusing empty evidence`
+    )
+    fail()
+  }
   const result: LaneResult = {
     suite: suite.id,
     title: suite.title,
@@ -352,7 +368,7 @@ async function executeSuite(
       ? "timed-out"
       : outcome.cancelled
         ? "cancelled"
-        : outcome.exitCode === 0
+        : outcome.exitCode === 0 && !missingHostEvidence
           ? "passed"
           : "failed",
     durationMs: performance.now() - laneStarted,

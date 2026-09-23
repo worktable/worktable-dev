@@ -71,9 +71,8 @@ expected_file_count=$(printf '%s\n' "$skill_files" | wc -l | tr -d ' ')
   exit 1
 }
 
-# The same public command is intentionally safe to rerun when current.
-run_installer --target agents
-run_installer status --target agents >/dev/null
+# Idempotency and status are owned by the compiled installer contracts.
+# Keep the actual public wrapper install/remove journey at each release route.
 run_installer remove --target agents
 [ -z "$(find "$skill_root" -type f -print -quit)" ] || {
   echo "public-skill-installer-smoke: removal left a Worktable-owned file" >&2

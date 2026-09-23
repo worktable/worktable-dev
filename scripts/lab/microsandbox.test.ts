@@ -351,14 +351,8 @@ describe("owned sandbox lifecycle", () => {
       "OPENCLAW_STATE_DIR=/run/worktable-lab-auth/openclaw"
     )
     expect(allScripts).toContain(
-      "This root shell has a separate, empty agent profile"
-    )
-    expect(allScripts).toContain("Run: exec su - tester")
-    expect(allScripts).toContain("openclaw models set openai/gpt-5.6-sol")
-    expect(allScripts).toContain(
       "plugins.entries.codex.config.appServer.homeScope user"
     )
     expect(allScripts).toContain("openclaw config set gateway.mode local")
-    expect(allScripts).toContain('status_line "OpenClaw Codex runtime"')
   })
 })

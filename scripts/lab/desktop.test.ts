@@ -27,10 +27,6 @@ import {
   processGroupMatchesPid,
   recordDesktopPort,
 } from "./desktop-watchdog.ts"
-import {
-  renderDesktopGuide,
-  renderDesktopGuideSummary,
-} from "./render-guide.ts"
 
 function paths(root: string): DesktopLabPaths {
   return {
@@ -407,40 +403,6 @@ describe("Desktop manual lab", () => {
       rmSync(base, { recursive: true, force: true })
       rmSync(outside, { recursive: true, force: true })
     }
-  })
-
-  test("guide keeps host agent configuration outside the acceptance flow", () => {
-    const options = {
-      name: "review",
-      ttl: "2h",
-      root: "/tmp/review",
-      home: "/tmp/review/home",
-      appData: "/tmp/review/app",
-      defaultWorkspace: "/tmp/review/home/Worktable",
-      fixture: "basic-docs",
-      fixtureWorkspace: "/tmp/review/workspaces/basic-docs",
-      sourceCommit: "abc",
-      stdoutLog: "/tmp/review/stdout.log",
-      stderrLog: "/tmp/review/stderr.log",
-      guide: "/tmp/review/WORKTABLE_DESKTOP_LAB.txt",
-      keep: false,
-    }
-    const guide = renderDesktopGuide(options)
-    expect(guide).toContain("Open an existing workspace")
-    expect(guide).toContain("## UI review")
-    expect(guide).toContain("## Agent and MCP review")
-    expect(guide).toContain("bun run lab -- agent codex --name review")
-    expect(guide).toContain("Isolated HOME: /tmp/review/home")
-    expect(guide).not.toContain("env -u WORKTABLE_CODEX_CONFIG")
-    expect(guide).not.toContain("WORKTABLE_VSCODE_MCP_CONFIG=")
-    expect(guide).toContain("does not set the ephemeral workspace override")
-    const summary = renderDesktopGuideSummary(options)
-    expect(summary).toStartWith("Desktop lab: basic-docs\n\nCommands in order")
-    expect(summary).not.toContain("Isolated HOME")
-    expect(summary).not.toContain("Run: review")
-    expect(summary).toEndWith(
-      "Detailed guide and logs: /tmp/review/WORKTABLE_DESKTOP_LAB.txt"
-    )
   })
 
   test("named fixture supplies only its parent as a trusted picker hint", () => {

@@ -407,7 +407,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await expect(frame.getByRole("heading", { name: "Ready now" })).toBeVisible()
 
-  const racePage = await page.context().newPage()
+  let racePage = await page.context().newPage()
   await racePage.routeWebSocket(/\/ws(?:\?|$)/, (socket) => socket.close())
   await racePage.goto(
     new URL("/spaces/welcome/documents/ways-to-work", harness.webUrl).href,
@@ -442,6 +442,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
 
   const racedPath = "**/api/spaces/welcome/documents/page?*"
   let movedDuringRead = false
+  let releaseMovedRead!: () => void
+  const movedReadReleased = new Promise<void>((resolve) => {
+    releaseMovedRead = resolve
+  })
   await racePage.route(racedPath, async (route) => {
     const url = new URL(route.request().url())
     if (
@@ -461,10 +465,14 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     )
     expect(racingMove.status()).toBe(200)
     await route.fulfill({ response: successfulOldRead })
+    releaseMovedRead()
   })
   await racePage
     .getByRole("link", { name: "Live Status", exact: true })
     .evaluate((element) => (element as HTMLElement).click())
+  // The injected move is fixture setup. Start the UI assertion only after the
+  // held old response has been released, not while our own API call is running.
+  await movedReadReleased
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/plans\/live-status-final$/
   )
@@ -496,6 +504,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
 
   let docMovedDuringRead = false
+  let releaseMovedDocRead!: () => void
+  const movedDocReadReleased = new Promise<void>((resolve) => {
+    releaseMovedDocRead = resolve
+  })
   await racePage.route(racedPath, async (route) => {
     const url = new URL(route.request().url())
     if (
@@ -515,8 +527,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     )
     expect(racingMove.status()).toBe(200)
     await route.fulfill({ response: successfulOldRead })
+    releaseMovedDocRead()
   })
   await moveNoteLink.evaluate((element) => (element as HTMLElement).click())
+  await movedDocReadReleased
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/plans\/move-note-final$/
   )
@@ -525,6 +539,12 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   ).toBeVisible()
   expect(docMovedDuringRead).toBe(true)
   await racePage.unroute(racedPath)
+
+  // End the disconnected stale-read fixture before the folder lifecycle.
+  // Reuse the original tab so unrelated observers do not duplicate every
+  // rename/archive refresh while this single-user journey continues.
+  await racePage.close()
+  racePage = page
 
   const promoted = await racePage.request.post(
     `${harness.apiUrl}/api/spaces/welcome/widgets/plans/live-status-final/move`,
@@ -665,8 +685,6 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await racePage.close()
-
   await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
 

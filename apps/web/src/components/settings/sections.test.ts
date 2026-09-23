@@ -29,6 +29,8 @@ describe("settings sections", () => {
 
     expect(selfManaged.filter((id) => id === "help")).toHaveLength(1)
     expect(cloud.filter((id) => id === "help")).toHaveLength(1)
+    expect(cloud).toContain("account")
+    expect(selfManaged).not.toContain("account")
     expect(cloud).toContain("backups")
     expect(selfManaged).not.toContain("backups")
   })

@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "public/install", "public/install-skills"]
     },
     "lint": {
       "dependsOn": ["^lint"]
@@ -14,7 +14,8 @@
       "dependsOn": ["^format"]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": ["^typecheck"],
+      "outputs": []
     },
     "dev": {
       "cache": false,
@@ -22,7 +23,60 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.ts", "src/**/*.test.ts"]
+      "inputs": ["src/**/*.ts", "src/**/*.test.ts"],
+      "cache": false
+    },
+    "@worktable/docs#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "$TURBO_ROOT$/CHANGELOG.md",
+        "$TURBO_ROOT$/mcp-tools.json",
+        "$TURBO_ROOT$/apps/cli/src/**",
+        "$TURBO_ROOT$/packages/server/src/**",
+        "$TURBO_ROOT$/packages/mcp-connect/src/**",
+        "$TURBO_ROOT$/packages/types/src/**",
+        "$TURBO_ROOT$/packages/hosted-contract/src/**",
+        "$TURBO_ROOT$/plugins/worktable/**"
+      ],
+      "outputs": [
+        "dist/**",
+        ".astro/**",
+        "src/content/docs/reference/mcp-tools.md",
+        "src/content/docs/reference/cli-commands.md",
+        "src/content/docs/reference/html-doc-runtime.md",
+        "src/content/docs/whats-new.md"
+      ]
+    },
+    "@worktable/openclaw#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", "artifacts/bundle-metafile.json"]
+    },
+    "@worktable/web#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", "node_modules/.tmp/*.tsbuildinfo"]
+    },
+    "@worktable/web#typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": ["node_modules/.tmp/*.tsbuildinfo"]
     }
-  }
+  },
+  "globalDependencies": [
+    "scripts/**",
+    "patches/**",
+    "packages/config-typescript/**",
+    "assets/brand/**"
+  ],
+  "globalEnv": [
+    "CI",
+    "NODE_ENV",
+    "WORKTABLE_VERSION",
+    "WORKTABLE_PUBLIC_SOURCE_*",
+    "VITE_*",
+    "SOURCE_DATE_EPOCH",
+    "PUBLIC_*"
+  ]
 }

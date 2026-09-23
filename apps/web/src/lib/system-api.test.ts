@@ -1,8 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import {
-  normalizeSystemVersion,
-  UPDATE_CHECK_FRESH_MS,
-} from "./system-api"
+import { normalizeSystemVersion, UPDATE_CHECK_FRESH_MS } from "./system-api"
 
 const baseVersion = {
   current: "1.2.3",
@@ -27,14 +24,21 @@ describe("system version normalization", () => {
     expect(normalized.checkTtlRemainingMs).toBeLessThanOrEqual(remaining)
   })
 
-  it("trusts an explicit fresh verdict without comparing server and browser clocks", () => {
-    const normalized = normalizeSystemVersion({
-      ...baseVersion,
-      checkedAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
-      lastAttemptAt: new Date().toISOString(),
-      checkStatus: "fresh",
-    })
-
-    expect(normalized.checkTtlRemainingMs).toBe(UPDATE_CHECK_FRESH_MS)
+  it("honors server freshness and remaining TTL with either browser clock skew", () => {
+    for (const offset of [-24 * 60 * 60_000, 24 * 60 * 60_000]) {
+      for (const remaining of [undefined, 5_000, 0]) {
+        const normalized = normalizeSystemVersion({
+          ...baseVersion,
+          checkedAt: new Date(Date.now() + offset).toISOString(),
+          lastAttemptAt: new Date().toISOString(),
+          checkStatus: "fresh",
+          checkTtlRemainingMs: remaining,
+        })
+        expect(normalized.checkStatus).toBe("fresh")
+        expect(normalized.checkTtlRemainingMs).toBe(
+          remaining ?? UPDATE_CHECK_FRESH_MS
+        )
+      }
+    }
   })
 })

@@ -122,20 +122,46 @@ describe("hosted mode", () => {
 });
 
 describe("loopback (unexposed): bare requests act as owner", () => {
-  it("GET, POST, and DELETE all pass the mint gate", async () => {
-    const list = await app.fetch(tokensReq("GET"));
-    expect(list.status).toBe(200);
-
+  it("mints, lists without secrets, and revokes while validating requests", async () => {
+    for (const body of [
+      {},
+      { scopes: [] },
+      { scopes: ["bad scope"] },
+      { scopes: ["*"], agent: 42 },
+    ]) {
+      expect(
+        (await app.fetch(tokensReq("POST", "/api/tokens", { body }))).status,
+      ).toBe(400);
+    }
     const created = await app.fetch(
-      tokensReq("POST", "/api/tokens", { body: { scopes: ["docs:read"] } })
+      tokensReq("POST", "/api/tokens", {
+        body: { scopes: ["docs:read"], agent: "ci" },
+      }),
     );
     expect(created.status).toBe(201);
-    const { metadata } = (await created.json()) as { metadata: { id: string } };
-
-    const deleted = await app.fetch(
-      tokensReq("DELETE", `/api/tokens/${metadata.id}`)
+    const { token, metadata } = (await created.json()) as {
+      token: string;
+      metadata: { id: string; agent: string };
+    };
+    expect(token).toMatch(/^wt_/);
+    expect(metadata.agent).toBe("ci");
+    const listed = await app.fetch(tokensReq("GET"));
+    expect(listed.status).toBe(200);
+    const inventory = (await listed.json()) as { tokens: unknown[] };
+    expect(inventory.tokens).toHaveLength(1);
+    expect(JSON.stringify(inventory)).not.toContain(
+      token.split("_").slice(2).join("_"),
     );
-    expect(deleted.status).toBe(200);
+    expect(
+      (await app.fetch(tokensReq("DELETE", `/api/tokens/${metadata.id}`))).status,
+    ).toBe(200);
+    expect(
+      (await app.fetch(tokensReq("GET", "/api/tokens", { bearer: token })))
+        .status,
+    ).toBe(401);
+    expect(
+      (await app.fetch(tokensReq("DELETE", "/api/tokens/missing"))).status,
+    ).toBe(404);
   });
 });
 
@@ -177,13 +203,13 @@ describe("exposed (WORKTABLE_REQUIRE_AUTH=1)", () => {
     const { token } = await createToken({ scopes: ["docs:read"], agent: null });
     process.env["WORKTABLE_REQUIRE_AUTH"] = "1";
 
-    const res = await app.fetch(
-      tokensReq("POST", "/api/tokens", {
-        bearer: token,
-        body: { scopes: ["docs:*"] },
-      })
-    );
-    expect(res.status).toBe(403);
+    for (const request of [
+      tokensReq("GET", "/api/tokens", { bearer: token }),
+      tokensReq("POST", "/api/tokens", { bearer: token, body: { scopes: ["docs:*"] } }),
+      tokensReq("DELETE", "/api/tokens/missing", { bearer: token }),
+    ]) {
+      expect((await app.fetch(request)).status).toBe(403);
+    }
   });
 
   it("accepts a bearer that carries tokens:manage", async () => {
@@ -195,6 +221,11 @@ describe("exposed (WORKTABLE_REQUIRE_AUTH=1)", () => {
 
     const res = await app.fetch(tokensReq("GET", "/api/tokens", { bearer: token }));
     expect(res.status).toBe(200);
+    const minted = await app.fetch(tokensReq("POST", "/api/tokens", {
+      bearer: token, body: { scopes: ["docs:read"], agent: "managed" },
+    }));
+    expect(minted.status).toBe(201);
+    expect((await minted.json() as { token: string }).token).toMatch(/^wt_/);
   });
 });
 

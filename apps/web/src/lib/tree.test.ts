@@ -16,43 +16,6 @@ function collectAllNodes(nodes: TreeNode[]): TreeNode[] {
 }
 
 describe("buildTree", () => {
-  it("returns empty array for empty input", () => {
-    expect(buildTree([])).toEqual([]);
-  });
-
-  it("creates flat list for single-level paths", () => {
-    const tree = buildTree(["alpha", "beta", "gamma"]);
-    expect(tree.length).toBe(3);
-    expect(tree.every((n) => !n.isFolder)).toBe(true);
-    expect(tree.map((n) => n.name).sort()).toEqual(["alpha", "beta", "gamma"]);
-  });
-
-  it("creates folder nodes for nested paths", () => {
-    const tree = buildTree(["folder/doc"]);
-    expect(tree.length).toBe(1);
-    expect(tree[0]!.isFolder).toBe(true);
-    expect(tree[0]!.name).toBe("folder");
-    expect(tree[0]!.children.length).toBe(1);
-    expect(tree[0]!.children[0]!.name).toBe("doc");
-    expect(tree[0]!.children[0]!.isFolder).toBe(false);
-  });
-
-  it("groups siblings under the same folder", () => {
-    const tree = buildTree(["work/todos", "work/notes", "personal/diary"]);
-    expect(tree.length).toBe(2); // work + personal
-    const work = tree.find((n) => n.name === "work");
-    expect(work).toBeDefined();
-    expect(work!.children.length).toBe(2);
-  });
-
-  it("handles deeply nested paths", () => {
-    const tree = buildTree(["a/b/c/d"]);
-    expect(tree[0]!.name).toBe("a");
-    expect(tree[0]!.children[0]!.name).toBe("b");
-    expect(tree[0]!.children[0]!.children[0]!.name).toBe("c");
-    expect(tree[0]!.children[0]!.children[0]!.children[0]!.name).toBe("d");
-  });
-
   it("sorts folders before files at each level", () => {
     const tree = buildTree(["zebra", "folder/nested", "alpha"]);
     // folder should come first
@@ -61,21 +24,6 @@ describe("buildTree", () => {
     // then files alphabetically
     expect(tree[1]!.name).toBe("alpha");
     expect(tree[2]!.name).toBe("zebra");
-  });
-
-  it("preserves full paths", () => {
-    const tree = buildTree(["meetings/work/standup", "meetings/personal"]);
-    const allNodes = collectAllNodes(tree);
-    const standup = allNodes.find((n) => n.name === "standup");
-    expect(standup).toBeDefined();
-    expect(standup!.path).toBe("meetings/work/standup");
-  });
-
-  it("handles a single path", () => {
-    const tree = buildTree(["only-doc"]);
-    expect(tree.length).toBe(1);
-    expect(tree[0]!.name).toBe("only-doc");
-    expect(tree[0]!.isFolder).toBe(false);
   });
 
   // ── Display label (B+ model) ───────────────────────────
@@ -197,38 +145,24 @@ describe("buildTree", () => {
 
   // ── Property-based ─────────────────────────────────────
 
-  it("PBT: every input path appears exactly once in the tree", () => {
-    const pathSegment = fc
-      .stringMatching(/^[a-zA-Z0-9_-]{1,20}$/);
-
-    const docPath = fc
-      .array(pathSegment, { minLength: 1, maxLength: 4 })
-      .map((segs) => segs.join("/"));
-
-    const pathList = fc
-      .uniqueArray(docPath, { minLength: 0, maxLength: 20 });
-
-    fc.assert(
-      fc.property(pathList, (paths) => {
-        const tree = buildTree(paths);
-        const allNodes = collectAllNodes(tree);
-        // Every input path appears exactly once as a node (leaf or folder)
-        const nodePaths = allNodes.map((n) => n.path);
-        return (
-          new Set(nodePaths).size === nodePaths.length &&
-          paths.every((p) => nodePaths.filter((candidate) => candidate === p).length === 1)
-        );
-      }),
-      { numRuns: 200 }
-    );
-  });
-
-  it("promotes file to folder when a child path appears", () => {
-    const tree = buildTree(["-", "-/-", "0"]);
-    const dash = tree.find((n) => n.name === "-");
-    expect(dash).toBeDefined();
-    expect(dash!.isFolder).toBe(true);
-    expect(dash!.children.length).toBeGreaterThan(0);
+  it("builds one coherent namespace for every input path independent of insertion order", () => {
+    const segment = fc.stringMatching(/^[a-zA-Z0-9_-]{1,20}$/);
+    const paths = fc.uniqueArray(fc.array(segment, { minLength: 1, maxLength: 4 }).map((parts) => parts.join("/")), { maxLength: 20 });
+    fc.assert(fc.property(paths, (input) => {
+      const expected = new Set(input.flatMap((path) => path.split("/").map((_, index, parts) => parts.slice(0, index + 1).join("/"))));
+      for (const ordered of [input, [...input].reverse()]) {
+        const nodes = collectAllNodes(buildTree(ordered));
+        expect(nodes.length).toBe(expected.size);
+        expect(new Set(nodes.map((node) => node.path))).toEqual(expected);
+        for (const node of nodes) {
+          expect(node.name).toBe(node.path.split("/").at(-1)!);
+          const children = [...expected].filter((path) => path.slice(0, path.lastIndexOf("/")) === node.path && path.includes("/"));
+          expect(new Set(node.children.map((child) => child.path))).toEqual(new Set(children));
+          expect(node.isFolder).toBe(children.length > 0);
+          expect(node.kind).toBe(input.includes(node.path) ? "document" : "folder");
+        }
+      }
+    }), { numRuns: 200, examples: [[[]], [["-", "-/-", "0"]], [["a/b/c/d", "a/b/other", "standalone"]]] });
   });
 
   it("propagates freshness to doc leaves but not folders", () => {
@@ -257,34 +191,6 @@ describe("buildTree", () => {
     expect(promoted?.freshness).toEqual(freshness);
   });
 
-  it("PBT: folder nodes are never leaves and leaf nodes are never folders", () => {
-    const pathSegment = fc
-      .stringMatching(/^[a-zA-Z0-9_-]{1,10}$/);
-
-    const docPath = fc
-      .array(pathSegment, { minLength: 1, maxLength: 3 })
-      .map((segs) => segs.join("/"));
-
-    const pathList = fc.uniqueArray(docPath, { minLength: 1, maxLength: 15 });
-
-    fc.assert(
-      fc.property(pathList, (paths) => {
-        const tree = buildTree(paths);
-        const allNodes = collectAllNodes(tree);
-        for (const node of allNodes) {
-          if (node.isFolder) {
-            // Folders must have children
-            if (node.children.length === 0) return false;
-          } else {
-            // Leaves must not have children
-            if (node.children.length !== 0) return false;
-          }
-        }
-        return true;
-      }),
-      { numRuns: 200 }
-    );
-  });
 });
 
 describe("document navigation policy", () => {

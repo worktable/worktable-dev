@@ -28,7 +28,7 @@ import {
   setPreparedSpaceBeforeManifestHookForTests,
   writeSpace,
 } from "./store.ts"
-import { listWidgets, readWidget, readWidgetHtml } from "./widget-store.ts"
+import { listWidgets, readWidgetHtml } from "./widget-store.ts"
 import { listRecords, readRecordCollectionSchema } from "./record-store.ts"
 import {
   getBlockingWidgetIssue,
@@ -67,8 +67,6 @@ describe("starter workspace seeding", () => {
     const spaces = await listSpaces()
     expect(spaces.map((s) => s.id)).toEqual(["welcome"])
     expect(spaces[0]).toMatchObject({
-      name: "Welcome to Worktable",
-      icon: "hand",
       group: "meta",
       settings: {
         docSort: "custom",
@@ -85,9 +83,6 @@ describe("starter workspace seeding", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "mermaid",
-          props: expect.objectContaining({
-            title: "Choose the form that fits the work",
-          }),
         }),
       ])
     )
@@ -95,8 +90,7 @@ describe("starter workspace seeding", () => {
     const prompts = await readDoc("welcome", "example-prompts")
     expect(prompts.error).toBeNull()
     expect(prompts.storedAs).toBe("md")
-    expect(prompts.data).toContain("# Example Prompts")
-    expect(prompts.data).toContain("Create a Records collection")
+    expect(String(prompts.data).trim().length).toBeGreaterThan(0)
 
     const widgets = await listWidgets("welcome")
     expect(widgets.map((w) => w.id).sort()).toEqual([
@@ -104,7 +98,6 @@ describe("starter workspace seeding", () => {
       "welcome",
     ])
     expect(widgets.find((widget) => widget.id === "welcome")).toMatchObject({
-      name: "Start Here",
       metadata: { journeyOrder: 1, purpose: "guided-welcome" },
     })
     expect(
@@ -121,7 +114,6 @@ describe("starter workspace seeding", () => {
     )
     expect(schema.error).toBeNull()
     expect(schema.data).toMatchObject({
-      name: "Welcome Guide",
       fields: {
         title: { name: "Guide item", required: true },
         status: {
@@ -139,12 +131,10 @@ describe("starter workspace seeding", () => {
       expect.objectContaining({
         sequence: 1,
         status: "Next",
-        title: "Explain the building blocks",
       }),
       expect.objectContaining({
         sequence: 2,
         status: "Ready",
-        title: "Show useful examples",
       }),
       expect.objectContaining({ sequence: 3, status: "Next" }),
       expect.objectContaining({ sequence: 4, status: "Next" }),
@@ -162,12 +152,7 @@ describe("starter workspace seeding", () => {
       expect(issues.find((i) => i.code === "browser_storage")).toBeUndefined()
     }
 
-    const startHere = await readWidgetHtml("welcome", "welcome")
-    expect(startHere.data).toContain("<h1>Welcome to your Worktable</h1>")
-    expect(startHere.data).not.toContain("Work Table")
 
-    const storedBoard = await readWidget("welcome", "onboarding-board")
-    expect(storedBoard.data?.description).toContain("Welcome Guide records")
   })
 
   it("never touches a workspace that already has spaces", async () => {

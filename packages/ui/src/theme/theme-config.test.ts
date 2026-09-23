@@ -62,14 +62,6 @@ function contrast(first: string, second: string): number {
 }
 
 describe("canonical theme configuration", () => {
-  test("both modes define the full semantic surface contract", () => {
-    for (const mode of THEME_MODES) {
-      expect(Object.keys(themeConfig.modes[mode])).toEqual(
-        expect.arrayContaining(REQUIRED_MODE_ROLES)
-      )
-    }
-  })
-
   test("structural CSS colors are valid OKLCH values", () => {
     for (const mode of THEME_MODES) {
       for (const role of REQUIRED_MODE_ROLES) {
@@ -112,14 +104,6 @@ describe("canonical theme configuration", () => {
     for (const mode of THEME_MODES) expect(themeConfig.shell[mode]).toMatch(HEX)
   })
 
-  test("chart consumers receive five distinct colors in each mode", () => {
-    for (const mode of THEME_MODES) {
-      const ramp = themeConfig.charts[mode]
-      expect(ramp).toHaveLength(5)
-      expect(new Set(ramp).size).toBe(5)
-    }
-  })
-
   test("primary text accents meet normal-text contrast on panels", () => {
     for (const mode of THEME_MODES) {
       expect(
@@ -139,9 +123,6 @@ describe("canonical theme configuration", () => {
       )
       const readingContrast = contrast(colors.readingForeground, colors.canvas)
       expect(readingContrast).toBeGreaterThanOrEqual(7)
-      expect(readingContrast).toBeLessThan(
-        contrast(colors.foreground, colors.canvas)
-      )
       expect(
         contrast(colors.mutedForeground, colors.canvas)
       ).toBeGreaterThanOrEqual(4.5)

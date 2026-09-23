@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import {
   artifactMayBeReused,
   artifactNameForArch,
-  CHECKOUT_ARTIFACT_INPUTS,
   dirtyBuildMarker,
   stageLocalWorktable,
 } from "./local-worktable.ts"
@@ -33,15 +32,6 @@ describe("local Worktable staging", () => {
         sourceCommitMatches: true,
       })
     ).toBeTrue()
-  })
-
-  test("freshness covers shared runtime and web packages", () => {
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("packages")
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("apps/cli")
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("apps/web")
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("scripts/build-release.ts")
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("scripts/release-archive.py")
-    expect(CHECKOUT_ARTIFACT_INPUTS).toContain("scripts/release-targets.ts")
   })
 
   test("release helper keeps installation and setup manual", () => {

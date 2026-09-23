@@ -8,6 +8,7 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { recordsRouter } from "./routes/records.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
+import { buildRecordCollectionSchema, buildRecordFile, queryRecords, writeRecord, writeRecordCollectionSchema } from "./record-store.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -392,4 +393,52 @@ describe("record query AST", () => {
     expect(allowed.status).toBe(200);
     expect(allowed.json.expanded.projects.atlas).toBeDefined();
   });
+
+  it("keeps legacy scalar queries typed and treats malformed or missing values as non-matching", async () => {
+    const collectionId = "legacy";
+    const schema = await writeRecordCollectionSchema(
+      "meta",
+      buildRecordCollectionSchema({
+        id: collectionId,
+        fields: {
+          title: { type: "string" },
+          score: { type: "number" },
+          due: { type: "date" },
+        },
+      }),
+    );
+    expect(schema.error).toBeNull();
+    for (const [id, data] of [
+      ["a", { title: "a", score: 2, due: "2026-01-01" }],
+      ["b", { title: "b", score: 10, due: "2026-06-01" }],
+      ["c", { title: "c", score: 1, due: "2026-12-01" }],
+      ["missing", { title: "missing" }],
+    ] as const) {
+      expect(
+        (await writeRecord("meta", buildRecordFile({ id, collectionId, data })))
+          .error,
+      ).toBeNull();
+    }
+    for (const [input, ids] of [
+      [
+        { where: { score: { gte: 0 } }, orderBy: "score", order: "asc" },
+        ["c", "a", "b"],
+      ],
+      [
+        { where: { score: { lte: 100 } }, orderBy: "score", order: "asc" },
+        ["c", "a", "b"],
+      ],
+      [{ where: { due: { gte: "2026-05-01", lte: "2026-07-01" } } }, ["b"]],
+      [{ where: { title: { in: ["a", "c"] } } }, ["a", "c"]],
+      [{ where: { title: { in: "a" } } }, []],
+      [{ where: { title: { contains: 5 } } }, []],
+    ] as const) {
+      const actual = (
+        await queryRecords("meta", collectionId, input)
+      ).records.map((record) => record.id);
+      if (!("orderBy" in input)) actual.sort();
+      expect(actual).toEqual([...ids]);
+    }
+  });
+
 });

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { isBareSleepLine } from "./policy-rules.ts"
 import {
   bunTestArguments,
+  hasExecutedGoTests,
   canonicalResultDirectory,
   selectedTestFiles,
   unmatchedTestFilters,
@@ -103,4 +104,22 @@ describe("canonical runner policy", () => {
     const timeoutCall = ["await page", "waitForTimeout(250)"].join(".")
     expect(isBareSleepLine([timeoutCall], 0)).toBe(true)
   })
+})
+
+test("host evidence requires a completed test, not a successful empty Go invocation", () => {
+  for (const events of [
+    [],
+    [{ Action: "pass", Package: "runner" }],
+    [{ Action: "skip", Test: "TestHost" }],
+  ]) {
+    expect(
+      hasExecutedGoTests(
+        events.map((event) => JSON.stringify(event)).join("\n")
+      )
+    ).toBe(false)
+  }
+  expect(
+    hasExecutedGoTests(JSON.stringify({ Action: "pass", Test: "TestHost" }))
+  ).toBe(true)
+  expect(hasExecutedGoTests("invalid JSON")).toBe(false)
 })

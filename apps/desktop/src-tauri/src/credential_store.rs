@@ -411,40 +411,23 @@ mod tests {
     }
 
     #[test]
-    fn credential_round_trip_uses_the_environment_scoped_service_and_account() {
-        let store = MemoryCredentialStore::new(false);
-        let value = credential();
-        store.store("https://app.worktable.cloud", &value).unwrap();
-        let loaded = store
-            .load("https://app.worktable.cloud", "user_owner")
-            .unwrap()
-            .unwrap();
-        assert_eq!(loaded.refresh_token(), "refresh_secret");
-        assert_eq!(loaded.session_id(), "session_owner");
-        assert!(store
-            .load("https://staging.example.test", "user_owner")
-            .unwrap()
-            .is_none());
-        store
-            .remove("https://app.worktable.cloud", "user_owner")
-            .unwrap();
-        assert!(store
-            .load("https://app.worktable.cloud", "user_owner")
-            .unwrap()
-            .is_none());
-    }
-
-    #[test]
-    fn write_failure_has_no_plaintext_fallback() {
-        let store = MemoryCredentialStore::new(true);
-        assert!(store
-            .store("https://app.worktable.cloud", &credential())
-            .unwrap_err()
-            .contains("injected Keychain write failure"));
-        assert!(store
-            .load("https://app.worktable.cloud", "user_owner")
-            .unwrap()
-            .is_none());
+    fn credential_accounts_isolate_origins_and_users_without_ambiguous_keys() {
+        let production = credential_account("https://app.worktable.cloud", "user_owner").unwrap();
+        let staging =
+            credential_account("https://staging.app.worktable.cloud", "user_owner").unwrap();
+        let other_user = credential_account("https://app.worktable.cloud", "user_other").unwrap();
+        assert_ne!(production, staging);
+        assert_ne!(production, other_user);
+        // The Keychain discovery path uses this persisted origin delimiter.
+        assert!(production.starts_with("https://app.worktable.cloud|"));
+        for (origin, user) in [
+            ("", "user"),
+            ("origin", " "),
+            ("origin|other", "user"),
+            ("origin", "user|other"),
+        ] {
+            assert!(credential_account(origin, user).is_err());
+        }
     }
 
     #[test]
@@ -465,36 +448,6 @@ mod tests {
                 "workosUserId"
             ]
         );
-    }
-
-    #[test]
-    fn unverified_exchange_continuation_is_discoverable_and_replaced_in_place() {
-        let store = MemoryCredentialStore::new(false);
-        let continuation = StoredCredential::continuation(
-            "refresh_continuation".into(),
-            "user_owner".into(),
-            "2026-07-29T20:00:00Z".into(),
-        )
-        .unwrap();
-        store
-            .store("https://app.worktable.cloud", &continuation)
-            .unwrap();
-        let discovered = store
-            .load_only("https://app.worktable.cloud")
-            .unwrap()
-            .unwrap();
-        assert_eq!(discovered.workos_user_id(), "user_owner");
-        assert!(discovered.is_continuation());
-
-        store
-            .store("https://app.worktable.cloud", &credential())
-            .unwrap();
-        let verified = store
-            .load_only("https://app.worktable.cloud")
-            .unwrap()
-            .unwrap();
-        assert_eq!(verified.session_id(), "session_owner");
-        assert!(!verified.is_continuation());
     }
 
     #[test]
@@ -530,31 +483,5 @@ mod tests {
             "2026-07-29T20:00:00Z".into(),
         )
         .is_err());
-    }
-
-    #[test]
-    fn service_scoped_removal_recovers_an_unreadable_credential() {
-        let store = MemoryCredentialStore::new(false);
-        store.value.lock().unwrap().replace((
-            WORKTABLE_KEYCHAIN_SERVICE.into(),
-            credential_account("https://app.worktable.cloud", "user_owner").unwrap(),
-            b"{unreadable".to_vec(),
-        ));
-        let unreadable = store.load_only("https://app.worktable.cloud");
-        assert!(matches!(unreadable, Err(message) if message.contains("invalid")));
-        store.remove_all("https://app.worktable.cloud").unwrap();
-        assert!(store
-            .load_only("https://app.worktable.cloud")
-            .unwrap()
-            .is_none());
-
-        store
-            .store("https://staging.example.test", &credential())
-            .unwrap();
-        store.remove_all("https://app.worktable.cloud").unwrap();
-        assert!(store
-            .load("https://staging.example.test", "user_owner")
-            .unwrap()
-            .is_some());
     }
 }

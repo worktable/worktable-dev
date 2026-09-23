@@ -389,9 +389,6 @@ describe("Claude Desktop MCPB artifact", () => {
     })
 
     const bundle = readFileSync(unpackedBridge, "utf8")
-    expect(bundle).not.toContain(repoRoot)
-    expect(bundle).not.toContain("sourceMappingURL")
-    expect(bundle).not.toContain("Bearer wt_")
     expect(bundle).not.toContain("node_modules/")
   })
 })

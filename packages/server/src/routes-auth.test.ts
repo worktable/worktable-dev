@@ -295,92 +295,7 @@ describe("strict identity policy (MCP surface)", () => {
   });
 });
 
-describe("token management API", () => {
-  it("mints, lists (without secrets), and revokes over HTTP", async () => {
-    const created = await req(app, "POST", "/api/tokens", {
-      body: { scopes: ["docs:*"], agent: "claude-code" },
-    });
-    expect(created.status).toBe(201);
-    expect(created.json.token).toMatch(/^wt_/);
-    expect(created.json.metadata.agent).toBe("claude-code");
-
-    const listed = await req(app, "GET", "/api/tokens");
-    expect(listed.status).toBe(200);
-    expect(listed.json.tokens).toHaveLength(1);
-    // Token is `wt_<id>_<secret>`; the base64url secret can itself contain "_",
-    // so rebuild it from everything after the id rather than indexing split()[2]
-    // (which is empty/partial when the secret starts with or contains "_").
-    const secret = created.json.token.split("_").slice(2).join("_");
-    expect(JSON.stringify(listed.json)).not.toContain(secret);
-
-    const revoked = await req(
-      app,
-      "DELETE",
-      `/api/tokens/${created.json.metadata.id}`
-    );
-    expect(revoked.status).toBe(200);
-
-    const afterRevoke = await req(app, "GET", "/protected", {
-      token: created.json.token,
-    });
-    expect(afterRevoke.status).toBe(401);
-  });
-
-  it("rejects invalid mint requests", async () => {
-    expect((await req(app, "POST", "/api/tokens", { body: {} })).status).toBe(400);
-    expect(
-      (await req(app, "POST", "/api/tokens", { body: { scopes: [] } })).status
-    ).toBe(400);
-    expect(
-      (await req(app, "POST", "/api/tokens", { body: { scopes: ["bad scope"] } }))
-        .status
-    ).toBe(400);
-    expect(
-      (
-        await req(app, "POST", "/api/tokens", {
-          body: { scopes: ["*"], agent: 42 },
-        })
-      ).status
-    ).toBe(400);
-  });
-
-  it("404s when revoking an unknown token id", async () => {
-    const res = await req(app, "DELETE", "/api/tokens/doesnotexist");
-    expect(res.status).toBe(404);
-  });
-
-  it("narrow-scoped agent tokens cannot manage tokens (no escalation)", async () => {
-    const { token } = await createToken({ scopes: ["docs:*"], agent: "ci" });
-
-    const mint = await req(app, "POST", "/api/tokens", {
-      body: { scopes: ["*"] },
-      token,
-    });
-    expect(mint.status).toBe(403);
-
-    const list = await req(app, "GET", "/api/tokens", { token });
-    expect(list.status).toBe(403);
-  });
-
-  it("tokens:manage scope is sufficient for the management API", async () => {
-    const { token } = await createToken({ scopes: ["tokens:manage"] });
-    const list = await req(app, "GET", "/api/tokens", { token });
-    expect(list.status).toBe(200);
-  });
-
-  it("stays usable for bare local requests even once tokens exist", async () => {
-    await createToken({ scopes: ["*"] });
-    const list = await req(app, "GET", "/api/tokens");
-    expect(list.status).toBe(200);
-  });
-});
-
 describe("exposure mint gate (WORKTABLE_REQUIRE_AUTH)", () => {
-  it("401s a bare POST /api/tokens when exposed (no remote persistent-credential theft)", async () => {
-    process.env["WORKTABLE_REQUIRE_AUTH"] = "1";
-    const res = await req(app, "POST", "/api/tokens", { body: { scopes: ["*"] } });
-    expect(res.status).toBe(401);
-  });
 
   it("401s a bare POST /api/tokens when HOST is non-loopback even without WORKTABLE_REQUIRE_AUTH", async () => {
     // Defense-in-depth: a raw bind to 0.0.0.0 without the CLI flag must still gate
@@ -393,19 +308,6 @@ describe("exposure mint gate (WORKTABLE_REQUIRE_AUTH)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("still mints over HTTP with a verifying tokens:manage bearer while exposed", async () => {
-    // Bootstrap a manage-capable bearer in-process (the CLI mints in-process),
-    // then expose and confirm a presented bearer can still mint.
-    const { token } = await createToken({ scopes: ["tokens:manage"] });
-    process.env["WORKTABLE_REQUIRE_AUTH"] = "1";
-    const res = await req(app, "POST", "/api/tokens", {
-      body: { scopes: ["docs:*"], agent: "managed" },
-      token,
-    });
-    expect(res.status).toBe(201);
-    expect(res.json.token).toMatch(/^wt_/);
-  });
-
   it("after a minted token, bare loopback and scoped bearer identities coexist", async () => {
     const { token } = await createToken({ scopes: ["*"] });
     const bare = await req(app, "GET", "/protected");
@@ -413,14 +315,6 @@ describe("exposure mint gate (WORKTABLE_REQUIRE_AUTH)", () => {
     const authed = await req(app, "GET", "/protected", { token });
     expect(authed.status).toBe(200);
     expect(authed.json.identity).toMatchObject({ scopes: ["*"] });
-  });
-
-  it("bare trustedLocalIdentity() is STILL owner when the exposure flag is unset (back-compat)", async () => {
-    delete process.env["WORKTABLE_REQUIRE_AUTH"];
-    await createToken({ scopes: ["docs:read"] });
-    const res = await req(app, "GET", "/rest");
-    expect(res.status).toBe(200);
-    expect(res.json.identity).toMatchObject({ user: "owner", scopes: ["*"] });
   });
 });
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test"
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { Database } from "bun:sqlite"
 import { tmpdir } from "node:os"
@@ -277,14 +277,22 @@ describe("checkForUpdate", () => {
     const lockOwner = new Database(lockPath, { create: true })
     lockOwner.exec("BEGIN IMMEDIATE")
 
-    const outcome = await backgroundUpdateCheck({ force: true })
-
-    expect(outcome).toBe("failed")
-    expect(requests).toBe(1)
-    expect(getCachedUpdateCheck().checkStatus).toBe("unchecked")
-    lockOwner.exec("COMMIT")
-    lockOwner.close()
-  }, 8_000)
+    // Keep the actual SQLite contention and advance only the deadline clock.
+    setUpdateCheckCacheLockWaitHookForTests(() => {
+      setSystemTime(new Date(Date.now() + 4_000))
+    })
+    try {
+      const outcome = await backgroundUpdateCheck({ force: true })
+      expect(outcome).toBe("failed")
+      expect(requests).toBe(1)
+      expect(getCachedUpdateCheck().checkStatus).toBe("unchecked")
+    } finally {
+      setUpdateCheckCacheLockWaitHookForTests(null)
+      setSystemTime()
+      lockOwner.exec("COMMIT")
+      lockOwner.close()
+    }
+  })
 
   it("preserves a newer cache written by another process while a check fails", async () => {
     server = Bun.serve({

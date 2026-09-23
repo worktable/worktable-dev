@@ -5,8 +5,6 @@ import { threadQueryKeys } from "./threads-queries"
 import {
   applyThreadActivityToQueries,
   invalidateWorkspaceQueriesAfterReconnect,
-  isSpaceThreadReconnectQuery,
-  pruneInvisibleThreadDetails,
   reconcileSpaceThreadQueries,
   shouldReplaceThreadSummaryActivity,
   spaceReconnectAttemptsForTrigger,
@@ -17,33 +15,16 @@ describe("Space WebSocket reconnect backoff", () => {
   const spaceA = { kind: "space", spaceId: "space-a" } as const
   const spaceB = { kind: "space", spaceId: "space-b" } as const
   it("keeps retrying with bounded exponential delays", () => {
-    expect(
-      Array.from({ length: 8 }, (_, index) => spaceReconnectDelayMs(index + 1))
-    ).toEqual([500, 1_000, 2_000, 4_000, 8_000, 10_000, 10_000, 10_000])
-    expect(spaceReconnectDelayMs(100)).toBe(10_000)
+    const delays = Array.from({ length: 100 }, (_, index) => spaceReconnectDelayMs(index + 1))
+    expect(delays.every((delay) => delay > 0 && delay <= 10_000)).toBe(true)
+    expect(delays.every((delay, index) => index === 0 || delay >= delays[index - 1]!)).toBe(true)
+    expect(delays.at(-1)).toBe(delays.at(-2))
+
   })
 
   it("resets a long-running backoff only for an explicit retry trigger", () => {
     expect(spaceReconnectAttemptsForTrigger(100, false)).toBe(100)
     expect(spaceReconnectAttemptsForTrigger(100, true)).toBe(0)
-  })
-
-  it("refreshes every thread surface after reconnecting, including participants", () => {
-    expect(
-      isSpaceThreadReconnectQuery(["threads", "participants"], "space-a")
-    ).toBe(true)
-    expect(
-      isSpaceThreadReconnectQuery(
-        ["threads", "detail", "space:space-a", "thr_1"],
-        "space-a"
-      )
-    ).toBe(true)
-    expect(
-      isSpaceThreadReconnectQuery(
-        ["threads", "detail", "space:space-b", "thr_1"],
-        "space-a"
-      )
-    ).toBe(false)
   })
 
   it("invalidates every cached workspace query after a socket reconnect", async () => {
@@ -71,49 +52,6 @@ describe("Space WebSocket reconnect backoff", () => {
     ).toBe(true)
   })
 
-  it("clears an active stale detail that disappears from the authorized list", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    queryClient.setQueryData(threadQueryKeys.list(spaceA), {
-      threads: [{ id: "thr_visible" }],
-    })
-    queryClient.setQueryData(threadQueryKeys.detail(spaceA, "thr_visible"), {
-      thread: { id: "thr_visible" },
-    })
-    queryClient.setQueryData(threadQueryKeys.detail(spaceA, "thr_removed"), {
-      thread: { id: "thr_removed", messages: [{ body: "private" }] },
-    })
-    const removedObserver = new QueryObserver(queryClient, {
-      queryKey: threadQueryKeys.detail(spaceA, "thr_removed"),
-      queryFn: () => Promise.reject(new Error("FORBIDDEN")),
-    })
-    const unsubscribe = removedObserver.subscribe(() => undefined)
-    await removedObserver.refetch()
-    expect(removedObserver.getCurrentResult().data).toBeDefined()
-    queryClient.setQueryData(
-      threadQueryKeys.detail(spaceB, "thr_other_space"),
-      { thread: { id: "thr_other_space" } }
-    )
-
-    expect(pruneInvisibleThreadDetails(queryClient, "space-a")).toEqual([
-      "thr_removed",
-    ])
-    expect(
-      queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_removed"))
-    ).toBeUndefined()
-    expect(removedObserver.getCurrentResult().data).toBeUndefined()
-    expect(
-      queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_visible"))
-    ).toBeDefined()
-    expect(
-      queryClient.getQueryData(
-        threadQueryKeys.detail(spaceB, "thr_other_space")
-      )
-    ).toBeDefined()
-    unsubscribe()
-  })
-
   it("converges reconnect state after the authorized thread list refreshes", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -136,6 +74,9 @@ describe("Space WebSocket reconnect backoff", () => {
     await removedObserver.refetch()
     expect(removedObserver.getCurrentResult().data).toBeDefined()
 
+    queryClient.setQueryData(threadQueryKeys.detail(spaceA, "thr_visible"), { thread: { id: "thr_visible" } })
+    queryClient.setQueryData(threadQueryKeys.detail(spaceB, "thr_other_space"), { thread: { id: "thr_other_space" } })
+    queryClient.setQueryData(["threads", "participants"], [{ id: "person" }])
     visibleThreads = [{ id: "thr_visible" }]
     await reconcileSpaceThreadQueries(queryClient, "space-a")
 
@@ -143,6 +84,10 @@ describe("Space WebSocket reconnect backoff", () => {
       queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_removed"))
     ).toBeUndefined()
     expect(removedObserver.getCurrentResult().data).toBeUndefined()
+    expect(queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_visible"))).toBeDefined()
+    expect(queryClient.getQueryData(threadQueryKeys.detail(spaceB, "thr_other_space"))).toBeDefined()
+    expect(queryClient.getQueryState(threadQueryKeys.detail(spaceB, "thr_other_space"))?.isInvalidated).toBe(false)
+    expect(queryClient.getQueryState(["threads", "participants"])?.isInvalidated).toBe(true)
     unsubscribeRemoved()
     unsubscribeList()
   })

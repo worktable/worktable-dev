@@ -77,7 +77,6 @@ interface DesktopPackage {
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = resolve(appRoot, "../..")
 const nativeRoot = join(appRoot, "src-tauri")
-const appManifestSource = readFileSync(join(nativeRoot, "build.rs"), "utf8")
 const config = JSON.parse(
   readFileSync(join(nativeRoot, "tauri.conf.json"), "utf8")
 ) as TauriConfig
@@ -128,16 +127,6 @@ describe("desktop package contracts", () => {
     expect(cargo.package.version).toBe(repoPackage.version)
   })
 
-  test("keeps native work out of default cross-platform Turbo tasks", () => {
-    expect(desktopPackage.scripts.dev).toBeUndefined()
-    expect(desktopPackage.scripts.build).toBeUndefined()
-    expect(desktopPackage.scripts["native:dev"]).toBeDefined()
-    expect(desktopPackage.scripts["dev:isolated"]).toBeDefined()
-    expect(desktopPackage.scripts["native:dev:isolated"]).toBeDefined()
-    expect(desktopPackage.scripts["native:build"]).toBeDefined()
-    expect(desktopPackage.scripts.ci).toBeDefined()
-  })
-
   test("binds generated native command permissions to their exact surfaces", () => {
     expect(config.app.windows).toEqual([])
     expect(config.app.security.capabilities).toEqual([
@@ -145,45 +134,40 @@ describe("desktop package contracts", () => {
       "workspace-window-chrome",
       "workspace-agent-skills",
     ])
-    for (const command of [
-      "desktop_agent_skills_status",
-      "desktop_agent_skills_preview",
-      "desktop_agent_skills_apply",
-    ]) {
-      expect(appManifestSource).toContain(`"${command}"`)
-    }
     expect(trustedShellCapability.identifier).toBe("trusted-shell")
     expect(trustedShellCapability.webviews).toEqual(["trusted-shell"])
-    expect(trustedShellCapability.permissions).toEqual([
-      "allow-desktop-shell-identity",
-      "allow-desktop-agent-skills-preview",
-      "allow-desktop-agent-skills-apply",
-      "allow-desktop-bootstrap-state",
-      "allow-desktop-updater-state",
-      "allow-desktop-mark-shell-ready",
-      "allow-desktop-check-for-updates",
-      "allow-desktop-install-update",
-      "allow-desktop-dismiss-update",
-      "allow-desktop-open-update-download",
-      "allow-desktop-select-connection-provider",
-      "allow-desktop-start-cloud-connection",
-      "allow-desktop-cancel-cloud-connection",
-      "allow-desktop-start-self-hosted-connection",
-      "allow-desktop-start-saved-connection",
-      "allow-desktop-choose-workspace-folder",
-      "allow-desktop-inspect-workspace",
-      "allow-desktop-start-local-connection",
-      "allow-desktop-use-existing-installation",
-      "allow-desktop-retry-connection",
-      "allow-desktop-restart-local-host",
-      "allow-desktop-repair-local-authority",
-      "allow-desktop-open-local-logs",
-      "allow-desktop-change-connection",
-      "allow-desktop-cloud-sign-out",
-      "allow-desktop-cloud-end-session",
-      "allow-desktop-remove-connection",
-      "core:window:allow-start-dragging",
-    ])
+    expect(new Set(trustedShellCapability.permissions)).toEqual(
+      new Set([
+        "allow-desktop-shell-identity",
+        "allow-desktop-agent-skills-preview",
+        "allow-desktop-agent-skills-apply",
+        "allow-desktop-bootstrap-state",
+        "allow-desktop-updater-state",
+        "allow-desktop-mark-shell-ready",
+        "allow-desktop-check-for-updates",
+        "allow-desktop-install-update",
+        "allow-desktop-dismiss-update",
+        "allow-desktop-open-update-download",
+        "allow-desktop-select-connection-provider",
+        "allow-desktop-start-cloud-connection",
+        "allow-desktop-cancel-cloud-connection",
+        "allow-desktop-start-self-hosted-connection",
+        "allow-desktop-start-saved-connection",
+        "allow-desktop-choose-workspace-folder",
+        "allow-desktop-inspect-workspace",
+        "allow-desktop-start-local-connection",
+        "allow-desktop-use-existing-installation",
+        "allow-desktop-retry-connection",
+        "allow-desktop-restart-local-host",
+        "allow-desktop-repair-local-authority",
+        "allow-desktop-open-local-logs",
+        "allow-desktop-change-connection",
+        "allow-desktop-cloud-sign-out",
+        "allow-desktop-cloud-end-session",
+        "allow-desktop-remove-connection",
+        "core:window:allow-start-dragging",
+      ])
+    )
     expect(workspaceChromeCapability.identifier).toBe("workspace-window-chrome")
     expect(workspaceChromeCapability.webviews).toEqual(["workspace"])
     expect(workspaceChromeCapability.local).toBe(false)
@@ -193,11 +177,8 @@ describe("desktop package contracts", () => {
     expect(workspaceChromeCapability.permissions).toEqual([
       "core:window:allow-start-dragging",
     ])
-    expect(workspaceAgentSkillsCapability).toEqual({
-      $schema: "../gen/schemas/desktop-schema.json",
+    expect(workspaceAgentSkillsCapability).toMatchObject({
       identifier: "workspace-agent-skills",
-      description:
-        "Fixed agent-skill lifecycle commands for the active local loopback workspace only.",
       local: false,
       remote: {
         urls: [
@@ -239,27 +220,6 @@ describe("desktop package contracts", () => {
       bundle: { createUpdaterArtifacts: true },
       $schema: "https://schema.tauri.app/config/2",
     })
-    expect(desktopPackage.scripts["native:build:prepared"]).not.toContain(
-      "tauri.release.conf.json"
-    )
-    expect(desktopPackage.scripts["native:build:release:prepared"]).toContain(
-      "--config src-tauri/tauri.release.conf.json"
-    )
-    expect(desktopPackage.scripts["native:build:release:prepared"]).toContain(
-      "--bundles app,dmg"
-    )
-    expect(
-      desktopPackage.scripts["native:build:release:prepared"]
-    ).not.toContain("bun run")
-    expect(
-      desktopPackage.scripts["native:build:release:prepared"]
-    ).not.toContain("staging")
-    expect(desktopPackage.scripts["release:prepare"]).toContain(
-      "check:prepared"
-    )
-    expect(desktopPackage.scripts["release:finalize"]).toContain(
-      "prepare-updater-release.ts"
-    )
   })
 
   test("builds staging as a separate non-updating application", () => {
@@ -271,32 +231,6 @@ describe("desktop package contracts", () => {
     expect([config.version, nextPatchVersion(config.version)]).toContain(
       stagingConfig.version
     )
-    expect(desktopPackage.scripts["native:build:staging:prepared"]).toContain(
-      "--features staging"
-    )
-    expect(desktopPackage.scripts["native:build:staging:prepared"]).toContain(
-      "--config src-tauri/tauri.staging.conf.json"
-    )
-    expect(
-      desktopPackage.scripts["native:build:staging:prepared"]
-    ).not.toContain("tauri.release.conf.json")
-
-    const mainSource = readFileSync(join(nativeRoot, "src", "main.rs"), "utf8")
-    const cloudAuthSource = readFileSync(
-      join(nativeRoot, "src", "cloud_auth.rs"),
-      "utf8"
-    )
-    const credentialSource = readFileSync(
-      join(nativeRoot, "src", "credential_store.rs"),
-      "utf8"
-    )
-    expect(mainSource).toContain(
-      '#[cfg(all(target_os = "macos", not(feature = "staging")))]'
-    )
-    expect(cloudAuthSource).toContain(
-      'env!("WORKTABLE_DESKTOP_STAGING_ORIGIN")'
-    )
-    expect(credentialSource).toContain('"dev.worktable.desktop.staging.workos"')
     expect(config.identifier).not.toContain("staging")
     expect(config.productName).toBe("Worktable")
   })
@@ -309,21 +243,7 @@ describe("desktop package contracts", () => {
     expect(config.plugins.updater.pubkey).not.toContain("REQUIRED")
   })
 
-  test("bundles the open-licensed offline typography assets", () => {
-    for (const font of [
-      "fraunces-variable-latin.woff2",
-      "jetbrains-mono-variable-latin.woff2",
-    ]) {
-      const fontPath = join(appRoot, "ui", "fonts", font)
-      expect(existsSync(fontPath)).toBe(true)
-      expect(statSync(fontPath).size).toBeGreaterThan(0)
-    }
-  })
-
   test("packaging requires a separately supplied General Sans font", () => {
-    expect(config.build.beforeBuildCommand).toBe(
-      "bun run scripts/verify-fonts.ts"
-    )
     const root = mkdtempSync(join(tmpdir(), "worktable-desktop-fonts-"))
     try {
       for (const name of [

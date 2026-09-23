@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { CopyField } from "@worktable/ui/components/copy-field"
 import { Switch } from "@worktable/ui/components/switch"
 import { fetchJSON, HttpError } from "@/lib/http"
+import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
 
 type Status = {
@@ -121,124 +122,131 @@ export function CloudSection() {
   )
   return (
     <section className="flex min-w-0 flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {data.account.user ? (
-          <>
-            <span className="min-w-0 text-sm break-all">
-              {data.account.user.email || data.account.user.name || "Signed in"}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={signOut.isPending || toggle.isPending}
-              onClick={() => signOut.mutate()}
-            >
-              Sign out
-            </Button>
-          </>
-        ) : (
-          <div className="flex flex-col items-start gap-3">
-            <Button
-              disabled={signIn.isPending}
-              onClick={() => void openSignIn()}
-            >
-              {signIn.isPending
-                ? "Opening sign-in…"
-                : "Sign in to Worktable Cloud"}
-            </Button>
-            {signInUrl && data.account.signingIn && (
-              <a
-                className="text-sm text-primary-text underline underline-offset-4"
-                href={signInUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Continue sign-in
-              </a>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="worktable-link" className="text-sm font-medium">
-              Worktable Link
-            </label>
-            <p
-              id="worktable-link-description"
-              className="text-sm text-muted-foreground"
-            >
-              Connect approved AI apps and share documents from this device.
-            </p>
-          </div>
-          <div className="flex min-h-11 shrink-0 items-center">
-            {data.enabled === null ? (
-              <span role="status" className="text-xs text-muted-foreground">
-                {["offline", "error"].includes(data.state)
-                  ? "Unavailable"
-                  : "Checking…"}
+      <SettingsGroup title="Account">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {data.account.user ? (
+            <>
+              <span className="min-w-0 text-sm break-all">
+                {data.account.user.email ||
+                  data.account.user.name ||
+                  "Signed in"}
               </span>
-            ) : (
-              <Switch
-                id="worktable-link"
-                aria-label="Worktable Link"
-                aria-describedby="worktable-link-description"
-                checked={toggle.isPending ? toggle.variables : data.enabled}
-                disabled={
-                  !data.account.user ||
-                  toggle.isPending ||
-                  disconnect.isPending ||
-                  data.state === "unlinking"
-                }
-                onCheckedChange={(enabled) => toggle.mutate(enabled)}
-              />
-            )}
-          </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={signOut.isPending || toggle.isPending}
+                onClick={() => signOut.mutate()}
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <div className="flex w-full flex-wrap items-center justify-between gap-3">
+              <span className="text-sm text-muted-foreground">
+                Not signed in
+              </span>
+              <Button
+                disabled={signIn.isPending}
+                onClick={() => void openSignIn()}
+              >
+                {signIn.isPending ? "Opening sign-in…" : "Sign in"}
+              </Button>
+              {signInUrl && data.account.signingIn && (
+                <a
+                  className="w-full text-sm text-primary-text underline underline-offset-4"
+                  href={signInUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Continue sign-in
+                </a>
+              )}
+            </div>
+          )}
         </div>
-        {data.enabled !== null && STATES[data.state] && (
-          <p role="status" className="text-xs text-muted-foreground">
-            {STATES[data.state]}
-          </p>
-        )}
-        {data.mcpUrl && <CopyField label="MCP URL" value={data.mcpUrl} />}
-        {subscriptionRequired && (
+      </SettingsGroup>
+      <SettingsGroup title="Connection">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="worktable-link" className="text-sm font-medium">
+                Worktable Link
+              </label>
+              <p
+                id="worktable-link-description"
+                className="text-sm text-muted-foreground"
+              >
+                Connect approved AI apps and share documents from this device.
+              </p>
+            </div>
+            <div className="flex min-h-11 shrink-0 items-center">
+              {data.enabled === null ? (
+                <span role="status" className="text-xs text-muted-foreground">
+                  {["offline", "error"].includes(data.state)
+                    ? "Unavailable"
+                    : "Checking…"}
+                </span>
+              ) : (
+                <Switch
+                  id="worktable-link"
+                  aria-label="Worktable Link"
+                  aria-describedby="worktable-link-description"
+                  checked={toggle.isPending ? toggle.variables : data.enabled}
+                  disabled={
+                    !data.account.user ||
+                    toggle.isPending ||
+                    disconnect.isPending ||
+                    data.state === "unlinking"
+                  }
+                  onCheckedChange={(enabled) => toggle.mutate(enabled)}
+                />
+              )}
+            </div>
+          </div>
+          {data.enabled !== null && STATES[data.state] && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {STATES[data.state]}
+            </p>
+          )}
+          {data.mcpUrl && <CopyField label="MCP URL" value={data.mcpUrl} />}
+          {subscriptionRequired && (
+            <a
+              className="text-sm text-primary-text underline underline-offset-4"
+              href={`${data.cloudOrigin}/signup`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Manage subscription
+            </a>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
           <a
             className="text-sm text-primary-text underline underline-offset-4"
-            href={`${data.cloudOrigin}/signup`}
+            href={`${data.cloudOrigin}/linked`}
             target="_blank"
             rel="noreferrer"
           >
-            Manage subscription
+            Manage devices
           </a>
-        )}
-      </div>
+          {(linked ||
+            data.state === "awaiting_approval" ||
+            data.state === "revoked") && (
+            <Button
+              variant="ghost"
+              disabled={data.state === "unlinking" || toggle.isPending}
+              onClick={() => setConfirm(true)}
+            >
+              Unlink
+            </Button>
+          )}
+        </div>
+      </SettingsGroup>
       {(error || data.account.error) && (
         <p role="alert" className="text-sm text-destructive">
           {error?.message ?? data.account.error}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-4">
-        <a
-          className="text-sm text-primary-text underline underline-offset-4"
-          href={`${data.cloudOrigin}/linked`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Manage devices
-        </a>
-        {(linked ||
-          data.state === "awaiting_approval" ||
-          data.state === "revoked") && (
-          <Button
-            variant="ghost"
-            disabled={data.state === "unlinking" || toggle.isPending}
-            onClick={() => setConfirm(true)}
-          >
-            Unlink
-          </Button>
-        )}
-      </div>
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}

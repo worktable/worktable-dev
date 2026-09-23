@@ -1,4 +1,5 @@
-import type { ComponentType } from "react"
+import type { DeploymentInfo } from "@/lib/system-api"
+import { lazy, type ComponentType } from "react"
 import type { LucideIcon } from "lucide-react"
 import {
   Bot,
@@ -12,18 +13,59 @@ import {
   Settings2,
   UserRound,
 } from "lucide-react"
-import { AccountSection } from "./sections/account"
-import { CloudSection } from "./sections/cloud"
-import { GeneralSection } from "./sections/general"
-import { AppearanceSection } from "./sections/appearance"
-import { EditorSection } from "./sections/editor"
-import { BackupsSection } from "./sections/backups"
-import { HistorySection } from "./sections/history"
-import { AgentsSection } from "./sections/agents"
-import { HelpSection } from "./sections/help"
-import { SystemSection } from "./sections/system"
-import { PortabilitySection } from "./sections/portability"
-import type { DeploymentInfo } from "@/lib/system-api"
+const AccountSection = lazy(() =>
+  import("./sections/account").then((module) => ({
+    default: module.AccountSection,
+  }))
+)
+const CloudSection = lazy(() =>
+  import("./sections/cloud").then((module) => ({
+    default: module.CloudSection,
+  }))
+)
+const GeneralSection = lazy(() =>
+  import("./sections/general").then((module) => ({
+    default: module.GeneralSection,
+  }))
+)
+const AppearanceSection = lazy(() =>
+  import("./sections/appearance").then((module) => ({
+    default: module.AppearanceSection,
+  }))
+)
+const EditorSection = lazy(() =>
+  import("./sections/editor").then((module) => ({
+    default: module.EditorSection,
+  }))
+)
+const BackupsSection = lazy(() =>
+  import("./sections/backups").then((module) => ({
+    default: module.BackupsSection,
+  }))
+)
+const HistorySection = lazy(() =>
+  import("./sections/history").then((module) => ({
+    default: module.HistorySection,
+  }))
+)
+const AgentsSection = lazy(() =>
+  import("./sections/agents").then((module) => ({
+    default: module.AgentsSection,
+  }))
+)
+const HelpSection = lazy(() =>
+  import("./sections/help").then((module) => ({ default: module.HelpSection }))
+)
+const SystemSection = lazy(() =>
+  import("./sections/system").then((module) => ({
+    default: module.SystemSection,
+  }))
+)
+const PortabilitySection = lazy(() =>
+  import("./sections/portability").then((module) => ({
+    default: module.PortabilitySection,
+  }))
+)
 
 export type SettingsSectionId =
   | "general"

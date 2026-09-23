@@ -1,5 +1,6 @@
 import { markSettingsSectionVisible } from "@/lib/settings-open"
 import {
+  Suspense,
   createContext,
   useContext,
   useEffect,
@@ -16,6 +17,7 @@ import {
   useResponsiveDialog,
 } from "@worktable/ui/components/responsive-dialog"
 import { Button } from "@worktable/ui/components/button"
+import { Skeleton } from "@worktable/ui/components/skeleton"
 import { Badge } from "@worktable/ui/components/badge"
 import { cn } from "@worktable/ui/lib/utils"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
@@ -30,7 +32,7 @@ import {
 } from "./sections"
 
 // Whether the section a component sits in is the one currently shown. All
-// sections stay mounted while the dialog is open (state must survive
+// visited sections stay mounted while the dialog is open (state must survive
 // switching), so queries with real-world side effects (e.g. the version query,
 // whose route may contact the release host) gate on this instead of mount.
 const SectionActiveContext = createContext(false)
@@ -85,7 +87,7 @@ export function SettingsDialog({
       <ResponsiveDialogContent className="h-[85dvh] sm:h-[min(680px,85dvh)] sm:max-h-none sm:max-w-3xl sm:p-0 md:h-[min(800px,90dvh)] md:w-[calc(100%-3rem)] md:max-w-5xl">
         {/* Mounted only while open, so per-session state (update engagement, a
             one-time connection token) is fresh each open — a past update's
-            terminal marker can't leak in. ALL sections stay mounted while the
+            terminal marker can't leak in. Visited sections stay mounted while the
             dialog is open (inactive ones hidden): switching sections must not
             destroy a just-minted one-time token or stop in-flight update
             polling mid-restart. */}
@@ -137,7 +139,7 @@ function SettingsBody({
   // gutter (base-ui's ScrollArea can't carry either), with scroll-fade masking
   // the edges in place of hard borders. On desktop it spans the full content
   // column so the scrollbar rides the dialog's right edge instead of hugging
-  // the cards; the pr-5 keeps content clear of the thumb. Every section stays
+  // the cards; the pr-5 keeps content clear of the thumb. Each visited section stays
   // mounted (inactive hidden) so section state survives switching — see the
   // note at the mount site.
   const content = (
@@ -150,21 +152,13 @@ function SettingsBody({
         isMobile ? "-mx-5 px-5 pt-4 pb-6" : "pt-4 pr-5 pb-6 pl-6"
       )}
     >
-      {sections.map((section) => {
-        const Section = section.component
-        const isActive = section.id === active.id
-        return (
-          <div
-            key={section.id}
-            data-settings-section={section.id}
-            hidden={!isActive}
-          >
-            <SectionActiveContext.Provider value={isActive}>
-              <Section />
-            </SectionActiveContext.Provider>
-          </div>
-        )
-      })}
+      {sections.map((section) => (
+        <SettingsPanel
+          key={section.id}
+          section={section}
+          active={section.id === active.id}
+        />
+      ))}
     </div>
   )
 
@@ -226,6 +220,38 @@ function SettingsBody({
         </header>
         {content}
       </div>
+    </div>
+  )
+}
+
+// Load a section on first visit, then retain its local state and background
+// work until Settings closes (one-time tokens and import/update polling).
+function SettingsPanel({
+  section,
+  active,
+}: {
+  section: SettingsSection
+  active: boolean
+}) {
+  const [visited, setVisited] = useState(active)
+  if (active && !visited) setVisited(true)
+  if (!active && !visited) return null
+  const Section = section.component
+  return (
+    <div data-settings-section={section.id} hidden={!active}>
+      <SectionActiveContext.Provider value={active}>
+        <Suspense
+          fallback={
+            <div role="status" className="space-y-3">
+              <span className="sr-only">Loading {section.label}…</span>
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-24 w-full rounded-xl" />
+            </div>
+          }
+        >
+          <Section />
+        </Suspense>
+      </SectionActiveContext.Provider>
     </div>
   )
 }

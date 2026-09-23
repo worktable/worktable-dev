@@ -315,7 +315,7 @@ test("local Desktop Settings manages the two skill targets from allowed operatio
   ).toBeVisible()
 })
 
-test("switching setup disclosures preserves a one-time manual token", async ({
+test("switching settings sections and setup disclosures preserves a one-time manual token", async ({
   page,
 }) => {
   await page.route("**/api/system/connection", (route) =>
@@ -363,6 +363,11 @@ test("switching setup disclosures preserves a one-time manual token", async ({
   await desktopApps.click()
   await expect(oneTimeNotice).toBeHidden()
   await manualInstall.click()
+  await expect(oneTimeNotice).toBeVisible()
+
+  await dialog.getByRole("button", { name: "General", exact: true }).click()
+  await expect(oneTimeNotice).toBeHidden()
+  await dialog.getByRole("button", { name: "Agents", exact: true }).click()
   await expect(oneTimeNotice).toBeVisible()
 })
 

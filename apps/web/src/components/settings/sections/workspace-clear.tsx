@@ -10,11 +10,10 @@ import {
   confirmWorkspaceClear,
 } from "@/lib/workspace-transfer-api"
 import { clearJobKey } from "@/lib/workspace-transfer-api"
-import { SettingsGroup } from "../settings-group"
 import { SettingRow } from "@worktable/ui/components/setting-row"
 import { OperationStatus } from "../operation-status"
 
-export function WorkspaceClearGroup() {
+export function WorkspaceClearControls() {
   const deployment = useDeploymentInfo()
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -65,7 +64,7 @@ export function WorkspaceClearGroup() {
     job.data?.state === "ready" && Date.parse(job.data.expiresAt) > now
   const error = confirm.error ?? prepare.error
   return (
-    <SettingsGroup title="Workspace">
+    <div className="-mx-4 flex flex-col gap-3 border-t border-border/60 px-4 pt-3">
       <SettingRow label="Clear workspace">
         <Button
           variant="outline"
@@ -159,6 +158,6 @@ export function WorkspaceClearGroup() {
           ) : null}
         </div>
       </ConfirmDialog>
-    </SettingsGroup>
+    </div>
   )
 }

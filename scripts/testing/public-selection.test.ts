@@ -51,7 +51,7 @@ describe("public evidence ownership", () => {
     ).toBe(true)
     expect(
       selectPublicSuiteIds(["apps/docs/src/content/docs/start.md"])
-    ).toEqual([])
+    ).toEqual(required)
     for (const input of [
       "mcp-tools.json",
       "scripts/generate-docs-content.ts",

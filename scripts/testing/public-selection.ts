@@ -21,7 +21,6 @@ export function productDocsOnly(paths: string[]): boolean {
 // build inputs, new packages and unknown paths retain every portable lane.
 export function selectPublicSuiteIds(paths: string[]): string[] {
   if (paths.length === 0) return [...allSuites]
-  if (productDocsOnly(paths)) return []
   const selected = new Set(required)
   for (const path of paths) {
     if (path.startsWith("apps/web/")) selected.add("web-browser")

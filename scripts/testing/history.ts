@@ -135,7 +135,6 @@ const samples: Sample[] = [...byDirectory.entries()]
         "",
     }
   })
-  .filter((sample) => sample.durationMs > 0)
   .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
 
 const browserSamples: BrowserSample[] = [...byDirectory.entries()]
@@ -188,7 +187,7 @@ const fullBrowserObservationGateMet =
 const { current: currentSamples, excluded: excludedRevisionSamples } =
   partitionPortfolioRevisionSamples(samples, requiredRevision)
 const comparable = currentSamples.filter(
-  (sample) => sample.complete && sample.passed
+  (sample) => sample.complete && sample.passed && sample.durationMs > 0
 )
 const durations = comparable.map((sample) => sample.durationMs)
 const p50Ms = percentile(durations, 0.5)

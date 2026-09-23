@@ -6,6 +6,7 @@ PORT=${WORKTABLE_SMOKE_PORT:-19434}
 KEEP=${WORKTABLE_SMOKE_KEEP:-0}
 HOLD=${WORKTABLE_SMOKE_HOLD:-0}
 CHECK_SERVICE=0
+SERVICE_INSTALLED=0
 SMOKE_BASE=${WORKTABLE_SMOKE_BASE:-/tmp}
 SMOKE_ROOT=${WORKTABLE_SMOKE_ROOT:-}
 TARGET_OS=${WORKTABLE_TEST_OS:-$(uname -s)}
@@ -168,6 +169,10 @@ cleanup() {
   if [ -n "${SERVER_PID:-}" ]; then
     stop_owned_process "$SERVER_PID"
   fi
+  if [ "$SERVICE_INSTALLED" = "1" ]; then
+    run_wt service stop > "$SMOKE_ROOT/service-cleanup-stop.out" 2>&1 || true
+    run_wt service uninstall > "$SMOKE_ROOT/service-cleanup-uninstall.out" 2>&1 || true
+  fi
   if [ "$KEEP" != "1" ]; then
     rm -rf "$SMOKE_ROOT" || { [ "$smoke_status" -ne 0 ] || smoke_status=1; }
   fi
@@ -273,6 +278,19 @@ for (const id of ["cursor", "opencode", "codex"]) {
   assert.equal(json("mcp-status.json").find((client) => client.id === id)?.state, "configured")
 }
 JS
+
+# Exercise the opt-in service before the foreground host owns the endpoint.
+# The foreground host below still serves the complete smoke and --review mode.
+if [ "$CHECK_SERVICE" = "1" ]; then
+  run_wt service install > "$SMOKE_ROOT/service-install.out"
+  SERVICE_INSTALLED=1
+  run_wt service start > "$SMOKE_ROOT/service-start.out"
+  run_wt service status > "$SMOKE_ROOT/service-status.out"
+  run_wt service logs > "$SMOKE_ROOT/service-logs.out"
+  run_wt service stop > "$SMOKE_ROOT/service-stop.out"
+  run_wt service uninstall > "$SMOKE_ROOT/service-uninstall.out"
+  SERVICE_INSTALLED=0
+fi
 
 HOME="$HOME_DIR" \
 XDG_DATA_HOME="$HOME_DIR/.local/share" \
@@ -423,17 +441,6 @@ assert.equal(status.find((client) => client.id === "cursor")?.state, "removed")
 const cursor = await Bun.file(join(root, "clients/cursor/mcp.json")).json()
 assert.equal(cursor.mcpServers?.worktable, undefined)
 JS
-
-# Explicit opt-in only: this is the retained native user-service check from
-# verify-local-e2e.sh. Ordinary smoke runs never install or start a user service.
-if [ "$CHECK_SERVICE" = "1" ]; then
-  run_wt service install > "$SMOKE_ROOT/service-install.out"
-  run_wt service start > "$SMOKE_ROOT/service-start.out"
-  run_wt service status > "$SMOKE_ROOT/service-status.out"
-  run_wt service logs > "$SMOKE_ROOT/service-logs.out"
-  run_wt service stop > "$SMOKE_ROOT/service-stop.out" || true
-  run_wt service uninstall > "$SMOKE_ROOT/service-uninstall.out" || true
-fi
 
 echo
 echo "Local install smoke passed."

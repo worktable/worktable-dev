@@ -174,6 +174,9 @@ const browserSamples: BrowserSample[] = [...byDirectory.entries()]
 const browserRevision = process.argv.includes("--distributed")
   ? `${CANONICAL_PORTFOLIO_REVISION}-distributed`
   : CANONICAL_PORTFOLIO_REVISION
+// Public CI consolidates required and browser evidence in the same portfolio.
+// Keep distributed observations separate from local single-host samples.
+const requiredRevision = browserRevision
 const currentBrowserSamples = partitionPortfolioRevisionSamples(
   browserSamples,
   browserRevision
@@ -183,7 +186,7 @@ const fullBrowserObservationGateMet =
   browserCleanStreak >= budgets.fullBrowserObservationRunThreshold
 
 const { current: currentSamples, excluded: excludedRevisionSamples } =
-  partitionPortfolioRevisionSamples(samples, CANONICAL_PORTFOLIO_REVISION)
+  partitionPortfolioRevisionSamples(samples, requiredRevision)
 const comparable = currentSamples.filter(
   (sample) => sample.complete && sample.passed
 )
@@ -204,7 +207,7 @@ const resourcePassing = isPeakRssWithinBudget(
 
 const markdown = `# Required-test health history
 
-- Required portfolio revision: ${CANONICAL_PORTFOLIO_REVISION}
+- Required portfolio revision: ${requiredRevision}
 - Browser portfolio revision: ${browserRevision}
 - Comparable passing runs: ${comparable.length}/${budgets.minimumComparableRuns} required before enforcement
 - Legacy or other revision samples retained but excluded: ${excludedRevisionSamples}
@@ -226,7 +229,7 @@ await writeFile(
   `${JSON.stringify(
     {
       generatedAt: new Date().toISOString(),
-      portfolioRevision: CANONICAL_PORTFOLIO_REVISION,
+      portfolioRevision: requiredRevision,
       browserRevision,
       comparableRuns: comparable.length,
       excludedRevisionSamples,

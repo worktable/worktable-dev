@@ -15,7 +15,7 @@
     },
     "typecheck": {
       "dependsOn": ["^typecheck"],
-      "outputs": ["node_modules/.tmp/*.tsbuildinfo"]
+      "outputs": []
     },
     "dev": {
       "cache": false,
@@ -58,6 +58,10 @@
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**", "node_modules/.tmp/*.tsbuildinfo"]
+    },
+    "@worktable/web#typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": ["node_modules/.tmp/*.tsbuildinfo"]
     }
   },
   "globalDependencies": [

@@ -130,7 +130,7 @@ jobs:
       - name: Bind lane evidence
         run:
           bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "bun-standard,bun-server,cli-boundary,packaged-boundaries"
-          --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Upload lane evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -179,7 +179,7 @@ jobs:
       - name: Bind lane evidence
         run:
           bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "desktop-contracts" --source
-          "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Upload lane evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -222,7 +222,7 @@ jobs:
           test "${#selected[@]}" -gt 0
           bun run test:full "${args[@]}"
           expected=$(IFS=,; echo "${selected[*]}")
-          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "$expected" --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          bun scripts/testing/aggregate-ci.ts stamp --root test-results/canonical --expected "$expected" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Upload lane evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -307,7 +307,7 @@ jobs:
         run: |-
           profile=changed
           if [ "$SCOPE" = full ]; then profile=full; fi
-          bun scripts/testing/aggregate-ci.ts aggregate --root "$RUNNER_TEMP/ci-fragments" --expected "$SELECTED_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse HEAD^{tree})" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --profile "$profile" --output test-results/canonical/"$profile"
+          bun scripts/testing/aggregate-ci.ts aggregate --root "$RUNNER_TEMP/ci-fragments" --expected "$SELECTED_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --profile "$profile" --output test-results/canonical/"$profile"
       - name: Upload consolidated evidence
         if: always() && needs.plan.outputs.required == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

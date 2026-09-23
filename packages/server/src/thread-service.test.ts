@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
 import {
   mkdir,
   mkdtemp,
@@ -112,16 +112,6 @@ const owner: TokenIdentity = {
     id: "local:owner",
     type: "human",
     displayName: "Owner",
-  },
-}
-
-const scopedHuman: TokenIdentity = {
-  ...owner,
-  scopes: ["threads:read"],
-  principal: {
-    id: "local-token:scoped-human",
-    type: "human",
-    displayName: "Scoped human credential",
   },
 }
 
@@ -1862,39 +1852,64 @@ describe("thread service", () => {
       phase: "receiving",
       receivedCharacters: 42,
     })
-    await failDelivery(atlas, {
-      messageId: initial!.messageId,
-      leaseId: initial!.leaseId,
-      retryable: true,
-      code: "TEMPORARY",
-      message: "Try again.",
-    })
+    await drainWorkspaceChanges()
+    jest.useFakeTimers({ now: Date.now() })
+    try {
+      await failDelivery(atlas, {
+        messageId: initial!.messageId,
+        leaseId: initial!.leaseId,
+        retryable: true,
+        code: "TEMPORARY",
+        message: "Try again.",
+      })
 
-    const startedAt = Date.now()
-    const retried = await claimNextThreadDelivery(atlas, 3)
-    expect(retried).toMatchObject({
-      messageId: first.messageId,
-      attempt: 2,
-    })
-    expect(
-      await getThreadActivity(
-        "connected-agents",
-        first.threadId,
-        first.messageId
-      )
-    ).toMatchObject({
-      state: "queued",
-      receivedCharacters: undefined,
-      error: undefined,
-    })
-    const secondProgress = await progressDelivery(atlas, {
-      messageId: retried!.messageId,
-      leaseId: retried!.leaseId,
-      phase: "receiving",
-      receivedCharacters: 5,
-    })
-    expect(secondProgress.receivedCharacters).toBe(5)
-    expect(Date.now() - startedAt).toBeLessThan(2_200)
+      await drainWorkspaceChanges()
+      const scheduled = Promise.withResolvers<number>()
+      const schedule = globalThis.setTimeout
+      const timer = jest.spyOn(globalThis, "setTimeout").mockImplementation(((
+        ...args: Parameters<typeof setTimeout>
+      ) => {
+        const handle = schedule(...args)
+        scheduled.resolve(args[1] ?? 0)
+        return handle
+      }) as typeof setTimeout)
+      try {
+        const pending = claimNextThreadDelivery(atlas, 3)
+        const delay = await scheduled.promise
+        // The inbox must wake at retry eligibility, before the three-second poll ends.
+        expect(delay).toBeGreaterThan(0)
+        expect(delay).toBeLessThanOrEqual(1_000)
+        timer.mockRestore()
+        jest.advanceTimersByTime(delay)
+        const retried = await pending
+        expect(retried).toMatchObject({
+          messageId: first.messageId,
+          attempt: 2,
+        })
+        expect(
+          await getThreadActivity(
+            "connected-agents",
+            first.threadId,
+            first.messageId,
+          ),
+        ).toMatchObject({
+          state: "queued",
+          receivedCharacters: undefined,
+          error: undefined,
+        })
+        const secondProgress = await progressDelivery(atlas, {
+          messageId: retried!.messageId,
+          leaseId: retried!.leaseId,
+          phase: "receiving",
+          receivedCharacters: 5,
+        })
+        expect(secondProgress.receivedCharacters).toBe(5)
+      } finally {
+        timer.mockRestore()
+      }
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it("clears a failed delivery error when a late durable reply arrives", async () => {

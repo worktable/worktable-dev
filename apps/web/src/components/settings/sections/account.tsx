@@ -183,7 +183,7 @@ function formatUtcDeadline(timestamp: number): string {
   }).format(timestamp)
 }
 
-function SubscriptionCard({
+export function SubscriptionCard({
   billing,
   checkoutPending,
   checkoutError,

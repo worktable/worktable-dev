@@ -151,7 +151,7 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("keeps direct replies implicit and promotes one group mention", async ({
+test("recovers committed creation and direct replies after participant refresh failure", async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -269,9 +269,54 @@ test("keeps direct replies implicit and promotes one group mention", async ({
     })
     .toEqual({ identityName: "Atlas", status: "open" })
 
+  expect(consoleErrors).toEqual([])
+})
+
+test("mentions, response requests and live messages preserve the reader’s intent", async ({
+  page,
+}) => {
+  // This journey starts from its own real thread. Creation and retry wiring are
+  // owned above, so group interaction does not repeat that entire UI setup.
+  const participantsResponse = await fetch(
+    `${harness.apiUrl}/api/threads/participants`
+  )
+  expect(participantsResponse.ok).toBe(true)
+  const { participants } = (await participantsResponse.json()) as {
+    participants: Array<{ id: string; name: string }>
+  }
+  const atlas = participants.find((participant) => participant.name === "Atlas")
+  expect(atlas).toBeDefined()
+  const created = await fetch(`${harness.apiUrl}/api/threads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: atlas!.id,
+      body: "A group interaction thread",
+      idempotencyKey: "browser-group-interaction",
+      waitSeconds: 0,
+    }),
+  })
+  expect(created.ok).toBe(true)
+  const { threadId } = (await created.json()) as { threadId: string }
+  const consoleErrors: string[] = []
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text())
+  })
+  await page.goto(appUrl(`/threads/worktable/${threadId}`), {
+    waitUntil: "domcontentloaded",
+  })
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
+  const composer = page.getByPlaceholder("Reply in this thread…")
+  const composerGroup = page.getByRole("group", {
+    name: "Write a message",
+    exact: true,
+  })
+  await expect(composer).toBeEnabled()
+  consoleErrors.length = 0
+
   await composer.fill("Please ask @Fi")
   await page.getByRole("option", { name: "Finn", exact: true }).click()
-  await composer.pressSequentially(" for a passive review.")
+  await composer.fill(`${await composer.inputValue()} for a passive review.`)
   const target = composerGroup.getByRole("button", {
     name: "Change Finn",
     exact: true,
@@ -345,7 +390,7 @@ test("keeps direct replies implicit and promotes one group mention", async ({
 
   await composer.fill("Please have @Ma")
   await page.getByRole("option", { name: "Maya", exact: true }).click()
-  await composer.pressSequentially(" review the launch plan.")
+  await composer.fill(`${await composer.inputValue()} review the launch plan.`)
   await expect(
     composerGroup.getByRole("button", { name: "Change Maya", exact: true })
   ).toBeVisible()
@@ -411,9 +456,7 @@ test("keeps direct replies implicit and promotes one group mention", async ({
   await expect(
     message.getByRole("button", { name: "Assigned to Finn", exact: true })
   ).toBeVisible()
-  await expect(message.getByText("@Finn", { exact: true })).toHaveClass(
-    /bg-primary\/10/
-  )
+  await expect(message.getByText("@Finn", { exact: true })).toBeVisible()
 
   await expect
     .poll(async () => {

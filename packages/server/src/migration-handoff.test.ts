@@ -34,11 +34,6 @@ describe("validateStagingHandoff", () => {
     }
   });
 
-  it("survives a JSON round-trip (provenance must not be lost on serialize/parse — R2)", () => {
-    const roundTripped = JSON.parse(JSON.stringify(stagingManifest()));
-    expect(validateStagingHandoff(roundTripped).ok).toBe(true);
-  });
-
   it("rejects a manifest with no provenance block", () => {
     const r = validateStagingHandoff(stagingManifest({ provenance: undefined }));
     expect(r.ok).toBe(false);

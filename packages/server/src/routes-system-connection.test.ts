@@ -229,6 +229,10 @@ describe("GET /api/system/connection — config source (settings network.publicU
     expect(body.origin).toBe("https://config.example.com");
     expect(body.originSource).toBe("config");
     expect(body.originConfigured).toBe(true);
+    process.env["WORKTABLE_PUBLIC_URL"] = "https://env.example.com";
+    const overridden = (await getConnection()).body;
+    expect(overridden.origin).toBe("https://env.example.com");
+    expect(overridden.originSource).toBe("env");
   });
 
   it("a non-http stored publicUrl is ignored, not surfaced as a null origin", async () => {

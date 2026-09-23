@@ -5,6 +5,7 @@ ROOT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 PORT=${WORKTABLE_SMOKE_PORT:-19434}
 KEEP=${WORKTABLE_SMOKE_KEEP:-0}
 HOLD=${WORKTABLE_SMOKE_HOLD:-0}
+CHECK_SERVICE=0
 SMOKE_BASE=${WORKTABLE_SMOKE_BASE:-/tmp}
 SMOKE_ROOT=${WORKTABLE_SMOKE_ROOT:-}
 TARGET_OS=${WORKTABLE_TEST_OS:-$(uname -s)}
@@ -20,6 +21,7 @@ Options:
   --root <path>      Use a stable smoke root instead of a generated temp dir.
   --base <path>      Directory for generated smoke roots. Default: /tmp.
   --port <port>      Port for the temporary Worktable server. Default: 19434.
+  --service          Also attempt real user-service install/start/stop checks.
   --help             Show this help.
 
 Examples:
@@ -62,6 +64,9 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       PORT=$1
+      ;;
+    --service)
+      CHECK_SERVICE=1
       ;;
     --help|-h)
       usage
@@ -113,12 +118,32 @@ if [ -z "$SMOKE_ROOT" ]; then
   mkdir -p "$SMOKE_BASE"
   SMOKE_ROOT=$(mktemp -d "$SMOKE_BASE/worktable-local-smoke.XXXXXX")
 fi
+mkdir -p "$SMOKE_ROOT"
+SMOKE_ROOT=$(CDPATH= cd "$SMOKE_ROOT" && pwd)
 HOME_DIR="$SMOKE_ROOT/home"
 BIN_DIR="$SMOKE_ROOT/bin"
 WORKSPACE_DIR="$SMOKE_ROOT/workspace"
 APP_DIR="$SMOKE_ROOT/app"
+CLIENT_DIR="$SMOKE_ROOT/clients"
+CURSOR_CONFIG="$CLIENT_DIR/cursor/mcp.json"
+OPENCODE_CONFIG="$CLIENT_DIR/opencode/opencode.json"
+CODEX_CONFIG="$CLIENT_DIR/codex/config.toml"
+ISOLATED_PATH="$SMOKE_ROOT/fake-path:/usr/bin:/bin:/usr/sbin:/sbin"
 
-mkdir -p "$HOME_DIR" "$BIN_DIR" "$WORKSPACE_DIR" "$APP_DIR"
+mkdir -p "$HOME_DIR" "$BIN_DIR" "$WORKSPACE_DIR" "$APP_DIR" "$CLIENT_DIR" "$SMOKE_ROOT/fake-path"
+
+run_wt() {
+  HOME="$HOME_DIR" \
+  XDG_DATA_HOME="$HOME_DIR/.local/share" \
+  XDG_CONFIG_HOME="$HOME_DIR/.config" \
+  PATH="$ISOLATED_PATH" \
+  WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
+  WORKTABLE_APP_DIR="$APP_DIR" \
+  WORKTABLE_CURSOR_MCP_CONFIG="$CURSOR_CONFIG" \
+  WORKTABLE_OPENCODE_CONFIG="$OPENCODE_CONFIG" \
+  WORKTABLE_CODEX_CONFIG="$CODEX_CONFIG" \
+  "$WORKTABLE" "$@"
+}
 
 stop_owned_process() {
   owned_pid=$1
@@ -214,18 +239,45 @@ for binary in "$APP_DIR"/releases/*/bin/worktable; do
   fi
 done
 
-WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
-WORKTABLE_APP_DIR="$APP_DIR" \
-"$WORKTABLE" --version > "$SMOKE_ROOT/version.out"
+run_wt --version > "$SMOKE_ROOT/version.out"
+run_wt setup --yes --foreground --skip-mcp --no-launch \
+  --workspace "$WORKSPACE_DIR" --host 127.0.0.1 --port "$PORT" \
+  > "$SMOKE_ROOT/setup.out"
+run_wt paths --json > "$SMOKE_ROOT/paths.json"
+# The exit status is the supported health gate, independent of presentation.
+run_wt doctor --check > "$SMOKE_ROOT/doctor-check.out"
+run_wt status --json > "$SMOKE_ROOT/status-before.json"
 
-WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
-WORKTABLE_APP_DIR="$APP_DIR" \
-"$WORKTABLE" paths --json > "$SMOKE_ROOT/paths.json"
+# Exercise configuration written by the compiled launcher, without requiring
+# agent executables or writing to the caller's real client configuration.
+run_wt mcp setup cursor opencode codex > "$SMOKE_ROOT/mcp-setup.out"
+run_wt mcp status --json > "$SMOKE_ROOT/mcp-status.json"
+bun - "$SMOKE_ROOT" "$PORT" <<'JS'
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+const [root, port] = process.argv.slice(2)
+const json = (path) => JSON.parse(readFileSync(join(root, path), "utf8"))
+const endpoint = `http://127.0.0.1:${port}/mcp`
+assert.equal(json("paths.json").workspaceDir, join(root, "workspace"))
+assert.equal(json("paths.json").appDir, join(root, "app"))
+assert.equal(json("status-before.json").workspace, join(root, "workspace"))
+assert.equal(json("status-before.json").server.url, `http://127.0.0.1:${port}`)
+assert.equal(json("clients/cursor/mcp.json").mcpServers.worktable.url, endpoint)
+assert.deepEqual(json("clients/opencode/opencode.json").mcp.worktable, {
+  type: "remote", url: endpoint, enabled: true,
+})
+const codex = Bun.TOML.parse(readFileSync(join(root, "clients/codex/config.toml"), "utf8"))
+assert.equal(codex.mcp_servers.worktable.url, endpoint)
+for (const id of ["cursor", "opencode", "codex"]) {
+  assert.equal(json("mcp-status.json").find((client) => client.id === id)?.state, "configured")
+}
+JS
 
-WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
-WORKTABLE_APP_DIR="$APP_DIR" \
-"$WORKTABLE" doctor > "$SMOKE_ROOT/doctor.out"
-
+HOME="$HOME_DIR" \
+XDG_DATA_HOME="$HOME_DIR/.local/share" \
+XDG_CONFIG_HOME="$HOME_DIR/.config" \
+PATH="$ISOLATED_PATH" \
 WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
 WORKTABLE_APP_DIR="$APP_DIR" \
 "$WORKTABLE" launch --foreground --no-browser --port "$PORT" > "$SMOKE_ROOT/server.log" 2>&1 &
@@ -249,8 +301,16 @@ if [ "$healthy" != "1" ]; then
   exit 1
 fi
 
-curl -fsS "http://127.0.0.1:$PORT/" > "$SMOKE_ROOT/index.html"
-grep -q "<title>Worktable</title>" "$SMOKE_ROOT/index.html"
+run_wt status --json > "$SMOKE_ROOT/status-running.json"
+bun - "$SMOKE_ROOT/status-running.json" <<'JS'
+import assert from "node:assert/strict"
+assert.equal((await Bun.file(process.argv[2]).json()).server.running, true)
+JS
+run_wt mcp test > "$SMOKE_ROOT/mcp-test.out"
+
+curl -fsS -D "$SMOKE_ROOT/index.headers" "http://127.0.0.1:$PORT/" > "$SMOKE_ROOT/index.html"
+grep -iq '^Content-Type:[[:space:]]*text/html' "$SMOKE_ROOT/index.headers"
+test -s "$SMOKE_ROOT/index.html"
 
 i=0
 while [ "$i" -lt 40 ]; do
@@ -278,7 +338,11 @@ if [ -p "$SMOKE_ROOT/stdio-mcp.in" ]; then
   rm "$SMOKE_ROOT/stdio-mcp.in"
 fi
 mkfifo "$SMOKE_ROOT/stdio-mcp.in"
-WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
+HOME="$HOME_DIR" \
+  XDG_DATA_HOME="$HOME_DIR/.local/share" \
+  XDG_CONFIG_HOME="$HOME_DIR/.config" \
+  PATH="$ISOLATED_PATH" \
+  WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
   WORKTABLE_APP_DIR="$APP_DIR" \
   "$WORKTABLE" --mcp < "$SMOKE_ROOT/stdio-mcp.in" \
   > "$SMOKE_ROOT/stdio-mcp.out" 2> "$SMOKE_ROOT/stdio-mcp.err" &
@@ -319,6 +383,8 @@ printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\
 await_mcp_response 4
 printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"worktable_docs_read\",\"arguments\":{\"request\":{\"action\":\"read\",\"spaceId\":\"smoke-mcp-space\",\"docPath\":\"json-doc\"}}}}" >&3
 await_mcp_response 5
+printf '%s\n' '{"jsonrpc":"2.0","id":6,"method":"tools/list","params":{}}' >&3
+await_mcp_response 6
 exec 3>&-
 stop_owned_process "$STDIO_PID"
 STDIO_PID=
@@ -326,6 +392,30 @@ grep -q '"protocolVersion"' "$SMOKE_ROOT/mcp-response-1.json"
 grep -q 'flowchart-v2' "$SMOKE_ROOT/mcp-response-2.json"
 grep -q 'graph TD; A-->B' "$SMOKE_ROOT/mcp-response-5.json"
 grep -q 'Hello from JSON' "$SMOKE_ROOT/mcp-response-5.json"
+grep -q 'worktable_discover' "$SMOKE_ROOT/mcp-response-6.json"
+
+run_wt mcp remove cursor > "$SMOKE_ROOT/mcp-remove.out"
+run_wt mcp status --json > "$SMOKE_ROOT/mcp-status-after-remove.json"
+bun - "$SMOKE_ROOT" <<'JS'
+import assert from "node:assert/strict"
+import { join } from "node:path"
+const root = process.argv[2]
+const status = await Bun.file(join(root, "mcp-status-after-remove.json")).json()
+assert.equal(status.find((client) => client.id === "cursor")?.state, "removed")
+const cursor = await Bun.file(join(root, "clients/cursor/mcp.json")).json()
+assert.equal(cursor.mcpServers?.worktable, undefined)
+JS
+
+# Explicit opt-in only: this is the retained native user-service check from
+# verify-local-e2e.sh. Ordinary smoke runs never install or start a user service.
+if [ "$CHECK_SERVICE" = "1" ]; then
+  run_wt service install > "$SMOKE_ROOT/service-install.out"
+  run_wt service start > "$SMOKE_ROOT/service-start.out"
+  run_wt service status > "$SMOKE_ROOT/service-status.out"
+  run_wt service logs > "$SMOKE_ROOT/service-logs.out"
+  run_wt service stop > "$SMOKE_ROOT/service-stop.out" || true
+  run_wt service uninstall > "$SMOKE_ROOT/service-uninstall.out" || true
+fi
 
 echo
 echo "Local install smoke passed."

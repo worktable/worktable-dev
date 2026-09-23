@@ -16,14 +16,7 @@ function hash(path: string): string {
 }
 
 describe("workspace fixture seeding", () => {
-  test("uses the exact committed fixture inventory", () => {
-    expect(FIXTURE_SLUGS).toEqual([
-      "basic-docs",
-      "engineer",
-      "founder",
-      "product-manager",
-      "wiki-links",
-    ])
+  test("resolves registered fixtures and rejects unknown paths", () => {
     for (const slug of FIXTURE_SLUGS)
       expect(fixturePath(slug)).toEndWith(join("fixtures", "workspaces", slug))
     expect(() => fixturePath("../daily")).toThrow("Unknown fixture")

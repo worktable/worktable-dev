@@ -19,7 +19,6 @@ import {
   writeLocalRuntime,
 } from "@worktable/server/runtime"
 import {
-  SETUP_INTERACTIVE_TERMINAL_REQUIRED_MESSAGE,
   assertExclusiveRunMode,
   clientsToDeselect,
   describeWorkspaceClassification,
@@ -347,10 +346,6 @@ describe("setup helpers", () => {
     expect(clientsToDeselect(config, ["claude-code", "codex"])).toEqual([])
     expect(clientsToDeselect(config, [])).toEqual(["claude-code", "codex"])
   })
-
-  it("tells non-interactive users that --yes is required", () => {
-    expect(SETUP_INTERACTIVE_TERMINAL_REQUIRED_MESSAGE).toContain("--yes")
-  })
 })
 
 describe("color gating", () => {
@@ -403,7 +398,6 @@ describe("CLI command surface (shared command runtime)", () => {
   it("documents the top-level commands in --help", () => {
     const { stdout, exitCode } = runCli(["--help"])
     expect(exitCode).toBe(0)
-    // Locked by verify-local-e2e.sh: these substrings must appear in help.
     expect(stdout).toContain("worktable launch")
     expect(stdout).toContain("worktable setup")
     expect(stdout).toContain("worktable mcp")
@@ -459,7 +453,10 @@ describe("CLI command surface (shared command runtime)", () => {
       )
 
       expectCliSuccess(
-        skillsWorker.run(["skills", "install", "agents", "--yes", "--json"], env),
+        skillsWorker.run(
+          ["skills", "install", "agents", "--yes", "--json"],
+          env
+        ),
         "standard Agent Skills install"
       )
       const claude = skillsWorker.run(
@@ -469,7 +466,10 @@ describe("CLI command surface (shared command runtime)", () => {
       expectCliSuccess(claude, "Claude skill install")
       expect(JSON.parse(claude.stdout).result.action).toBe("write")
 
-      const status = skillsWorker.run(["skills", "status", "all", "--json"], env)
+      const status = skillsWorker.run(
+        ["skills", "status", "all", "--json"],
+        env
+      )
       expectCliSuccess(status, "target-based skill status")
       expect(
         JSON.parse(status.stdout).statuses.map(
@@ -1411,6 +1411,8 @@ describe("workspace and service handoff command integration", () => {
         WORKTABLE_SERVICE_BACKEND: "unsupported",
         WORKTABLE_OWNER_PASSWORD: TEST_OWNER_PASSWORD,
       })
+      const config = JSON.parse(readFileSync(join(app, "config.json"), "utf8"))
+      expect(config.service).toMatchObject({ reachable: true, host: "0.0.0.0" })
       const tokensPath = join(app, "tokens.json")
       expect(existsSync(tokensPath)).toBe(true)
       const tokens = JSON.parse(readFileSync(tokensPath, "utf8"))
@@ -1476,7 +1478,7 @@ describe("workspace and service handoff command integration", () => {
     }
   })
 
-  it("launch --background restarts a running service after changing its workspace", async () => {
+  it("launch --background adopts the requested workspace and endpoint after restarting", async () => {
     const { ws, app, cleanup } = tempWsAppPair()
     const second = mkdtempSync(join(tmpdir(), "wt-background-second-"))
     const blocker = occupyEphemeralPort()
@@ -1531,8 +1533,19 @@ describe("workspace and service handoff command integration", () => {
         ),
         "workspace-switch workspace preparation"
       )
+      const nextPortReservation = occupyEphemeralPort()
+      const nextPort = nextPortReservation.port
+      await nextPortReservation.stop()
       const switched = runCli(
-        ["launch", "--background", "--no-browser", "--workspace", second],
+        [
+          "launch",
+          "--background",
+          "--no-browser",
+          "--workspace",
+          second,
+          "--port",
+          String(nextPort),
+        ],
         baseEnv
       )
       expectCliSuccess(switched, "workspace-switch launch")
@@ -1563,6 +1576,10 @@ describe("workspace and service handoff command integration", () => {
       expect(secondWorkspace).not.toBeNull()
       expect(secondWorkspace?.id).not.toBe(firstWorkspace.id)
       expect(switchedConfig.workspace).toBe(second)
+      expect(switchedConfig.service.port).toBe(nextPort)
+      expect(switched.stdout).not.toContain(
+        `Worktable running at http://127.0.0.1:${port}`
+      )
     } finally {
       await blocker.stop()
       runCli(["service", "stop"], baseEnv)
@@ -1601,59 +1618,6 @@ describe("workspace and service handoff command integration", () => {
       cleanup()
     }
   })
-
-  it("a launch that changes reachability vs the running service does not report the stale loopback URL (Finding 4)", async () => {
-    // The process backend's start waits a few seconds for the (deliberately
-    // failing) managed child to report a PID, so allow extra time.
-    const { ws, app, cleanup } = tempWsAppPair()
-    const servicePath = isolatedServiceTestPath(app)
-    const serviceHome = isolatedServiceTestHome(app)
-    // Occupy the target port so the managed child server cannot bind and exits
-    // immediately — this keeps the test from leaving a real server running while
-    // still exercising the apply-new-config path.
-    const blocker = occupyEphemeralPort("0.0.0.0")
-    const port = blocker.port
-    try {
-      // Plain loopback setup on a fixed port.
-      const setup = runCli(
-        ["setup", "--yes", "--skip-mcp", "--no-launch", "--port", String(port)],
-        {
-          WORKTABLE_WORKSPACE: ws,
-          WORKTABLE_APP_DIR: app,
-          WORKTABLE_SERVICE_BACKEND: "process",
-          HOME: serviceHome,
-          PATH: servicePath,
-        }
-      )
-      expectCliSuccess(setup, "stale-loopback test setup")
-      // Mark the process-backend service as installed (marker file present) so the
-      // "service already installed" branch is taken.
-      writeFileSync(join(app, "managed-service.json"), "{}")
-
-      const { stdout } = runCli(
-        ["launch", "--reachable", "--no-browser", "--port", String(port)],
-        {
-          WORKTABLE_WORKSPACE: ws,
-          WORKTABLE_APP_DIR: app,
-          WORKTABLE_SERVICE_BACKEND: "process",
-          WORKTABLE_OWNER_PASSWORD: TEST_OWNER_PASSWORD,
-          HOME: serviceHome,
-          PATH: servicePath,
-        }
-      )
-      // It must NOT silently report the old loopback URL as already running.
-      expect(stdout).not.toContain(
-        `Worktable running at http://127.0.0.1:${port}`
-      )
-      // Instead it applied the newly resolved reachable config (persisted 0.0.0.0).
-      const config = JSON.parse(readFileSync(join(app, "config.json"), "utf8"))
-      expect(config.service.reachable).toBe(true)
-      expect(config.service.host).toBe("0.0.0.0")
-    } finally {
-      await blocker.stop()
-      cleanup()
-    }
-  }, 20000)
 
   it("a failed foreground bind restores the previous config and workspace reservation", () => {
     const { ws, app, cleanup } = tempWsAppPair()

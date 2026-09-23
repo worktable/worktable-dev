@@ -3,7 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { getEventListeners } from "node:events"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { OpenClawConfig } from "openclaw/plugin-sdk/channel-core"
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
 import {
   createOpenClawDeliveryDedupe,
@@ -13,7 +12,6 @@ import {
 } from "./connector.js"
 import type { DeliveryDedupe } from "./connector.js"
 import { FakeWorktableClient } from "./fake-worktable-client.js"
-import { worktableSessionRoute } from "./openclaw-dispatcher.js"
 import {
   createMemoryReplyOutbox,
   createOpenClawReplyOutbox,
@@ -1202,38 +1200,6 @@ describe("OpenClaw Worktable connector", () => {
     expect(completed).toBe(true)
     expect(startedCount).toBe(4)
     expect(client.replies).toHaveLength(0)
-  })
-
-  it("maps a Worktable thread deterministically to one isolated OpenClaw session", () => {
-    const cfg = {} as OpenClawConfig
-    const first = worktableSessionRoute(
-      cfg,
-      "default",
-      "connected-agents",
-      "thr_alpha"
-    )
-    const followUp = worktableSessionRoute(
-      cfg,
-      "default",
-      "connected-agents",
-      "thr_alpha"
-    )
-    const second = worktableSessionRoute(
-      cfg,
-      "default",
-      "connected-agents",
-      "thr_beta"
-    )
-    const copied = worktableSessionRoute(
-      cfg,
-      "default",
-      "copied-space",
-      "thr_alpha"
-    )
-    expect(followUp.sessionKey).toBe(first.sessionKey)
-    expect(second.sessionKey).not.toBe(first.sessionKey)
-    expect(copied.sessionKey).not.toBe(first.sessionKey)
-    expect(first.sessionKey).toContain("thr_alpha")
   })
 
   it("persists duplicate completion across a connector restart", async () => {

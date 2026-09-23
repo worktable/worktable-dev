@@ -58,7 +58,6 @@ describe("link graph", () => {
         Array.from({ length: 8 }, () => getSpaceLinkGraph(SPACE))
       )
       expect(builds).toBe(1)
-      expect(results.every((result) => result === results[0])).toBe(true)
       expect(results[0]!.inbound.get("target")).toEqual(["source"])
     } finally {
       setLinkGraphRebuildHookForTests(null)

@@ -186,6 +186,12 @@ test("Cloud composes relevant sections and saves human preferences", async ({
       history: { retention: { mode: "count", maxPerDoc: 50 } },
     })
 
+  await page.setViewportSize({ width: 390, height: 844 })
+  await settings.getByRole("button", { name: "Account", exact: true }).click()
+  await expect(
+    settings.getByText("Signed in on this browser", { exact: true })
+  ).toBeVisible()
+
   expect(cachedVersionRequests).toBe(0)
   expect(updateStatusRequests).toBe(0)
 })
@@ -224,24 +230,5 @@ test("self-managed Settings retain local controls and normalize Account requests
   ).toBeVisible()
   await expect(
     settings.getByText("Check for updates automatically", { exact: true })
-  ).toBeVisible()
-})
-
-test("Cloud mobile settings keeps the Account section reachable", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await mockCloud(page)
-  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-  await expect(
-    page.getByRole("button", { name: "Settings", exact: true })
-  ).toBeVisible({ timeout: 30_000 })
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent("worktable:open-settings"))
-  })
-  const settings = page.getByRole("dialog")
-  await settings.getByRole("button", { name: "Account", exact: true }).click()
-  await expect(
-    settings.getByText("Signed in on this browser", { exact: true })
   ).toBeVisible()
 })

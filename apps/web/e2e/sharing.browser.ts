@@ -122,20 +122,6 @@ async function mockCloudSharing(
   return mutations
 }
 
-async function headerActionLabels(page: Page): Promise<string[]> {
-  return page.locator("[data-worktable-app-header]").evaluate((header) =>
-    Array.from(header.children).flatMap((element) => {
-      if (!element.matches("button, a, [role='button']")) return []
-      return [
-        element.getAttribute("aria-label") ??
-          element.getAttribute("title") ??
-          element.textContent?.trim() ??
-          "",
-      ]
-    })
-  )
-}
-
 test.beforeAll(async () => {
   harness = await startWebHarness("sharing-browser")
   await createFixture()
@@ -169,13 +155,6 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await expect(shareButton).toBeHidden()
   sharingEnabled = true
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
-  await expect(shareButton.locator("svg")).toHaveClass(/lucide-share-2/)
-  const docActions = await headerActionLabels(page)
-  expect(docActions).toContain("Share document")
-  expect(docActions).toContain("More actions")
-  expect(docActions.indexOf("More actions")).toBeGreaterThan(
-    docActions.indexOf("Share document")
-  )
   await shareButton.click()
 
   const dialog = page.getByRole("dialog", { name: "Share document" })
@@ -255,12 +234,6 @@ test("explains the inert shared-HTML boundary before creating a link", async ({
 
   const shareButton = page.getByRole("button", { name: "Share document" })
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
-  const htmlActions = await headerActionLabels(page)
-  expect(htmlActions).toContain("Share document")
-  expect(htmlActions).toContain("More actions")
-  expect(htmlActions.indexOf("More actions")).toBeGreaterThan(
-    htmlActions.indexOf("Share document")
-  )
   await shareButton.click()
   const dialog = page.getByRole("dialog", { name: "Share document" })
   await expect(

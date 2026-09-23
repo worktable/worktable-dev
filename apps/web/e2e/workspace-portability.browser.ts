@@ -4,10 +4,13 @@ import { startWebHarness, type WebHarness } from "./harness"
 let harness: WebHarness
 
 async function openPortability(page: Page) {
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
   const settings = page.getByRole("button", { name: "Settings", exact: true })
   await expect(settings).toBeVisible({ timeout: 30_000 })
   await settings.click()
-  await page.getByRole("button", { name: "Import & Export", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Import & Export", exact: true })
+    .click()
   await expect(
     page.getByRole("heading", { name: "Import & Export", exact: true })
   ).toBeVisible()
@@ -114,10 +117,13 @@ test("clearing a workspace discards stale drafts and reloads another tab", async
   ).toBeNull()
   // A restored tab can start with storage from before the clear. It must finish
   // loading the new workspace as well as discard the obsolete draft.
-  await other.evaluate(({ id, epoch, key }) => {
-    sessionStorage.setItem(`worktable-content-epoch:${id}`, epoch)
-    sessionStorage.setItem(key, "obsolete draft")
-  }, { id: before.id, epoch: before.contentEpoch, key: draftKey })
+  await other.evaluate(
+    ({ id, epoch, key }) => {
+      sessionStorage.setItem(`worktable-content-epoch:${id}`, epoch)
+      sessionStorage.setItem(key, "obsolete draft")
+    },
+    { id: before.id, epoch: before.contentEpoch, key: draftKey }
+  )
   await other.reload({ waitUntil: "domcontentloaded" })
   await openPortability(other)
   expect(

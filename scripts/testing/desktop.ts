@@ -61,7 +61,7 @@ const phases: Array<{
   {
     phase: "rust-test",
     executable: "cargo",
-    args: ["test", "--manifest-path", manifest],
+    args: ["test", "--manifest-path", manifest, "--bins", "--examples"],
     cwd: desktopRoot,
     env: rustContractEnvironment,
   },

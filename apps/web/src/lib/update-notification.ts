@@ -16,3 +16,28 @@ export function markUpdateVersionSeen(version: string): void {
     // persistent badge remains useful; at worst the toast repeats next load.
   }
 }
+
+/** Announce once on visibility, re-reading shared storage when a hidden tab returns. */
+export function announceUpdateWhenVisible(
+  version: string,
+  announce: () => void,
+  visibility: Pick<
+    Document,
+    "visibilityState" | "addEventListener" | "removeEventListener"
+  > = document,
+  seen: () => string | null = seenUpdateVersion,
+  markSeen: (version: string) => void = markUpdateVersionSeen
+): () => void {
+  let announced = false
+  const onVisible = () => {
+    if (announced || visibility.visibilityState !== "visible") return
+    announced = true
+    visibility.removeEventListener("visibilitychange", onVisible)
+    if (seen() === version) return
+    markSeen(version)
+    announce()
+  }
+  if (visibility.visibilityState === "visible") onVisible()
+  else visibility.addEventListener("visibilitychange", onVisible)
+  return () => visibility.removeEventListener("visibilitychange", onVisible)
+}

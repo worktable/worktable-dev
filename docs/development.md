@@ -79,8 +79,10 @@ bun run test:required
 
 Use the least expensive canonical test lane that proves the changed behavior
 while developing. `test:required` covers standard, server, CLI, and packaged
-boundaries. `test:full` adds Desktop contracts and browser journeys. The public
-`test:changed` command currently selects every public changed lane.
+boundaries. `test:full` adds Desktop contracts and browser journeys.
+`test:changed` retains required tests and selects browser/Desktop lanes for their
+owning surface. Server protocols, shared contracts, toolchain inputs and unknown
+paths select every lane; unavailable history also falls back conservatively.
 
 Before relying on full verification, install Chromium with
 `bunx playwright@1.61.1 install --with-deps chromium` and the Rust/native
@@ -94,8 +96,12 @@ tests. Keep examples synthetic and describe what you verified in the PR.
 Repository README, contributor guides, and issue templates use focused CI
 checks for local Markdown links, YAML parsing, and unresolved merge conflicts.
 Run `bun scripts/repository-docs.ts` to check these documents locally. Product
-code, product documentation, workflow changes, and unknown paths retain full
-verification. A mixed change uses the broader path.
+changes always retain build, typecheck and required tests. Independent web,
+Desktop, CLI, plugin and lab changes select their owning expensive lanes;
+shared inputs and unknown paths retain full verification. Public main, manual
+runs and the weekly schedule run full verification. The weekly run omits the
+Rust build cache to preserve cold-build evidence. Plugin distribution checks
+run only when plugin or build inputs change, with the required job still present.
 
 ## Generated files and docs
 

@@ -62,6 +62,21 @@ require an explicit non-production origin, for example
 `bun run lab -- cloud --origin https://staging.example.test --dry-run`.
 Use a staging system you control for an actual run.
 
+## Installed CLI smoke
+
+After building the local release archive in `dist/releases`, run
+`bun run smoke:local-install`. This installs into temporary directories and checks
+compiled CLI setup, client configuration and removal, HTTP health, and stdio MCP
+with a document roundtrip. Stdio requests wait for their matching responses.
+The repository's Bun parses the resulting JSON/TOML; the installed launcher runs
+with an isolated home and a system-only PATH to verify its bundled runtime.
+
+Use `-- --keep` to retain logs or `-- --review` for a running instance. The older
+`bun run verify:local-e2e` entrypoint delegates to this same journey and preserves
+its `WORKTABLE_E2E_*` settings and options. `--service` explicitly adds the native
+user-service install/start/status/logs/stop/uninstall checks; ordinary runs do not
+install a user service.
+
 ## Desktop
 
 Desktop packaging requires macOS and the Rust toolchain pinned in

@@ -185,8 +185,8 @@ function jsonBody(value: unknown): string {
 }
 
 /**
- * Render the connection config for one client. Bodies must stay byte-identical
- * to what `worktable mcp print-config` emits — golden tests pin this.
+ * Render the connection config for one client. The CLI uses this renderer;
+ * client contract tests verify the parsed configuration and shell arguments.
  */
 export function mcpClientSnippet(
   id: McpSnippetClientId,

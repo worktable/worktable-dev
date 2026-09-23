@@ -3,7 +3,7 @@ import { toast } from "@worktable/ui/components/sonner"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
 import { openSettings } from "@/lib/settings-open"
 import {
-  markUpdateVersionSeen,
+  announceUpdateWhenVisible,
   seenUpdateVersion,
 } from "@/lib/update-notification"
 
@@ -21,15 +21,7 @@ export function UpdateNudge() {
   useEffect(() => {
     if (!latest || !fresh || seenUpdateVersion() === latest) return
 
-    let announced = false
-    const announce = () => {
-      if (announced || document.visibilityState !== "visible") return
-      announced = true
-      document.removeEventListener("visibilitychange", announce)
-      // A different tab may have announced this release while this one was
-      // hidden. Re-read shared storage at the moment the toast becomes visible.
-      if (seenUpdateVersion() === latest) return
-      markUpdateVersionSeen(latest)
+    return announceUpdateWhenVisible(latest, () => {
       toast.info(`Worktable ${latest} is available`, {
         id: "update-nudge",
         duration: 15_000,
@@ -39,14 +31,7 @@ export function UpdateNudge() {
           onClick: () => openSettings("system"),
         },
       })
-    }
-
-    if (document.visibilityState === "visible") {
-      announce()
-      return
-    }
-    document.addEventListener("visibilitychange", announce)
-    return () => document.removeEventListener("visibilitychange", announce)
+    })
   }, [fresh, latest])
 
   return null

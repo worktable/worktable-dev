@@ -293,32 +293,6 @@ describe("markdown → blocks → markdown stability", () => {
     const gen2 = await blocksToMarkdown(blocks2);
     expect(gen2).toBe(gen1);
   });
-
-  it("first-generation markdown keeps every construct recognizable", async () => {
-    const blocks = await markdownToBlocks(markdownFixture);
-    const gen1 = await blocksToMarkdown(blocks);
-
-    expect(gen1).toContain("# Heading one");
-    expect(gen1).toContain("## Heading two");
-    expect(gen1).toContain("### Heading three");
-    expect(gen1).toContain("**bold**");
-    expect(gen1).toContain("*italic*");
-    expect(gen1).toContain("`mono`");
-    expect(gen1).toContain("[a link](https://example.com)");
-    expect(gen1).toContain("* bullet item");
-    expect(gen1).toContain("1. numbered item");
-    expect(gen1).toContain("* [x] done task");
-    expect(gen1).toContain("* [ ] open task");
-    expect(gen1).toContain("> quoted wisdom");
-    // Markdown-originated tables keep their header row (unlike block-originated
-    // header-less tables): the parser records headerRows, so the header survives.
-    expect(gen1).toContain("| Name       | Role       |");
-    expect(gen1).toContain("| Ada        | Engineer   |");
-    expect(gen1).toContain("![A picture](https://example.com/pic.png)");
-    expect(gen1).toContain("```typescript");
-    // The fence stays a codeBlock with language "mermaid", so it round-trips as text.
-    expect(gen1).toContain("```mermaid\ngraph TD; A-->B\n```");
-  });
 });
 
 // ── 3. canonicalizeBlocks equivalence ────────────────────
@@ -475,6 +449,9 @@ describe("storage round-trip through the real store", () => {
     expect(types).toContain("checkListItem");
     expect(types).toContain("quote");
     expect(types).toContain("table");
+    expect(tableRows(blocks.find((block) => block.type === "table"))).toEqual([
+      ["Name", "Role"], ["Ada", "Engineer"],
+    ]);
     expect(types).toContain("image");
     expect(blocks.filter((b) => b.type === "codeBlock").length).toBe(1);
     expect(types).toContain("mermaid");

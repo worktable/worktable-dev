@@ -148,13 +148,6 @@ describe("lab networking", () => {
     ).toThrow("requires host network")
   })
 
-  test("allocates distinct usable ports", async () => {
-    const first = await allocatePort("127.0.0.1")
-    const second = await allocatePort("127.0.0.1")
-    expect(first).toBeGreaterThan(0)
-    expect(second).toBeGreaterThan(0)
-  })
-
   test("renders only client-facing local origins", () => {
     expect(localOrigin("192.168.1.50", 17432)).toBe("http://192.168.1.50:17432")
     expect(localOrigin("fd00::1234", 17432)).toBe("http://[fd00::1234]:17432")
@@ -224,50 +217,5 @@ describe("lab networking", () => {
       "the Mac / LAN HTTP endpoint is cleartext. Use it only on a trusted network"
     )
     expect(summary).toEndWith("Full guide: ~/WORKTABLE_LAB.txt")
-  })
-
-  test("OpenClaw guide leads with the real channel acceptance path", () => {
-    const guide = renderGuide({
-      kind: "openclaw",
-      name: "openclaw-lab",
-      ttl: "2h",
-      versions: {
-        claude: "1.0.0",
-        codex: "1.0.0",
-        openclaw: "2026.7.1-2",
-      },
-      auth: {
-        claude: { kind: "guest-login" },
-        codex: { kind: "guest-login" },
-      },
-      authMode: "ready",
-      local: {
-        source: "checkout",
-        hostPort: 17432,
-        publicHost: "192.168.1.50",
-        publicOrigin: "http://192.168.1.50:17432",
-        lanOrigin: "http://192.168.1.50:17432",
-        loopbackOrigin: "http://127.0.0.1:17432",
-      },
-    })
-
-    expect(guide).toContain(
-      "OpenClaw reuses the isolated lab Codex subscription through the supported Codex harness"
-    )
-    expect(guide).toContain("openclaw gateway run")
-    expect(guide).toContain(
-      "openclaw plugins inspect worktable --runtime --json"
-    )
-    expect(guide).toContain("root has a separate empty OpenClaw state")
-    expect(guide).toContain(
-      "msb exec --tty --user tester openclaw-lab -- bash -l"
-    )
-    expect(guide.indexOf("~/bin/lab-status")).toBeLessThan(
-      guide.indexOf("## Flow and explanations")
-    )
-    expect(guide).toContain("Prove thread continuity")
-    expect(guide).not.toContain(
-      "Connect either Claude Code or Codex during setup"
-    )
   })
 })

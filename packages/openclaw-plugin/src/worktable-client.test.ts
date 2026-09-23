@@ -125,9 +125,6 @@ describe("OpenClaw Worktable client", () => {
       },
     ])
     expect(result).toEqual({ delivery: null })
-  })
-
-  it("propagates claim failures", async () => {
     const failure = Object.assign(new Error("Unauthorized"), { code: 401 })
     await expect(
       claimWithThreadLocations(() => Promise.reject(failure), 0)

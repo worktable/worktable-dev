@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
 permissions:
   contents: read
 concurrency:
@@ -27,7 +29,8 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: echo "scope=$(bun scripts/repository-docs.ts --classify "$BASE_SHA" "$HEAD_SHA")" >> "$GITHUB_OUTPUT"
+          FULL_VERIFY: ${{ github.event_name != 'pull_request' }}
+        run: bun scripts/testing/public-selection.ts
       - name: Check repository documentation
         if: steps.scope.outputs.scope == 'documentation'
         run: bun scripts/repository-docs.ts
@@ -44,24 +47,54 @@ jobs:
               "WORKTABLE_PUBLIC_SOURCE_COMMIT=$GITHUB_SHA" >> "$GITHUB_ENV"
           fi
       - name: Set up Rust
-        if: steps.scope.outputs.scope != 'documentation'
+        if: steps.scope.outputs.desktop == 'true'
         run: |
           rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
           rustup default 1.97.0
       - run: bun install --frozen-lockfile
         if: steps.scope.outputs.scope != 'documentation'
-      - name: Install browser and Desktop dependencies
-        if: steps.scope.outputs.scope != 'documentation'
+      - name: Restore Rust build cache
+        if: steps.scope.outputs.desktop == 'true' && github.event_name != 'schedule'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-rust-1.97.0-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-rust-1.97.0-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}-
+      - name: Install selected browser dependencies
+        if: steps.scope.outputs.browser == 'true'
+        run: bunx playwright@1.61.1 install --with-deps chromium
+      - name: Install selected Desktop dependencies
+        if: steps.scope.outputs.desktop == 'true'
         run: |
-          bunx playwright@1.61.1 install --with-deps chromium
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev
       - run: bun run check:tools && bun run check:theme && bun run check:brand
         if: steps.scope.outputs.scope != 'documentation'
       - run: bun run build
         if: steps.scope.outputs.scope != 'documentation'
-      - run: bun run verify:full
-        if: steps.scope.outputs.scope != 'documentation'
+      - name: Full verification
+        if: steps.scope.outputs.scope == 'full'
+        run: bun run verify:full
+      - name: Verify selected product lanes
+        if: steps.scope.outputs.scope == 'selected'
+        env:
+          SELECTED_SUITES: ${{ steps.scope.outputs.suites }}
+        run: |
+          bun run typecheck
+          bun run typecheck:lab
+          bun run --cwd packages/openclaw-plugin typecheck
+          bun run test:policy
+          IFS=',' read -r -a suites <<< "$SELECTED_SUITES"
+          args=()
+          for suite in "${suites[@]}"; do args+=(--suite "$suite"); done
+          bun run test:full "${args[@]}"
+          # The standalone compiled artifacts/notices are a distinct boundary
+          # from turbo's JS build, even when browsers/native tests are unneeded.
+          bun run release:lab
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

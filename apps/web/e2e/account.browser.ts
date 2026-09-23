@@ -165,38 +165,6 @@ test("Cloud Account settings confirms in-app before a CSRF-protected gateway sig
   ])
 })
 
-test("Cloud Account settings falls back to the gateway confirmation when CSRF acquisition fails", async ({
-  page,
-}) => {
-  const logoutMethods: string[] = []
-  await mockCloudAccount(page)
-  await page.route("**/gateway/session", (route) =>
-    route.fulfill({ status: 503, body: "Unavailable" })
-  )
-  await page.route("**/logout", async (route) => {
-    logoutMethods.push(route.request().method())
-    await route.fulfill({
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-      body: "<h1>Gateway sign-out confirmation</h1>",
-    })
-  })
-
-  await openCloudAccount(page)
-  const settings = page.getByRole("dialog")
-  await settings.getByRole("button", { name: "Sign out", exact: true }).click()
-  const confirmation = page.getByRole("dialog").filter({
-    has: page.getByRole("heading", { name: "Sign out of Worktable?" }),
-  })
-  await confirmation
-    .getByRole("button", { name: "Sign out", exact: true })
-    .click()
-
-  await expect(
-    page.getByRole("heading", { name: "Gateway sign-out confirmation" })
-  ).toBeVisible()
-  expect(logoutMethods).toEqual(["GET"])
-})
-
 test("Cloud Account shows period-end cancellation and opens the CSRF-protected portal", async ({
   page,
 }) => {
@@ -316,49 +284,6 @@ test("Cloud Account opens a CSRF-protected checkout without re-entering signup",
   })
 })
 
-test("Cloud Account distinguishes grace and complimentary access", async ({
-  browser,
-}) => {
-  const gracePage = await browser.newPage()
-  await mockCloudAccount(
-    gracePage,
-    activeBilling({
-      access: "grace",
-      subscription: {
-        status: "past_due",
-        currentPeriodEnd: Date.UTC(2026, 7, 29),
-        cancelAtPeriodEnd: false,
-        graceEndsAt: Date.UTC(2026, 8, 5),
-      },
-    })
-  )
-  await openCloudAccount(gracePage)
-  const graceSettings = gracePage.getByRole("dialog")
-  await expect(graceSettings.getByText("Payment due")).toBeVisible()
-  await gracePage.close()
-
-  const complimentaryPage = await browser.newPage()
-  await mockCloudAccount(
-    complimentaryPage,
-    activeBilling({
-      access: "complimentary",
-      subscription: undefined,
-      canManageBilling: false,
-    })
-  )
-  await openCloudAccount(complimentaryPage)
-  const complimentarySettings = complimentaryPage.getByRole("dialog")
-  await expect(complimentarySettings.getByText("VIP")).toBeVisible()
-  await expect(complimentarySettings.getByText("Boss tier")).toBeVisible()
-  await expect(
-    complimentarySettings.getByRole("button", { name: "Manage billing" })
-  ).toHaveCount(0)
-  await expect(
-    complimentarySettings.getByRole("button", { name: "Export" })
-  ).toHaveCount(0)
-  await complimentaryPage.close()
-})
-
 test("Cloud Account keeps export available while billing access is locked", async ({
   page,
 }) => {
@@ -391,25 +316,4 @@ test("Cloud Account keeps export available while billing access is locked", asyn
     page.getByRole("heading", { name: "Workspace export ready" })
   ).toBeVisible()
   expect(exportMethod).toBe("GET")
-})
-
-test("local Settings omits the Cloud-only Account section", async ({
-  page,
-}) => {
-  await page.route("**/api/system/connection", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
-    })
-  )
-
-  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
-  await expect(
-    page.getByRole("button", { name: "Settings", exact: true })
-  ).toBeVisible({ timeout: 30_000 })
-  await page.getByRole("button", { name: "Settings", exact: true }).click()
-  const settings = page.getByRole("dialog")
-  await expect(
-    settings.getByRole("button", { name: "Account", exact: true })
-  ).toHaveCount(0)
 })

@@ -353,13 +353,31 @@ await_mcp_response() {
   request_id=$1
   attempts=0
   while [ "$attempts" -lt 240 ]; do
-    if grep -E "\"id\":[[:space:]]*$request_id([,}])" "$SMOKE_ROOT/stdio-mcp.out" > "$SMOKE_ROOT/mcp-response-$request_id.json"; then
-      if grep -Eq '"error"[[:space:]]*:|"isError"[[:space:]]*:[[:space:]]*true' "$SMOKE_ROOT/mcp-response-$request_id.json"; then
+    if bun - "$SMOKE_ROOT/stdio-mcp.out" "$request_id" "$SMOKE_ROOT/mcp-response-$request_id.json" <<'JS'
+import { readFileSync, writeFileSync } from "node:fs"
+const [input, requestId, output] = process.argv.slice(2)
+let response
+for (const line of readFileSync(input, "utf8").split("\n")) {
+  try {
+    const message = JSON.parse(line)
+    if (message?.id === Number(requestId)) response = message
+  } catch {
+    // The child may still be writing the final line.
+  }
+}
+if (!response) process.exit(2)
+writeFileSync(output, JSON.stringify(response) + "\n")
+process.exit(Object.hasOwn(response, "error") || response.result?.isError === true ? 1 : 0)
+JS
+    then
+      return
+    else
+      response_status=$?
+      if [ "$response_status" -ne 2 ]; then
         echo "Stdio MCP request $request_id failed:" >&2
         cat "$SMOKE_ROOT/mcp-response-$request_id.json" >&2
         exit 1
       fi
-      return
     fi
     if ! kill -0 "$STDIO_PID" >/dev/null 2>&1; then
       break

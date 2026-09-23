@@ -51,7 +51,7 @@
     "desktop:dev:isolated": "bun run --cwd apps/desktop dev:isolated",
     "desktop:build": "bun run --cwd apps/desktop native:build",
     "generate:docs-content": "bun run scripts/generate-docs-content.ts",
-    "build:docs": "bun run --cwd apps/docs build",
+    "build:docs": "turbo build --filter=@worktable/docs",
     "dev:docs": "bun run generate:docs-content && bun run --cwd apps/docs dev:host",
     "serve:docs": "bun run --cwd apps/docs preview:host",
     "fixtures:generate": "bun run packages/server/src/fixtures/cli.ts generate",

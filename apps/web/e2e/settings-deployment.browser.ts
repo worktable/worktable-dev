@@ -61,14 +61,13 @@ async function mockCloud(page: Page): Promise<void> {
   )
 }
 
-async function openMobileSettings(page: Page) {
+async function openSettings(page: Page) {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   const settingsButton = page.getByRole("button", {
     name: "Settings",
     exact: true,
   })
   await expect(settingsButton).toBeVisible({ timeout: 30_000 })
-  await page.getByRole("button", { name: /^Toggle sidebar/ }).click()
   await settingsButton.click()
   return page.getByRole("dialog")
 }
@@ -84,7 +83,7 @@ test.afterAll(async () => {
 test("Cloud composes relevant sections and saves human preferences", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setViewportSize({ width: 800, height: 360 })
   const settingsPatches: unknown[] = []
   const workspacePatches: unknown[] = []
   let cachedVersionRequests = 0
@@ -108,10 +107,9 @@ test("Cloud composes relevant sections and saves human preferences", async ({
     if (url.pathname === "/api/system/update") updateStatusRequests += 1
   })
 
-  const settings = await openMobileSettings(page)
-  await settings.getByRole("button", { name: "Account", exact: true }).click()
+  const settings = await openSettings(page)
   await expect(
-    settings.getByText("Signed in on this browser", { exact: true })
+    settings.getByRole("button", { name: "Account", exact: true })
   ).toBeVisible()
   const about = settings.getByRole("button", { name: "About", exact: true })
   await page.evaluate(() => {
@@ -122,6 +120,9 @@ test("Cloud composes relevant sections and saves human preferences", async ({
     )
   })
   await expect(about).toBeInViewport()
+  await expect(
+    settings.getByRole("heading", { name: "About", exact: true }).first()
+  ).toBeVisible()
   await expect(settings.getByText("Product", { exact: true })).toBeVisible()
   await expect(
     settings.getByText("Worktable Cloud", { exact: true })
@@ -146,6 +147,7 @@ test("Cloud composes relevant sections and saves human preferences", async ({
     settings.getByRole("button", { name: "System", exact: true })
   ).toHaveCount(0)
 
+  await page.setViewportSize({ width: 1280, height: 720 })
   await settings.getByRole("button", { name: "General", exact: true }).click()
   const name = settings.getByLabel("Name", { exact: true })
   await name.fill("Cloud Settings Browser")
@@ -222,5 +224,23 @@ test("self-managed Settings retain local controls and normalize Account requests
   ).toBeVisible()
   await expect(
     settings.getByText("Check for updates automatically", { exact: true })
+  ).toBeVisible()
+})
+
+test("Cloud mobile settings keeps the Account section reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockCloud(page)
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await expect(
+    page.getByRole("button", { name: "Settings", exact: true })
+  ).toBeVisible({ timeout: 30_000 })
+  await page.getByRole("button", { name: /^Toggle sidebar/ }).click()
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  const settings = page.getByRole("dialog")
+  await settings.getByRole("button", { name: "Account", exact: true }).click()
+  await expect(
+    settings.getByText("Signed in on this browser", { exact: true })
   ).toBeVisible()
 })

@@ -12,6 +12,8 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-09-23
+
 ### Added
 
 - **Clear workspace:** Remove workspace content and history from Settings with typed confirmation while keeping your workspace identity and preferences.

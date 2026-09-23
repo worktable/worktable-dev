@@ -65,7 +65,7 @@ export function WorkspaceClearControls() {
   const error = confirm.error ?? prepare.error
   return (
     <div className="-mx-4 flex flex-col gap-3 border-t border-border/60 px-4 pt-3">
-      <SettingRow label="Clear workspace" labelVariant="heading">
+      <SettingRow label="Clear workspace">
         <Button
           variant="outline"
           disabled={busy}

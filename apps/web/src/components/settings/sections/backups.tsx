@@ -152,12 +152,12 @@ export function BackupsSection() {
                 : "Automatic backups off"}
             </p>
             {status.latest && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Last backup {date(status.latest.capturedAt)}
               </p>
             )}
             {status.retentionDays && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Kept for {status.retentionDays} days
               </p>
             )}

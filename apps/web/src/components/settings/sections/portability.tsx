@@ -246,14 +246,14 @@ function ExportControls() {
                     <code className="text-xs break-all whitespace-pre-wrap">
                       {displayExportPath(issue.path)}
                     </code>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="block text-sm text-muted-foreground">
                       {issue.code.replaceAll("-", " ")}
                     </span>
                   </li>
                 ))}
               </ul>
               {failedJob.failure.truncated ? (
-                <p className="mt-2 text-xs text-muted-foreground">
+                <p className="mt-2 text-sm text-muted-foreground">
                   Showing {failedJob.failure.issues.length} of{" "}
                   {failedJob.failure.issueCount} issues.
                 </p>
@@ -396,8 +396,8 @@ function ImportControls() {
         <OperationStatus state="attention">Reconnecting…</OperationStatus>
       ) : null}
       <SettingRow
+        className="flex-col items-start sm:flex-row sm:items-center"
         label="Import workspace"
-        labelVariant="heading"
         description="Replace content from a Worktable package."
       >
         <Button

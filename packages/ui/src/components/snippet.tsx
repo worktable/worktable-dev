@@ -24,9 +24,7 @@ function Snippet({
   return (
     <div data-slot="snippet" className={cn("flex flex-col gap-1.5", className)}>
       {label ? (
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          {label}
-        </span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
       ) : null}
       <div className="relative">
         <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 pr-11 font-mono text-xs whitespace-pre">

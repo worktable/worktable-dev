@@ -6,14 +6,12 @@ import { FieldLabel, FieldDescription } from "./field"
 
 function SettingRow({
   label,
-  labelVariant = "default",
   description,
   htmlFor,
   children,
   className,
 }: {
   label: React.ReactNode
-  labelVariant?: "default" | "heading"
   description?: React.ReactNode
   htmlFor?: string
   children: React.ReactNode
@@ -37,15 +35,7 @@ function SettingRow({
       className={cn("flex items-center justify-between gap-4 py-1", className)}
     >
       <div className="min-w-0 space-y-0.5">
-        <FieldLabel
-          id={labelId}
-          htmlFor={htmlFor}
-          className={
-            labelVariant === "heading"
-              ? "text-sm tracking-[revert-layer] text-foreground"
-              : undefined
-          }
-        >
+        <FieldLabel id={labelId} htmlFor={htmlFor}>
           {label}
         </FieldLabel>
         {description ? (

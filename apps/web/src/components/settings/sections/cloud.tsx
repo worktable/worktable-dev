@@ -200,7 +200,7 @@ export function CloudSection() {
             </div>
             <div className="flex min-h-11 shrink-0 items-center">
               {data.enabled === null ? (
-                <span role="status" className="text-xs text-muted-foreground">
+                <span role="status" className="text-sm text-muted-foreground">
                   {["offline", "error"].includes(data.state)
                     ? "Unavailable"
                     : "Checking…"}
@@ -234,7 +234,7 @@ export function CloudSection() {
             </div>
           </div>
           {data.enabled !== null && STATES[data.state] && (
-            <p role="status" className="text-xs text-muted-foreground">
+            <p role="status" className="text-sm text-muted-foreground">
               {STATES[data.state]}
             </p>
           )}

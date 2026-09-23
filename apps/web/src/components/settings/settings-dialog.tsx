@@ -342,7 +342,7 @@ function SettingsNavRail({
               aria-label={group}
               className="flex flex-col gap-0.5"
             >
-              <h3 className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
+              <h3 className="px-2.5 pt-1 pb-1.5 text-sm font-medium text-muted-foreground">
                 {group}
               </h3>
               {groupSections.map((section) => {

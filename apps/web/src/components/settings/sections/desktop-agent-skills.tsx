@@ -189,7 +189,7 @@ export function DesktopAgentSkillsGroup({ enabled }: { enabled: boolean }) {
               <span className="block text-sm font-medium text-foreground">
                 Local agent skills
               </span>
-              <span className="block text-xs text-muted-foreground">
+              <span className="block text-sm text-muted-foreground">
                 {statusSummary(statuses)}
               </span>
             </span>
@@ -233,7 +233,7 @@ export function DesktopAgentSkillsGroup({ enabled }: { enabled: boolean }) {
                         </Badge>
                       </div>
                       {showDetail ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-sm text-muted-foreground">
                           {status.detail}
                         </p>
                       ) : null}

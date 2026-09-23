@@ -114,13 +114,22 @@ test("clearing a workspace discards stale drafts and reloads another tab", async
   ).toBeNull()
   // A restored tab can start with storage from before the clear. It must finish
   // loading the new workspace as well as discard the obsolete draft.
-  await other.evaluate(({ id, epoch, key }) => {
-    sessionStorage.setItem(`worktable-content-epoch:${id}`, epoch)
-    sessionStorage.setItem(key, "obsolete draft")
+  const restored = await context.newPage()
+  await restored.addInitScript(({ id, epoch, key }) => {
+    const epochKey = `worktable-content-epoch:${id}`
+    if (sessionStorage.getItem(epochKey) !== null) return
+    sessionStorage.setItem(epochKey, epoch)
+    sessionStorage.setItem(key, JSON.stringify({
+      version: 1,
+      drafts: {
+        unsent: { value: "Draft from before clear", updatedAt: Date.now() },
+      },
+    }))
   }, { id: before.id, epoch: before.contentEpoch, key: draftKey })
-  await other.reload({ waitUntil: "domcontentloaded" })
-  await openPortability(other)
-  expect(
-    await other.evaluate((key) => sessionStorage.getItem(key), draftKey)
+  await restored.goto(harness.webUrl, { waitUntil: "domcontentloaded" })
+  await openPortability(restored)
+  await expect.poll(
+    () => restored.evaluate((key) => sessionStorage.getItem(key), draftKey),
+    { timeout: 20_000 }
   ).toBeNull()
 })

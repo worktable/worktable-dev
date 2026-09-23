@@ -12,6 +12,16 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-09-23
+
+### Changed
+
+- **Clearer settings:** Desktop settings have more space, grouped navigation, readable labels and descriptions, and simpler Cloud and Import & Export layouts.
+
+### Fixed
+
+- **Faster settings opening:** Settings appears promptly while individual tabs load, and switching tabs preserves in-progress work.
+
 ## [0.1.11] - 2026-09-23
 
 ### Added

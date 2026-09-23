@@ -4,6 +4,11 @@ import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { CopyField } from "@worktable/ui/components/copy-field"
 import { Switch } from "@worktable/ui/components/switch"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { fetchJSON, HttpError } from "@/lib/http"
 import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
@@ -120,6 +125,20 @@ export function CloudSection() {
   const linked = !["unlinked", "awaiting_approval", "revoked"].includes(
     data.state
   )
+  const linkDisabled =
+    !data.account.user ||
+    toggle.isPending ||
+    disconnect.isPending ||
+    data.state === "unlinking"
+  const linkTooltip = !data.account.user
+    ? "Sign in to Worktable Cloud to enable this connection."
+    : disconnect.isPending || data.state === "unlinking"
+      ? "Unlinking this device…"
+      : toggle.isPending
+        ? "Updating connection…"
+        : data.enabled
+          ? "Turn off to pause AI connections and document sharing."
+          : "Enable AI connections and document sharing."
   return (
     <section className="flex min-w-0 flex-col gap-6">
       <SettingsGroup title="Account">
@@ -149,7 +168,7 @@ export function CloudSection() {
                 disabled={signIn.isPending}
                 onClick={() => void openSignIn()}
               >
-                {signIn.isPending ? "Opening sign-in…" : "Sign in"}
+                {signIn.isPending ? "Opening sign-in" : "Sign in"}
               </Button>
               {signInUrl && data.account.signingIn && (
                 <a
@@ -187,19 +206,30 @@ export function CloudSection() {
                     : "Checking…"}
                 </span>
               ) : (
-                <Switch
-                  id="worktable-link"
-                  aria-label="Worktable Link"
-                  aria-describedby="worktable-link-description"
-                  checked={toggle.isPending ? toggle.variables : data.enabled}
-                  disabled={
-                    !data.account.user ||
-                    toggle.isPending ||
-                    disconnect.isPending ||
-                    data.state === "unlinking"
-                  }
-                  onCheckedChange={(enabled) => toggle.mutate(enabled)}
-                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span
+                        className="inline-flex"
+                        role="group"
+                        aria-label="Worktable Link"
+                        tabIndex={linkDisabled ? 0 : undefined}
+                      />
+                    }
+                  >
+                    <Switch
+                      id="worktable-link"
+                      aria-label="Worktable Link"
+                      aria-describedby="worktable-link-description"
+                      checked={
+                        toggle.isPending ? toggle.variables : data.enabled
+                      }
+                      disabled={linkDisabled}
+                      onCheckedChange={(enabled) => toggle.mutate(enabled)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>{linkTooltip}</TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>
@@ -253,6 +283,7 @@ export function CloudSection() {
         title="Unlink this device?"
         description="Connected AI apps and share links will stop working. Your documents stay on this device."
         confirmLabel="Unlink"
+        loadingLabel="Unlinking"
         loading={disconnect.isPending}
         onConfirm={() => disconnect.mutate()}
       />

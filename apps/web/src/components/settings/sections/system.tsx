@@ -179,7 +179,7 @@ function AutoUpdateGroup() {
         ) : (
           <SettingRow
             label="Check for updates automatically"
-            description="Checks about every 6 hours."
+            description="Checks every 6 hours"
           >
             <Switch
               checked={settings?.updates.autoCheck ?? false}
@@ -617,7 +617,7 @@ function UpdateBody({
             ) : (
               <RefreshCw className="size-4" />
             )}
-            {checking ? "Checking…" : checkButtonLabel}
+            {checking ? "Checking" : checkButtonLabel}
           </Button>
         ) : null}
       </div>

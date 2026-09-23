@@ -65,17 +65,17 @@ export function WorkspaceClearControls() {
   const error = confirm.error ?? prepare.error
   return (
     <div className="-mx-4 flex flex-col gap-3 border-t border-border/60 px-4 pt-3">
-      <SettingRow label="Clear workspace">
+      <SettingRow label="Clear workspace" labelVariant="heading">
         <Button
           variant="outline"
           disabled={busy}
-          aria-label="Clear workspace…"
+          aria-label="Clear workspace"
           onClick={() => {
             confirm.reset()
             prepare.mutate()
           }}
         >
-          Clear…
+          Clear
         </Button>
       </SettingRow>
       {!open && busy ? (
@@ -118,7 +118,7 @@ export function WorkspaceClearControls() {
         confirmLabel="Clear workspace"
         confirmDisabled={!ready || phrase !== job.data?.confirmationText}
         loading={confirm.isPending}
-        loadingLabel="Starting clear…"
+        loadingLabel="Starting clear"
         onConfirm={() => {
           confirm.mutate()
         }}

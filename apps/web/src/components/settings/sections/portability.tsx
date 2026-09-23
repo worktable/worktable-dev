@@ -1,5 +1,5 @@
 import { OperationStatus } from "../operation-status"
-import { SettingsGroup } from "../settings-group"
+import { Card } from "@worktable/ui/components/card"
 import { WorkspaceClearControls } from "./workspace-clear"
 import {
   recoverWorkspaceExport,
@@ -80,11 +80,11 @@ function historySummary(job: WorkspaceImportJob): string {
 
 export function PortabilitySection() {
   return (
-    <SettingsGroup title="Workspace">
+    <Card className="gap-3 px-4">
       <ExportControls />
       <ImportControls />
       <WorkspaceClearControls />
-    </SettingsGroup>
+    </Card>
   )
 }
 
@@ -139,7 +139,7 @@ function ExportControls() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col items-start gap-3">
         <div className="flex flex-col gap-2">
           <label htmlFor="export-history" className="text-sm font-medium">
             Version history
@@ -385,10 +385,10 @@ function ImportControls() {
 
   const chooseLabel =
     uploadingJob && uploadingJob.receivedBytes > 0
-      ? "Resume upload…"
+      ? "Resume upload"
       : ready
-        ? "Choose another…"
-        : "Choose file…"
+        ? "Choose another"
+        : "Choose file"
 
   return (
     <div className="-mx-4 flex flex-col gap-3 border-t border-border/60 px-4 pt-3">
@@ -397,6 +397,7 @@ function ImportControls() {
       ) : null}
       <SettingRow
         label="Import workspace"
+        labelVariant="heading"
         description="Replace content from a Worktable package."
       >
         <Button
@@ -510,7 +511,7 @@ function ImportControls() {
         description={`Replace all content and history with ${ready?.prepared?.source.workspaceName ?? "this package"}? This can’t be undone.`}
         confirmLabel="Replace Worktable"
         loading={replace.isPending}
-        loadingLabel="Starting replacement…"
+        loadingLabel="Starting replacement"
         onConfirm={() => {
           if (ready?.id) replace.mutate(ready.id)
         }}

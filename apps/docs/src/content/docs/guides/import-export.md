@@ -55,7 +55,7 @@ Export** to check progress and download the result.
 
 ## Clear the current workspace
 
-On local, Desktop, and self-hosted installations, **Clear workspace…** opens a
+On local, Desktop, and self-hosted installations, **Clear** under **Clear workspace** opens a
 review of the content to remove. Type the exact `CLEAR <workspace name>` phrase
 and confirm. Reviews expire after ten minutes; changes to the workspace after
 review require a new review.
@@ -75,7 +75,7 @@ Clear is not yet available in Cloud.
 
 ## Import by replacing a workspace
 
-Choose a `.wtb` package under **Import**. Worktable verifies it and
+Choose a `.wtb` package under **Import workspace**. Worktable verifies it and
 shows the source workspace, export time, size, file count, and history summary
 before anything changes. If the page reloads during a large upload, reselect
 the same file to continue.

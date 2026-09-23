@@ -29,9 +29,7 @@ function CopyField({
       className={cn("flex flex-col gap-1.5", className)}
     >
       {label ? (
-        <span className="text-xs font-medium tracking-wide text-foreground/70">
-          {label}
-        </span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
       ) : null}
       <div className="well well-interactive flex h-9 items-center gap-2 rounded-lg border border-input pr-1 pl-3 transition-colors">
         <span

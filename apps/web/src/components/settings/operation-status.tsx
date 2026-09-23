@@ -49,7 +49,7 @@ export function OperationStatus({
     <StatusRow icon={icon} alert={state === "error"}>
       {children}
       {detail ? (
-        <span className="mt-1 block text-xs text-muted-foreground">
+        <span className="mt-1 block text-sm text-muted-foreground">
           {detail}
         </span>
       ) : null}

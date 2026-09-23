@@ -92,7 +92,7 @@ function WorkspaceNameField({ workspace }: { workspace: WorkspaceInfo }) {
     <div className="flex flex-col gap-1.5">
       <label
         htmlFor="workspace-name"
-        className="text-xs font-medium tracking-wide text-foreground/70"
+        className="text-sm font-medium text-foreground"
       >
         Name
       </label>
@@ -200,7 +200,7 @@ function WorkspaceUrlField({
     <div className="flex flex-col gap-1.5">
       <label
         htmlFor="workspace-url"
-        className="text-xs font-medium tracking-wide text-foreground/70"
+        className="text-sm font-medium text-foreground"
       >
         Worktable URL
       </label>
@@ -220,10 +220,10 @@ function WorkspaceUrlField({
         }}
       />
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       {connection?.originSource === "env" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Set by{" "}
           <code className="inline-code-accent font-mono">
             WORKTABLE_PUBLIC_URL
@@ -231,7 +231,7 @@ function WorkspaceUrlField({
           .
         </p>
       ) : connection?.originSource === "resource" ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Set by the hosted{" "}
           <code className="inline-code-accent font-mono">
             WORKTABLE_RESOURCE_URL
@@ -239,7 +239,7 @@ function WorkspaceUrlField({
           .
         </p>
       ) : connection ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Currently resolving to{" "}
           <span className="font-mono text-foreground/80">
             {connection.origin}
@@ -266,13 +266,13 @@ function WorkspaceFolderField({ root }: { root: string | null | undefined }) {
         <CopyField label="Worktable folder" value={root} />
       ) : (
         <>
-          <span className="text-xs font-medium tracking-wide text-foreground/70">
+          <span className="text-sm font-medium text-foreground">
             Worktable folder
           </span>
           <p className="text-sm text-muted-foreground">Unknown.</p>
         </>
       )}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         Change with{" "}
         <code className="inline-code-accent font-mono">worktable setup</code>{" "}
         from the terminal.

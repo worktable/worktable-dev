@@ -143,7 +143,7 @@ function AboutGroup({ cloud = false }: { cloud?: boolean }) {
       </div>
       <SourceCodeLink sourceUrl={versionQuery.data?.sourceUrl} />
       {cloud ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Worktable Cloud is updated automatically.
         </p>
       ) : null}
@@ -179,7 +179,7 @@ function AutoUpdateGroup() {
         ) : (
           <SettingRow
             label="Check for updates automatically"
-            description="Checks about every 6 hours."
+            description="Checks every 6 hours"
           >
             <Switch
               checked={settings?.updates.autoCheck ?? false}
@@ -518,7 +518,7 @@ function UpdateBody({
           : target
             ? `Downloading and applying v${target}…`
             : "Downloading and applying the update…"}
-        <span className="mt-1 block text-xs text-muted-foreground">
+        <span className="mt-1 block text-sm text-muted-foreground">
           This page will reconnect automatically when it’s ready.
         </span>
       </StatusRow>
@@ -617,7 +617,7 @@ function UpdateBody({
             ) : (
               <RefreshCw className="size-4" />
             )}
-            {checking ? "Checking…" : checkButtonLabel}
+            {checking ? "Checking" : checkButtonLabel}
           </Button>
         ) : null}
       </div>

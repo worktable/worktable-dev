@@ -38,7 +38,9 @@ function SettingRow({
         <FieldLabel id={labelId} htmlFor={htmlFor}>
           {label}
         </FieldLabel>
-        {description ? <FieldDescription>{description}</FieldDescription> : null}
+        {description ? (
+          <FieldDescription>{description}</FieldDescription>
+        ) : null}
       </div>
       <div className="shrink-0">{control}</div>
     </div>

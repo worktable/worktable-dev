@@ -80,8 +80,9 @@ export function SettingsDialog({
           override does the same for the desktop dialog. sm:max-h-none drops
           DialogContent's viewport cap so sm:h- governs. sm:p-0 lets the nav
           rail column run edge to edge; each pane brings its own padding (the
-          drawer keeps its built-in inset on mobile). */}
-      <ResponsiveDialogContent className="h-[85dvh] sm:h-[min(680px,85dvh)] sm:max-h-none sm:max-w-3xl sm:p-0">
+          drawer keeps its built-in inset on mobile). The larger md: bounds
+          match ResponsiveDialog's desktop breakpoint. */}
+      <ResponsiveDialogContent className="h-[85dvh] sm:h-[min(680px,85dvh)] sm:max-h-none sm:max-w-3xl sm:p-0 md:h-[min(800px,90dvh)] md:w-[calc(100%-3rem)] md:max-w-5xl">
         {/* Mounted only while open, so per-session state (update engagement, a
             one-time connection token) is fresh each open — a past update's
             terminal marker can't leak in. ALL sections stay mounted while the
@@ -190,7 +191,7 @@ function SettingsBody({
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[190px_1fr]">
+    <div className="grid min-h-0 flex-1 grid-cols-[224px_1fr]">
       {/* The rail column is a full-height quiet surface so the nav reads as a
           grounded region of the dialog, not buttons floating in space. The
           dialog title lives here; the content pane header names the section. */}
@@ -276,53 +277,80 @@ function SettingsNavRail({
 }) {
   const itemRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>())
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null)
+  const scrollRef = useScrollFade<HTMLElement>()
+  const sectionIds = sections.map((section) => section.id).join(",")
+  const groups = ["Workspace", "Preferences", "Data", "Support"] as const
 
   useLayoutEffect(() => {
     const el = itemRefs.current.get(activeId)
     if (!el) return
     setPill({ top: el.offsetTop, height: el.offsetHeight })
     el.scrollIntoView({ block: "nearest" })
-  }, [activeId])
+  }, [activeId, sectionIds])
 
   return (
-    <nav className="relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-      {pill && (
-        <div
-          aria-hidden
-          className="absolute inset-x-0 top-0 rounded-lg bg-sidebar-accent transition-[transform,height] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]"
-          style={{
-            transform: `translateY(${pill.top}px)`,
-            height: pill.height,
-          }}
-        />
-      )}
-      {sections.map((section) => {
-        const Icon = section.icon
-        const isActive = section.id === activeId
-        return (
-          <button
-            key={section.id}
-            ref={(el) => {
-              if (el) itemRefs.current.set(section.id, el)
-              else itemRefs.current.delete(section.id)
+    <nav
+      ref={scrollRef}
+      aria-label="Settings"
+      className="scroll-fade min-h-0 flex-1 overflow-y-auto"
+    >
+      <div className="relative space-y-4">
+        {pill && (
+          <div
+            aria-hidden
+            className="absolute inset-x-0 top-0 rounded-lg bg-sidebar-accent transition-[transform,height] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{
+              transform: `translateY(${pill.top}px)`,
+              height: pill.height,
             }}
-            type="button"
-            onClick={() => onSelect(section.id)}
-            className={cn(
-              "relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-180",
-              isActive
-                ? "font-medium text-primary-text"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            )}
-          >
-            <Icon className="size-4 shrink-0" />
-            <span className="flex-1 text-left">{section.label}</span>
-            {updateAvailable && section.id === "system" ? (
-              <Badge variant="info">Update</Badge>
-            ) : null}
-          </button>
-        )
-      })}
+          />
+        )}
+        {groups.map((group) => {
+          const groupSections = sections.filter(
+            (section) => section.group === group
+          )
+          if (groupSections.length === 0) return null
+          return (
+            <section
+              key={group}
+              aria-label={group}
+              className="flex flex-col gap-0.5"
+            >
+              <h3 className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted-foreground">
+                {group}
+              </h3>
+              {groupSections.map((section) => {
+                const Icon = section.icon
+                const isActive = section.id === activeId
+                return (
+                  <button
+                    key={section.id}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(section.id, el)
+                      else itemRefs.current.delete(section.id)
+                    }}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => onSelect(section.id)}
+                    className={cn(
+                      "relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-180",
+                      isActive
+                        ? "font-medium text-primary-text"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="flex-1 text-left">{section.label}</span>
+                    {updateAvailable && section.id === "system" ? (
+                      <Badge variant="info">Update</Badge>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </section>
+          )
+        })}
+      </div>
     </nav>
   )
 }

@@ -40,6 +40,7 @@ export type SettingsSectionId =
 
 export interface SettingsSection {
   id: SettingsSectionId
+  group: "Workspace" | "Preferences" | "Data" | "Support"
   label: string
   /** One-liner under the section title in the content-pane header. */
   description?: string
@@ -51,6 +52,7 @@ export const DEFAULT_SETTINGS_SECTION_ID: SettingsSectionId = "general"
 
 const GENERAL: SettingsSection = {
   id: "general",
+  group: "Workspace",
   label: "General",
   description: "Worktable name, URL, and local folder.",
   icon: Settings2,
@@ -59,6 +61,7 @@ const GENERAL: SettingsSection = {
 
 const ACCOUNT: SettingsSection = {
   id: "account",
+  group: "Workspace",
   label: "Account",
   description: "Subscription and sign-in.",
   icon: UserRound,
@@ -67,6 +70,7 @@ const ACCOUNT: SettingsSection = {
 
 const APPEARANCE: SettingsSection = {
   id: "appearance",
+  group: "Preferences",
   label: "Appearance",
   description: "Theme and display name.",
   icon: Palette,
@@ -75,6 +79,7 @@ const APPEARANCE: SettingsSection = {
 
 const EDITOR: SettingsSection = {
   id: "editor",
+  group: "Preferences",
   label: "Editor",
   description: "Writing preferences.",
   icon: PencilLine,
@@ -83,6 +88,7 @@ const EDITOR: SettingsSection = {
 
 const HISTORY: SettingsSection = {
   id: "history",
+  group: "Data",
   label: "History",
   description: "Choose how long to keep doc versions.",
   icon: History,
@@ -91,6 +97,7 @@ const HISTORY: SettingsSection = {
 
 const PORTABILITY: SettingsSection = {
   id: "portability",
+  group: "Data",
   label: "Import & Export",
   icon: PackageOpen,
   component: PortabilitySection,
@@ -98,6 +105,7 @@ const PORTABILITY: SettingsSection = {
 
 const AGENTS: SettingsSection = {
   id: "agents",
+  group: "Workspace",
   label: "Agents",
   description: "Connect agents and manage their access.",
   icon: Bot,
@@ -106,6 +114,7 @@ const AGENTS: SettingsSection = {
 
 const HELP: SettingsSection = {
   id: "help",
+  group: "Support",
   label: "Help",
   description: "Support, documentation, and policies.",
   icon: CircleHelp,
@@ -114,6 +123,7 @@ const HELP: SettingsSection = {
 
 const SYSTEM: SettingsSection = {
   id: "system",
+  group: "Support",
   label: "System",
   description: "Version, address, and software updates.",
   icon: MonitorCog,
@@ -145,6 +155,7 @@ export function getSettingsSections(
       ...(capabilities.historySettings ? [HISTORY] : []),
       {
         id: "backups",
+        group: "Data",
         label: "Backups",
         description: "",
         icon: Archive,
@@ -160,6 +171,7 @@ export function getSettingsSections(
     ...(capabilities.workspaceName ? [GENERAL] : []),
     {
       id: "cloud",
+      group: "Workspace",
       label: "Worktable Cloud",
       description: "AI connections and document sharing.",
       icon: UserRound,

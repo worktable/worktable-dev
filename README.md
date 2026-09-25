@@ -45,7 +45,7 @@ For other setups, see [self-hosting](https://docs.worktable.dev/guides/remote-ac
 - **Save your research.** Keep findings, plans, and decisions in linked documents.
 - **Organize your data.** Maintain tasks, sources, feedback, and other records
   with shared fields.
-- **Build tools around it.** Ask for an interactive dashboard, board, or calculator.
+- **Build tools in Worktable.** Ask for an interactive dashboard, board, or calculator.
   HTML tools can read and update the same records your agents maintain.
 
 For example, ask an agent to research hosting options, save the sources and

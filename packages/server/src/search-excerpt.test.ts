@@ -12,7 +12,7 @@ import {
   search,
   setSearchIndexRebuildHookForTests,
 } from "./search-index.ts";
-import { setWorkspaceRootOverride } from "./workspace.ts";
+import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { docsRouter } from "./routes/docs.ts";
 import { recordsRouter } from "./routes/records.ts";
@@ -94,8 +94,10 @@ describe("search excerpts", () => {
   beforeEach(async () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "worktable-excerpt-ws-"));
     appDir = mkdtempSync(join(tmpdir(), "worktable-excerpt-app-"));
-    mkdirSync(join(workspaceDir, "spaces"), { recursive: true });
     setWorkspaceRootOverride(workspaceDir);
+    const manifest = ensureWorkspaceManifest();
+    writeFileSync(join(workspaceDir, "worktable.workspace.json"), JSON.stringify({ ...manifest, version: 1 }));
+    mkdirSync(join(workspaceDir, "spaces"), { recursive: true });
     setAppDirOverride(appDir);
     app = buildTestApp();
 
@@ -271,7 +273,9 @@ describe("search excerpts", () => {
   });
 
 
-  it("keeps common search authorized, inert, and metadata-safe", async () => {
+  it.each([1, 2] as const)("keeps V%s common search authorized, inert, and metadata-safe", async (storageVersion) => {
+    const manifest = ensureWorkspaceManifest();
+    writeFileSync(join(workspaceDir, "worktable.workspace.json"), JSON.stringify({ ...manifest, version: storageVersion }));
     const created = await req(app, "POST", "/api/spaces/meta/widgets", {
       id: "dashboards/lighthouse",
       name: "Lighthousebeacon status",

@@ -12,6 +12,19 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-09-30
+
+### Changed
+
+- **Drawings in every workspace:** New workspaces support drawing documents immediately, and existing workspaces upgrade automatically before editing resumes.
+- **Workspace upgrades:** An upgrade screen keeps you informed while documents are prepared and offers a retry when an issue needs attention.
+
+### Fixed
+
+- **Preserved workspace data:** Upgrades, imports, and restores retain document identity, annotations, HTML state, and compatible history while keeping a rollback copy for an existing workspace upgrade.
+- **Reliable document actions:** HTML titles, document moves, folder deletion, and interrupted-operation recovery work consistently after an upgrade.
+- **Large workspace verification:** Repeated document and backup checks release file resources instead of eventually exhausting the process limit.
+
 ## [0.1.12] - 2026-09-23
 
 ### Changed

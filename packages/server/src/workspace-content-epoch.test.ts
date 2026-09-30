@@ -12,6 +12,7 @@ import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts"
 
 let root: string
+const originalHosted = process.env["WORKTABLE_HOSTED"]
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "worktable-content-fence-"))
   setAppDirOverride(join(root, "app"))
@@ -19,12 +20,17 @@ beforeEach(async () => {
   ensureWorkspaceManifest()
 })
 afterEach(async () => {
+  if (originalHosted === undefined) delete process.env["WORKTABLE_HOSTED"]
+  else process.env["WORKTABLE_HOSTED"] = originalHosted
   setAppDirOverride(null)
   setWorkspaceRootOverride(null)
   await rm(root, { recursive: true, force: true })
 })
 
-it("rejects old and missing browser epochs before admitting content mutations", async () => {
+it.each([false, true])("rejects stale browser edits, including gateway bearer injection (hosted: %s)", async (hosted) => {
+  if (hosted) process.env["WORKTABLE_HOSTED"] = "1"
+  else delete process.env["WORKTABLE_HOSTED"]
+  const gatewayHeaders: Record<string, string> = hosted ? { "Sec-Fetch-Site": "same-origin", Authorization: "Bearer gateway-browser" } : {}
   let writes = 0
   const app = new Hono()
     .use("*", requireWorkspaceContentEpoch)
@@ -40,6 +46,7 @@ it("rejects old and missing browser epochs before admitting content mutations", 
   ]) {
     for (const epoch of [undefined, "old-epoch"]) {
       const headers = {
+        ...gatewayHeaders,
         Origin: "http://localhost",
         ...(epoch ? { "X-Worktable-Content-Epoch": epoch } : {}),
       }
@@ -55,6 +62,7 @@ it("rejects old and missing browser epochs before admitting content mutations", 
       await app.request("/api/spaces", {
         method: "POST",
         headers: {
+          ...gatewayHeaders,
           Origin: "http://localhost",
           "X-Worktable-Content-Epoch": epoch,
         },

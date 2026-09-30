@@ -1,3 +1,4 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import {
   existsSync,
@@ -19,9 +20,10 @@ import {
   setWorkspaceWatcherTestOptions,
   startServer,
 } from "./index.ts"
-import { getDocProvenance, readDoc, writeDoc } from "./store.ts"
+import { getDocProvenance, readDoc} from "./store.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
-import { withWidgetWriteLock, writeWidget } from "./widget-store.ts"
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
+import { withWidgetWriteLock } from "./widget-store.ts"
 import { listWidgetVersions } from "./widget-version-store.ts"
 import {
   ensureWorkspaceManifest,
@@ -263,7 +265,7 @@ describe("server lifecycle", () => {
     }
   }, 15_000)
 
-  it.each([1, 2])("flushes a V%s coalesced HTML version before stop without inverting write locks", async (version) => {
+  it("flushes a coalesced HTML version before stop without inverting write locks", async () => {
     server = startServer(0, "127.0.0.1")
     const written = await writeWidget(
       "meta",
@@ -272,15 +274,7 @@ describe("server lifecycle", () => {
     )
     expect(written.error).toBeNull()
     written.release?.()
-    if (version === 2) {
-      const manifest = join(workspaceDir, "worktable.workspace.json")
-      writeFileSync(manifest, JSON.stringify({
-        ...JSON.parse(readFileSync(manifest, "utf8")), version: 2,
-      }))
-      rmSync(join(workspaceDir, "spaces", "meta", "widgets", "status"), { recursive: true })
-      mkdirSync(join(workspaceDir, "spaces", "meta", "docs"), { recursive: true })
-      writeFileSync(join(workspaceDir, "spaces", "meta", "docs", "status.html"), "<h1>Status</h1>")
-    }
+
 
     let stopping!: Promise<void>
     await withDocPathLock("meta", async () => {

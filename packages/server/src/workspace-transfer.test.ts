@@ -23,6 +23,7 @@ import {
   ensureWorkspaceManifest,
   isWorkspaceManifest,
   setWorkspaceRootOverride,
+  writeWorkspaceManifest,
 } from "./workspace.ts"
 
 let root: string
@@ -32,7 +33,9 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "worktable-transfer-"))
   source = join(root, "source")
   setWorkspaceRootOverride(source)
-  ensureWorkspaceManifest()
+  // These fixtures exercise the historical JSON export format, which can
+  // contain only V1 storage. Import still must produce a current workspace.
+  writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 })
   await mkdir(join(source, "spaces", "notes", "docs"), { recursive: true })
   await mkdir(join(source, "spaces", "empty"), { recursive: true })
   await writeFile(
@@ -60,6 +63,7 @@ describe("workspace export/import", () => {
 
     expect(bundle.sourceWorkspaceId).toBe(sourceManifest.id)
     expect(imported.id).not.toBe(sourceManifest.id)
+    expect(imported.version).toBe(2)
     expect(imported.provenance).toMatchObject({
       source: { workspaceId: sourceManifest.id },
       snapshotAt: bundle.exportedAt,
@@ -79,6 +83,7 @@ describe("workspace export/import", () => {
     )
     expect(isWorkspaceManifest(restoredManifest)).toBe(true)
     expect(restoredManifest.id).toBe(imported.id)
+    expect(restoredManifest.version).toBe(2)
     expect((await stat(bundleFile)).size).toBeLessThanOrEqual(
       WORKSPACE_EXPORT_MAX_ENCODED_BYTES
     )

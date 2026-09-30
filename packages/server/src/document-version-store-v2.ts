@@ -29,7 +29,7 @@ import {
 } from "./bounded-file.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
-import { analyzeDocumentPath, parseNewDocumentPath } from "./document-path.ts"
+import { analyzeDocumentPath } from "./document-path.ts"
 import {
   createBuiltinDocumentFormatRegistry,
   type DocumentFormatRegistry,
@@ -346,8 +346,9 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
     entries: Array<DocumentGenerationPayloadEntry & { sha256: string }>
   }>
 } {
-  const parsedPath = parseNewDocumentPath(input.logicalPath)
-  if ("error" in parsedPath || parsedPath.path !== input.logicalPath) {
+  // Persisted owners may predate the new-name rule reserving source suffixes.
+  const parsedPath = analyzeDocumentPath(input.logicalPath)
+  if (!parsedPath.safe || !parsedPath.portable || parsedPath.canonicalPath !== input.logicalPath) {
     throw new Error("document generation logical path is not portable")
   }
   const source = normalizedPayloadEntries(
@@ -499,8 +500,8 @@ async function readGenerationManifestAt(
   const manifest = DocumentGenerationManifestV2Schema.parse(
     JSON.parse(manifestText)
   )
-  const parsedPath = parseNewDocumentPath(manifest.logicalPath)
-  if ("error" in parsedPath || parsedPath.path !== manifest.logicalPath) {
+  const parsedPath = analyzeDocumentPath(manifest.logicalPath)
+  if (!parsedPath.safe || !parsedPath.portable || parsedPath.canonicalPath !== manifest.logicalPath) {
     throw new Error("document generation logical path is not portable")
   }
   return manifest

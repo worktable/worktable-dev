@@ -31,6 +31,9 @@ import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 const JOB_ID_PATTERN = /^dsv2_[A-Za-z0-9_-]{22}$/
 const JOB_MAX_BYTES = 1024 * 1024
 
+class DocumentDataPreconditionError extends Error {}
+type PreconditionFailure = { handled: true; error: string }
+
 const MoveDocumentSchema = z
   .object({
     documentId: DocumentIdSchema,
@@ -152,9 +155,9 @@ async function writeDurableJobFile(path: string, text: string): Promise<void> {
 }
 
 function requirePortablePath(path: string): string {
-  const analyzed = analyzeDocumentPath(path, { enforceNewPathGrammar: true })
+  const analyzed = analyzeDocumentPath(path)
   if (!analyzed.safe || !analyzed.portable || analyzed.canonicalPath !== path) {
-    throw new Error("document data lifecycle path is not portable")
+    throw new DocumentDataPreconditionError("document data lifecycle path is not portable")
   }
   return path
 }
@@ -219,17 +222,21 @@ async function currentDurableDocuments(
   spaceId: string,
   paths: readonly string[]
 ): Promise<Array<{ documentId: DocumentId; path: string }>> {
-  const requested = new Set(paths.map(requirePortablePath))
+  // Let the base planner reject noncanonical source spellings with its exact
+  // current-path diagnostic. Only exact catalog owners need sidecar recovery.
+  const requested = new Set(paths)
   const catalog = await buildDocumentCatalog({
     workspaceRoot: getWorkspaceRoot(),
     spaceId,
+  }).catch((error) => {
+    throw new DocumentDataPreconditionError(error instanceof Error ? error.message : String(error))
   })
   if (
     catalog.inventoryDiagnostics.some(
       (diagnostic) => diagnostic.severity === "error"
     )
   ) {
-    throw new Error(
+    throw new DocumentDataPreconditionError(
       "document inventory must be repaired before changing V2 document data"
     )
   }
@@ -448,18 +455,38 @@ async function applyJob(job: DocumentDataLifecycleV2Job): Promise<void> {
 }
 
 async function runWithJob<T>(
-  recovery: RecoveredDocumentDataLifecycleV2 | null,
+  preparing: Promise<RecoveredDocumentDataLifecycleV2 | null>,
   operation: () => Promise<T>,
   committed: (result: T) => boolean
-): Promise<T> {
+): Promise<T | PreconditionFailure> {
+  let recovery: RecoveredDocumentDataLifecycleV2 | null
+  try {
+    recovery = await preparing
+  } catch (error) {
+    if (error instanceof DocumentDataPreconditionError) {
+      return { handled: true, error: error.message }
+    }
+    throw error
+  }
   let result: T
   try {
     result = await operation()
   } catch (error) {
     if (recovery) {
-      requireWorkspaceRecovery(
-        "document V2 data is waiting for lifecycle recovery"
-      )
+      const { didDocumentLifecyclePreserveGeneration } = await import("./document-lifecycle-journal.ts")
+      if (didDocumentLifecyclePreserveGeneration(error)) {
+        // The base transaction proved that it restored the original source.
+        // No V2 sidecars have changed yet. Retire this preparation as well so
+        // collaboration can replay edits accepted during the failed operation.
+        try { await finishJob(recovery) } catch (cleanupError) {
+          requireWorkspaceRecovery("document V2 preparation cleanup failed")
+          throw new AggregateError([error, cleanupError], "Document recovery could not finish")
+        }
+      } else {
+        requireWorkspaceRecovery(
+          "document V2 data is waiting for lifecycle recovery"
+        )
+      }
     }
     throw error
   }
@@ -492,8 +519,8 @@ export async function withDocumentDataV2ExactMove<
   from: string,
   to: string,
   operation: () => Promise<T>
-): Promise<T> {
-  const recovery = await prepareMoveJob(spaceId, [{ from, to }])
+): Promise<T | PreconditionFailure> {
+  const recovery = prepareMoveJob(spaceId, [{ from, to }])
   return runWithJob(
     recovery,
     operation,
@@ -511,8 +538,8 @@ export async function withDocumentDataV2PrefixMove<
   spaceId: string,
   moves: readonly { from: string; to: string }[],
   operation: () => Promise<T>
-): Promise<T> {
-  const recovery = await prepareMoveJob(spaceId, moves)
+): Promise<T | PreconditionFailure> {
+  const recovery = prepareMoveJob(spaceId, moves)
   return runWithJob(
     recovery,
     operation,
@@ -526,8 +553,8 @@ export async function withDocumentDataV2ExactDelete<
     documentId?: DocumentId
     error?: string
   },
->(spaceId: string, path: string, operation: () => Promise<T>): Promise<T> {
-  const recovery = await prepareDeleteJob(spaceId, [path])
+>(spaceId: string, path: string, operation: () => Promise<T>): Promise<T | PreconditionFailure> {
+  const recovery = prepareDeleteJob(spaceId, [path])
   return runWithJob(
     recovery,
     operation,
@@ -545,8 +572,8 @@ export async function withDocumentDataV2PrefixDelete<
   spaceId: string,
   paths: readonly string[],
   operation: () => Promise<T>
-): Promise<T> {
-  const recovery = await prepareDeleteJob(spaceId, paths)
+): Promise<T | PreconditionFailure> {
+  const recovery = prepareDeleteJob(spaceId, paths)
   return runWithJob(
     recovery,
     operation,

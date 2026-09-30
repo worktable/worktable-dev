@@ -861,7 +861,14 @@ describe("local access boundary model", () => {
     for (const action of ["archive", "restore"]) {
       const archivedWidget = await fetch(`${origin}${widgetPath}/${action}`, { method: "POST", headers: agentHeaders, body: JSON.stringify({ archivedBy: "user" }) })
       expect(archivedWidget.status).toBe(200)
-      expect((await archivedWidget.json() as { widget: { updatedBy: string } }).widget.updatedBy).toStartWith("agent:")
+      const { widget } = await archivedWidget.json() as {
+        widget: { createdBy: string; archive: null | { archivedBy: string } }
+      }
+      // V2 archives use shared document metadata; archive attribution is
+      // separate from the HTML content's last editor.
+      expect(widget.createdBy).toStartWith("agent:")
+      if (action === "archive") expect(widget.archive?.archivedBy).toStartWith("agent:")
+      else expect(widget.archive).toBeNull()
     }
     expect((await tryUpgrade(port, await withCollaborationEpoch(`/yjs/demo/private?token=${encodeURIComponent(agent.token)}`), {})).ok).toBe(false)
     const fullAgent = await createToken({ scopes: ["*"], agent: "synthetic-owner-scope-agent" })

@@ -59,7 +59,8 @@ describe("starter workspace seeding", () => {
     expect(await listSpaces()).toEqual([])
   })
 
-  it("seeds the complete Welcome to Worktable experience on an empty workspace", async () => {
+  it.each([1, 2] as const)("seeds the complete Welcome to Worktable experience on V%s", async (version) => {
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version })
     expect(await starterWorkspaceReady()).toBe(false)
     expect(await seedStarterWorkspace()).toBe(true)
     expect(await starterWorkspaceReady()).toBe(true)

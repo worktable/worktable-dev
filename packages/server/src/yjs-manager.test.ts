@@ -1,3 +1,5 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
@@ -7,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writ
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
-import { deleteDoc, docExists, getDocPath, getDocProvenance, readDoc, renameDoc, writeDoc, writeSpace } from "./store.ts";
+import { deleteDoc, docExists, getDocPath, getDocProvenance, readDoc, renameDoc, writeSpace } from "./store.ts";
 import { getServerEditor } from "./blocknote.ts";
 import { getDocFreshness } from "./freshness.ts";
 import { MermaidDocumentValidationError } from "./mermaid-document.ts";
@@ -19,19 +21,21 @@ import { YjsDocManager, yjsManager } from "./yjs-manager.ts";
 import type { SpaceFile } from "@worktable/types"
 import {
   mintDocumentId,
+  readDocumentInventory,
   updateDocumentInventory,
 } from "./document-inventory.ts"
 import { setDocumentLifecycleStepHookForTests } from "./document-lifecycle-journal.ts"
 import {
   requireWorkspaceRecovery,
   resetWorkspaceSafetyForTests,
+  workspaceRecoveryRequired,
 } from "./workspace-safety.ts"
 import { recordDocAlias } from "./doc-aliases.ts"
 import { moveDocumentFolder } from "./document-folder-move.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
-import { readWidgetHtml, writeWidget } from "./widget-store.ts"
+import { readWidgetHtml} from "./widget-store.ts"
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_INTENT = 43;
@@ -176,6 +180,7 @@ function readYjsStateHeader(docPath: string): Record<string, unknown> {
 
 describe("YjsDocManager sync persistence", () => {
   beforeEach(async () => {
+    resetWorkspaceSafetyForTests();
     setWorkspaceRootOverride(testDir);
     process.env["WORKTABLE_APP_DIR"] = appDir
     ensureWorkspaceManifest()
@@ -184,6 +189,7 @@ describe("YjsDocManager sync persistence", () => {
   });
 
   afterEach(() => {
+    resetWorkspaceSafetyForTests()
     setDocumentLifecycleStepHookForTests(null)
     setWorkspaceRootOverride(null);
     if (originalAppDir === undefined) {
@@ -765,7 +771,7 @@ describe("YjsDocManager sync persistence", () => {
       manifestPath,
       `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`
     );
-    await writeDoc("test-space", "provisional-edit", [para("before")]);
+    await writeDoc("test-space", "provisional-edit", [para("before")], { managedIdentity: false });
 
     await simulateClientEdit("test-space", "provisional-edit", [
       para("after collaborative edit"),
@@ -1339,7 +1345,7 @@ describe("YjsDocManager sync persistence", () => {
     await yjsManager.handleConnection(ws, "test-space", "live-old");
     const serverDoc = await yjsManager.getOrCreateDoc("test-space", "live-old");
 
-    const documentId = mintDocumentId()
+    const documentId = [...(await readDocumentInventory("test-space")).entries.values()].find(entry => entry.path === "live-old")!.documentId
     await updateDocumentInventory("test-space", {
       upsert: [
         {
@@ -1428,9 +1434,10 @@ describe("YjsDocManager sync persistence", () => {
         source: "rest-api",
       })
     }
+    const inventory = await readDocumentInventory("test-space")
     await updateDocumentInventory("test-space", {
       upsert: documents.map((document) => ({
-        documentId: mintDocumentId(),
+        documentId: [...inventory.entries.values()].find(entry => entry.path === document.from)!.documentId,
         path: document.from,
         format: { id: "worktable.rich-text", sourceVersion: 1 },
         source: {
@@ -1627,6 +1634,7 @@ describe("YjsDocManager sync persistence", () => {
 
       expect(ws.closed).toBe(false)
       expect(await docExists("test-space", docPath)).toBe(true)
+      expect(workspaceRecoveryRequired()).toBe(false)
       await yjsManager.flushPersist("test-space", docPath)
       expect(
         JSON.stringify((await readDoc("test-space", docPath)).data)

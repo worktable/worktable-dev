@@ -27,6 +27,7 @@ import {
   type DocumentInventoryDiagnostic,
 } from "./document-inventory.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
+import { readHtmlDocumentTitleV2 } from "./html-document-properties-v2.ts"
 import {
   createBuiltinDocumentFormatRegistry,
   type DocumentFormatRegistry,
@@ -593,6 +594,24 @@ export async function buildDocumentCatalog(options: {
   )
   const grouped = new Map<string, typeof merged.claims>()
   for (const claim of merged.claims) {
+    if (
+      claim.identity === "durable" &&
+      claim.format.id === "worktable.html" &&
+      claim.format.sourceVersion === 1 &&
+      claim.source.kind === "file" &&
+      !claim.diagnostics.some((diagnostic) => diagnostic.severity === "error")
+    ) {
+      try {
+        claim.title = (await readHtmlDocumentTitleV2({
+          workspaceRoot: options.workspaceRoot,
+          spaceId,
+          documentId: claim.documentId,
+          path: claim.path,
+        })) ?? claim.title
+      } catch {
+        // Unavailable optional display metadata must not hide the source.
+      }
+    }
     const key = claim.comparisonKey ?? `invalid:${claim.source.relativePath}`
     const group = grouped.get(key) ?? []
     group.push(claim)

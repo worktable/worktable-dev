@@ -99,7 +99,7 @@ function finishRecovery(
   state: "complete" | "failed",
   error: string | undefined,
   cleanup: () => void,
-  resetRequired = job.resetPending ?? true
+  resetRequired = job.kind === "document-storage-v2" ? false : (job.resetPending ?? true)
 ): void {
   // Keep this requirement durable until startup has refreshed derived state.
   // Cleanup may finish before a crash; absence of `prepared` is not an acknowledgement.
@@ -140,7 +140,7 @@ function finishRecovery(
 
 function recoveryResult(
   job: RecoverableJob,
-  resetRequired = job.resetPending ?? true
+  resetRequired = job.kind === "document-storage-v2" ? false : (job.resetPending ?? true)
 ): WorkspaceReplacementRecovery {
   return {
     id: job.id,

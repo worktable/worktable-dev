@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
+import { ensureWorkspaceManifest, setWorkspaceRootOverride, writeWorkspaceManifest } from "./workspace.ts";
 import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
@@ -47,7 +47,8 @@ describe("HTML doc (widget) annotations", () => {
   beforeEach(async () => {
     setWorkspaceRootOverride(testDir);
     setAppDirOverride(appDir);
-    ensureWorkspaceManifest();
+    // Historical bundle annotation ownership, including separate doc/widget roots.
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 });
     mkdirSync(join(testDir, "spaces"), { recursive: true });
     app = buildTestApp();
     await req(app, "POST", "/api/spaces", { name: "Meta" });

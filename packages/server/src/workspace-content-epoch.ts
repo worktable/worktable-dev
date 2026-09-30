@@ -1,6 +1,5 @@
 import type { MiddlewareHandler } from "hono"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
-import { isHosted } from "./hosted.ts"
 
 export function isWorkspaceContentMutation(
   method: string,
@@ -19,15 +18,16 @@ export const requireWorkspaceContentEpoch: MiddlewareHandler = async (
   c,
   next
 ) => {
-  // Hosted clear remains disabled until its gateway forwards this fence.
   if (
-    isHosted() ||
     !isWorkspaceContentMutation(c.req.method, new URL(c.req.url).pathname)
   )
     return next()
   const browser =
-    Boolean(c.req.header("Sec-Fetch-Site") || c.req.header("Origin")) &&
-    !c.req.header("Authorization")
+    // The Cloud gateway injects Authorization for browser requests. Fetch
+    // Metadata still identifies those requests; a gateway bearer must not
+    // turn a stale browser edit into an unfenced agent write.
+    Boolean(c.req.header("Sec-Fetch-Site")) ||
+    (Boolean(c.req.header("Origin")) && !c.req.header("Authorization"))
   const supplied = c.req.header("X-Worktable-Content-Epoch")
   if (
     (browser || supplied) &&

@@ -574,7 +574,7 @@ export async function importWorkspaceExport(
   )
   const newManifest: WorkspaceManifest = {
     type: "worktable.workspace",
-    version: 1,
+    version: capturedManifest(bundle.files).version,
     id: `ws_${randomBytes(16).toString("base64url")}`,
     name: bundle.sourceWorkspaceName,
     createdAt: new Date().toISOString(),
@@ -610,6 +610,9 @@ export async function importWorkspaceExport(
       `${JSON.stringify(newManifest, null, 2)}\n`,
       { mode: 0o600 }
     )
+    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
+    await convertStagedWorkspaceStorageV2(staging)
+    newManifest.version = 2
     if (classification.outcome === "empty") {
       const entries = await readdir(target)
       if (!entries.every(isIgnoredEmptyWorkspaceEntry)) {

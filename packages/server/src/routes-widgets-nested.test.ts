@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
+import { ensureWorkspaceManifest, setWorkspaceRootOverride, writeWorkspaceManifest } from "./workspace.ts";
 import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
@@ -22,7 +22,7 @@ import { readDocumentAnnotationsV2, readDocumentPortableStateV2 } from "./docume
 import { buildDocumentCatalog } from "./document-catalog.ts";
 import { readDoc, writeDoc } from "./store.ts";
 import { buildWidgetFile } from "./widget-authoring.ts";
-import { writeWidget } from "./widget-store.ts";
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts";
 import { recordDocAlias, retireDocAlias } from "./doc-aliases.ts";
 import { stringifyCanonicalYaml } from "./yaml.ts";
 import {
@@ -73,6 +73,7 @@ describe("path-style widget ids", () => {
   });
 
   it("serves a directly added V2 HTML file through the collision-free compatibility route", async () => {
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 })
     const legacyDirect = join(
       testDir,
       "spaces",
@@ -263,7 +264,7 @@ describe("path-style widget ids", () => {
     const nested = await req(app, "POST", "/api/spaces/meta/widgets", { id: "plans/q3-redesign", name: "Q3 Plan", html: VALID_HTML });
     expect(nested.status).toBe(201);
     expect(nested.json.widgetId).toBe("plans/q3-redesign");
-    expect(existsSync(join(testDir, "spaces", "meta", "widgets", "plans", "q3-redesign", "widget.yaml"))).toBe(true);
+    expect(existsSync(join(testDir, "spaces", "meta", "docs", "plans", "q3-redesign.html"))).toBe(true);
 
     const flat = await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: VALID_HTML });
     expect(flat.status).toBe(201);
@@ -329,7 +330,7 @@ describe("path-style widget ids", () => {
       app,
       "POST",
       "/api/spaces/meta/widgets/legacy/movable/move",
-      { newPath: "Legacy" },
+      { newPath: "legacy" },
     );
     expect(moved.status).toBe(200);
     expect(moved.json).toMatchObject({
@@ -492,14 +493,16 @@ describe("path-style widget ids", () => {
     const get = await req(app, "GET", "/api/spaces/meta/widgets/plans/q3/state");
     expect(get.status).toBe(200);
     expect(get.json.state).toEqual({ tab: "overview" });
-    expect(existsSync(join(testDir, "spaces", "meta", "widgets", "plans", "q3", "state.yaml"))).toBe(true);
+    const inventory = await readDocumentInventory("meta");
+    const entry = [...inventory.entries.values()].find(entry => entry.path === "plans/q3")!;
+    expect(await readDocumentPortableStateV2({ workspaceRoot: testDir, spaceId: "meta", documentId: entry.documentId })).not.toBeNull();
   });
 
-  it("rejects reserved names in nested id segments", async () => {
+  it("keeps former widget action names usable as document path segments", async () => {
     for (const id of ["foo/records", "records/foo", "a/state/b", "x/archive", "restore/y", "plans/content"]) {
       const res = await req(app, "POST", "/api/spaces/meta/widgets", { id, name: "Bad", html: VALID_HTML });
-      expect(res.status).toBe(400);
-      expect(res.json.code).toBe("VALIDATION_ERROR");
+      expect(res.status).toBe(201);
+      expect(res.json.widgetId).toBe(id);
     }
   });
 
@@ -536,8 +539,8 @@ describe("path-style widget ids", () => {
     }
   });
 
-  it("rejects malformed ids (traversal, empty segments, uppercase, spaces)", async () => {
-    for (const id of ["../escape", "a//b", "a/../b", "Plans/Q3", "a b", "/leading", "trailing/"]) {
+  it("rejects traversal, empty segments, and absolute document paths", async () => {
+    for (const id of ["../escape", "a//b", "a/../b", "/leading", "trailing/"]) {
       const res = await req(app, "POST", "/api/spaces/meta/widgets", { id, name: "Bad", html: VALID_HTML });
       expect(res.status).toBe(400);
     }
@@ -552,16 +555,14 @@ describe("path-style widget ids", () => {
     expect(res.json.widgetId).toBe("plans-2");
   });
 
-  it("enforces leaf-only nesting in both directions", async () => {
+  it("supports a document beside a folder with the same name", async () => {
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "plans/q3", name: "Q3", html: VALID_HTML });
 
     const under = await req(app, "POST", "/api/spaces/meta/widgets", { id: "plans/q3/child", name: "Child", html: VALID_HTML });
-    expect(under.status).toBe(400);
-    expect(under.json.error).toContain("nested under existing widget");
+    expect(under.status).toBe(201);
 
     const over = await req(app, "POST", "/api/spaces/meta/widgets", { id: "plans", name: "Plans", html: VALID_HTML });
-    expect(over.status).toBe(400);
-    expect(over.json.error).toContain("folder that contains widgets");
+    expect(over.status).toBe(201);
   });
 
   it("keeps record permission enforcement per nested widget (no cross-widget reach)", async () => {
@@ -583,9 +584,9 @@ describe("path-style widget ids", () => {
 
     const del = await req(app, "DELETE", "/api/spaces/meta/widgets/plans/deep/q3");
     expect(del.status).toBe(200);
-    expect(existsSync(join(testDir, "spaces", "meta", "widgets", "plans", "deep"))).toBe(false);
+    expect(existsSync(join(testDir, "spaces", "meta", "docs", "plans", "deep", "q3.html"))).toBe(false);
     // plans/ still holds q4 — must survive.
-    expect(existsSync(join(testDir, "spaces", "meta", "widgets", "plans", "q4", "widget.yaml"))).toBe(true);
+    expect(existsSync(join(testDir, "spaces", "meta", "docs", "plans", "q4.html"))).toBe(true);
 
     const list = await req(app, "GET", "/api/spaces/meta/widgets");
     expect(list.json.widgets.map((w: { id: string }) => w.id)).toEqual(["plans/q4"]);

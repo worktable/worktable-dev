@@ -1,6 +1,8 @@
-import { ensureWorkspaceManifest } from "./workspace.ts"
+import { ensureWorkspaceManifest, getWorkspaceRoot } from "./workspace.ts"
 import { randomUUID } from "node:crypto"
-import type { SpaceFile, WidgetFile } from "@worktable/types"
+import { mkdir, rename, rm } from "node:fs/promises"
+import { join } from "node:path"
+import type { SpaceFile } from "@worktable/types"
 import {
   discardPreparedSpace,
   ensureSpaceDirectories,
@@ -18,7 +20,10 @@ import {
   reconcilePublishedRecordCollection,
   writeRecordCollectionSchema,
 } from "./record-store.ts"
-import { listWidgets, readWidgetHtml, writeWidget } from "./widget-store.ts"
+import { listWidgets, readWidgetHtml } from "./widget-store.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
+import { readDocumentInventory } from "./document-inventory.ts"
+import { readDocumentPortableStateV2, writeDocumentPortableStateV2 } from "./document-data-v2.ts"
 import {
   buildWaysToWorkBlocks,
   EXAMPLE_PROMPTS_MARKDOWN,
@@ -26,7 +31,6 @@ import {
   STARTER_RECORDS,
   STARTER_SPACE_ID,
   STARTER_WIDGETS,
-  type StarterWidgetDefinition,
 } from "./starter-space.ts"
 
 // A clean install must not open onto an empty void. The welcome space itself
@@ -69,25 +73,8 @@ function makeStarterSpace(): SpaceFile {
   }
 }
 
-function makeStarterWidget(definition: StarterWidgetDefinition): WidgetFile {
-  const now = new Date().toISOString()
-  return {
-    version: 1,
-    kind: "worktable.widget",
-    id: definition.id,
-    name: definition.name,
-    description: definition.description,
-    createdAt: now,
-    updatedAt: now,
-    createdBy: "worktable",
-    metadata: definition.metadata,
-    runtime: { type: "html", entry: "index.html" },
-    permissions: definition.permissions,
-  }
-}
-
 function assertWrite(
-  result: { error: string | null; data: unknown },
+  result: { error?: string | null; data?: unknown },
   message: string
 ): void {
   if (result.error || result.data == null) {
@@ -98,6 +85,40 @@ function assertWrite(
 async function discardStarterPreparation(preparedId: string): Promise<void> {
   await discardPreparedSpace(preparedId)
   await reconcileDiscardedRecordCollection(preparedId, "onboarding-work")
+}
+
+// Portable state binds its digest to the Space identity. Prepare that state
+// for the published identity while all files are still private; renaming the
+// source directory alone would leave otherwise valid HTML docs unreadable.
+async function prepareStarterPortableState(preparedId: string): Promise<void> {
+  if (ensureWorkspaceManifest().version !== 2) return
+  const workspaceRoot = getWorkspaceRoot()
+  const preparedRoot = join(workspaceRoot, "spaces", preparedId)
+  const publicationRoot = join(preparedRoot, ".publication")
+  await mkdir(publicationRoot)
+  const inventory = await readDocumentInventory(preparedId)
+  let hasState = false
+  for (const entry of inventory.entries.values()) {
+    const state = await readDocumentPortableStateV2({
+      workspaceRoot, spaceId: preparedId, documentId: entry.documentId,
+    })
+    if (!state) continue
+    hasState = true
+    await writeDocumentPortableStateV2({
+      ...state.manifest,
+      workspaceRoot: publicationRoot,
+      spaceId: STARTER_SPACE_ID,
+      entries: state.entries,
+    })
+  }
+  if (hasState) {
+    await rm(join(preparedRoot, "document-data"), { recursive: true })
+    await rename(
+      join(publicationRoot, "spaces", STARTER_SPACE_ID, "document-data"),
+      join(preparedRoot, "document-data")
+    )
+  }
+  await rm(publicationRoot, { recursive: true })
 }
 
 /**
@@ -125,7 +146,7 @@ export async function seedStarterWorkspace(): Promise<boolean> {
       preparedId,
       "ways-to-work",
       await buildWaysToWorkBlocks(),
-      { updatedBy: "worktable", source: "seed", recordVersion: false }
+      { updatedBy: "worktable", source: "seed", recordVersion: false, managedIdentity: true }
     )
     if (!waysWrite.ok) {
       throw new Error(waysWrite.error ?? "Ways to Work seed failed")
@@ -135,7 +156,7 @@ export async function seedStarterWorkspace(): Promise<boolean> {
       preparedId,
       "example-prompts",
       EXAMPLE_PROMPTS_MARKDOWN,
-      { updatedBy: "worktable", source: "seed", recordVersion: false }
+      { updatedBy: "worktable", source: "seed", recordVersion: false, managedIdentity: true }
     )
     if (!promptsWrite.ok) {
       throw new Error(promptsWrite.error ?? "Example Prompts seed failed")
@@ -171,21 +192,26 @@ export async function seedStarterWorkspace(): Promise<boolean> {
     // Start Here remains last among the authored payloads so every dependency
     // it points to has already landed when the completion marker is written.
     for (const definition of STARTER_WIDGETS) {
-      const result = await writeWidget(
-        preparedId,
-        makeStarterWidget(definition),
-        definition.html
-      )
-      try {
-        assertWrite(result, `Starter HTML doc seed failed: ${definition.id}`)
-      } finally {
-        result.release?.()
-      }
+      const result = await createHtmlDocument({
+        spaceId: preparedId,
+        explicitId: definition.id,
+        name: definition.name,
+        description: definition.description,
+        html: definition.html,
+        createdBy: "worktable",
+        metadata: definition.metadata,
+        permissions: definition.permissions,
+        versionSource: "seed",
+        versionUpdatedBy: "worktable",
+        recordVersion: false,
+      })
+      assertWrite(result, `Starter HTML doc seed failed: ${definition.id}`)
     }
 
     // Store the final manifest inside the private directory, then atomically
     // claim `welcome`. A concurrent external writer makes the destination
     // non-empty, causing publication to fail without replacing their files.
+    await prepareStarterPortableState(preparedId)
     await writePreparedSpace(preparedId, {
       ...space,
       updatedAt: new Date().toISOString(),

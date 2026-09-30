@@ -1,5 +1,6 @@
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
 import { isHosted } from "../hosted.ts"
+import { retryWorkspaceStorageUpgrade, workspaceStorageUpgradeState } from "../workspace-storage-upgrade.ts"
 import {
   createWorkspaceClearJob,
   getCurrentWorkspaceClearJob,
@@ -201,6 +202,19 @@ function transferOwner(c: Context): Response | null {
     ? null
     : c.json({ error: "Forbidden", required: "human owner" }, 403)
 }
+
+workspaceRouter.post("/storage-upgrade/retry", (c) => {
+  const denied = transferOwner(c)
+  if (denied) return denied
+  return retryWorkspaceStorageUpgrade()
+    ? c.json({ state: "upgrading" }, 202)
+    : c.json({ error: "No workspace upgrade is waiting for retry." }, 409)
+})
+
+workspaceRouter.get("/storage-upgrade", (c) => {
+  c.header("Cache-Control", "no-store")
+  return c.json({ state: workspaceStorageUpgradeState(), canRetry: transferOwner(c) === null })
+})
 
 function workspaceExportReader(c: Context): Response | null {
   const identity = c.get("identity")

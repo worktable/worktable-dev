@@ -1,3 +1,4 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { describe, it, expect, afterEach } from "bun:test";
 import {
   existsSync,
@@ -16,6 +17,7 @@ import {
 } from "./document-lifecycle-journal.ts";
 import {
   mintDocumentId,
+  readDocumentInventory,
   updateDocumentInventory,
 } from "./document-inventory.ts";
 import { renameDocAndSync } from "./doc-rename.ts";
@@ -28,7 +30,6 @@ import {
   getDocProvenance,
   listDocVersions,
   readDoc,
-  writeDoc,
   writeSpace,
 } from "./store.ts";
 import {
@@ -136,7 +137,7 @@ describe("startServer with a rejected workspace folder", () => {
     await updateDocumentInventory("space", {
       upsert: [
         {
-          documentId: mintDocumentId(),
+          documentId: [...(await readDocumentInventory("space")).entries.values()].find(entry => entry.path === "old")!.documentId,
           path: "old",
           format: { id: "worktable.markdown", sourceVersion: 1 },
           source: { kind: "file", relativePath: "docs/old.md" },
@@ -187,7 +188,7 @@ describe("startServer with a rejected workspace folder", () => {
     await updateDocumentInventory("space", {
       upsert: [
         {
-          documentId: mintDocumentId(),
+          documentId: [...(await readDocumentInventory("space")).entries.values()].find(entry => entry.path === "old")!.documentId,
           path: "old",
           format: { id: "worktable.markdown", sourceVersion: 1 },
           source: { kind: "file", relativePath: "docs/old.md" },
@@ -241,7 +242,7 @@ describe("startServer with a rejected workspace folder", () => {
     await updateDocumentInventory("space", {
       upsert: [
         {
-          documentId: mintDocumentId(),
+          documentId: [...(await readDocumentInventory("space")).entries.values()].find(entry => entry.path === "old")!.documentId,
           path: "old",
           format: { id: "worktable.markdown", sourceVersion: 1 },
           source: { kind: "file", relativePath: "docs/old.md" },

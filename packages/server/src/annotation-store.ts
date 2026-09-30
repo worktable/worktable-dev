@@ -284,10 +284,11 @@ export async function listAnnotations(spaceId: string, filters: AnnotationListFi
 /** Returns every annotation attached to one doc without the paginated list API. */
 export async function listDocAnnotations(
   spaceId: string,
-  docPath: string
+  docPath: string,
+  options: { namespaceLockHeld?: boolean } = {}
 ): Promise<Annotation[]> {
   if (await usesDocumentDataV2()) {
-    return listLegacyCompatibleAnnotationsV2(spaceId, docPath)
+    return listLegacyCompatibleAnnotationsV2(spaceId, docPath, options)
   }
   const file = await readAnnotationFile(spaceId, {
     root: "docs",

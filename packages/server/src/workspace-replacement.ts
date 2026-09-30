@@ -268,6 +268,9 @@ export async function prepareWorkspaceReplacement(
       )
     }
 
+    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
+    await convertStagedWorkspaceStorageV2(stagingPath)
+
     return {
       stagingPath,
       backupPath,
@@ -277,7 +280,7 @@ export async function prepareWorkspaceReplacement(
       // The portable checkpoint is paths, sizes, and file hashes. Filesystem
       // modes and timestamps are best-effort metadata and cannot make an
       // otherwise identical import fail across operating systems.
-      contentCheckpoint: exported.integrity.contentCheckpoint,
+      contentCheckpoint: await calculateWorkspaceContentCheckpoint(stagingPath),
       files: exported.integrity.files.length,
       bytes: exported.integrity.files.reduce((sum, file) => sum + file.size, 0),
     }
@@ -415,11 +418,14 @@ export async function beginPreparedWorkspaceReplacement(
     const staged = replacementManifest as WorkspaceManifest
     writeWorkspaceManifestBytesAt(
       resolvedStaging,
-      staged.starterSeed?.status === "suppressed"
+      staged.version !== current.value.version || staged.starterSeed?.status === "suppressed"
         ? Buffer.from(
             JSON.stringify({
               ...current.value,
-              starterSeed: staged.starterSeed,
+              version: staged.version,
+              ...(staged.starterSeed?.status === "suppressed"
+                ? { starterSeed: staged.starterSeed }
+                : {}),
             }) + "\n"
           )
         : current.bytes

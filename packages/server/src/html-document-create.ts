@@ -29,6 +29,8 @@ export interface CreateHtmlDocumentInput {
   permissions?: WidgetFile["permissions"]
   versionSource: string
   versionUpdatedBy: string
+  /** Private initial content can be published without an edit-history entry. */
+  recordVersion?: boolean
 }
 
 export interface CreateHtmlDocumentResult {
@@ -105,7 +107,7 @@ export async function createHtmlDocument(
           if (result.error || !result.data) {
             return { error: result.error ?? "Write failed" }
           }
-          await recordWidgetVersion(
+          if (input.recordVersion !== false) await recordWidgetVersion(
             input.spaceId,
             id,
             beforeContent,

@@ -1,3 +1,4 @@
+import { writeWorkspaceManifest as writeLegacyFixtureManifest } from "./workspace.ts"
 import { ownerIdentity } from "./auth.ts";
 import { afterEach, beforeEach, describe, expect, it, setSystemTime } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -46,7 +47,7 @@ describe("widget version history", () => {
   beforeEach(async () => {
     setWorkspaceRootOverride(testDir);
     setAppDirOverride(appDir);
-    ensureWorkspaceManifest();
+    writeLegacyFixtureManifest({ ...ensureWorkspaceManifest(), version: 1 });
     mkdirSync(join(testDir, "spaces"), { recursive: true });
     app = buildTestApp();
     await req(app, "POST", "/api/spaces", { name: "Meta" });

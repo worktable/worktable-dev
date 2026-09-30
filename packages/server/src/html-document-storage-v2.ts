@@ -1,8 +1,19 @@
+import {
+  HTML_DOCUMENT_PROPERTIES_ENTRY,
+  isHtmlDocumentPath,
+  parseHtmlDocumentWidgetFile,
+  parsePropertiesEnvelope,
+  type HtmlPropertiesEnvelope,
+} from "./html-document-properties-v2.ts"
+export {
+  HTML_DOCUMENT_PROPERTIES_ENTRY,
+  isHtmlDocumentPath,
+  parseHtmlDocumentWidgetFile,
+} from "./html-document-properties-v2.ts"
 import { createHash } from "node:crypto"
 import { lstat } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import {
-  WidgetFileSchema,
   WidgetPermissionsSchema,
   type DocumentId,
   type WidgetFile,
@@ -18,8 +29,8 @@ import {
   BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
 } from "./document-format-registry.ts"
-import { analyzeDocumentPath } from "./document-path.ts"
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts"
+import { analyzeDocumentPath } from "./document-path.ts"
 import {
   DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
   type DocumentGenerationPayloadEntry,
@@ -37,7 +48,6 @@ import {
   readWorkspaceStorageLayoutAt,
 } from "./workspace-storage-v2.ts"
 
-export const HTML_DOCUMENT_PROPERTIES_ENTRY = "html/properties.json"
 export const HTML_DOCUMENT_RUNTIME_STATE_ENTRY = "html/runtime-state.json"
 export const HTML_DOCUMENT_LEGACY_COMPANION_PREFIX = "html/legacy-companions/"
 export const HTML_DOCUMENT_PORTABLE_STATE_VERSION = 1
@@ -52,40 +62,6 @@ const DENIED_PERMISSIONS = WidgetPermissionsSchema.parse({
   records: {},
   state: { read: true, write: true },
 })
-
-/**
- * HTML source files use the common document path grammar in V2. The legacy
- * WidgetIdSchema remains intentionally narrower because its path-style REST
- * routes depend on reserved, URL-clean segments.
- */
-export function isHtmlDocumentPath(path: string): boolean {
-  const analyzed = analyzeDocumentPath(path)
-  return analyzed.safe && analyzed.canonicalPath === path
-}
-
-export function parseHtmlDocumentWidgetFile(
-  value: unknown,
-  path: string
-): WidgetFile {
-  if (!isHtmlDocumentPath(path)) {
-    throw new Error(`Invalid HTML document path: ${path}`)
-  }
-  const parsed = WidgetFileSchema.parse({
-    ...(value as object),
-    // Validate the compatibility payload independently from the legacy route
-    // identifier. WidgetFile's TypeScript shape still represents `id` as a
-    // string, so restoring the common logical path is type-safe.
-    id: "html-document",
-  })
-  return { ...parsed, id: path }
-}
-
-interface HtmlPropertiesEnvelope {
-  type: "worktable.html-properties"
-  version: 1
-  sourceSha256: string
-  widget: WidgetFile
-}
 
 export interface HtmlDocumentStorageV2Owner {
   documentId: DocumentId
@@ -176,39 +152,6 @@ export function buildHtmlDocumentPortableStateEntries(input: {
       bytes: entry.bytes.slice(),
     })),
   ]
-}
-
-function parsePropertiesEnvelope(
-  entry: DocumentGenerationPayloadEntry | undefined,
-  path: string,
-  archive: WidgetFile["archive"]
-): HtmlPropertiesEnvelope | null {
-  if (!entry) return null
-  const value = decodeObject(entry.bytes)
-  if (
-    !value ||
-    value["type"] !== "worktable.html-properties" ||
-    value["version"] !== 1 ||
-    typeof value["sourceSha256"] !== "string"
-  ) {
-    return null
-  }
-  try {
-    return {
-      type: "worktable.html-properties",
-      version: 1,
-      sourceSha256: value["sourceSha256"],
-      widget: parseHtmlDocumentWidgetFile(
-        {
-          ...(value["widget"] as object),
-          archive: archive ?? null,
-        },
-        path
-      ),
-    }
-  } catch {
-    return null
-  }
 }
 
 function defaultWidget(input: {

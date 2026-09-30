@@ -1437,12 +1437,9 @@ export async function moveRegisteredDocument(options: {
       registry,
     })
     const current = resolveManagedFileDocument(catalog, options.path, registry)
-    if (entryAt(catalog, to) || reservedByAliasIn(catalog.aliases, to)) {
-      throw new DocumentWriteError(
-        "conflict",
-        "Another document already uses the destination path"
-      )
-    }
+    // The lifecycle planner owns destination conflicts and can retire an alias
+    // belonging to this same document when moving it back to a former path.
+    // A blanket alias rejection here prevents that supported round trip.
     const moved = await moveDurableDocumentExactlyLocked(
       options.spaceId,
       current.path,

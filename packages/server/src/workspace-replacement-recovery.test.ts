@@ -235,9 +235,9 @@ describe("interrupted replacement recovery", () => {
       kind: "document-storage-v2",
       state: "complete",
       backupPath,
-      resetRequired: true,
+      resetRequired: false,
     })
-    expect(recoverInterruptedWorkspaceReplacements()).toEqual([id])
+    expect(recoverInterruptedWorkspaceReplacements()).toEqual([])
     acknowledgeWorkspaceReplacementResets([id])
     expect(
       recoverInterruptedWorkspaceReplacements({ details: true })

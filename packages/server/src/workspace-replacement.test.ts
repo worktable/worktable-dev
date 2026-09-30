@@ -13,6 +13,9 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
+import { readWidgetHtml } from "./widget-store.ts"
+import { readWidgetState, writeWidgetState } from "./record-store.ts"
 import {
   beginPreparedWorkspaceReplacement,
   prepareWorkspaceReplacement,
@@ -33,6 +36,11 @@ let source: string
 
 async function seedDoc(workspace: string, body: string): Promise<void> {
   await mkdir(join(workspace, "spaces", "notes", "docs"), { recursive: true })
+  const timestamp = new Date().toISOString()
+  await writeFile(join(workspace, "spaces", "notes", "space.json"), JSON.stringify({
+    type: "worktable.space", version: 1, id: "notes", name: "Notes",
+    createdAt: timestamp, updatedAt: timestamp, createdBy: "test", settings: {},
+  }))
   await writeFile(join(workspace, "spaces", "notes", "docs", "note.md"), body)
 }
 
@@ -61,7 +69,19 @@ afterEach(async () => {
 })
 
 describe("workspace replacement transaction", () => {
-  it("preserves destination identity while replacing all portable content", async () => {
+  it.each([1, 2] as const)("imports storage V%s into V2 while preserving destination identity", async (sourceVersion) => {
+    const manifestPath = join(source, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, version: sourceVersion }))
+    setWorkspaceRootOverride(source)
+    try {
+      expect(await createHtmlDocument({
+        spaceId: "notes", explicitId: "panel", name: "Panel",
+        html: "<h1>Imported HTML</h1>",
+        versionSource: "test", versionUpdatedBy: "test",
+      })).toMatchObject({ data: { id: "panel" } })
+      await writeWidgetState("notes", "panel", { count: 7 })
+    } finally { setWorkspaceRootOverride(active) }
     const destinationManifest = await readFile(
       join(active, "worktable.workspace.json")
     )
@@ -95,7 +115,11 @@ describe("workspace replacement transaction", () => {
     expect(
       await readFile(join(active, "spaces", "notes", "docs", "note.md"), "utf8")
     ).toBe("# Imported\n")
-  })
+    expect(await readWidgetHtml("notes", "panel")).toEqual({ data: "<h1>Imported HTML</h1>", error: null })
+    expect(await readWidgetState("notes", "panel")).toEqual({ count: 7 })
+    expect(await readFile(join(active, "spaces", "notes", "docs", "panel.html"), "utf8"))
+      .toBe("<h1>Imported HTML</h1>")
+  }, 30_000)
 
   it("restores the original workspace when restart validation fails", async () => {
     const archive = await writeWorkspaceExportV2(join(root, "source-export"), {

@@ -44,6 +44,7 @@ import {
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
+  writeWorkspaceManifest,
 } from "./workspace.ts"
 import {
   createWorkspaceClearJob,
@@ -57,6 +58,8 @@ import {
 } from "./workspace-transfer-jobs.ts"
 import { seedStarterWorkspace } from "./seed.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
+import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 
 const originalEnv = { ...process.env }
 let root: string
@@ -174,6 +177,78 @@ afterEach(async () => {
 })
 
 describe("live workspace replacement", () => {
+  it("upgrades V1 before admitting edits, preserving collaboration identity and a rollback copy", async () => {
+    const original = { ...ensureWorkspaceManifest(), version: 1 as const }
+    writeWorkspaceManifest(original)
+    const epoch = await getWorkspaceCollaborationEpoch()
+    const share = await createDocumentShare({ kind: "doc", spaceId: "notes", artifactKey: "note" })
+    const resets: string[] = []
+    const unsubscribe = onWorkspaceChange((event) => {
+      if (event.type === "workspaceReset") resets.push(event.type)
+    })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let reached!: () => void
+    const swapping = new Promise<void>((resolve) => { reached = resolve })
+    setWorkspaceReplacementCommitHookForTests(async () => { reached(); await held })
+    const server = startServer(0, "127.0.0.1")
+    const origin = `http://127.0.0.1:${server.port}`
+    try {
+      await withDeadline(swapping, 15_000, "upgrade did not reach cutover")
+      expect(await (await fetch(`${origin}/health`)).json()).toMatchObject({ workspaceStorage: "upgrading" })
+      expect((await fetch(`${origin}/api/spaces`, { method: "POST", body: JSON.stringify({ name: "Too early" }) })).status).toBe(503)
+      release()
+      await withDeadline((async () => {
+        for (;;) {
+          const status = await fetch(`${origin}/api/workspace/storage-upgrade`).then(r => r.json()).catch(() => null)
+          if (status?.state === "ready") return
+          // test-policy: external-readiness-backoff (HTTP upgrade state)
+          await Bun.sleep(20)
+        }
+      })(), 15_000, "upgraded runtime did not become ready")
+      expect(ensureWorkspaceManifest()).toEqual({ ...original, version: 2 })
+      expect(await getWorkspaceCollaborationEpoch()).toBe(epoch)
+      expect(await resolveDocumentShare(share.token)).toEqual(share)
+      expect(resets).toEqual([])
+      expect((await fetch(`${origin}/api/spaces`)).status).toBe(200)
+      const backups = (await readdir(root)).filter(name => name.endsWith(".committed"))
+      expect(backups).toHaveLength(1)
+      expect(JSON.parse(await readFile(join(root, backups[0]!, "worktable.workspace.json"), "utf8"))).toEqual(original)
+    } finally {
+      release()
+      unsubscribe()
+      await server.stop(true)
+    }
+  })
+
+  it("keeps a failed upgrade closed and lets its owner retry after repair", async () => {
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 })
+    const conflict = join(active, "spaces", "notes", "document-data")
+    await writeFile(conflict, "legacy namespace conflict")
+    const server = startServer(0, "127.0.0.1")
+    const origin = `http://127.0.0.1:${server.port}`
+    const waitFor = (state: string) => withDeadline((async () => {
+      for (;;) {
+        const status = await fetch(`${origin}/api/workspace/storage-upgrade`).then(r => r.json()).catch(() => null)
+        if (status?.state === state) return
+        // test-policy: external-readiness-backoff (HTTP upgrade state)
+        await Bun.sleep(20)
+      }
+    })(), 15_000, `upgrade did not reach ${state}`)
+    try {
+      await waitFor("blocked")
+      expect(ensureWorkspaceManifest().version).toBe(1)
+      expect((await fetch(`${origin}/api/spaces`)).status).toBe(503)
+      expect((await fetch(`${origin}/api/workspace/storage-upgrade/retry`, {
+        method: "POST", headers: { Origin: "https://untrusted.example" },
+      })).status).toBe(401)
+      await rm(conflict)
+      expect((await fetch(`${origin}/api/workspace/storage-upgrade/retry`, { method: "POST" })).status).toBe(202)
+      await waitFor("ready")
+      expect(ensureWorkspaceManifest().version).toBe(2)
+    } finally { await server.stop(true) }
+  })
+
   it("holds HTTP writes only while capturing an immutable export", async () => {
     const server = startServer(0, "127.0.0.1")
     const origin = `http://127.0.0.1:${server.port}`

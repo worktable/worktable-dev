@@ -314,6 +314,9 @@ describe("registered file format conformance", () => {
   })
 
   it("preserves current bytes when a legacy document first enters V2 history", async () => {
+    const legacyManifestPath = join(workspaceRoot, "worktable.workspace.json")
+    const legacyManifest = JSON.parse(await readFile(legacyManifestPath, "utf8"))
+    await writeFile(legacyManifestPath, JSON.stringify({ ...legacyManifest, version: 1 }))
     await writeDoc(spaceId, "notes/legacy-handoff", "# Tracked legacy\n", {
       updatedBy: "test",
       source: "test",
@@ -382,6 +385,9 @@ describe("registered file format conformance", () => {
   })
 
   it("validates Quickdraw writes before changing saved ink and projects typed notes", async () => {
+    const legacyManifestPath = join(workspaceRoot, "worktable.workspace.json")
+    const legacyManifest = JSON.parse(await readFile(legacyManifestPath, "utf8"))
+    await writeFile(legacyManifestPath, JSON.stringify({ ...legacyManifest, version: 1 }))
     const copiedSource = join(
       workspaceRoot,
       "spaces",

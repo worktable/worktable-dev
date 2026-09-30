@@ -17,8 +17,10 @@ import {
 import {
   inspectPortableWorkspaceTree,
   portableWorkspaceCheckpoint,
+  calculateWorkspaceContentCheckpoint,
 } from "./workspace-transfer-v2.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { convertStagedWorkspaceStorageV2 } from "./document-storage-migration-v2.ts"
 
 export const LOCAL_OPERATOR_SNAPSHOT_RESTORE_PATH =
   "/internal/operator/workspace-snapshot-restore"
@@ -56,6 +58,7 @@ export async function recoverMissingWorkspaceSnapshot(
         workspaceId,
         sourceCheckpoint,
       })
+      await convertStagedWorkspaceStorageV2(join(downloaded, "workspace"))
       await rename(join(downloaded, "workspace"), root)
       const parent = await open(dirname(root), "r")
       try {
@@ -206,12 +209,16 @@ export async function restoreLiveWorkspaceSnapshot(
         await saveJob(jobDirectory, job)
         try {
           await rename(join(downloaded, "workspace"), job.prepared.stagingPath)
+          await convertStagedWorkspaceStorageV2(job.prepared.stagingPath)
+          const convertedSourceCheckpoint = portableWorkspaceCheckpoint(
+            await inspectPortableWorkspaceTree(job.prepared.stagingPath)
+          )
           scheduleWorkspaceReplacement({
             ...job.prepared,
-            contentCheckpoint: snapshot.contentCheckpoint,
+            contentCheckpoint: await calculateWorkspaceContentCheckpoint(job.prepared.stagingPath),
             options: {
               manifest: "checkpoint",
-              expectedSourceCheckpoint: snapshot.sourceCheckpoint,
+              expectedSourceCheckpoint: convertedSourceCheckpoint,
               validateBeforeSwap: async () => {
                 const live = portableWorkspaceCheckpoint(
                   await inspectPortableWorkspaceTree(getWorkspaceRoot())

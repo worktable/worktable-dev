@@ -7,6 +7,7 @@ import {
   readdir,
   realpath,
   rm,
+  statfs,
   unlink,
   writeFile,
 } from "node:fs/promises"
@@ -960,6 +961,83 @@ async function verifyMigratedWorkspace(input: {
   }
 }
 
+/** Convert only a private, disposable tree. Callers verify the original package
+ * before this operation and publish the converted tree only after it succeeds.
+ * This never changes the configured workspace or machine-local collaboration state.
+ */
+export async function convertStagedWorkspaceStorageV2(
+  stagingPath: string,
+  inspectionOptions: { appDir?: string; runtimeCacheKey?: string } = {}
+) {
+  const layout = await requireWorkspaceStorageVersionAt(stagingPath, [1, 2])
+  if (layout.kind === "v2") return null
+  const plan = await planDocumentStorageV2Migration(stagingPath, inspectionOptions)
+  if (!plan.clean) throw migrationError(plan)
+  const stagedPlan = await planDocumentIdMaterialization(
+    stagingPath,
+    inspectionOptions
+  )
+  if (
+    !stagedPlan.clean ||
+    stagedPlan.workspaceId !== plan.workspaceId ||
+    stagedPlan.workspaceContentCheckpoint !==
+      plan.workspaceContentCheckpoint ||
+    stagedPlan.sourceCheckpoint !== plan.sourceCheckpoint
+  ) {
+    throw new Error("prepared migration copy failed source verification")
+  }
+  const materialized = await materializeDocumentIdsAt(
+    stagingPath,
+    {
+      workspaceId: plan.workspaceId,
+      workspaceContentCheckpoint: stagedPlan.workspaceContentCheckpoint,
+      ...inspectionOptions,
+    }
+  )
+  const materializedPreflight = await preflightDocumentWorkspace(
+    stagingPath
+  )
+  if (
+    !materializedPreflight.clean ||
+    materializedPreflight.documents.some(
+      (document) => document.identity !== "durable"
+    )
+  ) {
+    throw new Error("materialized migration copy failed annotation census")
+  }
+  const migratedAnnotations = await migrateLegacyAnnotations(
+    stagingPath,
+    materializedPreflight.documents
+  )
+  const htmlDocumentsMigrated = await migrateLegacyHtmlDocuments(
+    stagingPath,
+    materializedPreflight.documents
+  )
+  const cutoverPreflight = await preflightDocumentWorkspace(
+    stagingPath
+  )
+  if (
+    !cutoverPreflight.clean ||
+    cutoverPreflight.documents.some(
+      (document) => document.identity !== "durable"
+    ) ||
+    cutoverPreflight.documentCount !== plan.documentCount
+  ) {
+    throw new Error("HTML document storage cutover failed verification")
+  }
+  const afterSourceCheckpoint = calculateDocumentSourceCheckpoint(
+    cutoverPreflight.documents
+  )
+  await admitStorageV2Manifest(stagingPath)
+  await verifyMigratedWorkspace({
+    workspaceRoot: stagingPath,
+    workspaceId: plan.workspaceId,
+    expectedSourceCheckpoint: afterSourceCheckpoint,
+    documentCount: plan.documentCount,
+  })
+  return { plan, materialized, migratedAnnotations, htmlDocumentsMigrated, afterSourceCheckpoint }
+}
+
 /**
  * Build a complete sibling workspace, write the V2 manifest only after its
  * contents verify, and atomically replace the configured copied workspace.
@@ -999,9 +1077,19 @@ export async function migrateDocumentStorageV2(input: {
   }
 
   const replacementPaths = createWorkspaceReplacementPaths()
+  const sourceSize = await calculateLocalWorkspaceContentCheckpoints(workspaceRoot)
+  const available = await statfs(dirname(workspaceRoot), { bigint: true })
+  // The original remains on disk as the rollback copy. Allow a full sibling
+  // plus conversion growth and manifest/journal overhead before copying.
+  const requiredBytes = BigInt(sourceSize.bytes) * 2n + 64n * 1024n * 1024n
+  if (available.bavail * available.bsize < requiredBytes) {
+    throw new Error("Not enough free disk space to upgrade this workspace safely. Free space and restart Worktable.")
+  }
+  const recovery = await createMigrationRecoveryJob(replacementPaths)
   // The sibling path belongs to this attempt as soon as copying begins. Even
   // a partial copy can be large and contain private workspace data.
   let replacementPrepared = true
+  let swapAttempted = false
   try {
     await cp(workspaceRoot, replacementPaths.stagingPath, {
       recursive: true,
@@ -1022,68 +1110,13 @@ export async function migrateDocumentStorageV2(input: {
       throw new Error("workspace changed while the migration copy was captured")
     }
 
-    const stagedPlan = await planDocumentIdMaterialization(
-      replacementPaths.stagingPath,
-      inspectionOptions
+    const converted = await convertStagedWorkspaceStorageV2(
+      replacementPaths.stagingPath, inspectionOptions
     )
-    if (
-      !stagedPlan.clean ||
-      stagedPlan.workspaceId !== plan.workspaceId ||
-      stagedPlan.workspaceContentCheckpoint !==
-        plan.workspaceContentCheckpoint ||
-      stagedPlan.sourceCheckpoint !== plan.sourceCheckpoint
-    ) {
-      throw new Error("prepared migration copy failed source verification")
+    if (!converted || converted.plan.workspaceContentCheckpoint !== plan.workspaceContentCheckpoint) {
+      throw new Error("prepared migration copy changed before conversion")
     }
-    const materialized = await materializeDocumentIdsAt(
-      replacementPaths.stagingPath,
-      {
-        workspaceId: plan.workspaceId,
-        workspaceContentCheckpoint: stagedPlan.workspaceContentCheckpoint,
-        ...inspectionOptions,
-      }
-    )
-    const materializedPreflight = await preflightDocumentWorkspace(
-      replacementPaths.stagingPath
-    )
-    if (
-      !materializedPreflight.clean ||
-      materializedPreflight.documents.some(
-        (document) => document.identity !== "durable"
-      )
-    ) {
-      throw new Error("materialized migration copy failed annotation census")
-    }
-    const migratedAnnotations = await migrateLegacyAnnotations(
-      replacementPaths.stagingPath,
-      materializedPreflight.documents
-    )
-    const htmlDocumentsMigrated = await migrateLegacyHtmlDocuments(
-      replacementPaths.stagingPath,
-      materializedPreflight.documents
-    )
-    const cutoverPreflight = await preflightDocumentWorkspace(
-      replacementPaths.stagingPath
-    )
-    if (
-      !cutoverPreflight.clean ||
-      cutoverPreflight.documents.some(
-        (document) => document.identity !== "durable"
-      ) ||
-      cutoverPreflight.documentCount !== plan.documentCount
-    ) {
-      throw new Error("HTML document storage cutover failed verification")
-    }
-    const afterSourceCheckpoint = calculateDocumentSourceCheckpoint(
-      cutoverPreflight.documents
-    )
-    await admitStorageV2Manifest(replacementPaths.stagingPath)
-    await verifyMigratedWorkspace({
-      workspaceRoot: replacementPaths.stagingPath,
-      workspaceId: plan.workspaceId,
-      expectedSourceCheckpoint: afterSourceCheckpoint,
-      documentCount: plan.documentCount,
-    })
+    const { materialized, migratedAnnotations, htmlDocumentsMigrated, afterSourceCheckpoint } = converted
     const stagedCheckpoint = (
       await calculateLocalWorkspaceContentCheckpoints(
         replacementPaths.stagingPath
@@ -1098,15 +1131,12 @@ export async function migrateDocumentStorageV2(input: {
     ) {
       throw new Error("migration backup source changed before the swap")
     }
-    const recovery = await createMigrationRecoveryJob({
-      stagingPath: replacementPaths.stagingPath,
-      backupPath: replacementPaths.backupPath,
-    })
 
     let transaction: Awaited<
       ReturnType<typeof beginPreparedWorkspaceReplacement>
     > | null = null
     try {
+      swapAttempted = true
       transaction = await beginPreparedWorkspaceReplacement(
         replacementPaths.stagingPath,
         replacementPaths.backupPath,
@@ -1180,6 +1210,9 @@ export async function migrateDocumentStorageV2(input: {
   } finally {
     if (replacementPrepared) {
       await rm(replacementPaths.stagingPath, { recursive: true, force: true })
+      // Retire a pre-swap failure only while the original root is present.
+      // Otherwise startup recovery still owns the recorded paths.
+      if (!swapAttempted && await pathExists(workspaceRoot)) await settleMigrationRecoveryJob(recovery, "failed")
     }
   }
 }

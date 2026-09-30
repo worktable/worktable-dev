@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -24,10 +25,11 @@ import {
   ensureWorkspaceManifest,
   getDocAliasesPath,
   setWorkspaceRootOverride,
+  writeWorkspaceManifest,
 } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
-import { readWidget, readWidgetHtml, writeWidget } from "./widget-store.ts"
+import { readWidget, readWidgetHtml } from "./widget-store.ts"
 
 const testDir = join(tmpdir(), `worktable-doc-rename-lifecycle-${Date.now()}`)
 
@@ -276,6 +278,7 @@ describe("document rename lifecycle", () => {
   })
 
   it("rejects a legacy annotation collision before moving any state", async () => {
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 })
     await writeDoc("space", "source", "# Source")
     const sourceAnnotation = await createAnnotation("space", {
       target: { type: "doc", docPath: "source" },
@@ -410,10 +413,10 @@ describe("document rename lifecycle", () => {
       "occupied/sub"
     )
     expect(nestedHtml).toMatchObject({
-      ok: false,
-      error: expect.stringContaining("inside an existing HTML document"),
+      ok: true,
     })
-    expect(await readWidgetHtml("space", "source/child")).toMatchObject({
+    // Flat HTML files can share a logical prefix with an ordinary folder.
+    expect(await readWidgetHtml("space", "occupied/sub/child")).toMatchObject({
       data: "<h1>Child</h1>",
     })
     expect(await readWidgetHtml("space", "occupied")).toMatchObject({

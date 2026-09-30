@@ -153,7 +153,8 @@ describe("doc routes", () => {
 
   describe("POST /api/spaces/:spaceId/docs/*/review", () => {
     it("records a review checkpoint and flips humanReviewed", async () => {
-      const { writeDoc, listDocVersions } = await import("./store.ts");
+      const { listDocVersions } = await import("./store.ts");
+      const { writeManagedFixtureDoc: writeDoc } = await import("./fixtures/managed-content.ts");
       await writeDoc("test-space", "agent-doc", "# Agent Doc\n\nBody.", {
         updatedBy: "worktable-agent",
         source: "mcp",

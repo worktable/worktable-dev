@@ -883,11 +883,13 @@ export async function useResolvedDocumentHandle<T>(
      * reads keep newly discovered filesystem documents provisional.
      */
     materializeIdentity?: boolean
+    /** Internal callers already serializing a namespace mutation must not relock it. */
+    namespaceLockHeld?: boolean
   },
   use: (handle: ResolvedDocumentHandle) => Promise<T> | T
 ): Promise<T | Exclude<DocumentHandleResolution, { kind: "document" }>> {
   try {
-    return await withDocPathLock(options.spaceId, async () => {
+    const read = async () => {
       const result = await prepareDocumentReadResult(options)
       if (result.kind !== "prepared") return result
       return (
@@ -922,7 +924,8 @@ export async function useResolvedDocumentHandle<T>(
           }
         )) ?? { kind: "not-found" }
       )
-    })
+    }
+    return await (options.namespaceLockHeld ? read() : withDocPathLock(options.spaceId, read))
   } catch (error) {
     if (error instanceof DocumentSpaceNotFoundError) {
       return { kind: "not-found" }

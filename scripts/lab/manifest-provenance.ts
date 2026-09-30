@@ -55,7 +55,8 @@ export function buildProvenanceManifest(
 
   return {
     type: "worktable.workspace",
-    version: 1,
+    // Changing provenance must never relabel a V2 tree as legacy storage.
+    version: source["version"] === 2 ? 2 : 1,
     id: freshId(),
     name,
     createdAt,

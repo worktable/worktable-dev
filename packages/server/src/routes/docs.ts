@@ -62,9 +62,10 @@ const CreateDocSchema = z.object({
 async function hasUnportableAnnotationAnchors(
   spaceId: string,
   docPath: string,
-  blocks: unknown[]
+  blocks: unknown[],
+  namespaceLockHeld = false
 ): Promise<boolean> {
-  const annotations = await listDocAnnotations(spaceId, docPath);
+  const annotations = await listDocAnnotations(spaceId, docPath, { namespaceLockHeld });
 
   const flattened: Array<{ id?: string; text: string }> = [];
   const collectBlocks = (values: unknown[]) => {
@@ -653,7 +654,8 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
             !(await hasUnportableAnnotationAnchors(
               spaceId,
               docPath,
-              blocks
+              blocks,
+              true
             )),
           onConverted: async () => {
             convertedState.complete = true;

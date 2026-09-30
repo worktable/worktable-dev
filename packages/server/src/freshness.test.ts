@@ -1,10 +1,10 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { describe, it, expect, beforeEach, afterEach, setSystemTime } from "bun:test";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  writeDoc,
   writeSpace,
   createDocReviewCheckpoint,
   createManualDocCheckpoint,

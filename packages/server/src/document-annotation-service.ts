@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid"
+import { analyzeDocumentPath } from "./document-path.ts"
 import { lstat, opendir } from "node:fs/promises"
 import { join } from "node:path"
 import { DocumentIdSchema } from "@worktable/types"
@@ -515,11 +516,24 @@ function legacyAnnotation(
 
 export async function listLegacyCompatibleAnnotationsV2(
   spaceId: string,
-  path?: string
+  path?: string,
+  options: { namespaceLockHeld?: boolean } = {}
 ): Promise<Annotation[]> {
-  const owners = path
-    ? [await ownerForPath(spaceId, path)]
-    : await allAnnotationOwners(spaceId)
+  let owners: AnnotationOwner[]
+  if (path) {
+    if (!analyzeDocumentPath(path).safe) return []
+    const result = await useResolvedDocumentHandle({
+      spaceId, path, includeArchived: true, ...options,
+    }, async (handle) => handle.identity === "durable" ? [await ownerForDocument(spaceId, {
+      documentId: handle.documentId, path: handle.document.path, formatId: handle.document.format.id,
+    })] : [])
+    // A newly discovered file has no durable annotation owner yet. Reading
+    // it must neither mint an identity nor prevent its content from opening.
+    if (!Array.isArray(result)) {
+      throw new DocumentAnnotationError(result.kind === "not-found" ? "not-found" : "conflict", "Document path cannot be resolved")
+    }
+    owners = result
+  } else owners = await allAnnotationOwners(spaceId)
   return owners.flatMap((owner) =>
     owner.annotations.flatMap((annotation) => {
       const projected = legacyAnnotation(owner, annotation)

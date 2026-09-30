@@ -1,3 +1,4 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import fc from "fast-check";
 import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
@@ -19,7 +20,6 @@ import { dispatchOperation } from "./mcp/dispatcher.ts";
 
 import {
   readDoc,
-  writeDoc,
   docExists,
   docStat,
   listDocs,

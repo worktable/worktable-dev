@@ -1,3 +1,4 @@
+import { writeWorkspaceManifest as writeLegacyFixtureManifest } from "./workspace.ts"
 import { describe, it, expect, beforeEach, afterEach } from "bun:test"
 import fc from "fast-check"
 import {
@@ -86,7 +87,7 @@ describe("doc store", () => {
   beforeEach(async () => {
     setWorkspaceRootOverride(testDir)
     setAppDirOverride(appDir)
-    ensureWorkspaceManifest()
+    writeLegacyFixtureManifest({ ...ensureWorkspaceManifest(), version: 1 })
     mkdirSync(spacesDir, { recursive: true })
     await writeSpace(makeSpace("test-space"))
   })
@@ -903,7 +904,7 @@ describe("path security", () => {
   beforeEach(async () => {
     setWorkspaceRootOverride(testDir)
     setAppDirOverride(appDir)
-    ensureWorkspaceManifest()
+    writeLegacyFixtureManifest({ ...ensureWorkspaceManifest(), version: 1 })
     mkdirSync(spacesDir, { recursive: true })
     await writeSpace(makeSpace("test-space"))
   })

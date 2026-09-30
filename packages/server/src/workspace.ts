@@ -528,7 +528,7 @@ export function prepareWorkspaceTarget(
 
   const manifest: WorkspaceManifest = {
     type: "worktable.workspace",
-    version: 1,
+    version: 2,
     id: makeId("ws"),
     name: "Local Workspace",
     createdAt: new Date().toISOString(),

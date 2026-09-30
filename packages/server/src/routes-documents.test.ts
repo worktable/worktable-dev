@@ -1,3 +1,4 @@
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   access,
@@ -32,7 +33,7 @@ import {
   writeDoc,
   writeSpace,
 } from "./store.ts"
-import { readWidget, setWidgetArchived, writeWidget } from "./widget-store.ts"
+import { readWidget, setWidgetArchived} from "./widget-store.ts"
 import { yjsManager } from "./yjs-manager.ts"
 import {
   ensureWorkspaceManifest,
@@ -475,7 +476,7 @@ describe("format-neutral document route", () => {
         },
       ],
     })
-    const v1CommonWrite = await instance.request(
+    const commonWrite = await instance.request(
       `/api/spaces/${spaceId}/documents/annotations`,
       {
         method: "POST",
@@ -486,11 +487,11 @@ describe("format-neutral document route", () => {
         body: JSON.stringify({
           path: "notes/readme",
           category: "comment",
-          body: "Must stay in the released V1 store",
+          body: "A comment in the current document store",
         }),
       }
     )
-    expect(v1CommonWrite.status).toBe(409)
+    expect(commonWrite.status).toBe(200)
     await expect(
       access(
         join(
@@ -502,7 +503,7 @@ describe("format-neutral document route", () => {
           "annotations.json"
         )
       )
-    ).rejects.toMatchObject({ code: "ENOENT" })
+    ).resolves.toBeNull()
 
     const missing = await resolve("missing")
     expect(missing.status).toBe(404)
@@ -542,16 +543,9 @@ describe("format-neutral document route", () => {
       },
     })
 
-    const conflicting = await writeWidget(
-      spaceId,
-      {
-        ...htmlDocument(),
-        id: "library/readme",
-        name: "Conflicting readme",
-      },
-      "<h1>Conflict</h1>"
-    )
-    conflicting.release?.()
+    // Simulate a conflicting file arriving from an external filesystem writer;
+    // managed writes correctly reject this collision before creating anything.
+    await writeFile(join(root, "spaces", spaceId, "docs", "library", "readme.html"), "<h1>Conflict</h1>")
     const conflict = await resolve("notes/readme")
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toMatchObject({ code: "CONFLICT" })
@@ -638,7 +632,7 @@ describe("format-neutral document route", () => {
     expect(oversizedReason.status).toBe(400)
     expect(await getDocArchiveInfo(spaceId, "notes/readme")).toBeUndefined()
     expect(
-      (await readWidget(spaceId, "notes/status")).data?.archive
+      (await readWidget(spaceId, "notes/status")).data?.archive ?? undefined
     ).toBeUndefined()
 
     const archived = await instance.request(
@@ -762,7 +756,7 @@ describe("format-neutral document route", () => {
     ).toBe("# Bundled")
   }, 10_000)
 
-  it("moves and archives HTML-only folders despite unrelated malformed Doc metadata", async () => {
+  it("preserves HTML folders when shared metadata is corrupt and resumes after repair", async () => {
     const instance = app()
     const htmlOnly = await writeWidget(
       spaceId,
@@ -787,11 +781,14 @@ describe("format-neutral document route", () => {
         }),
       }
     )
-    expect(movedHtmlOnly.status).toBe(200)
-    expect(await movedHtmlOnly.json()).toMatchObject({
-      count: 1,
-      renamed: [{ from: "dashboards/live", to: "reports/live" }],
+    expect(movedHtmlOnly.status).toBe(409)
+    expect((await readWidget(spaceId, "dashboards/live")).data?.name).toBe("Live")
+    await writeFile(docsMetaPath, validDocMeta)
+    const repairedMove = await instance.request(`/api/spaces/${spaceId}/documents/move-folder`, {
+      method: "POST", headers: { "content-type": "application/json", "x-test-scopes": "documents:write" },
+      body: JSON.stringify({ oldPath: "dashboards", newPath: "reports" }),
     })
+    expect(repairedMove.status).toBe(200)
 
     const archivedHtmlOnly = await instance.request(
       `/api/spaces/${spaceId}/documents/archive-folder`,

@@ -63,7 +63,8 @@ import {
   writeSpace,
 } from "./store.ts"
 import {
-  ensureWorkspaceManifest,
+  ensureWorkspaceManifest as initializeWorkspace,
+  writeWorkspaceManifest,
   setWorkspaceRootOverride,
   workspaceCacheKey,
 } from "./workspace.ts"
@@ -91,6 +92,12 @@ import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts"
 
 const root = join(tmpdir(), `worktable-document-lifecycle-model-${Date.now()}`)
 const originalHosted = process.env["WORKTABLE_HOSTED"]
+
+// These recovery models own the original bundle and path-history journal.
+// V2 sidecar recovery cases below explicitly opt into their additional protocol.
+function ensureWorkspaceManifest() {
+  writeWorkspaceManifest({ ...initializeWorkspace(), version: 1 })
+}
 
 function makeSpace(id: string): SpaceFile {
   const now = new Date().toISOString()

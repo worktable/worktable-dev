@@ -4,7 +4,7 @@ import { startWebHarness, type WebHarness } from "./harness"
 let harness: WebHarness
 
 test.beforeAll(async () => {
-  harness = await startWebHarness("drawing-input", { storageVersion: 2 })
+  harness = await startWebHarness("drawing-input")
 })
 test.afterAll(async () => {
   await harness?.stop()
@@ -52,7 +52,8 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   })
   expect(space.ok()).toBe(true)
   await page.goto(`${harness.webUrl}/spaces/drawing-input`)
-  await page.getByRole("button", { name: "New", exact: true }).click()
+  await page.getByRole("button", { name: "Drawing input", exact: true })
+    .locator("..").getByRole("button", { name: "New", exact: true }).click()
   await page.getByRole("menuitem", { name: "New drawing", exact: true }).click()
   await page.getByLabel("Name", { exact: true }).fill("Scratchpad")
   await page.getByRole("button", { name: "Create drawing" }).click()

@@ -103,7 +103,7 @@ describe("workspace root resolution", () => {
       const manifest = ensureWorkspaceManifest();
       expect(manifest).toMatchObject({
         type: "worktable.workspace",
-        version: 1,
+        version: 2,
         name: "Local Workspace",
         cloud: { status: "unlinked" },
         onboarding: { version: 1, status: "pending" },

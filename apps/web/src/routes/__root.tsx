@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
+import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
 import {
   DocumentOpening,
@@ -624,7 +625,7 @@ function RootLayoutWithProviders() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <RootLayout />
+        <WorkspaceStorageGate><RootLayout /></WorkspaceStorageGate>
       </ThemeProvider>
     </QueryClientProvider>
   )

@@ -41,7 +41,7 @@ import {
   withLegacyAnnotationStoreLock,
 } from "./legacy-annotation-lock.ts"
 import { requireSafeLegacySpaceId } from "./legacy-space-id.ts"
-import { analyzeDocumentPath, parseNewDocumentPath } from "./document-path.ts"
+import { analyzeDocumentPath } from "./document-path.ts"
 import {
   createBuiltinDocumentFormatRegistry,
   type DocumentFormatRegistry,
@@ -175,8 +175,8 @@ function normalizeJsonValue(value: unknown): unknown {
 }
 
 function requirePortableLogicalPath(path: string): string {
-  const parsed = parseNewDocumentPath(path)
-  if ("error" in parsed || parsed.path !== path) {
+  const parsed = analyzeDocumentPath(path)
+  if (!parsed.safe || !parsed.portable || parsed.canonicalPath !== path) {
     throw new Error("document data logical path is not portable")
   }
   return path

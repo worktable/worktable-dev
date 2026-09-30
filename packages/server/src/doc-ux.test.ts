@@ -1,3 +1,4 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { ownerIdentity } from "./auth.ts";
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
@@ -5,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   writeSpace,
-  writeDoc,
   readDoc,
   readSpace,
   setDocArchived,
@@ -25,6 +25,7 @@ import { createAnnotation } from "./annotation-store.ts";
 import { buildDocumentCatalog } from "./document-catalog.ts";
 import {
   mintDocumentId,
+  readDocumentInventory,
   updateDocumentInventory,
 } from "./document-inventory.ts";
 import type { SpaceFile } from "@worktable/types";
@@ -177,7 +178,7 @@ describe("doc UX routes", () => {
         },
         para("Body copy"),
       ]);
-      const documentId = mintDocumentId();
+      const documentId = [...(await readDocumentInventory("doc-ux-space")).entries.values()].find(entry => entry.path === "safe-rich")!.documentId;
       await updateDocumentInventory("doc-ux-space", {
         upsert: [{
           documentId,

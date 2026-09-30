@@ -92,6 +92,7 @@ import {
 import { VERSION } from "./release-info.ts";
 import { createStaticFileResponse, getStaticAssetsInfo } from "./static-assets.ts";
 import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
+import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep } from "./version-retention.ts";
 import {
   changeEventAffectsContentDerivedState,
@@ -141,6 +142,7 @@ import {
   stopWorkspaceRequestAdmissionAndDrain,
 } from "./workspace-request-lifecycle.ts";
 import {
+  runWorkspaceStartupRecovery,
   clearWorkspaceRecoveryRequirement,
   onWorkspaceRecoveryRequired,
   requireWorkspaceRecovery,
@@ -749,12 +751,86 @@ export async function runRecordReconcileSweep(): Promise<void> {
   }
 }
 
+function startStorageUpgradeServer(
+  port: number,
+  hostname: string | undefined,
+  options: { resumeWorkspaceRequests?: boolean; replacementRestart?: boolean },
+  recovery: Promise<void> | null
+): ReturnType<typeof Bun.serve<WsData>> {
+  let stopped = false;
+  let running: Promise<void> | null = null;
+  let replacement: ReturnType<typeof Bun.serve<WsData>> | null = null;
+  const maintenance: Bun.Serve.Options<WsData, string> = {
+    port, hostname,
+    websocket: { message() {} },
+    fetch(req) {
+      const url = new URL(req.url);
+      if (
+        url.pathname === "/health" ||
+        url.pathname.startsWith("/auth/") ||
+        url.pathname === "/api/workspace/storage-upgrade" ||
+        url.pathname === "/api/workspace/storage-upgrade/retry" ||
+        (req.method === "GET" && url.pathname.startsWith("/assets/"))
+      ) return app.fetch(req);
+      if (req.method === "GET" && req.headers.get("accept")?.includes("text/html") &&
+        !["/api/", "/internal/", "/mcp", "/yjs/", "/ws"].some(prefix => url.pathname.startsWith(prefix))) {
+        // Always serve the neutral shell: document-opening injection must not
+        // inspect content while the workspace is being converted or swapped.
+        url.pathname = "/";
+        url.search = "";
+        return app.fetch(new Request(url, req));
+      }
+      return Response.json({ code: "WORKSPACE_UPGRADING", error: "Worktable is upgrading this workspace." },
+        { status: 503, headers: { "Retry-After": "2" } });
+    },
+  };
+  const server = Bun.serve<WsData>(maintenance);
+  activeServer = server;
+  const stopListener = server.stop.bind(server);
+  const run = () => {
+    if (running || stopped) return;
+    setWorkspaceStorageUpgradeState("upgrading");
+    running = (async () => {
+      await recovery;
+      if (stopped) return;
+      await upgradeWorkspaceBeforeStartup();
+      if (stopped) return;
+      const selectedPort = server.port!;
+      if (activeServer === server) activeServer = null;
+      // Keep the same listener through cutover so clients never race a rebind.
+      // The normal runtime installs its own stop boundary around the raw socket.
+      server.stop = stopListener;
+      replacement = startServer(selectedPort, hostname, { ...options, upgradeListener: server });
+      setWorkspaceStorageUpgradeState("ready");
+    })().catch((error) => {
+      server.reload(maintenance);
+      server.stop = stop;
+      activeServer = server;
+      console.error("[workspace] storage upgrade needs attention:", error);
+      setWorkspaceStorageUpgradeState("blocked", run);
+    }).finally(() => { running = null; });
+  };
+  const stop = async (closeActiveConnections?: boolean) => {
+    stopped = true;
+    await running;
+    if (replacement) await replacement.stop(closeActiveConnections);
+    else await stopListener(closeActiveConnections);
+    if (activeServer === server) activeServer = null;
+    setWorkspaceStorageUpgradeState("ready");
+  };
+  server.stop = stop;
+  run();
+  return server;
+}
+
 export function startServer(
   port = 7480,
   hostname = process.env["HOST"],
   options: {
     resumeWorkspaceRequests?: boolean;
     replacementRestart?: boolean;
+    /** Internal: retain the maintenance listener while startup finishes. */
+    upgradeListener?: ReturnType<typeof Bun.serve<WsData>>;
   } = {}
 ): ReturnType<typeof Bun.serve<WsData>> {
   if (activeServer) {
@@ -880,7 +956,10 @@ export function startServer(
     } else {
       clearWorkspaceRecoveryRequirement()
     }
-    ensureWorkspaceManifest();
+    if (ensureWorkspaceManifest().version === 1) {
+      return startStorageUpgradeServer(port, hostname, options, recoveredWorkspaceReset);
+    }
+    setWorkspaceStorageUpgradeState("ready");
   } catch (err) {
     workspaceRejected = true;
     if (err instanceof WorkspaceAdoptionError) {
@@ -1185,7 +1264,7 @@ export function startServer(
       recoveredDocumentData.length > 0 ||
       recoveredDocumentCreates.length > 0
     ) {
-      const task = (async () => {
+      const task = runWorkspaceStartupRecovery(async () => {
         if (recoveredDocumentData.length > 0) {
           await reconcileDocumentDataV2LifecycleRecovery(recoveredDocumentData)
         }
@@ -1196,7 +1275,7 @@ export function startServer(
           await reconcileDocumentCreateRecoveryV2(recoveredDocumentCreates)
         }
         clearWorkspaceRecoveryRequirement()
-      })().catch((error) => {
+      }).catch((error) => {
         requireWorkspaceRecovery(
           "recovered document content could not be reconciled"
         );
@@ -1294,7 +1373,8 @@ export function startServer(
     return credentialCheck;
   };
 
-  const startListener = () => Bun.serve<WsData>({
+  const startListener = () => {
+    const config: Bun.Serve.Options<WsData, string> = {
     port,
     ...(hostname ? { hostname } : {}),
     idleTimeout: 120, // seconds — sync MCP calls can poll up to 60s
@@ -1304,6 +1384,10 @@ export function startServer(
       // process-local and owner-only, so disable Bun's idle timer only for the
       // authenticated maintenance hop rather than for public requests.
       disableAuthorizedOperatorRequestTimeout(req, server);
+
+      if (recoveredDocumentTask && url.pathname !== "/health") {
+        await recoveredDocumentTask;
+      }
 
       // A rejected workspace must be left byte-for-byte untouched. Short-circuit
       // every workspace-touching surface (REST, MCP, Yjs/space WebSockets) with
@@ -1330,19 +1414,6 @@ export function startServer(
           return new Response("Workspace recovery failed; restart Worktable.", {
             status: 503,
           });
-        }
-      }
-      const pendingRecoveredDocument = recoveredDocumentTask;
-      if (pendingRecoveredDocument && url.pathname !== "/health") {
-        await pendingRecoveredDocument;
-        if (workspaceRecoveryRequired()) {
-          return new Response(
-            JSON.stringify({
-              error:
-                "Workspace unavailable: restart Worktable to finish recovering a document move.",
-            }),
-            { status: 503, headers: { "Content-Type": "application/json" } }
-          );
         }
       }
 
@@ -1558,7 +1629,9 @@ export function startServer(
         }
       },
     },
-  });
+    };
+    return options.upgradeListener?.reload(config) ?? Bun.serve<WsData>(config);
+  };
 
   let server: ReturnType<typeof Bun.serve<WsData>>;
   try {

@@ -1,10 +1,11 @@
+import { writeManagedFixtureDoc as writeDoc } from "./fixtures/managed-content.ts"
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import fc from "fast-check";
 import { mkdirSync, mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeDoc, writeSpace, renameDoc, deleteDoc, listDocsDetailed } from "./store.ts";
+import { writeSpace, renameDoc, deleteDoc, listDocsDetailed } from "./store.ts";
 import {
   extractDocLinkTargets,
   resolveDocLink,

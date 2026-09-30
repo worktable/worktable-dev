@@ -1,3 +1,5 @@
+import { writeWidget } from "./widget-store.ts"
+import { writeWorkspaceManifest } from "./workspace.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
@@ -13,7 +15,7 @@ import { readDocument } from "./document-query.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { invalidateSearchIndex, search } from "./search-index.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
-import { withWidgetWriteLock, writeWidget } from "./widget-store.ts"
+import { withWidgetWriteLock} from "./widget-store.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -82,7 +84,8 @@ async function connect(scopes = ["documents:read"]): Promise<Client> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "worktable-mcp-documents-"))
   setWorkspaceRootOverride(root)
-  ensureWorkspaceManifest()
+  // This catalog fixture deliberately includes legacy bundles and alias shadows.
+  writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version: 1 })
   invalidateSearchIndex()
   await writeSpace(space())
 })

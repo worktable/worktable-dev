@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto"
 import { isHosted } from "../hosted.ts"
 import { LOCAL_PROOF_HEADER } from "../local-host.ts"
 import { VERSION } from "../release-info.ts"
+import { workspaceStorageUpgradeState, type WorkspaceStorageUpgradeState } from "../workspace-storage-upgrade.ts"
 
 const startTime = Date.now()
 export const DESKTOP_CONNECTION_PROTOCOL_VERSION = 1
@@ -18,6 +19,7 @@ export interface HealthResponse {
   version: string
   uptime: number
   desktopConnection: DesktopConnectionHealth
+  workspaceStorage: WorkspaceStorageUpgradeState
 }
 
 export const healthRouter = new Hono()
@@ -28,6 +30,7 @@ export function healthPayload(): HealthResponse {
     // Stable marker so clients can distinguish a Worktable server from any other
     // process that happens to answer /health with {"ok":true}.
     service: "worktable",
+    workspaceStorage: workspaceStorageUpgradeState(),
     // The real installed version (stamped by the installer). The update UI polls
     // /health after a restart and compares this to confirm the new build is live.
     version: VERSION,

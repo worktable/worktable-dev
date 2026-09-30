@@ -3226,6 +3226,9 @@ export async function importWorkspaceExportV2(
       staging,
       `${JSON.stringify(newManifest, null, 2)}\n`
     )
+    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
+    await convertStagedWorkspaceStorageV2(staging)
+    newManifest.version = 2
     if (classification.outcome === "empty") {
       const currentEntries = await readdir(target)
       if (!currentEntries.every(isIgnoredEmptyWorkspaceEntry)) {

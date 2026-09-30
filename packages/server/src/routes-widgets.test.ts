@@ -73,9 +73,9 @@ describe("widget REST routes", () => {
     expect(createRes.status).toBe(201);
     expect(createRes.json.widgetId).toBe("open-items");
 
-    const yaml = await readFile(join(testDir, "spaces", "meta", "widgets", "open-items", "widget.yaml"), "utf8");
-    expect(yaml).toContain('kind: "worktable.widget"');
-    expect(await readFile(join(testDir, "spaces", "meta", "widgets", "open-items", "index.html"), "utf8")).toBe(html);
+    const metadata = await req(app, "GET", "/api/spaces/meta/widgets/open-items");
+    expect(metadata.json.widget.kind).toBe("worktable.widget");
+    expect(await readFile(join(testDir, "spaces", "meta", "docs", "open-items.html"), "utf8")).toBe(html);
 
     const listRes = await req(app, "GET", "/api/spaces/meta/widgets");
     expect(listRes.status).toBe(200);
@@ -251,7 +251,7 @@ describe("widget REST routes", () => {
     });
     expect(patchRes.status).toBe(200);
     expect(patchRes.json.widget.name).toBe("Lifecycle Renamed");
-    expect(await readFile(join(testDir, "spaces", "meta", "widgets", "lifecycle", "index.html"), "utf8")).toBe(html);
+    expect(await readFile(join(testDir, "spaces", "meta", "docs", "lifecycle.html"), "utf8")).toBe(html);
 
     const archiveRes = await req(app, "POST", "/api/spaces/meta/widgets/lifecycle/archive", { reason: "done" });
     expect(archiveRes.status).toBe(200);
@@ -402,8 +402,8 @@ describe("widget REST routes", () => {
       permissions: { workspaceRead: true, workspaceWrite: true, records: {} },
     });
     expect(res.status).toBe(201);
-    const yaml = await readFile(join(testDir, "spaces", "meta", "widgets", "legacy-perms", "widget.yaml"), "utf8");
-    expect(yaml).not.toContain("workspaceRead");
-    expect(yaml).not.toContain("workspaceWrite");
+    const metadata = await req(app, "GET", "/api/spaces/meta/widgets/legacy-perms");
+    expect(metadata.json.widget.permissions).not.toHaveProperty("workspaceRead");
+    expect(metadata.json.widget.permissions).not.toHaveProperty("workspaceWrite");
   });
 });

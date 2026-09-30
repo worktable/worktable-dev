@@ -3859,7 +3859,7 @@ async function preparePrefixDelete(
       deletion.path
     )
     assertSafeWorkspacePath(historyPath)
-    const files = behavior.usesDocCollaboration
+    const files = deletion.storageProfileId === DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
       ? captureDirectHistoryFiles(historyPath)
       : undefined
     const historyExists = files ? files.length > 0 : existsSync(historyPath)

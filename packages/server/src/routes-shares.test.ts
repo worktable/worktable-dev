@@ -1,3 +1,4 @@
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Hono } from "hono"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -18,8 +19,7 @@ import { setSpaceArchived, writeDoc, writeSpace } from "./store.ts"
 import {
   setWidgetArchived,
   updateWidgetMetadata,
-  writeWidget,
-} from "./widget-store.ts"
+  } from "./widget-store.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import {
   ensureWorkspaceManifest,
@@ -322,7 +322,7 @@ describe("Cloud document share HTTP boundary", () => {
     })
     try {
       await rm(
-        join(workspaceDir, "spaces", "space", "widgets", "external-html"),
+        join(workspaceDir, "spaces", "space", "docs", "external-html.html"),
         { recursive: true }
       )
       await directoryMoveObserved
@@ -330,23 +330,10 @@ describe("Cloud document share HTTP boundary", () => {
     } finally {
       watcher.stop()
     }
-    const replacement = await writeWidget(
-      html.spaceId,
-      {
-        version: 1,
-        kind: "worktable.widget",
-        id: html.artifactKey,
-        name: "Replacement HTML",
-        createdAt: now,
-        updatedAt: now,
-        createdBy: "test",
-        metadata: {},
-        runtime: { type: "html", entry: "index.html" },
-        permissions: { network: false, records: {}, state: {} },
-      },
+    await writeFile(
+      join(workspaceDir, "spaces", "space", "docs", "external-html.html"),
       "<h1>Replacement</h1>"
     )
-    replacement.release?.()
     expect((await publicRequest(htmlToken)).status).toBe(404)
   })
 

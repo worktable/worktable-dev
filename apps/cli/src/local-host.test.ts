@@ -776,9 +776,8 @@ describe("local-authority state model and command integration", () => {
             workspace,
             "spaces",
             "welcome",
-            "widgets",
-            "welcome",
-            "index.html"
+            "docs",
+            "welcome.html"
           )
         )
       ).toBe(true)

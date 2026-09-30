@@ -1,3 +1,4 @@
+import { writeManagedFixtureHtml as writeWidget } from "./fixtures/managed-content.ts"
 import { afterEach, beforeEach, expect, it } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -20,7 +21,6 @@ import {
 } from "./settings-store.ts"
 import { issueSessionCookie } from "./session-store.ts"
 import { Hono } from "hono"
-import { writeWidget } from "./widget-store.ts"
 
 let root: string
 const shell = `<html><head>${OPENING_DATA_MARKER}</head><body>${OPENING_VIEW_MARKER}<main></main></body></html>`

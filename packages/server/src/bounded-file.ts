@@ -1,4 +1,4 @@
-import { constants } from "node:fs"
+import { constants, type ReadStream } from "node:fs"
 import { lstat, open } from "node:fs/promises"
 
 const SECURE_READ_FLAGS =
@@ -51,6 +51,7 @@ async function readBoundedRegularFileBuffer(
     throw new BoundedFileReadError("aborted", path)
   }
   let handle: Awaited<ReturnType<typeof open>>
+  let stream: ReadStream | undefined
   try {
     handle = await open(path, SECURE_READ_FLAGS)
   } catch (error) {
@@ -84,11 +85,11 @@ async function readBoundedRegularFileBuffer(
 
     const chunks: Buffer[] = []
     let bytes = 0
-    const stream = handle.createReadStream({
+    stream = handle.createReadStream({
       autoClose: false,
       highWaterMark: Math.min(64 * 1024, maxBytes + 1),
     })
-    const abortRead = () => stream.destroy()
+    const abortRead = () => stream?.destroy()
     signal?.addEventListener("abort", abortRead, { once: true })
     if (signal?.aborted) abortRead()
     try {
@@ -137,6 +138,9 @@ async function readBoundedRegularFileBuffer(
     }
     throw new BoundedFileReadError("unreadable", path)
   } finally {
+    // Bun retains the stream's descriptor after EOF even when the handle closes.
+    // Destroy only after the final identity checks, which still need the handle.
+    stream?.destroy()
     await handle.close()
   }
 }

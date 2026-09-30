@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { constants, type Dirent } from "node:fs"
+import { constants, type Dirent, type ReadStream } from "node:fs"
 import { lstat, open, opendir } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import type {
@@ -192,6 +192,7 @@ async function hashFile(
   })
   if (!inspected.safe) throw new Error(inspected.message)
   const handle = await open(inspected.absolutePath, PREFLIGHT_SECURE_READ_FLAGS)
+  let stream: ReadStream | undefined
   try {
     const [info, pathInfo] = await Promise.all([
       handle.stat(),
@@ -215,7 +216,8 @@ async function hashFile(
     }
     const hash = createHash("sha256")
     let bytes = 0
-    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+    stream = handle.createReadStream({ autoClose: false })
+    for await (const chunk of stream) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       bytes += buffer.byteLength
       if (bytes > PREFLIGHT_MAX_FILE_BYTES) throw new Error("source-too-large")
@@ -255,6 +257,7 @@ async function hashFile(
       sha256: hash.digest("hex"),
     }
   } finally {
+    stream?.destroy()
     await handle.close()
   }
 }

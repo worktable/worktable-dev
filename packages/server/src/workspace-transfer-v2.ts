@@ -1245,6 +1245,7 @@ async function copyAndHash(
     throw new WorkspaceChangedDuringExportError(source.path)
   }
   const handle = await open(source.absolute, SECURE_READ_FLAGS)
+  let stream: ReturnType<typeof handle.createReadStream> | undefined
   const hash = createHash("sha256")
   let bytes = 0
   const meter = new Transform({
@@ -1260,8 +1261,9 @@ async function copyAndHash(
       throw new WorkspaceChangedDuringExportError(source.path)
     }
     await mkdir(dirname(destination), { recursive: true, mode: 0o700 })
+    stream = handle.createReadStream({ autoClose: false })
     await pipeline(
-      handle.createReadStream({ autoClose: false }),
+      stream,
       meter,
       createWriteStream(destination, {
         flags: "wx",
@@ -1283,6 +1285,7 @@ async function copyAndHash(
     await utimes(destination, source.mtime, source.mtime)
     return hash.digest("hex")
   } finally {
+    stream?.destroy()
     await handle.close()
   }
 }
@@ -1302,6 +1305,7 @@ async function hashSourceEntry(
     throw new WorkspaceChangedDuringExportError(source.path)
   }
   const handle = await open(source.absolute, SECURE_READ_FLAGS)
+  let stream: ReturnType<typeof handle.createReadStream> | undefined
   const hash = createHash("sha256")
   let bytes = 0
   try {
@@ -1309,7 +1313,8 @@ async function hashSourceEntry(
     if (!opened.isFile() || !sameSourceIdentity(source, opened)) {
       throw new WorkspaceChangedDuringExportError(source.path)
     }
-    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+    stream = handle.createReadStream({ autoClose: false })
+    for await (const chunk of stream) {
       const data = chunk as Buffer
       bytes += data.byteLength
       hash.update(data)
@@ -1321,6 +1326,7 @@ async function hashSourceEntry(
     await assertSourceAncestors(source, inventory, directories)
     return hash.digest("hex")
   } finally {
+    stream?.destroy()
     await handle.close()
   }
 }

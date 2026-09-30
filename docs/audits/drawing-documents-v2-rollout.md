@@ -164,6 +164,13 @@ while cutover verification uses the converted staging tree.
   policy belongs to new-document creation, not to existing document owners.
 - V2 sidecar preparation must preserve the lifecycle API's ordinary rejection
   result for invalid catalogs and paths, before creating any recovery job.
+- A target-workspace rehearsal exposed descriptor retention in Bun 1.3.14 when
+  a file-handle read stream reached EOF and only the handle was closed. Repeated
+  source verification exhausted the process limit during post-swap validation.
+  Explicitly destroy streams after the final identity checks in bounded reads,
+  preflight, checkpoint hashing and export capture. The interrupted rehearsal
+  recovered its original V1 files exactly; a Linux resource regression checks
+  that each read operation releases its workspace descriptors.
 
 Tests for ordinary behavior should create documents through managed identity
 admission and use the default V2 workspace. Explicit legacy fixtures remain for

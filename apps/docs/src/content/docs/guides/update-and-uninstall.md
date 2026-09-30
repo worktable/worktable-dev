@@ -42,6 +42,28 @@ override for automated or managed installations.
 
 What shipped in each release is on [What's new](/whats-new/).
 
+## First opening after the workspace upgrade
+
+Starting with 0.1.13, an older workspace upgrades automatically when the updated
+Worktable server starts. No manual export, import, or version selection is needed.
+New workspaces already use the current format.
+
+If you open Worktable while the upgrade is running, you will see **Upgrading your
+workspace**. Editing and agent access wait until preparation finishes, then the
+page opens automatically. Allow several minutes for a large workspace; later
+starts do not repeat the migration. **New drawing** becomes available after the
+upgrade.
+
+Existing documents, history, and share links are preserved. Worktable retains the
+original workspace as a rollback copy beside the workspace folder. Keep that copy
+until you have verified the upgraded workspace; it contains private data.
+
+If you see **Workspace upgrade needs attention**, the owner needs to inspect the
+server logs and resolve the reported issue before choosing **Retry upgrade**.
+The original workspace is preserved and editing stays unavailable until the
+upgrade succeeds. Do not restore an old application release against converted
+workspace files; rollback requires the matching original workspace copy.
+
 ## Uninstall
 
 ```sh

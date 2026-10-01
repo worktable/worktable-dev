@@ -1,4 +1,4 @@
-import { test } from "bun:test"
+import { expect, test } from "bun:test"
 import * as driver from "playwright-core"
 import { createRequire } from "node:module"
 import { dirname } from "node:path"
@@ -53,4 +53,21 @@ export function previewTest(
   timeout = 60_000
 ) {
   test(name, () => withSyntheticPreview(task), timeout)
+}
+
+/** Bun 1.3.14's async rejection matcher can lose browser I/O poll events during
+ * nested event-loop processing (oven-sh/bun#33261). Await normally, then make
+ * synchronous assertions without weakening the expected preview failure. */
+export async function expectPreviewError(
+  pending: Promise<unknown>,
+  message: string
+): Promise<void> {
+  let received: unknown
+  try {
+    await pending
+  } catch (error) {
+    received = error
+  }
+  expect(received).toBeInstanceOf(Error)
+  expect((received as Error).message).toContain(message)
 }

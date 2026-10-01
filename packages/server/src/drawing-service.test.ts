@@ -1,4 +1,7 @@
-import { previewTest as it } from "./test-support/synthetic-preview.ts"
+import {
+  expectPreviewError,
+  previewTest as it,
+} from "./test-support/synthetic-preview.ts"
 import {
   PreviewBrowserPool,
   PreviewBrowserError,
@@ -756,7 +759,7 @@ describe("drawing agent workflows", () => {
       }))
       // Even unplaced assets with previews disabled must decode before either
       // creation or replacement publishes source/history/a retry receipt.
-      await expect(
+      await expectPreviewError(
         write({
           action: "create",
           spaceId,
@@ -765,15 +768,16 @@ describe("drawing agent workflows", () => {
           requestId: "invalid-create",
           operations,
           preview: { mode: "none" },
-        })
-      ).rejects.toThrow(error)
+        }),
+        error
+      )
       await expect(
         readRegisteredDocumentSource({
           spaceId,
           path: "drawings/invalid-image",
         })
       ).rejects.toThrow()
-      await expect(
+      await expectPreviewError(
         write({
           action: "edit",
           ...address,
@@ -781,8 +785,9 @@ describe("drawing agent workflows", () => {
           requestId: "image",
           operations,
           preview: { mode: "none" },
-        })
-      ).rejects.toThrow(error)
+        }),
+        error
+      )
       const current = await readRegisteredDocumentSource(address)
       expect(current.sourceRevision).toBe(original.sourceRevision)
       expect(current.bytes).toEqual(original.bytes)
@@ -849,15 +854,16 @@ describe("drawing agent workflows", () => {
       replacement.snapshot.document.store[imported.references.logo!]!
     if (asset.typeName !== "asset") throw new Error("Expected image asset")
     asset.src = malformed
-    await expect(
+    await expectPreviewError(
       replaceRegisteredDocument({
         ...address,
         expectedRevision: saved.sourceRevision,
         bytes: new TextEncoder().encode(JSON.stringify(replacement)),
         updatedBy: "human",
         source: "test",
-      })
-    ).rejects.toThrow("Could not decode")
+      }),
+      "Could not decode"
+    )
     expect((await readRegisteredDocumentSource(address)).bytes).toEqual(
       saved.bytes
     )

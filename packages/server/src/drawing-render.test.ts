@@ -1,4 +1,7 @@
-import { previewTest as test } from "./test-support/synthetic-preview.ts"
+import {
+  previewTest as test,
+  expectPreviewError,
+} from "./test-support/synthetic-preview.ts"
 import { describe, expect } from "bun:test"
 import sharp from "sharp"
 import {
@@ -206,7 +209,7 @@ describe("headless drawing previews", () => {
         ])
         forged.writeUInt32LE(forged.length - 8, 4)
         doc.snapshot.document.store.asset.src = `data:image/webp;base64,${forged.toString("base64")}`
-        await expect(renderDrawing(doc)).rejects.toThrow("decode drawing image")
+        await expectPreviewError(renderDrawing(doc), "decode drawing image")
       }
     }
   }, 60_000)

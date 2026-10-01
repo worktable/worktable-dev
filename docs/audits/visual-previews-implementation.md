@@ -148,6 +148,17 @@ including malformed images, mismatched MIME, dimension/cumulative limits,
 unchanged source/history after rejection, and outage behavior. Renderer and
 shared-write conformance checks passed ten tests with 160 assertions.
 
+The next CI run exposed Bun 1.3.14's async rejection matcher losing browser
+I/O events during nested event-loop processing, matching upstream reports
+[bun#33261](https://github.com/oven-sh/bun/issues/33261) and
+[bun#37189](https://github.com/oven-sh/bun/issues/37189). The unchanged image
+case reproduced locally on its fourth repetition; converting only its final
+matcher moved the stall to an earlier matcher. Ordinary JavaScript awaits
+followed by the same error assertions passed eight repetitions. A shared
+test helper now handles these browser-backed rejection assertions. Production
+decoding and time budgets are unchanged. Final service, renderer and MCP checks
+passed 14 tests with 213 assertions; server typechecking passed.
+
 ## Earlier acceptance evidence and environmental boundaries
 
 The first hosted PR run for commit `99d3352` passed the complete required suite

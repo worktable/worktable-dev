@@ -541,6 +541,7 @@ function RecordsPage() {
   const table = useReactTable({
     data: rows,
     columns,
+    getRowId: (record) => record.id,
     state: { sorting, columnSizing: colPrefs.widths },
     onColumnSizingChange: (updater) => {
       const next: ColumnSizingState = typeof updater === "function" ? updater(colPrefs.widths) : updater

@@ -128,6 +128,9 @@ jobs:
           node-version: 24.15.0
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Use Ubuntu archive mirrors
+        # The runner's preferred Azure mirror can stall package downloads.
+        run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
       - name: Install preview Chromium
         # Server and compiled-package renderer tests use the pinned headless
         # shell; this job has an independent runner from browser journeys.
@@ -165,6 +168,9 @@ jobs:
           node-version: 24.15.0
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Use Ubuntu archive mirrors
+        # The runner's preferred Azure mirror can stall package downloads.
+        run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
       - name: Install native toolchain and dependencies
         run: |-
           rustup toolchain install 1.97.0 --profile minimal --component clippy --component rustfmt
@@ -214,6 +220,9 @@ jobs:
           node-version: 24.15.0
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Use Ubuntu archive mirrors
+        # The runner's preferred Azure mirror can stall package downloads.
+        run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
       - name: Install Chromium
         run: bunx playwright@1.61.1 install --with-deps chromium
       - name: Run selected browser journeys

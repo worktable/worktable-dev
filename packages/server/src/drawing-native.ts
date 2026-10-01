@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { localBounds, pageBounds, type ShapeRecord } from "@quickdrawjs/core"
-import { imageSize } from "image-size"
+import {
+  inspectDrawingImageAssets,
+  decodeDrawingImageAssets,
+} from "./drawing-image-validation.ts"
 import type { DrawingOperation, QuickdrawDocument } from "@worktable/types"
 import {
   parseQuickdrawDocument,
@@ -351,8 +354,8 @@ export async function renderNativeDrawing(
     if (!shapes.some((shape) => shape.id === id))
       throw new Error(`Drawing object not found: ${id}`)
   const validateBudget = (shapes: DrawingShape[]) => {
-    let pixels = 0,
-      points = 0
+    let points = 0
+    const assets = []
     const checked = new Set<string>()
     for (const shape of shapes) {
       if ("pts" in shape.props) points += shape.props.pts.length
@@ -361,29 +364,16 @@ export async function renderNativeDrawing(
       if (shape.type !== "image" || checked.has(shape.props.assetId)) continue
       checked.add(shape.props.assetId)
       const asset = drawing.snapshot.document.store[shape.props.assetId]
-      if (
-        !asset ||
-        asset.typeName !== "asset" ||
-        !/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(
-          asset.src
-        )
-      )
+      if (!asset || asset.typeName !== "asset")
         throw new Error("Invalid drawing image asset")
-      const dimensions = imageSize(
-        Buffer.from(asset.src.split(",")[1]!, "base64")
-      )
-      pixels += dimensions.width * dimensions.height
-      if (
-        dimensions.width > 8192 ||
-        dimensions.height > 8192 ||
-        pixels > 16_000_000
-      )
-        throw new Error("Drawing images exceed preview pixel budget")
+      assets.push(asset)
     }
+    inspectDrawingImageAssets(assets)
     if (points > 200_000)
       throw new Error("Drawing preview is too complex; request fewer objects")
+    return assets
   }
-  if (!options.region) validateBudget(shapes)
+  let assets = options.region ? [] : validateBudget(shapes)
   const { signal, ...renderOptions } = options
   const result = await nativeJob(
     drawing,
@@ -394,7 +384,7 @@ export async function renderNativeDrawing(
           { drawing, ids: options.ids }
         )
         const r = options.region
-        validateBudget(
+        assets = validateBudget(
           shapes.filter((shape) => {
             const b = measured[shape.id]!.page
             return (
@@ -406,6 +396,7 @@ export async function renderNativeDrawing(
           })
         )
       }
+      await decodeDrawingImageAssets(page, assets)
       return page.evaluate(
         ({ drawing, options }) =>
           window.worktableDrawing.render(drawing, options),

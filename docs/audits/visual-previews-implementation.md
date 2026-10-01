@@ -4,7 +4,7 @@ Implemented in the drawing worktree on 2026-10-01; not yet released. This supers
 
 ## Implemented behavior
 
-- Drawing PNGs, text geometry and bound-connector updates use Quickdraw's actual Canvas engine. Reads, queries, sequential edits, proposals and undo/redo share its measurements. Geometry-dependent writes fail before saving if the native renderer is unavailable. Title, ordering and asset-import operations do not require a renderer.
+- Drawing PNGs, text geometry and bound-connector updates use Quickdraw's actual Canvas engine. Reads, queries, sequential edits, proposals and undo/redo share its measurements. Geometry-dependent writes fail before saving if the native renderer is unavailable. Title and ordering changes do not require a renderer. New or changed image bytes require browser decoding before save, including unused imports and writes with previews disabled; unchanged image bytes and removals do not.
 - The editor and native renderer share versioned fonts and theme tokens. General Sans is the default sans-serif family, with script/emoji fallbacks and explicit drawing font choices preserved. Opening and saving drawings do not wait for fonts: the editor displays available fallback text, loads browser-selected faces on demand, and invalidates cached text measurements as fonts arrive. Native captures wait for the faces selected by actual text/font runs, not the full collection. The Quickdraw patch provides grapheme-safe wrapping, text-cache invalidation, a shared decoded-image cache and explicit export failures for missing/broken images. The editor hides Quickdraw branding through its supported option.
 - Generic document rendering supports drawings and HTML at the current source revision; other document formats report unavailable previews. It and the HTML convenience action return inline MCP PNG content with structured revision, dimensions, renderer/font identity, capture status and diagnostics. Bytes appear once, outside structured JSON. Drawing-specific selection, world-coordinate crops and object labels remain available.
 - Drawing writes and optional HTML write previews capture the exact saved candidate. Failed preview generation does not undo a successful save; callers retry rendering separately. Unsaved drawing proposals are identified as proposals. Existing revision checks, request receipts and targeted undo/redo remain authoritative.
@@ -122,6 +122,31 @@ It produced a 320 × 200 PNG of 8,111 bytes with the OS sandbox enabled, without
 test-launcher injection or sandbox-disabling flags. This proves production
 browser launch and PNG capture on that Linux environment; it does not establish
 the remaining macOS signing, WKWebView or ARM64 execution checks.
+
+## Review round 2: drawing receipts and image validation
+
+Undo and redo now require the receipt's original stable principal ID; matching
+display names or shared drawing write scope do not confer receipt ownership.
+Creation receipts retain their pre-operation title, so a title operation in a
+create batch reverses together with its objects. Older receipts that report a
+title change without its original title fail explicitly rather than partially
+undoing the batch. Existing MCP and service cases cover both principal checks,
+creation replay/recovery after a move, title undo/redo, and unchanged source on
+legacy-baseline failure: eight tests with 118 assertions passed. Shared types
+and server typechecking also passed with Bun 1.3.14.
+
+The shared document writer now validates new or changed drawing image bytes
+before publishing source, history or receipts, covering MCP and normal browser
+saves. It checks declared MIME against the compressed format and rejects
+dimensions above 8,192 pixels or a cumulative asset budget above 16 million
+pixels before decoding. The managed browser then decodes all remaining assets,
+including unused imports. This adds renderer startup/decoding cost to image
+imports; a renderer outage blocks them. Edits retaining existing image bytes
+and image removal remain available when their geometry needs no renderer.
+Expanded existing service/MCP cases passed eight tests with 153 assertions,
+including malformed images, mismatched MIME, dimension/cumulative limits,
+unchanged source/history after rejection, and outage behavior. Renderer and
+shared-write conformance checks passed ten tests with 160 assertions.
 
 ## Earlier acceptance evidence and environmental boundaries
 

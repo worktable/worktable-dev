@@ -526,22 +526,11 @@ describe("drawing agent workflows", () => {
           ...address,
           requestId: "metadata-without-renderer",
           expectedRevision: titled.sourceRevision!,
-          operations: [
-            { op: "reorder", id: apiId, position: "front" },
-            {
-              op: "import_image",
-              ref: "badge",
-              width: 1,
-              height: 1,
-              dataUrl:
-                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=",
-            },
-          ],
+          operations: [{ op: "reorder", id: apiId, position: "front" }],
         })
         expect(metadata.drawing.snapshot.document.store[arrowId]).toEqual(
           boundArrow
         )
-        expect(metadata.addedIds).toContain(metadata.references.badge!)
         expect(launchAttempts).toBe(0)
       })
     } finally {
@@ -645,6 +634,7 @@ describe("drawing agent workflows", () => {
       requestId: "concurrent",
       title: "One board",
       operations: [
+        { op: "title", title: "Renamed board" },
         {
           op: "add",
           ref: "title",
@@ -662,6 +652,7 @@ describe("drawing agent workflows", () => {
       documentId: saved.documentId,
     }
     expect((await listDocumentGenerationsV2(location)).length).toBe(1)
+    expect(saved.drawing.title).toBe("Renamed board")
     const manifestPath = join(
       documentGenerationV2Directory(
         root,
@@ -681,10 +672,122 @@ describe("drawing agent workflows", () => {
       (await listDocumentGenerationsV2(location))[0]?.agentMutation?.state
     ).toBe("committed")
     expect((await listDocumentGenerationsV2(location)).length).toBe(1)
+    const receipt = JSON.parse(await readFile(manifestPath, "utf8"))
+    expect(receipt.agentMutation.beforeTitle).toBe("One board")
+    const undo = {
+      action: "undo",
+      spaceId,
+      path: "drawings/renamed",
+      requestId: "undo-create",
+      expectedRevision: (
+        await readRegisteredDocumentSource({
+          spaceId,
+          path: "drawings/renamed",
+        })
+      ).sourceRevision,
+      changeId: saved.changeId,
+    } satisfies DrawingsWriteRequest
+    // Old receipts can report a title change without retaining the original.
+    // Refuse a partial reversal rather than silently leaving that title edit.
+    const legacy = structuredClone(receipt)
+    delete legacy.agentMutation.beforeTitle
+    await writeFile(manifestPath, JSON.stringify(legacy))
+    await expect(write(undo)).rejects.toThrow("original title is unavailable")
+    expect((await readRegisteredDocumentSource(undo)).sourceRevision).toBe(
+      undo.expectedRevision
+    )
+    await writeFile(manifestPath, JSON.stringify(receipt))
+    const undone = await write(undo)
+    if (!("changeId" in undone)) throw new Error("Expected saved undo")
+    expect(undone.drawing.title).toBe("One board")
+    expect(undone.drawing.snapshot.document.store).toEqual({})
+    const redone = await write({
+      action: "redo",
+      spaceId,
+      path: undo.path,
+      requestId: "redo-create",
+      expectedRevision: undone.sourceRevision,
+      changeId: undone.changeId,
+    })
+    expect(redone.drawing).toEqual(saved.drawing)
   })
 
   it("imports assets once, uses temporary references, and protects later image dependencies on undo", async () => {
     const initial = await create()
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=",
+      "base64"
+    )
+    const dataUrl = (bytes: Uint8Array) =>
+      `data:image/png;base64,${Buffer.from(bytes).toString("base64")}`
+    const header = (width: number, height: number) => {
+      const bytes = Buffer.from(png.subarray(0, 33))
+      bytes.writeUInt32BE(width, 16)
+      bytes.writeUInt32BE(height, 20)
+      return dataUrl(bytes)
+    }
+    const malformed = dataUrl(png.subarray(0, 33))
+    const rejected = [
+      { sources: [malformed], error: "Could not decode" },
+      {
+        sources: [dataUrl(png).replace("image/png", "image/jpeg")],
+        error: "declared format",
+      },
+      { sources: [header(8193, 1)], error: "pixel budget" },
+      {
+        sources: [header(3000, 3000), header(3001, 3000)],
+        error: "pixel budget",
+      },
+    ]
+    const location = {
+      workspaceRoot: root,
+      spaceId,
+      documentId: initial.documentId,
+    }
+    const original = await readRegisteredDocumentSource(address)
+    const generations = await listDocumentGenerationsV2(location)
+    for (const { sources, error } of rejected) {
+      const operations = sources.map((src, index) => ({
+        op: "import_image" as const,
+        ref: `image-${index}`,
+        width: 1,
+        height: 1,
+        dataUrl: src,
+      }))
+      // Even unplaced assets with previews disabled must decode before either
+      // creation or replacement publishes source/history/a retry receipt.
+      await expect(
+        write({
+          action: "create",
+          spaceId,
+          path: "drawings/invalid-image",
+          title: "Invalid",
+          requestId: "invalid-create",
+          operations,
+          preview: { mode: "none" },
+        })
+      ).rejects.toThrow(error)
+      await expect(
+        readRegisteredDocumentSource({
+          spaceId,
+          path: "drawings/invalid-image",
+        })
+      ).rejects.toThrow()
+      await expect(
+        write({
+          action: "edit",
+          ...address,
+          expectedRevision: initial.sourceRevision,
+          requestId: "image",
+          operations,
+          preview: { mode: "none" },
+        })
+      ).rejects.toThrow(error)
+      const current = await readRegisteredDocumentSource(address)
+      expect(current.sourceRevision).toBe(original.sourceRevision)
+      expect(current.bytes).toEqual(original.bytes)
+      expect(await listDocumentGenerationsV2(location)).toEqual(generations)
+    }
     const imported = await write({
       action: "edit",
       ...address,
@@ -696,8 +799,7 @@ describe("drawing agent workflows", () => {
           ref: "logo",
           width: 1,
           height: 1,
-          dataUrl:
-            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=",
+          dataUrl: dataUrl(png),
         },
         {
           op: "add",
@@ -740,5 +842,124 @@ describe("drawing agent workflows", () => {
     expect((await readRegisteredDocumentSource(address)).sourceRevision).toBe(
       reused.sourceRevision
     )
+    const saved = await readRegisteredDocumentSource(address)
+    const history = await listDocumentGenerationsV2(location)
+    const replacement = structuredClone(reused.drawing)
+    const asset =
+      replacement.snapshot.document.store[imported.references.logo!]!
+    if (asset.typeName !== "asset") throw new Error("Expected image asset")
+    asset.src = malformed
+    await expect(
+      replaceRegisteredDocument({
+        ...address,
+        expectedRevision: saved.sourceRevision,
+        bytes: new TextEncoder().encode(JSON.stringify(replacement)),
+        updatedBy: "human",
+        source: "test",
+      })
+    ).rejects.toThrow("Could not decode")
+    expect((await readRegisteredDocumentSource(address)).bytes).toEqual(
+      saved.bytes
+    )
+    expect(await listDocumentGenerationsV2(location)).toEqual(history)
+
+    let launchAttempts = 0
+    const unavailable = new PreviewBrowserPool({
+      launch: async () => {
+        launchAttempts++
+        throw new PreviewBrowserError(
+          "PREVIEW_UNAVAILABLE",
+          "Synthetic renderer outage"
+        )
+      },
+    })
+    try {
+      await runWithPreviewBrowserPool(unavailable, async () => {
+        const edited = await write({
+          action: "edit",
+          ...address,
+          requestId: "image-metadata-outage",
+          expectedRevision: saved.sourceRevision,
+          operations: [
+            { op: "title", title: "Images retained" },
+            {
+              op: "update",
+              id: imported.references.placed!,
+              changes: { x: 80 },
+            },
+          ],
+        })
+        expect(
+          edited.drawing.snapshot.document.store[imported.references.logo!]
+        ).toEqual(
+          reused.drawing.snapshot.document.store[imported.references.logo!]
+        )
+        expect(launchAttempts).toBe(0)
+        const beforeRejected = await readRegisteredDocumentSource(address)
+        const beforeHistory = await listDocumentGenerationsV2(location)
+        // An unused, otherwise valid import still requires the decoder.
+        await expect(
+          write({
+            action: "edit",
+            ...address,
+            requestId: "unused-import-outage",
+            expectedRevision: edited.sourceRevision!,
+            preview: { mode: "none" },
+            operations: [
+              {
+                op: "import_image",
+                ref: "unused",
+                width: 1,
+                height: 1,
+                dataUrl: dataUrl(png),
+              },
+            ],
+          })
+        ).rejects.toThrow("Synthetic renderer outage")
+        const changed = structuredClone(edited.drawing)
+        const changedAsset =
+          changed.snapshot.document.store[imported.references.logo!]!
+        if (changedAsset.typeName !== "asset")
+          throw new Error("Expected image asset")
+        changedAsset.src = dataUrl(Buffer.concat([png, Buffer.from([0])]))
+        await expect(
+          replaceRegisteredDocument({
+            ...address,
+            expectedRevision: edited.sourceRevision!,
+            bytes: new TextEncoder().encode(JSON.stringify(changed)),
+            updatedBy: "human",
+            source: "test",
+          })
+        ).rejects.toThrow("Synthetic renderer outage")
+        expect(launchAttempts).toBeGreaterThan(0)
+        expect((await readRegisteredDocumentSource(address)).bytes).toEqual(
+          beforeRejected.bytes
+        )
+        expect(
+          (await readRegisteredDocumentSource(address)).sourceRevision
+        ).toBe(beforeRejected.sourceRevision)
+        expect(await listDocumentGenerationsV2(location)).toEqual(beforeHistory)
+        const launchesBeforeRemoval = launchAttempts
+        const removed = structuredClone(edited.drawing)
+        for (const [id, record] of Object.entries(
+          removed.snapshot.document.store
+        ))
+          if (
+            record.typeName === "asset" ||
+            (record.typeName === "shape" && record.type === "image")
+          )
+            delete removed.snapshot.document.store[id]
+        await replaceRegisteredDocument({
+          ...address,
+          expectedRevision: edited.sourceRevision!,
+          bytes: new TextEncoder().encode(JSON.stringify(removed)),
+          updatedBy: "human",
+          source: "test",
+        })
+        expect(launchAttempts).toBe(launchesBeforeRemoval)
+      })
+    } finally {
+      await unavailable.close()
+    }
   })
 })

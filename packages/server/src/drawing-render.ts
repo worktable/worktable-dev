@@ -1,5 +1,5 @@
 import { renderNativeDrawing } from "./drawing-native.ts"
-import { imageSize } from "image-size"
+import { inspectDrawingImageAssets } from "./drawing-image-validation.ts"
 import { strokeOutline } from "@quickdrawjs/core/freehand"
 import {
   ellipsePolygon,
@@ -293,7 +293,7 @@ export async function renderDrawing(
       "Drawing preview is too complex; request fewer objects or a smaller region"
     )
   // Header dimensions guard against embedded compressed-image allocation bombs.
-  let pixels = 0
+  const assets = []
   const imageSources = new Map<string, string>()
   for (const assetId of new Set(
     shapes.flatMap((shape) =>
@@ -301,24 +301,11 @@ export async function renderDrawing(
     )
   )) {
     const asset = doc.snapshot.document.store[assetId]
-    if (
-      !asset ||
-      asset.typeName !== "asset" ||
-      !/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(
-        asset.src
-      )
-    )
+    if (!asset || asset.typeName !== "asset")
       throw new Error("Invalid drawing image asset")
-    const bytes = Buffer.from(asset.src.split(",")[1], "base64")
-    const dimensions = imageSize(bytes)
-    pixels += dimensions.width * dimensions.height
-    if (
-      dimensions.width > 8192 ||
-      dimensions.height > 8192 ||
-      pixels > 16_000_000
-    )
-      throw new Error("Drawing images exceed preview pixel budget")
+    assets.push(asset)
   }
+  inspectDrawingImageAssets(assets)
   if (!bounds) {
     const boxes = shapes.map(drawingObjectBounds)
     const x = boxes.length ? Math.min(...boxes.map((b) => b.x)) - 32 : 0,

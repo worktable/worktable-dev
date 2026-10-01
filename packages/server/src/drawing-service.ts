@@ -372,7 +372,8 @@ async function resultWithDiff(result: DocumentWriteResult, spaceId: string) {
       .catch(() => undefined)
   } else
     before = emptyQuickdrawDocument(
-      parseQuickdrawDocument(result.mutation!.bytes).title
+      receipt.beforeTitle ??
+        parseQuickdrawDocument(result.mutation!.bytes).title
     )
   return {
     ...writeResult(result, before),
@@ -429,6 +430,7 @@ export async function drawingWrite(
         requestId: request.requestId,
         requestHash,
         operation: "create",
+        beforeTitle: before.title,
         references: applied.references,
         changes: diff(before, applied.drawing),
       },
@@ -472,13 +474,23 @@ export async function drawingWrite(
     const receipt = target.generation.manifest.agentMutation
     if (!receipt || receipt.state !== "committed")
       conflict("This change is not a confirmed agent drawing change")
+    if (receipt.actor !== attribution.actor)
+      conflict("Only the original actor can undo or redo this drawing change")
     if (request.action === "redo" && receipt.operation !== "undo")
       invalid("Redo requires the changeId returned by undo")
     if (request.action === "undo" && receipt.operation === "undo")
       invalid("Use redo to reverse an undo change")
+    if (
+      !receipt.beforeGenerationId &&
+      receipt.changes?.titleChanged &&
+      receipt.beforeTitle === undefined
+    )
+      conflict(
+        "This change's original title is unavailable. Inspect and make a targeted correction."
+      )
     const old = receipt.beforeGenerationId
       ? (await generationDrawing(address, receipt.beforeGenerationId)).drawing
-      : emptyQuickdrawDocument(target.drawing.title)
+      : emptyQuickdrawDocument(receipt.beforeTitle ?? target.drawing.title)
     drawing = structuredClone(before)
     const a = old.snapshot.document.store,
       b = target.drawing.snapshot.document.store,

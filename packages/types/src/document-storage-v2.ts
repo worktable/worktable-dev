@@ -199,6 +199,8 @@ export const DocumentAgentMutationSchema = z
     state: z.enum(["prepared", "committed"]),
     sourceRevision: z.string().min(1).max(200),
     beforeGenerationId: DocumentGenerationIdSchema.optional(),
+    // Creation has no before generation; retain its pre-operation title.
+    beforeTitle: z.string().min(1).max(200).optional(),
     reverses: DocumentGenerationIdSchema.optional(),
     references: z
       .record(z.string().max(200), z.string().max(200))

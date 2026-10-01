@@ -1,4 +1,6 @@
 import { rotateWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { withSyntheticPreview } from "./test-support/synthetic-preview.ts"
+import sharp from "sharp"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   access,
@@ -315,8 +317,13 @@ describe("registered file format conformance", () => {
 
   it("preserves current bytes when a legacy document first enters V2 history", async () => {
     const legacyManifestPath = join(workspaceRoot, "worktable.workspace.json")
-    const legacyManifest = JSON.parse(await readFile(legacyManifestPath, "utf8"))
-    await writeFile(legacyManifestPath, JSON.stringify({ ...legacyManifest, version: 1 }))
+    const legacyManifest = JSON.parse(
+      await readFile(legacyManifestPath, "utf8")
+    )
+    await writeFile(
+      legacyManifestPath,
+      JSON.stringify({ ...legacyManifest, version: 1 })
+    )
     await writeDoc(spaceId, "notes/legacy-handoff", "# Tracked legacy\n", {
       updatedBy: "test",
       source: "test",
@@ -386,8 +393,13 @@ describe("registered file format conformance", () => {
 
   it("validates Quickdraw writes before changing saved ink and projects typed notes", async () => {
     const legacyManifestPath = join(workspaceRoot, "worktable.workspace.json")
-    const legacyManifest = JSON.parse(await readFile(legacyManifestPath, "utf8"))
-    await writeFile(legacyManifestPath, JSON.stringify({ ...legacyManifest, version: 1 }))
+    const legacyManifest = JSON.parse(
+      await readFile(legacyManifestPath, "utf8")
+    )
+    await writeFile(
+      legacyManifestPath,
+      JSON.stringify({ ...legacyManifest, version: 1 })
+    )
     const copiedSource = join(
       workspaceRoot,
       "spaces",
@@ -465,22 +477,30 @@ describe("registered file format conformance", () => {
       { numRuns: 25 }
     )
     // Embedded images must not hide typed notes behind the default 512 KiB read cap.
+    const image = await sharp({
+      create: { width: 600, height: 400, channels: 3, background: "red" },
+    })
+      .png({ compressionLevel: 0 })
+      .toBuffer()
     drawing.snapshot.document.store.asset = {
       id: "asset",
       typeName: "asset",
-      w: 100,
-      h: 100,
-      src: `data:image/png;base64,${"A".repeat(600 * 1024)}`,
+      w: 600,
+      h: 400,
+      src: `data:image/png;base64,${image.toString("base64")}`,
     }
     const bytes = new TextEncoder().encode(JSON.stringify(drawing))
-    const created = await createRegisteredDocument({
-      spaceId,
-      path: "scratchpad",
-      format: { id: "worktable.quickdraw", sourceVersion: 1 },
-      bytes,
-      createdBy: "test",
-      source: "test",
-    })
+    expect(bytes.byteLength).toBeGreaterThan(512 * 1024)
+    const created = await withSyntheticPreview(() =>
+      createRegisteredDocument({
+        spaceId,
+        path: "scratchpad",
+        format: { id: "worktable.quickdraw", sourceVersion: 1 },
+        bytes,
+        createdBy: "test",
+        source: "test",
+      })
+    )
     expect(
       (await readRegisteredDocumentSource({ spaceId, path: "scratchpad" }))
         .bytes

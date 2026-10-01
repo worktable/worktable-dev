@@ -60,8 +60,11 @@ and multilingual/color-emoji fallbacks. Coverage is finite; inspect pixels and
 render diagnostics. Animated image assets are captured as a still image.
 SVG retains the older exporter and its font/visual limitations; use PNG as the
 visual reference. If the managed runtime is unavailable, previews report that
-explicitly. Geometry-dependent drawing edits can fail before saving when native
-measurement is unavailable.
+explicitly. Geometry-dependent edits and new or changed image assets require the
+runtime before saving, even with previews disabled. Image imports must decode
+successfully and stay within 8,192 pixels per dimension and 16 million total
+image pixels. Edits that keep existing image bytes and image removal do not need
+image decoding.
 
 Arrows and lines can attach to shapes with `startBinding` and `endBinding`,
 each containing `shapeId` and an optional `anchor` (`top`, `right`, `bottom`,

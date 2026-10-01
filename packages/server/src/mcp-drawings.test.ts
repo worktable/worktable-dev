@@ -19,11 +19,13 @@ let root = ""
 const clients: Client[] = []
 const address = { spaceId: "drawings", path: "flow" }
 async function connect(
-  scopes = ["search:read", "documents:read", "documents:write"]
+  scopes = ["search:read", "documents:read", "documents:write"],
+  principalId = "drawing-owner"
 ) {
   const server = createWorktableMcpServer({
     version: "test",
     scopes,
+    principal: { id: principalId, type: "agent", displayName: "Drawing agent" },
     urlOrigin: "http://127.0.0.1:7481",
   })
   const client = new Client({ name: "drawing-test", version: "1" })
@@ -165,6 +167,18 @@ describe("drawing tools through MCP", () => {
       })
     )
     expect(changed.sourceRevision).not.toBe(saved.sourceRevision)
+    // Identical display names do not give a different principal ownership of
+    // another agent's receipts, even when it has drawing write scope.
+    const other = await connect(undefined, "another-agent")
+    const deniedUndo = await call(other, "write", {
+      action: "undo",
+      expectedRevision: changed.sourceRevision,
+      requestId: "undo",
+      changeId: changed.changeId,
+      preview: { mode: "none" },
+    })
+    expect(deniedUndo.isError).toBe(true)
+    expect(JSON.stringify(deniedUndo.content)).toContain("original actor")
     const undo = data(
       await call(client, "write", {
         action: "undo",
@@ -174,6 +188,15 @@ describe("drawing tools through MCP", () => {
         preview: { mode: "none" },
       })
     )
+    const deniedRedo = await call(other, "write", {
+      action: "redo",
+      expectedRevision: undo.sourceRevision,
+      requestId: "redo",
+      changeId: undo.changeId,
+      preview: { mode: "none" },
+    })
+    expect(deniedRedo.isError).toBe(true)
+    expect(JSON.stringify(deniedRedo.content)).toContain("original actor")
     const redo = data(
       await call(client, "write", {
         action: "redo",

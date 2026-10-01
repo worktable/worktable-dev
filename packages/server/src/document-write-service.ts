@@ -4,6 +4,8 @@ import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import {
   DocumentGenerationIdSchema,
+  QUICKDRAW_FORMAT,
+  parseQuickdrawDocument,
   type DocumentFormatClaim,
   type DocumentId,
   type DocumentGenerationManifestV2,
@@ -76,6 +78,7 @@ import {
 } from "./workspace-storage-v2.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
+import { validateDrawingImageMutation } from "./drawing-image-validation.ts"
 
 const WRITE_ADAPTER_BUDGET = {
   maxInputBytes: DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
@@ -278,6 +281,25 @@ async function preparedBytes(
     )
   } finally {
     if (timer) clearTimeout(timer)
+  }
+}
+
+async function validateDrawingImagesBeforeCommit(
+  format: DocumentFormatClaim,
+  bytes: Uint8Array,
+  before?: Uint8Array
+): Promise<void> {
+  if (format.id !== QUICKDRAW_FORMAT) return
+  try {
+    await validateDrawingImageMutation(
+      parseQuickdrawDocument(bytes),
+      before ? parseQuickdrawDocument(before) : undefined
+    )
+  } catch (error) {
+    throw new DocumentWriteError(
+      "invalid",
+      error instanceof Error ? error.message : "Invalid drawing image asset"
+    )
   }
 }
 
@@ -817,6 +839,7 @@ export async function createRegisteredDocument(options: {
         "Another document already uses this path"
       )
     }
+    await validateDrawingImagesBeforeCommit(options.format, bytes)
     const profile = documentStorageProfiles.get(
       DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
     )
@@ -1116,6 +1139,7 @@ export async function replaceRegisteredDocument(options: {
       current.format,
       options.bytes
     )
+    await validateDrawingImagesBeforeCommit(current.format, bytes, before)
     const documentId =
       current.identity === "durable" ? current.documentId : mintDocumentId()
     const now = new Date().toISOString()

@@ -320,6 +320,34 @@ async function createCustomMcpServer(
                 extra.signal.addEventListener("abort", complete, { once: true })
             })
           }
+          if (message.params.name === "preview") {
+            const metadata = {
+              preview: {
+                status: "ready",
+                contentBlockIndex: 1,
+                sourceRevision: "revision-A",
+              },
+            }
+            return {
+              structuredContent: metadata,
+              content: [
+                { type: "text", text: JSON.stringify(metadata) },
+                {
+                  type: "image",
+                  mimeType: "image/png",
+                  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=",
+                },
+                {
+                  type: "resource",
+                  resource: {
+                    uri: "worktable-preview://fixture/a.svg",
+                    mimeType: "image/svg+xml",
+                    text: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+                  },
+                },
+              ],
+            }
+          }
           if (message.params.name === "failure") {
             return {
               isError: true,
@@ -695,3 +723,31 @@ describe("HTTP-to-stdio MCP bridge", () => {
     })
   }
 })
+
+it("preserves model-visible images and embedded exports through HTTP and the packaged stdio bridge", async () => {
+  const fixture = await createCustomMcpServer()
+  const endpoint = `http://127.0.0.1:${fixture.port}/mcp`
+  const direct = new Client({ name: "preview-http", version: "1" })
+  let bridge: BridgeConnection | undefined
+  try {
+    await direct.connect(new StreamableHTTPClientTransport(new URL(endpoint)))
+    bridge = await connectBridge(endpoint)
+    const request = { name: "preview", arguments: {} }
+    const result = await direct.callTool(request)
+    const bridged = await bridge.client.callTool(request)
+    expect(bridged).toEqual(result)
+    expect(bridged.content).toHaveLength(3)
+    const blocks = bridged.content as Array<{ type: string; data?: string }>
+    expect(blocks[1]?.type).toBe("image")
+    expect(
+      Buffer.from(blocks[1]!.data!, "base64").subarray(0, 8).toString("hex")
+    ).toBe("89504e470d0a1a0a")
+    expect(JSON.stringify(bridged.structuredContent)).not.toContain(
+      blocks[1]!.data!
+    )
+  } finally {
+    await bridge?.client.close()
+    await direct.close()
+    await fixture.stop(true)
+  }
+}, 30_000)

@@ -4,8 +4,11 @@ import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import {
   DocumentGenerationIdSchema,
+  QUICKDRAW_FORMAT,
+  parseQuickdrawDocument,
   type DocumentFormatClaim,
   type DocumentId,
+  type DocumentGenerationManifestV2,
   type DocumentSource,
 } from "@worktable/types"
 import {
@@ -24,6 +27,9 @@ import {
 } from "./document-create-recovery-v2.ts"
 import {
   DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
+  listDocumentGenerationsV2,
+  readDocumentGenerationV2,
+  commitDocumentAgentMutationV2,
   listCompatibleDocumentVersionsV2,
   readCompatibleDocumentVersionV2,
   writeDocumentGenerationV2,
@@ -72,6 +78,7 @@ import {
 } from "./workspace-storage-v2.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
+import { validateDrawingImageMutation } from "./drawing-image-validation.ts"
 
 const WRITE_ADAPTER_BUDGET = {
   maxInputBytes: DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
@@ -116,12 +123,22 @@ function requireValidVersionId(
   }
 }
 
+export type DocumentAgentMutationInput = Omit<
+  NonNullable<DocumentGenerationManifestV2["agentMutation"]>,
+  "state" | "sourceRevision" | "beforeGenerationId"
+>
+
 export interface DocumentWriteResult {
   documentId: DocumentId
   path: string
   format: DocumentFormatClaim
   sourceRevision: string
   versionId: string
+  mutation?: {
+    receipt: NonNullable<DocumentGenerationManifestV2["agentMutation"]>
+    bytes: Uint8Array
+    replayed: boolean
+  }
 }
 
 export interface DocumentMoveResult {
@@ -147,7 +164,7 @@ type WritableDocument = ManagedFileDocument & {
   }
 }
 
-async function sourceRevision(input: {
+export async function registeredDocumentSourceRevision(input: {
   documentId: DocumentId
   path: string
   format: DocumentFormatClaim
@@ -267,6 +284,25 @@ async function preparedBytes(
   }
 }
 
+async function validateDrawingImagesBeforeCommit(
+  format: DocumentFormatClaim,
+  bytes: Uint8Array,
+  before?: Uint8Array
+): Promise<void> {
+  if (format.id !== QUICKDRAW_FORMAT) return
+  try {
+    await validateDrawingImageMutation(
+      parseQuickdrawDocument(bytes),
+      before ? parseQuickdrawDocument(before) : undefined
+    )
+  } catch (error) {
+    throw new DocumentWriteError(
+      "invalid",
+      error instanceof Error ? error.message : "Invalid drawing image asset"
+    )
+  }
+}
+
 async function readSource(
   workspaceRoot: string,
   spaceId: string,
@@ -303,8 +339,10 @@ async function legacyDocRestoreFence(input: {
     input.document
   )
   if (
-    (await sourceRevision({ ...input.document, bytes: currentBytes })) !==
-    input.expectedRevision
+    (await registeredDocumentSourceRevision({
+      ...input.document,
+      bytes: currentBytes,
+    })) !== input.expectedRevision
   ) {
     throw new DocumentWriteError(
       "conflict",
@@ -558,7 +596,7 @@ async function ensurePreEditBaseline(input: {
   bytes: Uint8Array
   beforeCreatedAt: string
   registry: DocumentFormatRegistry
-}): Promise<string | null> {
+}): Promise<{ generationId: string; created: boolean }> {
   const legacyKind = input.document.registration.legacyVersionKind
   const existing = await listCompatibleDocumentVersionsV2({
     workspaceRoot: input.workspaceRoot,
@@ -592,7 +630,7 @@ async function ensurePreEditBaseline(input: {
       previousBytes &&
       Buffer.from(previousBytes).equals(Buffer.from(input.bytes))
     ) {
-      return null
+      return { generationId: latest.id, created: false }
     }
   }
   const baselineLabel =
@@ -627,7 +665,123 @@ async function ensurePreEditBaseline(input: {
     },
     registry: input.registry,
   })
-  return generationId
+  return { generationId, created: true }
+}
+
+async function replayAgentMutationLocked(input: {
+  workspaceRoot: string
+  spaceId: string
+  document: WritableDocument
+  mutation: Pick<
+    DocumentAgentMutationInput,
+    "actor" | "requestId" | "requestHash"
+  >
+}): Promise<DocumentWriteResult | null> {
+  if (input.document.identity !== "durable") return null
+  const generations = await listDocumentGenerationsV2({
+    workspaceRoot: input.workspaceRoot,
+    spaceId: input.spaceId,
+    documentId: input.document.documentId,
+  })
+  const prior = generations.find(
+    (item) =>
+      item.agentMutation?.actor === input.mutation.actor &&
+      item.agentMutation.requestId === input.mutation.requestId
+  )
+  if (!prior?.agentMutation) return null
+  if (prior.agentMutation.requestHash !== input.mutation.requestHash)
+    throw new DocumentWriteError(
+      "conflict",
+      "requestId was already used with different drawing operations; use a new requestId"
+    )
+  const generation = await readDocumentGenerationV2({
+    workspaceRoot: input.workspaceRoot,
+    spaceId: input.spaceId,
+    documentId: input.document.documentId,
+    generationId: prior.id,
+  })
+  const bytes = generation?.authoredSource.entries[0]?.bytes
+  if (!bytes || generation.authoredSource.entries.length !== 1)
+    throw new DocumentWriteError("conflict", "Mutation history is unavailable")
+  if (prior.agentMutation.state !== "committed") {
+    const live = await readSource(
+      input.workspaceRoot,
+      input.spaceId,
+      input.document
+    )
+    if (!Buffer.from(live).equals(Buffer.from(bytes)))
+      throw new DocumentWriteError(
+        "conflict",
+        "A previous attempt has an unconfirmed drawing receipt. Inspect the current drawing before making a new request; this request will not be applied again."
+      )
+    await commitDocumentAgentMutationV2({
+      workspaceRoot: input.workspaceRoot,
+      spaceId: input.spaceId,
+      documentId: input.document.documentId,
+      generationId: prior.id,
+    })
+  }
+  return {
+    documentId: input.document.documentId,
+    path: prior.logicalPath,
+    format: prior.format,
+    sourceRevision: prior.agentMutation.sourceRevision,
+    versionId: prior.id,
+    mutation: {
+      receipt: { ...prior.agentMutation, state: "committed" },
+      bytes,
+      replayed: true,
+    },
+  }
+}
+
+/** Check durable request receipts before constructing another mutation. The writer checks again under its lock. */
+export async function replayRegisteredDocumentMutation(options: {
+  spaceId: string
+  path: string
+  actor: string
+  requestId: string
+  requestHash: string
+}): Promise<DocumentWriteResult | null> {
+  const workspaceRoot = getWorkspaceRoot()
+  const registry = createBuiltinDocumentFormatRegistry()
+  return withDocPathLock(options.spaceId, async () => {
+    await requireV2Workspace(workspaceRoot)
+    const catalog = await buildDocumentCatalog({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      registry,
+    })
+    let document: WritableDocument
+    try {
+      document = resolveWritableDocument(catalog, options.path, registry, {
+        allowAliases: true,
+      })
+    } catch (error) {
+      if (error instanceof DocumentWriteError && error.reason === "not-found")
+        return null
+      throw error
+    }
+    return replayAgentMutationLocked({
+      workspaceRoot,
+      spaceId: options.spaceId,
+      document,
+      mutation: options,
+    })
+  })
+}
+
+async function finishAgentReceipt(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationId: string
+}): Promise<void> {
+  // Source and history have committed. Do not roll back a successful edit if the receipt marker fails;
+  // a retry verifies the exact source bytes before finishing this marker.
+  await commitDocumentAgentMutationV2(input).catch((error) =>
+    console.warn("[document-write] mutation receipt commit deferred:", error)
+  )
 }
 
 export async function createRegisteredDocument(options: {
@@ -638,6 +792,7 @@ export async function createRegisteredDocument(options: {
   createdBy: string
   source: string
   reason?: string
+  agentMutation?: DocumentAgentMutationInput
   registry?: DocumentFormatRegistry
 }): Promise<DocumentWriteResult> {
   const workspaceRoot = getWorkspaceRoot()
@@ -663,12 +818,28 @@ export async function createRegisteredDocument(options: {
         "Document inventory must be repaired before creating documents"
       )
     }
+    if (
+      options.agentMutation &&
+      (entryAt(catalog, path) || reservedByAliasIn(catalog.aliases, path))
+    ) {
+      const document = resolveWritableDocument(catalog, path, registry, {
+        allowAliases: true,
+      })
+      const replay = await replayAgentMutationLocked({
+        workspaceRoot,
+        spaceId: options.spaceId,
+        document,
+        mutation: options.agentMutation,
+      })
+      if (replay) return replay
+    }
     if (reservedByAliasIn(catalog.aliases, path) || entryAt(catalog, path)) {
       throw new DocumentWriteError(
         "conflict",
         "Another document already uses this path"
       )
     }
+    await validateDrawingImagesBeforeCommit(options.format, bytes)
     const profile = documentStorageProfiles.get(
       DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
     )
@@ -720,7 +891,27 @@ export async function createRegisteredDocument(options: {
       const now = new Date().toISOString()
       const versionId = mintVersionId(now)
       const generationEntry = `document${registration.fileSource!.extension}`
+      const agentMutation = options.agentMutation
+        ? {
+            ...options.agentMutation,
+            state: "prepared" as const,
+            sourceRevision: await registeredDocumentSourceRevision({
+              documentId,
+              path,
+              format: options.format,
+              source,
+              bytes,
+            }),
+          }
+        : undefined
       const committedResult = async (): Promise<DocumentWriteResult> => {
+        if (agentMutation)
+          await finishAgentReceipt({
+            workspaceRoot,
+            spaceId: options.spaceId,
+            documentId,
+            generationId: versionId,
+          })
         await publishLegacyDocProjection({
           registration,
           spaceId: options.spaceId,
@@ -735,7 +926,7 @@ export async function createRegisteredDocument(options: {
           documentId,
           path,
           format: options.format,
-          sourceRevision: await sourceRevision({
+          sourceRevision: await registeredDocumentSourceRevision({
             documentId,
             path,
             format: options.format,
@@ -743,6 +934,15 @@ export async function createRegisteredDocument(options: {
             bytes,
           }),
           versionId,
+          ...(agentMutation
+            ? {
+                mutation: {
+                  receipt: { ...agentMutation, state: "committed" as const },
+                  bytes,
+                  replayed: false,
+                },
+              }
+            : {}),
         }
       }
       const recovery = await prepareDocumentCreateRecoveryV2({
@@ -772,6 +972,7 @@ export async function createRegisteredDocument(options: {
           createdBy: options.createdBy,
           source: options.source,
           ...(options.reason ? { reason: options.reason } : {}),
+          ...(agentMutation ? { agentMutation } : {}),
           authoredSource: {
             kind: "file",
             entries: [
@@ -845,27 +1046,45 @@ export async function readRegisteredDocumentSource(options: {
   bytes: Uint8Array
   sourceRevision: string
 }> {
+  return withDocPathLock(options.spaceId, () =>
+    readRegisteredDocumentSourceLocked(options)
+  )
+}
+
+/** Caller holds the document namespace lock; capture without reacquiring it. */
+export async function readRegisteredDocumentSourceLocked(options: {
+  spaceId: string
+  path: string
+  registry?: DocumentFormatRegistry
+}): Promise<{
+  documentId: DocumentId
+  path: string
+  format: DocumentFormatClaim
+  bytes: Uint8Array
+  sourceRevision: string
+}> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
-  return withDocPathLock(options.spaceId, async () => {
-    await requireV2Workspace(workspaceRoot)
-    const catalog = await buildDocumentCatalog({
-      workspaceRoot,
-      spaceId: options.spaceId,
-      registry,
-    })
-    const document = resolveWritableDocument(catalog, options.path, registry, {
-      allowAliases: true,
-    })
-    const bytes = await readSource(workspaceRoot, options.spaceId, document)
-    return {
-      documentId: document.documentId,
-      path: document.path,
-      format: document.format,
-      bytes,
-      sourceRevision: await sourceRevision({ ...document, bytes }),
-    }
+  await requireV2Workspace(workspaceRoot)
+  const catalog = await buildDocumentCatalog({
+    workspaceRoot,
+    spaceId: options.spaceId,
+    registry,
   })
+  const document = resolveManagedFileDocument(catalog, options.path, registry, {
+    allowAliases: true,
+  })
+  const bytes = await readSource(workspaceRoot, options.spaceId, document)
+  return {
+    documentId: document.documentId,
+    path: document.path,
+    format: document.format,
+    bytes,
+    sourceRevision: await registeredDocumentSourceRevision({
+      ...document,
+      bytes,
+    }),
+  }
 }
 
 export async function replaceRegisteredDocument(options: {
@@ -876,6 +1095,7 @@ export async function replaceRegisteredDocument(options: {
   updatedBy: string
   source: string
   reason?: string
+  agentMutation?: DocumentAgentMutationInput
   registry?: DocumentFormatRegistry
   /** Kernel-owned restore metadata; ordinary callers leave this unset. */
   checkpoint?: {
@@ -894,8 +1114,20 @@ export async function replaceRegisteredDocument(options: {
       registry,
     })
     const current = resolveWritableDocument(catalog, options.path, registry)
+    if (options.agentMutation) {
+      const replay = await replayAgentMutationLocked({
+        workspaceRoot,
+        spaceId: options.spaceId,
+        document: current,
+        mutation: options.agentMutation,
+      })
+      if (replay) return replay
+    }
     const before = await readSource(workspaceRoot, options.spaceId, current)
-    const beforeRevision = await sourceRevision({ ...current, bytes: before })
+    const beforeRevision = await registeredDocumentSourceRevision({
+      ...current,
+      bytes: before,
+    })
     if (beforeRevision !== options.expectedRevision) {
       throw new DocumentWriteError(
         "conflict",
@@ -907,6 +1139,7 @@ export async function replaceRegisteredDocument(options: {
       current.format,
       options.bytes
     )
+    await validateDrawingImagesBeforeCommit(current.format, bytes, before)
     const documentId =
       current.identity === "durable" ? current.documentId : mintDocumentId()
     const now = new Date().toISOString()
@@ -924,7 +1157,7 @@ export async function replaceRegisteredDocument(options: {
       registration: current.registration,
     })
     let sourcePublished = false
-    let baselineVersionId: string | null = null
+    let baseline: { generationId: string; created: boolean } | null = null
     let provisionalAdmitted = false
     try {
       if (current.identity === "provisional") {
@@ -945,7 +1178,7 @@ export async function replaceRegisteredDocument(options: {
         )
         provisionalAdmitted = true
       }
-      baselineVersionId = await ensurePreEditBaseline({
+      baseline = await ensurePreEditBaseline({
         workspaceRoot,
         spaceId: options.spaceId,
         document: current,
@@ -954,6 +1187,20 @@ export async function replaceRegisteredDocument(options: {
         beforeCreatedAt: now,
         registry,
       })
+      const agentMutation = options.agentMutation
+        ? {
+            ...options.agentMutation,
+            state: "prepared" as const,
+            beforeGenerationId: baseline.generationId,
+            sourceRevision: await registeredDocumentSourceRevision({
+              documentId,
+              path: current.path,
+              format: current.format,
+              source: current.source,
+              bytes,
+            }),
+          }
+        : undefined
       await writeDocumentGenerationV2({
         workspaceRoot,
         spaceId: options.spaceId,
@@ -967,6 +1214,7 @@ export async function replaceRegisteredDocument(options: {
         source: options.source,
         ...(options.reason ? { reason: options.reason } : {}),
         ...(options.checkpoint ? { checkpoint: options.checkpoint } : {}),
+        ...(agentMutation ? { agentMutation } : {}),
         authoredSource: {
           kind: "file",
           entries: [{ path: generationEntryName(current), bytes }],
@@ -983,8 +1231,10 @@ export async function replaceRegisteredDocument(options: {
             current
           )
           return (
-            (await sourceRevision({ ...current, bytes: latest })) ===
-            beforeRevision
+            (await registeredDocumentSourceRevision({
+              ...current,
+              bytes: latest,
+            })) === beforeRevision
           )
         }
       )
@@ -1017,11 +1267,18 @@ export async function replaceRegisteredDocument(options: {
         versionId,
         contentChanged: true,
       })
+      if (agentMutation)
+        await finishAgentReceipt({
+          workspaceRoot,
+          spaceId: options.spaceId,
+          documentId,
+          generationId: versionId,
+        })
       return {
         documentId,
         path: current.path,
         format: current.format,
-        sourceRevision: await sourceRevision({
+        sourceRevision: await registeredDocumentSourceRevision({
           documentId,
           path: current.path,
           format: current.format,
@@ -1029,6 +1286,15 @@ export async function replaceRegisteredDocument(options: {
           bytes,
         }),
         versionId,
+        ...(agentMutation
+          ? {
+              mutation: {
+                receipt: { ...agentMutation, state: "committed" as const },
+                bytes,
+                replayed: false,
+              },
+            }
+          : {}),
       }
     } catch (error) {
       let canRollBackPublishedSource = sourcePublished
@@ -1064,12 +1330,12 @@ export async function replaceRegisteredDocument(options: {
           documentId,
           versionId
         )
-        if (current.identity === "provisional" && baselineVersionId) {
+        if (current.identity === "provisional" && baseline?.created) {
           await removeGeneration(
             workspaceRoot,
             options.spaceId,
             documentId,
-            baselineVersionId
+            baseline.generationId
           )
         }
         if (provisionalAdmitted) {
@@ -1117,7 +1383,10 @@ export async function checkpointRegisteredDocument(options: {
     })
     const current = resolveWritableDocument(catalog, options.path, registry)
     const bytes = await readSource(workspaceRoot, options.spaceId, current)
-    const revision = await sourceRevision({ ...current, bytes })
+    const revision = await registeredDocumentSourceRevision({
+      ...current,
+      bytes,
+    })
     if (revision !== options.expectedRevision) {
       throw new DocumentWriteError(
         "conflict",
@@ -1195,7 +1464,7 @@ export async function checkpointRegisteredDocument(options: {
       documentId,
       path: current.path,
       format: current.format,
-      sourceRevision: await sourceRevision({
+      sourceRevision: await registeredDocumentSourceRevision({
         documentId,
         path: current.path,
         format: current.format,
@@ -1465,7 +1734,10 @@ export async function moveRegisteredDocument(options: {
       documentId: moved.documentId,
       from: current.path,
       to,
-      sourceRevision: await sourceRevision({ ...refreshed, bytes }),
+      sourceRevision: await registeredDocumentSourceRevision({
+        ...refreshed,
+        bytes,
+      }),
     }
   })
   await publishMutation()

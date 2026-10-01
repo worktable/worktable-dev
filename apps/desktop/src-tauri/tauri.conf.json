@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Worktable",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "identifier": "dev.worktable.desktop",
   "build": {
     "frontendDist": "../ui",
     "devUrl": "http://127.0.0.1:15321",
     "beforeDevCommand": "bun run scripts/serve-ui.ts --fontshare",
-    "beforeBuildCommand": "bun run scripts/verify-fonts.ts"
+    "beforeBuildCommand": "bun run scripts/verify-fonts.ts && bun run scripts/sign-preview-runtime.ts"
   },
   "app": {
     "withGlobalTauri": true,

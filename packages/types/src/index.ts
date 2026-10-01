@@ -131,3 +131,11 @@ export interface AgentAttribution {
 export * from "./quickdraw-document.ts";
 
 export * from "./workspace-layout";
+
+export * from "./drawing-operations.ts";
+
+export { DRAWING_THEME } from "./drawing-theme.generated";
+
+export * from "./drawing-bindings.ts";
+export * from "./drawing-record-comparison.ts";
+export * from "./document-preview.ts";

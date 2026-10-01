@@ -1,0 +1,229 @@
+{
+  "date": "2026-10-01",
+  "status": "Exploratory synthetic probes, not production validation",
+  "environment": {
+    "platform": "linux",
+    "bun": "1.3.14",
+    "playwright": "1.61.1",
+    "quickdraw": "0.2.0 with repository patch",
+    "actualBrowser": "Chromium headless shell 1228",
+    "hostFontFamilies": [
+      "DejaVu Sans Mono",
+      "DejaVu Sans",
+      "Liberation Sans Narrow",
+      "Liberation Mono",
+      "Liberation Serif",
+      "Liberation Sans",
+      "DejaVu Serif"
+    ]
+  },
+  "limitations": [
+    "Shared host, small synthetic board; no fleet, large board or concurrency benchmark.",
+    "Successful probes used Playwright default launch, which disabled Chromium sandbox.",
+    "Cold first-PNG probe omitted fresh image; it is not a readiness-correct end-to-end timing.",
+    "Warm same-page exports exclude per-job isolation and are not recommended architecture.",
+    "Fresh-context jobs include page/context creation, local fixture load, tracked image.decode readiness, export, transfer and disposal.",
+    "Supplied-font timing is one separate local-file experiment; final export followed a warmup and disposable 100ms delay.",
+    "Summed process RSS double-counts shared pages; not unique/peak memory.",
+    "Disk footprint is unpacked installed headless shell, not download size or all runtime dependencies.",
+    "Font specimens are unoptimized, not exhaustive coverage or proposed release pins.",
+    "Visual script/emoji inspection does not certify linguistic correctness.",
+    "HTML smoke only tests static element screenshot, not Worktable permissions/runtime.",
+    "Board uses upstream palette, not Worktable generated theme. Kana was added after baseline timing."
+  ],
+  "coldFirstPng": [
+    {
+      "launchMs": 157.18784200000005,
+      "totalFirstPngMs": 533.201843,
+      "exportMs": 94.5,
+      "bytes": 64569,
+      "width": 1000,
+      "height": 570
+    },
+    {
+      "launchMs": 90.66078000000016,
+      "totalFirstPngMs": 394.57347800000025,
+      "exportMs": 100.70000000298023,
+      "bytes": 64569,
+      "width": 1000,
+      "height": 570
+    },
+    {
+      "launchMs": 81.32832499999995,
+      "totalFirstPngMs": 393.68508199999997,
+      "exportMs": 115.09999999403954,
+      "bytes": 64569,
+      "width": 1000,
+      "height": 570
+    }
+  ],
+  "samePageWarm": [
+    {
+      "totalMs": 75.00923899999998,
+      "exportMs": 68.5
+    },
+    {
+      "totalMs": 44.85474700000009,
+      "exportMs": 39.900000005960464
+    },
+    {
+      "totalMs": 43.12818900000002,
+      "exportMs": 36.400000005960464
+    },
+    {
+      "totalMs": 35.807977000000164,
+      "exportMs": 28.899999991059303
+    },
+    {
+      "totalMs": 32.33079399999997,
+      "exportMs": 28.700000002980232
+    }
+  ],
+  "freshContextWarmBrowser": [
+    {
+      "totalMs": 329.77119500000003,
+      "exportMs": 46.29999999701977,
+      "bytes": 64731
+    },
+    {
+      "totalMs": 218.38687600000003,
+      "exportMs": 39.70000000298023,
+      "bytes": 64731
+    },
+    {
+      "totalMs": 264.70935800000007,
+      "exportMs": 48.20000000298023,
+      "bytes": 64731
+    },
+    {
+      "totalMs": 313.97017400000004,
+      "exportMs": 50.5,
+      "bytes": 64731
+    },
+    {
+      "totalMs": 202.9597630000003,
+      "exportMs": 38,
+      "bytes": 64731
+    }
+  ],
+  "memory": {
+    "summedProcessRssMiB": 448.984375,
+    "browserProcessCount": 6
+  },
+  "installedHeadlessShellMiBApprox": 262,
+  "sandboxProbe": {
+    "success": false,
+    "durationMs": 343.77054300000003,
+    "reason": "Chromium fatal: No usable sandbox!",
+    "signal": "SIGTRAP",
+    "hostModified": false
+  },
+  "suppliedFontExperiment": {
+    "loadedMs": 867.0420920000001,
+    "exportMs": 37.900000005960464,
+    "bytes": 101054,
+    "width": 751,
+    "height": 570,
+    "errors": [],
+    "fontStatus": [
+      {
+        "family": "Bengali",
+        "status": "loaded"
+      },
+      {
+        "family": "Thai",
+        "status": "loaded"
+      },
+      {
+        "family": "Tamil",
+        "status": "loaded"
+      },
+      {
+        "family": "Devanagari",
+        "status": "loaded"
+      },
+      {
+        "family": "Korean",
+        "status": "loaded"
+      },
+      {
+        "family": "Emoji",
+        "status": "loaded"
+      },
+      {
+        "family": "CJK",
+        "status": "loaded"
+      }
+    ]
+  },
+  "fontSpecimens": [
+    {
+      "name": "CJK",
+      "bytes": 17772300,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "sha": "fb0637bafbcd804fe32152370a1225990745b4bc"
+    },
+    {
+      "name": "Emoji",
+      "bytes": 25332736,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notocoloremoji/NotoColorEmoji-Regular.ttf",
+      "sha": "35b58811aeb4ca6f6723d904cc0754bffa0c841d"
+    },
+    {
+      "name": "Bengali",
+      "bytes": 463668,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth%2Cwght%5D.ttf",
+      "sha": "25e13e26dc15c4933f8fe49c9efcda54152349db"
+    },
+    {
+      "name": "Tamil",
+      "bytes": 340668,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstamil/NotoSansTamil%5Bwdth%2Cwght%5D.ttf",
+      "sha": "cb08d499b2d05ef6fd8e470c36c2be47ff368f0d"
+    },
+    {
+      "name": "Thai",
+      "bytes": 218652,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansthai/NotoSansThai%5Bwdth%2Cwght%5D.ttf",
+      "sha": "34b48ab6f74867dbfce19410a2f452abef34e3ff"
+    },
+    {
+      "name": "Korean",
+      "bytes": 10414588,
+      "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf",
+      "sha": "b386890ba945e1f39448a6b59f20c5d194f58808"
+    }
+  ],
+  "fontSpecimensBytesOnDisk": 54588260,
+  "selection": {
+    "width": 514,
+    "height": 144,
+    "bytes": 4663
+  },
+  "emptyExport": null,
+  "findings": {
+    "firstExportAssetMissing": true,
+    "laterExportAssetVisible": true,
+    "nativeArbitraryCrop": false,
+    "nativeSvgExport": false,
+    "fontsNeededBeforeMeasurement": true,
+    "nativeWrapping": "whitespace-based"
+  },
+  "reproduction": {
+    "location": ".local-dev/visual-preview-spike (disposable and ignored; not shipped)",
+    "scripts": [
+      "run.ts",
+      "browser.ts",
+      "supplied.ts",
+      "isolation.ts",
+      "fonts.ts",
+      "korean.ts"
+    ],
+    "commands": [
+      "bun .local-dev/visual-preview-spike/run.ts",
+      "bun .local-dev/visual-preview-spike/isolation.ts",
+      "bun .local-dev/visual-preview-spike/supplied.ts"
+    ],
+    "requirements": "Pinned Bun, installed Playwright browser and dependencies, font specimens for supplied.ts; scripts are local experiment material."
+  }
+}

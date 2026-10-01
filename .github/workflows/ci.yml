@@ -68,6 +68,7 @@ jobs:
           bun run check:tools
           bun run check:theme
           bun run check:brand
+          bun run check:previews
           bun run typecheck
           bun run typecheck:lab
           bun run test:policy
@@ -101,6 +102,8 @@ jobs:
           if [ "$(bun -p "require('./package.json').license")" = "AGPL-3.0-only" ]; then
             printf '%s\n' "WORKTABLE_PUBLIC_SOURCE_REPOSITORY=https://github.com/$GITHUB_REPOSITORY" "WORKTABLE_PUBLIC_SOURCE_COMMIT=$GITHUB_SHA" >> "$GITHUB_ENV"
           fi
+      - name: Provision pinned product font
+        run: bun scripts/provision-product-font.ts
       - name: Build each production surface once
         run: |-
           # release:lab is the sole production web build owner; other workspace builds remain.
@@ -125,6 +128,10 @@ jobs:
           node-version: 24.15.0
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
+      - name: Install preview Chromium
+        # Server and compiled-package renderer tests use the pinned headless
+        # shell; this job has an independent runner from browser journeys.
+        run: bunx playwright@1.61.1 install --with-deps --only-shell chromium
       - name: Run required tests
         run: bun run test:required
       - name: Bind lane evidence

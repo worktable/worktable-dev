@@ -1,3 +1,4 @@
+import { DRAWING_FONTS, previewFontCss } from "./preview-fonts.ts"
 import type { WidgetFile } from "@worktable/types"
 import { parseDocument, Parser } from "htmlparser2"
 
@@ -127,7 +128,7 @@ Narrative Doc writes validate Mermaid automatically. HTML cannot reliably expose
 export function getHtmlAuthoringGuide(
   _profile: HtmlGuideProfile = "runtime"
 ): string {
-  return `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_RUNTIME}`
+  return `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_RUNTIME}\n\n## Visual inspection\n\nUse worktable_html_read action "render" (or worktable_documents_read action "render") to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry the read render action, not the mutation. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -371,6 +372,8 @@ function escapeClosingScript(value: string): string {
 
 export function buildWidgetHostStyles(): string {
   return `<style data-worktable-runtime="host-smoothness">
+${previewFontCss("/worktable-preview")}
+:where(html) { font-family: ${DRAWING_FONTS.sans}; }
 :root { color-scheme: light dark; }
 html { min-height: 100%; }
 body { min-height: 100%; -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; }
@@ -594,6 +597,12 @@ export function injectWidgetRuntime(
   const runtime = buildWidgetRuntimeScript(spaceId, widgetId)
   const runtimeInsertionIndex = trustedRuntimeInsertionIndex(html)
   let output = `${html.slice(0, runtimeInsertionIndex)}${runtime}${html.slice(runtimeInsertionIndex)}`
+  return injectWidgetHostStyles(output)
+}
+
+/** The same typography and host styles are used for live and static previews. */
+export function injectWidgetHostStyles(html: string): string {
+  let output = html
   let shell = inspectWidgetHtmlShell(output)
   if (!shell.hasViewport) {
     const viewport = `<meta name="viewport" content="width=device-width, initial-scale=1">`

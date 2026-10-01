@@ -2,5 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "createUpdaterArtifacts": true
+  },
+  "build": {
+    "beforeBuildCommand": "bun run scripts/verify-fonts.ts && bun run scripts/sign-preview-runtime.ts --release"
   }
 }

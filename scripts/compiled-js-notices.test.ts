@@ -151,3 +151,44 @@ test("compiled notice gate follows real bundle contributors and rejects source o
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test("native drawing and legacy SVG bundles carry reviewed font and embedded dependency notices", async () => {
+  const output = mkdtempSync(join(tmpdir(), "worktable-drawing-notice-gate-"))
+  try {
+    const build = await Bun.build({
+      entrypoints: [
+        join(import.meta.dir, "../packages/server/src/drawing-render.ts"),
+      ],
+      target: "bun",
+      metafile: true,
+    })
+    expect(build.success).toBe(true)
+    const browser = await Bun.build({
+      entrypoints: [
+        join(
+          import.meta.dir,
+          "../packages/server/src/drawing-preview-client.ts"
+        ),
+      ],
+      target: "browser",
+      metafile: true,
+    })
+    expect(browser.success).toBe(true)
+    // The generated browser bundle is an asset in the server metafile; include
+    // its own contributors so native renderer attribution is not lost.
+    writeCompiledJsNotices(
+      [build.metafile!, browser.metafile!],
+      process.cwd(),
+      output
+    )
+    expect(verifyCompiledJsNotices(output)).toBe(2)
+    const notices = readFileSync(
+      join(output, "licenses/bundled-javascript-NOTICES.md"),
+      "utf8"
+    )
+    expect(notices).toContain("Noto Project Authors")
+    expect(notices).toContain("Source archive SHA256:")
+  } finally {
+    rmSync(output, { recursive: true, force: true })
+  }
+})

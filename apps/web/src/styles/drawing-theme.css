@@ -1,0 +1,86 @@
+/* Quickdraw's canvas palette lives in theme-config.ts. Its floating controls
+   use the same semantic surfaces, focus and elevation as the Worktable shell. */
+.worktable-drawing.qd-root,
+.worktable-drawing.qd-root[data-qd-theme="dark"] {
+  background: var(--background);
+}
+
+.worktable-drawing :is(.qd-dock, .qd-actions, .qd-popover, .qd-submenu) {
+  color: var(--popover-foreground);
+  background: var(--popover);
+  border-color: var(--overlay-border);
+  box-shadow: var(--overlay-floating-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.worktable-drawing
+  :is(
+    .qd-tool,
+    .qd-dock button,
+    .qd-opt,
+    .qd-menu-item,
+    .qd-menu-row,
+    .qd-seg-btn
+  ) {
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.worktable-drawing
+  :is(
+    .qd-tool,
+    .qd-dock button,
+    .qd-opt,
+    .qd-menu-item,
+    .qd-dot,
+    .qd-seg-btn
+  ):hover,
+.worktable-drawing .qd-has-sub.sub-open {
+  color: var(--foreground);
+  background: var(--surface-tint);
+}
+
+.worktable-drawing
+  :is(.qd-tool, .qd-dock button, .qd-opt, .qd-dot, .qd-seg-btn).on {
+  color: var(--primary-text);
+  background: var(--surface-selected);
+}
+
+.worktable-drawing button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.worktable-drawing :is(.qd-mi-ico, .qd-mi-key, .qd-mi-value, .qd-mi-chev) {
+  color: var(--muted-foreground);
+}
+
+.worktable-drawing .qd-mi-check {
+  color: var(--primary-text);
+}
+
+.worktable-drawing :is(.qd-div, .qd-menu-div) {
+  background: var(--border);
+}
+
+.worktable-drawing .qd-row + .qd-row {
+  border-color: var(--border);
+}
+
+.worktable-drawing .qd-seg {
+  background: var(--well-bg);
+}
+
+.worktable-drawing .qd-style-dot {
+  border-color: var(--popover);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.worktable-drawing .qd-style-btn.on .qd-style-dot {
+  border-color: var(--surface-selected);
+}
+
+.worktable-drawing .qd-dot::before {
+  box-shadow: 0 0 0 1px var(--border);
+}

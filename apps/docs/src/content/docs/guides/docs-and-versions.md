@@ -48,11 +48,18 @@ freehand notes, shapes, text, and images. This action is available on Worktables
 using V2 document storage. Changes save automatically after you stop drawing.
 The document menu offers **Download PNG**, **Download drawing**, and **Save a copy**.
 
-Agents can read and replace the drawing source, and typed text appears in search.
-Freehand handwriting needs an image to interpret: share a PNG or let the agent
-inspect the open canvas. Use **Reload drawing** after an agent changes it.
-Concurrent edits are not merged; if the saved drawing changed elsewhere, save
-a copy to keep your local work before reloading.
+Agents can inspect PNG or SVG previews and edit specific objects, including
+shapes, arrows, labels and images. Typed text appears in search; freehand marks
+need visual inspection. Agents can preview proposals and undo their saved
+batches while history is retained. See [the drawing tool workflow](/agents/writing-docs/#working-with-drawings).
+
+Clean idle canvases refresh after agent changes without moving your viewport.
+Local undo and redo remain available for compatible gestures. Steps that would
+overwrite external changes or remove objects needed by them are cleared, with
+a notification. Agent batches and retained document versions also provide
+durable recovery paths.
+Concurrent edits are not merged; if the saved drawing changed elsewhere while
+you were drawing, use **Save a copy** to keep your work before **Reload drawing**.
 
 On iPad, Scribble can cause browser handwriting to skip strokes. If that happens,
 turn off **Settings → Apple Pencil → Scribble** while drawing. Handwriting with

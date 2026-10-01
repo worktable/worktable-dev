@@ -1,3 +1,5 @@
+import { readProductFontSource } from "./product-fonts.ts"
+import { stagePreviewRuntime } from "./preview-runtime.ts"
 import {
   copyFileSync,
   cpSync,
@@ -100,8 +102,11 @@ function copySkillPackage(destination: string): void {
 
 const sourceMetadata = resolveSourceMetadata(root)
 assertReviewedBunRuntime(Bun)
+readProductFontSource(join(root, "apps/desktop/ui/fonts"))
+run([process.execPath, "run", "check:previews"])
 
 const compiledMetafiles = new Map<string, Bun.BuildMetafile[]>()
+let drawingPreviewMetafile: Bun.BuildMetafile | undefined
 
 async function buildExecutable(
   target: ReleaseTarget,
@@ -145,9 +150,29 @@ async function buildExecutable(
   }
   const noticesStarted = performance.now()
   const destination = dirname(dirname(outfile))
+  const embedsDrawingPreview = Object.keys(result.metafile!.inputs).some(
+    (path) => path.endsWith("generated/drawing-preview.bundle.js")
+  )
+  if (embedsDrawingPreview && !drawingPreviewMetafile) {
+    const browserBuild = await Bun.build({
+      entrypoints: [
+        join(root, "packages/server/src/drawing-preview-client.ts"),
+      ],
+      target: "browser",
+      minify: true,
+      metafile: true,
+    })
+    if (!browserBuild.success)
+      throw new AggregateError(
+        browserBuild.logs,
+        "Drawing preview dependency accounting failed"
+      )
+    drawingPreviewMetafile = browserBuild.metafile!
+  }
   const metafiles = [
     ...(compiledMetafiles.get(destination) ?? []),
     result.metafile!,
+    ...(embedsDrawingPreview ? [drawingPreviewMetafile!] : []),
   ]
   compiledMetafiles.set(destination, metafiles)
   writeCompiledJsNotices(metafiles, process.cwd(), destination)
@@ -235,6 +260,11 @@ for (const target of selectedTargets.cli) {
   const assemblyStarted = performance.now()
   assertPortableExecutable(executable)
 
+  await stagePreviewRuntime(
+    target,
+    releaseDir,
+    join(root, "dist", "preview-browser-cache")
+  )
   cpSync(webDist, webDir, { recursive: true })
   mkdirSync(join(releaseDir, "connector"), { recursive: true })
   copyFileSync(connectorBundle, join(releaseDir, "connector", "connect.mjs"))
@@ -355,6 +385,11 @@ for (const target of selectedTargets.server) {
   assertPortableExecutable(backupWorker)
 
   const assemblyStarted = performance.now()
+  await stagePreviewRuntime(
+    target,
+    releaseDir,
+    join(root, "dist", "preview-browser-cache")
+  )
   cpSync(webDist, webDir, { recursive: true })
   // Hosted tenants serve /connect.sh + /connect.mjs like any install (the
   // remote-agent pairing flow); the compiled server has no source tree to

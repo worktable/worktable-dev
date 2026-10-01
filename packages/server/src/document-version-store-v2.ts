@@ -83,6 +83,7 @@ export interface WriteDocumentGenerationV2Input {
   createdBy: string
   source: string
   reason?: string
+  agentMutation?: DocumentGenerationManifestV2["agentMutation"]
   provenance?: DocumentProvenance
   checkpoint?: DocumentGenerationManifestV2["checkpoint"]
   /** Promote the prior generation before this write releases the retention lock. */
@@ -186,9 +187,7 @@ function normalizedPayloadEntries(
       }
       return { ...entry, sha256: sha256(entry.bytes) }
     })
-    .sort((left, right) =>
-      compareDocumentStorageText(left.path, right.path)
-    )
+    .sort((left, right) => compareDocumentStorageText(left.path, right.path))
 }
 
 function contentHash(input: {
@@ -219,16 +218,11 @@ function contentHash(input: {
 }
 
 export function documentGenerationManifestContentHash(
-  manifest: Pick<
-    DocumentGenerationManifestV2,
-    "authoredSource" | "companions"
-  >
+  manifest: Pick<DocumentGenerationManifestV2, "authoredSource" | "companions">
 ): string {
   const hash = createHash("sha256")
   for (const entry of manifest.authoredSource.entries) {
-    hash.update(
-      `source\0${entry.path}\0${entry.bytes}\0${entry.sha256}\0`
-    )
+    hash.update(`source\0${entry.path}\0${entry.bytes}\0${entry.sha256}\0`)
   }
   for (const companion of manifest.companions) {
     for (const entry of companion.entries) {
@@ -241,10 +235,7 @@ export function documentGenerationManifestContentHash(
 }
 
 export function expectedDocumentGenerationInventory(
-  manifest: Pick<
-    DocumentGenerationManifestV2,
-    "authoredSource" | "companions"
-  >
+  manifest: Pick<DocumentGenerationManifestV2, "authoredSource" | "companions">
 ): ReadonlyMap<string, "directory" | "file"> {
   const expected = new Map<string, "directory" | "file">([
     ["manifest.json", "file"],
@@ -348,7 +339,11 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
 } {
   // Persisted owners may predate the new-name rule reserving source suffixes.
   const parsedPath = analyzeDocumentPath(input.logicalPath)
-  if (!parsedPath.safe || !parsedPath.portable || parsedPath.canonicalPath !== input.logicalPath) {
+  if (
+    !parsedPath.safe ||
+    !parsedPath.portable ||
+    parsedPath.canonicalPath !== input.logicalPath
+  ) {
     throw new Error("document generation logical path is not portable")
   }
   const source = normalizedPayloadEntries(
@@ -385,9 +380,7 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
         entries: normalizedPayloadEntries(companion.entries, "companion"),
       }
     })
-    .sort((left, right) =>
-      compareDocumentStorageText(left.key, right.key)
-    )
+    .sort((left, right) => compareDocumentStorageText(left.key, right.key))
 
   const entryCount =
     source.length +
@@ -416,6 +409,7 @@ function preparedGeneration(input: WriteDocumentGenerationV2Input): {
     createdBy: input.createdBy,
     source: input.source,
     ...(input.reason ? { reason: input.reason } : {}),
+    ...(input.agentMutation ? { agentMutation: input.agentMutation } : {}),
     ...(input.provenance ? { provenance: input.provenance } : {}),
     ...(input.checkpoint ? { checkpoint: input.checkpoint } : {}),
     authoredSource: {
@@ -501,7 +495,11 @@ async function readGenerationManifestAt(
     JSON.parse(manifestText)
   )
   const parsedPath = analyzeDocumentPath(manifest.logicalPath)
-  if (!parsedPath.safe || !parsedPath.portable || parsedPath.canonicalPath !== manifest.logicalPath) {
+  if (
+    !parsedPath.safe ||
+    !parsedPath.portable ||
+    parsedPath.canonicalPath !== manifest.logicalPath
+  ) {
     throw new Error("document generation logical path is not portable")
   }
   return manifest
@@ -700,9 +698,7 @@ export async function writeDocumentGenerationV2(
           input.generationId
         )
         if (collision) {
-          throw new Error(
-            `document generation already exists: ${collision}`
-          )
+          throw new Error(`document generation already exists: ${collision}`)
         }
         const staging = await mkdtemp(join(parent, ".pending-"))
         try {
@@ -819,6 +815,51 @@ export async function markDocumentGenerationCheckpointV2(input: {
           checkpoint: input.checkpoint,
           registry: input.registry,
         })
+    )
+  })
+}
+
+/** Commit the mutation receipt only after the corresponding live source is published. */
+export async function commitDocumentAgentMutationV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationId: string
+}): Promise<void> {
+  const parent = documentVersionsV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  await withDocumentGenerationLock(parent, async () => {
+    await requireRealDocumentStorageDirectory(input.workspaceRoot, parent)
+    await withCrossProcessLock(
+      join(parent, ".write-lock"),
+      { label: "Document mutation receipt" },
+      async () => {
+        const generation = await readDocumentGenerationV2(input)
+        if (!generation?.manifest.agentMutation)
+          throw new Error("Mutation receipt is unavailable")
+        const manifest = DocumentGenerationManifestV2Schema.parse({
+          ...generation.manifest,
+          agentMutation: {
+            ...generation.manifest.agentMutation,
+            state: "committed",
+          },
+        })
+        await atomicWriteText(
+          join(
+            documentGenerationV2Directory(
+              input.workspaceRoot,
+              input.spaceId,
+              input.documentId,
+              input.generationId
+            ),
+            "manifest.json"
+          ),
+          `${JSON.stringify(manifest, null, 2)}\n`
+        )
+      }
     )
   })
 }

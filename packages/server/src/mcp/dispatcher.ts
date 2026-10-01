@@ -1,3 +1,16 @@
+import {
+  renderDocumentPreview,
+  renderFrozenHtmlPreview,
+  previewFailure,
+} from "../document-preview-service.ts"
+import {
+  freezeHtmlPreviewSnapshotLocked,
+  freezeSavedHtmlPreviewSnapshotLocked,
+  type HtmlPreviewSnapshot,
+} from "../html-preview.ts"
+import type { DocumentPreviewOptions } from "@worktable/types"
+import { dispatchDrawingOperation } from "./drawings.ts"
+import { DRAWING_GUIDE } from "./drawing-guide.ts"
 // ============================================================
 // Worktable MCP operation dispatcher. Public capability tools adapt to these
 // transport-agnostic operation ids in tools.ts.
@@ -364,6 +377,7 @@ async function syncDocAfterToolWrite(
 }
 
 interface ToolDispatchContext {
+  signal?: AbortSignal
   principal?: RequestPrincipal
   identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
   scopes?: string[]
@@ -589,13 +603,34 @@ async function _dispatchOperationInner(
         tokens: WIDGET_STYLE_TOKENS,
       }
     }
+    case "drawings.inspect":
+    case "drawings.query":
+    case "drawings.render":
+    case "drawings.changes":
+    case "drawings.create":
+    case "drawings.edit":
+    case "drawings.undo":
+    case "drawings.redo":
+      return await dispatchDrawingOperation(
+        operationId,
+        args,
+        actorId,
+        context.signal
+      )
     case "documents.list": {
       return {
-        documents: await listDocuments({
-          spaceId: args["spaceId"] as string,
-          includeArchived:
-            (args["includeArchived"] as boolean | undefined) ?? false,
-        }),
+        documents: (
+          await listDocuments({
+            spaceId: args["spaceId"] as string,
+            includeArchived:
+              (args["includeArchived"] as boolean | undefined) ?? false,
+          })
+        ).filter(
+          (document) =>
+            !args["format"] ||
+            (document.kind === "document" &&
+              document.format.id === args["format"])
+        ),
       }
     }
     case "documents.read": {
@@ -743,6 +778,18 @@ async function _dispatchOperationInner(
         })),
       }
     }
+    case "documents.render":
+    case "html.render": {
+      return renderDocumentPreview({
+        spaceId: args["spaceId"] as string,
+        path: (args["path"] ?? args["widgetId"]) as string,
+        expectedRevision: args["expectedRevision"] as string | undefined,
+        preview: args["preview"] as DocumentPreviewOptions | undefined,
+        scopes: context.scopes ?? ["*"],
+        html: operationId === "html.render",
+        signal: context.signal,
+      })
+    }
     case "html.list": {
       const spaceId = args["spaceId"] as string
       const includeArchived =
@@ -775,10 +822,14 @@ async function _dispatchOperationInner(
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
             if (error || !widget) throw new Error(error ?? "Widget not found")
-            return { widget, freshness: await getWidgetFreshness(spaceId, widget) }
+            return {
+              widget,
+              freshness: await getWidgetFreshness(spaceId, widget),
+            }
           }
           const { data, error } = await readWidgetDocument(spaceId, widgetId)
-          if (error || !data) throw new Error(error ?? "Widget content not found")
+          if (error || !data)
+            throw new Error(error ?? "Widget content not found")
           return {
             widget: data.widget,
             freshness: await getWidgetFreshness(spaceId, data.widget),
@@ -964,7 +1015,31 @@ async function _dispatchOperationInner(
       const blockingIssue = getBlockingWidgetIssue(warnings)
       if (blockingIssue)
         throw new Error(`${blockingIssue.code}: ${blockingIssue.message}`)
+      let previewSnapshot: HtmlPreviewSnapshot | undefined
+      let previewError: unknown
+      const captureSaved = async (saved: {
+        widget: WidgetFile
+        documentId?: string
+      }) => {
+        if (!args["preview"]) return
+        try {
+          if (!saved.documentId)
+            throw new Error(
+              "Preview requires registered HTML document storage."
+            )
+          previewSnapshot = await freezeSavedHtmlPreviewSnapshotLocked({
+            spaceId,
+            path: saved.widget.id,
+            html,
+            widget: saved.widget,
+            documentId: saved.documentId,
+          })
+        } catch (error) {
+          previewError = error
+        }
+      }
       const created = await createHtmlDocument({
+        onSaved: captureSaved,
         spaceId,
         explicitId,
         name,
@@ -984,18 +1059,41 @@ async function _dispatchOperationInner(
         widgetId,
         data: created.data,
       })
-      return { widgetId, widget: created.data, warnings }
+      const result = { widgetId, widget: created.data, warnings }
+      if (!args["preview"]) return result
+      return previewSnapshot
+        ? {
+            ...result,
+            ...(await renderFrozenHtmlPreview(
+              previewSnapshot,
+              context.scopes ?? ["*"],
+              args["preview"] as DocumentPreviewOptions,
+              context.signal
+            )),
+          }
+        : {
+            ...result,
+            preview: previewFailure(
+              null,
+              previewError ?? new Error("Saved preview snapshot unavailable.")
+            ),
+          }
     }
     case "html.update": {
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
       const html = args["html"] as string
+      let previewSnapshot: HtmlPreviewSnapshot | undefined
+      let previewError: unknown
       const updated = await withCanonicalHtmlDocumentPath(
         spaceId,
         widgetId,
         () =>
           withWidgetWriteLock(spaceId, widgetId, async () => {
-            const { data: existing, error } = await readWidget(spaceId, widgetId)
+            const { data: existing, error } = await readWidget(
+              spaceId,
+              widgetId
+            )
             if (error || !existing) throw new Error(error ?? "Widget not found")
             const permissions =
               (args["permissions"] as WidgetFile["permissions"]) ??
@@ -1032,6 +1130,16 @@ async function _dispatchOperationInner(
               updatedBy: actorId,
             })
             result.release?.()
+            if (args["preview"]) {
+              try {
+                previewSnapshot = await freezeHtmlPreviewSnapshotLocked({
+                  spaceId,
+                  path: widgetId,
+                })
+              } catch (error) {
+                previewError = error
+              }
+            }
             return { data: result.data, warnings }
           }),
         { materialize: true }
@@ -1042,7 +1150,29 @@ async function _dispatchOperationInner(
         widgetId,
         data: updated.data,
       })
-      return { widgetId, widget: updated.data, warnings: updated.warnings }
+      const result = {
+        widgetId,
+        widget: updated.data,
+        warnings: updated.warnings,
+      }
+      if (!args["preview"]) return result
+      return previewSnapshot
+        ? {
+            ...result,
+            ...(await renderFrozenHtmlPreview(
+              previewSnapshot,
+              context.scopes ?? ["*"],
+              args["preview"] as DocumentPreviewOptions,
+              context.signal
+            )),
+          }
+        : {
+            ...result,
+            preview: previewFailure(
+              null,
+              previewError ?? new Error("Saved preview snapshot unavailable.")
+            ),
+          }
     }
     case "html.rename": {
       const spaceId = args["spaceId"] as string
@@ -1096,14 +1226,17 @@ async function _dispatchOperationInner(
     case "html.archive": {
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
-      const result = await withCanonicalHtmlDocumentPath(spaceId, widgetId, () =>
-        setWidgetArchived(
-          spaceId,
-          widgetId,
-          true,
-          actorId,
-          args["reason"] as string | undefined
-        ),
+      const result = await withCanonicalHtmlDocumentPath(
+        spaceId,
+        widgetId,
+        () =>
+          setWidgetArchived(
+            spaceId,
+            widgetId,
+            true,
+            actorId,
+            args["reason"] as string | undefined
+          ),
         { materialize: true, transactionOwnsPathLock: true }
       )
       if (result.error || !result.data)
@@ -1119,8 +1252,10 @@ async function _dispatchOperationInner(
     case "html.restore": {
       const spaceId = args["spaceId"] as string
       const widgetId = args["widgetId"] as string
-      const result = await withCanonicalHtmlDocumentPath(spaceId, widgetId, () =>
-        setWidgetArchived(spaceId, widgetId, false, actorId),
+      const result = await withCanonicalHtmlDocumentPath(
+        spaceId,
+        widgetId,
+        () => setWidgetArchived(spaceId, widgetId, false, actorId),
         { materialize: true, transactionOwnsPathLock: true }
       )
       if (result.error || !result.data)
@@ -1150,7 +1285,9 @@ async function _dispatchOperationInner(
         )
         const spacesWithDetail = await Promise.all(
           spaces.map(async (space) => {
-            const docs = await listDocsDetailed(space.id, { includeArchived })
+            const docs = hasScope(identity.scopes, "documents:read")
+              ? await listDocuments({ spaceId: space.id, includeArchived })
+              : await listDocsDetailed(space.id, { includeArchived })
             return {
               id: space.id,
               name: space.name,
@@ -1172,7 +1309,7 @@ async function _dispatchOperationInner(
               : {}),
           },
           spaces: spacesWithDetail,
-          hint: "Use worktable_discover actions state, space_index, or search to drill into workspace content.",
+          hint: "Use worktable_documents_read action list for every document format, or worktable_discover action search. Drawing previews and objects are available through worktable_drawings_read.",
         }
       }
       const { data: space, error: spaceErr } = await readSpace(spaceId)
@@ -1189,7 +1326,13 @@ async function _dispatchOperationInner(
           await listDocsDetailed(spaceId, { includeArchived })
         )
       )
-      return { space, docs }
+      return {
+        space,
+        docs,
+        ...(hasScope(identity.scopes, "documents:read")
+          ? { documents: await listDocuments({ spaceId, includeArchived }) }
+          : {}),
+      }
     }
     case "workspace.search": {
       const spaceId = args["spaceId"] as string | undefined
@@ -1712,6 +1855,8 @@ async function _dispatchOperationInner(
       const theme = (args["theme"] as "light" | "dark" | undefined) ?? "dark"
       return await previewMermaid(args["source"] as string, theme)
     }
+    case "guidance.drawings":
+      return { guide: DRAWING_GUIDE }
     case "guidance.format_spec": {
       return { spec: FORMAT_SPEC.trim() }
     }

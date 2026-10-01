@@ -1,3 +1,5 @@
+import { DrawingsReadInput, DrawingsWriteInput } from "@worktable/types"
+export { DrawingsReadInput, DrawingsWriteInput }
 // ============================================================
 // Worktable MCP Tool Schemas (Zod)
 // Single source of truth shared between stdio and HTTP transports.
@@ -9,6 +11,7 @@ import {
   ConversationIdentityIdSchema,
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
   DocumentFormatClaimSchema,
+  DocumentPreviewOptionsSchema,
   THREAD_IDENTITY_NAME_MAX_LENGTH,
   ThreadDeliveryStateSchema,
   ThreadLocationSchema,
@@ -708,15 +711,31 @@ export const DocsReadInput = z.strictObject({
   ]),
 })
 
+const DocumentRenderFields = {
+  expectedRevision: z.string().min(1).max(256).optional(),
+  preview: DocumentPreviewOptionsSchema.optional(),
+}
+
 export const DocumentsReadInput = z.strictObject({
   request: z.discriminatedUnion("action", [
-    actionSchema("list", ListDocsInput.shape),
+    actionSchema("list", {
+      ...ListDocsInput.shape,
+      format: z
+        .string()
+        .optional()
+        .describe("Optional format id, e.g. worktable.quickdraw for drawings"),
+    }),
     actionSchema("read", {
       spaceId: ReadDocInput.shape.spaceId,
       path: z
         .string({ error: "path is required" })
         .describe("Extensionless document path, e.g. 'notes/readme'"),
       includeArchived: ListDocsInput.shape.includeArchived,
+    }),
+    actionSchema("render", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z.string().min(1).max(4096),
+      ...DocumentRenderFields,
     }),
     actionSchema("read_source", {
       spaceId: ReadDocInput.shape.spaceId,
@@ -802,6 +821,11 @@ export const HtmlReadInput = z.strictObject({
       profile: z.literal("runtime").optional().default("runtime"),
     }),
     actionSchema("list", ListWidgetsInput.shape),
+    actionSchema("render", {
+      spaceId: ReadWidgetInput.shape.spaceId,
+      htmlId: HtmlIdInput,
+      ...DocumentRenderFields,
+    }),
     actionSchema("read", {
       spaceId: ReadWidgetInput.shape.spaceId,
       htmlId: HtmlIdInput,
@@ -812,8 +836,12 @@ export const HtmlReadInput = z.strictObject({
 
 export const HtmlWriteInput = z.strictObject({
   request: z.discriminatedUnion("action", [
-    actionSchema("create", CreateWidgetInput.shape),
+    actionSchema("create", {
+      ...CreateWidgetInput.shape,
+      preview: DocumentPreviewOptionsSchema.optional(),
+    }),
     actionSchema("update", {
+      preview: DocumentPreviewOptionsSchema.optional(),
       spaceId: UpdateWidgetInput.shape.spaceId,
       htmlId: HtmlIdInput,
       name: UpdateWidgetInput.shape.name,
@@ -941,7 +969,10 @@ export const DeleteInput = z.strictObject({
 })
 
 export const GuidanceInput = z.strictObject({
-  request: z.discriminatedUnion("action", [actionSchema("format_spec", {})]),
+  request: z.discriminatedUnion("action", [
+    actionSchema("format_spec", {}),
+    actionSchema("drawings", {}),
+  ]),
 })
 
 export const MermaidInput = z.strictObject({
@@ -952,6 +983,8 @@ export const MermaidInput = z.strictObject({
 })
 
 export type PublicCapabilityRequest =
+  | z.infer<typeof DrawingsReadInput>
+  | z.infer<typeof DrawingsWriteInput>
   | z.infer<typeof DiscoverInput>
   | z.infer<typeof SpacesInput>
   | z.infer<typeof DocumentsReadInput>

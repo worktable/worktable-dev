@@ -7,13 +7,14 @@ come from the canonical theme configuration below.
 
 ## Theme source and generated artifacts
 
-[`packages/ui/src/theme/theme-config.ts`](packages/ui/src/theme/theme-config.ts) is the only human-edited source for structural colors, accents, statuses, charts, backdrop geometry, control finishes, overlay elevation, browser shell colors, and the BlockNote and Mermaid adapter palettes. Read that file for exact values; do not copy its values into documentation or product CSS.
+[`packages/ui/src/theme/theme-config.ts`](packages/ui/src/theme/theme-config.ts) is the only human-edited source for structural colors, accents, statuses, charts, backdrop geometry, control finishes, overlay elevation, browser shell colors, and the BlockNote, Mermaid, and drawing adapter palettes. Read that file for exact values; do not copy its values into documentation or product CSS.
 
 Run `bun run generate:theme` after changing the configuration. It generates and commits:
 
 - `packages/ui/src/styles/theme.generated.css`, the pure semantic CSS variable contract.
 - `apps/web/src/styles/blocknote-theme.generated.css`, BlockNote-compatible hardcoded colors.
 - `packages/types/src/mermaid-theme.generated.ts`, Mermaid-compatible constants.
+- `packages/types/src/drawing-theme.generated.ts`, shared Quickdraw canvas and ink palettes for the editor and agent previews.
 
 `bun run check:theme` rejects drift. Product CSS consumes `@worktable/ui/theme.css`; React continues using standard Tailwind semantic utilities.
 

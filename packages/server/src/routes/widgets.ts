@@ -1,3 +1,4 @@
+import { buildWidgetCsp, canWidgetRecord, deniedWidgetQueryCollection, widgetRecordReadGuard, WidgetRecordAccessError } from "../widget-runtime-policy.ts";
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { documentSourceDisposition } from "../content-disposition.ts";
 import { existsSync } from "node:fs";
@@ -8,8 +9,8 @@ import { z } from "zod";
 import { WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
-import { createRecord, deleteRecord, queryRecords, queryTargetCollections, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
-import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
+import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
+import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { decorateWidgetsWithFreshness, evictWidgetFreshness, getWidgetFreshness } from "../widget-freshness.ts";
@@ -105,30 +106,11 @@ const ArchiveWidgetSchema = z.object({
 // /versions/checkpoint would carry Sec-Fetch-Site: same-origin and pass the human
 // trust-anchor gate. In-iframe use is unaffected — the iframe already sandboxes to
 // an opaque origin, and the broker validates event.source, not the frame origin.
-function buildWidgetCsp(network: boolean): string {
-  return [
-    "sandbox allow-scripts",
-    "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    "img-src data: blob:",
-    "font-src data:",
-    network ? "connect-src 'self' ws: wss: https:" : "connect-src 'self'",
-    "frame-ancestors 'self'",
-    "base-uri 'none'",
-    "form-action 'none'",
-  ].join("; ");
-}
-
-function canRecord(widget: { permissions?: { records?: Record<string, { read?: boolean; create?: boolean; update?: boolean; delete?: boolean }> } }, collectionId: string, action: "read" | "create" | "update" | "delete"): boolean {
-  const permission = widget.permissions?.records?.[collectionId] ?? widget.permissions?.records?.["*"];
-  return !!permission?.[action];
-}
 
 async function ensureWidgetAccess(spaceId: string, widgetId: string, collectionId: string, action: "read" | "create" | "update" | "delete") {
   const { data: widget, error } = await readWidget(spaceId, widgetId);
   if (error || !widget) return { widget: null, response: new Response(JSON.stringify({ error: error ?? "Widget not found", code: "NOT_FOUND" }), { status: 404, headers: { "Content-Type": "application/json" } }) };
-  if (!canRecord(widget, collectionId, action)) return { widget: null, response: new Response(JSON.stringify({
+  if (!canWidgetRecord(widget, collectionId, action)) return { widget: null, response: new Response(JSON.stringify({
     error: `Widget lacks ${action} permission for ${collectionId}`,
     code: "FORBIDDEN",
     missingPermission: `permissions.records.${collectionId}.${action}`,
@@ -359,7 +341,7 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
   return new Response(themedHtml, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false),
+      "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
       "X-Content-Type-Options": "nosniff",
     },
   });
@@ -397,18 +379,22 @@ async function handleRecordsQuery(c: Context, spaceId: string, widgetId: string,
     // Cross-collection reach (expand, backlinks, relation-path predicates) is
     // a read of the target collection — the widget needs read permission on
     // every collection the query touches, not just the one it names.
-    for (const target of await queryTargetCollections(spaceId, collectionId, body ?? {})) {
-      if (!canRecord(access.widget!, target, "read")) {
+    const target = await deniedWidgetQueryCollection(spaceId, access.widget!.permissions, collectionId, body ?? {});
+    if (target) {
         return c.json({
           error: `Widget lacks read permission for ${target} (reached via expand/backlinks/relation path)`,
           code: "FORBIDDEN",
           missingPermission: `permissions.records.${target}.read`,
           suggestedPermissions: { records: { [target]: { read: true } } },
         }, 403);
-      }
     }
-    return c.json(await queryRecords(spaceId, collectionId, body ?? {}));
+    return c.json(await queryRecords(spaceId, collectionId, body ?? {}, { authorizeCollection: widgetRecordReadGuard(access.widget!.permissions) }));
   } catch (err) {
+    if (err instanceof WidgetRecordAccessError) return c.json({
+      error: err.message, code: "FORBIDDEN",
+      missingPermission: `permissions.records.${err.collectionId}.read`,
+      suggestedPermissions: { records: { [err.collectionId]: { read: true } } },
+    }, 403);
     if (err instanceof RecordQueryError) return c.json({ error: err.message, code: "VALIDATION_ERROR" }, 400);
     throw err;
   }
@@ -655,12 +641,12 @@ async function handleGetVersionContent(c: Context, spaceId: string, widgetId: st
   }
   const snapshot = await getWidgetVersion(spaceId, widgetId, versionId);
   if (!snapshot) return c.json({ error: "Version not found", code: "NOT_FOUND" }, 404);
-  const themedHtml = applyWidgetTheme(snapshot.after.content.html, c.req.query("theme"));
+  const themedHtml = injectWidgetHostStyles(applyWidgetTheme(snapshot.after.content.html, c.req.query("theme")));
   // Snapshots are truly static: script-src 'none' (not just connect-src) —
   // historical authored JS could otherwise exfiltrate snapshot-embedded data
   // by NAVIGATING the frame to an external URL, which no connect-src blocks.
   // The client compare iframe also omits allow-scripts as defense in depth.
-  const snapshotCsp = buildWidgetCsp(false)
+  const snapshotCsp = buildWidgetCsp(false, new URL(c.req.url).origin)
     .replace(/script-src [^;]+/, "script-src 'none'")
     .replace(/connect-src [^;]+/, "connect-src 'none'");
   return new Response(themedHtml, {

@@ -4,11 +4,12 @@ import {
   renderAuthKitCss,
   renderBlockNoteCss,
   renderMermaidTs,
+  renderDrawingTs,
 } from "./generate-theme"
 import { themeConfig } from "../packages/ui/src/theme/theme-config"
 
 describe("theme artifact generation", () => {
-  test("BlockNote and Mermaid adapters are derived from canonical values", () => {
+  test("Editor and rendering adapters are derived from canonical values", () => {
     const blockNote = renderBlockNoteCss()
     expect(blockNote).toContain(themeConfig.blockNote.light.editorText)
     expect(blockNote).toContain(themeConfig.blockNote.dark.editorText)
@@ -19,6 +20,10 @@ describe("theme artifact generation", () => {
     expect(mermaid).toContain(themeConfig.mermaid.light.canvas)
     expect(mermaid).toContain(themeConfig.mermaid.dark.canvas)
     expect(mermaid).toContain('"useGradient": false')
+
+    const drawing = renderDrawingTs()
+    expect(drawing).toContain(themeConfig.drawing.light.background)
+    expect(drawing).toContain(themeConfig.drawing.dark.colors.blue.stroke)
   })
 
   test("AuthKit output targets the supported WorkOS states", () => {

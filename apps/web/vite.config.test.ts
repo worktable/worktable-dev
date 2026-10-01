@@ -12,11 +12,16 @@ describe("development server proxy", () => {
   test("forwards the authenticated app surface without changing HTTP origins", () => {
     expect(Object.keys(devServerProxy)).toEqual([
       "/api",
+      "/worktable-preview/fonts",
       "/auth",
       "/ws",
       "/yjs",
     ])
-    for (const route of ["/api", "/auth"] as const) {
+    for (const route of [
+      "/api",
+      "/auth",
+      "/worktable-preview/fonts",
+    ] as const) {
       expect(devServerProxy[route].changeOrigin).toBe(false)
     }
   })

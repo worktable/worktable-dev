@@ -1,3 +1,5 @@
+import { closePreviewBrowsers } from "./document-preview-browser.ts";
+import { fulfillPreviewFont, previewFontVersion, previewFontCss } from "./preview-fonts.ts";
 import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts";
 import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts";
 import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts";
@@ -324,6 +326,48 @@ app.route("/api/pairing", pairingRouter);
 app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
+// Public immutable application assets only; this map cannot read workspace files.
+let previewFontStyles: { version: string; css: string; gzip: Buffer } | undefined;
+app.get("/worktable-preview/fonts.css", (c) => {
+  const version = previewFontVersion();
+  const etag = `W/"${version}"`;
+  const headers = {
+    "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=0, must-revalidate",
+    ETag: etag,
+    Vary: "Accept-Encoding",
+  };
+  if (c.req.header("If-None-Match") === etag) return new Response(null, { status: 304, headers });
+  if (previewFontStyles?.version !== version) {
+    const css = previewFontCss("/worktable-preview");
+    previewFontStyles = { version, css, gzip: gzipSync(css) };
+  }
+  const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "");
+  return new Response(compressed ? new Uint8Array(previewFontStyles.gzip) : previewFontStyles.css, {
+    headers: { ...headers, ...(compressed ? { "Content-Encoding": "gzip" } : {}) },
+  });
+});
+app.get("/worktable-preview/fonts/*", async (c) => {
+  const version = c.req.query("v");
+  const currentVersion = previewFontVersion();
+  if (version && version !== currentVersion) return c.notFound();
+  const bytes = await fulfillPreviewFont(
+    c.req.path.replace("/worktable-preview", ""),
+  );
+  if (!bytes) return c.notFound();
+  return new Response(Buffer.from(bytes), {
+    headers: {
+      "Content-Type": c.req.path.endsWith(".woff") ? "font/woff" : "font/woff2",
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": version
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=3600",
+      ETag: `"${currentVersion}"`,
+      "Cross-Origin-Resource-Policy": "cross-origin",
+    },
+  });
+});
+
 app.use("/api/*", trustedLocalIdentity());
 app.use("/api/*", requireWorkspaceContentEpoch);
 
@@ -1745,6 +1789,7 @@ export function startServer(
         // open upgraded connection. Worktable drains its own durable work
         // below, so the listener boundary itself is always force-closed.
         await settle(() => stopSocket(true));
+        await settle(() => closePreviewBrowsers());
         await settle(stopLinked);
         await settle(stopBackupNotifier);
         await settle(() => credentialCheck ?? Promise.resolve());

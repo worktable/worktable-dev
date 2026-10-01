@@ -22,7 +22,7 @@ Treat an HTML Doc as a **durable interface**, not decorated prose. Help the user
 4. Read `worktable_html_read` action `guide` with the `runtime` profile for the authoritative sandbox, bridge, permission, and data contract. Do not treat visual workflow guidance as a server security boundary.
 5. Model and seed canonical Records first when the interface depends on them. Then write one complete self-contained HTML document with the narrowest permissions that cover its actual calls.
 6. Validate Mermaid sources with `worktable_mermaid` when embedding a diagram or returned SVG. Repair actionable Worktable validation warnings.
-7. Exercise the real experience when possible: render desktop and mobile, use every important control, and verify that a Record mutation survives rereading the collection.
+7. Inspect desktop/mobile and light/dark screenshots with `worktable_html_read` action `render` (or request a `preview` on create/update). Read the image and diagnostics, then correct the source. Previews disable persistent writes and external network; `partial` identifies incomplete or blocked content. If a saved write's preview fails, retry `render`, not the mutation. Separately exercise important controls in the real interface and verify that intended Record mutations survive rereading the collection.
 
 ## Hold the quality bar
 

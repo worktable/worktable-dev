@@ -1,7 +1,43 @@
+diff --git a/node_modules/@quickdrawjs/core/.bun-tag-51ecbb4892794d0c b/.bun-tag-51ecbb4892794d0c
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@quickdrawjs/core/.bun-tag-b53a908d40027aa2 b/.bun-tag-b53a908d40027aa2
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@quickdrawjs/core/.bun-tag-cf67b567e59dadd1 b/.bun-tag-cf67b567e59dadd1
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@quickdrawjs/core/.bun-tag-db2ece447f7b9441 b/.bun-tag-db2ece447f7b9441
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/package.json b/package.json
+index 2f03b2eba931154ecd8b53dd228c84153fbacaec..ff61b218e70f72dfb7e497defb03d18e31b9be3c 100644
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     },
+     "./quickdraw.css": "./src/quickdraw.css",
+     "./styles.css": "./src/quickdraw.css",
+-    "./package.json": "./package.json"
++    "./package.json": "./package.json",
++    "./geometry": "./src/geometry.js",
++    "./freehand": "./src/freehand.js"
+   },
+   "files": [
+     "src",
 diff --git a/src/editor.js b/src/editor.js
-index 28bba64c33109196c6b50d0646fd0e0c38a616fc..9221fd42d994d206055790c3fbff602a58f703a2 100644
+index 28bba64c33109196c6b50d0646fd0e0c38a616fc..6d86d4d84f4aa7a97d4fa80bfff40d26fc1f9b75 100644
 --- a/src/editor.js
 +++ b/src/editor.js
+@@ -7,7 +7,7 @@ import { Store, newId } from './store.js'
+ import { themeOf, SIZES, FONT_SIZES, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_MAJOR } from './palette.js'
+ import {
+   localBounds, pageBounds, toLocal, drawShape, hitShape, marqueeHits,
+-  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts,
++  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts, loadAssetImages,
+ } from './shapes.js'
+ import { boundsUnion, boundsExpand, boundsContain, clamp, rotWith } from './geometry.js'
+ 
 @@ -450,6 +450,8 @@ export class Editor {
      if (this.readonly) return
      if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
@@ -84,6 +120,41 @@ index 28bba64c33109196c6b50d0646fd0e0c38a616fc..9221fd42d994d206055790c3fbff602a
      }
      this.store.update(ss.id, { props: { pts } })
    }
+@@ -1451,20 +1465,7 @@ export class Editor {
+     return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'))
+   }
+   async _decodeAssets(shapes) {
+-    const waits = []
+-    for (const s of shapes) {
+-      if (s.type !== 'image' || !s.props.assetId) continue
+-      const a = this.store.asset(s.props.assetId)
+-      if (!a) continue
+-      waits.push(new Promise((res) => {
+-        const img = new Image()
+-        img.onload = res
+-        img.onerror = res
+-        img.src = a.src
+-        if (img.complete) res()
+-      }))
+-    }
+-    await Promise.all(waits)
++    await loadAssetImages(this.store, shapes)
+   }
+ 
+   // ---- rendering -----------------------------------------------------------
+diff --git a/src/index.js b/src/index.js
+index 03cdcf586a5211d63734c2dc784a8cac57af87be..99b21d09014babe0ba03ff38ef17eef2dcc78c99 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -9,7 +9,7 @@ export {
+   themeOf, THEMES, COLOR_IDS, SIZE_IDS, DASH_IDS, FILL_IDS, GEO_IDS, GRID_IDS,
+   SIZES, FONT_SIZES, FONTS,
+ } from './palette.js'
+-export { pageBounds, localBounds, drawShape, hitShape } from './shapes.js'
++export { pageBounds, localBounds, drawShape, hitShape, loadAssetImages, invalidateTextLayouts } from './shapes.js'
+ export { strokeOutline } from './freehand.js'
+ 
+ import { Editor } from './editor.js'
 diff --git a/src/quickdraw.css b/src/quickdraw.css
 index 79f2c01f128107d0ec4d954085b28cff5e049f1e..17c74f383189562b703a75594949d3a9467da623 100644
 --- a/src/quickdraw.css
@@ -106,3 +177,176 @@ index 79f2c01f128107d0ec4d954085b28cff5e049f1e..17c74f383189562b703a75594949d3a9
    -webkit-user-select: text;
    user-select: text;
  }
+diff --git a/src/shapes.js b/src/shapes.js
+index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f78611f4d5 100644
+--- a/src/shapes.js
++++ b/src/shapes.js
+@@ -94,7 +94,7 @@ export function toLocal(shape, px, py) {
+ 
+ const outlineCache = new WeakMap() // draw props -> Path2D
+ const geoPathCache = new WeakMap() // geo props+id key stored on props via WeakMap keyed by props (id captured at build)
+-const layoutCache = new WeakMap() // text/note/geo-label props -> layout
++let layoutCache = new WeakMap() // text/note/geo-label props -> layout
+ 
+ let measureCtx = null
+ const measurer = () => {
+@@ -109,6 +109,12 @@ const measurer = () => {
+ // they disagree by a few px, so committed text would shift. Draw with
+ // 'alphabetic' at the CSS baseline instead so canvas matches the textarea.
+ const baselineCache = new Map()
++// Hosts may progressively load fonts. Re-measure without replacing persisted
++// shape records or adding document/history changes just because a font arrived.
++export function invalidateTextLayouts() {
++  layoutCache = new WeakMap()
++  baselineCache.clear()
++}
+ export function lineBaseline(font, fontSize, lh) {
+   const key = `${fontSize}|${lh}|${font}`
+   let b = baselineCache.get(key)
+@@ -126,21 +132,28 @@ export function lineBaseline(font, fontSize, lh) {
+ 
+ // ---- text layout -----------------------------------------------------------
+ 
++const wordSegments = new Intl.Segmenter('und', { granularity: 'word' })
++const graphemes = new Intl.Segmenter('und', { granularity: 'grapheme' })
+ function wrapLines(text, font, fontSize, maxW) {
+   const ctx = measurer()
+   ctx.font = `500 ${fontSize}px ${font}`
+   const out = []
+   for (const para of String(text ?? '').split('\n')) {
+-    if (para === '') { out.push({ text: '', w: 0 }); continue }
++    if (!maxW) { out.push({ text: para, w: ctx.measureText(para).width }); continue }
+     let line = ''
+-    for (const word of para.split(/(\s+)/)) {
+-      const test = line + word
+-      if (line && maxW && ctx.measureText(test).width > maxW) {
+-        out.push({ text: line, w: ctx.measureText(line).width })
+-        line = word.trimStart()
+-      } else line = test
++    const push = () => { out.push({ text: line, w: ctx.measureText(line).width }); line = '' }
++    for (const { segment: word } of wordSegments.segment(para)) {
++      if (line && ctx.measureText(line + word).width > maxW) push()
++      const token = line ? word : word.trimStart()
++      if (ctx.measureText(token).width > maxW) {
++        // Break long unspaced runs without splitting combining marks or emoji sequences.
++        for (const { segment } of graphemes.segment(token)) {
++          if (line && ctx.measureText(line + segment).width > maxW) push()
++          line += segment
++        }
++      } else line += token
+     }
+-    out.push({ text: line, w: ctx.measureText(line).width })
++    push()
+   }
+   return out
+ }
+@@ -191,19 +204,41 @@ function geoLabelLayout(shape) {
+ 
+ // ---- image assets ----------------------------------------------------------
+ 
+-const imgCache = new Map() // assetId -> { img, ready }
+-export function assetImage(store, assetId, onReady) {
+-  let e = imgCache.get(assetId)
+-  if (e) return e.ready ? e.img : null
++const imgCaches = new WeakMap() // Store -> assetId -> decoded source
++function imageEntry(store, assetId) {
+   const asset = store.asset(assetId)
+   if (!asset) return null
++  let cache = imgCaches.get(store)
++  if (!cache) { cache = new Map(); imgCaches.set(store, cache) }
++  let entry = cache.get(assetId)
++  if (entry && entry.src === asset.src) return entry
+   const img = new Image()
+-  e = { img, ready: false }
+-  imgCache.set(assetId, e)
+-  img.onload = () => { e.ready = true; onReady && onReady() }
++  entry = { img, src: asset.src, ready: false, failed: false, promise: null }
++  entry.promise = new Promise((resolve, reject) => {
++    img.onload = () => { entry.ready = true; resolve(img) }
++    img.onerror = () => { entry.failed = true; reject(new Error(`Could not decode drawing image ${assetId}`)) }
++  })
++  // Interactive rendering may precede export; retain the rejection for export
++  // while preventing an unhandled rejection in the ordinary canvas viewer.
++  entry.promise.catch(() => {})
++  cache.set(assetId, entry)
+   img.src = asset.src
++  return entry
++}
++export function assetImage(store, assetId, onReady) {
++  const entry = imageEntry(store, assetId)
++  if (!entry) return null
++  if (entry.ready) return entry.img
++  if (onReady && !entry.failed) entry.promise.then(onReady, onReady)
+   return null
+ }
++export async function loadAssetImages(store, shapes) {
++  await Promise.all(shapes.filter(s => s.type === 'image').map(s => {
++    const entry = imageEntry(store, s.props.assetId)
++    if (!entry) throw new Error(`Missing drawing image ${s.props.assetId}`)
++    return entry.promise
++  }))
++}
+ 
+ // ---- rendering -------------------------------------------------------------
+ 
+diff --git a/src/store.js b/src/store.js
+index 68ec28e2f152d2dfc2760c31556326621a9b4c0f..de0d2a33b8944888dc56a821a2e2a702fdfc2912 100644
+--- a/src/store.js
++++ b/src/store.js
+@@ -52,6 +52,7 @@ export class Store {
+     this.records = new Map()
+     this.listeners = new Set() // { fn, source: 'user' | 'remote' | 'all' }
+     this.historyListeners = new Set()
++    this.beforeCommitListeners = new Set()
+     this.undos = []
+     this.redos = []
+     this._batch = null // open history batch: composed diff
+@@ -75,6 +76,12 @@ export class Store {
+     return () => this.listeners.delete(l)
+   }
+ 
++  // Derived document changes belong in the same transaction and undo entry.
++  listenBeforeCommit(fn) {
++    this.beforeCommitListeners.add(fn)
++    return () => this.beforeCommitListeners.delete(fn)
++  }
++
+   _emit(diff, source) {
+     for (const l of [...this.listeners]) {
+       if (l.source !== 'all' && l.source !== source) continue
+@@ -101,7 +108,11 @@ export class Store {
+   transact(fn, source = 'user') {
+     if (this._tx) { fn(); return }
+     this._tx = { diff: emptyDiff(), source }
+-    try { fn() } finally {
++    try {
++      fn()
++      for (const listener of [...this.beforeCommitListeners])
++        listener(this._tx.diff, source, !!this._applyingHistory)
++    } finally {
+       const { diff } = this._tx
+       this._tx = null
+       if (!isDiffEmpty(diff)) {
+diff --git a/types/index.d.ts b/types/index.d.ts
+index 595f061a8a15f6eb83e56c81478f955651d42daf..8d10d8019a7a9e202785f1ce9a1cb446c2c8e5c1 100644
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -160,6 +160,9 @@ export class Store {
+    */
+   listenHistory(fn: () => void): () => void
+ 
++  /** Add derived updates before a transaction enters history or emits. */
++  listenBeforeCommit(fn: (diff: Diff, source: DiffSource, applyingHistory: boolean) => void): () => void
++
+   transact(fn: () => void, source?: DiffSource): void
+   put(rec: BoardRecord, source?: DiffSource): void
+   update(id: string, patch: Partial<BoardRecord> & { props?: Record<string, any> }, source?: DiffSource): void
+@@ -332,3 +335,8 @@ export interface CreateQuickdrawOptions extends EditorOptions {
+ 
+ /** One call: editor + toolbar chrome in a container. */
+ export function createQuickdraw(opts: CreateQuickdrawOptions): QuickdrawInstance
++
++/** Decode the same asset cache used by drawShape; rejects missing/invalid images. */
++export function loadAssetImages(store: Store, shapes: ShapeRecord[]): Promise<void>
++/** Clear measured text layouts after fonts become available. Does not edit records. */
++export function invalidateTextLayouts(): void

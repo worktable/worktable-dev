@@ -10,6 +10,8 @@ export const WORKTABLE_TOOL_NAMES = [
   "worktable_documents_write",
   "worktable_docs_read",
   "worktable_docs_write",
+  "worktable_drawings_read",
+  "worktable_drawings_write",
   "worktable_html_read",
   "worktable_html_write",
   "worktable_records_read",
@@ -32,7 +34,12 @@ export const PUBLIC_TOOL_NAMES = [
 export type PublicToolName = (typeof PUBLIC_TOOL_NAMES)[number]
 export type WorktableToolName = (typeof WORKTABLE_TOOL_NAMES)[number]
 export type MutationClass = "none" | "workspace" | "records"
-export type ResultLinkKind = "none" | "doc" | "renamed_doc" | "html"
+export type ResultLinkKind =
+  | "none"
+  | "doc"
+  | "renamed_doc"
+  | "html"
+  | "document"
 
 export const OPERATION_DEFINITIONS = {
   "workspace.state": tool("search:read", "none"),
@@ -40,6 +47,7 @@ export const OPERATION_DEFINITIONS = {
   "workspace.space_index": tool("docs:read", "none"),
   "spaces.create": tool("docs:write", "workspace"),
   "documents.list": tool("documents:read", "none"),
+  "documents.render": tool("documents:read", "none", "document"),
   "documents.read": tool("documents:read", "none"),
   "documents.read_source": tool("documents:read", "none"),
   "documents.versions": tool("documents:read", "none"),
@@ -61,8 +69,17 @@ export const OPERATION_DEFINITIONS = {
   "docs.patch": tool("docs:write", "workspace", "doc"),
   "docs.rename": tool("docs:write", "workspace", "renamed_doc"),
   "docs.delete": tool("docs:write", "workspace"),
+  "drawings.inspect": tool("documents:read", "none", "document"),
+  "drawings.query": tool("documents:read", "none", "document"),
+  "drawings.render": tool("documents:read", "none", "document"),
+  "drawings.changes": tool("documents:read", "none", "document"),
+  "drawings.create": tool("documents:write", "workspace", "document"),
+  "drawings.edit": tool("documents:write", "workspace", "document"),
+  "drawings.undo": tool("documents:write", "workspace", "document"),
+  "drawings.redo": tool("documents:write", "workspace", "document"),
   "html.guide": tool(null, "none"),
   "html.list": tool("widgets:read", "none"),
+  "html.render": tool("widgets:read", "none", "html"),
   "html.read": tool("widgets:read", "none", "html"),
   "html.create": tool("widgets:write", "workspace", "html"),
   "html.update": tool("widgets:write", "workspace", "html"),
@@ -98,6 +115,7 @@ export const OPERATION_DEFINITIONS = {
   "thread_delivery.progress": tool("threads:participate", "none"),
   "thread_delivery.fail": tool("threads:participate", "none"),
   "guidance.format_spec": tool(null, "none"),
+  "guidance.drawings": tool(null, "none"),
   "mermaid.validate": tool(null, "none"),
   "mermaid.preview": tool(null, "none"),
 } as const
@@ -164,6 +182,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   worktable_documents_read: {
     list: "documents.list",
     read: "documents.read",
+    render: "documents.render",
     read_source: "documents.read_source",
     versions: "documents.versions",
   },
@@ -185,10 +204,23 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     patch: "docs.patch",
     rename: "docs.rename",
   },
+  worktable_drawings_read: {
+    inspect: "drawings.inspect",
+    query: "drawings.query",
+    render: "drawings.render",
+    changes: "drawings.changes",
+  },
+  worktable_drawings_write: {
+    create: "drawings.create",
+    edit: "drawings.edit",
+    undo: "drawings.undo",
+    redo: "drawings.redo",
+  },
   worktable_html_read: {
     guide: "html.guide",
     list: "html.list",
     read: "html.read",
+    render: "html.render",
   },
   worktable_html_write: {
     create: "html.create",
@@ -246,6 +278,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   },
   worktable_guidance: {
     format_spec: "guidance.format_spec",
+    drawings: "guidance.drawings",
   },
   worktable_mermaid: {
     validate: "mermaid.validate",

@@ -113,15 +113,24 @@ run only when plugin or build inputs change, with the required job still present
 
 ## Generated files and docs
 
-MCP metadata, theme files, and brand assets are checked in but generated.
-Regenerate the corresponding output with `generate:tools`, `generate:theme`, or
-`generate:brand`; do not edit it by hand. Check them with:
+MCP metadata, theme files, brand assets, and drawing preview assets are checked
+in but generated. Regenerate the corresponding output with `generate:tools`,
+`generate:theme`, `generate:brand`, or `generate:previews`; do not edit it by hand.
+`generate:previews` updates the shared font manifest and native drawing browser
+bundle after changes to their source, font dependencies, or the Quickdraw patch.
+Check generated outputs with:
 
 ```sh
 bun run check:tools
 bun run check:theme
 bun run check:brand
+bun run check:previews
 ```
+
+CI source checks and standalone release assembly check preview asset integrity.
+Run `check:previews` locally when changing preview sources or their dependencies;
+ordinary build and test commands do not repeat this check. Regenerate and review
+stale outputs rather than bypassing the check.
 
 For product docs, use `bun run dev:docs` or `bun run build:docs`. CLI and MCP
 reference pages are generated from source; edit the owning source instead.

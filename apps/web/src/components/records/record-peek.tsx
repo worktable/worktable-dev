@@ -1,8 +1,8 @@
-import { useState } from "react"
-import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Info, Loader2, Maximize2, MoreVertical, Pencil, RotateCcw, SearchX, Trash, X } from "lucide-react"
+import { useRef, useState } from "react"
+import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Info, Loader2, Maximize2, MoreVertical, ExternalLink, RotateCcw, SearchX, Trash, X } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { Badge } from "@worktable/ui/components/badge"
-import { Button } from "@worktable/ui/components/button"
+import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Card, CardContent } from "@worktable/ui/components/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@worktable/ui/components/collapsible"
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
@@ -26,18 +26,18 @@ import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
   coerceFieldInput,
+  isSafeHttpUrl,
   columnLabel,
   fieldEditorSeed,
   recordDetailSections,
   recordTitle,
-  nextBooleanValue,
-  toastRecordError,
   INLINE_EDITABLE_TYPES,
   type RecordFieldColumn,
 } from "@/lib/records"
 import { RelativeTime } from "@/lib/time"
 import { FieldValue, type ExpandedRecords } from "./field-value"
-import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEditor, TextareaEditor, TextishEditor } from "./field-editor"
+import { Popover, PopoverTrigger } from "@worktable/ui/components/popover"
+import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEditor, TextareaEditor, TextishEditor, BooleanEditor, FieldEditorScope, FieldPopoverContent } from "./field-editor"
 
 /** Types the peek can edit: the grid's inline set plus its own richer
  *  editors. A whitelist, not a blocklist — a field type from a NEWER
@@ -47,7 +47,7 @@ import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEd
 const PEEK_EDITABLE_TYPES = new Set([...INLINE_EDITABLE_TYPES, "relation", "document", "json"])
 
 export interface RecordPeekActions {
-  onCommitField: (recordId: string, key: string, value: unknown) => void
+  onCommitField: (recordId: string, key: string, value: unknown) => Promise<void>
   onDuplicate: (record: RecordFile) => void
   onArchive: (recordId: string) => void
   onRestore: (recordId: string) => void
@@ -95,6 +95,7 @@ export function RecordPeek({
   drawerMode: boolean
   onClose: () => void
 }) {
+  const [drawerContainer, setDrawerContainer] = useState<HTMLDivElement | null>(null)
   const railResize = useResizable({
     edge: "left",
     defaultSize: 500,
@@ -121,10 +122,18 @@ export function RecordPeek({
   if (drawerMode) {
     return (
       <Drawer open={open} onOpenChange={(o) => !o && onClose()} repositionInputs={false}>
-        <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
+        <DrawerContent
+          ref={setDrawerContainer}
+          className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]"
+          onEscapeKeyDown={(event) => {
+            // Vaul handles Escape in capture, before a field can cancel its draft.
+            const target = event.target
+            if ((target instanceof Element && target.closest("input, textarea")) || drawerContainer?.querySelector('[data-slot="popover-content"][data-open]')) event.preventDefault()
+          }}
+        >
           <DrawerTitle className="sr-only">Record details</DrawerTitle>
           <DrawerDescription className="sr-only">Fields and provenance for this record.</DrawerDescription>
-          <div className="flex max-h-[calc(86dvh-1.5rem)] min-h-0 flex-col">{body}</div>
+          <FieldEditorScope container={drawerContainer}><div className="flex max-h-[calc(86dvh-1.5rem)] min-h-0 flex-col">{body}</div></FieldEditorScope>
         </DrawerContent>
       </Drawer>
     )
@@ -196,13 +205,12 @@ export function RecordDetailBody({
   surface?: "rail" | "page"
   onClose: () => void
 }) {
-  const [editing, setEditing] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const scrollRef = useScrollFade<HTMLDivElement>()
   const sections = recordDetailSections(schema, record)
   const archived = Boolean(record.archive)
   const moreCount = sections.secondary.length + sections.unmodeled.length
-  const visiblePrimary = editing && sections.title ? [sections.title, ...sections.primary] : sections.primary
+  const visiblePrimary = sections.primary
 
   const narrativeContent = sections.narrative.length > 0 ? (
     <section aria-label="Overview">
@@ -216,7 +224,7 @@ export function RecordDetailBody({
             expanded={expanded}
             danglingTargets={danglingByRecordField?.get(`${record.id}:${column.key}`)}
             onCommitField={actions.onCommitField}
-            editingEnabled={editing}
+            editingEnabled
             layout="narrative"
           />
         ))}
@@ -225,7 +233,7 @@ export function RecordDetailBody({
   ) : null
 
   const propertiesContent = visiblePrimary.length > 0 ? (
-    <DetailCard title="Properties" description={editing ? "Select a value to edit" : undefined}>
+    <DetailCard title="Properties">
       {visiblePrimary.map((column) => (
         <PeekFieldRow
           key={`${record.id}:${column.key}`}
@@ -235,7 +243,7 @@ export function RecordDetailBody({
           expanded={expanded}
           danglingTargets={danglingByRecordField?.get(`${record.id}:${column.key}`)}
           onCommitField={actions.onCommitField}
-          editingEnabled={editing}
+          editingEnabled
         />
       ))}
     </DetailCard>
@@ -251,7 +259,7 @@ export function RecordDetailBody({
           record={record}
           expanded={expanded}
           onCommitField={actions.onCommitField}
-          editingEnabled={editing}
+          editingEnabled
         />
       ))}
     </DetailCard>
@@ -280,7 +288,7 @@ export function RecordDetailBody({
                   expanded={expanded}
                   danglingTargets={danglingByRecordField?.get(`${record.id}:${column.key}`)}
                   onCommitField={actions.onCommitField}
-                  editingEnabled={editing}
+                  editingEnabled
                 />
               ))}
             </dl>
@@ -328,8 +336,7 @@ export function RecordDetailBody({
       schema={schema}
       actions={actions}
       archived={archived}
-      editing={editing}
-      onEditingChange={setEditing}
+      titleColumn={sections.title ?? undefined}
       navigation={navigation}
       surface={surface}
       onClose={onClose}
@@ -345,18 +352,10 @@ export function RecordDetailBody({
     </div>
   ) : null
 
-  const editingNotice = editing ? (
-    <div className="flex items-center gap-2 rounded-lg bg-primary/8 px-3 py-2 text-xs text-primary-text ring-1 ring-primary/20">
-      <Pencil className="size-3.5 shrink-0" />
-      Select any highlighted value to edit it. Changes save when you finish the field.
-    </div>
-  ) : null
-
   if (surface === "page") {
     return (
       <div className="min-h-full">
         {header}
-        {editingNotice && <div className="mx-5 mb-6 sm:mx-8 lg:mx-10">{editingNotice}</div>}
         <div className="grid gap-8 px-5 pb-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_21rem] lg:px-10 xl:gap-12">
           <div className="min-w-0 space-y-8">
             {archiveNotice}
@@ -383,7 +382,6 @@ export function RecordDetailBody({
       {header}
       <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-px">
         <div className="space-y-6">
-          {editingNotice}
           {archiveNotice}
           {narrativeContent}
           {propertiesContent}
@@ -403,8 +401,7 @@ function RecordDetailHeader({
   record,
   actions,
   archived,
-  editing,
-  onEditingChange,
+  titleColumn,
   navigation,
   surface,
   onClose,
@@ -414,8 +411,7 @@ function RecordDetailHeader({
   record: RecordFile
   actions: RecordPeekActions
   archived: boolean
-  editing: boolean
-  onEditingChange: (editing: boolean) => void
+  titleColumn?: RecordFieldColumn
   navigation?: RecordPeekNavigation
   surface: "rail" | "page"
   onClose: () => void
@@ -439,10 +435,6 @@ function RecordDetailHeader({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          <Button size="sm" variant={editing ? "secondary" : "outline"} onClick={() => onEditingChange(!editing)} aria-pressed={editing}>
-            <Pencil className="size-3.5" />
-            {editing ? "Done" : "Edit"}
-          </Button>
           {surface === "rail" && (
             <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/spaces/$spaceId/records/$collectionId/$recordId" params={{ spaceId, collectionId: record.collectionId, recordId: record.id }} />} aria-label="Open full record page">
               <Maximize2 className="size-4" />
@@ -465,9 +457,9 @@ function RecordDetailHeader({
           <span className="truncate font-mono text-[11px] text-muted-foreground">{record.id}</span>
           {archived && <Badge variant="outline" className="text-accent-bronze-ink"><Archive className="size-3" />Archived</Badge>}
         </div>
-        <h1 className={cn("font-display text-[1.8rem] leading-[1.08] tracking-[-0.02em] text-foreground", surface === "page" && "text-4xl sm:text-5xl")}>
-          {recordTitle(record, schema)}
-        </h1>
+        <div className={cn("font-display text-[1.8rem] leading-[1.08] tracking-[-0.02em] text-foreground", surface === "page" && "text-4xl sm:text-5xl")}>
+          {titleColumn ? <DetailFieldValue spaceId={spaceId} column={titleColumn} record={record} onCommitField={actions.onCommitField} editingEnabled title /> : <h1>{recordTitle(record, schema)}</h1>}
+        </div>
       </div>
     </header>
   )
@@ -531,35 +523,79 @@ function PeekFieldRow({
   record: RecordFile
   expanded?: ExpandedRecords
   danglingTargets?: ReadonlySet<string>
-  onCommitField: (recordId: string, key: string, value: unknown) => void
+  onCommitField: (recordId: string, key: string, value: unknown) => Promise<void>
   editingEnabled: boolean
   layout?: "property" | "narrative"
 }) {
+  return (
+    <div className={cn("min-w-0", layout === "narrative" ? "px-1" : "grid grid-cols-[minmax(6.5rem,0.38fr)_minmax(0,1fr)] items-start gap-4 px-4 py-3")}>
+      <dt
+        className={cn(
+          "min-w-0 text-muted-foreground",
+          layout === "narrative"
+            ? "mb-2 text-[11px] font-medium uppercase tracking-[0.11em]"
+            : "pt-0.5 text-xs leading-5"
+        )}
+        title={column.type === "unknown" ? "Unmodeled field" : `${columnLabel(column)} · ${column.type}`}
+      >
+        <span className="truncate">{columnLabel(column)}</span>
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 text-foreground",
+          layout === "narrative" ? "text-[15px] leading-7" : "text-sm leading-5",
+        )}
+      >
+        <DetailFieldValue spaceId={spaceId} column={column} record={record} expanded={expanded} danglingTargets={danglingTargets} onCommitField={onCommitField} editingEnabled={editingEnabled} />
+      </dd>
+    </div>
+  )
+}
+
+function DetailFieldValue({
+  spaceId,
+  column,
+  record,
+  expanded,
+  danglingTargets,
+  onCommitField,
+  editingEnabled,
+  title = false,
+}: {
+  spaceId: string
+  column: RecordFieldColumn
+  record: RecordFile
+  expanded?: ExpandedRecords
+  danglingTargets?: ReadonlySet<string>
+  onCommitField: (recordId: string, key: string, value: unknown) => Promise<void>
+  editingEnabled: boolean
+  title?: boolean
+}) {
   const [editing, setEditing] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const value = record.data[column.key]
+  const done = (restoreFocus = false) => {
+    setEditing(false)
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus())
+  }
   const editable = editingEnabled && PEEK_EDITABLE_TYPES.has(column.type)
 
-  const commitRaw = (raw: unknown) => {
+  const commitRaw = async (raw: unknown) => {
     const { value: next, error } = coerceFieldInput(column, raw)
-    if (error) {
-      toastRecordError(new Error(`${column.key}: ${error}`), "Invalid value")
-      return
-    }
+    if (error) throw new Error(error)
     if (JSON.stringify(next) === JSON.stringify(value ?? null)) return
-    onCommitField(record.id, column.key, next)
+    await onCommitField(record.id, column.key, next)
   }
 
-  // Editable url/email rows disable their anchors: the peek's primary action
-  // is editing, and the anchor's click handling would swallow the click that
-  // should open the editor. The grid keeps its links (whitespace edits there).
-  const display = (
+  const empty = value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0)
+  const display = title && !empty ? <span className="whitespace-pre-wrap break-words">{String(value)}</span> : empty && editable ? <span className="text-muted-foreground">{title ? "Add title…" : "Add…"}</span> : (
     <FieldValue
       column={column}
       value={value}
       spaceId={spaceId}
       expanded={expanded}
       danglingTargets={danglingTargets}
-      linksDisabled={editable && (column.type === "url" || column.type === "email" || column.type === "document")}
+      linksDisabled={editable}
       mode="detail"
     />
   )
@@ -568,17 +604,7 @@ function PeekFieldRow({
     if (!editable) return display
 
     if (column.type === "boolean") {
-      return (
-        <button
-          type="button"
-          className="flex min-h-6 items-center"
-          onClick={() => onCommitField(record.id, column.key, nextBooleanValue(value, column.field?.required ?? false))}
-          aria-label={`Toggle ${column.key}`}
-          title={column.field?.required ? undefined : "Cycles yes, no, unset"}
-        >
-          {display}
-        </button>
-      )
+      return <BooleanEditor column={column} value={value} onCommit={commitRaw}>{display}</BooleanEditor>
     }
     if (column.type === "relation") {
       return (
@@ -608,74 +634,43 @@ function PeekFieldRow({
         </MultiSelectEditor>
       )
     }
-    if (column.type === "json") {
-      if (!editing) {
-        return (
-          <button type="button" className="block w-full cursor-text text-left" onClick={() => setEditing(true)}>
-            {display}
-          </button>
-        )
-      }
-      return (
-        <JsonEditor
-          initial={value}
-          onCommit={(raw) => {
-            const { value: next, error } = coerceFieldInput(column, raw)
-            if (error) return false
-            if (JSON.stringify(next) !== JSON.stringify(value ?? null)) onCommitField(record.id, column.key, next)
-            return true
-          }}
-          onDone={() => setEditing(false)}
-        />
-      )
+    if (column.type === "json" && editing) {
+      return <JsonEditor initial={value} onCommit={commitRaw} onDone={() => done(true)} />
     }
     // Text-like (string/number/date/datetime/url/email/person and optionless
     // selects); `text` gets a real multiline editor.
     if (editing) {
       if (column.type === "text") {
-        return <TextareaEditor column={column} initial={value} onCommit={commitRaw} onDone={() => setEditing(false)} />
+        return <TextareaEditor column={column} initial={value} onCommit={commitRaw} onDone={done} />
       }
       return (
         <TextishEditor
           column={column}
           initial={fieldEditorSeed(column, value)}
           onCommit={commitRaw}
-          onDone={() => setEditing(false)}
-          className="h-8 px-2 text-sm"
+          onDone={done}
+          className={title ? "h-auto py-0 font-display text-[length:inherit] leading-[inherit] tracking-[inherit] md:text-[length:inherit]" : "h-8 px-2 text-sm"}
         />
       )
     }
     return (
-      <button type="button" className="block w-full cursor-text text-left" onClick={() => setEditing(true)} aria-label={`Edit ${column.key}`}>
+      <button ref={triggerRef} type="button" className={cn("block min-h-6 w-full cursor-text rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11", title && "-mx-2 -my-1 px-2 py-1 transition-colors hover:bg-muted/40")} onClick={() => setEditing(true)} aria-label={`Edit ${column.key}`}>
         {display}
       </button>
     )
   })()
 
-  return (
-    <div className={cn("min-w-0", layout === "narrative" ? "px-1" : "grid grid-cols-[minmax(6.5rem,0.38fr)_minmax(0,1fr)] items-start gap-4 px-4 py-3")}>
-      <dt
-        className={cn(
-          "min-w-0 text-muted-foreground",
-          layout === "narrative"
-            ? "mb-2 text-[11px] font-medium uppercase tracking-[0.11em]"
-            : "pt-0.5 text-xs leading-5"
-        )}
-        title={column.type === "unknown" ? "Unmodeled field" : `${columnLabel(column)} · ${column.type}`}
-      >
-        <span className="truncate">{columnLabel(column)}</span>
-      </dt>
-      <dd
-        className={cn(
-          "min-w-0 text-foreground",
-          layout === "narrative" ? "text-[15px] leading-7" : "text-sm leading-5",
-          editable && !editing && "-mx-2 -my-1 rounded-md bg-muted/30 px-2 py-1 ring-1 ring-border/60"
-        )}
-      >
-        {valueBody}
-      </dd>
-    </div>
-  )
+  if (title) return editing ? valueBody : <h1 aria-label={empty ? "Untitled record" : String(value)}>{valueBody}</h1>
+
+  return <div className="flex min-w-0 items-start gap-1">
+    <div className={cn("min-w-0 flex-1", editable && !editing && "-mx-2 -my-1 rounded-md px-2 py-1 transition-colors hover:bg-muted/40 has-focus-visible:bg-muted/40")}>{valueBody}</div>
+    {editable && !empty && column.type === "url" && isSafeHttpUrl(String(value)) && <a className={buttonVariants({ size: "icon-sm", variant: "ghost" })} href={String(value)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${columnLabel(column)}`}><ExternalLink className="size-3.5" /></a>}
+    {editable && !empty && column.type === "email" && <a className={buttonVariants({ size: "icon-sm", variant: "ghost" })} href={`mailto:${String(value)}`} aria-label={`Email ${String(value)}`}><ExternalLink className="size-3.5" /></a>}
+    {editable && !empty && ["document", "relation"].includes(column.type) && <Popover>
+      <PopoverTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Open ${columnLabel(column)}`} />}><ExternalLink className="size-3.5" /></PopoverTrigger>
+      <FieldPopoverContent align="end" aria-label={`Open ${columnLabel(column)}`}><FieldValue column={column} value={value} spaceId={spaceId} expanded={expanded} danglingTargets={danglingTargets} mode="detail" /></FieldPopoverContent>
+    </Popover>}
+  </div>
 }
 
 function ProvenanceRow({ label, by, at }: { label: string; by: string; at: string }) {

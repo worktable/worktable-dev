@@ -422,9 +422,9 @@ function NewRecordDocumentInput({ spaceId, field, value, onChange }: { spaceId: 
   const column = { key: field.key, field: field.field, type: field.type }
   return (
     <DocumentPicker spaceId={spaceId} column={column} value={value} open={open} onOpenChange={setOpen} onCommit={onChange}>
-      <button type="button" className="flex min-h-9 w-full items-center rounded-md border border-input bg-background px-3 text-left text-sm">
+      <span className="flex min-h-9 w-full items-center rounded-md border border-input bg-background px-3 text-left text-sm">
         {isEmptyValue(value) ? <span className="text-muted-foreground">Choose a document…</span> : <FieldValue column={column} value={value} spaceId={spaceId} linksDisabled />}
-      </button>
+      </span>
     </DocumentPicker>
   )
 }

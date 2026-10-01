@@ -125,6 +125,13 @@ the remaining macOS signing, WKWebView or ARM64 execution checks.
 
 ## Earlier acceptance evidence and environmental boundaries
 
+The first hosted PR run for commit `99d3352` passed the complete required suite
+and selected browser journeys with their unchanged canonical deadlines. This
+resolves the earlier shared-host timing uncertainty for that candidate. Its
+release build exposed unrelated lockfile resolution changes missing from the
+reviewed dependency inventory; that packaging correction and the final head
+still require passing CI. [Hosted verification run](https://github.com/worktable/worktable-dev/actions/runs/36868832308).
+
 A real MCP client scenario made 17 calls with 111 assertions and nine PNG responses. It created a multilingual board with joined/skin-tone emoji and an embedded raster badge; read IDs and text; edited text and bound connectors; queried/cropped; rendered an unsaved proposal; corrected a visible overlap; and undid/redid while preserving unrelated title and position changes. Visual inspection caught the initially blank emoji and confirmed the fix. The final run through the release headless-shell/native WebSocket transport passed in 22.7 seconds, with image-returning calls taking 0.96–3.17 seconds; the title-only save took 81 milliseconds. These are single synthetic-workflow observations, not a production benchmark. The schemas were usable without malformed calls. Coordinates still require agent judgment: the preview revealed an overlap, and the agent corrected it explicitly.
 
 Changed-region previews can clip labels on neighboring objects at the crop edge. The agent can request a full overview or a larger explicit region when that context matters; an otherwise successful cropped image does not imply every neighboring label is visible.

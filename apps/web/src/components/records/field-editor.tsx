@@ -108,9 +108,8 @@ export function TextishEditor({ column, initial, onCommit, onDone, className, mu
     onBlur: (e: React.FocusEvent) => {
       if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node | null)) void settle(true)
     },
-    onClick: (e: React.MouseEvent) => e.stopPropagation(),
   }
-  return <div ref={editorRef} className="space-y-1" aria-busy={state.pending}>
+  return <div ref={editorRef} className="space-y-1" aria-busy={state.pending} onClick={(event) => event.stopPropagation()}>
     {multiline ? <Textarea {...shared} className="min-h-24 text-sm" /> : <Input {...shared} type={inputTypeFor(column.type)} inputMode={column.type === "number" ? "decimal" : undefined} className={className ?? "h-7 px-2 py-0 text-sm"} />}
     <SaveFeedback state={state} onRetry={() => void settle(true, true)} />
   </div>

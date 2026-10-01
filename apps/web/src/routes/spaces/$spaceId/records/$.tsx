@@ -525,7 +525,6 @@ function RecordsPage() {
           id: "id",
           accessorFn: (row) => row.id,
           header: () => <span className="whitespace-nowrap">Id</span>,
-          cell: ({ row }) => <span className="font-mono text-xs">{row.original.id}</span>,
         },
       ]
     }
@@ -536,19 +535,8 @@ function RecordsPage() {
       size: defaultColumnWidth(column),
       minSize: 120,
       maxSize: 560,
-      cell: ({ row }) => (
-        <EditableCell
-          column={column}
-          record={row.original}
-          spaceId={spaceId}
-          expanded={expanded}
-          danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
-          onCommitField={peekActions.onCommitField}
-          editingEnabled={editCells}
-        />
-      ),
     }))
-  }, [visibleColumns, fieldColumns.length, rows.length, spaceId, expanded, danglingByRecordField, peekActions, editCells])
+  }, [visibleColumns, fieldColumns.length, rows.length])
 
   const table = useReactTable({
     data: rows,
@@ -955,15 +943,28 @@ function RecordsPage() {
                           data-state={peekRecordId === row.original.id ? "selected" : undefined}
                           className={`group/row cursor-pointer border-0 outline-none data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
                         >
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell
-                              key={cell.id}
-                              className="overflow-hidden px-3 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55"
-                              style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
-                            >
-                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                            </TableCell>
-                          ))}
+                          {row.getVisibleCells().map((cell) => {
+                            const column = visibleColumns.find((column) => column.key === cell.column.id)
+                            // Render the stable editor type directly: a column callback
+                            // recreated on query updates would remount it and lose drafts.
+                            return (
+                              <TableCell
+                                key={cell.id}
+                                className="overflow-hidden px-3 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55"
+                                style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
+                              >
+                                {column ? <EditableCell
+                                  column={column}
+                                  record={row.original}
+                                  spaceId={spaceId}
+                                  expanded={expanded}
+                                  danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
+                                  onCommitField={peekActions.onCommitField}
+                                  editingEnabled={editCells}
+                                /> : <span className="font-mono text-xs">{row.original.id}</span>}
+                              </TableCell>
+                            )
+                          })}
                           <TableCell className="w-9 px-1 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55">
                             <RecordRowMenu
                               record={row.original}

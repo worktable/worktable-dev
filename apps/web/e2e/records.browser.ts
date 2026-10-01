@@ -145,8 +145,22 @@ test("detail text edits save directly, cancel, and retain rejected drafts for re
   await expect(
     table.getByRole("button", { name: "Edit status", exact: true })
   ).toHaveCount(0)
+  await page.getByRole("button", { name: "Close record details" }).click()
+  await page.getByRole("button", { name: "Edit table cells", exact: true }).click()
+  const row = table.getByRole("row").filter({ hasText: "A better title" })
+  await row.getByRole("button", { name: "Edit title", exact: true }).click()
+  const tableInput = table.getByRole("textbox", { name: "Edit title" })
+  rejectSave = true
+  await tableInput.fill("Retried in the table")
+  await tableInput.press("Enter")
+  await expect(tableInput).toHaveAttribute("aria-invalid", "true")
+  rejectSave = false
+  await table.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect.poll(async () => (await data()).title).toBe("Retried in the table")
+  await expect(page.getByRole("button", { name: "Close record details" })).toBeHidden()
+  await page.getByRole("button", { name: "Stop editing table cells", exact: true }).click()
   await page.reload()
-  await expect(title).toHaveText("A better title", { timeout: 30_000 })
+  await expect(table.getByRole("cell", { name: "Retried in the table", exact: true })).toBeVisible({ timeout: 30_000 })
 })
 
 test("pickers open in one click, cancel drafts, and keep link navigation separate", async ({

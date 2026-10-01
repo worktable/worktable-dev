@@ -1,3 +1,4 @@
+import { verifyProductFontParity } from "../../../scripts/product-fonts.ts"
 import {
   chmodSync,
   copyFileSync,
@@ -52,6 +53,9 @@ function sourceTreeIsDirty(): boolean {
       "plugins/worktable/skill-inventory.json",
       "plugins/worktable/LICENSE",
       "scripts/build-release.ts",
+      "scripts/preview-runtime.ts",
+      "scripts/product-fonts.ts",
+      "apps/desktop/ui/fonts/GeneralSans-LICENSE.txt",
       "scripts/release-archive.py",
       "scripts/release-source.ts",
       "scripts/release-licenses.ts",
@@ -163,6 +167,15 @@ const targetBinary = join(binaryRoot, `worktable-${hostTuple}`)
 copyFileSync(join(extractRoot, "bin", "worktable"), targetBinary)
 chmodSync(targetBinary, 0o755)
 copyFileSync(manifestPath, join(runtimeRoot, "manifest.json"))
+cpSync(
+  join(extractRoot, "preview-runtime"),
+  join(runtimeRoot, "preview-runtime"),
+  { recursive: true }
+)
+verifyProductFontParity(
+  join(appRoot, "ui/fonts"),
+  join(runtimeRoot, "preview-runtime")
+)
 cpSync(join(extractRoot, "web"), join(runtimeRoot, "web"), { recursive: true })
 cpSync(join(extractRoot, "connector"), join(runtimeRoot, "connector"), {
   recursive: true,

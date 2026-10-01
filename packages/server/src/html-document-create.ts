@@ -31,6 +31,11 @@ export interface CreateHtmlDocumentInput {
   versionUpdatedBy: string
   /** Private initial content can be published without an edit-history entry. */
   recordVersion?: boolean
+  /** Observe exact saved bytes while the transaction is locked. Must handle its own failures. */
+  onSaved?: (saved: {
+    widget: WidgetFile
+    documentId?: string
+  }) => Promise<void>
 }
 
 export interface CreateHtmlDocumentResult {
@@ -107,30 +112,35 @@ export async function createHtmlDocument(
           if (result.error || !result.data) {
             return { error: result.error ?? "Write failed" }
           }
-          if (input.recordVersion !== false) await recordWidgetVersion(
-            input.spaceId,
-            id,
-            beforeContent,
-            {
-              source: input.versionSource,
-              updatedBy: input.versionUpdatedBy,
-            },
-            {
-              ...(admission ? { documentId: admission.documentId } : {}),
-              ...(storageV2
-                ? {
-                    afterContent: {
-                      html: input.html,
-                      widget: versionableWidget(result.data),
-                      authoredSource: {
-                        htmlBytes: new TextEncoder().encode(input.html),
+          if (input.recordVersion !== false)
+            await recordWidgetVersion(
+              input.spaceId,
+              id,
+              beforeContent,
+              {
+                source: input.versionSource,
+                updatedBy: input.versionUpdatedBy,
+              },
+              {
+                ...(admission ? { documentId: admission.documentId } : {}),
+                ...(storageV2
+                  ? {
+                      afterContent: {
+                        html: input.html,
+                        widget: versionableWidget(result.data),
+                        authoredSource: {
+                          htmlBytes: new TextEncoder().encode(input.html),
+                        },
                       },
-                    },
-                  }
-                : {}),
-            }
-          )
+                    }
+                  : {}),
+              }
+            )
           result.release?.()
+          await input.onSaved?.({
+            widget: result.data,
+            documentId: admission?.documentId,
+          })
           return { data: result.data }
         })
       ),

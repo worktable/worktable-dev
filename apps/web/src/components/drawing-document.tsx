@@ -4,6 +4,8 @@ import { useBlocker, useNavigate } from "@tanstack/react-router"
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query"
 import { createQuickdraw, type Editor } from "@quickdrawjs/core"
 import "@quickdrawjs/core/quickdraw.css"
+import { installDrawingFonts } from "@/lib/drawing-theme"
+import "@/styles/drawing-theme.css"
 import { Download, Image, RotateCw, Copy } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
@@ -13,6 +15,7 @@ import {
   type QuickdrawDocument,
 } from "@worktable/types"
 import { useTheme } from "@/components/theme-provider"
+import { useSpaceEvents } from "@/hooks/use-space-events"
 import { usePageMeta } from "@/hooks/use-page-meta"
 import {
   readEditableDocument,
@@ -28,6 +31,8 @@ import {
 import { documentQueryKeys } from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import { HttpError } from "@/lib/http"
+import { refreshDrawingHistory } from "@/lib/drawing-history"
+import { installDrawingBindings } from "@/lib/drawing-bindings"
 
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob)
@@ -71,6 +76,7 @@ function DrawingEditor({
   const { resolvedTheme } = useTheme()
   const initialTheme = useRef(resolvedTheme)
   const { setPageMeta } = usePageMeta()
+  const { subscribe } = useSpaceEvents(spaceId)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -90,6 +96,8 @@ function DrawingEditor({
     let change = 0
     let saving = false
     let loading = false
+    let refreshRequested = false
+    let refreshing = false
     let conflict = false
     let retries = 0
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -103,8 +111,12 @@ function DrawingEditor({
       readonly: true,
       grid: "dots",
       themeToggle: false,
+      watermark: false,
+      styles: { font: "sans" },
     })
     editor.current = instance.editor
+    const unsubscribeBindings = installDrawingBindings(instance.editor.store)
+    const unsubscribeFonts = installDrawingFonts(instance.editor)
 
     const currentSource = () =>
       JSON.stringify({
@@ -208,6 +220,82 @@ function DrawingEditor({
         console.error("Drawing save failed", cause)
       } finally {
         saving = false
+        void refreshExternal()
+      }
+    }
+    // Read without freezing the canvas. Recheck local activity after the read:
+    // input may start while the server response is in flight.
+    const refreshExternal = async () => {
+      if (
+        !refreshRequested ||
+        refreshing ||
+        disposed ||
+        loading ||
+        saving ||
+        !drawing ||
+        activePointers.size > 0 ||
+        node.querySelector(".qd-text-edit")
+      )
+        return
+      refreshRequested = false
+      refreshing = true
+      const readRevision = revision
+      const readChange = change
+      try {
+        const result = await readEditableDocument(spaceId, documentPath)
+        if (disposed) return
+        if (
+          loading ||
+          saving ||
+          revision !== readRevision ||
+          change !== readChange
+        ) {
+          refreshRequested = true
+          return
+        }
+        if (result.sourceRevision === revision) return
+        if (activePointers.size > 0 || node.querySelector(".qd-text-edit")) {
+          refreshRequested = true
+          return
+        }
+        if (dirty.current) {
+          conflict = true
+          clearTimeout(timer)
+          keepDraft()
+          setConflictError(true)
+          setStatus("Not saved")
+          setError(
+            "This drawing changed elsewhere. Save a copy to keep your changes, then reload."
+          )
+          return
+        }
+        const saved = parseQuickdrawDocument(
+          Uint8Array.from(atob(result.source), (char) => char.charCodeAt(0))
+        )
+        const discarded = refreshDrawingHistory(
+          instance.editor.store,
+          saved.snapshot
+        )
+        instance.editor.emit("history")
+        if (discarded > 0) {
+          toast.info(
+            "Drawing updated. Undo steps that conflict with those changes were cleared."
+          )
+        }
+        drawing = saved
+        revision = result.sourceRevision
+        conflict = false
+        setConflictError(false)
+        setError(null)
+        setTitle(saved.title)
+        setStatus("Saved")
+      } catch (cause) {
+        // A missed refresh must not turn a healthy local document into an error.
+        // Reconnection, the next event, or an explicit reload will retry it.
+        console.error("Drawing refresh failed", cause)
+      } finally {
+        refreshing = false
+        if (refreshRequested) void refreshExternal()
       }
     }
     const load = async (recoverDraft: boolean) => {
@@ -285,6 +373,7 @@ function DrawingEditor({
       } finally {
         loading = false
         if (!disposed && drawing) instance.editor.setReadonly(false)
+        void refreshExternal()
       }
       if (recoverDraft && dirty.current && !conflict) scheduleSave()
     }
@@ -363,6 +452,20 @@ function DrawingEditor({
       },
       { source: "user" }
     )
+    const unsubscribeEvents = subscribe((message) => {
+      if (
+        message.type === "subscribed" ||
+        (message.type === "doc_update" &&
+          (!message.docPath || message.docPath === documentPath))
+      ) {
+        refreshRequested = true
+        void refreshExternal()
+      }
+    })
+    const unsubscribeEditing = instance.editor.on(
+      "edit",
+      () => void refreshExternal()
+    )
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.target !== node &&
@@ -378,16 +481,22 @@ function DrawingEditor({
     const onPointerEnd = (event: PointerEvent) => {
       activePointers.delete(event.pointerId)
       if (activePointers.size === 0 && dirty.current) scheduleSave()
+      void refreshExternal()
     }
     const onOnline = () => {
       retries = 0
       if (dirty.current) scheduleSave()
+      refreshRequested = true
+      void refreshExternal()
     }
     const onPageHide = () => keepDraft()
     const onHide = () => {
       if (document.visibilityState === "hidden") {
         activePointers.clear()
         keepDraft()
+      } else {
+        refreshRequested = true
+        void refreshExternal()
       }
     }
     node.addEventListener("pointerdown", onPointerDown)
@@ -408,6 +517,10 @@ function DrawingEditor({
       clearTimeout(timer)
       unsubscribe()
       unregisterSave()
+      unsubscribeEvents()
+      unsubscribeEditing()
+      unsubscribeBindings()
+      unsubscribeFonts()
       node.removeEventListener("pointerdown", onPointerDown)
       window.removeEventListener("pointerup", onPointerEnd)
       window.removeEventListener("pointercancel", onPointerEnd)
@@ -421,7 +534,7 @@ function DrawingEditor({
       node.removeEventListener("keydown", stopKeys)
       instance.destroy()
     }
-  }, [workspaceId, spaceId, documentPath, queryClient, navigate])
+  }, [workspaceId, spaceId, documentPath, queryClient, navigate, subscribe])
 
   useEffect(() => {
     editor.current?.setTheme(resolvedTheme)
@@ -481,6 +594,15 @@ function DrawingEditor({
           <span role="alert" className="min-w-0 flex-1">
             {error}
           </span>
+          {conflictError && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => actions.current?.reload()}
+            >
+              Reload drawing
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() =>
@@ -501,7 +623,7 @@ function DrawingEditor({
       )}
       <div
         ref={container}
-        className="relative min-h-96 flex-1"
+        className="worktable-drawing relative min-h-96 flex-1"
         aria-label="Drawing canvas"
       />
     </section>

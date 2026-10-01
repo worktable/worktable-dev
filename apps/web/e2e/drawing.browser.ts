@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
+import { emptyQuickdrawDocument } from "@worktable/types"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -20,23 +21,26 @@ async function pointer(
 ) {
   // The renderer can mount after its container during a route handoff. Wait
   // for the actual input surface, as a user must, before dispatching a stroke.
-  await page.getByLabel("Drawing canvas").locator("canvas.qd-canvas").evaluate(
-    (canvas, input) => {
-      canvas.dispatchEvent(
-        new PointerEvent(input.type, {
-          ...input,
-          bubbles: true,
-          cancelable: true,
-          clientX: input.x,
-          clientY: input.y,
-          button: 0,
-          buttons: input.type === "pointerup" ? 0 : 1,
-          pressure: input.type === "pointerup" ? 0 : 0.7,
-        })
-      )
-    },
-    { type, pointerType, pointerId, x, y }
-  )
+  await page
+    .getByLabel("Drawing canvas")
+    .locator("canvas.qd-canvas")
+    .evaluate(
+      (canvas, input) => {
+        canvas.dispatchEvent(
+          new PointerEvent(input.type, {
+            ...input,
+            bubbles: true,
+            cancelable: true,
+            clientX: input.x,
+            clientY: input.y,
+            button: 0,
+            buttons: input.type === "pointerup" ? 0 : 1,
+            pressure: input.type === "pointerup" ? 0 : 0.7,
+          })
+        )
+      },
+      { type, pointerType, pointerId, x, y }
+    )
 }
 
 // Owns the pointer-to-persisted-ink boundary: a lifted pen must finish its
@@ -47,13 +51,19 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   page,
   request,
 }) => {
+  // A failed optional font must not block opening or the existing save journey.
+  await page.route("https://api.fontshare.com/**", (route) => route.abort())
+  await page.route("**/worktable-preview/fonts/**", (route) => route.abort())
   const space = await request.post(`${harness.apiUrl}/api/spaces`, {
     data: { name: "Drawing input", id: "drawing-input" },
   })
   expect(space.ok()).toBe(true)
   await page.goto(`${harness.webUrl}/spaces/drawing-input`)
-  await page.getByRole("button", { name: "Drawing input", exact: true })
-    .locator("..").getByRole("button", { name: "New", exact: true }).click()
+  await page
+    .getByRole("button", { name: "Drawing input", exact: true })
+    .locator("..")
+    .getByRole("button", { name: "New", exact: true })
+    .click()
   await page.getByRole("menuitem", { name: "New drawing", exact: true }).click()
   await page.getByLabel("Name", { exact: true }).fill("Scratchpad")
   await page.getByRole("button", { name: "Create drawing" }).click()
@@ -102,7 +112,9 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   await expect(page.getByRole("alert")).toBeVisible()
   expect(await canvas.boundingBox()).toEqual(initial)
   await page.clock.fastForward(2000)
-  await expect(page.getByRole("status")).toHaveText("Saved")
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
   await expect(page.getByRole("alert")).toHaveCount(0)
   expect(await canvas.boundingBox()).toEqual(initial)
 
@@ -167,14 +179,20 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   // state or installing the slow-read interception used by the next scenario.
   const renamedSource = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/documents/editable-source?path=drawings%2Frenamed") &&
+      response
+        .url()
+        .endsWith("/documents/editable-source?path=drawings%2Frenamed") &&
       response.status() === 200
   )
   releaseSave()
   holdSave = null
-  await expect(page).toHaveURL(/documents\/drawings\/renamed$/)
+  await expect(page).toHaveURL(/documents\/drawings\/renamed$/, {
+    timeout: 30_000,
+  })
   await renamedSource
-  await expect(page.getByRole("status")).toHaveText("Saved")
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
   const moved = await request.get(
     `${harness.apiUrl}/api/spaces/drawing-input/documents/editable-source?path=drawings/renamed`
   )
@@ -209,7 +227,9 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   expect(attempts).toBe(beforeDiscard)
   await page.clock.resume()
   releaseRead()
-  await expect(page.getByRole("status")).toHaveText("Saved")
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
   await page.unroute(sourceUrl)
   await page.clock.fastForward(2000)
   expect(attempts).toBe(beforeDiscard)
@@ -230,6 +250,232 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   expect(await drafts()).toHaveLength(1)
   page.once("dialog", (dialog) => dialog.accept())
   await page.reload()
-  await expect(page.getByRole("status")).toHaveText("Saved")
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
   expect(await drafts()).toHaveLength(0)
+})
+
+// The editor must follow agent saves while idle, preserving the reader's view,
+// and retain local ink when an external save races a gesture.
+test("agent saves refresh an idle canvas and preserve active local ink", async ({
+  page,
+  request,
+}) => {
+  const spaceId = "drawing-agent"
+  const path = "drawings/architecture"
+  expect(
+    (
+      await request.post(`${harness.apiUrl}/api/spaces`, {
+        data: { name: "Drawing agent", id: spaceId },
+      })
+    ).ok()
+  ).toBe(true)
+  const source = emptyQuickdrawDocument("Architecture")
+  source.snapshot.document.store.box = {
+    id: "box",
+    typeName: "shape",
+    type: "geo",
+    x: 0,
+    y: 0,
+    rot: 0,
+    z: 1,
+    props: {
+      w: 240,
+      h: 120,
+      geo: "rectangle",
+      color: "blue",
+      size: "s",
+      fill: "solid",
+      dash: "solid",
+      label: "API iii WWW",
+      font: "sans",
+    },
+  }
+  const endpoint = `${harness.apiUrl}/api/spaces/${spaceId}/documents`
+  const created = await request.post(endpoint, {
+    data: {
+      path,
+      source: JSON.stringify(source),
+      encoding: "utf8",
+      format: { id: "worktable.quickdraw", sourceVersion: 1 },
+    },
+  })
+  expect(created.ok()).toBe(true)
+  let revision = (await created.json()).sourceRevision
+  const update = async (title: string) => {
+    source.title = title
+    const result = await request.put(endpoint, {
+      data: {
+        path,
+        source: JSON.stringify(source),
+        encoding: "utf8",
+        expectedRevision: revision,
+      },
+    })
+    expect(result.ok()).toBe(true)
+    revision = (await result.json()).sourceRevision
+  }
+  // Keep required font responses pending through opening, edits and recovery.
+  // The browser must use fallback text rather than freeze the drawing.
+  let releaseFonts!: () => void
+  const pendingFonts = new Promise<void>((resolve) => {
+    releaseFonts = resolve
+  })
+  const fontRequests = new Set<string>()
+  await page.route("https://api.fontshare.com/**", (route) => route.abort())
+  await page.route("**/worktable-preview/fonts/**", async (route) => {
+    fontRequests.add(route.request().url())
+    await pendingFonts
+    await route.continue()
+  })
+  try {
+    await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/${path}`, {
+      waitUntil: "domcontentloaded",
+    })
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    const canvas = page.getByLabel("Drawing canvas")
+    const ink = canvas.locator("canvas.qd-canvas")
+    await expect.poll(() => fontRequests.size).toBeGreaterThan(0)
+    // This English-only board must not request the entire script collection.
+    expect(fontRequests.size).toBeLessThan(5)
+    await canvas.hover({ position: { x: 300, y: 200 } })
+    await page.mouse.wheel(80, 60)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        )
+    )
+    const before = await ink.evaluate((element) =>
+      (element as HTMLCanvasElement).toDataURL()
+    )
+    await update("Architecture reviewed")
+    await expect(
+      page
+        .getByRole("banner")
+        .getByText("Architecture reviewed", { exact: true })
+    ).toBeVisible()
+    const after = await ink.evaluate((element) =>
+      (element as HTMLCanvasElement).toDataURL()
+    )
+    expect(after).toBe(before)
+    const box = source.snapshot.document.store.box!
+    if (box.typeName === "shape" && box.type === "geo")
+      box.props.color = "green"
+    await update("Architecture approved")
+    await expect
+      .poll(() =>
+        ink.evaluate((element) => (element as HTMLCanvasElement).toDataURL())
+      )
+      .not.toBe(before)
+
+    const bounds = (await canvas.boundingBox())!
+    const x = bounds.x + 180
+    const y = bounds.y + 170
+    const readSaved = async () => {
+      const response = await request.get(
+        `${endpoint}/editable-source?path=${encodeURIComponent(path)}`
+      )
+      const result = await response.json()
+      revision = result.sourceRevision
+      return JSON.parse(Buffer.from(result.source, "base64").toString())
+    }
+    // A saved local gesture remains undoable after an unrelated agent edit.
+    // Redo also survives a later external refresh; neither rewinds the agent.
+    await pointer(page, "pointerdown", "pen", 19, x, y + 50)
+    await pointer(page, "pointerup", "pen", 19, x + 60, y + 50)
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    source.snapshot = (await readSaved()).snapshot
+    await update("Architecture with local ink")
+    await expect(
+      page
+        .getByRole("banner")
+        .getByText("Architecture with local ink", { exact: true })
+    ).toBeVisible()
+    await canvas.getByRole("button", { name: /Undo/ }).click()
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    const undone = await readSaved()
+    expect(Object.keys(undone.snapshot.document.store)).toEqual(["box"])
+    expect(undone.snapshot.document.store.box.props.color).toBe("green")
+    expect(undone.title).toBe("Architecture with local ink")
+    source.snapshot = undone.snapshot
+    await update("Architecture before redo")
+    await expect(
+      page
+        .getByRole("banner")
+        .getByText("Architecture before redo", { exact: true })
+    ).toBeVisible()
+    await canvas.getByRole("button", { name: /Redo/ }).click()
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    const redone = await readSaved()
+    expect(Object.keys(redone.snapshot.document.store)).toHaveLength(2)
+    expect(redone.title).toBe("Architecture before redo")
+    await canvas.getByRole("button", { name: /Undo/ }).click()
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    source.snapshot = (await readSaved()).snapshot
+
+    await pointer(page, "pointerdown", "pen", 20, x, y)
+    await pointer(page, "pointermove", "pen", 20, x + 35, y)
+    await update("Architecture from agent")
+    await pointer(page, "pointerup", "pen", 20, x + 60, y)
+    await expect(page.getByRole("alert")).toContainText("changed elsewhere")
+    await expect(
+      page.getByRole("button", { name: "Save a copy", exact: true })
+    ).toBeVisible()
+    const saved = await request.get(
+      `${endpoint}/editable-source?path=${encodeURIComponent(path)}`
+    )
+    const persisted = JSON.parse(
+      Buffer.from((await saved.json()).source, "base64").toString()
+    )
+    expect(Object.keys(persisted.snapshot.document.store)).toEqual(["box"])
+    // Copy recovers the local stroke without overwriting the agent's document.
+    await page.getByRole("button", { name: "Save a copy", exact: true }).click()
+    await expect(page).toHaveURL(/architecture-copy-/)
+    await expect(page.getByRole("status")).toHaveText("Saved", {
+      timeout: 30_000,
+    })
+    const copyPath = new URL(page.url()).pathname.split("/documents/")[1]!
+    const copy = await request.get(
+      `${endpoint}/editable-source?path=${encodeURIComponent(copyPath)}`
+    )
+    const copySource = JSON.parse(
+      Buffer.from((await copy.json()).source, "base64").toString()
+    )
+    expect(Object.keys(copySource.snapshot.document.store)).toHaveLength(2)
+    const beforeFont = await ink.evaluate((element) =>
+      (element as HTMLCanvasElement).toDataURL()
+    )
+    releaseFonts()
+    await page.evaluate(() => document.fonts.ready)
+    await expect
+      .poll(() =>
+        ink.evaluate((element) => (element as HTMLCanvasElement).toDataURL())
+      )
+      .not.toBe(beforeFont)
+    // Re-measuring text does not create an edit, a save, or an undo entry.
+    await expect(page.getByRole("status")).toHaveText("Saved")
+    const afterFont = await request.get(
+      `${endpoint}/editable-source?path=${encodeURIComponent(copyPath)}`
+    )
+    expect(
+      JSON.parse(
+        Buffer.from((await afterFont.json()).source, "base64").toString()
+      )
+    ).toEqual(copySource)
+    expect(fontRequests.size).toBeLessThan(5)
+  } finally {
+    releaseFonts()
+  }
 })

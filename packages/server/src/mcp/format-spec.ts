@@ -21,7 +21,7 @@ Drawing source is a strict JSON envelope saved as a .quickdraw file:
 
 {"type":"worktable.quickdraw","version":1,"title":"Scratchpad","snapshot":{"document":{"store":{}}}}
 
-Use worktable_documents_write with request.action="create", spaceId, an extensionless path, format={"id":"worktable.quickdraw","sourceVersion":1}, and source as a JSON string (encoding="utf8"). To edit, use worktable_documents_read with request.action="read_source", decode its base64 source, preserve existing records, and replace through worktable_documents_write with request.action="replace" and expectedRevision set to the returned sourceRevision. A conflict requires rereading and reconciling; never blindly retry a replacement with a newer revision. These APIs require V2 storage.
+Prefer worktable_drawings_read for inspect/query/render/changes and worktable_drawings_write for create/edit/undo/redo. Read worktable_guidance action="drawings" for typed operations, attached connectors, previews, retry and targeted undo. For exact source control, use worktable_documents_write with request.action="create", spaceId, an extensionless path, format={"id":"worktable.quickdraw","sourceVersion":1}, and source as a JSON string (encoding="utf8"). To edit raw source, use worktable_documents_read with request.action="read_source", decode its base64 source, preserve existing records, and replace through worktable_documents_write with request.action="replace" and expectedRevision set to the returned sourceRevision. A conflict requires rereading and reconciling; never blindly retry a replacement with a newer revision. These APIs require V2 storage.
 
 snapshot.document.store maps each record's unique id to that record. All shapes have id, typeName="shape", type, x, y, rot (radians), z (stacking order), and props. For example, this complete freehand stroke can be added under the key "ink-1":
 
@@ -31,11 +31,11 @@ Supported shape types and props:
 - draw/highlight: color, size, pts (flat local x,y,pressure triples), optional done, isPen, dash.
 - text: color, size, text, font; optional positive scale, positive w, autosize, align (start/middle/end).
 - note: color, size, text, font; optional positive scale.
-- line/arrow: color, size, dx, dy, dash; optional bend.
+- line/arrow: color, size, dx, dy, dash; optional bend, startBinding and endBinding. Each binding is {shapeId,anchor}, where shapeId identifies an existing geo/image/text/note shape and anchor is top/right/bottom/left/center. Bound endpoints follow target changes in drawing tools and canvas; raw source replacements must supply consistent endpoint geometry.
 - geo: color, size, positive w and h, geo (rectangle/ellipse/triangle/diamond/hexagon/star), dash, fill (none/semi/solid/pattern), font; optional label and labelSize.
 - image: positive w and h, assetId referencing an asset record.
 
 Colors: black, grey, light-violet, violet, blue, light-blue, yellow, orange, green, light-green, light-red, red. Sizes: s/m/l/xl. Fonts: draw/sans/serif/mono. Dash: draw/solid/dashed/dotted. Assets have only id, typeName="asset", positive w and h, and src as an embedded base64 PNG/JPEG/WebP/GIF data URL. Remote URLs and SVG are rejected. No extra properties are accepted. IDs must match store keys, be 1–200 characters, and cannot be __proto__, constructor, or prototype. Numbers must be finite and within ±10,000,000. Title is 1–200 nonblank characters, text/labels up to 50,000 characters, pts up to 300,000 numbers, total up to 5,000 records and 8 MiB UTF-8 source.
 
-Typed text is searchable; freehand marks require a PNG export or browser inspection to interpret. There is no OCR or live merging. Ask the human to use Reload drawing after your edit; unsaved conflicting ink can be kept with Save a copy. Each autosave retains a full source version under the Worktable's history retention policy, so embedded images can grow history quickly.
-`;
+Typed text is searchable; freehand marks require a PNG preview or browser inspection to interpret. There is no OCR or live merging. Clean idle canvases refresh after external edits, retaining compatible local undo steps. Conflicting unsaved ink can be kept with Save a copy before Reload drawing. Each autosave retains a full source version under the Worktable's history retention policy, so embedded images can grow history quickly.
+`

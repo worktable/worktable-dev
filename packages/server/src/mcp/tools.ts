@@ -1,3 +1,4 @@
+import { takeResultMedia } from "./media.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { ok, mkAuthErr, mkErr } from "./helpers.ts"
 import {
@@ -21,6 +22,8 @@ import {
   DocumentsWriteInput,
   DocsReadInput,
   DocsWriteInput,
+  DrawingsReadInput,
+  DrawingsWriteInput,
   HtmlReadInput,
   HtmlWriteInput,
   RecordsReadInput,
@@ -83,7 +86,20 @@ export function mcpToolAuthorized(
 ): boolean {
   const { id } = resolvePublicOperation(toolName, request)
   const required = OPERATION_DEFINITIONS[id].scope
-  return !required || hasScope(scopes, required)
+  if (
+    (id === "html.create" || id === "html.update") &&
+    request.preview !== undefined &&
+    !hasScope(scopes, "widgets:read")
+  )
+    return false
+  return (
+    (!required || hasScope(scopes, required)) &&
+    (!(
+      id.startsWith("drawings.") &&
+      OPERATION_DEFINITIONS[id].mutation !== "none"
+    ) ||
+      hasScope(scopes, "documents:read"))
+  )
 }
 
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
@@ -91,15 +107,19 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
     "Orient to the workspace or a Space, search scoped context, or inspect a Space index.",
   worktable_spaces: "Create a Worktable Space.",
   worktable_documents_read:
-    "List every document format and safely read supported formats through one format-neutral view.",
+    "List every document format, safely read source, or render drawings and HTML as model-visible PNG previews with action render.",
   worktable_documents_write:
     "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions.",
   worktable_docs_read: "List or read Worktable Docs.",
   worktable_docs_write: "Create, replace, patch, or rename Worktable Docs.",
+  worktable_drawings_read:
+    "Inspect drawings as objects and PNG previews, query text/type/region, render PNG or SVG, or list reversible agent changes. Start with guidance action drawings. Shared document tools list, move, archive and version drawings.",
+  worktable_drawings_write:
+    "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request.",
   worktable_html_read:
-    "Return the HTML runtime contract, list HTML Docs, or read one.",
+    "Return the HTML runtime contract, list or read HTML Docs, or render a read-only PNG preview. Rendering reports incomplete loads and requires Records read scope for Records data.",
   worktable_html_write:
-    "Create, update, rename, move, archive, or restore Worktable HTML Docs.",
+    "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save.",
   worktable_records_read:
     "List Record collections, query Records, or read one.",
   worktable_records_write:
@@ -117,7 +137,7 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_delete:
     "Permanently delete a Worktable document folder, one Doc, one HTML Doc, or one Record.",
   worktable_guidance:
-    "Read the immutable Worktable content format specification.",
+    "Read the Worktable format specification or drawing authoring guide and examples.",
   worktable_mermaid: "Validate Mermaid source or render it as an SVG preview.",
 }
 
@@ -128,6 +148,8 @@ export const TOOL_TITLES: Record<WorktableToolName, string> = {
   worktable_documents_write: "Write Worktable documents",
   worktable_docs_read: "Read Worktable Docs",
   worktable_docs_write: "Write Worktable Docs",
+  worktable_drawings_read: "Read Worktable drawings",
+  worktable_drawings_write: "Edit Worktable drawings",
   worktable_html_read: "Read Worktable HTML Docs",
   worktable_html_write: "Write Worktable HTML Docs",
   worktable_records_read: "Read Worktable Records",
@@ -266,7 +288,15 @@ export function registerTools(
     : null
   if (options?.urlOrigin) {
     const resource = new URL(options.urlOrigin)
-    if (resource.protocol === "https:" && !resource.username && !resource.password && !resource.search && !resource.hash && /^\/api\/mcp\/d\/[a-f0-9]{32}$/.test(resource.pathname)) configuredUrlOrigin = resource.href
+    if (
+      resource.protocol === "https:" &&
+      !resource.username &&
+      !resource.password &&
+      !resource.search &&
+      !resource.hash &&
+      /^\/api\/mcp\/d\/[a-f0-9]{32}$/.test(resource.pathname)
+    )
+      configuredUrlOrigin = resource.href
   }
   if (options?.urlOrigin && !configuredUrlOrigin) {
     throw new Error("urlOrigin must be an absolute HTTP(S) URL")
@@ -279,6 +309,7 @@ export function registerTools(
     async (
       { request }: CapabilityInput,
       extra: {
+        signal?: AbortSignal
         _meta?: { progressToken?: string | number }
         sendNotification: (notification: {
           method: "notifications/progress"
@@ -294,10 +325,16 @@ export function registerTools(
       const definition = OPERATION_DEFINITIONS[operation.id]
       if (!mcpToolAuthorized(toolName, request, scopes)) {
         const urlOrigin = configuredUrlOrigin ?? resolveLocalWorkspaceOrigin()
+        const requiredScope =
+          definition.scope && !hasScope(scopes, definition.scope)
+            ? definition.scope
+            : operation.id.startsWith("html.")
+              ? "widgets:read"
+              : "documents:read"
         return mkAuthErr(
-          `Insufficient scope: ${toolName} action "${String(request.action)}" requires "${definition.scope}". This token is not authorized for that action.`,
+          `Insufficient scope: ${toolName} action "${String(request.action)}" requires "${requiredScope}". This token is not authorized for that action.`,
           urlOrigin,
-          definition.scope ?? ""
+          requiredScope
         )
       }
       try {
@@ -307,6 +344,7 @@ export function registerTools(
           principal: identity?.principal ?? options?.principal,
           identity,
           scopes,
+          signal: extra?.signal,
           canReadRecords: hasScope(scopes, "records:read"),
           onThreadProgress: async ({ activity }) => {
             const progressToken = extra._meta?.progressToken
@@ -327,15 +365,17 @@ export function registerTools(
             })
           },
         })
+        const { data, content } = takeResultMedia(result)
         const linked = addUrlToSendInChat(
           definition.resultLink,
           operation.args,
-          result,
+          data,
           urlOrigin
         )
         const publicResult = publicizeResult(operation.id, linked)
         assertPublicOperationOutput(operation.id, publicResult)
-        return ok(publicResult)
+        const response = ok(publicResult)
+        return { ...response, content: [...response.content, ...content] }
       } catch (error) {
         if (error instanceof PublicOperationOutputError) {
           console.error(`[mcp] ${error.message}`)
@@ -424,6 +464,27 @@ export function registerTools(
       outputSchema: WORKTABLE_OUTPUT_SCHEMAS.worktable_docs_write,
     },
     handle("worktable_docs_write")
+  )
+  server.registerTool(
+    "worktable_drawings_read",
+    {
+      ...toolMetadata("worktable_drawings_read", READ_ONLY_ANNOTATIONS),
+      inputSchema: DrawingsReadInput,
+      outputSchema: WORKTABLE_OUTPUT_SCHEMAS.worktable_drawings_read,
+    },
+    handle("worktable_drawings_read")
+  )
+  server.registerTool(
+    "worktable_drawings_write",
+    {
+      ...toolMetadata("worktable_drawings_write", {
+        ...WRITE_ANNOTATIONS,
+        idempotentHint: true,
+      }),
+      inputSchema: DrawingsWriteInput,
+      outputSchema: WORKTABLE_OUTPUT_SCHEMAS.worktable_drawings_write,
+    },
+    handle("worktable_drawings_write")
   )
   server.registerTool(
     "worktable_html_read",

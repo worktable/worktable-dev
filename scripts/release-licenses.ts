@@ -10,14 +10,23 @@ import {
 // and Desktop fonts. Public AGPL builds also retain their root LICENSE/NOTICE;
 // the private checkout is not relicensed by this packaging helper.
 const appLicenses = ["packages/ui/LICENSE", "packages/hosted-contract/LICENSE"]
+const drawingLicenses = [
+  "apps/desktop/ui/fonts/GeneralSans-LICENSE.txt",
+  "scripts/licenses/NotoSans-OFL.txt",
+  "scripts/licenses/noto-serif-OFL.txt",
+  "scripts/licenses/noto-sans-mono-OFL.txt",
+  "scripts/licenses/caveat-OFL.txt",
+  "scripts/licenses/noto-sans-symbols-2-OFL.txt",
+]
 const skillLicense = "plugins/worktable/LICENSE"
 export const releaseLicenses = {
-  cli: [...appLicenses, skillLicense],
-  server: appLicenses,
+  cli: [...appLicenses, skillLicense, ...drawingLicenses],
+  server: [...appLicenses, ...drawingLicenses],
   skills: [skillLicense],
   desktop: [
     ...appLicenses,
     skillLicense,
+    ...drawingLicenses,
     "apps/desktop/ui/fonts/Fraunces-OFL.txt",
     "apps/desktop/ui/fonts/JetBrainsMono-OFL.txt",
   ],

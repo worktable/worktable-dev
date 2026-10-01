@@ -1,3 +1,4 @@
+import { verifyProductFontParity } from "../../../scripts/product-fonts.ts"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { resolveDesktopBundlePath } from "./release-paths"
@@ -59,6 +60,8 @@ for (const path of [
   shellBinary,
   sidecarBinary,
   join(runtimeRoot, "manifest.json"),
+  join(runtimeRoot, "preview-runtime", "manifest.json"),
+  join(runtimeRoot, "preview-runtime", "driver", "index.js"),
   join(runtimeRoot, "web", "_shell.html"),
   join(runtimeRoot, "connector", "connect.mjs"),
   join(runtimeRoot, "integrations", "worktable-claude-desktop.mcpb"),
@@ -70,6 +73,27 @@ for (const path of [
 ]) {
   if (!existsSync(path)) throw new Error(`Bundle is missing ${path}`)
 }
+
+verifyProductFontParity(
+  join(import.meta.dir, "../ui/fonts"),
+  join(runtimeRoot, "preview-runtime")
+)
+
+const previewManifest = JSON.parse(
+  readFileSync(join(runtimeRoot, "preview-runtime", "manifest.json"), "utf8")
+)
+const previewBrowser = join(
+  runtimeRoot,
+  "preview-runtime",
+  previewManifest.executable
+)
+if (
+  !existsSync(previewBrowser) ||
+  previewManifest.platform !== "darwin" ||
+  previewManifest.playwrightVersion !== "1.61.1"
+)
+  throw new Error("Desktop preview browser is missing or mismatched")
+run(["codesign", "--verify", "--strict", "--verbose=2", previewBrowser])
 
 verifyReleaseLicenses(join(import.meta.dir, "../../.."), runtimeRoot, "desktop")
 run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", bundle])
@@ -134,7 +158,12 @@ if (production) {
       "Production bundle verification requires APPLE_SIGNING_IDENTITY and APPLE_TEAM_ID"
     )
   }
-  for (const signedPath of [bundle, shellBinary, sidecarBinary]) {
+  for (const signedPath of [
+    bundle,
+    shellBinary,
+    sidecarBinary,
+    previewBrowser,
+  ]) {
     const display = run(["codesign", "--display", "--verbose=4", signedPath])
     const details = `${display.stdout}\n${display.stderr}`
     assertDeveloperIdSignature(

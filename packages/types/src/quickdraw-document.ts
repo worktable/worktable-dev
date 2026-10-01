@@ -54,8 +54,22 @@ const stroke = z
     isPen: z.boolean().optional(),
   })
   .strict()
+export const DrawingBindingSchema = z
+  .object({
+    shapeId: id,
+    anchor: z.enum(["top", "right", "bottom", "left", "center"]),
+  })
+  .strict()
 const line = z
-  .object({ ...ink, dx: number, dy: number, bend: number.optional(), dash })
+  .object({
+    ...ink,
+    dx: number,
+    dy: number,
+    bend: number.optional(),
+    dash,
+    startBinding: DrawingBindingSchema.optional(),
+    endBinding: DrawingBindingSchema.optional(),
+  })
   .strict()
 const shapeSchema = z.discriminatedUnion("type", [
   z.object({ ...shape, type: z.literal("draw"), props: stroke }).strict(),
@@ -154,6 +168,27 @@ export const QuickdrawDocumentSchema = z
           code: "custom",
           message: "Drawing object ID does not match its key",
         })
+      if (
+        record.typeName === "shape" &&
+        (record.type === "arrow" || record.type === "line")
+      ) {
+        for (const binding of [
+          record.props.startBinding,
+          record.props.endBinding,
+        ]) {
+          if (!binding) continue
+          const target = records[binding.shapeId]
+          if (
+            target?.typeName !== "shape" ||
+            !["geo", "image", "text", "note"].includes(target.type)
+          )
+            ctx.addIssue({
+              code: "custom",
+              message:
+                "Drawing connector must bind to an existing box, image, text, or note",
+            })
+        }
+      }
       if (
         record.typeName === "shape" &&
         record.type === "image" &&

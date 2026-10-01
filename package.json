@@ -1,6 +1,6 @@
 {
   "name": "worktable",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "license": "AGPL-3.0-only",
   "workspaces": [
@@ -67,7 +67,9 @@
     "test:policy": "bun run scripts/testing/policy.ts",
     "test:health": "bun run scripts/testing/history.ts test-results/canonical",
     "verify:full": "bun run typecheck && bun run typecheck:lab && bun run test:policy && bun run test:full && bun run release:lab",
-    "lab": "bun run scripts/lab/index.ts"
+    "lab": "bun run scripts/lab/index.ts",
+    "generate:previews": "bun scripts/generate-drawing-fonts.ts && bun scripts/generate-drawing-preview.ts",
+    "check:previews": "bun scripts/generate-drawing-fonts.ts --check && bun scripts/generate-drawing-preview.ts --check"
   },
   "devDependencies": {
     "@stryker-mutator/core": "9.6.1",

@@ -596,3 +596,33 @@ test("release metadata must match independently captured public identity", () =>
     }
   )
 })
+
+test("drawing font notices ship unchanged with every renderer distribution", () => {
+  const destination = mkdtempSync(join(tmpdir(), "worktable-drawing-notices-"))
+  const root = join(import.meta.dir, "..")
+  try {
+    const notice = "scripts/licenses/NotoSans-OFL.txt"
+    const upstream = readFileSync(
+      join(root, "node_modules/@fontsource/noto-sans/LICENSE")
+    )
+    expect(readFileSync(join(root, notice))).toEqual(upstream)
+    for (const kind of ["cli", "server", "desktop"] as const) {
+      const output = join(destination, kind)
+      copyReleaseLicenses(root, output, kind)
+      expect(readFileSync(join(output, "licenses", notice))).toEqual(upstream)
+      for (const name of [
+        "caveat-OFL.txt",
+        "noto-serif-OFL.txt",
+        "noto-sans-mono-OFL.txt",
+        "noto-sans-symbols-2-OFL.txt",
+      ]) {
+        const notice = `scripts/licenses/${name}`
+        expect(readFileSync(join(output, "licenses", notice))).toEqual(
+          readFileSync(join(root, notice))
+        )
+      }
+    }
+  } finally {
+    rmSync(destination, { recursive: true, force: true })
+  }
+})

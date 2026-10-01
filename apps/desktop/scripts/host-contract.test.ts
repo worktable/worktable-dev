@@ -218,6 +218,10 @@ describe("desktop package contracts", () => {
   test("creates signed updater artifacts only in protected release builds", () => {
     expect(releaseConfig).toEqual({
       bundle: { createUpdaterArtifacts: true },
+      build: {
+        beforeBuildCommand:
+          "bun run scripts/verify-fonts.ts && bun run scripts/sign-preview-runtime.ts --release",
+      },
       $schema: "https://schema.tauri.app/config/2",
     })
   })

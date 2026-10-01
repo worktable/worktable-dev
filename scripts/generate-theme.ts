@@ -802,6 +802,10 @@ export function renderMermaidTs(): string {
   return `// ${generatedNote}\nexport const MERMAID_CANVAS = ${JSON.stringify({ light: themeConfig.mermaid.light.canvas, dark: themeConfig.mermaid.dark.canvas }, null, 2)} as const\n\nexport const MERMAID_THEME_VARIABLES = ${JSON.stringify(variables, null, 2)} as const\n\nexport const MERMAID_THEME_CSS = ${JSON.stringify({ light: renderMermaidCss("light"), dark: renderMermaidCss("dark") }, null, 2)} as const\n`
 }
 
+export function renderDrawingTs(): string {
+  return `// ${generatedNote}\nexport const DRAWING_THEME = ${JSON.stringify(themeConfig.drawing, null, 2)} as const\n`
+}
+
 export const generatedThemeOutputs = new Map([
   ["packages/ui/src/styles/theme.generated.css", renderThemeCss()],
   ["apps/web/src/styles/blocknote-theme.generated.css", renderBlockNoteCss()],
@@ -810,6 +814,7 @@ export const generatedThemeOutputs = new Map([
     renderAuthKitCss(),
   ]),
   ["packages/types/src/mermaid-theme.generated.ts", renderMermaidTs()],
+  ["packages/types/src/drawing-theme.generated.ts", renderDrawingTs()],
 ])
 
 if (import.meta.main) {

@@ -24,8 +24,16 @@ name. For a fork, use your fork's URL and its full commit hash.
 ```sh
 export WORKTABLE_PUBLIC_SOURCE_REPOSITORY=https://github.com/worktable/worktable-dev
 export WORKTABLE_PUBLIC_SOURCE_COMMIT="$(git rev-parse HEAD)"
+bun scripts/provision-product-font.ts
 bun run release:lab
 ```
+
+The provisioning command downloads the reviewed General Sans variable WOFF2
+from its official Fontshare URL and verifies a pinned SHA-256 digest before
+writing the ignored local font file. It is reusable by local, CI and Desktop
+build preparation; an existing differing file is preserved and reported.
+The artifact CI job runs this step explicitly. Release assembly itself remains
+offline for fonts and rejects a missing local asset. Rendering never downloads fonts.
 
 `release:lab` builds Linux CLI and skill-installer bundles for the host architecture,
 plus connector and plugin artifacts, in `dist/lab-releases`. Run
@@ -96,3 +104,52 @@ Release automation verifies the successful originating GitHub run before reusing
 its source checks. Missing or incompatible proof runs those checks again.
 Release candidate validation, compiled artifact smoke tests, signing, publication
 and installed updater checks remain separate release guarantees.
+
+## Managed visual preview runtime
+
+Normal CLI and server archives include `preview-runtime/`: the pinned
+Playwright driver, its matching Chromium headless shell, upstream notices and a
+version/platform manifest. Desktop preparation copies that same runtime into
+its resources. Release assembly downloads browser distributions for each target;
+render requests never install software or download a browser. Skill-installer
+archives remain independent and do not contain a browser.
+
+The server owns Chromium through Bun's native process API and connects through
+Playwright's public CDP transport over a native WebSocket. The debugging endpoint
+binds only loopback on an ephemeral port; its random browser path stays inside a
+private temporary profile. Browser processes receive a small environment
+allowlist, without application credentials. This avoids Bun's extra-file-descriptor
+child-process transport issue; each job still receives a fresh isolated context.
+
+Preview workers require Chromium's OS sandbox. A host without the necessary
+sandbox or Linux shared libraries reports preview unavailable; Worktable does
+not retry with sandboxing disabled. Provision Linux browser dependencies and
+sandbox support when preparing the host. The runtime manifest records its
+installed size and browser executable checksum; the release archive checksum
+covers the complete driver and browser. Release assembly also requires the
+unmodified local General Sans WOFF2 described in
+[the font provisioning guide](../apps/desktop/ui/fonts/README.md). It packages
+that font with its source, license and SHA-256 identity under
+`preview-runtime/fonts/`. Desktop verifies that its shell uses the same bytes.
+Other fonts remain embedded application assets. Preview jobs never download fonts;
+public-source development without the optional local file uses a shared fallback.
+
+Development uses the pinned local Playwright package and previously installed
+browser from the development prerequisites. It uses the same sandbox policy as
+installed builds. Desktop release verification additionally checks that the
+embedded browser executable has a valid code signature; native capture and
+notarization must be exercised on macOS.
+
+Before Desktop bundling, native preview libraries and the browser are signed
+inside out while preserving Chromium's existing entitlements. Protected release
+builds require `APPLE_SIGNING_IDENTITY` to name a Developer ID Application
+identity already available in the build keychain; they fail rather than
+substituting an ad hoc identity. Development builds retain the existing ad hoc
+signing convention. The runtime manifest retains the original executable digest
+and records the digest after signing.
+
+The pinned Linux ARM64 headless archive omits standalone notices. Release
+assembly therefore obtains the full Chromium archive at the exact same revision
+and extracts its generated credits from `resources.pak`. Only those credits and
+their source/hash provenance are added to the headless runtime; the full browser
+is retained in the build cache rather than shipped.

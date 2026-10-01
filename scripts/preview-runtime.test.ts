@@ -1,0 +1,159 @@
+import { expect, test } from "bun:test"
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+} from "node:fs"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
+import { createHash } from "node:crypto"
+import { brotliCompressSync } from "node:zlib"
+import {
+  assemblePreviewRuntime,
+  chromiumCredits,
+  verifyPreviewRuntime,
+} from "./preview-runtime"
+
+test("release staging retains a portable driver, exact browser identity and upstream licenses", () => {
+  const root = mkdtempSync(join(tmpdir(), "preview-release-"))
+  try {
+    const driver = join(root, "source-driver")
+    const browser = join(root, "source-browser")
+    mkdirSync(driver)
+    mkdirSync(join(browser, "linux"), { recursive: true })
+    writeFileSync(
+      join(driver, "package.json"),
+      JSON.stringify({ version: "1.61.1" })
+    )
+    writeFileSync(
+      join(driver, "browsers.json"),
+      JSON.stringify({
+        browsers: [
+          {
+            name: "chromium-headless-shell",
+            revision: "1228",
+            browserVersion: "149",
+          },
+        ],
+      })
+    )
+    writeFileSync(join(driver, "index.js"), "module.exports = { chromium: {} }")
+    writeFileSync(join(driver, "LICENSE"), "Driver license")
+    writeFileSync(join(driver, "NOTICE"), "Driver notice")
+    writeFileSync(join(driver, "ThirdPartyNotices.txt"), "Third party notices")
+    mkdirSync(join(driver, "lib"))
+    for (const name of ["bootstrap.js", "coreBundle.js", "utilsBundle.js"])
+      writeFileSync(join(driver, "lib", name), "synthetic driver")
+    const fonts = join(root, "source-fonts")
+    mkdirSync(fonts)
+    writeFileSync(
+      join(fonts, "general-sans-variable.woff2"),
+      readFileSync(
+        new URL(
+          "../apps/desktop/ui/fonts/fraunces-variable-latin.woff2",
+          import.meta.url
+        )
+      )
+    )
+    writeFileSync(
+      join(fonts, "GeneralSans-LICENSE.txt"),
+      readFileSync(
+        new URL(
+          "../apps/desktop/ui/fonts/GeneralSans-LICENSE.txt",
+          import.meta.url
+        )
+      )
+    )
+    writeFileSync(
+      join(browser, "linux", "chrome-headless-shell"),
+      "synthetic executable",
+      { mode: 0o755 }
+    )
+    writeFileSync(
+      join(browser, "linux", "LICENSE.headless_shell"),
+      "Browser notices"
+    )
+    const destination = join(root, "release")
+    assemblePreviewRuntime(
+      { platform: "linux", arch: "x64" },
+      destination,
+      driver,
+      browser,
+      undefined,
+      fonts
+    )
+    const runtime = join(destination, "preview-runtime")
+    const manifest = JSON.parse(
+      readFileSync(join(runtime, "manifest.json"), "utf8")
+    )
+    expect(readFileSync(join(runtime, manifest.executable), "utf8")).toBe(
+      "synthetic executable"
+    )
+    expect(manifest.executableSha256).toBe(
+      createHash("sha256").update("synthetic executable").digest("hex")
+    )
+    expect(readFileSync(join(runtime, "driver", "index.js"), "utf8")).toContain(
+      "chromium"
+    )
+    expect(manifest.licenses).toContain("browser/linux/LICENSE.headless_shell")
+    expect(manifest.licenses).toContain("driver/LICENSE")
+    expect(() =>
+      verifyPreviewRuntime(runtime, { platform: "linux", arch: "x64" })
+    ).not.toThrow()
+    expect(() =>
+      verifyPreviewRuntime(runtime, { platform: "darwin", arch: "x64" })
+    ).toThrow("target")
+    const executable = join(runtime, manifest.executable)
+    writeFileSync(executable, "changed browser")
+    expect(() => verifyPreviewRuntime(runtime)).toThrow("hash")
+    writeFileSync(executable, "synthetic executable")
+    const font = join(runtime, "fonts/general-sans-variable.woff2")
+    const fontBytes = readFileSync(font)
+    rmSync(font)
+    expect(() => verifyPreviewRuntime(runtime)).toThrow()
+    writeFileSync(font, fontBytes)
+    const fontLicense = join(runtime, "fonts/GeneralSans-LICENSE.txt")
+    const licenseBytes = readFileSync(fontLicense)
+    writeFileSync(fontLicense, "ITF Free Font License tampered")
+    expect(() => verifyPreviewRuntime(runtime)).toThrow("license hash")
+    writeFileSync(fontLicense, licenseBytes)
+    const driverPackage = join(runtime, "driver/package.json")
+    writeFileSync(driverPackage, JSON.stringify({ version: "0.0.0" }))
+    expect(() => verifyPreviewRuntime(runtime)).toThrow("identity")
+    writeFileSync(driverPackage, JSON.stringify({ version: "1.61.1" }))
+    expect(() => verifyPreviewRuntime(runtime)).not.toThrow()
+    rmSync(join(browser, "linux", "LICENSE.headless_shell"))
+    expect(() =>
+      assemblePreviewRuntime(
+        { platform: "linux", arch: "x64" },
+        destination,
+        driver,
+        browser
+      )
+    ).toThrow("missing upstream license")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("extracts the matching archive's generated Chromium credits and refuses invalid resource bounds", () => {
+  const credits = Buffer.from(
+    "<!-- Generated by licenses.py; do not edit. --><html>Redistribution and use</html>"
+  )
+  const content = Buffer.concat([
+    Buffer.from([0x1e, 0x9b, 0, 0, 0, 0, 0, 0]),
+    brotliCompressSync(credits),
+  ])
+  const pak = Buffer.alloc(24 + content.length)
+  pak.writeUInt32LE(5, 0)
+  pak.writeUInt16LE(1, 8)
+  pak.writeUInt16LE(100, 12)
+  pak.writeUInt32LE(24, 14)
+  pak.writeUInt32LE(pak.length, 20)
+  content.copy(pak, 24)
+  expect(chromiumCredits(pak).equals(credits)).toBe(true)
+  pak.writeUInt32LE(pak.length + 1, 20)
+  expect(() => chromiumCredits(pak)).toThrow("resource bounds")
+})

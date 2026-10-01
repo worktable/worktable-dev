@@ -35,7 +35,10 @@ export function recordUrlToSendInChat(
   collectionId: string,
   recordId: string
 ): string {
-  return mcpContentUrl(origin, `/spaces/${encodeURIComponent(spaceId)}/records/${encodeURIComponent(collectionId)}/${encodeURIComponent(recordId)}`)
+  return mcpContentUrl(
+    origin,
+    `/spaces/${encodeURIComponent(spaceId)}/records/${encodeURIComponent(collectionId)}/${encodeURIComponent(recordId)}`
+  )
 }
 
 /**
@@ -54,6 +57,15 @@ export function addUrlToSendInChat(
   const record = result as Record<string, unknown>
   const spaceId = args["spaceId"]
   if (typeof spaceId !== "string") return result
+
+  if (linkKind === "document") {
+    if (record.previewOnly === true || typeof record.path !== "string")
+      return result
+    return {
+      ...record,
+      urlToSendInChat: docUrlToSendInChat(origin, spaceId, record.path),
+    }
+  }
 
   if (linkKind === "doc") {
     const docPath = record["docPath"]

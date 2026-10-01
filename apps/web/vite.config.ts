@@ -17,6 +17,7 @@ export const devServerProxy = {
   // Preserve the browser-facing Host so same-origin writes stay same-origin
   // at the API. Vite's string shorthand rewrites Host but retains Origin.
   "/api": { target: apiTarget, changeOrigin: false },
+  "/worktable-preview/fonts": { target: apiTarget, changeOrigin: false },
   "/auth": { target: apiTarget, changeOrigin: false },
   "/ws": { target: wsTarget, ws: true },
   "/yjs": { target: wsTarget, ws: true },

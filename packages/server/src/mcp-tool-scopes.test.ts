@@ -17,6 +17,7 @@ const ACTIONS: Array<{
   tool: WorktableToolName
   request: Record<string, unknown>
   scope: string | null
+  additionalScopes?: string[]
 }> = [
   { tool: "worktable_discover", request: { action: "state" }, scope: "search:read" },
   { tool: "worktable_discover", request: { action: "search", query: "x" }, scope: "search:read" },
@@ -24,6 +25,7 @@ const ACTIONS: Array<{
   { tool: "worktable_spaces", request: { action: "create", name: "S" }, scope: "docs:write" },
   { tool: "worktable_documents_read", request: { action: "list", spaceId: "s" }, scope: "documents:read" },
   { tool: "worktable_documents_read", request: { action: "read", spaceId: "s", path: "d" }, scope: "documents:read" },
+  { tool: "worktable_documents_read", request: { action: "render", spaceId: "s", path: "d" }, scope: "documents:read" },
   { tool: "worktable_documents_read", request: { action: "read_source", spaceId: "s", path: "d" }, scope: "documents:read" },
   { tool: "worktable_documents_write", request: { action: "move_folder", spaceId: "s", oldPath: "a", newPath: "b" }, scope: "documents:write" },
   { tool: "worktable_documents_write", request: { action: "archive_folder", spaceId: "s", path: "a" }, scope: "documents:write" },
@@ -33,8 +35,19 @@ const ACTIONS: Array<{
   { tool: "worktable_docs_write", request: { action: "write", spaceId: "s", docPath: "d", content: "x" }, scope: "docs:write" },
   { tool: "worktable_docs_write", request: { action: "patch", spaceId: "s", docPath: "d", operations: [] }, scope: "docs:write" },
   { tool: "worktable_docs_write", request: { action: "rename", spaceId: "s", oldPath: "a", newPath: "b" }, scope: "docs:write" },
+  { tool: "worktable_drawings_read", request: { action: "inspect", spaceId: "s", path: "drawing" }, scope: "documents:read" },
+  { tool: "worktable_drawings_read", request: { action: "query", spaceId: "s", path: "drawing" }, scope: "documents:read" },
+  { tool: "worktable_drawings_read", request: { action: "render", spaceId: "s", path: "drawing" }, scope: "documents:read" },
+  { tool: "worktable_drawings_read", request: { action: "changes", spaceId: "s", path: "drawing" }, scope: "documents:read" },
+  { tool: "worktable_drawings_write", request: { action: "create", spaceId: "s", path: "drawing" }, scope: "documents:write", additionalScopes: ["documents:read"] },
+  { tool: "worktable_drawings_write", request: { action: "edit", spaceId: "s", path: "drawing" }, scope: "documents:write", additionalScopes: ["documents:read"] },
+  { tool: "worktable_drawings_write", request: { action: "undo", spaceId: "s", path: "drawing" }, scope: "documents:write", additionalScopes: ["documents:read"] },
+  { tool: "worktable_drawings_write", request: { action: "redo", spaceId: "s", path: "drawing" }, scope: "documents:write", additionalScopes: ["documents:read"] },
   { tool: "worktable_html_read", request: { action: "guide" }, scope: null },
   { tool: "worktable_html_read", request: { action: "list", spaceId: "s" }, scope: "widgets:read" },
+  { tool: "worktable_html_read", request: { action: "render", spaceId: "s", htmlId: "h" }, scope: "widgets:read" },
+  { tool: "worktable_html_write", request: { action: "create", spaceId: "s", name: "H", html: "<html></html>", preview: {} }, scope: "widgets:write", additionalScopes: ["widgets:read"] },
+  { tool: "worktable_html_write", request: { action: "update", spaceId: "s", htmlId: "h", html: "<html></html>", preview: {} }, scope: "widgets:write", additionalScopes: ["widgets:read"] },
   { tool: "worktable_html_read", request: { action: "read", spaceId: "s", htmlId: "h" }, scope: "widgets:read" },
   { tool: "worktable_html_write", request: { action: "create", spaceId: "s", name: "H", html: "<html></html>" }, scope: "widgets:write" },
   { tool: "worktable_html_write", request: { action: "update", spaceId: "s", htmlId: "h", html: "<html></html>" }, scope: "widgets:write" },
@@ -70,6 +83,7 @@ const ACTIONS: Array<{
   { tool: "worktable_delete", request: { action: "document_folder", spaceId: "s", path: "folder" }, scope: "documents:write" },
   { tool: "worktable_delete", request: { action: "record", spaceId: "s", collectionId: "c", recordId: "r" }, scope: "records:write" },
   { tool: "worktable_guidance", request: { action: "format_spec" }, scope: null },
+  { tool: "worktable_guidance", request: { action: "drawings" }, scope: null },
   { tool: "worktable_mermaid", request: { action: "validate", source: "graph TD; A-->B" }, scope: null },
   { tool: "worktable_mermaid", request: { action: "preview", source: "graph TD; A-->B" }, scope: null },
 ]
@@ -89,7 +103,11 @@ describe("MCP action-level scope enforcement", () => {
         item.scope === null
       )
       if (item.scope) {
-        expect(mcpToolAuthorized(item.tool, item.request, [item.scope])).toBe(true)
+        expect(mcpToolAuthorized(item.tool, item.request, [item.scope, ...(item.additionalScopes ?? [])])).toBe(true)
+        for (const extra of item.additionalScopes ?? []) {
+          expect(mcpToolAuthorized(item.tool, item.request, [item.scope])).toBe(false)
+          expect(mcpToolAuthorized(item.tool, item.request, [extra])).toBe(false)
+        }
       }
     }
   })

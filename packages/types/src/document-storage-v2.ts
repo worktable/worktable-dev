@@ -121,9 +121,7 @@ const DocumentGenerationEntriesSchema = z
         index,
         path: entry.path.toLocaleLowerCase("en-US"),
       }))
-      .sort((left, right) =>
-        compareDocumentStorageText(left.path, right.path)
-      )
+      .sort((left, right) => compareDocumentStorageText(left.path, right.path))
     const seen = new Set<string>()
     for (const entry of paths) {
       if (seen.has(entry.path)) {
@@ -192,6 +190,31 @@ export const DocumentVersionCheckpointV2Schema = z.object({
  * Portable manifest for one exact authored generation. Content bytes live
  * beside this manifest under source/ and companions/.
  */
+export const DocumentAgentMutationSchema = z
+  .object({
+    actor: z.string().min(1).max(512),
+    requestId: z.string().min(1).max(128),
+    requestHash: DocumentStorageSha256Schema,
+    operation: z.enum(["create", "edit", "undo", "redo"]),
+    state: z.enum(["prepared", "committed"]),
+    sourceRevision: z.string().min(1).max(200),
+    beforeGenerationId: DocumentGenerationIdSchema.optional(),
+    reverses: DocumentGenerationIdSchema.optional(),
+    references: z
+      .record(z.string().max(200), z.string().max(200))
+      .refine((value) => Object.keys(value).length <= 500),
+    changes: z
+      .object({
+        addedIds: z.array(z.string().max(200)).max(5000),
+        changedIds: z.array(z.string().max(200)).max(5000),
+        removedIds: z.array(z.string().max(200)).max(5000),
+        titleChanged: z.boolean(),
+        description: z.string().max(2000).optional(),
+      })
+      .optional(),
+  })
+  .strict()
+
 export const DocumentGenerationManifestV2Schema = z
   .object({
     type: z.literal("worktable.document-generation"),
@@ -206,6 +229,7 @@ export const DocumentGenerationManifestV2Schema = z
     createdBy: z.string().min(1).max(512),
     source: z.string().min(1).max(512),
     reason: z.string().max(500).optional(),
+    agentMutation: DocumentAgentMutationSchema.optional(),
     provenance: DocumentProvenanceSchema.optional(),
     checkpoint: DocumentVersionCheckpointV2Schema.optional(),
     authoredSource: DocumentGenerationSourceSchema,

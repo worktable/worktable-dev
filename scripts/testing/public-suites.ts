@@ -26,7 +26,7 @@ const desktopTest = /^apps\/desktop\/scripts\/.+\.test\.ts$/
 const cliBoundaryTest =
   /^apps\/cli\/src\/(?:(?:index|local-host)(?:\.journey)?|[a-z0-9-]+\.journey)\.test\.ts$/
 const packagedBoundaryTest =
-  /^packages\/server\/src\/(?:bridge|connector)-e2e\.test\.ts$/
+  /^packages\/server\/src\/(?:bridge|connector|drawing-render)-e2e\.test\.ts$/
 const serverTest = /^packages\/server\/.+\.(?:test|spec)\.[cm]?[jt]sx?$/
 const bunTest = /\.(?:test|spec)\.[cm]?[jt]sx?$/
 

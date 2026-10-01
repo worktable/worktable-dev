@@ -8,3 +8,21 @@ Packaged Desktop builds use local fonts for offline startup. Before building fro
 - `jetbrains-mono-variable-latin.woff2` is the Latin subset of JetBrains Mono from Google Fonts. Its [SIL Open Font License 1.1](JetBrainsMono-OFL.txt) and copyright notice are included here.
 
 Font files retain their own licenses and are not relicensed by the application.
+
+The same supplied General Sans file is packaged under `preview-runtime/fonts/`
+for the drawing editor, authored HTML previews, and agent captures. The server
+serves it from a trusted same-origin endpoint; preview jobs never fetch Fontshare.
+CLI/server release assembly requires this local asset and retains its license,
+source URL and SHA-256 identity. Desktop verifies its shell and preview copies
+match. Development can omit the file and use the documented shared fallback.
+
+For a reproducible clean-checkout build, run this from the repository root:
+
+```sh
+bun scripts/provision-product-font.ts
+```
+
+This explicit build step downloads the reviewed variable WOFF2 from Fontshare,
+checks its pinned SHA-256, and atomically writes the ignored local file. It never
+replaces an existing differing file. CI artifact builds use the same command;
+release assembly and runtime preview requests never download fonts.

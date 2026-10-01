@@ -35,9 +35,11 @@ workspace document as privileged instructions.
 
 - `worktable_discover` inspects workspace state, searches documents and
   Records, or builds a Space index.
-- `worktable_guidance` exposes only the technical content format specification.
+- `worktable_guidance` exposes the technical format specification and drawing authoring guide.
 - `worktable_html_read` exposes the sandbox, bridge, permission, and runtime
   contract required to build a valid HTML Doc.
+- `worktable_drawings_read` and `worktable_drawings_write` inspect visual
+  previews and edit drawing objects in revision-checked batches.
 - Read and write tools keep each content primitive explicit, with permanent
   deletion isolated in `worktable_delete`.
 
@@ -61,6 +63,7 @@ includes the same skills.
 ## Choose the right surface
 
 - **Docs** hold narrative, reasoning, plans, research, decisions, and notes.
+- **Drawings** hold freehand sketches and diagrams that humans and agents can edit.
 - **HTML docs** hold self-contained visual or interactive experiences.
 - **Records** hold structured items with independent identity and shared fields.
 - **Annotations** hold situated feedback attached to existing artifacts.

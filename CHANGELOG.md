@@ -12,6 +12,17 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-01
+
+### Added
+
+- **Agent drawing tools:** Agents can inspect, create and edit diagrams, preview changes, and undo or redo their drawing edits.
+- **Document previews:** Agents can view PNG previews of drawings and HTML documents, including focused crops and capture diagnostics.
+
+### Changed
+
+- **Drawing experience:** Drawings match Worktable’s colors and typography, stay editable while fonts load, and preserve local work during agent updates.
+
 ## [0.1.13] - 2026-09-30
 
 ### Changed

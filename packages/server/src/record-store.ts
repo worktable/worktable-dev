@@ -544,11 +544,18 @@ export async function reconcileDiscardedRecordCollection(
 // backlinks, aggregate, select, cursor) runs the documented v2 evaluator.
 // Cross-collection lookups resolve through listRecords, so they use the index
 // or the file scan exactly like the primary collection.
-export async function queryRecords(spaceId: string, collectionId: string, input: unknown): Promise<RecordQueryResult> {
+export async function queryRecords(
+  spaceId: string,
+  collectionId: string,
+  input: unknown,
+  options: { authorizeCollection?: (collectionId: string) => void | Promise<void> } = {},
+): Promise<RecordQueryResult> {
+  await options.authorizeCollection?.(collectionId);
   const query = parseRecordQuery(input);
   const withProjectionWarnings = async (result: RecordQueryResult, collectionIds: string[]): Promise<RecordQueryResult> => {
     const drifted: { collectionId: string; indexedFileCount: number; canonicalFileCount: number }[] = [];
     for (const targetCollectionId of new Set(collectionIds)) {
+      await options.authorizeCollection?.(targetCollectionId);
       // Full health compares exact file hashes and belongs to the explicit
       // health/reconciliation path. Queries reuse its last result so paging,
       // filtering, and relation expansion stay independent of collection size.
@@ -582,10 +589,14 @@ export async function queryRecords(spaceId: string, collectionId: string, input:
       query,
       schema?.fields,
       async (targetCollectionId) => {
+        await options.authorizeCollection?.(targetCollectionId);
         const targetRows = await listRecords(spaceId, targetCollectionId, { includeArchived: query.includeArchived ?? false });
         return new Map(targetRows.map((record) => [record.id, record]));
       },
-      async (targetCollectionId) => (await readRecordCollectionSchema(spaceId, targetCollectionId)).data?.fields,
+      async (targetCollectionId) => {
+        await options.authorizeCollection?.(targetCollectionId);
+        return (await readRecordCollectionSchema(spaceId, targetCollectionId)).data?.fields;
+      },
       aliases ? { resolveDocumentPath: (path) => resolveDocAliasIn(aliases, path) ?? path } : undefined,
     );
     return withProjectionWarnings(result, [collectionId, ...referencedCollections(query, schema?.fields)]);

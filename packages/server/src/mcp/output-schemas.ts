@@ -1,4 +1,6 @@
 import {
+  DrawingObjectTypeSchema,
+  DocumentPreviewResultSchema,
   AnnotationAuthorSchema,
   AnnotationMessageSchema,
   AnnotationSchema,
@@ -47,6 +49,110 @@ const PortableDocumentReadResultSchema = DocumentReadResultSchema.meta({
 })
 const PortableDocumentVersionSummarySchema = DocumentVersionSummarySchema.meta({
   id: "DocumentVersionSummary",
+})
+
+const DrawingBoundsOutputSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+})
+const DrawingBindingOutputSchema = z.object({
+  shapeId: z.string(),
+  anchor: z.enum(["top", "right", "bottom", "left", "center"]),
+})
+const DrawingPreviewOutputSchema = DocumentPreviewResultSchema.extend({
+  labels: z.array(z.object({ label: z.string(), id: z.string() })).optional(),
+  bounds: DrawingBoundsOutputSchema.optional(),
+})
+const DocumentRenderOutputSchema = z.looseObject({
+  documentId: z.string().optional(),
+  path: z.string(),
+  sourceRevision: z.string(),
+  preview: DocumentPreviewResultSchema,
+})
+const DrawingResultOutputSchema = z.looseObject({
+  documentId: z.string().optional(),
+  path: z.string(),
+  sourceRevision: z.string().nullable(),
+  title: z.string().optional(),
+  previewOnly: z.boolean().optional(),
+  objects: z
+    .array(
+      z.looseObject({
+        id: z.string(),
+        type: DrawingObjectTypeSchema,
+        x: z.number(),
+        y: z.number(),
+        rotation: z.number(),
+        z: z.number(),
+        bounds: DrawingBoundsOutputSchema,
+        text: z.string().optional(),
+        color: z.string().optional(),
+        size: z.string().optional(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        dx: z.number().optional(),
+        dy: z.number().optional(),
+        bend: z.number().optional(),
+        startBinding: DrawingBindingOutputSchema.optional(),
+        endBinding: DrawingBindingOutputSchema.optional(),
+        pointCount: z.number().optional(),
+        textTruncated: z.boolean().optional(),
+        textLength: z.number().optional(),
+      })
+    )
+    .optional(),
+  assets: z
+    .array(
+      z.looseObject({
+        id: z.string(),
+        type: z.literal("asset"),
+        width: z.number(),
+        height: z.number(),
+        mimeType: z.string(),
+      })
+    )
+    .optional(),
+  assetsTruncated: z.boolean().optional(),
+  total: z.number().optional(),
+  nextOffset: z.number().nullable().optional(),
+  stats: z.object({ shapes: z.number(), assets: z.number() }).optional(),
+  changes: z
+    .array(
+      z.looseObject({
+        changeId: z.string(),
+        operation: z.enum(["create", "edit", "undo", "redo"]),
+        summary: z.string(),
+        addedIds: z.array(z.string()).optional(),
+        changedIds: z.array(z.string()).optional(),
+        removedIds: z.array(z.string()).optional(),
+        addedCount: z.number().optional(),
+        changedCount: z.number().optional(),
+        removedCount: z.number().optional(),
+        affectedIdsTruncated: z.boolean().optional(),
+        titleChanged: z.boolean().optional(),
+        createdAt: z.string(),
+        createdBy: z.string(),
+        state: z.enum(["prepared", "committed"]),
+        reverses: z.string().optional(),
+        undoAvailable: z.boolean(),
+      })
+    )
+    .optional(),
+  changeId: z.string().optional(),
+  references: z.record(z.string(), z.string()).optional(),
+  replayed: z.boolean().optional(),
+  addedIds: z.array(z.string()).optional(),
+  changedIds: z.array(z.string()).optional(),
+  removedIds: z.array(z.string()).optional(),
+  titleChanged: z.boolean().optional(),
+  description: z.string().optional(),
+  retention: z.string(),
+  historical: z.boolean().optional(),
+  versionId: z.string().optional(),
+  preview: DrawingPreviewOutputSchema.optional(),
+  urlToSendInChat: z.string().optional(),
 })
 
 const GenericDocumentMutationOutputSchema = z.looseObject({
@@ -216,6 +322,7 @@ const WorkspaceOverviewSchema = z.looseObject({
 const SpaceDetailSchema = z.looseObject({
   space: PortableSpaceFileSchema,
   docs: z.array(DocListEntrySchema),
+  documents: z.array(PortableDocumentListItemSchema).optional(),
 })
 
 const SearchResultSchema = z.looseObject({
@@ -337,6 +444,7 @@ const HtmlReadOutputSchema = z.looseObject({
 })
 
 const HtmlWriteOutputSchema = z.looseObject({
+  preview: DocumentPreviewResultSchema.optional(),
   htmlId: PortableHtmlIdSchema,
   htmlDoc: PortableHtmlDocSchema,
   warnings: z.array(HtmlValidationIssueSchema),
@@ -537,6 +645,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       documents: z.array(PortableDocumentListItemSchema),
     }),
   ],
+  "documents.render": [DocumentRenderOutputSchema],
   "documents.read": [
     z.looseObject({ result: PortableDocumentReadResultSchema }),
   ],
@@ -614,6 +723,14 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "docs.patch": [DocPatchOutputSchema],
   "docs.rename": [DocRenameOutputSchema],
   "docs.delete": [z.looseObject({ ok: z.literal(true), docPath: z.string() })],
+  "drawings.inspect": [DrawingResultOutputSchema],
+  "drawings.query": [DrawingResultOutputSchema],
+  "drawings.render": [DrawingResultOutputSchema],
+  "drawings.changes": [DrawingResultOutputSchema],
+  "drawings.create": [DrawingResultOutputSchema],
+  "drawings.edit": [DrawingResultOutputSchema],
+  "drawings.undo": [DrawingResultOutputSchema],
+  "drawings.redo": [DrawingResultOutputSchema],
   "html.guide": [
     z.looseObject({
       profile: z.literal("runtime"),
@@ -622,6 +739,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     }),
   ],
   "html.list": [z.looseObject({ htmlDocs: z.array(HtmlDocListEntrySchema) })],
+  "html.render": [DocumentRenderOutputSchema],
   "html.read": [HtmlReadOutputSchema],
   "html.create": [HtmlWriteOutputSchema],
   "html.update": [HtmlWriteOutputSchema],
@@ -720,6 +838,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     z.looseObject({ activity: PortableThreadActivitySchema }),
   ],
   "guidance.format_spec": [z.looseObject({ spec: z.string() })],
+  "guidance.drawings": [z.looseObject({ guide: z.string() })],
   "mermaid.validate": [MermaidValidationOutputSchema],
   "mermaid.preview": [MermaidPreviewOutputSchema],
 } satisfies Record<OperationId, readonly OutputVariant[]>
@@ -925,6 +1044,10 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     hint: forActions(z.string(), '"state" without a Space'),
     space: forActions(CompactSpaceSchema, '"state" with a Space'),
     docs: forActions(z.array(DocListEntrySchema), '"state" with a Space'),
+    documents: forActions(
+      z.array(PortableDocumentListItemSchema),
+      '"state" with a Space and documents:read scope'
+    ),
     results: forActions(z.array(SearchResultSchema), '"search"'),
     index: forActions(SpaceIndexSchema, '"space_index"'),
   }),
@@ -932,6 +1055,7 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     spaceId: PortableCanonicalIdSchema.describe('Created by action "create".'),
   }),
   worktable_documents_read: resultSchema("worktable_documents_read", {
+    preview: forActions(DocumentPreviewResultSchema, '"render"'),
     documents: forActions(z.array(PortableDocumentListItemSchema), '"list"'),
     result: forActions(PortableDocumentReadResultSchema, '"read"'),
     documentId: forActions(z.string(), '"read_source"'),
@@ -1030,7 +1154,13 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     headings: forActions(z.array(z.string()), '"patch"'),
     urlToSendInChat: UrlToSendInChatSchema,
   }),
+  worktable_drawings_read: DrawingResultOutputSchema,
+  worktable_drawings_write: DrawingResultOutputSchema,
   worktable_html_read: resultSchema("worktable_html_read", {
+    preview: forActions(DocumentPreviewResultSchema, '"render"'),
+    path: forActions(z.string(), '"render"'),
+    documentId: forActions(z.string(), '"render"'),
+    sourceRevision: forActions(z.string(), '"render"'),
     profile: forActions(z.literal("runtime"), '"guide"'),
     guide: forActions(z.string(), '"guide"'),
     tokens: forActions(z.array(z.string()), '"guide"'),
@@ -1042,6 +1172,10 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     urlToSendInChat: forActions(UrlToSendInChatSchema, '"read"'),
   }),
   worktable_html_write: resultSchema("worktable_html_write", {
+    preview: forActions(
+      DocumentPreviewResultSchema,
+      '"create" or "update" when requested'
+    ),
     htmlId: PortableHtmlIdSchema,
     htmlDoc: forActions(
       CompactHtmlDocSchema,
@@ -1164,6 +1298,7 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
   }),
   worktable_guidance: resultSchema("worktable_guidance", {
     spec: forActions(z.string(), '"format_spec"'),
+    guide: forActions(z.string(), '"drawings"'),
   }),
   worktable_mermaid: resultSchema("worktable_mermaid", {
     ok: z.boolean(),

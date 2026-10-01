@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { RecordFile } from "@worktable/types"
-import { coerceFieldInput, fieldEditorSeed, nextBooleanValue, toastRecordError, INLINE_EDITABLE_TYPES, type RecordFieldColumn } from "@/lib/records"
+import { coerceFieldInput, fieldEditorSeed, nextBooleanValue, INLINE_EDITABLE_TYPES, type RecordFieldColumn } from "@/lib/records"
 import { FieldValue, type ExpandedRecords } from "./field-value"
 import { DocumentPicker, MultiSelectEditor, SelectEditor, TextishEditor } from "./field-editor"
 
@@ -23,7 +23,7 @@ export function EditableCell({
   spaceId: string
   expanded?: ExpandedRecords
   danglingTargets?: ReadonlySet<string>
-  onCommitField: (recordId: string, key: string, value: unknown) => void
+  onCommitField: (recordId: string, key: string, value: unknown) => void | Promise<void>
   editingEnabled: boolean
 }) {
   const [editing, setEditing] = useState(false)
@@ -45,13 +45,10 @@ export function EditableCell({
 
   const commitRaw = (raw: unknown) => {
     const { value: next, error } = coerceFieldInput(column, raw)
-    if (error) {
-      toastRecordError(new Error(`${column.key}: ${error}`), "Invalid value")
-      return
-    }
+    if (error) throw new Error(error)
     // No-op commits (blur without change) skip the PATCH entirely.
     if (sameValue(next, value)) return
-    onCommitField(record.id, column.key, next)
+    return onCommitField(record.id, column.key, next)
   }
 
   if (!INLINE_EDITABLE_TYPES.has(column.type)) {
@@ -65,7 +62,7 @@ export function EditableCell({
         className="flex min-h-6 w-full items-center"
         onClick={(e) => {
           e.stopPropagation()
-          onCommitField(record.id, column.key, nextBooleanValue(value, column.field?.required ?? false))
+          void Promise.resolve(onCommitField(record.id, column.key, nextBooleanValue(value, column.field?.required ?? false))).catch(() => { /* Mutation reports the failure. */ })
         }}
         aria-label={`Toggle ${column.key}`}
         title={column.field?.required ? undefined : "Cycles yes, no, unset"}

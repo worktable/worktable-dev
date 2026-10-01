@@ -443,7 +443,7 @@ function RecordsPage() {
 
   const peekActions = useMemo<RecordPeekActions>(
     () => ({
-      onCommitField: (recordId, key, value) => mutations.updateField.mutate({ recordId, data: { [key]: value } }),
+      onCommitField: async (recordId, key, value) => { await mutations.updateField.mutateAsync({ recordId, data: { [key]: value } }) },
       onDuplicate: (record) => void duplicateRecord(record),
       onArchive: (recordId) => mutations.archive.mutate(recordId),
       onRestore: (recordId) => mutations.restore.mutate(recordId),

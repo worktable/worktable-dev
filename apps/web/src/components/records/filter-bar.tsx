@@ -375,8 +375,7 @@ function FilterValueEditor({
           onOpenChange={setDocumentOpen}
           onCommit={onChange}
         >
-          <button
-            type="button"
+          <span
             className="flex min-h-8 w-full items-center rounded-md border border-input bg-background px-2 text-left text-sm"
           >
             {typeof value === "string" && value ? (
@@ -389,7 +388,7 @@ function FilterValueEditor({
             ) : (
               <span className="text-muted-foreground">Choose a document…</span>
             )}
-          </button>
+          </span>
         </DocumentPicker>
       )
     }

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { RecordFile, ResolvedDocumentReference } from "@worktable/types"
 import type { RecordFieldColumn } from "@/lib/records"
-import { optionColorClass, recordTitle, relationIds } from "@/lib/records"
+import { isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 
 /** Merged `expanded` maps from every loaded query page, keyed collection → id. */
@@ -45,9 +45,7 @@ export function FieldValue({
   expanded?: ExpandedRecords
   /** `collection/recordId` targets the integrity sweep flagged for this record's field. */
   danglingTargets?: ReadonlySet<string>
-  /** Render url/email as plain text: in edit contexts (the peek rows) the
-   *  anchor's own click handling would swallow the click that should start
-   *  editing. Relation chips keep navigating either way. */
+  /** Editors own the value click; render navigation separately. */
   linksDisabled?: boolean
   /** Grid cells stay concise; detail surfaces preserve long-form content and
    * show every related object. */
@@ -144,6 +142,7 @@ export function FieldValue({
               recordId={id}
               expanded={expanded}
               dangling={danglingTargets?.has(`${target}/${id}`) ?? false}
+              linksDisabled={linksDisabled}
             />
           ))}
           {visible.length < ids.length && <OverflowCount count={ids.length - visible.length} />}
@@ -266,12 +265,14 @@ function RelationChip({
   recordId,
   expanded,
   dangling,
+  linksDisabled,
 }: {
   spaceId: string
   collectionId: string | undefined
   recordId: string
   expanded?: ExpandedRecords
   dangling?: boolean
+  linksDisabled: boolean
 }) {
   // A missing expansion is NOT evidence of a dangling reference: expand
   // honors includeArchived, so a valid link to an archived record has no
@@ -289,7 +290,7 @@ function RelationChip({
       <span className="truncate">{label}</span>
     </span>
   )
-  if (!collectionId || dangling) return chip
+  if (linksDisabled || !collectionId || dangling) return chip
   return (
     <Link
       to="/spaces/$spaceId/records/$"
@@ -301,15 +302,6 @@ function RelationChip({
       {chip}
     </Link>
   )
-}
-
-function isSafeHttpUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value)
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-  } catch {
-    return false
-  }
 }
 
 function formatNumber(value: number): string {

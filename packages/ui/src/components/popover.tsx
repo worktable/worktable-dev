@@ -16,20 +16,22 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 function PopoverContent({
   className,
   anchor,
+  container,
   align = "center",
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
   ...props
-}: PopoverPrimitive.Popup.Props &
+}: PopoverPrimitive.Popup.Props & { container?: HTMLElement | null } &
   Pick<
     PopoverPrimitive.Positioner.Props,
     "align" | "alignOffset" | "anchor" | "side" | "sideOffset"
   >) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Positioner
         anchor={anchor}
+        collisionBoundary={container ?? undefined}
         align={align}
         alignOffset={alignOffset}
         side={side}

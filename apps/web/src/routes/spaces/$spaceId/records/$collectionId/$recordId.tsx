@@ -50,8 +50,9 @@ function FullRecordPage() {
     })
   const actions = useMemo<RecordPeekActions>(
     () => ({
-      onCommitField: (id, key, value) =>
-        mutations.updateField.mutate({ recordId: id, data: { [key]: value } }),
+      onCommitField: async (id, key, value) => {
+        await mutations.updateField.mutateAsync({ recordId: id, data: { [key]: value } })
+      },
       onDuplicate: (record) =>
         void mutations.duplicate.mutateAsync(record).then((created) =>
           navigate({

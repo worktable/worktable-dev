@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Check, Loader2, Plus, Search, X } from "lucide-react"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { Button } from "@worktable/ui/components/button"
@@ -12,55 +12,108 @@ import { queryRecords } from "@/lib/records-api"
 import { documentPathIsSelected, normalizeDocumentPickerSearch, optionColorClass, recordTitle, relationIds, toggleDocumentPath, type RecordFieldColumn } from "@/lib/records"
 import { documentReferencesQueryOptions, useSpaceDocs } from "@/lib/docs-queries"
 
+// Keep nested pickers within a modal drawer's focus and accessibility boundary.
+const FieldPortalContext = createContext<HTMLElement | null | undefined>(undefined)
+
+export function FieldEditorScope({ container, children }: { container: HTMLElement | null; children: React.ReactNode }) {
+  return <FieldPortalContext.Provider value={container}>{children}</FieldPortalContext.Provider>
+}
+
+export function FieldPopoverContent(props: React.ComponentProps<typeof PopoverContent>) {
+  const container = useContext(FieldPortalContext)
+  return <PopoverContent {...props} container={container} />
+}
+
+/** A commit resolves only after persistence; rejection keeps the local draft. */
+type FieldCommit<T = unknown> = (raw: T) => void | Promise<void>
+
+function useFieldSave<T>(onCommit: FieldCommit<T>, open?: boolean) {
+  const busy = useRef(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string>()
+  const errorId = useId()
+  useEffect(() => { setError(undefined) }, [open])
+  const save = async (raw: T) => {
+    if (busy.current) return false
+    busy.current = true
+    setPending(true)
+    setError(undefined)
+    try {
+      await onCommit(raw)
+      return true
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not save this value.")
+      return false
+    } finally {
+      busy.current = false
+      setPending(false)
+    }
+  }
+  return { save, pending, error, errorId }
+}
+
+function SaveFeedback({ state, onRetry }: { state: Pick<ReturnType<typeof useFieldSave>, "pending" | "error" | "errorId">; onRetry?: () => void }) {
+  if (state.pending) return <span role="status" className="text-xs text-muted-foreground">Saving…</span>
+  if (!state.error) return null
+  return <div className="space-y-1">
+    <p id={state.errorId} role="alert" className="text-xs text-destructive">{state.error}</p>
+    {onRetry && <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>}
+  </div>
+}
+
+const pickerTriggerClass = "flex min-h-6 w-full cursor-pointer items-center rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11"
+
 /**
  * Shared editors for record field values, used by the grid's inline cells and
  * the peek panel. Every editor commits through `onCommit(raw)` — coercion and
  * the PATCH happen in the caller — and closes via `onDone`.
  */
 
-/** Single-line input for text-like and date/number types. Enter commits,
- *  Escape cancels, blur commits (the least surprising grid behavior). */
-export function TextishEditor({
-  column,
-  initial,
-  onCommit,
-  onDone,
-  className,
-}: {
+/** Enter commits short text; multiline uses Cmd/Ctrl+Enter. Escape cancels.
+ * Blur saves, but failed validation or persistence leaves the draft available. */
+export function TextishEditor({ column, initial, onCommit, onDone, className, multiline = false }: {
   column: RecordFieldColumn
   initial: unknown
-  onCommit: (raw: string) => void
-  onDone: () => void
+  onCommit: FieldCommit<string>
+  onDone: (restoreFocus?: boolean) => void
   className?: string
+  multiline?: boolean
 }) {
   const [value, setValue] = useState(initial === undefined || initial === null ? "" : String(initial))
-  // Commit-on-blur must not double-fire after Enter/Escape already settled it.
-  const settledRef = useRef(false)
-
-  const settle = (commit: boolean) => {
-    if (settledRef.current) return
-    settledRef.current = true
-    if (commit) onCommit(value)
-    onDone()
+  const settled = useRef(false)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const state = useFieldSave(onCommit)
+  const settle = async (commit: boolean, restoreFocus = false) => {
+    if (settled.current || state.pending) return
+    settled.current = true
+    if (!commit || await state.save(value)) onDone(restoreFocus && Boolean(editorRef.current?.contains(document.activeElement)))
+    else settled.current = false
   }
-
-  return (
-    <Input
-      autoFocus
-      type={inputTypeFor(column.type)}
-      inputMode={column.type === "number" ? "decimal" : undefined}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") settle(true)
-        if (e.key === "Escape") settle(false)
-      }}
-      onBlur={() => settle(true)}
-      onClick={(e) => e.stopPropagation()}
-      className={className ?? "h-7 px-2 py-0 text-sm"}
-      aria-label={`Edit ${column.key}`}
-    />
-  )
+  const shared = {
+    autoFocus: true,
+    value,
+    readOnly: state.pending,
+    "aria-label": `Edit ${column.key}`,
+    "aria-invalid": Boolean(state.error),
+    "aria-describedby": state.error ? state.errorId : undefined,
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValue(e.target.value),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.nativeEvent.isComposing) return
+      if (e.key === "Escape" || (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey))) {
+        e.preventDefault()
+        e.stopPropagation()
+        void settle(e.key !== "Escape", true)
+      }
+    },
+    onBlur: (e: React.FocusEvent) => {
+      if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node | null)) void settle(true)
+    },
+    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+  }
+  return <div ref={editorRef} className="space-y-1" aria-busy={state.pending}>
+    {multiline ? <Textarea {...shared} className="min-h-24 text-sm" /> : <Input {...shared} type={inputTypeFor(column.type)} inputMode={column.type === "number" ? "decimal" : undefined} className={className ?? "h-7 px-2 py-0 text-sm"} />}
+    <SaveFeedback state={state} onRetry={() => void settle(true, true)} />
+  </div>
 }
 
 function inputTypeFor(type: string): string {
@@ -94,48 +147,54 @@ export function SelectEditor({
   value: unknown
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCommit: (raw: string | null) => void
+  onCommit: FieldCommit<string | null>
   children: React.ReactNode
 }) {
   const options = column.field?.values ?? []
+  const state = useFieldSave(onCommit, open)
+  const pick = async (next: string | null) => {
+    if (await state.save(next)) onOpenChange(false)
+  }
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger nativeButton={false} render={<span className="flex min-h-6 w-full cursor-pointer items-center" onClick={(e) => e.stopPropagation()} />}>
+    <Popover open={open} onOpenChange={(next) => { if (!state.pending) onOpenChange(next) }}>
+      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
-        {options.map((option) => {
-          const active = value === option
-          return (
+      <FieldPopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
+        <fieldset disabled={state.pending} className="contents">
+          {options.map((option) => {
+            const active = value === option
+            return (
+              <button
+                key={option}
+                aria-pressed={active}
+                type="button"
+                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                onClick={() => {
+                  void pick(active && !column.field?.required ? null : option)
+                }}
+              >
+                <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(option)}`} />
+                <span className="min-w-0 flex-1 truncate">{option}</span>
+                {active && <Check className="size-3.5 shrink-0 text-primary" />}
+              </button>
+            )
+          })}
+          {!column.field?.required && value !== undefined && value !== null && value !== "" && (
             <button
-              key={option}
               type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+              className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50"
               onClick={() => {
-                onCommit(active ? null : option)
-                onOpenChange(false)
+                void pick(null)
               }}
             >
-              <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(option)}`} />
-              <span className="min-w-0 flex-1 truncate">{option}</span>
-              {active && <Check className="size-3.5 shrink-0 text-primary" />}
+              <X className="size-3.5 shrink-0" />
+              Clear
             </button>
-          )
-        })}
-        {value !== undefined && value !== null && value !== "" && (
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50"
-            onClick={() => {
-              onCommit(null)
-              onOpenChange(false)
-            }}
-          >
-            <X className="size-3.5 shrink-0" />
-            Clear
-          </button>
-        )}
-      </PopoverContent>
+          )}
+        </fieldset>
+        <SaveFeedback state={state} />
+      </FieldPopoverContent>
     </Popover>
   )
 }
@@ -155,44 +214,52 @@ export function MultiSelectEditor({
   value: unknown
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCommit: (raw: string[]) => void
+  onCommit: FieldCommit<string[]>
   children: React.ReactNode
 }) {
   const options = column.field?.values ?? []
   const committed = Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
   const [draft, setDraft] = useState<string[]>(committed)
+  const state = useFieldSave(onCommit, open)
   useEffect(() => {
     if (open) setDraft(committed)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when opening
   }, [open])
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next && !sameStringSet(draft, committed)) onCommit(draft)
+  const handleOpenChange = async (next: boolean, details?: { reason: string }) => {
+    if (state.pending) return
+    if (!next && details?.reason !== "escape-key" && !sameStringSet(draft, committed)) {
+      if (!await state.save(draft)) return
+    }
     onOpenChange(next)
   }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger nativeButton={false} render={<span className="flex min-h-6 w-full cursor-pointer items-center" onClick={(e) => e.stopPropagation()} />}>
+      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
-        {options.map((option) => {
-          const active = draft.includes(option)
-          return (
-            <button
-              key={option}
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
-              onClick={() => setDraft(active ? draft.filter((entry) => entry !== option) : [...draft, option])}
-            >
-              <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(option)}`} />
-              <span className="min-w-0 flex-1 truncate">{option}</span>
-              {active && <Check className="size-3.5 shrink-0 text-primary" />}
-            </button>
-          )
-        })}
-      </PopoverContent>
+      <FieldPopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
+        <fieldset disabled={state.pending} className="contents">
+          {options.map((option) => {
+            const active = draft.includes(option)
+            return (
+              <button
+                key={option}
+                aria-pressed={active}
+                type="button"
+                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                onClick={() => setDraft(active ? draft.filter((entry) => entry !== option) : [...draft, option])}
+              >
+                <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(option)}`} />
+                <span className="min-w-0 flex-1 truncate">{option}</span>
+                {active && <Check className="size-3.5 shrink-0 text-primary" />}
+              </button>
+            )
+          })}
+        </fieldset>
+        <SaveFeedback state={state} onRetry={() => void handleOpenChange(false)} />
+      </FieldPopoverContent>
     </Popover>
   )
 }
@@ -220,7 +287,7 @@ export function RelationPicker({
   value: unknown
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCommit: (raw: string[] | string | null) => void
+  onCommit: FieldCommit<string[] | string | null>
   children: React.ReactNode
 }) {
   const target = column.field?.references
@@ -229,6 +296,7 @@ export function RelationPicker({
   // Many-relations build a local draft and commit once on close: per-toggle
   // PATCHes of the full id array would race each other in flight.
   const [draft, setDraft] = useState<string[]>(committed)
+  const state = useFieldSave(onCommit, open)
   const [search, setSearch] = useState("")
   useEffect(() => {
     if (open) {
@@ -251,85 +319,90 @@ export function RelationPicker({
   })
   const candidates = useMemo(() => data?.records ?? [], [data])
 
-  const pick = (record: RecordFile) => {
+  const pick = async (record: RecordFile) => {
     if (many) {
       setDraft(selected.includes(record.id) ? selected.filter((id) => id !== record.id) : [...selected, record.id])
     } else {
-      onCommit(selected[0] === record.id ? null : record.id)
-      onOpenChange(false)
+      if (await state.save(selected[0] === record.id && !column.field?.required ? null : record.id)) onOpenChange(false)
     }
   }
 
   const resultsRef = useScrollFade<HTMLDivElement>()
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next && many && !sameStringSet(draft, committed)) onCommit(draft)
+  const handleOpenChange = async (next: boolean, details?: { reason: string }) => {
+    if (state.pending) return
+    if (!next && details?.reason !== "escape-key" && many && !sameStringSet(draft, committed)) {
+      if (!await state.save(draft)) return
+    }
     onOpenChange(next)
   }
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger nativeButton={false} render={<span className="flex min-h-6 w-full cursor-pointer items-center" onClick={(e) => e.stopPropagation()} />}>
+      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 gap-1.5 p-1.5" onClick={(e) => e.stopPropagation()}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
-          <Input
-            autoFocus
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={target ? `Search ${target}…` : "No target collection"}
-            className="h-8 pl-8 text-sm"
-            disabled={!target}
-          />
-        </div>
-        <div ref={resultsRef} className="scroll-fade max-h-64 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
-            </div>
-          ) : candidates.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-              {target ? "No matching records." : "This relation has no target collection in its schema."}
-            </p>
-          ) : (
-            candidates.map((record) => {
-              const active = selected.includes(record.id)
-              return (
-                <button
-                  key={record.id}
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
-                  onClick={() => pick(record)}
-                >
-                  <span className={`size-1.5 shrink-0 rounded-full ${active ? "bronze-knob" : "bg-muted-foreground/30"}`} />
-                  <span className="min-w-0 flex-1 truncate">{recordTitle(record)}</span>
-                  {active && <Check className="size-3.5 shrink-0 text-primary" />}
-                </button>
-              )
-            })
+      <FieldPopoverContent align="start" className="w-72 gap-1.5 p-1.5" onClick={(e) => e.stopPropagation()}>
+        <fieldset disabled={state.pending} className="contents">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={target ? `Search ${target}…` : "No target collection"}
+              className="h-8 pl-8 text-sm"
+              disabled={!target}
+            />
+          </div>
+          <div ref={resultsRef} className="scroll-fade max-h-64 overflow-y-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="size-4 animate-spin text-muted-foreground/60" />
+              </div>
+            ) : candidates.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+                {target ? "No matching records." : "This relation has no target collection in its schema."}
+              </p>
+            ) : (
+              candidates.map((record) => {
+                const active = selected.includes(record.id)
+                return (
+                  <button
+                    key={record.id}
+                    aria-pressed={active}
+                    type="button"
+                    className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                    onClick={() => pick(record)}
+                  >
+                    <span className={`size-1.5 shrink-0 rounded-full ${active ? "bronze-knob" : "bg-muted-foreground/30"}`} />
+                    <span className="min-w-0 flex-1 truncate">{recordTitle(record)}</span>
+                    {active && <Check className="size-3.5 shrink-0 text-primary" />}
+                  </button>
+                )
+              })
+            )}
+          </div>
+          {selected.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start text-muted-foreground"
+              onClick={() => {
+                if (many) {
+                  setDraft([])
+                } else {
+                  void state.save(null).then((saved) => { if (saved) onOpenChange(false) })
+                }
+              }}
+            >
+              <X className="mr-1.5 size-3.5" />
+              Clear
+            </Button>
           )}
-        </div>
-        {selected.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start text-muted-foreground"
-            onClick={() => {
-              if (many) {
-                setDraft([])
-              } else {
-                onCommit(null)
-                onOpenChange(false)
-              }
-            }}
-          >
-            <X className="mr-1.5 size-3.5" />
-            Clear
-          </Button>
-        )}
-      </PopoverContent>
+        </fieldset>
+        <SaveFeedback state={state} onRetry={many ? () => void handleOpenChange(false) : undefined} />
+      </FieldPopoverContent>
     </Popover>
   )
 }
@@ -350,12 +423,13 @@ export function DocumentPicker({
   value: unknown
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCommit: (raw: string[] | string | null) => void
+  onCommit: FieldCommit<string[] | string | null>
   children: React.ReactNode
 }) {
   const many = column.field?.many ?? false
   const committed = typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
   const [draft, setDraft] = useState<string[]>(committed)
+  const state = useFieldSave(onCommit, open)
   const [search, setSearch] = useState("")
   const { data: docs = [], isLoading: docsLoading } = useSpaceDocs(spaceId)
   const { data: committedReferences, isLoading: committedReferencesLoading } = useQuery(documentReferencesQueryOptions(spaceId, committed))
@@ -378,88 +452,60 @@ export function DocumentPicker({
     })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .slice(0, 40)
-  const pick = (path: string) => {
+  const pick = async (path: string) => {
     if (many) {
       setDraft(toggleDocumentPath(draft, path, committedIdentities))
     }
     else {
-      onCommit(documentPathIsSelected(committed, path, committedIdentities) ? null : path)
-      onOpenChange(false)
+      if (await state.save(documentPathIsSelected(committed, path, committedIdentities) && !column.field?.required ? null : path)) onOpenChange(false)
     }
   }
-  const handleOpenChange = (next: boolean) => {
-    if (!next && many && !sameStringSet(draft, committed)) onCommit(draft)
+  const handleOpenChange = async (next: boolean, details?: { reason: string }) => {
+    if (state.pending) return
+    if (!next && details?.reason !== "escape-key" && many && !sameStringSet(draft, committed)) {
+      if (!await state.save(draft)) return
+    }
     onOpenChange(next)
   }
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger nativeButton={false} render={<span className="flex min-h-6 w-full cursor-pointer items-center" onClick={(event) => event.stopPropagation()} />}>
+      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 gap-1.5 p-1.5" onClick={(event) => event.stopPropagation()}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
-          <Input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search documents or enter a path…" className="h-8 pl-8 text-sm" />
-        </div>
-        <div ref={scrollRef} className="scroll-fade max-h-64 overflow-y-auto">
-          {docsLoading || committedReferencesLoading ? <div className="flex justify-center py-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div> : candidates.map((doc) => {
-            const active = documentPathIsSelected(many ? draft : committed, doc.path, committedIdentities)
-            return (
-              <button key={doc.path} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50" onClick={() => pick(doc.path)}>
-                <span className={`size-1.5 shrink-0 rounded-full ${doc.archived ? "bg-muted-foreground/40" : active ? "bronze-knob" : "bg-primary/50"}`} />
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm">{doc.headings?.[0] || documentReferenceFallbackTitle(doc.path)}</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{doc.path}{doc.archived ? " · archived" : ""}</span></span>
-                {active && <Check className="size-3.5 shrink-0 text-primary" />}
+      <FieldPopoverContent align="start" className="w-80 gap-1.5 p-1.5" onClick={(event) => event.stopPropagation()}>
+        <fieldset disabled={state.pending} className="contents">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search documents or enter a path…" className="h-8 pl-8 text-sm" />
+          </div>
+          <div ref={scrollRef} className="scroll-fade max-h-64 overflow-y-auto">
+            {docsLoading || committedReferencesLoading ? <div className="flex justify-center py-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div> : candidates.map((doc) => {
+              const active = documentPathIsSelected(many ? draft : committed, doc.path, committedIdentities)
+              return (
+                <button key={doc.path} aria-pressed={active} type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left hover:bg-accent/50" onClick={() => pick(doc.path)}>
+                  <span className={`size-1.5 shrink-0 rounded-full ${doc.archived ? "bg-muted-foreground/40" : active ? "bronze-knob" : "bg-primary/50"}`} />
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm">{doc.headings?.[0] || documentReferenceFallbackTitle(doc.path)}</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{doc.path}{doc.archived ? " · archived" : ""}</span></span>
+                  {active && <Check className="size-3.5 shrink-0 text-primary" />}
+                </button>
+              )
+            })}
+            {fallbackPath && !docs.some((doc) => doc.path === fallbackPath) && (
+              <button type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-2 text-left hover:bg-accent/50" onClick={() => pick(fallbackPath)}>
+                <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="min-w-0"><span className="block text-sm">Link this path</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{fallbackPath} · target may be missing</span></span>
               </button>
-            )
-          })}
-          {fallbackPath && !docs.some((doc) => doc.path === fallbackPath) && (
-            <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/50" onClick={() => pick(fallbackPath)}>
-              <Plus className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="min-w-0"><span className="block text-sm">Link this path</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{fallbackPath} · target may be missing</span></span>
-            </button>
-          )}
-        </div>
-        {(many ? draft : committed).length > 0 && <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => many ? setDraft([]) : (onCommit(null), onOpenChange(false))}><X className="mr-1.5 size-3.5" />Clear</Button>}
-      </PopoverContent>
+            )}
+          </div>
+          {(many ? draft : committed).length > 0 && <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => many ? setDraft([]) : void state.save(null).then((saved) => { if (saved) onOpenChange(false) })}><X className="mr-1.5 size-3.5" />Clear</Button>}
+        </fieldset>
+        <SaveFeedback state={state} onRetry={many ? () => void handleOpenChange(false) : undefined} />
+      </FieldPopoverContent>
     </Popover>
   )
 }
 
-/** Multiline editor for `text` fields (peek only): Enter inserts a newline,
- *  Cmd/Ctrl+Enter or blur commits, Escape cancels. */
-export function TextareaEditor({
-  column,
-  initial,
-  onCommit,
-  onDone,
-}: {
-  column: RecordFieldColumn
-  initial: unknown
-  onCommit: (raw: string) => void
-  onDone: () => void
-}) {
-  const [value, setValue] = useState(initial === undefined || initial === null ? "" : String(initial))
-  const settledRef = useRef(false)
-  const settle = (commit: boolean) => {
-    if (settledRef.current) return
-    settledRef.current = true
-    if (commit) onCommit(value)
-    onDone()
-  }
-  return (
-    <Textarea
-      autoFocus
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) settle(true)
-        if (e.key === "Escape") settle(false)
-      }}
-      onBlur={() => settle(true)}
-      className="min-h-20 text-sm"
-      aria-label={`Edit ${column.key}`}
-    />
-  )
+export function TextareaEditor(props: Omit<React.ComponentProps<typeof TextishEditor>, "multiline">) {
+  return <TextishEditor {...props} multiline />
 }
 
 /** Block editor for json values (peek only): textarea with explicit save so a
@@ -470,7 +516,7 @@ export function JsonEditor({
   onDone,
 }: {
   initial: unknown
-  onCommit: (raw: string) => boolean
+  onCommit: FieldCommit<string>
   onDone: () => void
 }) {
   const [value, setValue] = useState(() => {
@@ -480,7 +526,7 @@ export function JsonEditor({
       return String(initial)
     }
   })
-  const [invalid, setInvalid] = useState(false)
+  const state = useFieldSave(onCommit)
 
   return (
     <div className="space-y-1.5">
@@ -489,29 +535,45 @@ export function JsonEditor({
         value={value}
         onChange={(e) => {
           setValue(e.target.value)
-          setInvalid(false)
         }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onDone()
+          if (e.key === "Escape") {
+            e.stopPropagation()
+            if (!state.pending) onDone()
+          }
         }}
         className="min-h-24 font-mono text-xs"
+        readOnly={state.pending}
+        aria-invalid={Boolean(state.error)}
+        aria-describedby={state.error ? state.errorId : undefined}
         aria-label="Edit JSON value"
       />
-      {invalid && <p className="text-xs text-destructive">Must be valid JSON.</p>}
+      <SaveFeedback state={state} />
       <div className="flex gap-1.5">
         <Button
           size="sm"
-          onClick={() => {
-            if (onCommit(value)) onDone()
-            else setInvalid(true)
+          disabled={state.pending}
+          onClick={async () => {
+            if (await state.save(value)) onDone()
           }}
         >
           Save
         </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>
+        <Button size="sm" variant="ghost" disabled={state.pending} onClick={onDone}>
           Cancel
         </Button>
       </div>
     </div>
   )
+}
+
+export function BooleanEditor({ column, value, onCommit, children }: { column: RecordFieldColumn; value: unknown; onCommit: (raw: unknown) => Promise<void>; children: React.ReactNode }) {
+  const state = useFieldSave(onCommit)
+  return <div className="space-y-1" aria-busy={state.pending}>
+    <div className="flex items-center gap-1">
+      <button type="button" disabled={state.pending} className="flex min-h-6 flex-1 items-center rounded-md max-sm:min-h-11 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void state.save(value !== true)} aria-label={`Toggle ${column.key}`} aria-pressed={value == null ? "mixed" : value === true}>{children}</button>
+      {!column.field?.required && value != null && <Button size="icon-sm" variant="ghost" disabled={state.pending} onClick={() => void state.save(null)} aria-label={`Clear ${column.key}`}><X className="size-3" /></Button>}
+    </div>
+    <SaveFeedback state={state} />
+  </div>
 }

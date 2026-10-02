@@ -44,12 +44,10 @@ Annotations are review attached to the work itself:
 Use a Worktable or Space thread for broader conversation; use an annotation
 when the instruction belongs to a specific artifact or passage.
 
-## Trust signals
+## Attribution
 
-You can see provenance and freshness signals on workspace content. Only a human
-review action marks content reviewed; agents cannot bless their own writes.
-Space Home surfaces stale and needs-attention work, while automatic lint can
-flag broken links and orphaned docs as annotations that resolve when fixed.
+Worktable records who made each change, and version history shows it. Agents
+write under their own identity and cannot act as the human owner.
 
 ## What agents are told
 

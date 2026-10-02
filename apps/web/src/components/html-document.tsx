@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Archive,
-  BadgeCheck,
   Code,
   ExternalLink,
   History,
@@ -30,7 +29,6 @@ import {
   readWidgetVersion,
   restoreWidget,
   restoreWidgetVersion,
-  reviewWidget,
   widgetContentUrl,
   widgetVersionContentUrl,
 } from "@/lib/widgets-api"
@@ -42,14 +40,8 @@ import { useSpaceSubscription } from "@/lib/ws"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
 import {
-  CATEGORY_LABELS,
-  docAttribution,
-  staleTitle,
-} from "@/lib/doc-freshness"
-import {
   usePageMeta,
   type PageAnnotationsAction,
-  type PageMetaChip,
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
 import { RelativeTime } from "@/lib/time"
@@ -110,11 +102,9 @@ import {
 import type {
   Annotation,
   AnnotationCategory,
-  DocFreshness,
-  SpaceFile,
   WidgetFile,
 } from "@worktable/types"
-import type { WidgetListEntry, WidgetRead } from "@/lib/widgets-api"
+import type { WidgetRead } from "@/lib/widgets-api"
 
 type WidgetDiagnostic = {
   id: string
@@ -682,85 +672,8 @@ function WidgetDetailPage({
     })
   }, [queryClient, spaceId, widgetId])
 
-  // Freshness lives on the LIST surfaces, not the single-widget read: source it
-  // from the space-detail embed ({space, widgets}), which the parent
-  // SpaceDetailPage already loads — so the cache is warm and there's no extra
-  // fetch. (useWidget's GET /:widgetId does not carry freshness.)
+  // The space-detail embed tells whether the Space is archived (sharing).
   const { data: spaceDetail } = useSpace(spaceId)
-  const freshness = useMemo(
-    () => spaceDetail?.widgets?.find((w) => w.id === widgetId)?.freshness,
-    [spaceDetail, widgetId]
-  )
-
-  // Manual click and inferred dwell can race; dedupe by sharing one in-flight
-  // request and latching on the version already reviewed. Latch on the
-  // provenance versionId — the identity of the recorded version — NOT the
-  // contentHash: an agent that reverts a doc to a byte-identical earlier state
-  // (A→B→A) mints a new, unreviewed version whose contentHash repeats, so a
-  // hash latch would refuse to POST and strand the visible unreviewed state.
-  // Each recorded version has a distinct id, so the latch clears per version.
-  // updatedAt remains the pre-provenance fallback.
-  const reviewedKeyRef = useRef<string | null>(null)
-  const reviewInFlightRef = useRef<Promise<void> | null>(null)
-  const currentKey = widget?.provenance?.versionId ?? widget?.updatedAt ?? null
-
-  useEffect(() => {
-    reviewInFlightRef.current = null
-    reviewedKeyRef.current = null
-  }, [spaceId, widgetId])
-
-  /** Resolves true only for the call that initiated a POST — no-op joins and
-   *  latched calls resolve false so callers don't report work they didn't do. */
-  const markReviewed = useCallback((): Promise<boolean> => {
-    const latchKey = currentKey ?? "none"
-    if (reviewedKeyRef.current === latchKey) return Promise.resolve(false)
-    if (reviewInFlightRef.current)
-      return reviewInFlightRef.current.then(() => false)
-    const request = (async () => {
-      try {
-        const result = await reviewWidget(spaceId, widgetId)
-        reviewedKeyRef.current = latchKey
-        // Write the post-review freshness into the space-detail cache so the
-        // chip flips and the Mark-reviewed button hides immediately, without a
-        // refetch round-trip. The sidebar reads the same query, so its stale
-        // dot clears too.
-        if (result.freshness) {
-          queryClient.setQueryData(
-            queryKeys.space(spaceId),
-            (
-              old: { space: SpaceFile; widgets: WidgetListEntry[] } | undefined
-            ) =>
-              old
-                ? {
-                    ...old,
-                    widgets: old.widgets.map((w) =>
-                      w.id === widgetId
-                        ? { ...w, freshness: result.freshness }
-                        : w
-                    ),
-                  }
-                : old
-          )
-        }
-        void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
-      } finally {
-        reviewInFlightRef.current = null
-      }
-    })()
-    reviewInFlightRef.current = request
-    return request.then(() => true)
-  }, [spaceId, widgetId, queryClient, currentKey])
-
-  const handleMarkReviewed = useCallback(() => {
-    markReviewed()
-      .then((performed) => {
-        if (performed) toast.success("Marked reviewed")
-      })
-      .catch((err) => {
-        console.error("Review failed:", err)
-        toast.error("Failed to mark reviewed")
-      })
-  }, [markReviewed])
 
   const handleRename = useCallback(
     async (name: string, description?: string | null) => {
@@ -809,14 +722,6 @@ function WidgetDetailPage({
         onSelect: openVersions,
       },
     ]
-    if (freshness && !freshness.humanReviewed && !widget.archive) {
-      actions.push({
-        id: "mark-reviewed",
-        label: "Mark Reviewed",
-        icon: BadgeCheck,
-        onSelect: handleMarkReviewed,
-      })
-    }
     actions.push(
       {
         id: "open-new-tab",
@@ -858,31 +763,13 @@ function WidgetDetailPage({
 
     return actions
   }, [
-    freshness,
     handleArchive,
     handleCopyHtml,
-    handleMarkReviewed,
     handleRestore,
     newTabUrl,
     openVersions,
     widget,
   ])
-
-  // Reading an HTML doc counts as a review, same as the doc route: 30s of
-  // visible dwell plus at least one interaction. ONLY trusted parent-window
-  // gestures count — a postMessage "interaction" signal from the sandboxed
-  // frame would let agent-authored script forge the interaction and launder
-  // its own content into human-reviewed after mere dwell. Users who only
-  // interact inside the frame use Mark Reviewed explicitly.
-  const inferredEligible = Boolean(
-    freshness && !freshness.humanReviewed && !widget?.archive
-  )
-  useWidgetInferredReview(
-    inferredEligible,
-    widgetId,
-    widget?.provenance?.versionId ?? widget?.updatedAt ?? "",
-    markReviewed
-  )
 
   if (!routeValidated || isLoading || canonicalPath) {
     return <EditorSkeleton />
@@ -908,7 +795,6 @@ function WidgetDetailPage({
           spaceDetail && !spaceDetail.space.settings["archive"]
         )}
         widget={widget}
-        freshness={freshness}
         annotations={annotationsAction}
         overflowActions={overflowActions}
       />
@@ -1211,105 +1097,11 @@ function WidgetAnnotationComposer({
   )
 }
 
-// Reading an HTML doc for a sustained period counts as a review (same contract
-// as the doc route's useInferredReview): after 30s of visible dwell plus at
-// least one interaction, record the review the reader would otherwise click.
-// Fires at most once per widget view, only while eligible.
-const INFERRED_REVIEW_DWELL_MS = 30_000
-
-function useWidgetInferredReview(
-  eligible: boolean,
-  widgetId: string,
-  revision: string,
-  markReviewed: () => Promise<unknown>
-) {
-  const eligibleRef = useRef(eligible)
-  eligibleRef.current = eligible
-  const firedRef = useRef(false)
-
-  // Reset on the version too, not just the widget id: after a passive review
-  // fires, an agent/MCP update mints a new version (humanReviewed flips back to
-  // false) while the user stays on the same doc — without resetting here the hook
-  // stays latched and never re-reviews that new version.
-  useEffect(() => {
-    firedRef.current = false
-  }, [widgetId, revision])
-
-  useEffect(() => {
-    if (!eligible || firedRef.current) return
-    let visibleMs = 0
-    let last = Date.now()
-    let interacted = false
-    const markInteracted = () => {
-      interacted = true
-    }
-    const interval = setInterval(() => {
-      const now = Date.now()
-      if (document.visibilityState === "visible") visibleMs += now - last
-      last = now
-      if (
-        visibleMs >= INFERRED_REVIEW_DWELL_MS &&
-        interacted &&
-        eligibleRef.current &&
-        !firedRef.current
-      ) {
-        firedRef.current = true
-        markReviewed().catch((err) => {
-          console.error("Inferred review failed:", err)
-          // Let a later tick retry rather than giving up for the visit.
-          firedRef.current = false
-        })
-      }
-    }, 5_000)
-    window.addEventListener("pointerdown", markInteracted)
-    window.addEventListener("keydown", markInteracted)
-    window.addEventListener("wheel", markInteracted, { passive: true })
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener("pointerdown", markInteracted)
-      window.removeEventListener("keydown", markInteracted)
-      window.removeEventListener("wheel", markInteracted)
-    }
-  }, [eligible, widgetId, revision, markReviewed])
-}
-
-/**
- * Provenance chip for an HTML doc, mirroring the doc route's `docChip`.
- * Attribution prefers the version-history provenance (real source + actor —
- * filesystem edits and MCP writes attribute correctly even when widget.yaml
- * lags); widget.yaml fields are the pre-provenance fallback.
- */
-function widgetChip(
-  widget: WidgetRead,
-  freshness: DocFreshness | undefined
-): PageMetaChip {
-  const category = docAttribution(
-    {
-      ...(widget.provenance?.source !== undefined
-        ? { source: widget.provenance.source }
-        : {}),
-      ...((widget.provenance?.updatedBy ?? widget.updatedBy) !== undefined
-        ? { updatedBy: widget.provenance?.updatedBy ?? widget.updatedBy }
-        : {}),
-    },
-    freshness
-  )
-  return {
-    label: CATEGORY_LABELS[category],
-    agent: category === "agent",
-    updatedAtIso: widget.provenance?.updatedAt ?? widget.updatedAt ?? null,
-    stale: freshness?.stale ?? false,
-    reviewed: freshness?.humanReviewed ?? false,
-    staleDetail: freshness?.stale ? staleTitle(freshness) : undefined,
-  }
-}
-
 function WidgetPageMeta({
   spaceId,
   widgetId,
   spaceShareable,
   widget,
-  freshness,
   annotations,
   overflowActions,
 }: {
@@ -1317,21 +1109,14 @@ function WidgetPageMeta({
   widgetId: string
   spaceShareable: boolean
   widget: WidgetRead
-  freshness: DocFreshness | undefined
   annotations?: PageAnnotationsAction
   overflowActions?: PageOverflowAction[]
 }) {
   const { setPageMeta } = usePageMeta()
 
   useEffect(() => {
-    const chip = widgetChip(widget, freshness)
     setPageMeta({
-      updatedAtLabel: formatWidgetUpdatedAt(
-        widget.provenance?.updatedAt ?? widget.updatedAt
-      ),
-      provenanceLabel: widgetProvenanceLabel(widget),
       titleOverride: widget.name,
-      chip,
       annotations,
       overflowActions,
       shareTarget:
@@ -1342,7 +1127,6 @@ function WidgetPageMeta({
     return () => setPageMeta(null)
   }, [
     widget,
-    freshness,
     annotations,
     overflowActions,
     spaceShareable,
@@ -1352,29 +1136,6 @@ function WidgetPageMeta({
   ])
 
   return null
-}
-
-function formatWidgetUpdatedAt(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return "Updated recently"
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  })
-}
-
-function widgetProvenanceLabel(widget: WidgetRead): string {
-  // Provenance carries the real actor for content changes that never touch
-  // widget.yaml (external index.html edits, review checkpoints) — same
-  // preference order as the chip.
-  const by =
-    widget.provenance?.updatedBy ||
-    widget.updatedBy ||
-    widget.createdBy ||
-    "unknown"
-  return `HTML doc · ${by}`
 }
 
 function ArchivedWidgetBanner({

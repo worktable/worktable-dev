@@ -36,8 +36,6 @@ import {
   type RetentionPolicy,
 } from "./settings-store.ts";
 import { getSpacesDir, getVersionsDir, getWorkspaceRoot } from "./workspace.ts";
-import { evictFreshness } from "./freshness-cache.ts";
-import { evictWidgetFreshness } from "./widget-freshness.ts";
 import {
   versionIdTimestamp,
   versionKeyDir,
@@ -507,10 +505,6 @@ export async function pruneDocumentGenerationsForCountV2(
     retention: documentGenerationRetention(policy, Date.now()),
     authorizeRetention: () => retentionStillCurrent(generation, policy),
   });
-  if (removed > 0) {
-    evictFreshness(spaceId);
-    evictWidgetFreshness(spaceId);
-  }
   return removed;
 }
 
@@ -569,13 +563,6 @@ export async function runRetentionSweep(
       result.docsTouched += 1;
       result.filesDeleted += filesDeleted;
       result.bytesFreed += bytesFreed;
-      // Freshness (lastHumanTouch/humanReviewed) is derived from the version
-      // files just deleted, but its cache is keyed by provenance.versionId,
-      // which pruning doesn't change — evict so the next read rescans. The
-      // sweep key is the sanitized dir name, which may differ from the doc
-      // path the cache was keyed with, so evict the whole space (cheap; it
-      // rebuilds lazily and sweeps are rare).
-      evictFreshness(spaceId);
     }
   }
 
@@ -619,8 +606,6 @@ export async function runRetentionSweep(
       result.bytesFreed += before
         .filter((manifest) => !afterIds.has(manifest.id))
         .reduce((total, manifest) => total + manifest.totalBytes, 0);
-      evictFreshness(spaceId);
-      evictWidgetFreshness(spaceId);
     } catch (error) {
       console.warn(
         `[version-retention] failed to prune V2 generations for ${spaceId}/${documentId}:`,
@@ -667,7 +652,7 @@ export async function pruneDocKeyForCount(
   // defensively, but this function itself does not reject on fs errors.
   try {
     const versionsRootResolved = resolve(versionsRoot);
-    const { filesDeleted } = await pruneKeyDir(
+    await pruneKeyDir(
       spaceId,
       docPath,
       dir,
@@ -683,8 +668,6 @@ export async function pruneDocKeyForCount(
         return { policy: current, protect };
       },
     );
-    // See the sweep-path eviction note; here the true docPath is in hand.
-    if (filesDeleted > 0) evictFreshness(spaceId, docPath);
   } catch (err) {
     console.warn(
       `[version-retention] post-write prune failed for ${spaceId}/${docPath}:`,

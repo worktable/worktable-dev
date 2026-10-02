@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { WidgetFile } from "./widgets";
 import type {
-  DocFreshness,
   DocumentFormatClaim,
   DocumentHealth,
 } from "./documents";
@@ -66,7 +65,6 @@ export interface DocListEntry {
     versionId: string;
     contentHash: string;
   };
-  freshness?: DocFreshness;
   /** Docs linking to this one — count only in lists; full paths on single-doc reads. */
   backlinkCount?: number;
 }
@@ -75,8 +73,8 @@ export type DocSourceCategory = "human" | "agent" | "external" | "system" | "res
 
 /**
  * Classify who a doc write came from. Single source of truth shared by the
- * server (freshness derivation, checkpoint labels) and the web UI (provenance
- * chips) — keep the heuristics here so the two can never disagree.
+ * server (checkpoint labels) and the web UI (version history) — keep the
+ * heuristics here so the two can never disagree.
  */
 export function sourceCategory(source?: string, updatedBy?: string): DocSourceCategory {
   const normalizedSource = (source ?? "").toLowerCase();

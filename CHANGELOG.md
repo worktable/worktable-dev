@@ -12,6 +12,16 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Changed
+
+- **Space navigation:** Click a Space's name in the sidebar to open it; the arrow beside it expands its contents.
+- **Quieter documents:** Documents no longer show who last edited them next to the title, stale markers, or a review status. Version history still shows who made each change.
+
+### Removed
+
+- **Automatic lint comments:** Worktable no longer adds broken-link, orphan, or length comments to documents, and resolves the ones it added before. Agents still get a warning when a write links to a missing doc.
+- **Review and staleness fields:** Document reads, lists, and search results for agents no longer include review or staleness fields.
+
 ## [0.1.15] - 2026-10-02
 
 ### Added

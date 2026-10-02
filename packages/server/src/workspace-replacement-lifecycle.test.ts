@@ -144,7 +144,7 @@ beforeEach(async () => {
   source = join(root, "source")
   setAppDirOverride(join(root, "app"))
   process.env["WORKTABLE_SKIP_STARTER_SEED"] = "1"
-  process.env["WORKTABLE_SKIP_LINT_SWEEP"] = "1"
+  process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] = "1"
   process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
 
   setWorkspaceRootOverride(active)

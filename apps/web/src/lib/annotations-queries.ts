@@ -21,19 +21,20 @@ export interface AttentionSignal {
 }
 
 /**
- * Space-wide attention counts for Space Home. Counting happens on the server
- * (filtered `total` with limit=1), so the chips stay exact no matter how many
+ * Open instruction count for Space Home. Counting happens on the server
+ * (filtered `total` with limit=1), so the chip stays exact no matter how many
  * open annotations a space accumulates.
  */
 export function useSpaceAttention(spaceId: string) {
   return useQuery(
     queryOptions({
       queryKey: annotationQueryKeys.space(spaceId),
-      queryFn: async (): Promise<{ instructions: AttentionSignal; lint: AttentionSignal }> => {
-        const toSignal = (result: { annotations: { target: unknown }[]; total: number }): AttentionSignal => {
-          const target = result.annotations[0]?.target;
-          const isObject = target && typeof target === "object";
-          return {
+      queryFn: async (): Promise<{ instructions: AttentionSignal }> => {
+        const result = await listAnnotations(spaceId, { category: ["instruction"], limit: 1 });
+        const target = result.annotations[0]?.target;
+        const isObject = target && typeof target === "object";
+        return {
+          instructions: {
             count: result.total,
             newestDocPath:
               isObject && "docPath" in target
@@ -43,13 +44,8 @@ export function useSpaceAttention(spaceId: string) {
               isObject && "widgetId" in target
                 ? (target as { widgetId: string }).widgetId
                 : null,
-          };
+          },
         };
-        const [instructions, lint] = await Promise.all([
-          listAnnotations(spaceId, { category: ["instruction"], limit: 1 }),
-          listAnnotations(spaceId, { labels: ["lint"], limit: 1 }),
-        ]);
-        return { instructions: toSignal(instructions), lint: toSignal(lint) };
       },
     })
   );

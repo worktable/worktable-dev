@@ -21,7 +21,6 @@ import {
 import { DocumentInventorySpaceNotFoundError } from "./document-inventory.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { notifyDocContentChanged } from "./content-events.ts"
-import { evictFreshness } from "./freshness.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { docStat, getDocArchiveInfo } from "./store.ts"
 import {
@@ -30,7 +29,6 @@ import {
   withWidgetTopologyLock,
   withWidgetWriteLocks,
 } from "./widget-store.ts"
-import { evictWidgetFreshness } from "./widget-freshness.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
@@ -184,8 +182,6 @@ async function publishFolderMove(
     if (
       move.formatId === BUILTIN_DOCUMENT_FORMATS.html
     ) {
-      evictWidgetFreshness(spaceId, move.from)
-      evictWidgetFreshness(spaceId, move.to)
       const { data: widget } = await readWidget(spaceId, move.to)
       if (widget) {
         wsManager.broadcast(spaceId, {
@@ -213,8 +209,6 @@ async function publishFolderMove(
 
     notifyDocContentChanged(spaceId, move.from)
     notifyDocContentChanged(spaceId, move.to)
-    evictFreshness(spaceId, move.from)
-    evictFreshness(spaceId, move.to)
     wsManager.broadcast(spaceId, {
       type: "doc_deleted",
       spaceId,

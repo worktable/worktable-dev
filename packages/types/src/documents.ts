@@ -160,15 +160,6 @@ export const DocumentProvenanceSchema = z.object({
 
 export type DocumentProvenance = z.infer<typeof DocumentProvenanceSchema>
 
-export const DocumentFreshnessSchema = z.object({
-  lastHumanTouch: z.string().nullable(),
-  ageDays: z.number().nonnegative().nullable(),
-  humanReviewed: z.boolean(),
-  stale: z.boolean(),
-})
-
-export type DocFreshness = z.infer<typeof DocumentFreshnessSchema>
-
 export const DocumentRendererSchema = z.object({
   key: z.string().min(1).max(64),
   disposition: DocumentRenderDispositionSchema,
@@ -190,7 +181,6 @@ export const DocumentPageSchema = z.object({
   renderer: DocumentRendererSchema.nullable(),
   capabilities: DocumentPageCapabilitiesSchema,
   provenance: DocumentProvenanceSchema.optional(),
-  freshness: DocumentFreshnessSchema.optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [

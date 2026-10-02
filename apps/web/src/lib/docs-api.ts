@@ -1,4 +1,4 @@
-import type { ArchiveInfo, DocFreshness, DocListEntry, ResolvedDocumentReference } from "@worktable/types";
+import type { ArchiveInfo, DocListEntry, ResolvedDocumentReference } from "@worktable/types";
 import { fetchJSON } from "./http.ts";
 
 /**
@@ -54,7 +54,6 @@ export interface DocMeta {
     versionId: string;
     contentHash: string;
   };
-  freshness?: DocFreshness;
 }
 
 /** Encode each segment of a doc path for safe use in URLs */
@@ -260,19 +259,6 @@ export function createDocCheckpoint(
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions/checkpoint`, {
     method: "POST",
     body: JSON.stringify({ label }),
-  });
-}
-
-// ── Record a human review checkpoint ────────────────────────
-// REST-only on the server by design: review is the human trust anchor and
-// is never exposed over MCP.
-
-export function reviewDoc(
-  spaceId: string,
-  docPath: string
-): Promise<{ ok: boolean; provenance?: DocMeta["provenance"]; freshness?: DocFreshness }> {
-  return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/review`, {
-    method: "POST",
   });
 }
 

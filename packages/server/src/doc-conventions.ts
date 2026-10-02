@@ -10,7 +10,6 @@
 // never see this path at all.
 
 import type { DocLink } from "./link-graph.ts";
-import type { WikiConfig } from "./wiki-config.ts";
 
 export interface DocConventionIssue {
   severity: "hint" | "warning";
@@ -31,60 +30,24 @@ function hasBlockH1(blocks: unknown[]): boolean {
   });
 }
 
+const MISSING_H1: DocConventionIssue = {
+  severity: "hint",
+  code: "missing_h1",
+  message: "Doc has no H1 heading.",
+  hint: "The first H1 becomes the doc's display title everywhere; without one the filename is used.",
+};
+
 export function validateDocConventions(input: {
-  docPath: string;
   content: string | unknown[];
   links: DocLink[];
-  cfg: WikiConfig;
 }): DocConventionIssue[] {
-  const { docPath, content, links, cfg } = input;
+  const { content, links } = input;
   const issues: DocConventionIssue[] = [];
 
-  const folderDepth = docPath.split("/").length - 1;
-  if (folderDepth > cfg.folderDepthBudget) {
-    issues.push({
-      severity: "warning",
-      code: "folder_too_deep",
-      message: `Path is nested ${folderDepth} folders deep (budget ${cfg.folderDepthBudget}).`,
-      hint: "Deep trees hide docs. Prefer a flatter path that matches the space's structure; rename with worktable_docs_write when needed.",
-    });
-  }
-
   if (typeof content === "string") {
-    const lines = content.split("\n").length;
-    if (lines > cfg.docLengthBudgetLines) {
-      issues.push({
-        severity: "warning",
-        code: "doc_over_length_budget",
-        message: `Doc is ${lines} lines (budget ${cfg.docLengthBudgetLines}).`,
-        hint: "Keep docs as short as they need to be. Split into focused docs and link the parts by path: [Title](/other-doc).",
-      });
-    }
-    if (!hasMarkdownH1(content)) {
-      issues.push({
-        severity: "hint",
-        code: "missing_h1",
-        message: "Doc has no H1 heading.",
-        hint: "The first H1 becomes the doc's display title everywhere; without one the filename is used.",
-      });
-    }
+    if (!hasMarkdownH1(content)) issues.push(MISSING_H1);
   } else if (Array.isArray(content)) {
-    if (content.length > cfg.docLengthBudgetBlocks) {
-      issues.push({
-        severity: "warning",
-        code: "doc_over_length_budget",
-        message: `Doc is ${content.length} blocks (budget ${cfg.docLengthBudgetBlocks}).`,
-        hint: "Keep docs as short as they need to be. Split into focused docs and link the parts by path: [Title](/other-doc).",
-      });
-    }
-    if (!hasBlockH1(content)) {
-      issues.push({
-        severity: "hint",
-        code: "missing_h1",
-        message: "Doc has no H1 heading.",
-        hint: "The first H1 becomes the doc's display title everywhere; without one the filename is used.",
-      });
-    }
+    if (!hasBlockH1(content)) issues.push(MISSING_H1);
   }
 
   const broken = links.filter((link) => !link.resolved);

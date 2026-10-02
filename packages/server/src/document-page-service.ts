@@ -7,7 +7,6 @@ import type {
   DocumentProvenance,
   DocumentRenderDisposition,
   DocumentVersionSummary,
-  DocFreshness,
 } from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
 import { listDocumentAnnotationsForHandle } from "./document-annotation-service.ts"
@@ -26,7 +25,6 @@ import {
   DocumentSourceReadError,
   readDocumentSource,
 } from "./document-source-reader.ts"
-import { getDocFreshness } from "./freshness.ts"
 import { getDocProvenance, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -34,7 +32,6 @@ import {
   type CompatibleDocumentVersionSummary,
   type LegacyDocumentVersionLocator,
 } from "./document-version-store-v2.ts"
-import { getWidgetFreshness } from "./widget-freshness.ts"
 import {
   getWidgetProvenance,
   listWidgetVersions,
@@ -50,7 +47,6 @@ type LegacyShareKind = "doc" | "html"
 
 interface DocumentPageMetadata {
   provenance?: DocumentProvenance
-  freshness?: DocFreshness
 }
 
 interface DocumentPageIntegration {
@@ -75,10 +71,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
     annotationTarget: (path) => ({ docPath: path }),
     async readMetadata(spaceId, path) {
       const provenance = await getDocProvenance(spaceId, path)
-      return {
-        ...(provenance ? { provenance } : {}),
-        freshness: await getDocFreshness(spaceId, path, { provenance }),
-      }
+      return provenance ? { provenance } : {}
     },
     listVersions: (spaceId, path) => listDocVersions(spaceId, path),
   },
@@ -95,10 +88,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       const { data: widget } = await readWidget(spaceId, path)
       if (!widget) return null
       const provenance = await getWidgetProvenance(spaceId, path)
-      return {
-        ...(provenance ? { provenance } : {}),
-        freshness: await getWidgetFreshness(spaceId, widget),
-      }
+      return provenance ? { provenance } : {}
     },
     listVersions: (spaceId, path) => listWidgetVersions(spaceId, path),
   },
@@ -248,7 +238,6 @@ async function pageForHandle(
         : {}),
     },
     ...(metadata?.provenance ? { provenance: metadata.provenance } : {}),
-    ...(metadata?.freshness ? { freshness: metadata.freshness } : {}),
   }
 }
 

@@ -5,7 +5,6 @@ import {
   Suspense,
   useState,
   useEffect,
-  useMemo,
   useRef,
 } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
@@ -48,7 +47,6 @@ import { ProvenanceChip } from "@/components/provenance-chip"
 import { resolveIcon } from "@/lib/icons"
 import {
   useSpaces,
-  useSpace,
   useWorkspace,
   useRecordCollections,
   recordCollectionsQueryOptions,
@@ -72,7 +70,6 @@ import { useSidebar } from "@/hooks/use-sidebar"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { buildTree, flattenTreeOrder } from "@/lib/tree"
 import type { DocSortMode } from "@/lib/tree"
-import { staleTitle } from "@/lib/doc-freshness"
 import {
   createSpace,
   updateSpace,
@@ -644,16 +641,35 @@ function SpaceSection({
     <>
       <Collapsible open={expanded} onOpenChange={handleToggleExpanded}>
         <div className="group/space relative flex items-center rounded-md transition-colors duration-180 hover:bg-sidebar-hover">
-          <CollapsibleTrigger
-            className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-sm font-medium text-sidebar-space-foreground sm:min-h-0"
-            render={<button type="button" />}
-          >
-            <ChevronRight
-              className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-            />
-            {resolveIcon(space.icon, "size-4")}
-            <span className="min-w-0 truncate">{space.name}</span>
-          </CollapsibleTrigger>
+          {/* The chevron toggles the tree; the name opens the Space overview. */}
+          <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
+            <CollapsibleTrigger
+              className="flex h-full shrink-0 items-center py-2 pr-1 pl-3"
+              render={
+                <button
+                  type="button"
+                  aria-label={expanded ? `Collapse ${space.name}` : `Expand ${space.name}`}
+                />
+              }
+            >
+              <ChevronRight
+                className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+              />
+            </CollapsibleTrigger>
+            <Link
+              to="/spaces/$spaceId"
+              params={{ spaceId: space.id }}
+              onClick={handleNavigate}
+              className={`flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3 pl-1 text-sm font-medium ${
+                currentPath === `/spaces/${space.id}`
+                  ? "text-sidebar-primary"
+                  : "text-sidebar-space-foreground"
+              }`}
+            >
+              {resolveIcon(space.icon, "size-4")}
+              <span className="min-w-0 truncate">{space.name}</span>
+            </Link>
+          </div>
           {/* Always visible on touch (no hover exists) and on keyboard focus;
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
@@ -784,29 +800,8 @@ function SpaceContent({
     isError: documentsError,
     refetch: refetchDocuments,
   } = useDocuments(spaceId)
-  // The all-spaces payload (the `widgets` prop) is UNDECORATED — only the
-  // space-detail embed carries freshness. Layer freshness onto the prop list by
-  // id so stale dots match the doc route, without changing the list source
-  // (create/rename/archive still ride the all-spaces query). This query only
-  // fires for an expanded space, and shares the overview/widget-route cache.
-  const { data: spaceDetail } = useSpace(spaceId)
   const { subscribe } = useSpaceEvents(spaceId)
   const queryClient = useQueryClient()
-
-  const freshnessById = useMemo(() => {
-    const map = new Map<string, WidgetListEntry["freshness"]>()
-    for (const widget of spaceDetail?.widgets ?? [])
-      map.set(widget.id, widget.freshness)
-    return map
-  }, [spaceDetail])
-  const decoratedWidgets = useMemo<WidgetListEntry[]>(
-    () =>
-      widgets.map((widget) => ({
-        ...widget,
-        freshness: freshnessById.get(widget.id),
-      })),
-    [widgets, freshnessById]
-  )
 
   // Keep the merged tree live: a doc's sidebar label derives from its first
   // heading, so an edit that adds an H1 must show up without navigating away
@@ -830,8 +825,8 @@ function SpaceContent({
           queryKey: queryKeys.spaces,
           exact: true,
         })
-        // The per-space embed carries widget freshness (stale dots); refresh it
-        // too so a review/edit elsewhere updates the sidebar marker live.
+        // The per-space embed lists this Space's widgets for the overview;
+        // refresh it too so an edit elsewhere shows up live.
         void queryClient.invalidateQueries({
           queryKey: queryKeys.space(spaceId),
           exact: true,
@@ -869,8 +864,8 @@ function SpaceContent({
 
   const activeDocs = (docs ?? []).filter((doc) => !doc.archived)
   const archivedDocs = (docs ?? []).filter((doc) => doc.archived)
-  const activeWidgets = decoratedWidgets.filter((widget) => !widget.archive)
-  const archivedWidgets = decoratedWidgets.filter((widget) => widget.archive)
+  const activeWidgets = widgets.filter((widget) => !widget.archive)
+  const archivedWidgets = widgets.filter((widget) => widget.archive)
   const activeDocuments = (documents ?? []).filter(
     (document) => !documentListItemArchived(document)
   )
@@ -989,7 +984,7 @@ function RecordsSidebarSection({
   onNavigate: () => void
 }) {
   // Only fires for expanded spaces (this component mounts inside the
-  // collapsible), mirroring the useSpace freshness query above.
+  // collapsible).
   const { data: collections } = useRecordCollections(spaceId)
   if (!collections || collections.length === 0) return null
 
@@ -1478,12 +1473,6 @@ function WidgetTreeItem({
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
           <span className="truncate">{widget.name}</span>
-          {!archived && widget.freshness?.stale && (
-            <span
-              className="ml-auto size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-              title={staleTitle(widget.freshness)}
-            />
-          )}
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/widget:opacity-100 has-[[data-popup-open]]:opacity-100">
           <WidgetTreeActions
@@ -1810,7 +1799,6 @@ function SpaceTreeSection({
       format: item.format,
       health: item.health,
       archived: item.archived,
-      freshness: doc?.freshness ?? widget?.freshness,
       updatedAt:
         doc?.provenance?.updatedAt ??
         (typeof doc?.updatedAt === "number"
@@ -2500,13 +2488,6 @@ function DocTreeItem({
                     <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
                   )}
                   <span className="truncate">{node.label}</span>
-                  {/* A path can be both a doc and a folder; keep its stale signal visible. */}
-                  {!archived && node.freshness?.stale && (
-                    <span
-                      className="ml-auto size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                      title={staleTitle(node.freshness)}
-                    />
-                  )}
                 </SpecializedDocumentLink>
               </div>
             ) : (
@@ -2519,12 +2500,6 @@ function DocTreeItem({
                 />
                 <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
                 <span className="truncate">{node.label}</span>
-                {!archived && node.freshness?.stale && (
-                  <span
-                    className="ml-auto size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                    title={staleTitle(node.freshness)}
-                  />
-                )}
               </CollapsibleTrigger>
             )}
             <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/folder:opacity-100 has-[[data-popup-open]]:opacity-100">
@@ -2661,12 +2636,6 @@ function DocTreeItem({
             />
           )}
           <span className="truncate">{node.label}</span>
-          {!archived && node.freshness?.stale && (
-            <span
-              className="ml-auto size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-              title={staleTitle(node.freshness)}
-            />
-          )}
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/doc:opacity-100 has-[[data-popup-open]]:opacity-100">
           <DocContextMenuButton

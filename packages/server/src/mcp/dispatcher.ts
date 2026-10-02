@@ -125,22 +125,12 @@ import {
   invalidateSearchIndex,
   noteRecordMutated,
 } from "../search-index.ts"
-import {
-  decorateDocsWithFreshness,
-  evictFreshness,
-  getDocFreshness,
-} from "../freshness.ts"
-import {
-  decorateWidgetsWithFreshness,
-  getWidgetFreshness,
-} from "../widget-freshness.ts"
 import { decorateDocsWithBacklinkCounts, getDocLinks } from "../link-graph.ts"
 import { buildSpaceIndex } from "../space-index.ts"
 import {
   validateDocConventions,
   type DocConventionIssue,
 } from "../doc-conventions.ts"
-import { getWikiConfig } from "../wiki-config.ts"
 import { yjsManager } from "../yjs-manager.ts"
 import { renameDocAndSync } from "../doc-rename.ts"
 import { moveDocumentFolder } from "../document-folder-move.ts"
@@ -331,15 +321,10 @@ async function docWriteWarnings(
   try {
     const doc = await readDoc(spaceId, docPath)
     if (doc.error || doc.data === null) return []
-    const [space, { links }] = await Promise.all([
-      readSpace(spaceId),
-      getDocLinks(spaceId, docPath),
-    ])
+    const { links } = await getDocLinks(spaceId, docPath)
     return validateDocConventions({
-      docPath,
       content: doc.data as string | unknown[],
       links,
-      cfg: getWikiConfig(space.data),
     })
   } catch {
     // Guidance must never fail a successful write.
@@ -352,7 +337,6 @@ async function syncDocAfterToolWrite(
   docPath: string
 ): Promise<void> {
   invalidateSearchIndex()
-  evictFreshness(spaceId, docPath)
 
   const doc = await readDoc(spaceId, docPath)
   if (!doc.error && Array.isArray(doc.data)) {
@@ -361,7 +345,6 @@ async function syncDocAfterToolWrite(
 
   const statResult = await docStat(spaceId, docPath)
   const provenance = await getDocProvenance(spaceId, docPath)
-  const freshness = await getDocFreshness(spaceId, docPath, { provenance })
   wsManager.broadcast(spaceId, {
     type: "doc_update",
     spaceId,
@@ -371,7 +354,6 @@ async function syncDocAfterToolWrite(
       content: doc.data,
       updatedAt: statResult?.updatedAt ?? Date.now(),
       provenance,
-      freshness,
     },
   })
 }
@@ -797,10 +779,7 @@ async function _dispatchOperationInner(
       const { data: space, error } = await readSpace(spaceId)
       if (error || !space) throw new Error(error ?? "Space not found")
       return {
-        widgets: await decorateWidgetsWithFreshness(
-          spaceId,
-          await listWidgets(spaceId, { includeArchived })
-        ),
+        widgets: await listWidgets(spaceId, { includeArchived }),
       }
     }
     case "html.read": {
@@ -822,17 +801,13 @@ async function _dispatchOperationInner(
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
             if (error || !widget) throw new Error(error ?? "Widget not found")
-            return {
-              widget,
-              freshness: await getWidgetFreshness(spaceId, widget),
-            }
+            return { widget }
           }
           const { data, error } = await readWidgetDocument(spaceId, widgetId)
           if (error || !data)
             throw new Error(error ?? "Widget content not found")
           return {
             widget: data.widget,
-            freshness: await getWidgetFreshness(spaceId, data.widget),
             html: data.html,
             warnings: validateWidgetHtml(data.html, data.widget.permissions),
           }
@@ -1321,10 +1296,7 @@ async function _dispatchOperationInner(
       }
       const docs = await decorateDocsWithBacklinkCounts(
         spaceId,
-        await decorateDocsWithFreshness(
-          spaceId,
-          await listDocsDetailed(spaceId, { includeArchived })
-        )
+        await listDocsDetailed(spaceId, { includeArchived })
       )
       return {
         space,
@@ -1348,37 +1320,7 @@ async function _dispatchOperationInner(
         documentAccess: commonDocuments ? "common" : "legacy",
       })
 
-      // Doc hits carry trust signals so consumers can weight unreviewed
-      // agent-written content down at query time.
-      const decorated = await Promise.all(
-        results.map(async (hit) => {
-          if (hit.type !== "doc" || !hit.path) return hit
-          if (hit.documentKind) {
-            if (hit.documentKind !== "document" || hit.health !== "supported") {
-              return hit
-            }
-            if (hit.documentView === "html") {
-              const { data: widget } = await readWidget(hit.spaceId, hit.path)
-              if (!widget) return hit
-              const freshness = await getWidgetFreshness(hit.spaceId, widget)
-              return {
-                ...hit,
-                humanReviewed: freshness.humanReviewed,
-                lastHumanTouch: freshness.lastHumanTouch,
-              }
-            }
-            if (hit.documentView !== "doc") return hit
-          }
-          const freshness = await getDocFreshness(hit.spaceId, hit.path)
-          return {
-            ...hit,
-            humanReviewed: freshness.humanReviewed,
-            lastHumanTouch: freshness.lastHumanTouch,
-          }
-        })
-      )
-
-      return { results: decorated }
+      return { results }
     }
     case "annotations.list": {
       const parsed = ListAnnotationsInput.parse(args)
@@ -1517,9 +1459,6 @@ async function _dispatchOperationInner(
       if (result.error || result.data === null)
         throw new Error(result.error ?? "Failed to read document")
       const archived = await getDocArchiveInfo(spaceId, docPath)
-      // Trust signals ride along on every read so the agent can weight
-      // stale or unreviewed content without a second call.
-      const freshness = await getDocFreshness(spaceId, docPath)
       const { links, backlinks } = await getDocLinks(spaceId, docPath)
 
       // If stored as JSON, try to return markdown for agent convenience
@@ -1540,8 +1479,7 @@ async function _dispatchOperationInner(
               archived,
               links,
               backlinks,
-              ...freshness,
-              ...metadata,
+                  ...metadata,
             }
           }
         }
@@ -1555,7 +1493,6 @@ async function _dispatchOperationInner(
           archived,
           links,
           backlinks,
-          ...freshness,
           ...metadata,
           reason:
             metadata.lossyFields.length > 0
@@ -1575,7 +1512,6 @@ async function _dispatchOperationInner(
           archived,
           links,
           backlinks,
-          ...freshness,
           ...metadata,
         }
       }
@@ -1589,7 +1525,6 @@ async function _dispatchOperationInner(
         archived,
         links,
         backlinks,
-        ...freshness,
       }
     }
     case "docs.write": {
@@ -1755,7 +1690,6 @@ async function _dispatchOperationInner(
       if (deleteResult.notFound) {
         throw new Error(`Document not found: ${docPath}`)
       }
-      evictFreshness(spaceId, docPath)
       return { ok: true, docPath }
     }
     case "docs.rename": {
@@ -1835,10 +1769,7 @@ async function _dispatchOperationInner(
         (args["includeArchived"] as boolean | undefined) ?? false
       const docs = await decorateDocsWithBacklinkCounts(
         spaceId,
-        await decorateDocsWithFreshness(
-          spaceId,
-          await listDocsDetailed(spaceId, { includeArchived })
-        )
+        await listDocsDetailed(spaceId, { includeArchived })
       )
       return { docs }
     }

@@ -24,14 +24,12 @@ import { documentStorageProfiles } from "./document-storage-profile.ts"
 import { withDocGenerationLocks } from "./doc-generation-lock.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { notifyDocContentChanged } from "./content-events.ts"
-import { evictFreshness } from "./freshness.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import {
   pruneEmptyWidgetParents,
   withWidgetTopologyLock,
   withWidgetWriteLocks,
 } from "./widget-store.ts"
-import { evictWidgetFreshness } from "./widget-freshness.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
@@ -163,7 +161,6 @@ async function publishFolderDelete(
 ): Promise<void> {
   for (const document of documents) {
     if (document.formatId === BUILTIN_DOCUMENT_FORMATS.html) {
-      evictWidgetFreshness(spaceId, document.path)
       wsManager.broadcast(spaceId, {
         type: "widget_deleted",
         spaceId,
@@ -182,7 +179,6 @@ async function publishFolderDelete(
       continue
     }
     notifyDocContentChanged(spaceId, document.path)
-    evictFreshness(spaceId, document.path)
     wsManager.broadcast(spaceId, {
       type: "doc_deleted",
       spaceId,

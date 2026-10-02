@@ -14,7 +14,6 @@ import {
   deduplicateSlug,
 } from "../store.ts";
 import { listWidgets } from "../widget-store.ts";
-import { decorateWidgetsWithFreshness } from "../widget-freshness.ts";
 import { buildSpaceIndex } from "../space-index.ts";
 import type { SpaceFile } from "@worktable/types";
 import { wsManager } from "../ws.ts";
@@ -152,7 +151,7 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:r
     return c.json({ error: error ?? "Not found", code: "NOT_FOUND" }, 404);
   }
 
-  const widgets = await decorateWidgetsWithFreshness(spaceId, await listWidgets(spaceId, { includeArchived: true }));
+  const widgets = await listWidgets(spaceId, { includeArchived: true });
   return c.json({ space, widgets });
 });
 

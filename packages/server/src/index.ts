@@ -65,8 +65,7 @@ import { invalidateSearchIndex, noteRecordMutated } from "./search-index.ts";
 import { invalidateLinkGraph } from "./link-graph.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
-import { evictFreshness } from "./freshness.ts";
-import { lintScheduler, startLintScheduler } from "./wiki-lint.ts";
+import { retireLintAnnotations } from "./lint-retirement.ts";
 import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { THREADS_SCOPE, wsManager } from "./ws.ts";
 import { yjsManager } from "./yjs-manager.ts";
@@ -645,8 +644,23 @@ async function realtimeAccess(identity: TokenIdentity): Promise<{
   };
 }
 
-/** Teardown for the lint scheduler registered by the most recent startServer. */
-let stopLintScheduler: (() => Promise<void>) | null = null;
+// One deferred pass that resolves findings left by the retired wiki lint.
+// Replaced (not stacked) on each boot; stop awaits an in-flight pass.
+let lintRetirementTimer: ReturnType<typeof setTimeout> | null = null;
+let lintRetirementRun: Promise<void> | null = null;
+const LINT_RETIREMENT_DELAY_MS = 30_000;
+
+async function runLintRetirement(): Promise<void> {
+  try {
+    for (const receipt of await retireLintAnnotations()) {
+      console.log(
+        `[lint-retirement] space ${receipt.spaceId}: resolved ${receipt.resolved.length}, kept ${receipt.keptWithReplies.length} with replies`
+      );
+    }
+  } catch (err) {
+    console.error("[lint-retirement] failed:", err);
+  }
+}
 
 // Teardown for the completion-anchored update scheduler registered by the most
 // recent startServer. Module scope prevents repeated boots in tests from
@@ -1016,15 +1030,19 @@ export function startServer(
     }
   }
 
-  // Mechanical wiki lint: reacts to internal write notifications and sweeps
-  // periodically. WORKTABLE_SKIP_LINT_SWEEP=1 exists for the test runner
-  // (same rationale as the starter-seed guard above). Never set in production.
-  // Replace, never stack: startServer can run repeatedly in one process, and
-  // an ungraceful caller may have skipped the previous server's stop boundary.
-  if (!workspaceRejected && process.env["WORKTABLE_SKIP_LINT_SWEEP"] !== "1") {
-    // activeServer prevents overlapping server lifecycles; a prior callback
-    // can only be a fully stopped lifecycle and is safe to replace here.
-    stopLintScheduler = startLintScheduler();
+  // Resolve findings left open by the retired wiki lint, ~30s after boot so it
+  // never delays startup. WORKTABLE_SKIP_LINT_RETIREMENT=1 exists for the test
+  // runner (same rationale as the starter-seed guard above).
+  if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
+  lintRetirementTimer = null;
+  if (!workspaceRejected && process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] !== "1") {
+    lintRetirementTimer = setTimeout(() => {
+      lintRetirementTimer = null;
+      lintRetirementRun = runLintRetirement().finally(() => {
+        lintRetirementRun = null;
+      });
+    }, LINT_RETIREMENT_DELAY_MS);
+    lintRetirementTimer.unref?.();
   }
 
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
@@ -1050,7 +1068,7 @@ export function startServer(
 
   // Record index: derived SQLite projection of record YAML, fed by internal
   // record events plus the watcher (below). WORKTABLE_RECORDS_INDEX=0 is the
-  // kill switch. Replace, never stack, same as the lint scheduler. The stop is
+  // kill switch. Replace, never stack, same as the retention timers. The stop is
   // unconditional: a boot with the kill switch on (or a rejected workspace)
   // must also tear down an index left by a caller that skipped graceful stop.
   recordIndex.stop();
@@ -1165,11 +1183,8 @@ export function startServer(
     retentionSweepTimer = null;
     if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
     recordReconcileSweepTimer = null;
-    const stopLint = stopLintScheduler;
-    stopLintScheduler = null;
-    void stopLint?.().catch((stopErr) =>
-      console.error("[wiki-lint] failed-start cleanup error:", stopErr)
-    );
+    if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
+    lintRetirementTimer = null;
     recordIndex.stop();
   };
   const WIDGET_CHANGE_COALESCE_MS = 250;
@@ -1282,9 +1297,6 @@ export function startServer(
       // Sync external doc changes into Yjs in-memory state
       if (event.type === "doc") {
         console.log(`[Worktable] watcher doc change event: spaceId=${event.spaceId}, docPath=${event.docPath}`);
-        evictFreshness(event.spaceId, event.docPath);
-        // External edits bypass store.writeDoc, so notify lint here.
-        lintScheduler.noteDocChanged(event.spaceId, event.docPath);
         try {
           await syncExternalDocChange(event.spaceId, event.docPath);
         } catch (err) {
@@ -1771,9 +1783,9 @@ export function startServer(
     retentionSweepTimer = null;
     if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
     recordReconcileSweepTimer = null;
-    const stopLint = stopLintScheduler;
-    stopLintScheduler = null;
-    const lintStopping = stopLint?.() ?? Promise.resolve();
+    if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
+    lintRetirementTimer = null;
+    const lintStopping = lintRetirementRun ?? Promise.resolve();
 
     stopPromise = (async () => {
       const shutdownErrors: unknown[] = [];

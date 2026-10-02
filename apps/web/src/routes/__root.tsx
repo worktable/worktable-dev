@@ -72,7 +72,6 @@ import { useMobileVisualViewport } from "@/hooks/use-mobile-visual-viewport"
 import { SidebarContext } from "@/hooks/use-sidebar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
-import { RelativeTime } from "@/lib/time"
 import { themeBootstrapScript } from "@/lib/theme"
 import { ThemeProvider, useTheme } from "@/components/theme-provider"
 import {
@@ -427,11 +426,7 @@ function Breadcrumb() {
               <button
                 ref={triggerRef}
                 type="button"
-                className={`inline-flex shrink-0 items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                  pageDetails.chip
-                    ? "gap-1.5 px-2 py-0.5 text-[11px] leading-4"
-                    : "size-6 justify-center"
-                }`}
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
                 onPointerDown={(event) => {
                   lastPointerTypeRef.current = event.pointerType
                 }}
@@ -453,30 +448,7 @@ function Breadcrumb() {
                 aria-label={`View details for ${part.label}`}
                 title="View details"
               >
-                {pageDetails.chip ? (
-                  <>
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        pageDetails.chip.agent
-                          ? "bronze-knob"
-                          : "bg-muted-foreground/50"
-                      }`}
-                    />
-                    {pageDetails.chip.label}
-                    {pageDetails.chip.updatedAtIso && (
-                      <span className="hidden sm:inline">
-                        · <RelativeTime iso={pageDetails.chip.updatedAtIso} />
-                      </span>
-                    )}
-                    {pageDetails.chip.stale && (
-                      <span className="hidden text-muted-foreground/70 sm:inline">
-                        · Stale
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <Clock3 className="size-3.5" />
-                )}
+                <Clock3 className="size-3.5" />
               </button>
               {metaMounted && (
                 <div
@@ -507,11 +479,6 @@ function Breadcrumb() {
                       </div>
                     </div>
                   </div>
-                  {pageDetails.chip?.stale && pageDetails.chip.staleDetail ? (
-                    <div className="mt-2 border-t border-border/60 pt-2 leading-5 text-muted-foreground">
-                      {pageDetails.chip.staleDetail}
-                    </div>
-                  ) : null}
                 </div>
               )}
             </span>

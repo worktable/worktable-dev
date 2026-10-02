@@ -1,20 +1,6 @@
 import { createContext, useContext } from "react"
 import type { LucideIcon } from "lucide-react"
 
-/** Provenance chip rendered in the breadcrumb next to the doc title. */
-export interface PageMetaChip {
-  /** "You" | "Agent" | "File" | … — from CATEGORY_LABELS. */
-  label: string
-  /** Bronze dot (agent presence) vs muted dot. */
-  agent: boolean
-  /** ISO timestamp of the last write, for the relative time. */
-  updatedAtIso: string | null
-  stale: boolean
-  /** Newest version is a human edit or review checkpoint. */
-  reviewed: boolean
-  staleDetail?: string
-}
-
 export interface PageShareTarget {
   kind: "doc" | "html"
   spaceId: string
@@ -61,7 +47,6 @@ export interface PageMeta {
   /** Optional artifact details shown from the breadcrumb accessory. */
   updatedAtLabel?: string
   provenanceLabel?: string
-  chip?: PageMetaChip
   /** Cloud-only owner control for a read-only public link. */
   shareTarget?: PageShareTarget
   /** The single most important action for the open artifact. */

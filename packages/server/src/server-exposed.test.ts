@@ -801,8 +801,7 @@ describe("local access boundary model", () => {
     const content = [{ type: "paragraph", content: [{ type: "text", text: "SYNTHETIC_BOUNDARY_CONTENT_AGENT", styles: {} }] }]
     expect((await fetch(`${origin}/api/spaces/demo/docs/private`, { method: "PUT", headers: agentHeaders, body: JSON.stringify({ content }) })).status).toBe(200)
     const afterWrite = await fetch(`${origin}/api/spaces/demo/docs/private`, { headers: agentHeaders })
-    const document = await afterWrite.json() as { freshness: { humanReviewed: boolean }, provenance: { updatedBy: string } }
-    expect(document.freshness.humanReviewed).toBe(false)
+    const document = await afterWrite.json() as { provenance: { updatedBy: string } }
     expect(document.provenance.updatedBy).toStartWith("agent:")
     const archivedDoc = await fetch(`${origin}/api/spaces/demo/docs/private/archive`, { method: "POST", headers: agentHeaders, body: JSON.stringify({ archivedBy: "user" }) })
     expect(archivedDoc.status).toBe(200)
@@ -842,9 +841,7 @@ describe("local access boundary model", () => {
     const reply = await fetch(`${origin}/api/spaces/demo/annotations/${createdAnnotation.annotationId}/replies`, { method: "POST", headers: agentHeaders, body: JSON.stringify({ body: "Synthetic reply", author: { type: "user", id: "user" } }) })
     expect(reply.status).toBe(200)
     expect((await reply.json() as { annotation: { thread: Array<{ author: { type: string } }> } }).annotation.thread.at(-1)?.author.type).toBe("agent")
-    for (const action of ["review", "versions/checkpoint"]) {
-      expect((await fetch(`${origin}/api/spaces/demo/docs/private/${action}`, { method: "POST", headers: agentHeaders, body: "{}" })).status).toBe(403)
-    }
+    expect((await fetch(`${origin}/api/spaces/demo/docs/private/versions/checkpoint`, { method: "POST", headers: agentHeaders, body: "{}" })).status).toBe(403)
     const widgetCreated = await fetch(`${origin}/api/spaces/demo/widgets`, {
       method: "POST", headers: agentHeaders,
       body: JSON.stringify({ id: "synthetic-agent-widget", name: "Synthetic agent widget", createdBy: "user", html: "<!doctype html><html><head></head><body><p>Synthetic widget</p></body></html>" }),
@@ -852,12 +849,7 @@ describe("local access boundary model", () => {
     expect(widgetCreated.status).toBe(201)
     const { widgetId } = await widgetCreated.json() as { widgetId: string }
     const widgetPath = `/api/spaces/demo/widgets/__document/${Buffer.from(widgetId).toString("base64url")}`
-    for (const action of ["review", "versions/checkpoint"]) {
-      expect((await fetch(`${origin}${widgetPath}/${action}`, { method: "POST", headers: agentHeaders, body: "{}" })).status).toBe(403)
-    }
-    const widgetResponse = await fetch(`${origin}/api/spaces/demo/widgets`, { headers: agentHeaders })
-    const widgetResult = await widgetResponse.json() as { widgets: Array<{ id: string, freshness: { humanReviewed: boolean } }> }
-    expect(widgetResult.widgets.find(widget => widget.id === widgetId)?.freshness.humanReviewed).toBe(false)
+    expect((await fetch(`${origin}${widgetPath}/versions/checkpoint`, { method: "POST", headers: agentHeaders, body: "{}" })).status).toBe(403)
     for (const action of ["archive", "restore"]) {
       const archivedWidget = await fetch(`${origin}${widgetPath}/${action}`, { method: "POST", headers: agentHeaders, body: JSON.stringify({ archivedBy: "user" }) })
       expect(archivedWidget.status).toBe(200)
@@ -872,15 +864,15 @@ describe("local access boundary model", () => {
     }
     expect((await tryUpgrade(port, await withCollaborationEpoch(`/yjs/demo/private?token=${encodeURIComponent(agent.token)}`), {})).ok).toBe(false)
     const fullAgent = await createToken({ scopes: ["*"], agent: "synthetic-owner-scope-agent" })
-    expect((await fetch(`${origin}/api/spaces/demo/docs/private/review`, { method: "POST", headers: { Authorization: `Bearer ${fullAgent.token}` } })).status).toBe(403)
+    expect((await fetch(`${origin}/api/spaces/demo/docs/private/versions/checkpoint`, { method: "POST", headers: { Authorization: `Bearer ${fullAgent.token}` } })).status).toBe(403)
     for (const delegatedAgent of [undefined, null, "", "  ", "synthetic-delegated-agent"]) {
       const delegated = await fetch(`${origin}/api/tokens`, { method: "POST", headers: { Authorization: `Bearer ${fullAgent.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ scopes: ["*"], agent: delegatedAgent }) })
       expect(delegated.status).toBe(201)
       const credential = await delegated.json() as { token: string, metadata: { principal: { type: string } } }
       expect(credential.metadata.principal.type).toBe("agent")
-      expect((await fetch(`${origin}/api/spaces/demo/docs/private/review`, { method: "POST", headers: { Authorization: `Bearer ${credential.token}` } })).status).toBe(403)
+      expect((await fetch(`${origin}/api/spaces/demo/docs/private/versions/checkpoint`, { method: "POST", headers: { Authorization: `Bearer ${credential.token}` } })).status).toBe(403)
     }
-    expect((await fetch(`${origin}/api/spaces/demo/docs/private/review`, { method: "POST", headers: { Authorization: `Bearer ${owner}` } })).status).toBe(200)
+    expect((await fetch(`${origin}/api/spaces/demo/docs/private/versions/checkpoint`, { method: "POST", headers: { Authorization: `Bearer ${owner}` } })).status).toBe(200)
     const control = await fetch(`${origin}/api/spaces/demo/docs/private`, { headers: { Authorization: `Bearer ${owner}` } })
     expect(control.status).toBe(200)
     expect(await control.text()).toContain("SYNTHETIC_BOUNDARY_CONTENT")

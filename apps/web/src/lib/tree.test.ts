@@ -165,32 +165,6 @@ describe("buildTree", () => {
     }), { numRuns: 200, examples: [[[]], [["-", "-/-", "0"]], [["a/b/c/d", "a/b/other", "standalone"]]] });
   });
 
-  it("propagates freshness to doc leaves but not folders", () => {
-    const freshness = { lastHumanTouch: null, ageDays: 45, humanReviewed: false, stale: true };
-    const tree = buildTree([
-      { path: "notes/stale-doc", freshness },
-      { path: "notes/plain-doc" },
-    ]);
-    const folder = tree.find((n) => n.name === "notes");
-    expect(folder?.isFolder).toBe(true);
-    expect(folder?.freshness).toBeUndefined();
-    const staleDoc = folder?.children.find((n) => n.name === "stale-doc");
-    expect(staleDoc?.freshness).toEqual(freshness);
-    const plainDoc = folder?.children.find((n) => n.name === "plain-doc");
-    expect(plainDoc?.freshness).toBeUndefined();
-  });
-
-  it("keeps a doc's freshness when the path is later promoted to a folder", () => {
-    const freshness = { lastHumanTouch: null, ageDays: 10, humanReviewed: false, stale: true };
-    const tree = buildTree([
-      { path: "guide", freshness },
-      { path: "guide/child" },
-    ]);
-    const promoted = tree.find((n) => n.name === "guide");
-    expect(promoted?.isFolder).toBe(true);
-    expect(promoted?.freshness).toEqual(freshness);
-  });
-
 });
 
 describe("document navigation policy", () => {

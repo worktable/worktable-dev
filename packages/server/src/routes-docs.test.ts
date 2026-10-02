@@ -149,48 +149,6 @@ describe("doc routes", () => {
     });
   });
 
-  // ── Review + freshness ─────────────────────────────────
-
-  describe("POST /api/spaces/:spaceId/docs/*/review", () => {
-    it("records a review checkpoint and flips humanReviewed", async () => {
-      const { listDocVersions } = await import("./store.ts");
-      const { writeManagedFixtureDoc: writeDoc } = await import("./fixtures/managed-content.ts");
-      await writeDoc("test-space", "agent-doc", "# Agent Doc\n\nBody.", {
-        updatedBy: "worktable-agent",
-        source: "mcp",
-      });
-
-      const before = await req(app, "GET", "/api/spaces/test-space/docs/agent-doc");
-      expect((before.json as { freshness: { humanReviewed: boolean } }).freshness.humanReviewed).toBe(false);
-
-      const { status, json } = await req(app, "POST", "/api/spaces/test-space/docs/agent-doc/review");
-      expect(status).toBe(200);
-      const j = json as { ok: boolean; freshness: { humanReviewed: boolean; lastHumanTouch: string | null } };
-      expect(j.ok).toBe(true);
-      expect(j.freshness.humanReviewed).toBe(true);
-      expect(j.freshness.lastHumanTouch).not.toBeNull();
-
-      const versions = await listDocVersions("test-space", "agent-doc");
-      expect(versions[0]?.checkpoint?.kind).toBe("review");
-    });
-
-    it("404s for a missing doc", async () => {
-      const { status } = await req(app, "POST", "/api/spaces/test-space/docs/nope/review");
-      expect(status).toBe(404);
-    });
-  });
-
-  describe("freshness decoration", () => {
-    it("GET list includes freshness for every doc", async () => {
-      await req(app, "PUT", "/api/spaces/test-space/docs/alpha", { content: [] });
-      const { json } = await req(app, "GET", "/api/spaces/test-space/docs");
-      const j = json as { docs: { path: string; freshness?: { humanReviewed: boolean } }[] };
-      expect(j.docs[0]?.freshness).toBeDefined();
-      // REST PUT with updatedBy user counts as human.
-      expect(j.docs[0]?.freshness?.humanReviewed).toBe(true);
-    });
-  });
-
   // ── Read ───────────────────────────────────────────────
 
   describe("GET /api/spaces/:spaceId/docs/*", () => {

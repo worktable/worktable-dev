@@ -11,7 +11,6 @@ import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { deleteDoc, docExists, getDocPath, getDocProvenance, readDoc, renameDoc, writeSpace } from "./store.ts";
 import { getServerEditor } from "./blocknote.ts";
-import { getDocFreshness } from "./freshness.ts";
 import { MermaidDocumentValidationError } from "./mermaid-document.ts";
 import {
   ensureWorkspaceManifest,
@@ -726,8 +725,8 @@ describe("YjsDocManager sync persistence", () => {
   });
 
   it("opening an agent doc records no version and does not flip provenance to human", async () => {
-    // The repro from the freshness bug: an agent writes a doc, a human merely
-    // opens it (initial editor sync), and it must NOT read as human-reviewed.
+    // An agent writes a doc, a human merely opens it (initial editor sync), and
+    // the doc must stay attributed to the agent.
     await writeDoc("test-space", "agent-doc", [para("agent wrote this")], {
       updatedBy: "worktable-agent",
       source: "mcp",
@@ -741,8 +740,6 @@ describe("YjsDocManager sync persistence", () => {
     const after = await getDocProvenance("test-space", "agent-doc");
     expect(after?.versionId).toBe(before!.versionId);
     expect(after?.source).toBe("mcp");
-    const freshness = await getDocFreshness("test-space", "agent-doc");
-    expect(freshness.humanReviewed).toBe(false);
   });
 
   it("no-op persist over a browser doc records no new version", async () => {
@@ -908,8 +905,6 @@ describe("YjsDocManager sync persistence", () => {
 
     const after = await getDocProvenance("test-space", "drift-doc");
     expect(after?.source).toBe("browser-yjs-sync");
-    const freshness = await getDocFreshness("test-space", "drift-doc");
-    expect(freshness.humanReviewed).toBe(false);
   });
 
   it("attributes a content change to a human after an edit signal", async () => {
@@ -928,8 +923,6 @@ describe("YjsDocManager sync persistence", () => {
 
     const after = await getDocProvenance("test-space", "human-doc");
     expect(after?.source).toBe("browser-yjs");
-    const freshness = await getDocFreshness("test-space", "human-doc");
-    expect(freshness.humanReviewed).toBe(true);
   });
 
   it("rejects invalid Mermaid from a browser sync without replacing the valid file", async () => {

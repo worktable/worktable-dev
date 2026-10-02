@@ -86,7 +86,6 @@ through `worktable_html_read`.
 - Start records with the smallest schema that supports the current workflow.
 - Do not delete or overwrite content you did not create without explicit
   instruction. Annotate and ask when ownership is unclear.
-- Never mark content reviewed; that signal belongs to the human.
 
 Continue with [writing docs](/agents/writing-docs/),
 [building HTML docs](/agents/building-widgets/),

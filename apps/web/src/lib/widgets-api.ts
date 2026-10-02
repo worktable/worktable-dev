@@ -1,4 +1,4 @@
-import type { DocFreshness, WidgetFile } from "@worktable/types";
+import type { WidgetFile } from "@worktable/types";
 import type { DocVersionCheckpoint, DocVersionEntry } from "./docs-api.ts";
 import {
   authenticatedFetch,
@@ -9,13 +9,8 @@ import {
 } from "./http.ts";
 import { htmlDocumentApiPath } from "./html-document-api-path.ts";
 
-/**
- * A widget list entry decorated with derived freshness — the client mirror of
- * the server's `WidgetListEntry` (packages/server/src/widget-freshness.ts). The
- * single-widget REST read (GET /:widgetId) does NOT carry freshness; only list
- * surfaces (REST GET /widgets, the space-detail embed, MCP) do.
- */
-export type WidgetListEntry = WidgetFile & { freshness?: DocFreshness };
+/** A widget as returned by list surfaces (REST GET /widgets, the space-detail embed). */
+export type WidgetListEntry = WidgetFile;
 
 // ── Version history types ───────────────────────────────────
 // The server mirrors doc version history for HTML docs (widgets), so the list
@@ -101,19 +96,6 @@ export function restoreWidget(spaceId: string, widgetId: string) {
 export function deleteWidget(spaceId: string, widgetId: string) {
   return fetchJSON<{ ok: boolean }>(htmlDocumentApiPath(spaceId, widgetId), {
     method: "DELETE",
-  });
-}
-
-// ── Record a human review checkpoint ────────────────────────
-// REST-only on the server by design (mirrors reviewDoc): review is the human
-// trust anchor and is never exposed over MCP, so an agent can't launder its own
-// output into "reviewed".
-export function reviewWidget(
-  spaceId: string,
-  widgetId: string
-): Promise<{ ok: boolean; provenance?: unknown; freshness?: DocFreshness }> {
-  return fetchJSON(`${htmlDocumentApiPath(spaceId, widgetId)}/review`, {
-    method: "POST",
   });
 }
 

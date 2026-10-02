@@ -13,7 +13,6 @@ import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryE
 import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
-import { decorateWidgetsWithFreshness, evictWidgetFreshness, getWidgetFreshness } from "../widget-freshness.ts";
 import { wsManager } from "../ws.ts";
 import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
@@ -102,9 +101,9 @@ const ArchiveWidgetSchema = z.object({
 // The `sandbox allow-scripts` directive forces an OPAQUE origin even when this
 // content is loaded as a top-level document (the "Open in new tab" action serves
 // /content directly, outside the iframe's sandbox attribute). Without it, authored
-// widget JS would run at the real app origin there and its fetch to /review or
-// /versions/checkpoint would carry Sec-Fetch-Site: same-origin and pass the human
-// trust-anchor gate. In-iframe use is unaffected — the iframe already sandboxes to
+// widget JS would run at the real app origin there and its fetch to
+// /versions/checkpoint would carry Sec-Fetch-Site: same-origin and pass the
+// human-attribution gate. In-iframe use is unaffected — the iframe already sandboxes to
 // an opaque origin, and the broker validates event.source, not the frame origin.
 
 async function ensureWidgetAccess(spaceId: string, widgetId: string, collectionId: string, action: "read" | "create" | "update" | "delete") {
@@ -259,7 +258,7 @@ widgetsRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const { data: space, error } = await readSpace(spaceId);
   if (error || !space) return c.json({ error: error ?? "Space not found", code: "NOT_FOUND" }, 404);
-  return c.json({ widgets: await decorateWidgetsWithFreshness(spaceId, await listWidgets(spaceId, { includeArchived })) });
+  return c.json({ widgets: await listWidgets(spaceId, { includeArchived }) });
 });
 
 widgetsRouter.post("/", async (c) => {
@@ -738,10 +737,9 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
 async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: string) {
   const ownerDenied = await requireHumanWorkspaceOwner()(c, async () => {});
   if (ownerDenied) return ownerDenied;
-  // A manual checkpoint stamps sourceCategory "human" — a trust anchor isHumanTouch
-  // treats as reviewed — so it is gated exactly like /review. Without this, a
+  // A manual checkpoint stamps sourceCategory "human". Without this gate, a
   // sandboxed (or new-tab served) widget could POST its own /versions/checkpoint
-  // and launder itself into humanReviewed, bypassing the /review gate.
+  // and attribute its own content to the person.
   const denied = appOnlyOr403(c, "Saving a checkpoint");
   if (denied) return denied;
   const { data: widget, error } = await readWidget(spaceId, widgetId);
@@ -771,27 +769,21 @@ async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: str
     return { ok: true as const, provenance };
   });
   if (!result.ok) return c.json({ error: "Widget content not found", code: "NOT_FOUND" }, 404);
-  // A manual checkpoint changes the latest version id (freshness derives from
-  // it) — evict and broadcast so this and other clients read fresh state,
-  // matching the review route.
-  evictWidgetFreshness(spaceId, widgetId);
+  // A manual checkpoint changes the latest version id; broadcast so other
+  // clients read fresh state.
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: widget });
   return c.json({ ok: true, provenance: result.provenance });
 }
 
-// Mark-reviewed is REST-only BY DESIGN — it is never exposed over MCP, so an
-// agent cannot mint a review checkpoint and launder its own output into
-// "reviewed" (same invariant as docs, routes/docs.ts review handler).
-// The review checkpoint is the human-only trust anchor: it stamps a version as
-// human-reviewed (sourceCategory "human", updatedBy "user"). A widget renders in
-// an opaque-origin sandbox, so ANY fetch it makes to the app origin is
-// cross-origin: the POST carries `Origin: null` (and `Sec-Fetch-Site:
-// cross-site`, a Forbidden header widget JS cannot forge). CORS blocks the widget
-// from READING the response, but the review side-effect would still fire — so a
-// widget could mark itself human-reviewed. Gate the route to genuine same-origin
-// calls from the Worktable app. Non-browser callers (tests, CLI, tooling) send
-// neither header and are unaffected; this holds in local no-auth mode too, where
-// the WS/CORS origin gate does not run.
+// Version attribution is human-defaultable on REST writes, so a widget must not
+// be able to reach those routes. A widget renders in an opaque-origin sandbox,
+// so ANY fetch it makes to the app origin is cross-origin: the POST carries
+// `Origin: null` (and `Sec-Fetch-Site: cross-site`, a Forbidden header widget JS
+// cannot forge). CORS blocks the widget from READING the response, but the side
+// effect would still fire. Gate those routes to genuine same-origin calls from
+// the Worktable app. Non-browser callers (tests, CLI, tooling) send neither
+// header and are unaffected; this holds in local no-auth mode too, where the
+// WS/CORS origin gate does not run.
 function isSameOriginAppRequest(c: Context): boolean {
   const secFetchSite = c.req.header("sec-fetch-site");
   if (secFetchSite) {
@@ -815,51 +807,13 @@ function isSameOriginAppRequest(c: Context): boolean {
 }
 
 // Every route that records a widget VERSION with human-defaultable attribution
-// (source "rest-api", updatedBy defaulting to "user" — which isHumanTouch reads as
-// human) is a trust anchor: a sandboxed OR new-tab-served widget must not reach it,
-// or agent-authored HTML could stamp its own latest version as human-touched /
-// reviewed without ever calling /review. Guards create, PUT, PATCH, restore,
-// review, and checkpoint. Returns a 403 Response to short-circuit, or null to
+// (source "rest-api", updatedBy defaulting to "user") must be unreachable from a
+// sandboxed OR new-tab-served widget, or agent-authored HTML could attribute its
+// own content to the person. Guards create, PUT, PATCH, restore, and checkpoint. Returns a 403 Response to short-circuit, or null to
 // proceed. Non-browser callers (tests, CLI, MCP) send neither header and pass.
 function appOnlyOr403(c: Context, action: string): Response | null {
   if (isSameOriginAppRequest(c)) return null;
   return c.json({ error: `${action} can only be done from the Worktable app, not from widget content`, code: "FORBIDDEN" }, 403);
-}
-
-async function handleReview(c: Context, spaceId: string, widgetId: string) {
-  const ownerDenied = await requireHumanWorkspaceOwner()(c, async () => {});
-  if (ownerDenied) return ownerDenied;
-  const denied = appOnlyOr403(c, "Marking reviewed");
-  if (denied) return denied;
-  const { data: widget, error } = await readWidget(spaceId, widgetId);
-  if (error || !widget) return c.json({ error: error ?? "Widget not found", code: "NOT_FOUND" }, 404);
-  // Serialize capture→record under the per-widget lock so a concurrent agent/REST
-  // write can't land between capture and recordWidgetVersion's internal
-  // after-capture and get recorded as the human-reviewed snapshot (which would
-  // report humanReviewed on content the user never saw).
-  const result = await withWidgetWriteLock(spaceId, widgetId, async () => {
-    const current = await captureWidgetVersionContent(spaceId, widgetId);
-    if (!current) return { ok: false as const };
-    const provenance = await recordWidgetVersion(spaceId, widgetId, current, {
-      source: "rest-api",
-      updatedBy: restWriteActor(c),
-    }, {
-      force: true,
-      operation: "checkpoint",
-      checkpoint: {
-        meaningful: true,
-        kind: "review",
-        label: "Reviewed",
-        sourceCategory: "human",
-      },
-    });
-    return { ok: true as const, provenance };
-  });
-  if (!result.ok) return c.json({ error: "Widget content not found", code: "NOT_FOUND" }, 404);
-  evictWidgetFreshness(spaceId, widgetId);
-  const freshness = await getWidgetFreshness(spaceId, widget);
-  wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: widget });
-  return c.json({ ok: true, provenance: result.provenance, freshness });
 }
 
 // ---- Method dispatchers --------------------------------------------------------
@@ -919,7 +873,6 @@ widgetsRouter.post("/*", async (c) => {
     async () => {
       if (rest.length === 1 && rest[0] === "archive") return handleArchive(c, spaceId, widgetId);
       if (rest.length === 1 && rest[0] === "restore") return handleRestore(c, spaceId, widgetId);
-      if (rest.length === 1 && rest[0] === "review") return handleReview(c, spaceId, widgetId);
       if (rest.length === 2 && rest[0] === "versions" && rest[1] === "checkpoint") return handleCreateCheckpoint(c, spaceId, widgetId);
       if (rest.length === 3 && rest[0] === "versions" && rest[1] && rest[2] === "restore") return handleRestoreVersion(c, spaceId, widgetId, rest[1]);
       if (rest.length === 2 && rest[0] === "records" && rest[1]) return handleRecordCreate(c, spaceId, widgetId, rest[1]);

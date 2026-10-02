@@ -65,8 +65,6 @@ Treat as Worktable's bookkeeping (editable, but easy to get wrong):
 `worktable.workspace.json`, `space.json`, `docs.meta.json`,
 `documents.meta.json`, `document-data/`, `doc-aliases.json`, thread JSON, and
 `versions/`. Prefer doing those operations through the app or the MCP tools.
-Freshness and review status are derived from version history instead of being
-user-authored metadata.
 
 ## What is deliberately not here
 

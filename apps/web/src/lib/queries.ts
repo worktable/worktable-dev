@@ -142,7 +142,7 @@ export function useSpaces() {
     for (const space of query.data) {
       if (space.docs && queryClient.getQueryData(docQueryKeys.docs(space.id)) === undefined) {
         // Seed COLD caches only, and stale-at-birth: the all-spaces payload
-        // carries UNDECORATED docs (no freshness or backlink counts). Seeding
+        // carries UNDECORATED docs (no backlink counts). Seeding
         // over existing data would clobber the decorated shape on every
         // all-spaces refetch; skipping warm caches keeps the instant
         // first-navigation paint without ever regressing richer data.

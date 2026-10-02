@@ -633,10 +633,10 @@ export function useSpaceSubscription(
           (msg.type === "doc_update" || msg.type === "doc_deleted") &&
           spaceId
         ) {
-          // Doc content syncs through Yjs, but the docs LIST (titles,
-          // freshness, backlink counts on Space Home and the sidebar) only
-          // refreshes by refetch — without this, an open overview shows
-          // stale markers until the query's stale window expires.
+          // Doc content syncs through Yjs, but the docs LIST (titles and
+          // backlink counts on Space Home and the sidebar) only refreshes by
+          // refetch — without this, an open overview shows outdated rows
+          // until the query's stale window expires.
           void queryClient.invalidateQueries({
             queryKey: docQueryKeys.docs(spaceId),
           })

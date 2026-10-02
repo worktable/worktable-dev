@@ -31,7 +31,7 @@ History to choose a retention limit if needed.
 
 ## Links and the graph
 
-Link docs by path `[Title](/other-doc)` and Worktable tracks the graph: backlinks show up on Space Home, and automatic lint flags broken links and orphaned docs as annotations that resolve themselves once fixed. Worktable links stay in the current tab, while links to other websites open in a new tab. You can still use your browser's link menu to open or copy any destination. Ask your agents to link related docs; the graph is how a space stays navigable at fifty docs.
+Link docs by path `[Title](/other-doc)` and Worktable tracks the graph: agents see each doc's links and backlinks, and a write that links to a missing doc returns a warning. Worktable links stay in the current tab, while links to other websites open in a new tab. You can still use your browser's link menu to open or copy any destination. Ask your agents to link related docs; the graph is how a space stays navigable at fifty docs.
 
 Renaming a doc or moving a folder doesn't break the links that point at the old
 path: existing links and bookmarks keep resolving to the doc's new location.

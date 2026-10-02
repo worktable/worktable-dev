@@ -74,7 +74,7 @@ describe("space index", () => {
     expect(all.find((d) => d.path === "guides/no-heading-here")?.title).toBe("No Heading Here");
   });
 
-  it("excludes archived docs and carries freshness + backlink counts", async () => {
+  it("excludes archived docs and carries backlink counts", async () => {
     await write("hub", "# Hub\n\n[a](/a)", true);
     await write("a", "# A");
     await write("old", "# Old");
@@ -85,8 +85,6 @@ describe("space index", () => {
     expect(all.map((d) => d.path).sort()).toEqual(["a", "hub"]);
     const a = all.find((d) => d.path === "a");
     expect(a?.backlinkCount).toBe(1);
-    expect(a?.freshness?.humanReviewed).toBe(false);
-    expect(all.find((d) => d.path === "hub")?.freshness?.humanReviewed).toBe(true);
   });
 
   it("returns null for a missing space", async () => {

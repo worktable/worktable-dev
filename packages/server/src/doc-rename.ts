@@ -4,7 +4,7 @@
 //
 // A rename is one lifecycle operation regardless of transport. REST and MCP
 // both come through here so the portable file/history/meta move cannot drift
-// from live Yjs state, annotations, derived indexes, freshness, or events.
+// from live Yjs state, annotations, derived indexes, or events.
 //
 // This module deliberately does not inspect or rewrite document content.
 // Rename-stable links are provided by the portable aliases recorded here;
@@ -25,7 +25,6 @@ import {
   validateAnnotationDocPathMoves,
 } from "./annotation-store.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
-import { evictFreshness } from "./freshness.ts"
 import { wsManager } from "./ws.ts"
 import { recordDocAlias } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
@@ -233,11 +232,6 @@ async function publishRenameSignals(
   spaceId: string,
   moves: Array<{ from: string; to: string }>
 ): Promise<void> {
-  for (const { from, to } of moves) {
-    evictFreshness(spaceId, from)
-    evictFreshness(spaceId, to)
-  }
-
   invalidateSearchIndex()
 
   for (const { from, to } of moves) {

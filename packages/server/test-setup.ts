@@ -16,7 +16,6 @@ import { afterEach } from "bun:test";
 import { yjsManager } from "./src/yjs-manager.ts";
 import { setWorkspaceRootOverride } from "./src/workspace.ts";
 import { setAppDirOverride } from "./src/app-storage.ts";
-import { lintScheduler } from "./src/wiki-lint.ts";
 import { resetRecordDiagnosticsForTests } from "./src/record-store.ts";
 import { recordIndex } from "./src/record-index.ts";
 import { invalidateServerSettingsCache } from "./src/settings-store.ts";
@@ -28,11 +27,10 @@ import { drainWorkspaceChanges } from "./src/workspace-events.ts";
 // directly, so nothing is left uncovered.
 process.env["WORKTABLE_SKIP_STARTER_SEED"] = "1";
 
-// Same rationale for the background lint scheduler: startServer would register
-// a doc-change listener + sweep timers whose debounced lint runs race other
-// tests' temp workspaces. wiki-lint.test.ts drives lint directly, so nothing
-// is left uncovered.
-process.env["WORKTABLE_SKIP_LINT_SWEEP"] = "1";
+// Same rationale for the deferred lint-retirement pass: its boot timer would
+// outlive a test's temp workspace overrides. lint-retirement.test.ts drives the
+// pass directly, so nothing is left uncovered.
+process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] = "1";
 
 // And the retention timers: startServer's 30s boot sweep + daily interval would
 // outlive a test's temp workspace overrides and could prune a LATER test's
@@ -57,7 +55,6 @@ afterEach(async () => {
   invalidateServerSettingsCache();
   setWorkspaceRootOverride(null);
   setAppDirOverride(null);
-  await lintScheduler.stop();
   // Record diagnostics are cached per space/collection id, which repeat across
   // tests' temp workspaces.
   resetRecordDiagnosticsForTests();

@@ -4,6 +4,13 @@ import {
   previewFailure,
 } from "../document-preview-service.ts"
 import {
+  applyLifetimeOnCreate,
+  setDocumentFolderLifetime,
+  setDocumentLifetime,
+  type DocumentLifetimeChange,
+} from "../document-lifetime.ts"
+import { resolveStartHere, setStartHere } from "../space-start-here.ts"
+import {
   freezeHtmlPreviewSnapshotLocked,
   freezeSavedHtmlPreviewSnapshotLocked,
   type HtmlPreviewSnapshot,
@@ -18,7 +25,9 @@ import { DRAWING_GUIDE } from "./drawing-guide.ts"
 
 import {
   listSpaces,
+  mutateSpace,
   readSpace,
+  setSpaceArchived,
   writeSpace,
   slugify,
   deduplicateSlug,
@@ -76,8 +85,11 @@ import {
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
 import {
+  DOCUMENT_LIFETIME_REQUIRED_MESSAGE,
   WidgetIdSchema,
   type AnnotationAuthor,
+  type DocumentLifetime,
+  type StartHerePin,
   type RecordCollectionSchema,
   type SpaceFile,
   type WidgetFile,
@@ -358,6 +370,31 @@ async function syncDocAfterToolWrite(
   })
 }
 
+const LIST_PAGE_SIZE = 200
+
+function normalizePathPrefix(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim().replace(/^\/+|\/+$/g, "")
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function decodeListCursor(value: unknown): number {
+  if (value === undefined) return 0
+  const offset = typeof value === "string" ? Number(value) : Number.NaN
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("cursor is invalid; pass the nextCursor from a previous page")
+  }
+  return offset
+}
+
+function lifetimeChange(args: Record<string, unknown>): DocumentLifetimeChange {
+  const archiveOn = args["archiveOn"] as string | undefined
+  return {
+    lifetime: args["lifetime"] as DocumentLifetime,
+    ...(archiveOn ? { archiveOn } : {}),
+  }
+}
+
 interface ToolDispatchContext {
   signal?: AbortSignal
   principal?: RequestPrincipal
@@ -578,6 +615,50 @@ async function _dispatchOperationInner(
       await writeSpace(space)
       return { spaceId }
     }
+    case "spaces.update": {
+      const spaceId = args["spaceId"] as string
+      const rawIcon = args["icon"] as string | undefined
+      const rawGroup = args["group"] as string | undefined
+      const { data: updated, error } = await mutateSpace(spaceId, (space) => ({
+        ...space,
+        ...(args["name"] !== undefined
+          ? { name: (args["name"] as string).replace(/\b\w/g, (c) => c.toUpperCase()) }
+          : {}),
+        ...(args["description"] !== undefined
+          ? { description: args["description"] as string }
+          : {}),
+        ...(rawIcon !== undefined &&
+        ![...rawIcon].some((character) => character.codePointAt(0)! > 127)
+          ? { icon: rawIcon }
+          : {}),
+        ...(rawGroup !== undefined &&
+        (VALID_GROUPS as readonly string[]).includes(rawGroup)
+          ? { group: rawGroup }
+          : {}),
+        updatedAt: new Date().toISOString(),
+      }))
+      if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)
+      const startHere = args["startHere"]
+        ? await setStartHere(spaceId, args["startHere"] as StartHerePin[])
+        : await resolveStartHere(spaceId, updated)
+      wsManager.broadcastAll({ type: "spaces_changed" })
+      return { space: updated, startHere }
+    }
+    case "spaces.archive":
+    case "spaces.restore": {
+      const archived = operationId === "spaces.archive"
+      const { space, error } = archived
+        ? await setSpaceArchived(
+            args["spaceId"] as string,
+            true,
+            actorId,
+            args["reason"] as string | undefined
+          )
+        : await setSpaceArchived(args["spaceId"] as string, false)
+      if (error || !space) throw new Error(error ?? "Space not found")
+      wsManager.broadcastAll({ type: "spaces_changed" })
+      return { ok: true, space }
+    }
     case "html.guide": {
       return {
         profile: "runtime" as const,
@@ -600,19 +681,44 @@ async function _dispatchOperationInner(
         context.signal
       )
     case "documents.list": {
+      const spaceId = args["spaceId"] as string
+      const includeArchived =
+        (args["includeArchived"] as boolean | undefined) ?? false
+      const format = args["format"] as string | undefined
+      const pathPrefix = normalizePathPrefix(args["pathPrefix"])
+      const lifetime = args["lifetime"] as DocumentLifetime | undefined
+      const limit = (args["limit"] as number | undefined) ?? LIST_PAGE_SIZE
+      const offset = decodeListCursor(args["cursor"])
+      const matching = (await listDocuments({ spaceId, includeArchived })).filter(
+        (document) => {
+          const path =
+            document.kind === "document" ? document.path : document.pathKey
+          if (pathPrefix && path !== pathPrefix && !path.startsWith(`${pathPrefix}/`)) {
+            return false
+          }
+          if (format && (document.kind !== "document" || document.format.id !== format)) {
+            return false
+          }
+          if (lifetime && (document.kind !== "document" || document.lifetime !== lifetime)) {
+            return false
+          }
+          return true
+        }
+      )
+      const page = matching.slice(offset, offset + limit)
       return {
-        documents: (
-          await listDocuments({
-            spaceId: args["spaceId"] as string,
-            includeArchived:
-              (args["includeArchived"] as boolean | undefined) ?? false,
-          })
-        ).filter(
-          (document) =>
-            !args["format"] ||
-            (document.kind === "document" &&
-              document.format.id === args["format"])
-        ),
+        documents: page,
+        total: matching.length,
+        ...(offset + limit < matching.length
+          ? { nextCursor: String(offset + limit) }
+          : {}),
+        scope: {
+          spaceId,
+          includeArchived,
+          ...(pathPrefix ? { pathPrefix } : {}),
+          ...(format ? { format } : {}),
+          ...(lifetime ? { lifetime } : {}),
+        },
       }
     }
     case "documents.read": {
@@ -674,7 +780,42 @@ async function _dispatchOperationInner(
         source: "mcp",
         reason: args["reason"] as string | undefined,
       })
-      return { ok: true, ...result }
+      return {
+        ok: true,
+        ...result,
+        ...(await applyLifetimeOnCreate({
+          spaceId: args["spaceId"] as string,
+          path: result.path,
+          lifetime: args["lifetime"] as DocumentLifetime | undefined,
+          archiveOn: args["archiveOn"] as string | undefined,
+        })),
+      }
+    }
+    case "documents.set_lifetime": {
+      return {
+        ok: true,
+        ...(await setDocumentLifetime({
+          spaceId: args["spaceId"] as string,
+          path: args["path"] as string,
+          change: lifetimeChange(args),
+        })),
+      }
+    }
+    case "documents.set_folder_lifetime": {
+      const result = await setDocumentFolderLifetime({
+        spaceId: args["spaceId"] as string,
+        path: args["path"] as string,
+        change: lifetimeChange(args),
+      })
+      return {
+        ok: true,
+        lifetime: args["lifetime"] as DocumentLifetime,
+        count: result.changed.length,
+        paths: result.changed,
+        ...(result.unsupported.length > 0
+          ? { unsupported: result.unsupported }
+          : {}),
+      }
     }
     case "documents.replace": {
       const result = await replaceRegisteredDocument({
@@ -1028,13 +1169,19 @@ async function _dispatchOperationInner(
       })
       if (!created.data) throw new Error(created.error ?? "Widget write failed")
       const widgetId = created.data.id
+      const lifetime = await applyLifetimeOnCreate({
+        spaceId,
+        path: widgetId,
+        lifetime: args["lifetime"] as DocumentLifetime | undefined,
+        archiveOn: args["archiveOn"] as string | undefined,
+      })
       wsManager.broadcast(spaceId, {
         type: "widget_update",
         spaceId,
         widgetId,
         data: created.data,
       })
-      const result = { widgetId, widget: created.data, warnings }
+      const result = { widgetId, widget: created.data, warnings, ...lifetime }
       if (!args["preview"]) return result
       return previewSnapshot
         ? {
@@ -1298,8 +1445,10 @@ async function _dispatchOperationInner(
         spaceId,
         await listDocsDetailed(spaceId, { includeArchived })
       )
+      const startHere = await resolveStartHere(spaceId, space)
       return {
         space,
+        ...(startHere.length > 0 ? { startHere } : {}),
         docs,
         ...(hasScope(identity.scopes, "documents:read")
           ? { documents: await listDocuments({ spaceId, includeArchived }) }
@@ -1311,16 +1460,37 @@ async function _dispatchOperationInner(
       const query = args["query"] as string
       const includeArchived = args["includeArchived"] as boolean | undefined
       const commonDocuments = hasScope(identity.scopes, "documents:read")
+      const pathPrefix = normalizePathPrefix(args["pathPrefix"])
+      const limit = 50
 
-      const results = await miniSearch(query, {
+      // A folder-scoped search ranks across a wider candidate set so the
+      // folder's best matches are not crowded out before filtering.
+      const candidates = await miniSearch(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
-        maxResults: 50,
+        maxResults: pathPrefix ? 500 : limit,
         documentAccess: commonDocuments ? "common" : "legacy",
       })
+      const matching = pathPrefix
+        ? candidates.filter(
+            (hit) =>
+              hit.type === "doc" &&
+              hit.path !== undefined &&
+              (hit.path === pathPrefix || hit.path.startsWith(`${pathPrefix}/`))
+          )
+        : candidates
+      const results = matching.slice(0, limit)
 
-      return { results }
+      return {
+        results,
+        truncated: matching.length > limit || candidates.length >= (pathPrefix ? 500 : limit),
+        scope: {
+          ...(spaceId ? { spaceId } : {}),
+          ...(pathPrefix ? { pathPrefix } : {}),
+          includeArchived: includeArchived ?? false,
+        },
+      }
     }
     case "annotations.list": {
       const parsed = ListAnnotationsInput.parse(args)
@@ -1532,7 +1702,13 @@ async function _dispatchOperationInner(
       const docPath = args["docPath"] as string
       const content = args["content"] as unknown[] | string
       const force = (args["force"] as boolean) ?? false
+      const lifetime = args["lifetime"] as DocumentLifetime | undefined
+      const archiveOn = args["archiveOn"] as string | undefined
 
+      const existed = await docExists(spaceId, docPath)
+      if (!existed && !lifetime) {
+        throw new Error(DOCUMENT_LIFETIME_REQUIRED_MESSAGE)
+      }
       const result = await writeDoc(spaceId, docPath, content, {
         force,
         updatedBy: actorId,
@@ -1544,10 +1720,21 @@ async function _dispatchOperationInner(
         throw new Error(result.error ?? "Write failed")
       }
       await syncDocAfterToolWrite(spaceId, docPath)
+      const lifetimeResult: { lifetime?: DocumentLifetime; archiveOn?: string } = !existed
+        ? await applyLifetimeOnCreate({ spaceId, path: docPath, lifetime, archiveOn })
+        : lifetime
+          ? await setDocumentLifetime({
+              spaceId,
+              path: docPath,
+              change: { lifetime, ...(archiveOn ? { archiveOn } : {}) },
+            })
+          : {}
       return {
         ok: true,
         docPath,
         storedAs: result.storedAs,
+        ...(lifetimeResult.lifetime ? { lifetime: lifetimeResult.lifetime } : {}),
+        ...(lifetimeResult.archiveOn ? { archiveOn: lifetimeResult.archiveOn } : {}),
         repairs: result.repairs ?? [],
         warnings: await docWriteWarnings(spaceId, docPath),
       }

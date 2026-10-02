@@ -301,6 +301,9 @@ function classifyEntry(
         },
         ...(claim.updatedAt ? { updatedAt: claim.updatedAt } : {}),
         ...(lifetime?.createdAt ? { createdAt: lifetime.createdAt } : {}),
+        ...(!archived && claim.archiveProvider === "legacy-doc-metadata"
+          ? { lifetime: archiveOn ? ("temporary" as const) : ("durable" as const) }
+          : {}),
         ...(archiveOn ? { archiveOn } : {}),
         ...(archived ? { archived: true } : {}),
       },

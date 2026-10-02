@@ -25,6 +25,7 @@ import {
   ThreadResponseRequestSchema,
   ThreadV3Schema,
   WidgetFileSchema,
+  ResolvedStartHerePinSchema,
 } from "@worktable/types"
 import { z } from "zod"
 import { type OperationId, type WorktableToolName } from "./operations.ts"
@@ -155,6 +156,14 @@ const DrawingResultOutputSchema = z.looseObject({
   urlToSendInChat: z.string().optional(),
 })
 
+const LifetimeOutputFields = {
+  lifetime: z.enum(["durable", "temporary"]).optional(),
+  archiveOn: z
+    .string()
+    .optional()
+    .describe("Present on temporary documents: when the document archives."),
+}
+
 const GenericDocumentMutationOutputSchema = z.looseObject({
   ok: z.literal(true),
   documentId: z.string(),
@@ -212,6 +221,8 @@ const DocListEntrySchema = z
     containsMermaid: z.boolean().optional(),
     richBlockTypes: z.array(z.string()).optional(),
     archived: PortableArchiveInfoSchema.optional(),
+    createdAt: z.string().optional(),
+    archiveOn: LifetimeOutputFields.archiveOn,
     provenance: ProvenanceSchema.optional(),
     backlinkCount: z.number().int().nonnegative().optional(),
   })
@@ -311,9 +322,21 @@ const WorkspaceOverviewSchema = z.looseObject({
 
 const SpaceDetailSchema = z.looseObject({
   space: PortableSpaceFileSchema,
+  startHere: z
+    .array(ResolvedStartHerePinSchema)
+    .optional()
+    .describe("Pinned starting points; read these first."),
   docs: z.array(DocListEntrySchema),
   documents: z.array(PortableDocumentListItemSchema).optional(),
 })
+
+const ListScopeSchema = z
+  .looseObject({
+    spaceId: z.string().optional(),
+    pathPrefix: z.string().optional(),
+    includeArchived: z.boolean(),
+  })
+  .describe("The scope these results cover; absence of a match is only within it.")
 
 const SearchResultSchema = z.looseObject({
   spaceId: PortableCanonicalIdSchema,
@@ -328,6 +351,7 @@ const SearchResultSchema = z.looseObject({
   collectionId: PortableCanonicalIdSchema.optional(),
   recordId: PortableCanonicalIdSchema.optional(),
   excerpt: z.string().optional(),
+  archiveOn: LifetimeOutputFields.archiveOn,
 })
 
 const SpaceIndexSchema = z.looseObject({
@@ -375,6 +399,7 @@ const DocWriteOutputSchema = z.looseObject({
   ok: z.literal(true),
   docPath: z.string(),
   storedAs: z.enum(["md", "json"]),
+  ...LifetimeOutputFields,
   repairs: z.array(MermaidRepairSchema),
   warnings: z.array(GuidanceIssueSchema),
   urlToSendInChat: UrlToSendInChatSchema,
@@ -430,6 +455,7 @@ const HtmlWriteOutputSchema = z.looseObject({
   htmlId: PortableHtmlIdSchema,
   htmlDoc: PortableHtmlDocSchema,
   warnings: z.array(HtmlValidationIssueSchema),
+  ...LifetimeOutputFields,
   urlToSendInChat: UrlToSendInChatSchema,
 })
 
@@ -619,12 +645,33 @@ const MermaidPreviewOutputSchema = MermaidValidationOutputSchema.extend({
 
 export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "workspace.state": [WorkspaceOverviewSchema, SpaceDetailSchema],
-  "workspace.search": [z.looseObject({ results: z.array(SearchResultSchema) })],
+  "workspace.search": [
+    z.looseObject({
+      results: z.array(SearchResultSchema),
+      truncated: z.boolean(),
+      scope: ListScopeSchema,
+    }),
+  ],
   "workspace.space_index": [z.looseObject({ index: SpaceIndexSchema })],
   "spaces.create": [z.looseObject({ spaceId: PortableCanonicalIdSchema })],
+  "spaces.update": [
+    z.looseObject({
+      space: PortableSpaceFileSchema,
+      startHere: z.array(ResolvedStartHerePinSchema),
+    }),
+  ],
+  "spaces.archive": [
+    z.looseObject({ ok: z.literal(true), space: PortableSpaceFileSchema }),
+  ],
+  "spaces.restore": [
+    z.looseObject({ ok: z.literal(true), space: PortableSpaceFileSchema }),
+  ],
   "documents.list": [
     z.looseObject({
       documents: z.array(PortableDocumentListItemSchema),
+      total: z.number().int().nonnegative(),
+      nextCursor: z.string().optional(),
+      scope: ListScopeSchema,
     }),
   ],
   "documents.render": [DocumentRenderOutputSchema],
@@ -647,7 +694,9 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       versions: z.array(PortableDocumentVersionSummarySchema),
     }),
   ],
-  "documents.create": [GenericDocumentMutationOutputSchema],
+  "documents.create": [
+    GenericDocumentMutationOutputSchema.extend(LifetimeOutputFields),
+  ],
   "documents.replace": [GenericDocumentMutationOutputSchema],
   "documents.checkpoint": [GenericDocumentMutationOutputSchema],
   "documents.restore_version": [GenericDocumentMutationOutputSchema],
@@ -664,6 +713,22 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     GenericDocumentMutationOutputSchema.extend({ archived: z.literal(false) }),
   ],
   "documents.delete": [GenericDocumentMutationOutputSchema],
+  "documents.set_lifetime": [
+    z.looseObject({
+      ok: z.literal(true),
+      path: z.string(),
+      ...LifetimeOutputFields,
+    }),
+  ],
+  "documents.set_folder_lifetime": [
+    z.looseObject({
+      ok: z.literal(true),
+      lifetime: z.enum(["durable", "temporary"]),
+      count: z.number().int().nonnegative(),
+      paths: z.array(z.string()),
+      unsupported: z.array(z.string()).optional(),
+    }),
+  ],
   "documents.move_folder": [
     z.looseObject({
       ok: z.literal(true),
@@ -1025,20 +1090,35 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     spaces: forActions(z.array(CompactSpaceSchema), '"state" without a Space'),
     hint: forActions(z.string(), '"state" without a Space'),
     space: forActions(CompactSpaceSchema, '"state" with a Space'),
+    startHere: forActions(
+      z.array(ResolvedStartHerePinSchema),
+      '"state" with a Space; pinned starting points to read first'
+    ),
     docs: forActions(z.array(DocListEntrySchema), '"state" with a Space'),
     documents: forActions(
       z.array(PortableDocumentListItemSchema),
       '"state" with a Space and documents:read scope'
     ),
     results: forActions(z.array(SearchResultSchema), '"search"'),
+    truncated: forActions(
+      z.boolean(),
+      '"search"; true when more matches exist than were returned'
+    ),
+    scope: forActions(ListScopeSchema, '"search"'),
     index: forActions(SpaceIndexSchema, '"space_index"'),
   }),
   worktable_spaces: resultSchema("worktable_spaces", {
-    spaceId: PortableCanonicalIdSchema.describe('Created by action "create".'),
+    spaceId: forActions(PortableCanonicalIdSchema, '"create"'),
+    ok: forActions(z.literal(true), '"archive" or "restore"'),
+    space: forActions(PortableSpaceFileSchema, '"update", "archive", or "restore"'),
+    startHere: forActions(z.array(ResolvedStartHerePinSchema), '"update"'),
   }),
   worktable_documents_read: resultSchema("worktable_documents_read", {
     preview: forActions(DocumentPreviewResultSchema, '"render"'),
     documents: forActions(z.array(PortableDocumentListItemSchema), '"list"'),
+    total: forActions(z.number().int().nonnegative(), '"list"'),
+    nextCursor: forActions(z.string(), '"list" when more documents match'),
+    scope: forActions(ListScopeSchema, '"list"'),
     result: forActions(PortableDocumentReadResultSchema, '"read"'),
     documentId: forActions(z.string(), '"read_source"'),
     path: forActions(z.string(), '"read_source"'),
@@ -1083,8 +1163,8 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
       '"archive", "restore", "archive_folder", or "restore_folder"'
     ),
     count: forActions(
-      z.number().int().positive(),
-      '"move_folder", "archive_folder", or "restore_folder"'
+      z.number().int().nonnegative(),
+      '"move_folder", "archive_folder", "restore_folder", or "set_folder_lifetime"'
     ),
     renamed: forActions(
       z.array(
@@ -1097,7 +1177,19 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     ),
     paths: forActions(
       z.array(z.string()),
-      '"archive_folder" or "restore_folder"'
+      '"archive_folder", "restore_folder", or "set_folder_lifetime"'
+    ),
+    lifetime: forActions(
+      z.enum(["durable", "temporary"]),
+      '"create", "set_lifetime", or "set_folder_lifetime"'
+    ),
+    archiveOn: forActions(
+      z.string(),
+      '"create" or "set_lifetime" for temporary documents'
+    ),
+    unsupported: forActions(
+      z.array(z.string()),
+      '"set_folder_lifetime" when some documents cannot record a lifetime'
     ),
   }),
   worktable_docs_read: resultSchema("worktable_docs_read", {

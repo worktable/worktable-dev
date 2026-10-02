@@ -15,7 +15,12 @@ import {
 } from "../store.ts";
 import { listWidgets } from "../widget-store.ts";
 import { buildSpaceIndex } from "../space-index.ts";
-import type { SpaceFile } from "@worktable/types";
+import {
+  START_HERE_LIMIT,
+  StartHerePinSchema,
+  type SpaceFile,
+} from "@worktable/types";
+import { resolveStartHere, setStartHere, StartHereError } from "../space-start-here.ts";
 import { wsManager } from "../ws.ts";
 
 export const spacesRouter = new Hono();
@@ -152,7 +157,8 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:r
   }
 
   const widgets = await listWidgets(spaceId, { includeArchived: true });
-  return c.json({ space, widgets });
+  const startHere = await resolveStartHere(spaceId, space);
+  return c.json({ space, widgets, startHere });
 });
 
 // PUT /api/spaces/:spaceId/doc-order — persist common document-tree ordering.
@@ -206,6 +212,29 @@ spacesRouter.put("/:spaceId/doc-order", requireWorkspaceOwner(), async (c) => {
     );
   }
   return c.json({ space: updated });
+});
+
+// PUT /api/spaces/:spaceId/start-here — replace the pinned starting points
+const StartHereBodySchema = z.object({
+  pins: z.array(StartHerePinSchema).max(START_HERE_LIMIT),
+});
+
+spacesRouter.put("/:spaceId/start-here", requireWorkspaceOwner(), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  const parsed = StartHereBodySchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  }
+  try {
+    const startHere = await setStartHere(spaceId, parsed.data.pins);
+    wsManager.broadcast(spaceId, { type: "space_update", spaceId });
+    return c.json({ startHere });
+  } catch (error) {
+    if (error instanceof StartHereError) {
+      return c.json({ error: error.message, code: "VALIDATION_ERROR" }, 400);
+    }
+    throw error;
+  }
 });
 
 // PUT /api/spaces/:spaceId — update space metadata

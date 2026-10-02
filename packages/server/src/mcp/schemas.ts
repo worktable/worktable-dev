@@ -10,8 +10,12 @@ import {
   AnnotationTargetSchema,
   ConversationIdentityIdSchema,
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
+  DocumentArchiveOnInputSchema,
   DocumentFormatClaimSchema,
+  DocumentLifetimeInputSchema,
   DocumentPreviewOptionsSchema,
+  START_HERE_LIMIT,
+  StartHerePinSchema,
   THREAD_IDENTITY_NAME_MAX_LENGTH,
   ThreadDeliveryStateSchema,
   ThreadLocationSchema,
@@ -92,6 +96,10 @@ export const WriteDocInput = z.object({
     .describe(
       "When true, allows overwriting a .json document containing rich formatting with markdown, accepting data loss."
     ),
+  lifetime: DocumentLifetimeInputSchema.optional().describe(
+    `${DocumentLifetimeInputSchema.description} On an existing document, omit it to keep the current lifetime.`
+  ),
+  archiveOn: DocumentArchiveOnInputSchema.optional(),
 })
 
 export const PatchDocInput = z.object({
@@ -207,6 +215,13 @@ export const SearchInput = z.object({
     .boolean()
     .optional()
     .describe("When true, include archived spaces and documents in results."),
+  pathPrefix: z
+    .string()
+    .max(4096)
+    .optional()
+    .describe(
+      "Only documents at or under this folder path within spaceId; records are excluded."
+    ),
 })
 
 // ---- Widget schemas ----
@@ -242,6 +257,8 @@ export const CreateWidgetInput = z.object({
       "Optional portable HTML doc path. Slash-separated segments nest it in sidebar folders. Omit to derive a flat path from name."
     ),
   name: z.string().min(1).describe("Display name"),
+  lifetime: DocumentLifetimeInputSchema,
+  archiveOn: DocumentArchiveOnInputSchema.optional(),
   description: z
     .string()
     .optional()
@@ -701,6 +718,27 @@ export const DiscoverInput = z.strictObject({
 export const SpacesInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("create", CreateSpaceInput.shape),
+    actionSchema("update", {
+      spaceId: z.string().describe("ID of the space to update"),
+      name: CreateSpaceInput.shape.name.optional(),
+      description: z.string().optional().describe("New description"),
+      icon: CreateSpaceInput.shape.icon,
+      group: CreateSpaceInput.shape.group,
+      startHere: z
+        .array(StartHerePinSchema)
+        .max(START_HERE_LIMIT)
+        .optional()
+        .describe(
+          `Replace the Space's pinned starting points (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role.`
+        ),
+    }),
+    actionSchema("archive", {
+      spaceId: z.string().describe("ID of the space to archive"),
+      reason: z.string().max(DOCUMENT_ARCHIVE_REASON_MAX_LENGTH).optional(),
+    }),
+    actionSchema("restore", {
+      spaceId: z.string().describe("ID of the archived space to restore"),
+    }),
   ]),
 })
 
@@ -724,6 +762,21 @@ export const DocumentsReadInput = z.strictObject({
         .string()
         .optional()
         .describe("Optional format id, e.g. worktable.quickdraw for drawings"),
+      pathPrefix: z
+        .string()
+        .max(4096)
+        .optional()
+        .describe("Only documents at or under this folder path, e.g. 'plans'"),
+      lifetime: z
+        .enum(["durable", "temporary"])
+        .optional()
+        .describe("Only durable or only temporary documents"),
+      limit: z.number().int().min(1).max(1000).optional().describe("Page size (default 200)"),
+      cursor: z
+        .string()
+        .max(32)
+        .optional()
+        .describe("nextCursor from the previous page"),
     }),
     actionSchema("read", {
       spaceId: ReadDocInput.shape.spaceId,
@@ -760,6 +813,8 @@ export const DocumentsWriteInput = z.strictObject({
       spaceId: ReadDocInput.shape.spaceId,
       path: z.string().min(1).max(4096),
       format: DocumentFormatClaimSchema,
+      lifetime: DocumentLifetimeInputSchema,
+      archiveOn: DocumentArchiveOnInputSchema.optional(),
       ...GenericDocumentSourceInput,
       reason: z.string().max(2048).optional(),
     }),
@@ -798,6 +853,22 @@ export const DocumentsWriteInput = z.strictObject({
     actionSchema("restore", {
       spaceId: ReadDocInput.shape.spaceId,
       path: z.string().min(1).max(4096),
+    }),
+    actionSchema("set_lifetime", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z.string().min(1).max(4096),
+      lifetime: DocumentLifetimeInputSchema.describe(
+        "durable keeps the document until someone archives it; temporary archives it on archiveOn (default: 7 days from now). Restore archived documents with action restore."
+      ),
+      archiveOn: DocumentArchiveOnInputSchema.optional(),
+    }),
+    actionSchema("set_folder_lifetime", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z.string().min(1).max(4096).describe("Extensionless folder path"),
+      lifetime: DocumentLifetimeInputSchema.describe(
+        "Applied to every active document in the folder and its subfolders."
+      ),
+      archiveOn: DocumentArchiveOnInputSchema.optional(),
     }),
     actionSchema("move_folder", MoveDocumentFolderInput.shape),
     actionSchema("archive_folder", ArchiveDocumentFolderInput.shape),

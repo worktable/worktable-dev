@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -8,6 +8,7 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { runLifetimeSweep, LIFETIME_ACTOR } from "./document-lifetime.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { widgetsRouter } from "./routes/widgets.ts"
 import { getDocArchiveInfo, setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -36,6 +37,7 @@ function app() {
     return next()
   })
   instance.route("/api/spaces/:spaceId/documents", documentsRouter)
+  instance.route("/api/spaces/:spaceId/widgets", widgetsRouter)
   return instance
 }
 
@@ -44,7 +46,8 @@ async function call(
   route: string,
   body?: unknown
 ): Promise<{ status: number; json: Record<string, unknown> }> {
-  const response = await app().request(`/api/spaces/${spaceId}/documents${route}`, {
+  const base = route.startsWith("/widgets") ? "" : "/documents"
+  const response = await app().request(`/api/spaces/${spaceId}${base}${route}`, {
     method,
     ...(body === undefined
       ? {}
@@ -193,6 +196,46 @@ describe("document lifetime", () => {
     expect(await runLifetimeSweep()).toEqual([])
   })
 
+  it("restoring a folder makes archived documents durable and leaves active ones alone", async () => {
+    await create("notes/old", { lifetime: "temporary" })
+    await create("notes/current", { lifetime: "temporary" })
+    const before = (await summary("notes/current"))?.archiveOn
+    expect((await call("POST", "/archive", { path: "notes/old" })).status).toBe(200)
+
+    expect((await call("POST", "/restore-folder", { path: "notes" })).status).toBe(200)
+    expect((await summary("notes/old"))?.archiveOn).toBeUndefined()
+    expect((await summary("notes/current"))?.archiveOn).toBe(before)
+  })
+
+  it("creates temporary HTML documents and rejects dates without a temporary lifetime", async () => {
+    const html = await call("POST", "/widgets", {
+      id: "boards/status",
+      name: "Status",
+      html: "<!doctype html><html><head></head><body><p>Status</p></body></html>",
+      lifetime: "temporary",
+    })
+    expect(html.status).toBe(201)
+    expect(html.json["lifetime"]).toBe("temporary")
+    expectAbout((await summary("boards/status"))?.archiveOn, Date.now() + 7 * DAY)
+
+    const dated = await create("notes/dated", { archiveOn: "2030-01-01" })
+    expect(dated.status).toBe(400)
+    expect(await summary("notes/dated")).toBeUndefined()
+  })
+
+  it("does not rewrite document metadata for activity on durable documents", async () => {
+    await create("notes/durable")
+    const metaPath = join(root, "spaces", spaceId, "docs.meta.json")
+    const before = (await stat(metaPath)).mtimeMs
+    await createAnnotation(spaceId, {
+      target: { type: "doc", docPath: "notes/durable" },
+      category: "comment",
+      body: "Looks good",
+      author: { type: "user", id: "user" },
+    })
+    expect((await stat(metaPath)).mtimeMs).toBe(before)
+  })
+
   it("applies one lifetime to a folder and rejects invalid dates", async () => {
     await create("notes/a")
     await create("notes/b")
@@ -203,12 +246,14 @@ describe("document lifetime", () => {
     expect(folder.json["changed"]).toEqual(["notes/a", "notes/b"])
     expectAbout((await summary("notes/b"))?.archiveOn, Date.now() + 7 * DAY)
 
-    const invalid = await call("POST", "/lifetime", {
-      path: "notes/a",
-      lifetime: "temporary",
-      archiveOn: "someday",
-    })
-    expect(invalid.status).toBe(400)
+    for (const archiveOn of ["someday", "March 3", "5"]) {
+      const invalid = await call("POST", "/lifetime", {
+        path: "notes/a",
+        lifetime: "temporary",
+        archiveOn,
+      })
+      expect(invalid.status).toBe(400)
+    }
   })
 
   it("preserves document metadata fields it does not interpret", async () => {

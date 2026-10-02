@@ -7,8 +7,11 @@
 // fail the operation that triggered it.
 
 import { graceEndsAt } from "./lifetime-rules.ts"
-import { extendDocsArchiveOn, recordDocCreatedAt } from "./store.ts"
+import { extendDocsArchiveOn, recordDocCreated } from "./store.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+
+/** Actors whose annotations are bookkeeping rather than engagement. */
+export const NON_ENGAGING_ACTORS: ReadonlySet<string> = new Set(["worktable-lint"])
 
 /**
  * Keep temporary documents active after activity that doesn't change their
@@ -41,7 +44,7 @@ export async function noteDocumentCreated(
   now: number = Date.now()
 ): Promise<void> {
   try {
-    await recordDocCreatedAt(spaceId, path, new Date(now).toISOString())
+    await recordDocCreated(spaceId, path, new Date(now).toISOString())
   } catch (error) {
     console.error(
       `[document-lifetime] could not record creation of ${spaceId}/${path}:`,

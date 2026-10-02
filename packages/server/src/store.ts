@@ -1092,8 +1092,13 @@ async function mutateDocMetaFile<T>(
 ): Promise<T> {
   return withWriteLock(docMetaPath(spaceId), async () => {
     const meta = await readDocMetaFile(spaceId);
+    const before = JSON.stringify(meta);
     const result = await mutate(meta);
-    await writeDocMetaFileUnlocked(spaceId, meta);
+    // Bookkeeping that changes nothing must not touch the file: the watcher
+    // turns every write into a corpus change for indexes and clients.
+    if (JSON.stringify(meta) !== before) {
+      await writeDocMetaFileUnlocked(spaceId, meta);
+    }
     return result;
   });
 }
@@ -1144,18 +1149,6 @@ export async function getDocLifetimeFactsMap(
   return result;
 }
 
-/** Every document in a space that currently carries an archive date. */
-export async function listTemporaryDocs(
-  spaceId: string
-): Promise<Array<{ path: string; facts: DocLifetimeFacts }>> {
-  const meta = await readDocMetaFile(spaceId);
-  return Object.entries(meta.docs).flatMap(([path, entry]) =>
-    entry.archiveOn && !entry.archived
-      ? [{ path, facts: lifetimeFacts(entry) }]
-      : []
-  );
-}
-
 /**
  * Make documents temporary until `archiveOn`, or durable when it is null.
  * `setAt` records when the choice was made: later content changes extend it.
@@ -1203,8 +1196,13 @@ export async function extendDocsArchiveOn(
   });
 }
 
-/** Record when a document was created, keeping the first recorded time. */
-export async function recordDocCreatedAt(
+/**
+ * Record a genuine creation at this path. Lifetime facts left by an earlier
+ * document at the same path (removed outside Worktable) are cleared, so the
+ * new document starts durable. A second report of the same creation within
+ * a few seconds keeps the first time.
+ */
+export async function recordDocCreated(
   spaceId: string,
   docPath: string,
   createdAt: string
@@ -1212,8 +1210,10 @@ export async function recordDocCreatedAt(
   const path = sanitizeDocPath(docPath);
   await mutateDocMetaFile(spaceId, (meta) => {
     const entry = meta.docs[path] ?? {};
-    if (entry.createdAt) return;
+    const previous = entry.createdAt ? Date.parse(entry.createdAt) : Number.NaN;
+    if (Math.abs(Date.parse(createdAt) - previous) < 10_000) return;
     entry.createdAt = createdAt;
+    clearLifetime(entry);
     meta.docs[path] = entry;
   });
 }
@@ -1304,7 +1304,7 @@ export async function setDocArchived(
             ...(reason ? { reason } : {}),
           },
         };
-      } else if (meta.docs[sanitized]) {
+      } else if (meta.docs[sanitized]?.archived) {
         // Restored documents come back durable; the writer drops empty entries.
         delete meta.docs[sanitized]!.archived;
         clearLifetime(meta.docs[sanitized]!);
@@ -1356,7 +1356,8 @@ export async function setDocsArchivedByPrefix(
               ...(reason ? { reason } : {}),
             },
           };
-        } else if (meta.docs[path]) {
+        } else if (meta.docs[path]?.archived) {
+          // Restored documents come back durable; active ones keep theirs.
           delete meta.docs[path]!.archived;
           clearLifetime(meta.docs[path]!);
         }

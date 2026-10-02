@@ -270,9 +270,16 @@ export async function setDocumentFolderArchived(options: {
     }
     if (!options.archived) {
       // Restored documents come back durable; clear dates before restoring.
+      // Active documents in the folder keep their lifetime.
+      const archived: string[] = []
+      for (const document of planned.documents) {
+        if (await getDocArchiveInfo(options.spaceId, document.path)) {
+          archived.push(document.path)
+        }
+      }
       await setDocsArchiveOn(
         options.spaceId,
-        planned.documents.map((document) => document.path),
+        archived,
         null,
         new Date().toISOString()
       )

@@ -2,7 +2,7 @@ import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../aut
 import { Hono } from "hono";
 import { z } from "zod";
 import { DocumentLifetimeSchema } from "@worktable/types";
-import { applyLifetimeOnCreate, isArchiveOnValue } from "../document-lifetime.ts";
+import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import {
   listDocs,
   listDocsByPrefix,
@@ -59,7 +59,7 @@ const CreateDocSchema = z.object({
   content: z.array(z.unknown()).optional(),
   /** Omitted lifetimes are durable. */
   lifetime: DocumentLifetimeSchema.optional(),
-  archiveOn: z.string().max(64).refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time").optional(),
+  archiveOn: ArchiveOnSchema.optional(),
 });
 
 async function hasUnportableAnnotationAnchors(
@@ -250,6 +250,11 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
   const parsed = CreateDocSchema.safeParse(body);
   if (!parsed.success) {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  }
+
+  const lifetimeError = lifetimeCreateError(parsed.data.lifetime, parsed.data.archiveOn);
+  if (lifetimeError) {
+    return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400);
   }
 
   const base = slugifyDocPath(parsed.data.title);

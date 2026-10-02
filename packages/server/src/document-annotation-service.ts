@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid"
-import { noteDocumentActivity } from "./document-activity.ts"
+import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import { lstat, opendir } from "node:fs/promises"
 import { join } from "node:path"
@@ -474,9 +474,6 @@ export async function replyDocumentAnnotation(options: {
   }
   return { annotation: result.annotation, replyId: result.replyId }
 }
-
-// The retired lint identity resolving its own leftovers is not engagement.
-const NON_ENGAGING_ACTORS = new Set(["worktable-lint"])
 
 export async function resolveDocumentAnnotation(options: {
   spaceId: string

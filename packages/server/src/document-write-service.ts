@@ -64,6 +64,7 @@ import { invalidateSearchIndex } from "./search-index.ts"
 import {
   prepareSuppressedDocReplay,
   publishManagedDocGenerationProjection,
+  getDocArchiveInfo,
   restoreDocVersion,
   setDocsArchiveOn,
   suppressPath,
@@ -804,99 +805,131 @@ export async function createRegisteredDocument(options: {
   const bytes = await preparedBytes(registration, options.format, options.bytes)
 
   const result = await withDocPathLock(options.spaceId, async () => {
-    await requireV2Workspace(workspaceRoot)
-    const catalog = await buildDocumentCatalog({
-      workspaceRoot,
-      spaceId: options.spaceId,
-      registry,
-    })
-    if (
-      catalog.inventoryDiagnostics.some(
-        (diagnostic) => diagnostic.severity === "error"
-      )
-    ) {
-      throw new DocumentWriteError(
-        "conflict",
-        "Document inventory must be repaired before creating documents"
-      )
-    }
-    if (
-      options.agentMutation &&
-      (entryAt(catalog, path) || reservedByAliasIn(catalog.aliases, path))
-    ) {
-      const document = resolveWritableDocument(catalog, path, registry, {
-        allowAliases: true,
-      })
-      const replay = await replayAgentMutationLocked({
+    const created = await (async () => {
+      await requireV2Workspace(workspaceRoot)
+      const catalog = await buildDocumentCatalog({
         workspaceRoot,
         spaceId: options.spaceId,
-        document,
-        mutation: options.agentMutation,
+        registry,
       })
-      if (replay) return replay
-    }
-    if (reservedByAliasIn(catalog.aliases, path) || entryAt(catalog, path)) {
-      throw new DocumentWriteError(
-        "conflict",
-        "Another document already uses this path"
+      if (
+        catalog.inventoryDiagnostics.some(
+          (diagnostic) => diagnostic.severity === "error"
+        )
+      ) {
+        throw new DocumentWriteError(
+          "conflict",
+          "Document inventory must be repaired before creating documents"
+        )
+      }
+      if (
+        options.agentMutation &&
+        (entryAt(catalog, path) || reservedByAliasIn(catalog.aliases, path))
+      ) {
+        const document = resolveWritableDocument(catalog, path, registry, {
+          allowAliases: true,
+        })
+        const replay = await replayAgentMutationLocked({
+          workspaceRoot,
+          spaceId: options.spaceId,
+          document,
+          mutation: options.agentMutation,
+        })
+        if (replay) return replay
+      }
+      if (reservedByAliasIn(catalog.aliases, path) || entryAt(catalog, path)) {
+        throw new DocumentWriteError(
+          "conflict",
+          "Another document already uses this path"
+        )
+      }
+      await validateDrawingImagesBeforeCommit(options.format, bytes)
+      const profile = documentStorageProfiles.get(
+        DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
       )
-    }
-    await validateDrawingImagesBeforeCommit(options.format, bytes)
-    const profile = documentStorageProfiles.get(
-      DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile
-    )
-    const source = profile.sourceForLogicalPath?.(
-      options.format,
-      path,
-      registry
-    )
-    if (!source || source.kind !== "file") {
-      throw new DocumentWriteError(
-        "unsupported",
-        "This format has no managed file source"
+      const source = profile.sourceForLogicalPath?.(
+        options.format,
+        path,
+        registry
       )
-    }
-    const documentId = mintDocumentId()
-    const inventoryEntry = {
-      documentId,
-      path,
-      format: options.format,
-      source,
-    }
-    await validateDocumentInventoryMutation(options.spaceId, {
-      upsert: [inventoryEntry],
-    })
-    const absoluteSource = resolve(
-      workspaceRoot,
-      "spaces",
-      options.spaceId,
-      source.relativePath
-    )
-    await ensureRealDocumentStorageDirectory(
-      workspaceRoot,
-      dirname(absoluteSource)
-    )
-    if (await lstat(absoluteSource).catch(() => null)) {
-      throw new DocumentWriteError(
-        "conflict",
-        "Another document source already exists at this path"
+      if (!source || source.kind !== "file") {
+        throw new DocumentWriteError(
+          "unsupported",
+          "This format has no managed file source"
+        )
+      }
+      const documentId = mintDocumentId()
+      const inventoryEntry = {
+        documentId,
+        path,
+        format: options.format,
+        source,
+      }
+      await validateDocumentInventoryMutation(options.spaceId, {
+        upsert: [inventoryEntry],
+      })
+      const absoluteSource = resolve(
+        workspaceRoot,
+        "spaces",
+        options.spaceId,
+        source.relativePath
       )
-    }
+      await ensureRealDocumentStorageDirectory(
+        workspaceRoot,
+        dirname(absoluteSource)
+      )
+      if (await lstat(absoluteSource).catch(() => null)) {
+        throw new DocumentWriteError(
+          "conflict",
+          "Another document source already exists at this path"
+        )
+      }
 
-    const releaseWatcherSuppression = suppressRegisteredSourceWrite({
-      absoluteSource,
-      spaceId: options.spaceId,
-      path,
-      registration,
-    })
-    try {
-      const now = new Date().toISOString()
-      const versionId = mintVersionId(now)
-      const generationEntry = `document${registration.fileSource!.extension}`
-      const agentMutation = options.agentMutation
-        ? {
-            ...options.agentMutation,
-            state: "prepared" as const,
+      const releaseWatcherSuppression = suppressRegisteredSourceWrite({
+        absoluteSource,
+        spaceId: options.spaceId,
+        path,
+        registration,
+      })
+      try {
+        const now = new Date().toISOString()
+        const versionId = mintVersionId(now)
+        const generationEntry = `document${registration.fileSource!.extension}`
+        const agentMutation = options.agentMutation
+          ? {
+              ...options.agentMutation,
+              state: "prepared" as const,
+              sourceRevision: await registeredDocumentSourceRevision({
+                documentId,
+                path,
+                format: options.format,
+                source,
+                bytes,
+              }),
+            }
+          : undefined
+        const committedResult = async (): Promise<DocumentWriteResult> => {
+          if (agentMutation)
+            await finishAgentReceipt({
+              workspaceRoot,
+              spaceId: options.spaceId,
+              documentId,
+              generationId: versionId,
+            })
+          await publishLegacyDocProjection({
+            registration,
+            spaceId: options.spaceId,
+            path,
+            updatedAt: now,
+            updatedBy: options.createdBy,
+            source: options.source,
+            versionId,
+            contentChanged: true,
+          })
+          return {
+            documentId,
+            path,
+            format: options.format,
             sourceRevision: await registeredDocumentSourceRevision({
               documentId,
               path,
@@ -904,128 +937,101 @@ export async function createRegisteredDocument(options: {
               source,
               bytes,
             }),
+            versionId,
+            ...(agentMutation
+              ? {
+                  mutation: {
+                    receipt: { ...agentMutation, state: "committed" as const },
+                    bytes,
+                    replayed: false,
+                  },
+                }
+              : {}),
           }
-        : undefined
-      const committedResult = async (): Promise<DocumentWriteResult> => {
-        if (agentMutation)
-          await finishAgentReceipt({
+        }
+        const recovery = await prepareDocumentCreateRecoveryV2({
+          spaceId: options.spaceId,
+          documentId,
+          path,
+          format: options.format,
+          source,
+          generationId: versionId,
+          generationEntry,
+          createdAt: now,
+          createdBy: options.createdBy,
+          operationSource: options.source,
+          ...(options.reason ? { reason: options.reason } : {}),
+          sourceBytes: bytes,
+        })
+        try {
+          await writeDocumentGenerationV2({
             workspaceRoot,
             spaceId: options.spaceId,
             documentId,
             generationId: versionId,
-          })
-        await publishLegacyDocProjection({
-          registration,
-          spaceId: options.spaceId,
-          path,
-          updatedAt: now,
-          updatedBy: options.createdBy,
-          source: options.source,
-          versionId,
-          contentChanged: true,
-        })
-        return {
-          documentId,
-          path,
-          format: options.format,
-          sourceRevision: await registeredDocumentSourceRevision({
-            documentId,
-            path,
+            logicalPath: path,
             format: options.format,
-            source,
-            bytes,
-          }),
-          versionId,
-          ...(agentMutation
-            ? {
-                mutation: {
-                  receipt: { ...agentMutation, state: "committed" as const },
+            operation: "create",
+            createdAt: now,
+            createdBy: options.createdBy,
+            source: options.source,
+            ...(options.reason ? { reason: options.reason } : {}),
+            ...(agentMutation ? { agentMutation } : {}),
+            authoredSource: {
+              kind: "file",
+              entries: [
+                {
+                  path: generationEntry,
                   bytes,
-                  replayed: false,
                 },
-              }
-            : {}),
-        }
-      }
-      const recovery = await prepareDocumentCreateRecoveryV2({
-        spaceId: options.spaceId,
-        documentId,
-        path,
-        format: options.format,
-        source,
-        generationId: versionId,
-        generationEntry,
-        createdAt: now,
-        createdBy: options.createdBy,
-        operationSource: options.source,
-        ...(options.reason ? { reason: options.reason } : {}),
-        sourceBytes: bytes,
-      })
-      try {
-        await writeDocumentGenerationV2({
-          workspaceRoot,
-          spaceId: options.spaceId,
-          documentId,
-          generationId: versionId,
-          logicalPath: path,
-          format: options.format,
-          operation: "create",
-          createdAt: now,
-          createdBy: options.createdBy,
-          source: options.source,
-          ...(options.reason ? { reason: options.reason } : {}),
-          ...(agentMutation ? { agentMutation } : {}),
-          authoredSource: {
-            kind: "file",
-            entries: [
-              {
-                path: generationEntry,
-                bytes,
-              },
-            ],
-          },
-          registry,
-        })
-        await advanceDocumentCreateRecoveryV2(recovery, "generation-written")
-        try {
-          await atomicCreateBytes(absoluteSource, bytes)
+              ],
+            },
+            registry,
+          })
+          await advanceDocumentCreateRecoveryV2(recovery, "generation-written")
+          try {
+            await atomicCreateBytes(absoluteSource, bytes)
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+              throw new DocumentWriteError(
+                "conflict",
+                "Another document source was created at this path"
+              )
+            }
+            throw error
+          }
+          await advanceDocumentCreateRecoveryV2(recovery, "source-written")
+          await updateDocumentInventory(options.spaceId, {
+            upsert: [inventoryEntry],
+          })
+          await advanceDocumentCreateRecoveryV2(recovery, "committed")
+          await finishDocumentCreateRecoveryV2(recovery)
+          return committedResult()
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-            throw new DocumentWriteError(
-              "conflict",
-              "Another document source was created at this path"
+          const recovered = await reconcileDocumentCreateRecoveryV2([
+            recovery,
+          ]).catch((recoveryError) => {
+            requireWorkspaceRecovery("document creation is waiting for recovery")
+            console.error(
+              "[document-write] document create recovery failed:",
+              recoveryError
             )
+            return null
+          })
+          if (recovered?.[0] === "committed") {
+            return committedResult()
           }
           throw error
         }
-        await advanceDocumentCreateRecoveryV2(recovery, "source-written")
-        await updateDocumentInventory(options.spaceId, {
-          upsert: [inventoryEntry],
-        })
-        await advanceDocumentCreateRecoveryV2(recovery, "committed")
-        await finishDocumentCreateRecoveryV2(recovery)
-        return committedResult()
-      } catch (error) {
-        const recovered = await reconcileDocumentCreateRecoveryV2([
-          recovery,
-        ]).catch((recoveryError) => {
-          requireWorkspaceRecovery("document creation is waiting for recovery")
-          console.error(
-            "[document-write] document create recovery failed:",
-            recoveryError
-          )
-          return null
-        })
-        if (recovered?.[0] === "committed") {
-          return committedResult()
-        }
-        throw error
+      } finally {
+        releaseWatcherSuppression()
       }
-    } finally {
-      releaseWatcherSuppression()
-    }
+    })()
+    // Record creation under the same lock, so a concurrent move cannot leave
+    // the fact on a path the document no longer has.
+    await noteDocumentCreated(options.spaceId, path)
+    return created
   })
-  await noteDocumentCreated(options.spaceId, path)
   await pruneCommittedHistory({
     spaceId: options.spaceId,
     documentId: result.documentId,
@@ -1773,7 +1779,10 @@ export async function setRegisteredDocumentArchived(options: {
       options.spaceId,
       resolveManagedFileDocument(catalog, options.path, registry)
     )
-    if (!options.archived) {
+    if (
+      !options.archived &&
+      (await getDocArchiveInfo(options.spaceId, current.path))
+    ) {
       // Restored documents come back durable. Clear the date first: a failure
       // between the two steps leaves an archived durable document, never a
       // restored one that is already overdue.

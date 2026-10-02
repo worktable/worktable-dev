@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { noteDocumentActivity } from "./document-activity.ts"
+import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { existsSync } from "node:fs";
 import crypto from "node:crypto";
 import { dirname, join, relative } from "node:path";
@@ -427,9 +427,9 @@ async function resolveAnnotationRecord(spaceId: string, annotationId: string, re
   });
 }
 
-// Commenting on a temporary document keeps it active, like editing it. The
-// retired lint identity resolving its own leftovers is not engagement.
-const NON_ENGAGING_ACTORS = new Set(["worktable-lint"])
+// Commenting on a temporary document keeps it active, like editing it. In
+// Storage V2, replies and resolutions run through the document annotation
+// service, which records that activity itself.
 
 function annotatedDocumentPath(annotation: Annotation): string | null {
   const target = annotation.target
@@ -452,13 +452,17 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
 
 export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
   const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
-  if (author.type !== "system") await noteAnnotationActivity(spaceId, result.annotation)
+  if (author.type !== "system" && !(await usesDocumentDataV2())) {
+    await noteAnnotationActivity(spaceId, result.annotation)
+  }
   return result
 }
 
 export async function resolveAnnotation(spaceId: string, annotationId: string, reason?: string, resolvedBy = "worktable"): Promise<Annotation> {
   const annotation = await resolveAnnotationRecord(spaceId, annotationId, reason, resolvedBy)
-  if (!NON_ENGAGING_ACTORS.has(resolvedBy)) await noteAnnotationActivity(spaceId, annotation)
+  if (!NON_ENGAGING_ACTORS.has(resolvedBy) && !(await usesDocumentDataV2())) {
+    await noteAnnotationActivity(spaceId, annotation)
+  }
   return annotation
 }
 

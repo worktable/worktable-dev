@@ -26,8 +26,9 @@ import { analyzeDocumentPath } from "../document-path.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
 import {
   applyLifetimeOnCreate,
+  ArchiveOnSchema,
   DocumentLifetimeError,
-  isArchiveOnValue,
+  lifetimeCreateError,
   setDocumentFolderLifetime,
   setDocumentLifetime,
 } from "../document-lifetime.ts"
@@ -70,12 +71,6 @@ const EncodedSourceSchema = z.object({
   source: z.string(),
   encoding: z.enum(["utf8", "base64"]).default("utf8"),
 })
-
-const ArchiveOnSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time")
 
 const LifetimeFieldsSchema = z.object({
   lifetime: DocumentLifetimeSchema,
@@ -494,6 +489,13 @@ documentsRouter.post("/", requireScope("documents:write"), async (c) => {
       { error: parsed.error.message, code: "VALIDATION_ERROR" },
       400
     )
+  }
+  const lifetimeError = lifetimeCreateError(
+    parsed.data.lifetime,
+    parsed.data.archiveOn
+  )
+  if (lifetimeError) {
+    return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400)
   }
   try {
     const principal = c.get("identity").principal

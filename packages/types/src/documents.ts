@@ -131,6 +131,14 @@ export type DocumentLifetime = z.infer<typeof DocumentLifetimeSchema>
  */
 export const TEMPORARY_DOCUMENT_GRACE_DAYS = 7
 
+const ISO_DATE_OR_DATE_TIME =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})?)?$/
+
+/** Archive dates are ISO dates or date-times; other date formats are rejected. */
+export function isArchiveOnValue(value: string): boolean {
+  return ISO_DATE_OR_DATE_TIME.test(value) && !Number.isNaN(Date.parse(value))
+}
+
 /**
  * Public, format-neutral discovery result. Durable ids and source locations are
  * deliberately absent: paths remain the portable address until every legacy

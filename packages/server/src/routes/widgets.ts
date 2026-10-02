@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
 import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
-import { applyLifetimeOnCreate, isArchiveOnValue } from "../document-lifetime.ts";
+import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
@@ -68,7 +68,7 @@ const CreateWidgetSchema = z.object({
   permissions: WidgetPermissionsInputSchema.optional(),
   /** Omitted lifetimes are durable. */
   lifetime: DocumentLifetimeSchema.optional(),
-  archiveOn: z.string().max(64).refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time").optional(),
+  archiveOn: ArchiveOnSchema.optional(),
 });
 
 const PutWidgetSchema = z.object({
@@ -274,6 +274,8 @@ widgetsRouter.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = CreateWidgetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  const lifetimeError = lifetimeCreateError(parsed.data.lifetime, parsed.data.archiveOn);
+  if (lifetimeError) return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400);
 
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (

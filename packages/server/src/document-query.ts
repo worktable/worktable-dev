@@ -415,7 +415,16 @@ export interface DocumentLifetimeTarget {
 export async function listDocumentLifetimeTargets(
   spaceId: string
 ): Promise<DocumentLifetimeTarget[]> {
-  return withDocPathLock(spaceId, async () => {
+  return withDocPathLock(spaceId, () =>
+    listDocumentLifetimeTargetsLocked(spaceId)
+  )
+}
+
+/** As listDocumentLifetimeTargets, for callers already holding the doc-path lock. */
+export async function listDocumentLifetimeTargetsLocked(
+  spaceId: string
+): Promise<DocumentLifetimeTarget[]> {
+  {
     const context = await documentQueryContext(spaceId)
     return context.catalog.entries.flatMap((entry) => {
       const classified = classifyEntry(entry, context, true)
@@ -429,7 +438,7 @@ export async function listDocumentLifetimeTargets(
         },
       ]
     })
-  })
+  }
 }
 
 function metadataOnly(

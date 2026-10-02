@@ -7,8 +7,14 @@
 // lifetime-rules.ts for how content changes push that date out). Archived
 // documents are never deleted automatically; restoring one makes it durable.
 
-import type { DocumentLifetime } from "@worktable/types"
-import { listDocumentLifetimeTargets, listDocuments } from "./document-query.ts"
+import { isArchiveOnValue, type DocumentLifetime } from "@worktable/types"
+import { z } from "zod"
+import { withDocPathLock } from "./doc-path-lock.ts"
+import {
+  listDocumentLifetimeTargetsLocked,
+  listDocuments,
+  type DocumentLifetimeTarget,
+} from "./document-query.ts"
 import { setRegisteredDocumentArchived } from "./document-write-service.ts"
 import { graceEndsAt } from "./lifetime-rules.ts"
 import {
@@ -45,9 +51,28 @@ export interface DocumentLifetimeChange {
   archiveOn?: string
 }
 
+export { isArchiveOnValue }
+
+/** Shared REST input for archive dates. */
+export const ArchiveOnSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time")
+
+/** Why a lifetime given at creation is invalid, or null when it is usable. */
+export function lifetimeCreateError(
+  lifetime: DocumentLifetime | undefined,
+  archiveOn: string | undefined
+): string | null {
+  return archiveOn !== undefined && lifetime !== "temporary"
+    ? 'archiveOn applies only with lifetime "temporary"'
+    : null
+}
+
 function parseArchiveOn(value: string): string {
   const parsed = Date.parse(value)
-  if (Number.isNaN(parsed)) {
+  if (!isArchiveOnValue(value)) {
     throw new DocumentLifetimeError(
       "invalid-date",
       `archiveOn must be an ISO date or date-time: ${value}`
@@ -78,19 +103,10 @@ async function publishLifetimeChange(spaceId: string): Promise<void> {
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 
-/** Make one active document durable or temporary. */
-export async function setDocumentLifetime(options: {
-  spaceId: string
+function requireChangeable(
+  target: DocumentLifetimeTarget | undefined,
   path: string
-  change: DocumentLifetimeChange
-  now?: number
-}): Promise<{ path: string; lifetime: DocumentLifetime; archiveOn?: string }> {
-  const nowMs = options.now ?? Date.now()
-  const archiveOn = resolvedArchiveOn(options.change, nowMs)
-  const path = sanitizeDocPath(options.path)
-  const target = (await listDocumentLifetimeTargets(options.spaceId)).find(
-    (candidate) => candidate.path === path
-  )
+): asserts target is DocumentLifetimeTarget {
   if (!target) {
     throw new DocumentLifetimeError("not-found", `Document not found: ${path}`)
   }
@@ -106,12 +122,32 @@ export async function setDocumentLifetime(options: {
       `This document's storage can't record a lifetime: ${path}`
     )
   }
-  await setDocsArchiveOn(
-    options.spaceId,
-    [path],
-    archiveOn,
-    new Date(nowMs).toISOString()
-  )
+}
+
+/** Make one active document durable or temporary. */
+export async function setDocumentLifetime(options: {
+  spaceId: string
+  path: string
+  change: DocumentLifetimeChange
+  now?: number
+}): Promise<{ path: string; lifetime: DocumentLifetime; archiveOn?: string }> {
+  const nowMs = options.now ?? Date.now()
+  const archiveOn = resolvedArchiveOn(options.change, nowMs)
+  const path = sanitizeDocPath(options.path)
+  // Validate and write under the doc-path lock so a concurrent move or
+  // archive cannot leave the date on a path the document no longer has.
+  await withDocPathLock(options.spaceId, async () => {
+    const target = (
+      await listDocumentLifetimeTargetsLocked(options.spaceId)
+    ).find((candidate) => candidate.path === path)
+    requireChangeable(target, path)
+    await setDocsArchiveOn(
+      options.spaceId,
+      [path],
+      archiveOn,
+      new Date(nowMs).toISOString()
+    )
+  })
   await publishLifetimeChange(options.spaceId)
   return {
     path,
@@ -133,33 +169,34 @@ export async function setDocumentFolderLifetime(options: {
   const nowMs = options.now ?? Date.now()
   const archiveOn = resolvedArchiveOn(options.change, nowMs)
   const prefix = sanitizeDocPath(options.path)
-  const inFolder = (
-    await listDocumentLifetimeTargets(options.spaceId)
-  ).filter(
-    (target) =>
-      !target.archived &&
-      (target.path === prefix || target.path.startsWith(`${prefix}/`))
-  )
-  if (inFolder.length === 0) {
-    throw new DocumentLifetimeError(
-      "not-found",
-      `No active documents in folder: ${prefix}`
+  const result = await withDocPathLock(options.spaceId, async () => {
+    const inFolder = (
+      await listDocumentLifetimeTargetsLocked(options.spaceId)
+    ).filter(
+      (target) =>
+        !target.archived &&
+        (target.path === prefix || target.path.startsWith(`${prefix}/`))
     )
-  }
-  const changed = inFolder.filter((target) => target.supported).map((t) => t.path)
-  const unsupported = inFolder
-    .filter((target) => !target.supported)
-    .map((t) => t.path)
-  if (changed.length > 0) {
-    await setDocsArchiveOn(
-      options.spaceId,
-      changed,
-      archiveOn,
-      new Date(nowMs).toISOString()
-    )
-    await publishLifetimeChange(options.spaceId)
-  }
-  return { changed, unsupported }
+    if (inFolder.length === 0) {
+      throw new DocumentLifetimeError(
+        "not-found",
+        `No active documents in folder: ${prefix}`
+      )
+    }
+    const changed = inFolder.filter((t) => t.supported).map((t) => t.path)
+    const unsupported = inFolder.filter((t) => !t.supported).map((t) => t.path)
+    if (changed.length > 0) {
+      await setDocsArchiveOn(
+        options.spaceId,
+        changed,
+        archiveOn,
+        new Date(nowMs).toISOString()
+      )
+    }
+    return { changed, unsupported }
+  })
+  if (result.changed.length > 0) await publishLifetimeChange(options.spaceId)
+  return result
 }
 
 export interface LifetimeSweepReceipt {
@@ -169,9 +206,8 @@ export interface LifetimeSweepReceipt {
 }
 
 /**
- * Archive every temporary document whose date has passed. The due date is
- * re-derived from current state for each document, so a document edited
- * moments before the sweep stays active.
+ * Archive every temporary document whose date has passed. Due dates come
+ * from current state (including recent edits), checked twice per Space.
  */
 export async function runLifetimeSweep(
   options: { now?: number; shouldStop?: () => boolean } = {}
@@ -186,10 +222,9 @@ export async function runLifetimeSweep(
       archived: [],
       failed: [],
     }
-    let due: string[]
-    try {
+    const dueNow = async (): Promise<string[]> => {
       const nowMs = options.now ?? Date.now()
-      due = (await listDocuments({ spaceId: space.id }))
+      return (await listDocuments({ spaceId: space.id }))
         .filter(
           (item) =>
             item.kind === "document" &&
@@ -197,6 +232,15 @@ export async function runLifetimeSweep(
             Date.parse(item.archiveOn) <= nowMs
         )
         .map((item) => (item as { path: string }).path)
+    }
+    let due: string[]
+    try {
+      // List once to find candidates, then confirm them against a fresh
+      // listing so activity during a long sweep keeps a document active.
+      const candidates = await dueNow()
+      if (candidates.length === 0) continue
+      const confirmed = new Set(await dueNow())
+      due = candidates.filter((path) => confirmed.has(path))
     } catch (error) {
       console.error(
         `[document-lifetime] could not list documents in ${space.id}:`,
@@ -207,20 +251,6 @@ export async function runLifetimeSweep(
     for (const path of due) {
       if (shouldStop()) break
       try {
-        // Re-check against the latest state: an edit, rename, or comment may
-        // have moved the date since the listing.
-        const current = (await listDocuments({ spaceId: space.id })).find(
-          (item) => item.kind === "document" && item.path === path
-        )
-        const nowMs = options.now ?? Date.now()
-        if (
-          !current ||
-          current.kind !== "document" ||
-          current.archiveOn === undefined ||
-          Date.parse(current.archiveOn) > nowMs
-        ) {
-          continue
-        }
         await setRegisteredDocumentArchived({
           spaceId: space.id,
           path,
@@ -242,11 +272,6 @@ export async function runLifetimeSweep(
     }
   }
   return receipts
-}
-
-/** Accepts ISO dates and date-times; shared by REST and MCP inputs. */
-export function isArchiveOnValue(value: string): boolean {
-  return !Number.isNaN(Date.parse(value))
 }
 
 /**

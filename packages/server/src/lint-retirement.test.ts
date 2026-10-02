@@ -116,4 +116,19 @@ describe("lint retirement", () => {
     const again = await retireLintAnnotations()
     expect(again.flatMap((r) => r.resolved)).toEqual([])
   })
+
+  it("retires findings across pages while skipping the ones it keeps", async () => {
+    const kept = await annotate("long", LINT, ["lint", "lint:doc-too-long"])
+    await replyAnnotation(SPACE, kept, "Keep this.", { type: "user", id: "user" })
+    const retired = [
+      await annotate("orphan", LINT, ["lint", "lint:orphan-doc"]),
+      await annotate("notes", LINT, ["lint", "lint:orphan-doc"]),
+      await annotate("kept", LINT, ["lint", "lint:orphan-doc"]),
+    ]
+
+    const [receipt] = await retireLintAnnotations({ pageSize: 1 })
+
+    expect(receipt?.resolved.sort()).toEqual([...retired].sort())
+    expect(receipt?.keptWithFeedback).toEqual([kept])
+  })
 })

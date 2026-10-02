@@ -19,6 +19,7 @@ import { wsManager } from "./ws.ts"
 
 const RETIRED_LINT_AUTHOR_ID = "worktable-lint"
 const RETIREMENT_REASON = "Automatic lint was retired"
+const PAGE_SIZE = 500
 
 export interface LintRetirementReceipt {
   spaceId: string
@@ -48,9 +49,10 @@ function hasFeedback(annotation: Annotation): boolean {
 }
 
 export async function retireLintAnnotations(
-  options: { shouldStop?: () => boolean } = {}
+  options: { shouldStop?: () => boolean; pageSize?: number } = {}
 ): Promise<LintRetirementReceipt[]> {
   const shouldStop = options.shouldStop ?? (() => false)
+  const pageSize = options.pageSize ?? PAGE_SIZE
   const receipts: LintRetirementReceipt[] = []
   for (const space of await listSpaces()) {
     if (shouldStop()) break
@@ -61,43 +63,57 @@ export async function retireLintAnnotations(
       failed: [],
     }
     receipts.push(receipt)
-    let annotations: Annotation[]
-    try {
-      ;({ annotations } = await listAnnotations(space.id, {
-        labels: ["lint"],
-        limit: 10_000,
-      }))
-    } catch (err) {
-      console.error(`[lint-retirement] could not list annotations in ${space.id}:`, err)
-      continue
-    }
-    for (const annotation of annotations) {
-      if (shouldStop()) break
-      if (!isRetirable(annotation)) continue
-      if (hasFeedback(annotation)) {
-        receipt.keptWithFeedback.push(annotation.id)
-        continue
-      }
+    // Resolved findings leave the open listing, so each page starts after
+    // the ones this pass deliberately left open.
+    for (let skip = 0; !shouldStop(); ) {
+      let annotations: Annotation[]
+      let more: boolean
       try {
-        const resolved = await resolveAnnotation(
-          space.id,
-          annotation.id,
-          RETIREMENT_REASON,
-          RETIRED_LINT_AUTHOR_ID
-        )
-        receipt.resolved.push(annotation.id)
-        wsManager.broadcast(space.id, {
-          type: "annotation_update",
-          spaceId: space.id,
-          data: { annotationId: resolved.id, annotation: resolved, event: "resolved" },
+        const page = await listAnnotations(space.id, {
+          labels: ["lint"],
+          offset: skip,
+          limit: pageSize,
         })
+        annotations = page.annotations
+        more = page.nextOffset !== undefined
       } catch (err) {
-        receipt.failed.push(annotation.id)
-        console.error(
-          `[lint-retirement] could not resolve ${annotation.id} in ${space.id}:`,
-          err
-        )
+        console.error(`[lint-retirement] could not list annotations in ${space.id}:`, err)
+        break
       }
+      for (const annotation of annotations) {
+        if (shouldStop()) break
+        if (!isRetirable(annotation)) {
+          skip += 1
+          continue
+        }
+        if (hasFeedback(annotation)) {
+          receipt.keptWithFeedback.push(annotation.id)
+          skip += 1
+          continue
+        }
+        try {
+          const resolved = await resolveAnnotation(
+            space.id,
+            annotation.id,
+            RETIREMENT_REASON,
+            RETIRED_LINT_AUTHOR_ID
+          )
+          receipt.resolved.push(annotation.id)
+          wsManager.broadcast(space.id, {
+            type: "annotation_update",
+            spaceId: space.id,
+            data: { annotationId: resolved.id, annotation: resolved, event: "resolved" },
+          })
+        } catch (err) {
+          receipt.failed.push(annotation.id)
+          skip += 1
+          console.error(
+            `[lint-retirement] could not resolve ${annotation.id} in ${space.id}:`,
+            err
+          )
+        }
+      }
+      if (!more || annotations.length === 0) break
     }
   }
   return receipts.filter(

@@ -630,6 +630,11 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const rawIcon = args["icon"] as string | undefined
       const rawGroup = args["group"] as string | undefined
+      // Pins validate against current documents; apply them first so an
+      // invalid pin fails the whole update before anything is saved.
+      if (args["startHere"]) {
+        await setStartHere(spaceId, args["startHere"] as StartHerePin[])
+      }
       const { data: updated, error } = await mutateSpace(spaceId, (space) => ({
         ...space,
         ...(args["name"] !== undefined
@@ -649,11 +654,8 @@ async function _dispatchOperationInner(
         updatedAt: new Date().toISOString(),
       }))
       if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)
-      const startHere = args["startHere"]
-        ? await setStartHere(spaceId, args["startHere"] as StartHerePin[])
-        : await resolveStartHere(spaceId, updated)
       wsManager.broadcastAll({ type: "spaces_changed" })
-      return { space: updated, startHere }
+      return { space: updated, startHere: await resolveStartHere(spaceId, updated) }
     }
     case "spaces.archive":
     case "spaces.restore": {
@@ -710,7 +712,14 @@ async function _dispatchOperationInner(
           if (format && (document.kind !== "document" || document.format.id !== format)) {
             return false
           }
-          if (lifetime && (document.kind !== "document" || document.lifetime !== lifetime)) {
+          // Documents whose storage records no lifetime never auto-archive,
+          // so they count as durable while active.
+          if (
+            lifetime &&
+            (document.kind !== "document" ||
+              document.archived ||
+              (document.lifetime ?? "durable") !== lifetime)
+          ) {
             return false
           }
           return true
@@ -1458,7 +1467,9 @@ async function _dispatchOperationInner(
         spaceId,
         await listDocsDetailed(spaceId, { includeArchived })
       )
-      const startHere = await resolveStartHere(spaceId, space)
+      const startHere = hasScope(identity.scopes, "documents:read")
+        ? await resolveStartHere(spaceId, space)
+        : []
       return {
         space,
         ...(startHere.length > 0 ? { startHere } : {}),
@@ -1478,13 +1489,16 @@ async function _dispatchOperationInner(
 
       // A folder-scoped search ranks across a wider candidate set so the
       // folder's best matches are not crowded out before filtering.
-      const candidates = await miniSearch(query, {
+      const candidateLimit = pathPrefix ? 500 : limit
+      // Ask for one more than needed so `truncated` means more matches exist.
+      const ranked = await miniSearch(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
-        maxResults: pathPrefix ? 500 : limit,
+        maxResults: candidateLimit + 1,
         documentAccess: commonDocuments ? "common" : "legacy",
       })
+      const candidates = ranked.slice(0, candidateLimit)
       const matching = pathPrefix
         ? candidates.filter(
             (hit) =>
@@ -1497,7 +1511,7 @@ async function _dispatchOperationInner(
 
       return {
         results,
-        truncated: matching.length > limit || candidates.length >= (pathPrefix ? 500 : limit),
+        truncated: matching.length > limit || ranked.length > candidateLimit,
         scope: {
           ...(spaceId ? { spaceId } : {}),
           ...(pathPrefix ? { pathPrefix } : {}),
@@ -1728,6 +1742,11 @@ async function _dispatchOperationInner(
         throw new Error(DOCUMENT_LIFETIME_REQUIRED_MESSAGE)
       }
       assertLifetimeInput(args)
+      if (existed && lifetime && (await getDocArchiveInfo(spaceId, docPath))) {
+        throw new Error(
+          `Document is archived: ${docPath}. Restore it first; restored documents are durable.`
+        )
+      }
       const result = await writeDoc(spaceId, docPath, content, {
         force,
         updatedBy: actorId,

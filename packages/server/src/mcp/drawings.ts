@@ -9,7 +9,7 @@ export { takeResultMedia as takeDrawingMedia } from "./media.ts"
 import { renderDrawing } from "../drawing-render.ts"
 import { measureDrawing } from "../drawing-native.ts"
 import type { OperationId } from "./operations.ts"
-import { applyLifetimeOnCreate } from "../document-lifetime.ts"
+import { applyLifetimeOnCreate, lifetimeCreateError } from "../document-lifetime.ts"
 
 export async function dispatchDrawingOperation(
   operation: OperationId,
@@ -23,12 +23,9 @@ export async function dispatchDrawingOperation(
   const request = writing
     ? DrawingsWriteRequestSchema.parse({ ...args, action })
     : DrawingsReadRequestSchema.parse({ ...args, action })
-  if (
-    request.action === "create" &&
-    request.archiveOn !== undefined &&
-    request.lifetime !== "temporary"
-  ) {
-    throw new Error('archiveOn applies only with lifetime "temporary"')
+  if (request.action === "create") {
+    const error = lifetimeCreateError(request.lifetime, request.archiveOn)
+    if (error) throw new Error(error)
   }
   const result = writing
     ? await drawingWrite(DrawingsWriteRequestSchema.parse(request), {
@@ -43,7 +40,7 @@ export async function dispatchDrawingOperation(
     request.action === "create" && !request.previewOnly
       ? await applyLifetimeOnCreate({
           spaceId: request.spaceId,
-          path: request.path,
+          path: "path" in result && typeof result.path === "string" ? result.path : request.path,
           lifetime: request.lifetime,
           archiveOn: request.archiveOn,
         })

@@ -988,8 +988,9 @@
                   "description": "ID of the space to update"
                 },
                 "name": {
+                  "description": "New name in Title Case",
                   "type": "string",
-                  "description": "Space name in Title Case, e.g. 'CMS Research'"
+                  "minLength": 1
                 },
                 "description": {
                   "description": "New description",

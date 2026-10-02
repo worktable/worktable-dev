@@ -720,7 +720,7 @@ export const SpacesInput = z.strictObject({
     actionSchema("create", CreateSpaceInput.shape),
     actionSchema("update", {
       spaceId: z.string().describe("ID of the space to update"),
-      name: CreateSpaceInput.shape.name.optional(),
+      name: z.string().min(1).optional().describe("New name in Title Case"),
       description: z.string().optional().describe("New description"),
       icon: CreateSpaceInput.shape.icon,
       group: CreateSpaceInput.shape.group,

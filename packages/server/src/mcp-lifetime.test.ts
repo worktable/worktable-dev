@@ -176,9 +176,12 @@ describe("agent document lifetimes over MCP", () => {
     const unknown = await tool("worktable_spaces", {
       action: "update",
       spaceId,
+      name: "Renamed",
       startHere: [{ path: "missing" }],
     })
     expect(unknown.ok).toBe(false)
+    const unchanged = await tool("worktable_discover", { action: "state", spaceId })
+    expect((unchanged.data["space"] as { name: string }).name).toBe("Agents")
 
     await tool("worktable_documents_write", { action: "move", spaceId, path: "guide", to: "handbook" })
     await tool("worktable_documents_write", { action: "archive", spaceId, path: "plan" })

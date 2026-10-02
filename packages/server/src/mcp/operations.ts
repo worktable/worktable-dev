@@ -46,9 +46,10 @@ export const OPERATION_DEFINITIONS = {
   "workspace.search": tool("search:read", "none"),
   "workspace.space_index": tool("docs:read", "none"),
   "spaces.create": tool("docs:write", "workspace"),
-  "spaces.update": tool("docs:write", "workspace"),
-  "spaces.archive": tool("docs:write", "workspace"),
-  "spaces.restore": tool("docs:write", "workspace"),
+  // Like the REST Space routes, these require owner-equivalent access.
+  "spaces.update": tool("*", "workspace"),
+  "spaces.archive": tool("*", "workspace"),
+  "spaces.restore": tool("*", "workspace"),
   "documents.list": tool("documents:read", "none"),
   "documents.render": tool("documents:read", "none", "document"),
   "documents.read": tool("documents:read", "none"),

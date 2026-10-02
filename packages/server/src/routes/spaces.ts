@@ -22,6 +22,7 @@ import {
 } from "@worktable/types";
 import { resolveStartHere, setStartHere, StartHereError } from "../space-start-here.ts";
 import { wsManager } from "../ws.ts";
+import { hasScope } from "../token-store.ts";
 
 export const spacesRouter = new Hono();
 
@@ -157,7 +158,9 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:r
   }
 
   const widgets = await listWidgets(spaceId, { includeArchived: true });
-  const startHere = await resolveStartHere(spaceId, space);
+  const startHere = hasScope(c.get("identity").scopes, "documents:read")
+    ? await resolveStartHere(spaceId, space)
+    : [];
   return c.json({ space, widgets, startHere });
 });
 
@@ -226,9 +229,7 @@ spacesRouter.put("/:spaceId/start-here", requireWorkspaceOwner(), async (c) => {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
   try {
-    const startHere = await setStartHere(spaceId, parsed.data.pins);
-    wsManager.broadcast(spaceId, { type: "space_update", spaceId });
-    return c.json({ startHere });
+    return c.json({ startHere: await setStartHere(spaceId, parsed.data.pins) });
   } catch (error) {
     if (error instanceof StartHereError) {
       return c.json({ error: error.message, code: "VALIDATION_ERROR" }, 400);

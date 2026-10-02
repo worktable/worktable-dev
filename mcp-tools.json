@@ -149,7 +149,7 @@
   {
     "name": "worktable_discover",
     "title": "Discover Worktable context",
-    "description": "Orient to the workspace or a Space, search scoped context, or inspect a Space index.",
+    "description": "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its Start here pins: read those first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -194,6 +194,11 @@
                 "includeArchived": {
                   "description": "When true, include archived spaces and documents in results.",
                   "type": "boolean"
+                },
+                "pathPrefix": {
+                  "description": "Only documents at or under this folder path within spaceId; records are excluded.",
+                  "type": "string",
+                  "maxLength": 4096
                 }
               },
               "required": [
@@ -267,6 +272,61 @@
               "$ref": "#/definitions/SpaceSummary"
             }
           ]
+        },
+        "startHere": {
+          "description": "Returned by action \"state\" with a Space; pinned starting points to read first.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "archived",
+                  "missing"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "format": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                  },
+                  "sourceVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "sourceVersion"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "status"
+            ],
+            "additionalProperties": false
+          }
         },
         "docs": {
           "description": "Returned by action \"state\" with a Space.",
@@ -369,6 +429,10 @@
               },
               "excerpt": {
                 "type": "string"
+              },
+              "archiveOn": {
+                "description": "Present on temporary documents: when the document archives.",
+                "type": "string"
               }
             },
             "required": [
@@ -379,6 +443,29 @@
             ],
             "additionalProperties": {}
           }
+        },
+        "truncated": {
+          "description": "Returned by action \"search\"; true when more matches exist than were returned.",
+          "type": "boolean"
+        },
+        "scope": {
+          "description": "Returned by action \"search\".",
+          "type": "object",
+          "properties": {
+            "spaceId": {
+              "type": "string"
+            },
+            "pathPrefix": {
+              "type": "string"
+            },
+            "includeArchived": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "includeArchived"
+          ],
+          "additionalProperties": {}
         },
         "index": {
           "description": "Returned by action \"space_index\".",
@@ -556,6 +643,13 @@
                 }
               ]
             },
+            "createdAt": {
+              "type": "string"
+            },
+            "archiveOn": {
+              "description": "Present on temporary documents: when the document archives.",
+              "type": "string"
+            },
             "provenance": {
               "type": "object",
               "properties": {
@@ -671,6 +765,13 @@
                   "type": "string",
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ]
                 },
                 "archiveOn": {
                   "type": "string",
@@ -832,7 +933,7 @@
   {
     "name": "worktable_spaces",
     "title": "Create a Worktable space",
-    "description": "Create a Worktable Space.",
+    "description": "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -874,6 +975,109 @@
                 "name"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "update"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "description": "ID of the space to update"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Space name in Title Case, e.g. 'CMS Research'"
+                },
+                "description": {
+                  "description": "New description",
+                  "type": "string"
+                },
+                "icon": {
+                  "description": "Lucide icon name in kebab-case (e.g. 'flask-conical', 'bar-chart-3', 'layout-dashboard'). Any icon from lucide.dev works. Defaults to 'folder'.",
+                  "type": "string"
+                },
+                "group": {
+                  "description": "Category: work, side-quests, career, church, meta",
+                  "type": "string",
+                  "enum": [
+                    "work",
+                    "side-quests",
+                    "career",
+                    "church",
+                    "meta"
+                  ]
+                },
+                "startHere": {
+                  "description": "Replace the Space's pinned starting points (at most 7), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role.",
+                  "maxItems": 7,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "note": {
+                        "type": "string",
+                        "maxLength": 200
+                      }
+                    },
+                    "required": [
+                      "path"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "spaceId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "archive"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "description": "ID of the space to archive"
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "action",
+                "spaceId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "restore"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "description": "ID of the archived space to restore"
+                }
+              },
+              "required": [
+                "action",
+                "spaceId"
+              ],
+              "additionalProperties": false
             }
           ]
         }
@@ -888,17 +1092,82 @@
       "type": "object",
       "properties": {
         "spaceId": {
-          "description": "Created by action \"create\".",
+          "description": "Returned by action \"create\".",
           "allOf": [
             {
               "$ref": "#/definitions/CanonicalId"
             }
           ]
+        },
+        "ok": {
+          "description": "Returned by action \"archive\" or \"restore\".",
+          "type": "boolean",
+          "const": true
+        },
+        "space": {
+          "description": "Returned by action \"update\", \"archive\", or \"restore\".",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Space"
+            }
+          ]
+        },
+        "startHere": {
+          "description": "Returned by action \"update\".",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "archived",
+                  "missing"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "format": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                  },
+                  "sourceVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "sourceVersion"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "status"
+            ],
+            "additionalProperties": false
+          }
         }
       },
-      "required": [
-        "spaceId"
-      ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
       "description": "Structured result from worktable_spaces. Fields vary by request.action.",
@@ -907,6 +1176,60 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$"
+        },
+        "Space": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "worktable.space"
+            },
+            "version": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "icon": {
+              "type": "string"
+            },
+            "group": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "string"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "settings": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "type",
+            "version",
+            "id",
+            "name",
+            "createdAt",
+            "updatedAt",
+            "createdBy",
+            "settings"
+          ],
+          "additionalProperties": {}
         }
       }
     },
@@ -958,6 +1281,30 @@
                 "format": {
                   "description": "Optional format id, e.g. worktable.quickdraw for drawings",
                   "type": "string"
+                },
+                "pathPrefix": {
+                  "description": "Only documents at or under this folder path, e.g. 'plans'",
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "lifetime": {
+                  "description": "Only durable or only temporary documents",
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ]
+                },
+                "limit": {
+                  "description": "Page size (default 200)",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000
+                },
+                "cursor": {
+                  "description": "nextCursor from the previous page",
+                  "type": "string",
+                  "maxLength": 32
                 }
               },
               "required": [
@@ -1343,6 +1690,35 @@
             "$ref": "#/definitions/DocumentListItem"
           }
         },
+        "total": {
+          "description": "Returned by action \"list\".",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "nextCursor": {
+          "description": "Returned by action \"list\" when more documents match.",
+          "type": "string"
+        },
+        "scope": {
+          "description": "Returned by action \"list\".",
+          "type": "object",
+          "properties": {
+            "spaceId": {
+              "type": "string"
+            },
+            "pathPrefix": {
+              "type": "string"
+            },
+            "includeArchived": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "includeArchived"
+          ],
+          "additionalProperties": {}
+        },
         "result": {
           "description": "Returned by action \"read\".",
           "allOf": [
@@ -1468,6 +1844,13 @@
                   "type": "string",
                   "format": "date-time",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ]
                 },
                 "archiveOn": {
                   "type": "string",
@@ -1666,6 +2049,13 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    },
+                    "lifetime": {
+                      "type": "string",
+                      "enum": [
+                        "durable",
+                        "temporary"
+                      ]
                     },
                     "archiveOn": {
                       "type": "string",
@@ -1981,7 +2371,7 @@
   {
     "name": "worktable_documents_write",
     "title": "Write Worktable documents",
-    "description": "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions.",
+    "description": "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2022,6 +2412,20 @@
                     "sourceVersion"
                   ]
                 },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ],
+                  "description": "Required when creating a document.\n- durable: work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions.\n- temporary: supports work in progress and can leave browsing once that work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. Archives 7 days after the last edit, rename, or comment; set archiveOn for a later date. Archived documents remain searchable with includeArchived and can be restored.\nIf unsure: choose temporary if it only matters for finishing the current work, and durable if someone would look for it in a month. Archive point-in-time records when the work they document is complete."
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
+                },
                 "source": {
                   "type": "string",
                   "maxLength": 90000000
@@ -2044,6 +2448,7 @@
                 "spaceId",
                 "path",
                 "format",
+                "lifetime",
                 "source"
               ],
               "additionalProperties": false
@@ -2263,6 +2668,83 @@
               "properties": {
                 "action": {
                   "type": "string",
+                  "const": "set_lifetime"
+                },
+                "spaceId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ],
+                  "description": "durable keeps the document until someone archives it; temporary archives it on archiveOn (default: 7 days from now). Restore archived documents with action restore."
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
+                }
+              },
+              "required": [
+                "action",
+                "spaceId",
+                "path",
+                "lifetime"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "set_folder_lifetime"
+                },
+                "spaceId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "description": "Extensionless folder path"
+                },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ],
+                  "description": "Applied to every active document in the folder and its subfolders."
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
+                }
+              },
+              "required": [
+                "action",
+                "spaceId",
+                "path",
+                "lifetime"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
                   "const": "move_folder"
                 },
                 "spaceId": {
@@ -2412,9 +2894,9 @@
           "type": "boolean"
         },
         "count": {
-          "description": "Returned by action \"move_folder\", \"archive_folder\", or \"restore_folder\".",
+          "description": "Returned by action \"move_folder\", \"archive_folder\", \"restore_folder\", or \"set_folder_lifetime\".",
           "type": "integer",
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "maximum": 9007199254740991
         },
         "renamed": {
@@ -2438,7 +2920,26 @@
           }
         },
         "paths": {
-          "description": "Returned by action \"archive_folder\" or \"restore_folder\".",
+          "description": "Returned by action \"archive_folder\", \"restore_folder\", or \"set_folder_lifetime\".",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lifetime": {
+          "description": "Returned by action \"create\", \"set_lifetime\", or \"set_folder_lifetime\".",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"create\" or \"set_lifetime\" for temporary documents.",
+          "type": "string"
+        },
+        "unsupported": {
+          "description": "Returned by action \"set_folder_lifetime\" when some documents cannot record a lifetime.",
           "type": "array",
           "items": {
             "type": "string"
@@ -2616,6 +3117,22 @@
             "type": "string"
           }
         },
+        "lifetime": {
+          "description": "Returned by action \"read\" for active documents.",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"read\" for temporary documents.",
+          "type": "string"
+        },
+        "createdAt": {
+          "description": "Returned by action \"read\" when the document was created through Worktable.",
+          "type": "string"
+        },
         "headings": {
           "description": "Returned by action \"read\".",
           "type": "array",
@@ -2722,6 +3239,13 @@
                 }
               ]
             },
+            "createdAt": {
+              "type": "string"
+            },
+            "archiveOn": {
+              "description": "Present on temporary documents: when the document archives.",
+              "type": "string"
+            },
             "provenance": {
               "type": "object",
               "properties": {
@@ -2807,7 +3331,7 @@
   {
     "name": "worktable_docs_write",
     "title": "Write Worktable Docs",
-    "description": "Create, replace, patch, or rename Worktable Docs.",
+    "description": "Create, replace, patch, or rename Worktable Docs. Creating a Doc requires a lifetime: durable or temporary.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2844,6 +3368,20 @@
                   "default": false,
                   "description": "When true, allows overwriting a .json document containing rich formatting with markdown, accepting data loss.",
                   "type": "boolean"
+                },
+                "lifetime": {
+                  "description": "Required when creating a document.\n- durable: work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions.\n- temporary: supports work in progress and can leave browsing once that work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. Archives 7 days after the last edit, rename, or comment; set archiveOn for a later date. Archived documents remain searchable with includeArchived and can be restored.\nIf unsure: choose temporary if it only matters for finishing the current work, and durable if someone would look for it in a month. Archive point-in-time records when the work they document is complete. On an existing document, omit it to keep the current lifetime.",
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ]
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
                 }
               },
               "required": [
@@ -4530,6 +5068,20 @@
                   "minLength": 1,
                   "maxLength": 200
                 },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ],
+                  "description": "Required when creating a document.\n- durable: work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions.\n- temporary: supports work in progress and can leave browsing once that work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. Archives 7 days after the last edit, rename, or comment; set archiveOn for a later date. Archived documents remain searchable with includeArchived and can be restored.\nIf unsure: choose temporary if it only matters for finishing the current work, and durable if someone would look for it in a month. Archive point-in-time records when the work they document is complete."
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
+                },
                 "operations": {
                   "maxItems": 500,
                   "type": "array",
@@ -5237,7 +5789,8 @@
                 "spaceId",
                 "path",
                 "requestId",
-                "title"
+                "title",
+                "lifetime"
               ],
               "additionalProperties": false
             },
@@ -7602,6 +8155,20 @@
                   "minLength": 1,
                   "description": "Display name"
                 },
+                "lifetime": {
+                  "type": "string",
+                  "enum": [
+                    "durable",
+                    "temporary"
+                  ],
+                  "description": "Required when creating a document.\n- durable: work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions.\n- temporary: supports work in progress and can leave browsing once that work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. Archives 7 days after the last edit, rename, or comment; set archiveOn for a later date. Archived documents remain searchable with includeArchived and can be restored.\nIf unsure: choose temporary if it only matters for finishing the current work, and durable if someone would look for it in a month. Archive point-in-time records when the work they document is complete."
+                },
+                "archiveOn": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Temporary documents only: ISO date or date-time when the document archives. Defaults to 7 days from now; later activity can push it out."
+                },
                 "description": {
                   "description": "Short description shown in Worktable",
                   "type": "string"
@@ -7731,6 +8298,7 @@
                 "action",
                 "spaceId",
                 "name",
+                "lifetime",
                 "html"
               ],
               "additionalProperties": false

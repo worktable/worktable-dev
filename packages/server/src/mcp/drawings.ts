@@ -23,6 +23,13 @@ export async function dispatchDrawingOperation(
   const request = writing
     ? DrawingsWriteRequestSchema.parse({ ...args, action })
     : DrawingsReadRequestSchema.parse({ ...args, action })
+  if (
+    request.action === "create" &&
+    request.archiveOn !== undefined &&
+    request.lifetime !== "temporary"
+  ) {
+    throw new Error('archiveOn applies only with lifetime "temporary"')
+  }
   const result = writing
     ? await drawingWrite(DrawingsWriteRequestSchema.parse(request), {
         actor,

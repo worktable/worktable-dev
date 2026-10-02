@@ -5,6 +5,7 @@ import {
 } from "../document-preview-service.ts"
 import {
   applyLifetimeOnCreate,
+  lifetimeCreateError,
   setDocumentFolderLifetime,
   setDocumentLifetime,
   type DocumentLifetimeChange,
@@ -40,6 +41,7 @@ import {
   docExists,
   docStat,
   getDocArchiveInfo,
+  getDocLifetimeView,
   getDocProvenance,
   getSpaceArchiveInfo,
 } from "../store.ts"
@@ -385,6 +387,15 @@ function decodeListCursor(value: unknown): number {
     throw new Error("cursor is invalid; pass the nextCursor from a previous page")
   }
   return offset
+}
+
+/** Reject an archive date that would not take effect before writing anything. */
+function assertLifetimeInput(args: Record<string, unknown>): void {
+  const error = lifetimeCreateError(
+    args["lifetime"] as DocumentLifetime | undefined,
+    args["archiveOn"] as string | undefined
+  )
+  if (error) throw new Error(error)
 }
 
 function lifetimeChange(args: Record<string, unknown>): DocumentLifetimeChange {
@@ -765,6 +776,7 @@ async function _dispatchOperationInner(
       return { versions: result.versions }
     }
     case "documents.create": {
+      assertLifetimeInput(args)
       const result = await createRegisteredDocument({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
@@ -1105,6 +1117,7 @@ async function _dispatchOperationInner(
       return { ok: true }
     }
     case "html.create": {
+      assertLifetimeInput(args)
       const spaceId = args["spaceId"] as string
       const { data: space, error: sErr } = await readSpace(spaceId)
       if (sErr || !space) throw new Error(sErr ?? "Space not found")
@@ -1629,6 +1642,7 @@ async function _dispatchOperationInner(
       if (result.error || result.data === null)
         throw new Error(result.error ?? "Failed to read document")
       const archived = await getDocArchiveInfo(spaceId, docPath)
+      const lifetime = await getDocLifetimeView(spaceId, docPath)
       const { links, backlinks } = await getDocLinks(spaceId, docPath)
 
       // If stored as JSON, try to return markdown for agent convenience
@@ -1647,6 +1661,7 @@ async function _dispatchOperationInner(
               format: "markdown",
               storedAs: "json",
               archived,
+              ...lifetime,
               links,
               backlinks,
               ...metadata,
@@ -1661,6 +1676,7 @@ async function _dispatchOperationInner(
           format: "blocknote",
           storedAs: "json",
           archived,
+          ...lifetime,
           links,
           backlinks,
           ...metadata,
@@ -1680,6 +1696,7 @@ async function _dispatchOperationInner(
           format: "markdown",
           storedAs: "md",
           archived,
+          ...lifetime,
           links,
           backlinks,
           ...metadata,
@@ -1693,6 +1710,7 @@ async function _dispatchOperationInner(
         format: result.format,
         storedAs: result.storedAs,
         archived,
+        ...lifetime,
         links,
         backlinks,
       }
@@ -1709,6 +1727,7 @@ async function _dispatchOperationInner(
       if (!existed && !lifetime) {
         throw new Error(DOCUMENT_LIFETIME_REQUIRED_MESSAGE)
       }
+      assertLifetimeInput(args)
       const result = await writeDoc(spaceId, docPath, content, {
         force,
         updatedBy: actorId,

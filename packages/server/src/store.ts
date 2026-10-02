@@ -1134,6 +1134,21 @@ function lifetimeFacts(entry: DocMetaEntry | undefined): DocLifetimeFacts {
   };
 }
 
+/** Lifetime as agents read it for one Doc: durable, or temporary until a date. */
+export async function getDocLifetimeView(
+  spaceId: string,
+  docPath: string
+): Promise<{ lifetime?: "durable" | "temporary"; archiveOn?: string; createdAt?: string }> {
+  const path = sanitizeDocPath(docPath);
+  const meta = await readDocMetaFile(spaceId);
+  const entry = meta.docs[path];
+  const fields = lifetimeListFields(entry, (await docStat(spaceId, path))?.updatedAt);
+  return {
+    ...(entry?.archived ? {} : { lifetime: fields.archiveOn ? "temporary" : "durable" }),
+    ...fields,
+  };
+}
+
 /** Read lifetime facts once for a set of document paths. */
 export async function getDocLifetimeFactsMap(
   spaceId: string,

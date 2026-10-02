@@ -384,6 +384,8 @@ const DocReadOutputSchema = z.looseObject({
   archived: PortableArchiveInfoSchema.optional(),
   links: z.array(DocLinkSchema),
   backlinks: z.array(z.string()),
+  ...LifetimeOutputFields,
+  createdAt: z.string().optional(),
   headings: z.array(z.string()).optional(),
   blockCount: z.number().int().nonnegative().nullable().optional(),
   lossyFields: z.array(z.string()).optional(),
@@ -1201,6 +1203,15 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     archived: forActions(PortableArchiveInfoSchema, '"read"'),
     links: forActions(z.array(DocLinkSchema), '"read"'),
     backlinks: forActions(z.array(z.string()), '"read"'),
+    lifetime: forActions(
+      z.enum(["durable", "temporary"]),
+      '"read" for active documents'
+    ),
+    archiveOn: forActions(z.string(), '"read" for temporary documents'),
+    createdAt: forActions(
+      z.string(),
+      '"read" when the document was created through Worktable'
+    ),
     headings: forActions(z.array(z.string()), '"read"'),
     blockCount: forActions(z.number().int().nonnegative().nullable(), '"read"'),
     readFormatHint: forActions(z.enum(["markdown", "blocknote"]), '"read"'),

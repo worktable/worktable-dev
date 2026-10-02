@@ -9,30 +9,25 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ThreadsSplatRouteImport } from './routes/threads/$'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as SpacesSpaceIdRouteImport } from './routes/spaces/$spaceId'
-import { Route as SpacesSpaceIdWidgetsSplatRouteImport } from './routes/spaces/$spaceId/widgets/$'
-import { Route as SpacesSpaceIdThreadsSplatRouteImport } from './routes/spaces/$spaceId/threads/$'
-import { Route as SpacesSpaceIdRecordsSplatRouteImport } from './routes/spaces/$spaceId/records/$'
-import { Route as SpacesSpaceIdDocumentsSplatRouteImport } from './routes/spaces/$spaceId/documents/$'
+import { Route as ThreadsSplatRouteImport } from './routes/threads/$'
 import { Route as SpacesSpaceIdDocsSplatRouteImport } from './routes/spaces/$spaceId/docs/$'
+import { Route as SpacesSpaceIdDocumentsSplatRouteImport } from './routes/spaces/$spaceId/documents/$'
+import { Route as SpacesSpaceIdRecordsSplatRouteImport } from './routes/spaces/$spaceId/records/$'
+import { Route as SpacesSpaceIdThreadsSplatRouteImport } from './routes/spaces/$spaceId/threads/$'
+import { Route as SpacesSpaceIdWidgetsSplatRouteImport } from './routes/spaces/$spaceId/widgets/$'
 import { Route as SpacesSpaceIdRecordsCollectionIdRecordIdRouteImport } from './routes/spaces/$spaceId/records/$collectionId/$recordId'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ThreadsSplatRoute = ThreadsSplatRouteImport.update({
-  id: '/threads/$',
-  path: '/threads/$',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpacesSpaceIdRoute = SpacesSpaceIdRouteImport.update({
@@ -40,16 +35,20 @@ const SpacesSpaceIdRoute = SpacesSpaceIdRouteImport.update({
   path: '/spaces/$spaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpacesSpaceIdWidgetsSplatRoute =
-  SpacesSpaceIdWidgetsSplatRouteImport.update({
-    id: '/widgets/$',
-    path: '/widgets/$',
-    getParentRoute: () => SpacesSpaceIdRoute,
-  } as any)
-const SpacesSpaceIdThreadsSplatRoute =
-  SpacesSpaceIdThreadsSplatRouteImport.update({
-    id: '/threads/$',
-    path: '/threads/$',
+const ThreadsSplatRoute = ThreadsSplatRouteImport.update({
+  id: '/threads/$',
+  path: '/threads/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpacesSpaceIdDocsSplatRoute = SpacesSpaceIdDocsSplatRouteImport.update({
+  id: '/docs/$',
+  path: '/docs/$',
+  getParentRoute: () => SpacesSpaceIdRoute,
+} as any)
+const SpacesSpaceIdDocumentsSplatRoute =
+  SpacesSpaceIdDocumentsSplatRouteImport.update({
+    id: '/documents/$',
+    path: '/documents/$',
     getParentRoute: () => SpacesSpaceIdRoute,
   } as any)
 const SpacesSpaceIdRecordsSplatRoute =
@@ -58,17 +57,18 @@ const SpacesSpaceIdRecordsSplatRoute =
     path: '/records/$',
     getParentRoute: () => SpacesSpaceIdRoute,
   } as any)
-const SpacesSpaceIdDocumentsSplatRoute =
-  SpacesSpaceIdDocumentsSplatRouteImport.update({
-    id: '/documents/$',
-    path: '/documents/$',
+const SpacesSpaceIdThreadsSplatRoute =
+  SpacesSpaceIdThreadsSplatRouteImport.update({
+    id: '/threads/$',
+    path: '/threads/$',
     getParentRoute: () => SpacesSpaceIdRoute,
   } as any)
-const SpacesSpaceIdDocsSplatRoute = SpacesSpaceIdDocsSplatRouteImport.update({
-  id: '/docs/$',
-  path: '/docs/$',
-  getParentRoute: () => SpacesSpaceIdRoute,
-} as any)
+const SpacesSpaceIdWidgetsSplatRoute =
+  SpacesSpaceIdWidgetsSplatRouteImport.update({
+    id: '/widgets/$',
+    path: '/widgets/$',
+    getParentRoute: () => SpacesSpaceIdRoute,
+  } as any)
 const SpacesSpaceIdRecordsCollectionIdRecordIdRoute =
   SpacesSpaceIdRecordsCollectionIdRecordIdRouteImport.update({
     id: '/records/$collectionId/$recordId',
@@ -161,13 +161,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -175,11 +168,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/threads/$': {
-      id: '/threads/$'
-      path: '/threads/$'
-      fullPath: '/threads/$'
-      preLoaderRoute: typeof ThreadsSplatRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/spaces/$spaceId': {
@@ -189,25 +182,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpacesSpaceIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/spaces/$spaceId/widgets/$': {
-      id: '/spaces/$spaceId/widgets/$'
-      path: '/widgets/$'
-      fullPath: '/spaces/$spaceId/widgets/$'
-      preLoaderRoute: typeof SpacesSpaceIdWidgetsSplatRouteImport
-      parentRoute: typeof SpacesSpaceIdRoute
-    }
-    '/spaces/$spaceId/threads/$': {
-      id: '/spaces/$spaceId/threads/$'
+    '/threads/$': {
+      id: '/threads/$'
       path: '/threads/$'
-      fullPath: '/spaces/$spaceId/threads/$'
-      preLoaderRoute: typeof SpacesSpaceIdThreadsSplatRouteImport
-      parentRoute: typeof SpacesSpaceIdRoute
+      fullPath: '/threads/$'
+      preLoaderRoute: typeof ThreadsSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/spaces/$spaceId/records/$': {
-      id: '/spaces/$spaceId/records/$'
-      path: '/records/$'
-      fullPath: '/spaces/$spaceId/records/$'
-      preLoaderRoute: typeof SpacesSpaceIdRecordsSplatRouteImport
+    '/spaces/$spaceId/docs/$': {
+      id: '/spaces/$spaceId/docs/$'
+      path: '/docs/$'
+      fullPath: '/spaces/$spaceId/docs/$'
+      preLoaderRoute: typeof SpacesSpaceIdDocsSplatRouteImport
       parentRoute: typeof SpacesSpaceIdRoute
     }
     '/spaces/$spaceId/documents/$': {
@@ -217,11 +203,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpacesSpaceIdDocumentsSplatRouteImport
       parentRoute: typeof SpacesSpaceIdRoute
     }
-    '/spaces/$spaceId/docs/$': {
-      id: '/spaces/$spaceId/docs/$'
-      path: '/docs/$'
-      fullPath: '/spaces/$spaceId/docs/$'
-      preLoaderRoute: typeof SpacesSpaceIdDocsSplatRouteImport
+    '/spaces/$spaceId/records/$': {
+      id: '/spaces/$spaceId/records/$'
+      path: '/records/$'
+      fullPath: '/spaces/$spaceId/records/$'
+      preLoaderRoute: typeof SpacesSpaceIdRecordsSplatRouteImport
+      parentRoute: typeof SpacesSpaceIdRoute
+    }
+    '/spaces/$spaceId/threads/$': {
+      id: '/spaces/$spaceId/threads/$'
+      path: '/threads/$'
+      fullPath: '/spaces/$spaceId/threads/$'
+      preLoaderRoute: typeof SpacesSpaceIdThreadsSplatRouteImport
+      parentRoute: typeof SpacesSpaceIdRoute
+    }
+    '/spaces/$spaceId/widgets/$': {
+      id: '/spaces/$spaceId/widgets/$'
+      path: '/widgets/$'
+      fullPath: '/spaces/$spaceId/widgets/$'
+      preLoaderRoute: typeof SpacesSpaceIdWidgetsSplatRouteImport
       parentRoute: typeof SpacesSpaceIdRoute
     }
     '/spaces/$spaceId/records/$collectionId/$recordId': {

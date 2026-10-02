@@ -243,7 +243,11 @@ function SpaceOverview({
             <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
           ))}
         </div>
-      ) : docsCount === 0 && widgetsCount === 0 && recordCount === 0 && threadCount === 0 ? (
+      ) : docsCount === 0 &&
+        widgetsCount === 0 &&
+        recordCount === 0 &&
+        threadCount === 0 &&
+        startHere.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
           <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-muted/40">
             <Layers className="size-7 text-muted-foreground" />

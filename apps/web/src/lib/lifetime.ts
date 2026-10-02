@@ -149,7 +149,13 @@ export function recentQueryOptions(options: RecentOptions) {
 }
 
 export function useRecentDocuments(options: RecentOptions, enabled = true) {
-  return useQuery({ ...recentQueryOptions(options), enabled, placeholderData: keepPreviousData })
+  return useQuery({
+    ...recentQueryOptions(options),
+    enabled,
+    placeholderData: keepPreviousData,
+    // Home has no workspace-wide change feed; refresh while it is on screen.
+    refetchInterval: 30_000,
+  })
 }
 
 // ── Start here ─────────────────────────────────────────────

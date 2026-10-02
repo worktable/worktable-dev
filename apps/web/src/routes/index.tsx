@@ -39,8 +39,15 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 })
 
-function RecentDocumentRow({ item }: { item: RecentDocument }) {
+function RecentDocumentRow({
+  item,
+  sort,
+}: {
+  item: RecentDocument
+  sort: RecentOptions["sort"]
+}) {
   const { document } = item
+  const time = sort === "created" ? document.createdAt : document.updatedAt
   return (
     <Link
       to="/spaces/$spaceId/documents/$"
@@ -58,9 +65,7 @@ function RecentDocumentRow({ item }: { item: RecentDocument }) {
         ]
           .filter(Boolean)
           .join(" · ")}
-        meta={
-          document.updatedAt ? <RelativeTime iso={document.updatedAt} /> : undefined
-        }
+        meta={time ? <RelativeTime iso={time} /> : undefined}
       />
     </Link>
   )
@@ -159,7 +164,11 @@ function RecentSection({
       ) : data && data.items.length > 0 ? (
         <div className="space-y-1">
           {data.items.map((item) => (
-            <RecentDocumentRow key={`${item.spaceId}:${item.document.path}`} item={item} />
+            <RecentDocumentRow
+              key={`${item.spaceId}:${item.document.path}`}
+              item={item}
+              sort={sort}
+            />
           ))}
         </div>
       ) : (

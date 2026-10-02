@@ -1,5 +1,6 @@
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
-import { readNewDocumentLifetime, writeNewDocumentLifetime } from "@/lib/lifetime"
+import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
+import { useNewDocumentLifetime } from "@/lib/lifetime"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
   lazy,
@@ -170,37 +171,11 @@ const GROUP_ICONS: Record<string, typeof Briefcase> = {
   church: Church,
 }
 
-function formatGroupLabel(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ")
-}
-
 function getGroupDef(id: string) {
   return {
     id,
     label: formatGroupLabel(id),
     icon: GROUP_ICONS[id] ?? LayoutGrid,
-  }
-}
-
-function getSpaceArchiveInfo(space: SpaceFile) {
-  const value = space.settings["archive"]
-  if (!value || typeof value !== "object") return undefined
-  const candidate = value as Record<string, unknown>
-  if (
-    typeof candidate["archivedAt"] !== "string" ||
-    typeof candidate["archivedBy"] !== "string"
-  ) {
-    return undefined
-  }
-
-  return {
-    archivedAt: candidate["archivedAt"],
-    archivedBy: candidate["archivedBy"],
-    reason:
-      typeof candidate["reason"] === "string" ? candidate["reason"] : undefined,
   }
 }
 
@@ -521,7 +496,7 @@ function SpaceSection({
   const [newDrawingOpen, setNewDrawingOpen] = useState(false)
   // New documents start temporary unless the person chooses durable; the
   // choice is remembered for the next creation.
-  const [newLifetime, setNewLifetime] = useState(readNewDocumentLifetime)
+  const [newLifetime, setNewLifetime] = useNewDocumentLifetime()
   const [newWidgetOpen, setNewWidgetOpen] = useState(false)
   const [newCollectionOpen, setNewCollectionOpen] = useState(false)
   const createPendingRef = useRef(false)
@@ -716,9 +691,7 @@ function SpaceSection({
                   checked={newLifetime === "temporary"}
                   closeOnClick={false}
                   onCheckedChange={(checked) => {
-                    const next = checked ? "temporary" : "durable"
-                    setNewLifetime(next)
-                    writeNewDocumentLifetime(next)
+                    setNewLifetime(checked ? "temporary" : "durable")
                   }}
                 >
                   <Clock3 className="h-4 w-4" />

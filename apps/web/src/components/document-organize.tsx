@@ -54,10 +54,16 @@ function useLifetimeActions(spaceId: string, path: string) {
   }
 }
 
+/** The local calendar day of an instant, as a date input value. */
 function toDateInput(iso: string): string {
   const date = new Date(iso)
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
   return local.toISOString().slice(0, 10)
+}
+
+/** A date input value as the start of that day where the person is. */
+function fromDateInput(value: string): string {
+  return new Date(`${value}T00:00:00`).toISOString()
 }
 
 /** Quiet header chip for temporary documents; durable documents show nothing. */
@@ -74,6 +80,7 @@ export function DocumentLifetimeChip({
   const [date, setDate] = useState("")
   if (summary?.lifetime !== "temporary" || !summary.archiveOn) return null
   const label = `Archives ${formatArchiveDate(summary.archiveOn)}`
+  const today = toDateInput(new Date().toISOString())
 
   return (
     <Popover
@@ -115,19 +122,20 @@ export function DocumentLifetimeChip({
           className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!date) return
+            if (!date || date < today) return
             setOpen(false)
-            void actions.makeTemporary(date)
+            void actions.makeTemporary(fromDateInput(date))
           }}
         >
           <Input
             type="date"
             aria-label="Archive date"
             value={date}
+            min={today}
             onChange={(event) => setDate(event.target.value)}
             className="h-9 flex-1"
           />
-          <Button type="submit" size="sm" variant="outline" disabled={!date}>
+          <Button type="submit" size="sm" variant="outline" disabled={!date || date < today}>
             Change date
           </Button>
         </form>

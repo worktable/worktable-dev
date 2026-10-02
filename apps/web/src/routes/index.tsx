@@ -22,7 +22,10 @@ import {
   formatArchiveDate,
   useRecentDocuments,
   type RecentDocument,
+  type RecentDocuments,
+  type RecentOptions,
 } from "@/lib/lifetime"
+import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
 import {
   Select,
   SelectContent,
@@ -35,17 +38,6 @@ import type { SearchResult, SpaceFile } from "@worktable/types"
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
-
-const SPACE_GROUP_ORDER = ["work", "side-quests", "career", "church", "meta"]
-
-function isSpaceArchived(space: SpaceFile): boolean {
-  return Boolean(space.settings["archive"])
-}
-
-function groupLabel(group: string | undefined): string {
-  if (!group) return "Other"
-  return group.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase())
-}
 
 function RecentDocumentRow({ item }: { item: RecentDocument }) {
   const { document } = item
@@ -74,15 +66,31 @@ function RecentDocumentRow({ item }: { item: RecentDocument }) {
   )
 }
 
-function RecentSection({ spaces }: { spaces: SpaceFile[] }) {
-  const [sort, setSort] = useState<"updated" | "created">("updated")
-  const [spaceId, setSpaceId] = useState<string>("all")
-  const [includeTemporary, setIncludeTemporary] = useState(false)
-  const { data, isLoading } = useRecentDocuments({
-    sort,
-    includeTemporary,
-    ...(spaceId === "all" ? {} : { spaceId }),
-  })
+function RecentSection({
+  spaces,
+  options,
+  onOptionsChange,
+  data,
+  isLoading,
+  isError,
+  onRetry,
+}: {
+  spaces: SpaceFile[]
+  options: RecentOptions
+  onOptionsChange: (options: RecentOptions) => void
+  data: RecentDocuments | undefined
+  isLoading: boolean
+  isError: boolean
+  onRetry: () => void
+}) {
+  const { sort, includeTemporary } = options
+  const spaceId = options.spaceId ?? "all"
+  const setSort = (next: RecentOptions["sort"]) => onOptionsChange({ ...options, sort: next })
+  const setSpaceId = (next: string) => {
+    onOptionsChange({ sort, includeTemporary, ...(next === "all" ? {} : { spaceId: next }) })
+  }
+  const setIncludeTemporary = (next: boolean) =>
+    onOptionsChange({ ...options, includeTemporary: next })
   const spaceNames = new Map(spaces.map((space) => [space.id, space.name]))
 
   return (
@@ -135,7 +143,14 @@ function RecentSection({ spaces }: { spaces: SpaceFile[] }) {
         </div>
       </div>
 
-      {isLoading ? (
+      {isError && !data ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border/70 px-4 py-4 text-sm text-muted-foreground">
+          <span>Couldn’t load recent documents.</span>
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
@@ -169,11 +184,10 @@ function SpacesSection({
     groups.set(key, [...(groups.get(key) ?? []), space])
   }
   const activity = (space: SpaceFile) => lastActivity.get(space.id) ?? ""
-  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
-    const rank = (group: string) =>
-      group === "" ? SPACE_GROUP_ORDER.length + 1 : SPACE_GROUP_ORDER.indexOf(group) + 1 || SPACE_GROUP_ORDER.length
-    return rank(a) - rank(b)
-  })
+  // Alphabetical like the sidebar, with ungrouped Spaces last.
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) =>
+    a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)
+  )
 
   return (
     <section>
@@ -183,7 +197,7 @@ function SpacesSection({
           <div key={group || "other"}>
             {orderedGroups.length > 1 && (
               <h3 className="mb-1 px-4 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-                {groupLabel(group || undefined)}
+                {group ? formatGroupLabel(group) : "Other"}
               </h3>
             )}
             <div className="space-y-1">
@@ -418,21 +432,24 @@ function HomePage() {
     [spaces]
   )
   const activeSpaces = useMemo(
-    () => (spaces ?? []).filter((space) => !isSpaceArchived(space)),
+    () => (spaces ?? []).filter((space) => !getSpaceArchiveInfo(space)),
     [spaces]
   )
-  // Space ordering uses real document activity across all lifetimes.
-  const { data: activityData } = useRecentDocuments({
+  const [recentOptions, setRecentOptions] = useState<RecentOptions>({
     sort: "updated",
-    includeTemporary: true,
-    limit: 1,
+    includeTemporary: false,
   })
+  const recent = useRecentDocuments(recentOptions)
+  // Each response reports every listed Space's newest change across all
+  // lifetimes. The unfiltered list shares the query above, so Space ordering
+  // needs no extra scan; while a Space filter is on it keeps its last result.
+  const { data: activity } = useRecentDocuments(
+    { sort: recentOptions.sort, includeTemporary: recentOptions.includeTemporary },
+    !recentOptions.spaceId
+  )
   const lastActivity = useMemo(
-    () =>
-      new Map(
-        (activityData?.spaces ?? []).map((entry) => [entry.spaceId, entry.lastActivityAt])
-      ),
-    [activityData]
+    () => new Map((activity?.spaces ?? []).map((entry) => [entry.spaceId, entry.lastActivityAt])),
+    [activity]
   )
 
   if (isLoading) {
@@ -477,7 +494,15 @@ function HomePage() {
         />
       ) : (
         <>
-          <RecentSection spaces={activeSpaces} />
+          <RecentSection
+            spaces={activeSpaces}
+            options={recentOptions}
+            onOptionsChange={setRecentOptions}
+            data={recent.data}
+            isLoading={recent.isLoading}
+            isError={recent.isError}
+            onRetry={() => void recent.refetch()}
+          />
           <SpacesSection spaces={activeSpaces} lastActivity={lastActivity} />
         </>
       )}

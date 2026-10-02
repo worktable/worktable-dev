@@ -37,20 +37,33 @@ export async function listRecentDocuments(options: {
       !getSpaceArchiveInfo(space) &&
       (options.spaceId === undefined || space.id === options.spaceId)
   )
-  const items: RecentDocument[] = []
-  const activity: SpaceActivity[] = []
-  for (const space of spaces) {
-    let newest: string | undefined
-    for (const item of await listDocuments({ spaceId: space.id })) {
-      if (item.kind !== "document") continue
-      if (item.updatedAt && (!newest || item.updatedAt > newest)) {
-        newest = item.updatedAt
+  // Spaces are listed in parallel; one unreadable Space must not hide the
+  // rest of the workspace's recent work.
+  const perSpace = await Promise.all(
+    spaces.map(async (space) => {
+      try {
+        let newest: string | undefined
+        const spaceItems: RecentDocument[] = []
+        for (const item of await listDocuments({ spaceId: space.id })) {
+          if (item.kind !== "document") continue
+          if (item.updatedAt && (!newest || item.updatedAt > newest)) {
+            newest = item.updatedAt
+          }
+          if (!options.includeTemporary && item.lifetime === "temporary") continue
+          spaceItems.push({ spaceId: space.id, spaceName: space.name, document: item })
+        }
+        return {
+          items: spaceItems,
+          activity: { spaceId: space.id, ...(newest ? { lastActivityAt: newest } : {}) },
+        }
+      } catch (error) {
+        console.error(`[recent-documents] could not list ${space.id}:`, error)
+        return { items: [], activity: { spaceId: space.id } }
       }
-      if (!options.includeTemporary && item.lifetime === "temporary") continue
-      items.push({ spaceId: space.id, spaceName: space.name, document: item })
-    }
-    activity.push({ spaceId: space.id, ...(newest ? { lastActivityAt: newest } : {}) })
-  }
+    })
+  )
+  const items = perSpace.flatMap((entry) => entry.items)
+  const activity: SpaceActivity[] = perSpace.map((entry) => entry.activity)
   const key = (item: RecentDocument) =>
     sort === "created" ? item.document.createdAt : item.document.updatedAt
   // Unknown creation times are excluded from the Created view rather than

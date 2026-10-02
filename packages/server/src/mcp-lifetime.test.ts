@@ -192,6 +192,22 @@ describe("agent document lifetimes over MCP", () => {
       { path: "plan", status: "archived" },
     ])
 
+    // Reordering keeps an archived pin; only new pins must be active.
+    const reordered = await tool("worktable_spaces", {
+      action: "update",
+      spaceId,
+      startHere: [{ path: "plan" }, { path: "handbook" }],
+    })
+    expect(reordered.ok).toBe(true)
+    await writeDoc("draft", { lifetime: "durable" })
+    await tool("worktable_documents_write", { action: "archive", spaceId, path: "draft" })
+    const archivedPin = await tool("worktable_spaces", {
+      action: "update",
+      spaceId,
+      startHere: [{ path: "plan" }, { path: "draft" }],
+    })
+    expect(archivedPin.ok).toBe(false)
+
     const archived = await tool("worktable_spaces", { action: "archive", spaceId, reason: "Done" })
     expect(archived.data).toMatchObject({ ok: true })
     const restored = await tool("worktable_spaces", { action: "restore", spaceId })

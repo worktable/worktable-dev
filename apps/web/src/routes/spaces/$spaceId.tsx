@@ -135,6 +135,7 @@ function SpaceOverview({
   documents,
   startHere,
   recordCollections,
+  loaded,
 }: {
   spaceId: string
   spaceName: string
@@ -143,6 +144,8 @@ function SpaceOverview({
   documents: DocumentSummary[]
   startHere: ResolvedStartHerePin[]
   recordCollections: RecordCollectionSummary[]
+  /** False until documents and records have loaded, so nothing reads as empty early. */
+  loaded: boolean
 }) {
   const active = documents.filter((document) => !document.archived)
   const docsCount = active.filter((document) => document.format.id !== "worktable.html").length
@@ -234,7 +237,13 @@ function SpaceOverview({
         </div>
       )}
 
-      {docsCount === 0 && widgetsCount === 0 && recordCount === 0 && threadCount === 0 ? (
+      {!loaded ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
+          ))}
+        </div>
+      ) : docsCount === 0 && widgetsCount === 0 && recordCount === 0 && threadCount === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
           <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-muted/40">
             <Layers className="size-7 text-muted-foreground" />
@@ -617,10 +626,10 @@ function SpaceDetailPage() {
 }
 
 function SpaceOverviewWithData(
-  props: Omit<Parameters<typeof SpaceOverview>[0], "documents" | "recordCollections">
+  props: Omit<Parameters<typeof SpaceOverview>[0], "documents" | "recordCollections" | "loaded">
 ) {
-  const { data: documents } = useDocuments(props.spaceId)
-  const { data: recordCollections } = useRecordCollections(props.spaceId)
+  const { data: documents, isPending: documentsPending } = useDocuments(props.spaceId)
+  const { data: recordCollections, isPending: recordsPending } = useRecordCollections(props.spaceId)
   return (
     <SpaceOverview
       {...props}
@@ -628,6 +637,7 @@ function SpaceOverviewWithData(
         (item): item is DocumentSummary => item.kind === "document"
       )}
       recordCollections={recordCollections ?? []}
+      loaded={!documentsPending && !recordsPending}
     />
   )
 }

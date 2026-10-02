@@ -1,5 +1,5 @@
-import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback } from "react"
+import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useSyncExternalStore } from "react"
 import type {
   DocumentLifetime,
   DocumentSummary,
@@ -8,6 +8,7 @@ import type {
 } from "@worktable/types"
 import { useDocuments, documentQueryKeys } from "./documents-queries.ts"
 import { fetchJSON } from "./http.ts"
+import { spaceQueryOptions } from "./queries.ts"
 
 // ── Lifetime ────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ export function useRefreshDocumentLists(spaceId: string): () => Promise<void> {
   return useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: documentQueryKeys.list(spaceId) }),
+      // Start here pins report their document's status.
+      queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
       queryClient.invalidateQueries({ queryKey: recentQueryKeys.all }),
       queryClient.invalidateQueries({ queryKey: ["search"] }),
     ])
@@ -60,8 +63,10 @@ export function useRefreshDocumentLists(spaceId: string): () => Promise<void> {
 
 const NEW_LIFETIME_KEY = "worktable-new-document-lifetime"
 
+const newLifetimeListeners = new Set<() => void>()
+
 /** New documents start temporary unless the person last chose durable. */
-export function readNewDocumentLifetime(): DocumentLifetime {
+function readNewDocumentLifetime(): DocumentLifetime {
   try {
     return localStorage.getItem(NEW_LIFETIME_KEY) === "durable" ? "durable" : "temporary"
   } catch {
@@ -69,12 +74,37 @@ export function readNewDocumentLifetime(): DocumentLifetime {
   }
 }
 
-export function writeNewDocumentLifetime(lifetime: DocumentLifetime): void {
+function writeNewDocumentLifetime(lifetime: DocumentLifetime): void {
   try {
     localStorage.setItem(NEW_LIFETIME_KEY, lifetime)
   } catch {
-    // Private browsing: the choice applies to this creation only.
+    // Private browsing: the choice lasts until the page reloads.
+    fallbackLifetime = lifetime
   }
+  for (const listener of newLifetimeListeners) listener()
+}
+
+let fallbackLifetime: DocumentLifetime | undefined
+
+function subscribeNewDocumentLifetime(listener: () => void): () => void {
+  newLifetimeListeners.add(listener)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === NEW_LIFETIME_KEY) listener()
+  }
+  window.addEventListener("storage", onStorage)
+  return () => {
+    newLifetimeListeners.delete(listener)
+    window.removeEventListener("storage", onStorage)
+  }
+}
+
+/** One preference shared by every Space's New menu and other tabs. */
+export function useNewDocumentLifetime(): [DocumentLifetime, (lifetime: DocumentLifetime) => void] {
+  const lifetime = useSyncExternalStore(
+    subscribeNewDocumentLifetime,
+    () => fallbackLifetime ?? readNewDocumentLifetime()
+  )
+  return [lifetime, writeNewDocumentLifetime]
 }
 
 // ── Recent documents ───────────────────────────────────────
@@ -118,8 +148,8 @@ export function recentQueryOptions(options: RecentOptions) {
   })
 }
 
-export function useRecentDocuments(options: RecentOptions) {
-  return useQuery(recentQueryOptions(options))
+export function useRecentDocuments(options: RecentOptions, enabled = true) {
+  return useQuery({ ...recentQueryOptions(options), enabled, placeholderData: keepPreviousData })
 }
 
 // ── Start here ─────────────────────────────────────────────

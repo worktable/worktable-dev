@@ -1,0 +1,86 @@
+---
+import { PUBLIC_INSTALL_COMMAND } from "@worktable/public-analytics"
+---
+
+<worktable-install-command>
+  <pre tabindex="0"><code>{PUBLIC_INSTALL_COMMAND}</code></pre>
+  <button type="button" aria-label="Copy install command" hidden>Copy</button>
+  <span role="status" aria-live="polite"></span>
+</worktable-install-command>
+
+<script>
+  import { PUBLIC_INSTALL_COMMAND } from "@worktable/public-analytics"
+  import { writeClipboard } from "@worktable/public-analytics/clipboard"
+
+  class InstallCommand extends HTMLElement {
+    connectedCallback() {
+      const button = this.querySelector("button")
+      const status = this.querySelector('[role="status"]')
+      if (!button || !status || button.dataset.ready) return
+      button.dataset.ready = "true"
+      button.hidden = false
+      button.addEventListener("click", async () => {
+        const succeeded = await writeClipboard(PUBLIC_INSTALL_COMMAND)
+        status.textContent = succeeded ? "Copied" : "Could not copy. Select the command and copy it."
+        if (!succeeded) return
+        const config = window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__
+        if (!config) return
+        void import("@worktable/public-analytics/browser").then((analytics) => {
+          analytics.captureInstallCommandCopy(config, "cli_install", "docs_start")
+        })
+      })
+    }
+  }
+
+  if (!customElements.get("worktable-install-command")) {
+    customElements.define("worktable-install-command", InstallCommand)
+  }
+</script>
+
+<style>
+  worktable-install-command {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-chrome);
+    border-radius: 0.625rem;
+    background: var(--well-bg);
+  }
+
+  pre {
+    margin: 0;
+    padding: 0.25rem;
+    border: 0;
+    background: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  code { font-family: var(--sl-font-mono); }
+
+  button {
+    margin: 0;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-chrome);
+    border-radius: 0.5rem;
+    background: var(--well-bg);
+    color: var(--sl-color-text-accent);
+    cursor: pointer;
+  }
+
+  button:hover { background: var(--surface-tint); }
+  button:focus-visible, pre:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  [role="status"] {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: var(--sl-text-sm);
+  }
+  [role="status"]:empty { display: none; }
+</style>

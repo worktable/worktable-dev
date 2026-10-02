@@ -9,6 +9,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./clipboard": "./src/clipboard.ts",
     "./browser": "./src/browser.ts",
     "./react": "./src/react.tsx"
   },

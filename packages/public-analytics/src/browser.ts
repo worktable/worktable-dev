@@ -1,7 +1,7 @@
 import type { BeforeSendFn } from "posthog-js"
 import posthog from "posthog-js/dist/module.slim"
 import {
-  approvedCampaignProperties,
+  publicAcquisitionProperties,
   isDoNotTrackEnabled,
   isPublicAnalyticsContextAllowed,
   normalizePublicAnalyticsPathname,
@@ -11,6 +11,8 @@ import {
   PUBLIC_ANALYTICS_SCHEMA_VERSION,
   sanitizePublicAnalyticsEvent,
   type PublicAnalyticsConfig,
+  type PublicInstallCommandId,
+  type PublicInstallCopyPlacement,
 } from "./index"
 
 let activeConfig: PublicAnalyticsConfig | undefined
@@ -114,13 +116,17 @@ export function capturePublicPageview(): void {
   capture("$pageview", {})
 }
 
-export function captureInstallCommandCopy(config: PublicAnalyticsConfig): void {
+export function captureInstallCommandCopy(
+  config: PublicAnalyticsConfig,
+  commandId: PublicInstallCommandId,
+  placement: PublicInstallCopyPlacement
+): void {
   // The copy control can hydrate before the root analytics effect. Initialize
   // on demand so a successful early copy is not silently dropped.
   if (!initializePublicAnalytics(config) || !canCaptureActiveConfig()) return
   capture("marketing:install_command_copy", {
-    command_id: "self_host_install",
-    placement: "deployment_card",
+    command_id: commandId,
+    placement,
   })
 }
 
@@ -200,7 +206,10 @@ function capture(
       $host: window.location.hostname,
       $pathname: pathname,
       ...referringDomainProperty(),
-      ...approvedCampaignProperties(window.location.search),
+      ...publicAcquisitionProperties(
+        window.location.search,
+        referringDomainProperty().$referring_domain
+      ),
       ...properties,
     },
     {

@@ -1,4 +1,4 @@
-export const PUBLIC_ANALYTICS_SCHEMA_VERSION = 1 as const
+export const PUBLIC_ANALYTICS_SCHEMA_VERSION = 2 as const
 export const PUBLIC_ANALYTICS_API_HOST = "https://edge.worktable.dev"
 export const PUBLIC_ANALYTICS_PREFERENCE_KEY = "worktable.public-analytics"
 export const PUBLIC_ANALYTICS_PREFERENCE_EVENT =
@@ -14,14 +14,19 @@ export type PublicSiteSurface =
   | "worktable_docs"
 
 export type PublicAnalyticsCtaId =
+  | "install_guide_open"
   | "macos_download"
   | "cloud_app_open"
   | "cloud_site_open"
   | "cloud_signup_open"
   | "local_site_open"
   | "documentation_open"
+  | "source_code_open"
 
 export type PublicAnalyticsPlacement =
+  | "header"
+  | "footer_cta"
+  | "footer"
   | "hero"
   | "deployment_card"
   | "pricing_card"
@@ -29,9 +34,9 @@ export type PublicAnalyticsPlacement =
   | "docs_start"
 
 type PublicAnalyticsCampaignProperty =
-  | "$utm_source"
-  | "$utm_medium"
-  | "$utm_campaign"
+  | "utm_source"
+  | "utm_medium"
+  | "utm_campaign"
 
 export interface PublicAnalyticsConfig {
   projectToken: string | undefined
@@ -61,22 +66,127 @@ const PRODUCTION_HOST_BY_SURFACE: Readonly<Record<PublicSiteSurface, string>> =
 const CTA_PLACEMENTS: Readonly<
   Record<PublicAnalyticsCtaId, readonly PublicAnalyticsPlacement[]>
 > = {
-  macos_download: ["hero", "docs_start"],
+  install_guide_open: [
+    "header",
+    "hero",
+    "deployment_card",
+    "footer_cta",
+    "footer",
+    "docs_start",
+  ],
+  macos_download: [
+    "header",
+    "hero",
+    "deployment_card",
+    "footer_cta",
+    "footer",
+    "docs_start",
+  ],
   cloud_app_open: ["hero"],
-  cloud_site_open: ["deployment_card"],
-  cloud_signup_open: ["hero", "pricing_card"],
-  local_site_open: ["hero", "pricing_card"],
-  documentation_open: ["faq"],
+  cloud_site_open: ["hero", "deployment_card", "footer"],
+  cloud_signup_open: ["hero", "pricing_card", "footer_cta", "footer"],
+  local_site_open: ["hero", "pricing_card", "footer"],
+  documentation_open: ["hero", "faq", "footer"],
+  source_code_open: ["header", "hero", "footer", "pricing_card"],
 }
 
-// Deliberate campaign values go here before links using them ship. An empty
-// allowlist is safer than accepting arbitrary query-string values.
+// A bounded starter vocabulary for public campaign links. Add new campaign
+// names here before publishing them; never collect arbitrary query values.
 const ACTIVE_CAMPAIGN_VALUES: Readonly<
   Record<PublicAnalyticsCampaignProperty, readonly string[]>
 > = {
-  $utm_source: [],
-  $utm_medium: [],
-  $utm_campaign: [],
+  utm_source: [
+    "github",
+    "hackernews",
+    "reddit",
+    "x",
+    "linkedin",
+    "producthunt",
+    "newsletter",
+    "google",
+  ],
+  utm_medium: ["social", "community", "email", "referral", "cpc"],
+  utm_campaign: ["launch"],
+}
+
+const REFERRAL_SOURCES: Readonly<Record<string, string>> = {
+  "github.com": "github",
+  "news.ycombinator.com": "hackernews",
+  "reddit.com": "reddit",
+  "x.com": "x",
+  "t.co": "x",
+  "twitter.com": "x",
+  "linkedin.com": "linkedin",
+  "producthunt.com": "producthunt",
+  "google.com": "google",
+}
+const ACQUISITION_SOURCES = [
+  ...ACTIVE_CAMPAIGN_VALUES.utm_source,
+  "other_referral",
+  "direct_or_unknown",
+  "internal_unknown",
+]
+
+export function publicAcquisitionProperties(
+  search: string,
+  referringDomain: string | undefined
+): Record<string, string> {
+  const campaign = approvedCampaignProperties(search)
+  const params = new URLSearchParams(search)
+  const inherited = params.get("wt_source") ?? ""
+  const domain = referringDomain?.toLowerCase().replace(/^www\./, "") ?? ""
+  const referral =
+    (Object.hasOwn(REFERRAL_SOURCES, domain)
+      ? REFERRAL_SOURCES[domain]
+      : undefined) ??
+    (!domain
+      ? "direct_or_unknown"
+      : ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(
+            domain
+          )
+        ? "internal_unknown"
+        : "other_referral")
+  return {
+    ...campaign,
+    acquisition_source:
+      campaign.utm_source ??
+      (ACQUISITION_SOURCES.includes(inherited) ? inherited : referral),
+    ...(params.get("wt_test") === "1" ? { traffic_type: "verification" } : {}),
+  }
+}
+
+export function publicAnalyticsCta(
+  ctaId: PublicAnalyticsCtaId,
+  placement: PublicAnalyticsPlacement
+) {
+  return {
+    [PUBLIC_ANALYTICS_CTA_ATTRIBUTE]: ctaId,
+    [PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE]: placement,
+  }
+}
+
+export type PublicInstallCommandId = "self_host_install" | "cli_install"
+export type PublicInstallCopyPlacement = "deployment_card" | "docs_start"
+
+export const PUBLIC_INSTALL_COMMAND =
+  "curl -fsSL https://worktable.dev/install | sh"
+
+export function isApprovedInstallCopy(
+  commandId: unknown,
+  placement: unknown,
+  surface: PublicSiteSurface,
+  pathname: string
+): boolean {
+  return (
+    (commandId === "self_host_install" &&
+      placement === "deployment_card" &&
+      surface === "worktable_dev" &&
+      pathname === "/") ||
+    (commandId === "cli_install" &&
+      placement === "docs_start" &&
+      surface === "worktable_docs" &&
+      pathname === "/start/install")
+  )
 }
 
 const SAFE_PATH = /^\/(?:[a-z0-9][a-z0-9/_-]*\/?)?$/
@@ -185,6 +295,8 @@ export function createPublicAnalyticsEarlyCtaScript(
     const config = ${runtimeConfig};
     const ctaPlacements = ${ctaPlacements};
     const activeCampaignValues = ${activeCampaignValues};
+    const referralSources = ${serializeForInlineScript(REFERRAL_SOURCES)};
+    const acquisitionSources = ${serializeForInlineScript(ACQUISITION_SOURCES)};
     const preferenceKey = ${preferenceKey};
     const ctaAttribute = ${ctaAttribute};
     const placementAttribute = ${placementAttribute};
@@ -258,11 +370,19 @@ export function createPublicAnalyticsEarlyCtaScript(
       if (referrer) properties.$referring_domain = referrer;
       const search = new URLSearchParams(window.location.search);
       for (const key of Object.keys(activeCampaignValues)) {
-        const value = search.get(key.slice(1));
+        const value = search.get(key);
         if (value && value.length <= 100 && activeCampaignValues[key].includes(value)) {
           properties[key] = value;
         }
       }
+      const inherited = search.get("wt_source");
+      const domain = (referrer || "").replace(/^www\\./, "");
+      const referral = (Object.hasOwn(referralSources, domain) ? referralSources[domain] : undefined) || (!domain ? "direct_or_unknown" :
+        ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain)
+          ? "internal_unknown" : "other_referral");
+      properties.acquisition_source = properties.utm_source ||
+        (acquisitionSources.includes(inherited) ? inherited : referral);
+      if (search.get("wt_test") === "1") properties.traffic_type = "verification";
       return properties;
     }
 
@@ -301,24 +421,46 @@ export function createPublicAnalyticsEarlyCtaScript(
       }
     }
 
-    document.addEventListener("click", (event) => {
+    function captureClick(event) {
+      if (event.type === "auxclick" && event.button !== 1) return;
       if (!contextAllowed() || !(event.target instanceof Element)) return;
-      const tracked = event.target.closest("[" + ctaAttribute + "]");
-      if (!tracked) return;
-
-      const ctaId = tracked.getAttribute(ctaAttribute);
-      const placement = tracked.getAttribute(placementAttribute);
-      if (!ctaId || !placement || !ctaPlacements[ctaId]?.includes(placement)) return;
-
       const common = commonProperties();
       if (!common) return;
-      const properties = {
-        ...common,
-        cta_id: ctaId,
-        placement,
-      };
+      // Preserve only bounded, non-identifying labels through public navigation.
+      // Download artifacts and same-page anchors must retain their original URLs.
+      const anchor = event.target.closest("a[href]");
+      if (anchor instanceof HTMLAnchorElement) {
+        const destination = new URL(anchor.href, window.location.href);
+        const publicPage =
+          ["www.worktable.dev", "www.worktable.cloud", "docs.worktable.dev"].includes(destination.hostname) &&
+          !destination.pathname.startsWith("/releases/") &&
+          !["/install", "/install-skills"].includes(destination.pathname);
+        const signup = destination.hostname === "app.worktable.cloud" &&
+          destination.pathname.replace(/\\/+$/, "") === "/signup";
+        const samePage = destination.origin === window.location.origin &&
+          destination.pathname === window.location.pathname && destination.hash;
+        if (destination.protocol === "https:" && !samePage && (publicPage || signup)) {
+          // Explicit destination campaigns take precedence over inherited ones.
+          if (!destination.searchParams.has("utm_source")) {
+            for (const key of Object.keys(activeCampaignValues)) {
+              if (common[key] && !destination.searchParams.has(key)) destination.searchParams.set(key, common[key]);
+            }
+            destination.searchParams.set("wt_source", common.acquisition_source);
+          }
+          if (common.traffic_type === "verification") destination.searchParams.set("wt_test", "1");
+          anchor.href = destination.href;
+        }
+      }
+      const tracked = event.target.closest("[" + ctaAttribute + "]");
+      if (!tracked) return;
+      const ctaId = tracked.getAttribute(ctaAttribute);
+      const placement = tracked.getAttribute(placementAttribute);
+      if (!ctaId || !placement || !Object.hasOwn(ctaPlacements, ctaId) || !ctaPlacements[ctaId].includes(placement)) return;
+      const properties = { ...common, cta_id: ctaId, placement };
       sendEvent("marketing:cta_click", properties);
-    }, true);
+    }
+    document.addEventListener("click", captureClick, true);
+    document.addEventListener("auxclick", captureClick, true);
   })();`
 }
 
@@ -331,7 +473,7 @@ export function approvedCampaignProperties(
   for (const key of Object.keys(ACTIVE_CAMPAIGN_VALUES) as Array<
     keyof typeof ACTIVE_CAMPAIGN_VALUES
   >) {
-    const value = params.get(key.slice(1))
+    const value = params.get(key)
     if (
       value &&
       value.length <= 100 &&
@@ -397,6 +539,15 @@ export function sanitizePublicAnalyticsEvent(
       : rawUserAgent
 
   copyHostname(source, properties, "$referring_domain")
+  const acquisitionSource = source.acquisition_source
+  if (
+    typeof acquisitionSource === "string" &&
+    ACQUISITION_SOURCES.includes(acquisitionSource)
+  ) {
+    properties.acquisition_source = acquisitionSource
+  }
+  if (source.traffic_type === "verification")
+    properties.traffic_type = "verification"
   copyExactString(source, properties, "$os", 64)
   copyExactString(source, properties, "$device_type", 64)
   copyExactString(source, properties, "$lib", 64)
@@ -431,13 +582,17 @@ export function sanitizePublicAnalyticsEvent(
 
   if (event.event === "marketing:install_command_copy") {
     if (
-      source.command_id !== "self_host_install" ||
-      source.placement !== "deployment_card"
+      !isApprovedInstallCopy(
+        source.command_id,
+        source.placement,
+        config.siteSurface,
+        pathname
+      )
     ) {
       return null
     }
-    properties.command_id = "self_host_install"
-    properties.placement = "deployment_card"
+    properties.command_id = source.command_id
+    properties.placement = source.placement
   }
 
   return {

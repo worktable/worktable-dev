@@ -3,14 +3,14 @@ title: Install Worktable from the CLI
 description: Install local or self-hosted Worktable on macOS or Linux with one command.
 ---
 
+import InstallCommand from "../../../components/InstallCommand.astro"
+
 Use the command-line install on macOS or Linux to run Worktable locally in your
-browser, or on a server you control. It is the recommended starting point for
-the current release. If you do not want to operate a machine or server, use
+browser, or on a server you control. For the native macOS app,
+[download Worktable Desktop](/start/desktop/). If you do not want to operate a machine or server, use
 [Worktable Cloud](/guides/worktable-cloud/).
 
-```sh
-curl -fsSL https://worktable.dev/install | sh
-```
+<InstallCommand />
 
 The installer supports macOS and Linux on arm64 and x64. It sets up the
 `worktable` command (with a `wtb` shorthand), then starts interactive setup.

@@ -3,6 +3,7 @@ import type {
   DocumentId,
   DocumentSource,
 } from "@worktable/types"
+import { noteDocumentCreated } from "./document-activity.ts"
 import { reservedByAliasIn } from "./doc-aliases.ts"
 import {
   buildDocumentCatalog,
@@ -373,6 +374,7 @@ export async function admitManagedDocumentWrite<T>(options: {
           },
         ],
       })
+      await noteDocumentCreated(options.spaceId, path)
       return result
     } catch (error) {
       try {

@@ -45,7 +45,14 @@ import {
 } from "./document-source-reader.ts"
 import { resolveDocAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
-import { getDocArchiveInfoMap, readSpace, sanitizeDocPath } from "./store.ts"
+import {
+  getDocArchiveInfoMap,
+  getDocLifetimeFactsMap,
+  readSpace,
+  sanitizeDocPath,
+  type DocLifetimeFacts,
+} from "./store.ts"
+import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { withWidgetWriteLock } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
@@ -94,6 +101,7 @@ interface DocumentQueryContext {
   catalog: DocumentCatalog
   registry: DocumentFormatRegistry
   docArchives: ReadonlyMap<string, unknown>
+  docLifetimes: ReadonlyMap<string, DocLifetimeFacts>
 }
 
 type ClassifiedEntry =
@@ -269,6 +277,14 @@ function classifyEntry(
   if (!claims.some((claim) => claim.kind === "document")) return null
   if (claims.length === 1 && claims[0]?.kind === "document") {
     const claim = claims[0]
+    const archived = isArchived(claim, context.docArchives)
+    const lifetime =
+      claim.archiveProvider === "legacy-doc-metadata"
+        ? context.docLifetimes.get(claim.path)
+        : undefined
+    const archiveOn = archived
+      ? undefined
+      : effectiveArchiveOn(lifetime, claim.updatedAt)
     return {
       kind: "document",
       claim,
@@ -284,7 +300,9 @@ function classifyEntry(
           delete: claim.folderDeleteSupported,
         },
         ...(claim.updatedAt ? { updatedAt: claim.updatedAt } : {}),
-        ...(isArchived(claim, context.docArchives) ? { archived: true } : {}),
+        ...(lifetime?.createdAt ? { createdAt: lifetime.createdAt } : {}),
+        ...(archiveOn ? { archiveOn } : {}),
+        ...(archived ? { archived: true } : {}),
       },
     }
   }
@@ -328,16 +346,17 @@ async function documentQueryContext(
     registry,
   })
   const allClaims = catalog.entries.flatMap(claimsFor)
-  const docArchives = await getDocArchiveInfoMap(
-    spaceId,
-    allClaims.flatMap((claim) =>
-      claim.kind === "document" &&
-      claim.archiveProvider === "legacy-doc-metadata"
-        ? [claim.path]
-        : []
-    )
+  const metadataPaths = allClaims.flatMap((claim) =>
+    claim.kind === "document" &&
+    claim.archiveProvider === "legacy-doc-metadata"
+      ? [claim.path]
+      : []
   )
-  return { catalog, registry, docArchives }
+  const [docArchives, docLifetimes] = await Promise.all([
+    getDocArchiveInfoMap(spaceId, metadataPaths),
+    getDocLifetimeFactsMap(spaceId, metadataPaths),
+  ])
+  return { catalog, registry, docArchives, docLifetimes }
 }
 
 function entryKey(entry: DocumentCatalogEntry): string {
@@ -378,6 +397,37 @@ export async function listDocuments(options: {
         options.includeArchived ?? false
       )
       return classified ? [classified.item] : []
+    })
+  })
+}
+
+export interface DocumentLifetimeTarget {
+  path: string
+  archived: boolean
+  /** Whether this document's storage records a lifetime. */
+  supported: boolean
+}
+
+/**
+ * Every document in a Space with whether it can carry a lifetime. Conflicting
+ * paths are omitted: their identity must be resolved before changing them.
+ */
+export async function listDocumentLifetimeTargets(
+  spaceId: string
+): Promise<DocumentLifetimeTarget[]> {
+  return withDocPathLock(spaceId, async () => {
+    const context = await documentQueryContext(spaceId)
+    return context.catalog.entries.flatMap((entry) => {
+      const classified = classifyEntry(entry, context, true)
+      if (!classified || classified.kind !== "document") return []
+      return [
+        {
+          path: classified.claim.path,
+          archived: classified.item.archived === true,
+          supported:
+            classified.claim.archiveProvider === "legacy-doc-metadata",
+        },
+      ]
     })
   })
 }

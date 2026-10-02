@@ -6,7 +6,8 @@ import { dirname } from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
-import { WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
+import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
+import { applyLifetimeOnCreate, isArchiveOnValue } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
@@ -65,6 +66,9 @@ const CreateWidgetSchema = z.object({
   createdBy: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   permissions: WidgetPermissionsInputSchema.optional(),
+  /** Omitted lifetimes are durable. */
+  lifetime: DocumentLifetimeSchema.optional(),
+  archiveOn: z.string().max(64).refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time").optional(),
 });
 
 const PutWidgetSchema = z.object({
@@ -312,8 +316,14 @@ widgetsRouter.post("/", async (c) => {
   if (!outcome.data) return c.json({ error: outcome.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
   const id = outcome.data.id;
   invalidateSearchIndex();
+  const lifetime = await applyLifetimeOnCreate({
+    spaceId,
+    path: id,
+    lifetime: parsed.data.lifetime,
+    archiveOn: parsed.data.archiveOn,
+  });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId: id, data: outcome.data });
-  return c.json({ widget: outcome.data, widgetId: id, warnings }, 201);
+  return c.json({ widget: outcome.data, widgetId: id, warnings, ...lifetime }, 201);
 });
 
 // ---- Handlers ----------------------------------------------------------------

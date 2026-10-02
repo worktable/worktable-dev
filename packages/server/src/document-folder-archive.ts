@@ -20,7 +20,7 @@ import { materializeHtmlDocumentStorageV2, usesHtmlDocumentStorageV2 } from "./h
 import { withDocPathLock } from "./doc-path-lock.ts"
 import { notifyDocContentChanged } from "./content-events.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
-import { getDocArchiveInfo } from "./store.ts"
+import { getDocArchiveInfo, setDocsArchiveOn } from "./store.ts"
 import { readWidget, withWidgetWriteLocks } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
@@ -267,6 +267,15 @@ export async function setDocumentFolderArchived(options: {
           await materializeHtmlDocumentStorageV2(options.spaceId, document.path)
         }
       }
+    }
+    if (!options.archived) {
+      // Restored documents come back durable; clear dates before restoring.
+      await setDocsArchiveOn(
+        options.spaceId,
+        planned.documents.map((document) => document.path),
+        null,
+        new Date().toISOString()
+      )
     }
     const outcome = await setDurableDocumentsArchivedByPrefixLocked(
       options.spaceId,

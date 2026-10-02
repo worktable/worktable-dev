@@ -118,6 +118,20 @@ const DocumentListClaimSchema = z.discriminatedUnion("kind", [
 ])
 
 /**
+ * How long a document stays active. Durable documents stay until someone
+ * archives them; temporary documents archive automatically on their date.
+ */
+export const DocumentLifetimeSchema = z.enum(["durable", "temporary"])
+
+export type DocumentLifetime = z.infer<typeof DocumentLifetimeSchema>
+
+/**
+ * A temporary document stays active at least this long after it is made
+ * temporary or last changed, renamed, or commented on.
+ */
+export const TEMPORARY_DOCUMENT_GRACE_DAYS = 7
+
+/**
  * Public, format-neutral discovery result. Durable ids and source locations are
  * deliberately absent: paths remain the portable address until every legacy
  * source has been materialized with a stable identity.
@@ -129,6 +143,10 @@ export const DocumentSummarySchema = z.object({
   title: z.string(),
   health: DocumentHealthSchema,
   updatedAt: z.string().datetime().optional(),
+  /** When the document was created through Worktable; absent when unknown. */
+  createdAt: z.string().datetime().optional(),
+  /** Present on temporary documents: when the document archives itself. */
+  archiveOn: z.string().datetime().optional(),
   archived: z.literal(true).optional(),
   folderOperations: DocumentFolderOperationsSchema.optional(),
 })

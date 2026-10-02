@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid"
+import { noteDocumentActivity } from "./document-activity.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import { lstat, opendir } from "node:fs/promises"
 import { join } from "node:path"
@@ -285,20 +286,26 @@ export async function createDocumentAnnotationForPath(options: {
   input: DocumentAnnotationCreateInput
 }): Promise<{ annotation: DocumentAnnotationV2; created: boolean }> {
   await requireV2AnnotationWrites()
-  return useDurableDocument(options.spaceId, options.path, async (document) => {
+  const result = await useDurableDocument(options.spaceId, options.path, async (document) => {
     const owner = await ownerForDocument(options.spaceId, document)
     if (options.input.idempotencyKey) {
       const existing = owner.annotations.find(
         (annotation) =>
           annotation.idempotencyKey === options.input.idempotencyKey
       )
-      if (existing) return { annotation: existing, created: false }
+      if (existing) {
+        return { annotation: existing, created: false, path: owner.document.path }
+      }
     }
     const annotation = newAnnotation(options.spaceId, owner, options.input)
     owner.annotations.push(annotation)
     await writeOwner(options.spaceId, owner)
-    return { annotation, created: true }
+    return { annotation, created: true, path: owner.document.path }
   }, { materializeIdentity: true })
+  if (result.created && options.input.author?.type !== "system") {
+    await noteDocumentActivity(options.spaceId, [result.path])
+  }
+  return { annotation: result.annotation, created: result.created }
 }
 
 async function allAnnotationOwners(
@@ -444,10 +451,10 @@ export async function replyDocumentAnnotation(options: {
   author?: AnnotationAuthor
 }): Promise<{ annotation: DocumentAnnotationV2; replyId: string }> {
   await requireV2AnnotationWrites()
-  return withDocPathLock(options.spaceId, async () => {
+  const author = options.author ?? DEFAULT_AUTHOR
+  const result = await withDocPathLock(options.spaceId, async () => {
     const found = await findAnnotation(options.spaceId, options.annotationId)
     const now = new Date().toISOString()
-    const author = options.author ?? DEFAULT_AUTHOR
     const replyId = `msg_${nanoid(12)}`
     const annotation: DocumentAnnotationV2 = {
       ...found.annotation,
@@ -460,9 +467,16 @@ export async function replyDocumentAnnotation(options: {
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
-    return { annotation, replyId }
+    return { annotation, replyId, path: found.owner.document.path }
   })
+  if (author.type !== "system") {
+    await noteDocumentActivity(options.spaceId, [result.path])
+  }
+  return { annotation: result.annotation, replyId: result.replyId }
 }
+
+// The retired lint identity resolving its own leftovers is not engagement.
+const NON_ENGAGING_ACTORS = new Set(["worktable-lint"])
 
 export async function resolveDocumentAnnotation(options: {
   spaceId: string
@@ -471,7 +485,7 @@ export async function resolveDocumentAnnotation(options: {
   resolvedBy: string
 }): Promise<DocumentAnnotationV2> {
   await requireV2AnnotationWrites()
-  return withDocPathLock(options.spaceId, async () => {
+  const result = await withDocPathLock(options.spaceId, async () => {
     const found = await findAnnotation(options.spaceId, options.annotationId)
     const now = new Date().toISOString()
     const annotation: DocumentAnnotationV2 = {
@@ -488,8 +502,12 @@ export async function resolveDocumentAnnotation(options: {
     }
     found.owner.annotations[found.index] = annotation
     await writeOwner(options.spaceId, found.owner)
-    return annotation
+    return { annotation, path: found.owner.document.path }
   })
+  if (!NON_ENGAGING_ACTORS.has(options.resolvedBy)) {
+    await noteDocumentActivity(options.spaceId, [result.path])
+  }
+  return result.annotation
 }
 
 function legacyTargetAtPath(

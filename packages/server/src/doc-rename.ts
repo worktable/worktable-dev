@@ -10,6 +10,7 @@
 // Rename-stable links are provided by the portable aliases recorded here;
 // document content itself remains untouched.
 
+import { noteDocumentActivity } from "./document-activity.ts"
 import {
   docExists,
   docStat,
@@ -232,6 +233,10 @@ async function publishRenameSignals(
   spaceId: string,
   moves: Array<{ from: string; to: string }>
 ): Promise<void> {
+  await noteDocumentActivity(
+    spaceId,
+    moves.map(({ to }) => to)
+  )
   invalidateSearchIndex()
 
   for (const { from, to } of moves) {

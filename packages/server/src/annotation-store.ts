@@ -1,4 +1,5 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { noteDocumentActivity } from "./document-activity.ts"
 import { existsSync } from "node:fs";
 import crypto from "node:crypto";
 import { dirname, join, relative } from "node:path";
@@ -313,7 +314,7 @@ export async function readAnnotation(spaceId: string, annotationId: string): Pro
   return (await findAnnotation(spaceId, annotationId)).annotation;
 }
 
-export async function createAnnotation(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
+async function createAnnotationRecord(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
   if (await usesDocumentDataV2()) {
     return createLegacyCompatibleAnnotationV2(spaceId, input)
   }
@@ -350,7 +351,7 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
     : withAnnotationStoreLock(spaceId, create);
 }
 
-export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
+async function replyAnnotationRecord(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor): Promise<{ annotation: Annotation; replyId: string }> {
   if (await usesDocumentDataV2()) {
     return replyLegacyCompatibleAnnotationV2(
       spaceId,
@@ -400,7 +401,7 @@ export async function updateAnnotation(spaceId: string, annotationId: string, pa
 })
 }
 
-export async function resolveAnnotation(spaceId: string, annotationId: string, reason?: string, resolvedBy = "worktable"): Promise<Annotation> {
+async function resolveAnnotationRecord(spaceId: string, annotationId: string, reason: string | undefined, resolvedBy: string): Promise<Annotation> {
   if (await usesDocumentDataV2()) {
     return resolveLegacyCompatibleAnnotationV2(
       spaceId,
@@ -424,6 +425,41 @@ export async function resolveAnnotation(spaceId: string, annotationId: string, r
     await writeAnnotationFile(spaceId, found.key, found.file);
     return annotation;
   });
+}
+
+// Commenting on a temporary document keeps it active, like editing it. The
+// retired lint identity resolving its own leftovers is not engagement.
+const NON_ENGAGING_ACTORS = new Set(["worktable-lint"])
+
+function annotatedDocumentPath(annotation: Annotation): string | null {
+  const target = annotation.target
+  if (target.type === "widget") return target.widgetId
+  return "docPath" in target ? target.docPath : null
+}
+
+async function noteAnnotationActivity(spaceId: string, annotation: Annotation): Promise<void> {
+  const path = annotatedDocumentPath(annotation)
+  if (path) await noteDocumentActivity(spaceId, [path])
+}
+
+export async function createAnnotation(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
+  const result = await createAnnotationRecord(spaceId, input)
+  if (result.created && (input.author ?? DEFAULT_AUTHOR).type !== "system") {
+    await noteAnnotationActivity(spaceId, result.annotation)
+  }
+  return result
+}
+
+export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
+  const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
+  if (author.type !== "system") await noteAnnotationActivity(spaceId, result.annotation)
+  return result
+}
+
+export async function resolveAnnotation(spaceId: string, annotationId: string, reason?: string, resolvedBy = "worktable"): Promise<Annotation> {
+  const annotation = await resolveAnnotationRecord(spaceId, annotationId, reason, resolvedBy)
+  if (!NON_ENGAGING_ACTORS.has(resolvedBy)) await noteAnnotationActivity(spaceId, annotation)
+  return annotation
 }
 
 function textFromInline(content: unknown): string {

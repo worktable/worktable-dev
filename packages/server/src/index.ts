@@ -66,6 +66,7 @@ import { invalidateLinkGraph } from "./link-graph.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
 import { retireLintAnnotations } from "./lint-retirement.ts";
+import { runLifetimeSweep } from "./document-lifetime.ts";
 import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { THREADS_SCOPE, wsManager } from "./ws.ts";
 import { yjsManager } from "./yjs-manager.ts";
@@ -668,6 +669,32 @@ async function runLintRetirement(): Promise<void> {
   }
 }
 
+// Temporary-document archive sweep for the most recent startServer: one
+// deferred boot pass, then hourly. Replaced (not stacked) on each boot; stop
+// interrupts an in-flight pass at its next document.
+let lifetimeBootTimer: ReturnType<typeof setTimeout> | null = null;
+let lifetimeSweepTimer: ReturnType<typeof setInterval> | null = null;
+let lifetimeSweepRun: Promise<void> | null = null;
+let lifetimeSweepStopping = false;
+const LIFETIME_BOOT_DELAY_MS = 60_000;
+const LIFETIME_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+function startLifetimeSweep(): void {
+  if (lifetimeSweepRun) return;
+  lifetimeSweepRun = runLifetimeSweep({ shouldStop: () => lifetimeSweepStopping })
+    .then((receipts) => {
+      for (const receipt of receipts) {
+        console.log(
+          `[document-lifetime] space ${receipt.spaceId}: archived ${receipt.archived.length}, failed ${receipt.failed.length}`
+        );
+      }
+    })
+    .catch((err) => console.error("[document-lifetime] sweep failed:", err))
+    .finally(() => {
+      lifetimeSweepRun = null;
+    });
+}
+
 // Teardown for the completion-anchored update scheduler registered by the most
 // recent startServer. Module scope prevents repeated boots in tests from
 // stacking parallel check loops.
@@ -1052,6 +1079,21 @@ export function startServer(
     lintRetirementTimer.unref?.();
   }
 
+  // Archive temporary documents whose date has passed. The boot pass waits a
+  // minute so startup reconciliation of external edits lands first.
+  // WORKTABLE_SKIP_LIFETIME_SWEEP=1 exists for the test runner.
+  if (lifetimeBootTimer) clearTimeout(lifetimeBootTimer);
+  if (lifetimeSweepTimer) clearInterval(lifetimeSweepTimer);
+  lifetimeBootTimer = null;
+  lifetimeSweepTimer = null;
+  lifetimeSweepStopping = false;
+  if (!workspaceRejected && process.env["WORKTABLE_SKIP_LIFETIME_SWEEP"] !== "1") {
+    lifetimeBootTimer = setTimeout(startLifetimeSweep, LIFETIME_BOOT_DELAY_MS);
+    lifetimeBootTimer.unref?.();
+    lifetimeSweepTimer = setInterval(startLifetimeSweep, LIFETIME_SWEEP_INTERVAL_MS);
+    lifetimeSweepTimer.unref?.();
+  }
+
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
   // never delays startup) plus a 24h steady-state sweep. Both no-op instantly
   // when the policy is "all" (the default). Replace-not-stack across reboots,
@@ -1193,6 +1235,11 @@ export function startServer(
     if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
     lintRetirementTimer = null;
     lintRetirementStopping = true;
+    if (lifetimeBootTimer) clearTimeout(lifetimeBootTimer);
+    if (lifetimeSweepTimer) clearInterval(lifetimeSweepTimer);
+    lifetimeBootTimer = null;
+    lifetimeSweepTimer = null;
+    lifetimeSweepStopping = true;
     recordIndex.stop();
   };
   const WIDGET_CHANGE_COALESCE_MS = 250;
@@ -1796,6 +1843,12 @@ export function startServer(
     // An in-flight pass stops at its next annotation; wait only for that.
     lintRetirementStopping = true;
     const lintStopping = lintRetirementRun ?? Promise.resolve();
+    if (lifetimeBootTimer) clearTimeout(lifetimeBootTimer);
+    if (lifetimeSweepTimer) clearInterval(lifetimeSweepTimer);
+    lifetimeBootTimer = null;
+    lifetimeSweepTimer = null;
+    lifetimeSweepStopping = true;
+    const lifetimeStopping = lifetimeSweepRun ?? Promise.resolve();
 
     stopPromise = (async () => {
       const shutdownErrors: unknown[] = [];
@@ -1830,6 +1883,7 @@ export function startServer(
           await drainServerTasks();
         });
         await settle(() => lintStopping);
+        await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);
         await settle(() => updateChecksStopping);
         await settle(() => recordIndex.whenIdle());

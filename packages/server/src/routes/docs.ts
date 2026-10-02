@@ -1,6 +1,8 @@
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
+import { DocumentLifetimeSchema } from "@worktable/types";
+import { applyLifetimeOnCreate, isArchiveOnValue } from "../document-lifetime.ts";
 import {
   listDocs,
   listDocsByPrefix,
@@ -55,6 +57,9 @@ const RenameDocSchema = z.object({
 const CreateDocSchema = z.object({
   title: z.string().min(1),
   content: z.array(z.unknown()).optional(),
+  /** Omitted lifetimes are durable. */
+  lifetime: DocumentLifetimeSchema.optional(),
+  archiveOn: z.string().max(64).refine(isArchiveOnValue, "archiveOn must be an ISO date or date-time").optional(),
 });
 
 async function hasUnportableAnnotationAnchors(
@@ -285,8 +290,14 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     },
   });
 
+  const lifetime = await applyLifetimeOnCreate({
+    spaceId,
+    path: docPath,
+    lifetime: parsed.data.lifetime,
+    archiveOn: parsed.data.archiveOn,
+  });
   return c.json(
-    { path: docPath, updatedAt: statResult?.updatedAt ?? Date.now(), provenance },
+    { path: docPath, updatedAt: statResult?.updatedAt ?? Date.now(), provenance, ...lifetime },
     201
   );
 });

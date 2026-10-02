@@ -1,4 +1,5 @@
 import { copyFile, link, mkdir, readFile, readdir, rename, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { effectiveArchiveOn } from "./lifetime-rules.ts";
 import { constants, existsSync, lstatSync } from "node:fs";
 import crypto from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
@@ -110,6 +111,32 @@ interface DocMetaEntry {
   provenance?: DocProvenance;
   collaborationCacheEpoch?: string;
   collaborationCacheEpochHistory?: string[];
+  /** Temporary documents only: the explicit archive date. */
+  archiveOn?: string;
+  /** When archiveOn was last chosen; later content changes extend past it. */
+  lifetimeSetAt?: string;
+  /** When the document was created through Worktable. */
+  createdAt?: string;
+  /** Fields written by other components or newer versions are preserved. */
+  [field: string]: unknown;
+}
+
+/** Lifetime facts for one document, as stored in docs.meta.json. */
+export interface DocLifetimeFacts {
+  archiveOn?: string;
+  lifetimeSetAt?: string;
+  createdAt?: string;
+}
+
+function isoTimestamp(value: unknown): string | undefined {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value))
+    ? new Date(value).toISOString()
+    : undefined;
+}
+
+function hasStoredValue(value: unknown): boolean {
+  if (value === undefined) return false;
+  return !Array.isArray(value) || value.length > 0;
 }
 
 interface DocMetaFile {
@@ -965,6 +992,31 @@ async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
     if (data.docs && typeof data.docs === "object") {
       for (const [docPath, value] of Object.entries(data.docs as Record<string, unknown>)) {
         const entry = value as Record<string, unknown>;
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+        // Keep fields this reader does not interpret; normalize the ones it does.
+        const {
+          archived: _archived,
+          provenance: _provenance,
+          collaborationCacheEpoch: _epoch,
+          collaborationCacheEpochHistory: _history,
+          previousCollaborationCacheEpoch: _previousEpoch,
+          archiveOn: _archiveOn,
+          lifetimeSetAt: _lifetimeSetAt,
+          createdAt: _createdAt,
+          ...preserved
+        } = entry;
+        const archiveOn = isoTimestamp(entry["archiveOn"]);
+        const lifetimeSetAt = isoTimestamp(entry["lifetimeSetAt"]);
+        const createdAt = isoTimestamp(entry["createdAt"]);
+        if (Object.keys(preserved).length > 0) docs[docPath] = { ...preserved };
+        if (archiveOn) {
+          docs[docPath] = {
+            ...(docs[docPath] ?? {}),
+            archiveOn,
+            ...(lifetimeSetAt ? { lifetimeSetAt } : {}),
+          };
+        }
+        if (createdAt) docs[docPath] = { ...(docs[docPath] ?? {}), createdAt };
         const archived = normalizeArchiveInfo(entry?.["archived"]);
         const provenance = normalizeDocProvenance(entry?.["provenance"]);
         const collaborationCacheEpoch =
@@ -1015,13 +1067,12 @@ async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
 async function writeDocMetaFileUnlocked(spaceId: string, meta: DocMetaFile): Promise<void> {
   const path = docMetaPath(spaceId);
   const cleanedDocs = Object.fromEntries(
-    Object.entries(meta.docs).filter(
-      ([, entry]) =>
-        entry.archived ||
-        entry.provenance ||
-        entry.collaborationCacheEpoch ||
-        entry.collaborationCacheEpochHistory?.length
-    )
+    Object.entries(meta.docs).flatMap(([docPath, entry]) => {
+      const stored = Object.fromEntries(
+        Object.entries(entry).filter(([, value]) => hasStoredValue(value))
+      );
+      return Object.keys(stored).length > 0 ? [[docPath, stored]] : [];
+    })
   );
 
   if (Object.keys(cleanedDocs).length === 0) {
@@ -1044,6 +1095,126 @@ async function mutateDocMetaFile<T>(
     const result = await mutate(meta);
     await writeDocMetaFileUnlocked(spaceId, meta);
     return result;
+  });
+}
+
+function clearLifetime(entry: DocMetaEntry): void {
+  delete entry.archiveOn;
+  delete entry.lifetimeSetAt;
+}
+
+function lifetimeListFields(
+  entry: DocMetaEntry | undefined,
+  updatedAtMs: number | undefined
+): { createdAt?: string; archiveOn?: string } {
+  const archiveOn = entry?.archived
+    ? undefined
+    : effectiveArchiveOn(
+        lifetimeFacts(entry),
+        updatedAtMs === undefined ? undefined : new Date(updatedAtMs).toISOString()
+      );
+  return {
+    ...(entry?.createdAt ? { createdAt: entry.createdAt } : {}),
+    ...(archiveOn ? { archiveOn } : {}),
+  };
+}
+
+function lifetimeFacts(entry: DocMetaEntry | undefined): DocLifetimeFacts {
+  return {
+    ...(entry?.archiveOn ? { archiveOn: entry.archiveOn } : {}),
+    ...(entry?.archiveOn && entry.lifetimeSetAt
+      ? { lifetimeSetAt: entry.lifetimeSetAt }
+      : {}),
+    ...(entry?.createdAt ? { createdAt: entry.createdAt } : {}),
+  };
+}
+
+/** Read lifetime facts once for a set of document paths. */
+export async function getDocLifetimeFactsMap(
+  spaceId: string,
+  docPaths: Iterable<string>
+): Promise<Map<string, DocLifetimeFacts>> {
+  const meta = await readDocMetaFile(spaceId);
+  const result = new Map<string, DocLifetimeFacts>();
+  for (const rawPath of docPaths) {
+    const path = sanitizeDocPath(rawPath);
+    const facts = lifetimeFacts(meta.docs[path]);
+    if (Object.keys(facts).length > 0) result.set(rawPath, facts);
+  }
+  return result;
+}
+
+/** Every document in a space that currently carries an archive date. */
+export async function listTemporaryDocs(
+  spaceId: string
+): Promise<Array<{ path: string; facts: DocLifetimeFacts }>> {
+  const meta = await readDocMetaFile(spaceId);
+  return Object.entries(meta.docs).flatMap(([path, entry]) =>
+    entry.archiveOn && !entry.archived
+      ? [{ path, facts: lifetimeFacts(entry) }]
+      : []
+  );
+}
+
+/**
+ * Make documents temporary until `archiveOn`, or durable when it is null.
+ * `setAt` records when the choice was made: later content changes extend it.
+ */
+export async function setDocsArchiveOn(
+  spaceId: string,
+  docPaths: readonly string[],
+  archiveOn: string | null,
+  setAt: string
+): Promise<void> {
+  await mutateDocMetaFile(spaceId, (meta) => {
+    for (const rawPath of docPaths) {
+      const path = sanitizeDocPath(rawPath);
+      const entry = meta.docs[path] ?? {};
+      if (archiveOn === null) clearLifetime(entry);
+      else {
+        entry.archiveOn = archiveOn;
+        entry.lifetimeSetAt = setAt;
+      }
+      meta.docs[path] = entry;
+    }
+  });
+}
+
+/**
+ * Push temporary documents' dates to at least `until`. Durable documents are
+ * untouched. Returns the paths whose date moved.
+ */
+export async function extendDocsArchiveOn(
+  spaceId: string,
+  docPaths: readonly string[],
+  until: string
+): Promise<string[]> {
+  return mutateDocMetaFile(spaceId, (meta) => {
+    const extended: string[] = [];
+    for (const rawPath of docPaths) {
+      const path = sanitizeDocPath(rawPath);
+      const entry = meta.docs[path];
+      if (!entry?.archiveOn || entry.archived) continue;
+      if (Date.parse(entry.archiveOn) >= Date.parse(until)) continue;
+      entry.archiveOn = until;
+      extended.push(rawPath);
+    }
+    return extended;
+  });
+}
+
+/** Record when a document was created, keeping the first recorded time. */
+export async function recordDocCreatedAt(
+  spaceId: string,
+  docPath: string,
+  createdAt: string
+): Promise<void> {
+  const path = sanitizeDocPath(docPath);
+  await mutateDocMetaFile(spaceId, (meta) => {
+    const entry = meta.docs[path] ?? {};
+    if (entry.createdAt) return;
+    entry.createdAt = createdAt;
+    meta.docs[path] = entry;
   });
 }
 
@@ -1133,16 +1304,10 @@ export async function setDocArchived(
             ...(reason ? { reason } : {}),
           },
         };
-      } else {
-        if (
-          meta.docs[sanitized]?.provenance ||
-          meta.docs[sanitized]?.collaborationCacheEpoch ||
-          meta.docs[sanitized]?.collaborationCacheEpochHistory?.length
-        ) {
-          delete meta.docs[sanitized]!.archived;
-        } else {
-          delete meta.docs[sanitized];
-        }
+      } else if (meta.docs[sanitized]) {
+        // Restored documents come back durable; the writer drops empty entries.
+        delete meta.docs[sanitized]!.archived;
+        clearLifetime(meta.docs[sanitized]!);
       }
       return meta.docs[sanitized]?.archived;
     });
@@ -1191,16 +1356,9 @@ export async function setDocsArchivedByPrefix(
               ...(reason ? { reason } : {}),
             },
           };
-        } else {
-          if (
-            meta.docs[path]?.provenance ||
-            meta.docs[path]?.collaborationCacheEpoch ||
-            meta.docs[path]?.collaborationCacheEpochHistory?.length
-          ) {
-            delete meta.docs[path]!.archived;
-          } else {
-            delete meta.docs[path];
-          }
+        } else if (meta.docs[path]) {
+          delete meta.docs[path]!.archived;
+          clearLifetime(meta.docs[path]!);
         }
       }
     });
@@ -1702,6 +1860,7 @@ export async function listDocsDetailed(
       containsMermaid,
       richBlockTypes,
       archived: meta.docs[path]?.archived,
+      ...lifetimeListFields(meta.docs[path], statResult?.updatedAt),
       provenance: meta.docs[path]?.provenance,
     };
   }));

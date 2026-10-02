@@ -1,4 +1,5 @@
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { noteDocumentActivity, noteDocumentCreated } from "./document-activity.ts"
 import { createHash } from "node:crypto"
 import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
@@ -64,6 +65,7 @@ import {
   prepareSuppressedDocReplay,
   publishManagedDocGenerationProjection,
   restoreDocVersion,
+  setDocsArchiveOn,
   suppressPath,
   type DocSourceRevision,
   unsuppressPath,
@@ -1023,6 +1025,7 @@ export async function createRegisteredDocument(options: {
       releaseWatcherSuppression()
     }
   })
+  await noteDocumentCreated(options.spaceId, path)
   await pruneCommittedHistory({
     spaceId: options.spaceId,
     documentId: result.documentId,
@@ -1740,6 +1743,7 @@ export async function moveRegisteredDocument(options: {
       }),
     }
   })
+  await noteDocumentActivity(options.spaceId, [to])
   await publishMutation()
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
@@ -1769,6 +1773,17 @@ export async function setRegisteredDocumentArchived(options: {
       options.spaceId,
       resolveManagedFileDocument(catalog, options.path, registry)
     )
+    if (!options.archived) {
+      // Restored documents come back durable. Clear the date first: a failure
+      // between the two steps leaves an archived durable document, never a
+      // restored one that is already overdue.
+      await setDocsArchiveOn(
+        options.spaceId,
+        [current.path],
+        null,
+        new Date().toISOString()
+      )
+    }
     const changed = await setDurableDocumentArchivedExactlyLocked(
       options.spaceId,
       current.path,

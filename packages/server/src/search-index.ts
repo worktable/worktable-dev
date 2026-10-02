@@ -52,6 +52,7 @@ interface DocEntry {
   formatId?: string;
   sourceVersion?: number;
   health?: DocumentHealth;
+  archiveOn?: string;
 }
 
 interface RecordEntry {
@@ -505,6 +506,9 @@ async function rebuildCommonIndex(
             }
           : {}),
         health: document.health,
+        ...(result.kind === "document" && result.document.archiveOn
+          ? { archiveOn: result.document.archiveOn }
+          : {}),
       });
       displayBodies.set(
         id,
@@ -655,6 +659,7 @@ export async function search(
                 }
               : {}),
             ...(entry.health ? { health: entry.health } : {}),
+            ...(entry.archiveOn ? { archiveOn: entry.archiveOn } : {}),
           }
         : {}),
       ...(excerpt !== undefined ? { excerpt } : {}),

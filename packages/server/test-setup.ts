@@ -31,6 +31,8 @@ process.env["WORKTABLE_SKIP_STARTER_SEED"] = "1";
 // outlive a test's temp workspace overrides. lint-retirement.test.ts drives the
 // pass directly, so nothing is left uncovered.
 process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] = "1";
+// Same for the temporary-document sweep; document-lifetime.test.ts drives it.
+process.env["WORKTABLE_SKIP_LIFETIME_SWEEP"] = "1";
 
 // And the retention timers: startServer's 30s boot sweep + daily interval would
 // outlive a test's temp workspace overrides and could prune a LATER test's

@@ -1116,6 +1116,7 @@ function WidgetPageMeta({
 
   useEffect(() => {
     setPageMeta({
+      document: { spaceId, path: widgetId },
       titleOverride: widget.name,
       annotations,
       overflowActions,

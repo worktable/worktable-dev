@@ -8,9 +8,10 @@ import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { runLifetimeSweep, LIFETIME_ACTOR } from "./document-lifetime.ts"
 import { setRegisteredDocumentArchived } from "./document-write-service.ts"
+import { listRecentDocuments } from "./recent-documents.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
-import { getDocArchiveInfo, setDocArchived, writeDoc, writeSpace } from "./store.ts"
+import { getDocArchiveInfo, setDocArchived, setSpaceArchived, writeDoc, writeSpace } from "./store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
 
 const spaceId = "lifetime"
@@ -282,5 +283,27 @@ describe("document lifetime", () => {
 
     const after = JSON.parse(await readFile(metaPath, "utf8"))
     expect(after.docs["notes/kept"].futureField).toEqual({ kept: true })
+  })
+
+  it("lists recent durable documents, with temporary ones on request, never from archived Spaces", async () => {
+    await create("notes/first")
+    await create("notes/scratch", { lifetime: "temporary" })
+    await create("notes/second")
+    await writeDoc(spaceId, "notes/external", "# External", { updatedBy: "test", source: "filesystem" })
+
+    const updated = await listRecentDocuments({ sort: "updated" })
+    expect(updated.items.map((item) => item.document.path)).not.toContain("notes/scratch")
+    expect(updated.items[0]?.spaceName).toBe("Lifetime")
+    expect(updated.spaces).toEqual([{ spaceId, lastActivityAt: expect.any(String) }])
+
+    const withTemporary = await listRecentDocuments({ sort: "updated", includeTemporary: true })
+    expect(withTemporary.items.map((item) => item.document.path)).toContain("notes/scratch")
+
+    // Created order uses recorded creation times; unknown ones are left out.
+    const created = await listRecentDocuments({ sort: "created" })
+    expect(created.items.map((item) => item.document.path)).toEqual(["notes/second", "notes/first"])
+
+    await setSpaceArchived(spaceId, true, "test")
+    expect((await listRecentDocuments({ sort: "updated" })).items).toEqual([])
   })
 })

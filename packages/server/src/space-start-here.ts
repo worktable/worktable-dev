@@ -72,14 +72,22 @@ export async function resolveStartHere(
   return resolved
 }
 
-/** Replace a Space's pins. Every pin must name an active document. */
+/**
+ * Replace a Space's pins. A new pin must name an active document; pins that
+ * were already there may stay even if their document was since archived or
+ * removed, so editing the rest of the list never requires repairing them.
+ */
 export async function setStartHere(
   spaceId: string,
   pins: readonly StartHerePin[]
 ): Promise<ResolvedStartHerePin[]> {
-  if (!(await readSpace(spaceId)).data) {
+  const space = (await readSpace(spaceId)).data
+  if (!space) {
     throw new StartHereError(`Space not found: ${spaceId}`, "not-found")
   }
+  const existing = new Set(
+    await Promise.all(readStartHere(space).map((pin) => currentPath(spaceId, pin.path)))
+  )
   if (pins.length > START_HERE_LIMIT) {
     throw new StartHereError(
       `A Space can pin at most ${START_HERE_LIMIT} documents to Start here`
@@ -94,7 +102,7 @@ export async function setStartHere(
   const seen = new Set<string>()
   for (const pin of pins) {
     const path = await currentPath(spaceId, sanitizeDocPath(pin.path))
-    if (!active.has(path)) {
+    if (!active.has(path) && !existing.has(path)) {
       throw new StartHereError(`Not an active document in this Space: ${pin.path}`)
     }
     if (seen.has(path)) continue

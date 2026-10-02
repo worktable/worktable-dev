@@ -296,6 +296,7 @@ function DocPageMeta({
 
   useEffect(() => {
     setPageMeta({
+      document: { spaceId, path: doc.path },
       overflowActions,
       secondaryAction,
       annotations,

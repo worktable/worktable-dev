@@ -143,11 +143,12 @@ export async function downloadDocMarkdown(
 export function createDoc(
   spaceId: string,
   title: string,
-  content?: unknown[]
+  content?: unknown[],
+  lifetime?: "durable" | "temporary"
 ): Promise<{ path: string; updatedAt: number; provenance?: DocMeta["provenance"] }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs`, {
     method: "POST",
-    body: JSON.stringify({ title, content }),
+    body: JSON.stringify({ title, content, ...(lifetime ? { lifetime } : {}) }),
   });
 }
 

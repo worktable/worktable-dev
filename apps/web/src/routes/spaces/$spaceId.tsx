@@ -17,7 +17,10 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { useRecordCollections, useRecords, useSpace, spaceQueryOptions } from "@/lib/queries"
-import { useSpaceDocs } from "@/lib/docs-queries"
+import { useDocuments } from "@/lib/documents-queries"
+import { formatArchiveDate, setStartHere } from "@/lib/lifetime"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { useQueryClient } from "@tanstack/react-query"
 import { useSpaceAttention } from "@/lib/annotations-queries"
 import type { AttentionSignal } from "@/lib/annotations-queries"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -27,8 +30,11 @@ import { resolveIcon } from "@/lib/icons"
 import { Button } from "@worktable/ui/components/button"
 import { restoreSpace } from "@/lib/api"
 import { toast } from "@worktable/ui/components/sonner"
-import type { DocListEntry, RecordCollectionSummary } from "@worktable/types"
-import type { WidgetListEntry } from "@/lib/widgets-api"
+import type {
+  DocumentSummary,
+  RecordCollectionSummary,
+  ResolvedStartHerePin,
+} from "@worktable/types"
 import { useThreads } from "@/lib/threads-queries"
 
 /** Wraps an attention chip in a deep link to its newest target. Widget-target
@@ -126,39 +132,42 @@ function SpaceOverview({
   spaceName,
   spaceDescription,
   spaceIcon,
-  docs,
-  widgets,
+  documents,
+  startHere,
   recordCollections,
+  loaded,
 }: {
   spaceId: string
   spaceName: string
   spaceDescription?: string
   spaceIcon?: string
-  docs: DocListEntry[]
-  widgets: WidgetListEntry[]
+  documents: DocumentSummary[]
+  startHere: ResolvedStartHerePin[]
   recordCollections: RecordCollectionSummary[]
+  /** False until documents and records have loaded, so nothing reads as empty early. */
+  loaded: boolean
 }) {
-  const activeDocs = docs.filter((doc) => !doc.archived)
-  const docsCount = activeDocs.length
-  const activeWidgets = widgets.filter((widget) => !widget.archive)
-  const widgetsCount = activeWidgets.length
+  const active = documents.filter((document) => !document.archived)
+  const docsCount = active.filter((document) => document.format.id !== "worktable.html").length
+  const widgetsCount = active.length - docsCount
   const recordCount = recordCollections.reduce((sum, collection) => sum + collection.count, 0)
   const { data: threadsData } = useThreads({ kind: "space", spaceId })
   const threads = threadsData?.threads ?? []
   const threadCount = threads.length
-  const recentDocs = [...activeDocs]
-    .sort((a, b) => getDocUpdatedAt(b) - getDocUpdatedAt(a))
-    .slice(0, 7)
-  const recentWidgets = [...activeWidgets]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 7)
+  const byUpdated = (a: DocumentSummary, b: DocumentSummary) =>
+    (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+  const recent = active
+    .filter((document) => document.lifetime !== "temporary")
+    .sort(byUpdated)
+    .slice(0, 8)
+  const temporary = active
+    .filter((document) => document.lifetime === "temporary")
+    .sort((a, b) => (a.archiveOn ?? "").localeCompare(b.archiveOn ?? ""))
 
   // Open instructions are real requests, counted server-side (an exact
   // filtered total, immune to pagination).
   const { data: attention } = useSpaceAttention(spaceId)
   const instructions = attention?.instructions ?? { count: 0, newestDocPath: null, newestWidgetId: null }
-
-  const docGroups = buildDocGroups(activeDocs)
 
   return (
     <main className="mx-auto flex min-h-full max-w-5xl flex-col px-4 py-8 sm:px-6 lg:py-10">
@@ -228,7 +237,17 @@ function SpaceOverview({
         </div>
       )}
 
-      {docsCount === 0 && widgetsCount === 0 && recordCount === 0 && threadCount === 0 ? (
+      {!loaded ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
+          ))}
+        </div>
+      ) : docsCount === 0 &&
+        widgetsCount === 0 &&
+        recordCount === 0 &&
+        threadCount === 0 &&
+        startHere.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
           <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-muted/40">
             <Layers className="size-7 text-muted-foreground" />
@@ -240,85 +259,22 @@ function SpaceOverview({
         </div>
       ) : (
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-          <section className="min-w-0">
-            <div className="mb-4 flex items-end justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Recent docs
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground/75">
-                  Working notes and durable context for this space.
-                </p>
-              </div>
-            </div>
-
-            {recentDocs.length > 0 ? (
-              <div className="divide-y divide-border/70 border-y border-border/70">
-                {recentDocs.map((doc) => (
-                  <Link
-                    key={doc.path}
-                    to="/spaces/$spaceId/documents/$"
-                    params={{ spaceId, _splat: doc.path }}
-                    className="group grid min-w-0 gap-1 px-1 py-3.5 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <FileText className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
-                        <span className="truncate text-sm font-medium text-foreground">{docTitle(doc)}</span>
-                      </div>
-                      <div className="mt-1 truncate pl-6 text-xs text-muted-foreground">{doc.path}</div>
-                    </div>
-                    <div className="pl-6 text-xs text-muted-foreground sm:pl-0">
-                      {getDocUpdatedAt(doc) ? (
-                        <RelativeTime
-                          iso={new Date(getDocUpdatedAt(doc)).toISOString()}
-                        />
-                      ) : (
-                        doc.format
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="border-y border-border/70 py-10 text-sm text-muted-foreground">
-                No docs yet.
-              </div>
-            )}
-
-            {(docsCount > recentDocs.length || docGroups.length > 1) && (
-              <div className="mt-10">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  All docs
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground/75">
-                  Generated from the space's files — always current.
-                </p>
-                <div className="mt-4 space-y-6">
-                  {docGroups.map((group) => (
-                    <div key={group.folder}>
-                      <h3 className="mb-1 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-                        {group.label}
-                      </h3>
-                      <div className="divide-y divide-border/50">
-                        {group.docs.map((doc) => (
-                          <Link
-                            key={doc.path}
-                            to="/spaces/$spaceId/documents/$"
-                            params={{ spaceId, _splat: doc.path }}
-                            className="group flex min-w-0 items-center gap-2 px-1 py-2 text-sm transition-colors hover:bg-muted/30"
-                          >
-                            <FileText className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
-                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                              {docTitle(doc)}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <section className="min-w-0 space-y-10">
+            <StartHereSection spaceId={spaceId} pins={startHere} />
+            <OverviewDocuments
+              spaceId={spaceId}
+              title="Recent"
+              documents={recent}
+              empty="No documents yet."
+            />
+            {temporary.length > 0 && (
+              <OverviewDocuments
+                spaceId={spaceId}
+                title="Temporary"
+                description="Supporting work that archives on its date unless kept."
+                documents={temporary}
+                showArchiveDate
+              />
             )}
           </section>
 
@@ -367,39 +323,7 @@ function SpaceOverview({
               )}
             </div>
 
-            <div className="mb-4">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                HTML docs
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground/75">
-                Agent-built working surfaces.
-              </p>
-            </div>
-
-            {recentWidgets.length > 0 ? (
-              <div className="divide-y divide-border/70 border-y border-border/70">
-                {recentWidgets.map((widget) => (
-                  <Link
-                    key={widget.id}
-                    to="/spaces/$spaceId/documents/$"
-                    params={{ spaceId, _splat: widget.id }}
-                    className="group flex min-h-10 min-w-0 items-center gap-2 px-1 py-2.5 text-sm transition-colors hover:bg-muted/30"
-                  >
-                    <AppWindow className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
-                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">{widget.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      <RelativeTime iso={widget.updatedAt} />
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-3xl border border-dashed border-border/80 px-5 py-8 text-sm leading-6 text-muted-foreground">
-                No HTML docs yet. When an agent creates an interactive surface, it will show up here as the main launch point.
-              </div>
-            )}
-
-            <div className="mt-8">
+            <div>
               <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Records
               </h2>
@@ -457,36 +381,135 @@ function RecordCollectionPreview({ spaceId, collection }: { spaceId: string; col
   )
 }
 
-function getDocUpdatedAt(doc: DocListEntry): number {
-  return doc.provenance?.updatedAt ? new Date(doc.provenance.updatedAt).getTime() : 0
-}
-
-function humanize(segment: string): string {
-  const cleaned = segment.replace(/[-_]+/g, " ").trim()
-  return cleaned.replace(/(^|\s)\p{L}/gu, (c) => c.toUpperCase())
-}
-
-function docTitle(doc: DocListEntry): string {
-  const heading = doc.headings?.[0]?.trim()
-  if (heading) return heading
-  return humanize(doc.path.split("/").at(-1) ?? doc.path)
-}
-
-/** Mirror of the server's space index grouping: top-level folder, root first. */
-function buildDocGroups(docs: DocListEntry[]): Array<{ folder: string; label: string; docs: DocListEntry[] }> {
-  const byFolder = new Map<string, DocListEntry[]>()
-  for (const doc of docs) {
-    const slash = doc.path.indexOf("/")
-    const folder = slash === -1 ? "" : doc.path.slice(0, slash)
-    byFolder.set(folder, [...(byFolder.get(folder) ?? []), doc])
+function StartHereSection({
+  spaceId,
+  pins,
+}: {
+  spaceId: string
+  pins: ResolvedStartHerePin[]
+}) {
+  const queryClient = useQueryClient()
+  const unpin = async (path: string) => {
+    try {
+      await setStartHere(
+        spaceId,
+        pins
+          .filter((pin) => pin.path !== path)
+          .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
+      )
+      await queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey })
+    } catch (error) {
+      console.error("Failed to unpin:", error)
+      toast.error("Couldn’t unpin. Try again.")
+    }
   }
-  return [...byFolder.entries()]
-    .sort(([a], [b]) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)))
-    .map(([folder, groupDocs]) => ({
-      folder,
-      label: folder === "" ? "Overview" : humanize(folder),
-      docs: [...groupDocs].sort((a, b) => a.path.localeCompare(b.path)),
-    }))
+
+  return (
+    <section aria-labelledby="start-here-heading">
+      <h2
+        id="start-here-heading"
+        className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+      >
+        Start here
+      </h2>
+      {pins.length > 0 ? (
+        <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+          {pins.map((pin) => (
+            <div key={pin.path} className="group flex min-w-0 items-start gap-3 px-1 py-3">
+              <div className="min-w-0 flex-1">
+                {pin.status === "missing" ? (
+                  <span className="text-sm font-medium text-muted-foreground">{pin.path}</span>
+                ) : (
+                  <Link
+                    to="/spaces/$spaceId/documents/$"
+                    params={{ spaceId, _splat: pin.path }}
+                    className="text-sm font-medium text-foreground hover:text-primary"
+                  >
+                    {pin.title ?? pin.path}
+                  </Link>
+                )}
+                {pin.note && <p className="mt-0.5 text-sm text-muted-foreground">{pin.note}</p>}
+              </div>
+              {pin.status !== "active" && (
+                <span className="shrink-0 rounded-full bg-surface-tint px-2 py-0.5 text-xs text-muted-foreground">
+                  {pin.status === "archived" ? "Archived" : "Missing"}
+                </span>
+              )}
+              <Button
+                size="xs"
+                variant="ghost"
+                className="shrink-0 text-muted-foreground opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={() => void unpin(pin.path)}
+              >
+                Unpin
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Pin the documents to read first from their menu.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function OverviewDocuments({
+  spaceId,
+  title,
+  description,
+  documents,
+  empty,
+  showArchiveDate = false,
+}: {
+  spaceId: string
+  title: string
+  description?: string
+  documents: DocumentSummary[]
+  empty?: string
+  showArchiveDate?: boolean
+}) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {title}
+      </h2>
+      {description && <p className="mt-1 text-sm text-muted-foreground/75">{description}</p>}
+      {documents.length > 0 ? (
+        <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+          {documents.map((document) => (
+            <Link
+              key={document.path}
+              to="/spaces/$spaceId/documents/$"
+              params={{ spaceId, _splat: document.path }}
+              className="group grid min-w-0 gap-1 px-1 py-3 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
+            >
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <DocumentFormatIcon
+                    formatId={document.format.id}
+                    className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
+                  />
+                  <span className="truncate text-sm font-medium text-foreground">{document.title}</span>
+                </div>
+                <div className="mt-1 truncate pl-6 text-xs text-muted-foreground">{document.path}</div>
+              </div>
+              <div className="pl-6 text-xs text-muted-foreground sm:pl-0">
+                {showArchiveDate && document.archiveOn ? (
+                  `Archives ${formatArchiveDate(document.archiveOn)}`
+                ) : document.updatedAt ? (
+                  <RelativeTime iso={document.updatedAt} />
+                ) : null}
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : empty ? (
+        <div className="mt-4 border-y border-border/70 py-8 text-sm text-muted-foreground">{empty}</div>
+      ) : null}
+    </div>
+  )
 }
 
 function SpaceDetailPage() {
@@ -600,22 +623,25 @@ function SpaceDetailPage() {
         spaceName={space.name}
         spaceDescription={space.description}
         spaceIcon={space.icon}
-        widgets={data.widgets ?? []}
+        startHere={data.startHere ?? []}
       />
     </>
   )
 }
 
 function SpaceOverviewWithData(
-  props: Omit<Parameters<typeof SpaceOverview>[0], "docs" | "recordCollections">
+  props: Omit<Parameters<typeof SpaceOverview>[0], "documents" | "recordCollections" | "loaded">
 ) {
-  const { data: docs } = useSpaceDocs(props.spaceId)
-  const { data: recordCollections } = useRecordCollections(props.spaceId)
+  const { data: documents, isPending: documentsPending } = useDocuments(props.spaceId)
+  const { data: recordCollections, isPending: recordsPending } = useRecordCollections(props.spaceId)
   return (
     <SpaceOverview
       {...props}
-      docs={docs ?? []}
+      documents={(documents ?? []).filter(
+        (item): item is DocumentSummary => item.kind === "document"
+      )}
       recordCollections={recordCollections ?? []}
+      loaded={!documentsPending && !recordsPending}
     />
   )
 }

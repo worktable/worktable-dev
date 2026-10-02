@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { DocumentLifetimeChip, DocumentOrganizeMenuItems } from "@/components/document-organize"
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
 import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
@@ -938,6 +939,14 @@ function RootLayout() {
                 </Button>
               )}
 
+              {pageMeta?.document && (
+                <DocumentLifetimeChip
+                  key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
+                  spaceId={pageMeta.document.spaceId}
+                  path={pageMeta.document.path}
+                />
+              )}
+
               {pageMeta?.shareTarget && (
                 <ShareDocumentAction
                   key={`${pageMeta.shareTarget.kind}:${pageMeta.shareTarget.spaceId}:${pageMeta.shareTarget.artifactKey}`}
@@ -945,7 +954,7 @@ function RootLayout() {
                 />
               )}
 
-              {pageMeta?.overflowActions?.length ? (
+              {pageMeta?.overflowActions?.length || pageMeta?.document ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label="More actions"
@@ -960,7 +969,7 @@ function RootLayout() {
                     sideOffset={4}
                     className="min-w-44"
                   >
-                    {pageMeta.overflowActions.map((action) => {
+                    {(pageMeta.overflowActions ?? []).map((action) => {
                       const ActionIcon = action.icon
                       return (
                         <Fragment key={action.id}>
@@ -982,6 +991,13 @@ function RootLayout() {
                         </Fragment>
                       )
                     })}
+                    {pageMeta.document && (
+                      <DocumentOrganizeMenuItems
+                        spaceId={pageMeta.document.spaceId}
+                        path={pageMeta.document.path}
+                        separatorBefore={Boolean(pageMeta.overflowActions?.length)}
+                      />
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}

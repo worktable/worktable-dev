@@ -542,6 +542,7 @@ function DrawingEditor({
 
   useEffect(() => {
     setPageMeta({
+      document: { spaceId, path: documentPath },
       titleOverride: title || "Drawing",
       overflowActions: [
         {
@@ -579,7 +580,7 @@ function DrawingEditor({
       ],
     })
     return () => setPageMeta(null)
-  }, [title, setPageMeta])
+  }, [title, spaceId, documentPath, setPageMeta])
 
   return (
     <section

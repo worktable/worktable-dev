@@ -1,5 +1,6 @@
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
+  ResolvedStartHerePin,
   SearchResult,
   SpaceFile,
   SpaceWithDocs,
@@ -63,9 +64,11 @@ export function getSpaces() {
 }
 
 export function getSpace(spaceId: string) {
-  return fetchJSON<{ space: SpaceFile; widgets: WidgetListEntry[] }>(
-    `/api/spaces/${spaceId}`
-  )
+  return fetchJSON<{
+    space: SpaceFile
+    widgets: WidgetListEntry[]
+    startHere?: ResolvedStartHerePin[]
+  }>(`/api/spaces/${spaceId}`)
 }
 
 export function createSpace(data: {

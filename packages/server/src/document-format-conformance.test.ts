@@ -210,7 +210,7 @@ describe("registered file format conformance", () => {
     })
 
     await expect(
-      dispatchOperation("docs.write", {
+      dispatchOperation("docs.write", { lifetime: "durable",
         spaceId,
         docPath: "diagrams/system-map",
         content: "# Replacement",

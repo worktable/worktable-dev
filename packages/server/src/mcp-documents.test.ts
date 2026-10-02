@@ -168,6 +168,7 @@ describe("format-neutral document access", () => {
       arguments: {
         request: {
           action: "create",
+          lifetime: "durable",
           spaceId,
           id: "Team Board/Agent View",
           name: "Agent View",

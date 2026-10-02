@@ -73,7 +73,7 @@ describe("doc conventions", () => {
     });
 
     it("deep-path write succeeds and returns only the broken-link warning", async () => {
-      const result = (await dispatchOperation("docs.write", {
+      const result = (await dispatchOperation("docs.write", { lifetime: "durable",
         spaceId: SPACE,
         docPath: "a/b/c/buried",
         content: "# Buried\n\n[gone](/never-written)",
@@ -83,7 +83,7 @@ describe("doc conventions", () => {
     });
 
     it("clean write returns empty warnings; patch returns warnings on final state", async () => {
-      const clean = (await dispatchOperation("docs.write", {
+      const clean = (await dispatchOperation("docs.write", { lifetime: "durable",
         spaceId: SPACE,
         docPath: "notes",
         content: "# Notes\n\nfine",

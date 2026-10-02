@@ -78,6 +78,7 @@ describe("drawing tools through MCP", () => {
     const client = await connect()
     const created = await call(client, "write", {
       action: "create",
+      lifetime: "durable",
       title: "Request flow",
       requestId: "create",
       operations: [
@@ -231,6 +232,7 @@ describe("drawing tools through MCP", () => {
     const proposal = data(
       await call(client, "write", {
         action: "create",
+        lifetime: "durable",
         title: "Proposal",
         requestId: "proposal",
         previewOnly: true,
@@ -245,6 +247,7 @@ describe("drawing tools through MCP", () => {
     const result = data(
       await call(client, "write", {
         action: "create",
+        lifetime: "durable",
         title: "Large stroke",
         requestId: "large",
         operations: [
@@ -274,6 +277,7 @@ describe("drawing tools through MCP", () => {
     const client = await connect(["documents:write"])
     const denied = await call(client, "write", {
       action: "create",
+      lifetime: "durable",
       title: "Denied",
       requestId: "denied",
     })

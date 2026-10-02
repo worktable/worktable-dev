@@ -41,7 +41,7 @@ beforeEach(async () => {
     join(workspaceDir, "spaces", "product", "docs", "heliograph\\bad.md"),
     "# Retained invalid claim\n\nAtlas heliograph"
   )
-  await dispatchOperation("html.create", {
+  await dispatchOperation("html.create", { lifetime: "durable",
     spaceId: "product",
     id: "dashboards/launch",
     name: "Launch dashboard",

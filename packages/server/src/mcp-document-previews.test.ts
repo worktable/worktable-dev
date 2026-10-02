@@ -76,6 +76,7 @@ it("keeps HTML saved when preview runtime is unavailable and fences standalone c
   const client = await connect()
   const first = await call(client, "worktable_html_write", {
     action: "create",
+    lifetime: "durable",
     id: "dashboard",
     name: "Dashboard",
     html: "<!doctype html><html><body><h1>First</h1></body></html>",
@@ -133,6 +134,7 @@ it("does not grant preview reads to a write-only HTML connection", async () => {
   const client = await connect(["widgets:write"])
   const denied = await call(client, "worktable_html_write", {
     action: "create",
+    lifetime: "durable",
     id: "private",
     name: "Private",
     html: "<html><body>Secret</body></html>",
@@ -142,6 +144,7 @@ it("does not grant preview reads to a write-only HTML connection", async () => {
   expect(JSON.stringify(denied)).toContain("widgets:read")
   const allowed = await call(client, "worktable_html_write", {
     action: "create",
+    lifetime: "durable",
     id: "private",
     name: "Private",
     html: "<html><body>Secret</body></html>",

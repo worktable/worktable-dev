@@ -14,9 +14,9 @@ workspace that you can review, continue, and move between deployments.
 
 | Path                                            | Best for                                                               | Where the workspace runs                                    |
 | ----------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **[CLI install](/start/install/)**              | Recommended for new installations on macOS or Linux                    | On a machine or server you control                          |
+| **<a href="/start/install/" data-public-analytics-cta="install_guide_open" data-public-analytics-placement="docs_start">CLI install</a>**              | Terminal-based installation on macOS or Linux                    | On a machine or server you control                          |
 | **[Worktable Cloud](/guides/worktable-cloud/)** | A managed workspace for your browser and supported agent clients       | Hosted for you                                              |
-| **[Worktable Desktop](/start/desktop/)**        | Existing native macOS installations; see current download availability | On your Mac, on a self-hosted server, or in Worktable Cloud |
+| **[Worktable Desktop](/start/desktop/)**        | Native app for Apple Silicon Macs | On your Mac, on a self-hosted server, or in Worktable Cloud |
 
 All three use the same content model and agent tools. Local and self-hosted
 workspaces expose their files directly; Cloud keeps the live workspace hosted

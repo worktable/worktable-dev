@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import {
   approvedCampaignProperties,
+  publicAcquisitionProperties,
   isApprovedCta,
   isDoNotTrackEnabled,
   isPublicAnalyticsContextAllowed,
   normalizePublicAnalyticsPathname,
   PUBLIC_ANALYTICS_API_HOST,
+  PUBLIC_ANALYTICS_SCHEMA_VERSION,
   sanitizePublicAnalyticsEvent,
   type PublicAnalyticsConfig,
   type PublicAnalyticsEvent,
@@ -20,7 +22,7 @@ function config(siteSurface: PublicSiteSurface): PublicAnalyticsConfig {
     siteSurface,
     allowedPathnames:
       siteSurface === "worktable_docs"
-        ? ["/", "/start/desktop", "/whats-new"]
+        ? ["/", "/start/desktop", "/start/install", "/whats-new"]
         : ["/"],
     environmentVariableName: "TEST_POSTHOG_TOKEN",
     isDevelopment: false,
@@ -41,7 +43,7 @@ function pageviewEvent(
     properties: {
       token: "untrusted-token",
       distinct_id: "persistent-visitor-id",
-      analytics_schema_version: 1,
+      analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
       site_surface: siteSurface,
       $host: hostname,
       $pathname: pathname,
@@ -136,17 +138,77 @@ describe("public analytics collection boundary", () => {
   })
 
   test("accepts only the contract's CTA and placement pairs", () => {
+    expect(isApprovedCta("install_guide_open", "footer")).toBe(true)
+    expect(isApprovedCta("cloud_signup_open", "footer_cta")).toBe(true)
     expect(isApprovedCta("macos_download", "hero")).toBe(true)
     expect(isApprovedCta("macos_download", "docs_start")).toBe(true)
+    expect(isApprovedCta("documentation_open", "hero")).toBe(true)
     expect(isApprovedCta("cloud_signup_open", "pricing_card")).toBe(true)
     expect(isApprovedCta("cloud_signup_open", "faq")).toBe(false)
     expect(isApprovedCta("sign_in", "hero")).toBe(false)
   })
 
+  test("accepts published campaign labels using PostHog UTM properties", () => {
+    expect(
+      approvedCampaignProperties(
+        "?utm_source=github&utm_medium=referral&utm_campaign=launch&email=private@example.com"
+      )
+    ).toEqual({
+      utm_source: "github",
+      utm_medium: "referral",
+      utm_campaign: "launch",
+    })
+  })
+
+  test("preserves bounded acquisition labels without identifying visitors", () => {
+    expect(publicAcquisitionProperties("", "news.ycombinator.com")).toEqual({
+      acquisition_source: "hackernews",
+    })
+    expect(
+      publicAcquisitionProperties(
+        "?wt_source=reddit&wt_test=1",
+        "docs.worktable.dev"
+      )
+    ).toEqual({ acquisition_source: "reddit", traffic_type: "verification" })
+    for (const inherited of ["direct_or_unknown", "reddit"]) {
+      expect(
+        publicAcquisitionProperties(
+          `?wt_source=${inherited}&wt_test=1`,
+          "news.ycombinator.com"
+        )
+      ).toEqual({ acquisition_source: "hackernews" })
+    }
+    expect(
+      publicAcquisitionProperties("?wt_source=reddit", "example.com")
+    ).toEqual({ acquisition_source: "other_referral" })
+    expect(
+      publicAcquisitionProperties(
+        "?wt_source=reddit&utm_source=github",
+        undefined
+      )
+    ).toEqual({ acquisition_source: "github", utm_source: "github" })
+    expect(
+      publicAcquisitionProperties("?wt_source=private%40example.com", undefined)
+    ).toEqual({ acquisition_source: "direct_or_unknown" })
+    expect(publicAcquisitionProperties("", "www.worktable.cloud")).toEqual({
+      acquisition_source: "internal_unknown",
+    })
+    const event = pageviewEvent("worktable_dev", "www.worktable.dev")
+    event.properties!.acquisition_source = "private@example.com"
+    event.properties!.traffic_type = "arbitrary"
+    const sanitized = sanitizePublicAnalyticsEvent(
+      event,
+      config("worktable_dev"),
+      location("www.worktable.dev")
+    )
+    expect(sanitized?.properties).not.toHaveProperty("acquisition_source")
+    expect(sanitized?.properties).not.toHaveProperty("traffic_type")
+  })
+
   test("does not accept arbitrary campaign query values", () => {
     expect(
       approvedCampaignProperties(
-        "?utm_source=someone%40example.com&utm_medium=cpc&utm_campaign=private"
+        "?utm_source=someone%40example.com&utm_medium=private&utm_campaign=private"
       )
     ).toEqual({})
   })
@@ -167,7 +229,7 @@ describe("public analytics event sanitizer", () => {
       $cookieless_mode: true,
       $process_person_profile: false,
       $geoip_disable: true,
-      analytics_schema_version: 1,
+      analytics_schema_version: PUBLIC_ANALYTICS_SCHEMA_VERSION,
       site_surface: "worktable_dev",
       $host: "www.worktable.dev",
       $pathname: "/",
@@ -192,6 +254,70 @@ describe("public analytics event sanitizer", () => {
         location("www.worktable.dev")
       )?.properties?.$raw_user_agent
     ).toBe(`${"x".repeat(997)}...`)
+  })
+
+  test("accepts installer copies only at their declared acquisition surfaces", () => {
+    const cases = [
+      [
+        "worktable_dev",
+        "www.worktable.dev",
+        "/",
+        "self_host_install",
+        "deployment_card",
+        true,
+      ],
+      [
+        "worktable_docs",
+        "docs.worktable.dev",
+        "/start/install",
+        "cli_install",
+        "docs_start",
+        true,
+      ],
+      [
+        "worktable_docs",
+        "docs.worktable.dev",
+        "/start/desktop",
+        "cli_install",
+        "docs_start",
+        false,
+      ],
+      [
+        "worktable_cloud",
+        "www.worktable.cloud",
+        "/",
+        "self_host_install",
+        "deployment_card",
+        false,
+      ],
+      [
+        "worktable_dev",
+        "www.worktable.dev",
+        "/",
+        "private-command",
+        "deployment_card",
+        false,
+      ],
+    ] as const
+    for (const [surface, host, path, commandId, placement, allowed] of cases) {
+      const base = pageviewEvent(surface, host, path)
+      const event = sanitizePublicAnalyticsEvent(
+        {
+          ...base,
+          event: "marketing:install_command_copy",
+          properties: {
+            ...base.properties,
+            command_id: commandId,
+            placement,
+            command: "private text",
+          },
+        },
+        config(surface),
+        location(host, path)
+      )
+      expect(event !== null).toBe(allowed)
+      expect(event?.properties).not.toHaveProperty("command")
+    }
   })
 
   test("drops unknown events, invalid properties, and excluded contexts", () => {

@@ -1290,7 +1290,7 @@ async function updateDocProvenance(
 /**
  * Project one already-committed common document generation into the released
  * Doc compatibility surface without recording a second version. The common
- * writer owns V2 history; this adapter keeps legacy freshness, watcher dedup,
+ * writer owns V2 history; this adapter keeps watcher dedup,
  * derived state, and live rich-text rooms aligned with that same generation.
  */
 export async function publishManagedDocGenerationProjection(
@@ -1908,35 +1908,6 @@ export async function createManualDocCheckpoint(
         kind: "manual",
         label: label || "Manual Checkpoint",
         sourceCategory: category === "system" ? "human" : category,
-      },
-      sourceBytes: snapshot.bytes
-        ? { before: snapshot.bytes, after: snapshot.bytes }
-        : undefined,
-    });
-  });
-}
-
-export async function createDocReviewCheckpoint(
-  spaceId: string,
-  docPath: string,
-  reviewedBy = "user"
-): Promise<DocProvenance | undefined> {
-  return withDocPathLock(spaceId, async () => {
-    const snapshot = await readDocSourceSnapshot(spaceId, docPath);
-    const current = snapshot.result;
-    if (current.error || current.data === null) return undefined;
-    return recordDocVersion(spaceId, docPath, current, current, {
-      updatedBy: reviewedBy,
-      source: "manual-checkpoint",
-      reason: "Reviewed",
-    }, {
-      force: true,
-      operation: "checkpoint",
-      checkpoint: {
-        meaningful: true,
-        kind: "review",
-        label: "Reviewed",
-        sourceCategory: "human",
       },
       sourceBytes: snapshot.bytes
         ? { before: snapshot.bytes, after: snapshot.bytes }

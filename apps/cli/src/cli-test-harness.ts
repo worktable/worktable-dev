@@ -40,7 +40,7 @@ export function cliTestEnvironment(
     HOME: home,
     WORKTABLE_LAUNCHER: join(import.meta.dir, "..", "bin", "worktable.ts"),
     WORKTABLE_SKIP_STARTER_SEED: "1",
-    WORKTABLE_SKIP_LINT_SWEEP: "1",
+    WORKTABLE_SKIP_LINT_RETIREMENT: "1",
     WORKTABLE_SKIP_RETENTION_SWEEP: "1",
     WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP: "1",
     ...overrides,

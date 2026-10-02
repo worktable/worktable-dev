@@ -1888,8 +1888,8 @@ export class YjsDocManager {
       );
       liveDoc.lastPersistMs = updatedStat?.updatedAt ?? Date.now();
       // The watcher is suppressed for this self-write, so without an explicit
-      // event no doc-list consumer (sidebar labels derive from headings,
-      // freshness dots) would ever hear about a browser edit.
+      // event no doc-list consumer (sidebar labels derive from headings)
+      // would ever hear about a browser edit.
       wsManager.broadcast(spaceId, {
         type: "doc_update",
         spaceId,

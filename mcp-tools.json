@@ -369,19 +369,6 @@
               },
               "excerpt": {
                 "type": "string"
-              },
-              "humanReviewed": {
-                "type": "boolean"
-              },
-              "lastHumanTouch": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
               }
             },
             "required": [
@@ -441,13 +428,6 @@
                           "items": {
                             "type": "string"
                           }
-                        },
-                        "freshness": {
-                          "allOf": [
-                            {
-                              "$ref": "#/definitions/Freshness"
-                            }
-                          ]
                         },
                         "backlinkCount": {
                           "type": "integer",
@@ -604,13 +584,6 @@
               ],
               "additionalProperties": {}
             },
-            "freshness": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Freshness"
-                }
-              ]
-            },
             "backlinkCount": {
               "type": "integer",
               "minimum": 0,
@@ -639,45 +612,6 @@
           "required": [
             "archivedAt",
             "archivedBy"
-          ],
-          "additionalProperties": {}
-        },
-        "Freshness": {
-          "type": "object",
-          "properties": {
-            "lastHumanTouch": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "ageDays": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "humanReviewed": {
-              "type": "boolean"
-            },
-            "stale": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "lastHumanTouch",
-            "ageDays",
-            "humanReviewed",
-            "stale"
           ],
           "additionalProperties": {}
         },
@@ -2652,37 +2586,6 @@
             "type": "string"
           }
         },
-        "lastHumanTouch": {
-          "description": "Returned by action \"read\".",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ageDays": {
-          "description": "Returned by action \"read\".",
-          "anyOf": [
-            {
-              "type": "number",
-              "minimum": 0
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "humanReviewed": {
-          "description": "Returned by action \"read\".",
-          "type": "boolean"
-        },
-        "stale": {
-          "description": "Returned by action \"read\".",
-          "type": "boolean"
-        },
         "headings": {
           "description": "Returned by action \"read\".",
           "type": "array",
@@ -2817,13 +2720,6 @@
               ],
               "additionalProperties": {}
             },
-            "freshness": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/Freshness"
-                }
-              ]
-            },
             "backlinkCount": {
               "type": "integer",
               "minimum": 0,
@@ -2852,45 +2748,6 @@
           "required": [
             "archivedAt",
             "archivedBy"
-          ],
-          "additionalProperties": {}
-        },
-        "Freshness": {
-          "type": "object",
-          "properties": {
-            "lastHumanTouch": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "ageDays": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "humanReviewed": {
-              "type": "boolean"
-            },
-            "stale": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "lastHumanTouch",
-            "ageDays",
-            "humanReviewed",
-            "stale"
           ],
           "additionalProperties": {}
         }
@@ -7482,14 +7339,6 @@
             }
           ]
         },
-        "freshness": {
-          "description": "Returned by action \"read\".",
-          "allOf": [
-            {
-              "$ref": "#/definitions/Freshness"
-            }
-          ]
-        },
         "html": {
           "description": "Returned by action \"read\" when source is requested.",
           "type": "string"
@@ -7668,45 +7517,6 @@
           "required": [
             "archivedAt",
             "archivedBy"
-          ],
-          "additionalProperties": {}
-        },
-        "Freshness": {
-          "type": "object",
-          "properties": {
-            "lastHumanTouch": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "ageDays": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "minimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "humanReviewed": {
-              "type": "boolean"
-            },
-            "stale": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "lastHumanTouch",
-            "ageDays",
-            "humanReviewed",
-            "stale"
           ],
           "additionalProperties": {}
         }

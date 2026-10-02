@@ -197,7 +197,7 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
   await page.context().tracing.start({ screenshots: true, snapshots: false })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await page
-    .getByRole("button", { name: "Link Regression", exact: true })
+    .getByRole("button", { name: "Expand Link Regression", exact: true })
     .click()
   await page.getByRole("link", { name: "Cold Sync Proof", exact: true }).click()
 

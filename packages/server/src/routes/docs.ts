@@ -27,12 +27,10 @@ import {
   getDocVersion,
   restoreDocVersion,
   createManualDocCheckpoint,
-  createDocReviewCheckpoint,
   convertDocToMarkdownStorage,
   sanitizeDocPath,
   type DocProvenance,
 } from "../store.ts";
-import { decorateDocsWithFreshness, evictFreshness, getDocFreshness } from "../freshness.ts";
 import { decorateDocsWithBacklinkCounts, getDocLinks } from "../link-graph.ts";
 import { wsManager } from "../ws.ts";
 import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts";
@@ -147,7 +145,7 @@ docsRouter.get("/", requireScope("docs:read"), async (c) => {
 
   const docs = await decorateDocsWithBacklinkCounts(
     spaceId,
-    await decorateDocsWithFreshness(spaceId, await listDocsDetailed(spaceId, { includeArchived }))
+    await listDocsDetailed(spaceId, { includeArchived })
   );
   return c.json({ docs });
 });
@@ -540,31 +538,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
     }
     const provenance = await createManualDocCheckpoint(spaceId, docPath, parsed.data.label, "user");
     if (!provenance) return c.json({ error: "Document not found", code: "NOT_FOUND" }, 404);
-    evictFreshness(spaceId, docPath);
     return c.json({ ok: true, provenance });
-  }
-
-  // ── /review handler — records a human review checkpoint. REST-only on
-  // purpose: review is the human trust anchor, so it is never exposed over
-  // MCP where an agent could mark its own writes as reviewed. ──
-  if (rawPath.endsWith("/review")) {
-    const denied = await requireHumanWorkspaceOwner()(c, async () => {});
-    if (denied) return denied;
-    const docPath = extractDocPath(rawPath, spaceId, "/review");
-    if (!docPath) {
-      return c.json({ error: "Missing doc path", code: "BAD_REQUEST" }, 400);
-    }
-    const provenance = await createDocReviewCheckpoint(spaceId, docPath, "user");
-    if (!provenance) return c.json({ error: "Document not found", code: "NOT_FOUND" }, 404);
-    evictFreshness(spaceId, docPath);
-    const freshness = await getDocFreshness(spaceId, docPath, { provenance });
-    wsManager.broadcast(spaceId, {
-      type: "doc_update",
-      spaceId,
-      docPath,
-      data: { path: docPath, provenance, freshness },
-    });
-    return c.json({ ok: true, provenance, freshness });
   }
 
   // ── /convert handler (markdown → BlockNote) ──
@@ -673,7 +647,6 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
             }
             try {
               invalidateSearchIndex();
-              evictFreshness(spaceId, docPath);
             } catch (error) {
               console.error(
                 `[docs] failed to invalidate derived state after converting ${spaceId}/${docPath}:`,
@@ -826,7 +799,6 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
   const statResult = await docStat(spaceId, docPath);
   const archived = await getDocArchiveInfo(spaceId, docPath);
   const provenance = await getDocProvenance(spaceId, docPath);
-  const freshness = await getDocFreshness(spaceId, docPath, { provenance });
   const { links, backlinks } = await getDocLinks(spaceId, docPath);
   const collaborationEpoch = await getWorkspaceCollaborationEpoch();
   const collaborationCacheEpoch = await getDocCollaborationCacheEpoch(
@@ -852,7 +824,6 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
     updatedAt: statResult?.updatedAt ?? Date.now(),
     archived,
     provenance,
-    freshness,
     collaborationEpoch,
     collaborationCacheEpoch,
     collaborationCacheEpochHistory,

@@ -24,7 +24,7 @@ You will read this doc again in a later session — so will other agents, and so
 
 ## What the server tells you back
 
-Doc writes return convention guidance as warnings — broken links, a missing title heading, over-long docs, overly deep folders. Fix what the warnings name, but they don't block the write. Three things are absolute instead: never write index docs (the server generates the index), never mark content as reviewed (that signal belongs to the human), and an invalid Mermaid diagram rejects the whole write with a location-aware error until you fix the source (see [Docs and versions](/guides/docs-and-versions/#diagrams)).
+Doc writes return convention guidance as warnings — broken links and a missing title heading. Fix what the warnings name, but they don't block the write. Two things are absolute instead: never write index docs (the server generates the index), and an invalid Mermaid diagram rejects the whole write with a location-aware error until you fix the source (see [Docs and versions](/guides/docs-and-versions/#diagrams)).
 
 ## Working with drawings
 

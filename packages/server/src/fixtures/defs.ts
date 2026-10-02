@@ -38,26 +38,25 @@ const basicDocs: FixtureDef = {
 const wikiLinks: FixtureDef = {
   name: "wiki-links",
   proves:
-    "doc→doc links + backlinks (md and BlockNote), broken-link and orphan reporting, backlinkCount in lists, freshness/trust signals starting honest (unreviewed) and flipping live on edit/review",
+    "doc→doc links + backlinks (md and BlockNote), broken-link reporting, backlinkCount in lists",
   workspace: { id: "ws_fixture_wiki_links", name: "Wiki Links" },
   async build(b: FixtureBuilder) {
     await b.space({
       id: "atlas",
       name: "Field Atlas",
-      description: "A small interlinked doc set for demonstrating links, backlinks, and trust signals.",
+      description: "A small interlinked doc set for demonstrating links and backlinks.",
     });
 
     await b.docMd("atlas", "overview", [
       "# Field Atlas",
       "",
-      "A hub doc for the link-graph demo. Every doc here starts **unreviewed** (fixtures carry no edit history), so trust signals begin honest — edit or review a doc in the UI and watch them flip.",
+      "A hub doc for the link-graph demo.",
       "",
       "Try, over MCP or REST:",
       "",
       "- `worktable_docs_read` action `read` on this doc → `links` below resolve, except the changelog",
       "- `worktable_docs_read` action `read` on [the API reference](/reference/api) → two `backlinks`",
       "- `worktable_docs_read` action `list` → `backlinkCount` per doc; the scratchpad has none",
-      "- Open a doc in the UI, then read it again → `humanReviewed` flips true; let an agent edit it → flips back",
       "",
       "## Contents",
       "",
@@ -92,7 +91,7 @@ const wikiLinks: FixtureDef = {
     await b.docMd("atlas", "orphan-scratchpad", [
       "# Scratchpad",
       "",
-      "Nothing links to this doc: it shows up with `backlinkCount: 0` and as an orphan in the space link graph (future lint will flag it).",
+      "Nothing links to this doc: it shows up with `backlinkCount: 0` and as an orphan in the space link graph.",
     ].join("\n"));
 
     // A BlockNote doc with an inline link, proving extraction works for rich docs

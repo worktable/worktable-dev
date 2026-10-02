@@ -1,5 +1,4 @@
 import type {
-  DocFreshness,
   DocumentFormatClaim,
   DocumentHealth,
 } from "@worktable/types";
@@ -19,7 +18,6 @@ export interface TreeNode {
   format?: DocumentFormatClaim;
   health?: DocumentHealth;
   archived?: boolean;
-  freshness?: DocFreshness;
   /** Last-write time (ms). Folders carry the newest of their descendants. */
   updatedAt?: number;
   children: TreeNode[];
@@ -36,7 +34,6 @@ export interface TreeInput {
   archived?: boolean;
   /** Legacy callers may still provide headings while migrating to catalog titles. */
   headings?: string[];
-  freshness?: DocFreshness;
   /** ISO timestamp of the doc's last write (provenance.updatedAt). */
   updatedAt?: string;
 }
@@ -80,7 +77,6 @@ export function buildTree(
       typeof item === "string"
         ? undefined
         : (item.title?.trim() || item.headings?.[0]?.trim());
-    const freshness = typeof item === "string" ? undefined : item.freshness;
     const updatedAtIso = typeof item === "string" ? undefined : item.updatedAt;
     const updatedAt = updatedAtIso ? Date.parse(updatedAtIso) || undefined : undefined;
     const parts = path.split("/");
@@ -107,7 +103,6 @@ export function buildTree(
           format: isLast ? format : undefined,
           health: isLast ? health : undefined,
           archived: isLast ? archived : undefined,
-          freshness: isLast ? freshness : undefined,
           updatedAt,
           children: [],
         };
@@ -123,7 +118,6 @@ export function buildTree(
           if (health) node.health = health;
           if (archived) node.archived = true;
           if (title) node.title = title;
-          if (freshness) node.freshness = freshness;
           node.kind = kind;
         }
         // Recompute display label: a doc's H1 always wins over the humanized slug,

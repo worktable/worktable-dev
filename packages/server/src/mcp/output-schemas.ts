@@ -192,15 +192,6 @@ const UrlToSendInChatSchema = z
   .url()
   .describe("Current-install URL suitable for sending in chat.")
 
-const FreshnessSchema = z
-  .looseObject({
-    lastHumanTouch: z.string().nullable(),
-    ageDays: z.number().nonnegative().nullable(),
-    humanReviewed: z.boolean(),
-    stale: z.boolean(),
-  })
-  .meta({ id: "Freshness" })
-
 const ProvenanceSchema = z.looseObject({
   updatedAt: z.string(),
   updatedBy: z.string(),
@@ -222,7 +213,6 @@ const DocListEntrySchema = z
     richBlockTypes: z.array(z.string()).optional(),
     archived: PortableArchiveInfoSchema.optional(),
     provenance: ProvenanceSchema.optional(),
-    freshness: FreshnessSchema.optional(),
     backlinkCount: z.number().int().nonnegative().optional(),
   })
   .meta({ id: "DocListEntry" })
@@ -338,8 +328,6 @@ const SearchResultSchema = z.looseObject({
   collectionId: PortableCanonicalIdSchema.optional(),
   recordId: PortableCanonicalIdSchema.optional(),
   excerpt: z.string().optional(),
-  humanReviewed: z.boolean().optional(),
-  lastHumanTouch: z.string().nullable().optional(),
 })
 
 const SpaceIndexSchema = z.looseObject({
@@ -357,7 +345,6 @@ const SpaceIndexSchema = z.looseObject({
           path: z.string(),
           title: z.string(),
           headings: z.array(z.string()),
-          freshness: FreshnessSchema.optional(),
           backlinkCount: z.number().int().nonnegative(),
         })
       ),
@@ -373,10 +360,6 @@ const DocReadOutputSchema = z.looseObject({
   archived: PortableArchiveInfoSchema.optional(),
   links: z.array(DocLinkSchema),
   backlinks: z.array(z.string()),
-  lastHumanTouch: z.string().nullable(),
-  ageDays: z.number().nonnegative().nullable(),
-  humanReviewed: z.boolean(),
-  stale: z.boolean(),
   headings: z.array(z.string()).optional(),
   blockCount: z.number().int().nonnegative().nullable().optional(),
   lossyFields: z.array(z.string()).optional(),
@@ -431,13 +414,12 @@ const DocRenameOutputSchema = z.looseObject({
   urlToSendInChat: UrlToSendInChatSchema,
 })
 
-const HtmlDocListEntrySchema = PortableHtmlDocSchema.extend({
-  freshness: FreshnessSchema.optional(),
-}).meta({ id: "HtmlDocListEntry" })
+const HtmlDocListEntrySchema = PortableHtmlDocSchema.meta({
+  id: "HtmlDocListEntry",
+})
 
 const HtmlReadOutputSchema = z.looseObject({
   htmlDoc: PortableHtmlDocSchema,
-  freshness: FreshnessSchema,
   html: z.string().optional(),
   warnings: z.array(HtmlValidationIssueSchema).optional(),
   urlToSendInChat: UrlToSendInChatSchema,
@@ -1127,10 +1109,6 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     archived: forActions(PortableArchiveInfoSchema, '"read"'),
     links: forActions(z.array(DocLinkSchema), '"read"'),
     backlinks: forActions(z.array(z.string()), '"read"'),
-    lastHumanTouch: forActions(z.string().nullable(), '"read"'),
-    ageDays: forActions(z.number().nonnegative().nullable(), '"read"'),
-    humanReviewed: forActions(z.boolean(), '"read"'),
-    stale: forActions(z.boolean(), '"read"'),
     headings: forActions(z.array(z.string()), '"read"'),
     blockCount: forActions(z.number().int().nonnegative().nullable(), '"read"'),
     readFormatHint: forActions(z.enum(["markdown", "blocknote"]), '"read"'),
@@ -1166,7 +1144,6 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     tokens: forActions(z.array(z.string()), '"guide"'),
     htmlDocs: forActions(z.array(CompactHtmlDocSchema), '"list"'),
     htmlDoc: forActions(CompactHtmlDocSchema, '"read"'),
-    freshness: forActions(FreshnessSchema, '"read"'),
     html: forActions(z.string(), '"read" when source is requested'),
     warnings: forActions(z.array(HtmlValidationIssueSchema), '"read"'),
     urlToSendInChat: forActions(UrlToSendInChatSchema, '"read"'),

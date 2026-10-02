@@ -6,12 +6,10 @@
 // on every request, never stored, and never writable by agents
 // (a doc-file index under spaces/ would be agent-writable and is
 // the classic wiki-rot artifact). Docs are grouped by top-level
-// folder and carry the derived freshness/backlink signals, giving
+// folder and carry derived backlink counts, giving
 // humans a browsable space overview and agents progressive
 // disclosure without loading every doc.
 
-import type { DocFreshness } from "@worktable/types";
-import { decorateDocsWithFreshness } from "./freshness.ts";
 import { decorateDocsWithBacklinkCounts } from "./link-graph.ts";
 import { listDocsDetailed, readSpace } from "./store.ts";
 
@@ -19,7 +17,6 @@ export interface SpaceIndexDoc {
   path: string;
   title: string;
   headings: string[];
-  freshness?: DocFreshness;
   backlinkCount: number;
 }
 
@@ -56,7 +53,7 @@ export async function buildSpaceIndex(spaceId: string): Promise<SpaceIndex | nul
 
   const docs = await decorateDocsWithBacklinkCounts(
     spaceId,
-    await decorateDocsWithFreshness(spaceId, await listDocsDetailed(spaceId, { includeArchived: false }))
+    await listDocsDetailed(spaceId, { includeArchived: false })
   );
 
   const byFolder = new Map<string, SpaceIndexDoc[]>();
@@ -67,7 +64,6 @@ export async function buildSpaceIndex(spaceId: string): Promise<SpaceIndex | nul
       path: doc.path,
       title: docTitle(doc.path, doc.headings ?? []),
       headings: doc.headings ?? [],
-      freshness: doc.freshness,
       backlinkCount: doc.backlinkCount ?? 0,
     };
     const group = byFolder.get(folder) ?? [];

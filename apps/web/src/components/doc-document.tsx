@@ -12,7 +12,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Loader2,
   Archive,
-  BadgeCheck,
   Copy,
   Download,
   RotateCcw,
@@ -50,23 +49,16 @@ import {
   createDocCheckpoint,
   createDoc,
   restoreDocVersion,
-  reviewDoc,
 } from "@/lib/docs-api"
 import { workspaceCollaborationCacheKey } from "@/lib/collaboration-cache"
 import { HttpError } from "@/lib/http"
 import { copyText } from "@/lib/clipboard"
-import {
-  CATEGORY_LABELS,
-  docAttribution,
-  staleTitle,
-} from "@/lib/doc-freshness"
 import { RelativeTime } from "@/lib/time"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import {
   usePageMeta,
   type PageAnnotationsAction,
-  type PageMetaChip,
   type PageOverflowAction,
   type PageSecondaryAction,
 } from "@/hooks/use-page-meta"
@@ -212,49 +204,10 @@ function SyncStatusPill({
 
 // ── Main Page ────────────────────────────────────────────────
 
-function formatUpdatedAt(
-  provenance: DocMeta["provenance"],
-  fallbackUpdatedAt?: number
-): string {
-  const raw =
-    provenance?.updatedAt ??
-    (fallbackUpdatedAt ? new Date(fallbackUpdatedAt).toISOString() : null)
-  if (!raw) return "Not versioned yet"
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return "Updated recently"
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  })
-}
-
-function provenanceLabel(provenance: DocMeta["provenance"]): string {
-  if (!provenance) return "No provenance yet"
-  const by = provenance.updatedBy || "unknown"
-  const source = provenance.source || "unknown"
-  return `${by} via ${source}`
-}
-
-function docChip(doc: DocMeta): PageMetaChip | undefined {
-  if (!doc.provenance && !doc.freshness) return undefined
-  const category = docAttribution(doc.provenance, doc.freshness)
-  return {
-    label: CATEGORY_LABELS[category],
-    agent: category === "agent",
-    updatedAtIso: doc.provenance?.updatedAt ?? null,
-    stale: doc.freshness?.stale ?? false,
-    reviewed: doc.freshness?.humanReviewed ?? false,
-    staleDetail: doc.freshness?.stale ? staleTitle(doc.freshness) : undefined,
-  }
-}
-
 function DocPageMeta({
   spaceId,
   doc,
   onVersionHistory,
-  onMarkReviewed,
   onConvertToMarkdown,
   onCopyMarkdown,
   onDownload,
@@ -265,7 +218,6 @@ function DocPageMeta({
   spaceId: string
   doc: DocMeta
   onVersionHistory?: () => void
-  onMarkReviewed?: () => void
   onConvertToMarkdown?: () => void
   onCopyMarkdown?: () => void
   onDownload?: () => void
@@ -278,7 +230,6 @@ function DocPageMeta({
   const shareable = Boolean(
     spaceDetail && !spaceDetail.space.settings["archive"] && !doc.archived
   )
-  const chip = useMemo(() => docChip(doc), [doc])
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
 
@@ -297,14 +248,6 @@ function DocPageMeta({
         label: "Version History",
         icon: History,
         onSelect: onVersionHistory,
-      })
-    }
-    if (chip && !chip.reviewed && !doc.archived && onMarkReviewed) {
-      actions.push({
-        id: "mark-reviewed",
-        label: "Mark Reviewed",
-        icon: BadgeCheck,
-        onSelect: onMarkReviewed,
       })
     }
     if (onConvertToMarkdown) {
@@ -344,21 +287,15 @@ function DocPageMeta({
 
     return actions
   }, [
-    chip,
-    doc.archived,
     onConvertToMarkdown,
     onCopyMarkdown,
     onDownload,
-    onMarkReviewed,
     onRecoverOfflineEdits,
     onVersionHistory,
   ])
 
   useEffect(() => {
     setPageMeta({
-      updatedAtLabel: formatUpdatedAt(doc.provenance, doc.updatedAt),
-      provenanceLabel: provenanceLabel(doc.provenance),
-      chip,
       overflowActions,
       secondaryAction,
       annotations,
@@ -370,7 +307,6 @@ function DocPageMeta({
     return () => setPageMeta(null)
   }, [
     doc,
-    chip,
     overflowActions,
     secondaryAction,
     annotations,
@@ -380,69 +316,6 @@ function DocPageMeta({
   ])
 
   return null
-}
-
-// Reading a doc for a sustained period counts as a review: after 30s of
-// visible dwell plus at least one interaction, record the checkpoint the
-// reader would otherwise have to click for. Fires at most once per doc view
-// and only while the newest version is not already a human touch. `ready`
-// gates the timer on the content actually being on screen — a slow editor
-// sync must not count as reading.
-const INFERRED_REVIEW_DWELL_MS = 30_000
-
-function useInferredReview(
-  doc: DocMeta | undefined,
-  ready: boolean,
-  markReviewed: () => Promise<unknown>
-) {
-  const eligible = Boolean(
-    ready && doc?.freshness && !doc.freshness.humanReviewed && !doc.archived
-  )
-  const eligibleRef = useRef(eligible)
-  eligibleRef.current = eligible
-  const firedRef = useRef(false)
-  const docPath = doc?.path
-
-  useEffect(() => {
-    firedRef.current = false
-  }, [docPath])
-
-  useEffect(() => {
-    if (!eligible || firedRef.current) return
-    let visibleMs = 0
-    let last = Date.now()
-    let interacted = false
-    const markInteracted = () => {
-      interacted = true
-    }
-    const interval = setInterval(() => {
-      const now = Date.now()
-      if (document.visibilityState === "visible") visibleMs += now - last
-      last = now
-      if (
-        visibleMs >= INFERRED_REVIEW_DWELL_MS &&
-        interacted &&
-        eligibleRef.current &&
-        !firedRef.current
-      ) {
-        firedRef.current = true
-        markReviewed().catch((err) => {
-          console.error("Inferred review failed:", err)
-          // Let a later tick retry rather than silently giving up for the visit.
-          firedRef.current = false
-        })
-      }
-    }, 5_000)
-    window.addEventListener("pointerdown", markInteracted)
-    window.addEventListener("keydown", markInteracted)
-    window.addEventListener("wheel", markInteracted, { passive: true })
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener("pointerdown", markInteracted)
-      window.removeEventListener("keydown", markInteracted)
-      window.removeEventListener("wheel", markInteracted)
-    }
-  }, [eligible, docPath, markReviewed])
 }
 
 function DocEditorPage({
@@ -673,71 +546,6 @@ function DocEditorPage({
     }
   }, [spaceId, docPath, router])
 
-  // Manual click and inferred dwell can race; dedupe by sharing one in-flight
-  // request and latching on the versionId already reviewed (a review changes
-  // the versionId, so the latch clears itself when the doc changes again).
-  const reviewedVersionRef = useRef<string | null>(null)
-  const reviewInFlightRef = useRef<Promise<void> | null>(null)
-  const currentVersionId = docData?.provenance?.versionId ?? null
-
-  useEffect(() => {
-    // Both refs are per-doc state: the latch must not leak across navigation,
-    // or the "none" sentinel would mark every unversioned doc as reviewed.
-    reviewInFlightRef.current = null
-    reviewedVersionRef.current = null
-  }, [spaceId, docPath])
-
-  /** Resolves true only for the call that initiated a POST — no-op joins and
-   *  latched calls resolve false so callers don't report work they didn't do. */
-  const markReviewed = useCallback((): Promise<boolean> => {
-    // "none" stands in for docs without provenance (pre-versioning), so the
-    // latch still blocks repeat POSTs while cached data has no versionId.
-    const latchKey = currentVersionId ?? "none"
-    if (reviewedVersionRef.current === latchKey) return Promise.resolve(false)
-    if (reviewInFlightRef.current)
-      return reviewInFlightRef.current.then(() => false)
-    const request = (async () => {
-      try {
-        const result = await reviewDoc(spaceId, docPath)
-        reviewedVersionRef.current = latchKey
-        // The route returns the post-review state; write it into the cache so
-        // the chip flips and the button hides immediately instead of after
-        // the refetch round-trip.
-        if (result.provenance || result.freshness) {
-          queryClient.setQueryData(
-            docQueryKeys.doc(spaceId, docPath),
-            (old: DocMeta | undefined) =>
-              old
-                ? {
-                    ...old,
-                    provenance: result.provenance ?? old.provenance,
-                    freshness: result.freshness ?? old.freshness,
-                  }
-                : old
-          )
-        }
-        void queryClient.invalidateQueries({
-          queryKey: docQueryKeys.docs(spaceId),
-        })
-      } finally {
-        reviewInFlightRef.current = null
-      }
-    })()
-    reviewInFlightRef.current = request
-    return request.then(() => true)
-  }, [spaceId, docPath, queryClient, currentVersionId])
-
-  const handleMarkReviewed = useCallback(() => {
-    markReviewed()
-      .then((performed) => {
-        if (performed) toast.success("Marked reviewed")
-      })
-      .catch((err) => {
-        console.error("Review failed:", err)
-        toast.error("Failed to mark reviewed")
-      })
-  }, [markReviewed])
-
   const handleCopyMarkdown = useCallback(() => {
     exportDocMarkdown(spaceId, docPath)
       .then(copyText)
@@ -804,7 +612,6 @@ function DocEditorPage({
         content={docData.content}
         onConvert={handleConvert}
         converting={converting}
-        onMarkReviewed={handleMarkReviewed}
         onCopyMarkdown={handleCopyMarkdown}
         onDownload={handleDownload}
         onRecoverOfflineEdits={
@@ -812,7 +619,6 @@ function DocEditorPage({
             ? () => void recoverOfflineEdits()
             : undefined
         }
-        onInferredReview={markReviewed}
       />
     )
   }
@@ -825,7 +631,6 @@ function DocEditorPage({
       doc={docData}
       onRestore={handleRestore}
       restoring={restoring}
-      onMarkReviewed={handleMarkReviewed}
       onConvertToMarkdown={
         !docData.archived && docData.markdownCompatible !== false
           ? handleConvertToMarkdown
@@ -839,7 +644,6 @@ function DocEditorPage({
           ? () => void recoverOfflineEdits()
           : undefined
       }
-      onInferredReview={markReviewed}
     />
   )
 }
@@ -888,11 +692,9 @@ function MarkdownDocPage({
   content,
   onConvert,
   converting,
-  onMarkReviewed,
   onCopyMarkdown,
   onDownload,
   onRecoverOfflineEdits,
-  onInferredReview,
 }: {
   spaceId: string
   docPath: string
@@ -903,11 +705,9 @@ function MarkdownDocPage({
   content: string
   onConvert: () => void
   converting: boolean
-  onMarkReviewed?: () => void
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
-  onInferredReview: () => Promise<unknown>
 }) {
   const secondaryAction = useMemo<PageSecondaryAction>(
     () => ({
@@ -993,15 +793,11 @@ function MarkdownDocPage({
     }
   }, [spaceId, docPath, compareVersionId])
 
-  // The markdown viewer renders synchronously, so the content is on screen
-  // as soon as this component is.
-  useInferredReview(doc, true, onInferredReview)
   return (
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
         doc={doc}
-        onMarkReviewed={onMarkReviewed}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
         onRecoverOfflineEdits={onRecoverOfflineEdits}
@@ -1200,13 +996,11 @@ function BlockNoteDocPage({
   doc,
   onRestore,
   restoring,
-  onMarkReviewed,
   onConvertToMarkdown,
   convertingToMarkdown,
   onCopyMarkdown,
   onDownload,
   onRecoverOfflineEdits,
-  onInferredReview,
 }: {
   spaceId: string
   docPath: string
@@ -1214,13 +1008,11 @@ function BlockNoteDocPage({
   doc: DocMeta
   onRestore: () => void
   restoring: boolean
-  onMarkReviewed?: () => void
   onConvertToMarkdown?: () => void
   convertingToMarkdown: boolean
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
-  onInferredReview: () => Promise<unknown>
 }) {
   const ydocRef = useRef<Y.Doc | null>(null)
   const idbRef = useRef<IndexeddbPersistence | null>(null)
@@ -1456,9 +1248,6 @@ function BlockNoteDocPage({
     sendIntentFrame(wsProviderRef.current)
   }, [])
 
-  // Dwell only counts once the editor is actually showing content — while
-  // the Yjs/IndexedDB sync is still on the skeleton, nobody is reading.
-  useInferredReview(doc, editorReadable, onInferredReview)
 
   return (
     <div className="flex h-full flex-col">
@@ -1466,7 +1255,6 @@ function BlockNoteDocPage({
         spaceId={spaceId}
         doc={doc}
         onVersionHistory={openVersions}
-        onMarkReviewed={onMarkReviewed}
         onConvertToMarkdown={
           convertingToMarkdown ? undefined : onConvertToMarkdown
         }

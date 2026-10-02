@@ -10,7 +10,6 @@ import type { ReactNode } from "react"
 import {
   AppWindow,
   Archive,
-  Bot,
   Database,
   FileText,
   Layers,
@@ -22,7 +21,6 @@ import { useSpaceDocs } from "@/lib/docs-queries"
 import { useSpaceAttention } from "@/lib/annotations-queries"
 import type { AttentionSignal } from "@/lib/annotations-queries"
 import { useSpaceSubscription } from "@/lib/ws"
-import { staleTitle } from "@/lib/doc-freshness"
 import { recordTitle } from "@/lib/records"
 import { RelativeTime } from "@/lib/time"
 import { resolveIcon } from "@/lib/icons"
@@ -128,7 +126,6 @@ function SpaceOverview({
   spaceName,
   spaceDescription,
   spaceIcon,
-  spaceCreatedBy,
   docs,
   widgets,
   recordCollections,
@@ -137,7 +134,6 @@ function SpaceOverview({
   spaceName: string
   spaceDescription?: string
   spaceIcon?: string
-  spaceCreatedBy?: string
   docs: DocListEntry[]
   widgets: WidgetListEntry[]
   recordCollections: RecordCollectionSummary[]
@@ -157,17 +153,10 @@ function SpaceOverview({
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 7)
 
-  // Needs-attention signals: ambient counts, never a task queue. Counts are
-  // computed server-side (exact filtered totals, immune to pagination);
-  // staleness rides on the docs we already have.
+  // Open instructions are real requests, counted server-side (an exact
+  // filtered total, immune to pagination).
   const { data: attention } = useSpaceAttention(spaceId)
   const instructions = attention?.instructions ?? { count: 0, newestDocPath: null, newestWidgetId: null }
-  const lintFindings = attention?.lint ?? { count: 0, newestDocPath: null, newestWidgetId: null }
-  // Staleness spans both content kinds: docs and HTML docs (widgets) carry the
-  // same DocFreshness shape, so the "N stale" count aggregates both.
-  const staleDocs = activeDocs.filter((doc) => doc.freshness?.stale)
-  const staleWidgets = activeWidgets.filter((widget) => widget.freshness?.stale)
-  const staleCount = staleDocs.length + staleWidgets.length
 
   const docGroups = buildDocGroups(activeDocs)
 
@@ -186,12 +175,6 @@ function SpaceOverview({
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
               {spaceDescription}
             </p>
-          )}
-          {spaceCreatedBy && (
-            <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground/70">
-              <Bot className="size-3.5" />
-              <span>Created by {spaceCreatedBy}</span>
-            </div>
           )}
         </div>
 
@@ -231,29 +214,15 @@ function SpaceOverview({
         </dl>
       </header>
 
-      {(instructions.count > 0 || lintFindings.count > 0 || staleCount > 0) && (
+      {instructions.count > 0 && (
         <div className="-mt-4 mb-8 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground/70">Needs attention</span>
-          {instructions.count > 0 && (() => {
-            const chip = (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[color:var(--accent-bronze-ink)]">
-                <span className="bronze-knob size-1.5 rounded-full" />
-                {instructions.count} {instructions.count === 1 ? "instruction" : "instructions"}
-              </span>
-            )
-            return attentionLink(spaceId, instructions, "instructions", chip)
-          })()}
-          {lintFindings.count > 0 && (() => {
-            const chip = (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-muted-foreground">
-                {lintFindings.count} lint
-              </span>
-            )
-            return attentionLink(spaceId, lintFindings, "lint", chip)
-          })()}
-          {staleCount > 0 && (
-            <span className="inline-flex items-center rounded-full border border-border px-2.5 py-1 text-muted-foreground">
-              {staleCount} stale
+          {attentionLink(
+            spaceId,
+            instructions,
+            "instructions",
+            <span className="inline-flex items-center rounded-full border border-border px-2.5 py-1 text-[color:var(--accent-bronze-ink)]">
+              {instructions.count} {instructions.count === 1 ? "instruction" : "instructions"}
             </span>
           )}
         </div>
@@ -296,7 +265,6 @@ function SpaceOverview({
                       <div className="flex min-w-0 items-center gap-2">
                         <FileText className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
                         <span className="truncate text-sm font-medium text-foreground">{docTitle(doc)}</span>
-                        <StaleMark doc={doc} />
                       </div>
                       <div className="mt-1 truncate pl-6 text-xs text-muted-foreground">{doc.path}</div>
                     </div>
@@ -344,15 +312,6 @@ function SpaceOverview({
                             <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                               {docTitle(doc)}
                             </span>
-                            <StaleMark doc={doc} />
-                            {(doc.backlinkCount ?? 0) > 0 && (
-                              <span
-                                className="shrink-0 text-xs text-muted-foreground/60"
-                                title={`${doc.backlinkCount} ${doc.backlinkCount === 1 ? "doc links" : "docs link"} here`}
-                              >
-                                {doc.backlinkCount}&thinsp;↩
-                              </span>
-                            )}
                           </Link>
                         ))}
                       </div>
@@ -530,16 +489,6 @@ function buildDocGroups(docs: DocListEntry[]): Array<{ folder: string; label: st
     }))
 }
 
-/** Single-word staleness marker; tooltip carries the detail (no hover on mobile, so the word itself is the signal). */
-function StaleMark({ doc }: { doc: DocListEntry }) {
-  if (!doc.freshness?.stale) return null
-  return (
-    <span className="shrink-0 text-xs text-muted-foreground/70" title={staleTitle(doc.freshness)}>
-      Stale
-    </span>
-  )
-}
-
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
   const { data, isLoading } = useSpace(spaceId)
@@ -651,7 +600,6 @@ function SpaceDetailPage() {
         spaceName={space.name}
         spaceDescription={space.description}
         spaceIcon={space.icon}
-        spaceCreatedBy={space.createdBy}
         widgets={data.widgets ?? []}
       />
     </>

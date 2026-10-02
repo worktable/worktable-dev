@@ -35,9 +35,9 @@ that produced it.
 
 ## Open Space Home
 
-Click the space itself. Space Home is an automatic overview of docs by folder,
-backlinks, stale-content markers, and items that need attention. You never need
-to maintain an index doc by hand.
+Click the space name. Space Home is an automatic overview of recent docs, docs
+by folder, and open instructions. You never need to maintain an index doc by
+hand.
 
 ## Leave an annotation
 

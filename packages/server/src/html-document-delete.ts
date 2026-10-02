@@ -10,7 +10,6 @@ import {
 import { DocumentInventorySpaceNotFoundError } from "./document-inventory.ts"
 import { deleteDurableHtmlExactlyLocked } from "./document-lifecycle-journal.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
-import { evictWidgetFreshness } from "./widget-freshness.ts"
 import {
   pruneEmptyWidgetParents,
   withWidgetWriteLock,
@@ -58,7 +57,6 @@ export async function deleteHtmlDocument(
         spaceId,
         path: widgetId,
       })
-      evictWidgetFreshness(spaceId, widgetId)
       invalidateSearchIndex()
       wsManager.broadcast(spaceId, {
         type: "widget_deleted",
@@ -103,7 +101,6 @@ export async function deleteHtmlDocument(
               )
             }
             try {
-              evictWidgetFreshness(spaceId, widgetId)
               invalidateSearchIndex()
               wsManager.broadcast(spaceId, {
                 type: "widget_deleted",

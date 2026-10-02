@@ -29,9 +29,9 @@ the Worktable app or non-browser tools. Cross-origin and sandboxed browser
 requests do not receive that authority. Explicit credentials keep their scopes
 on both REST and realtime connections. HTML documents with network permission
 disabled cannot make outbound WebSocket connections. Agent writes use the
-verified agent identity; marking a document reviewed requires the human owner.
-An agent with token-management permission can delegate credentials, but those
-credentials remain agent principals and cannot certify human review.
+verified agent identity. An agent with token-management permission can
+delegate credentials, but those credentials remain agent principals and cannot
+act as the human owner.
 The browser collaboration channel is reserved for human principals. Agents edit
 through MCP or the scoped REST APIs.
 

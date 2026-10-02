@@ -252,7 +252,7 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
   "wiki-links": {
     fixture: "wiki-links",
     purpose:
-      "An interlinked documentation workspace covering links, backlinks, orphans, broken links, and review freshness.",
+      "An interlinked documentation workspace covering links, backlinks, orphans, and broken links.",
     uiChecks: [
       {
         title: "Follow the atlas",
@@ -260,9 +260,9 @@ export const FIXTURE_REVIEWS: Record<FixtureSlug, FixtureReview> = {
           "Open Field Atlas → Overview and follow links to Setup, Usage, and API Reference.",
       },
       {
-        title: "Inspect trust signals",
+        title: "Compare linked and orphaned docs",
         instruction:
-          "Compare linked documents with the orphan scratchpad and inspect freshness/review indicators.",
+          "Compare linked documents with the orphan scratchpad.",
       },
     ],
     mcpChecks: [

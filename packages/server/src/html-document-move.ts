@@ -7,7 +7,6 @@ import { withDocPathLock } from "./doc-path-lock.ts"
 import { DocumentInventorySpaceNotFoundError } from "./document-inventory.ts"
 import { moveDurableHtmlExactlyLocked } from "./document-lifecycle-journal.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
-import { evictWidgetFreshness } from "./widget-freshness.ts"
 import {
   pruneEmptyWidgetParents,
   readWidget,
@@ -77,8 +76,6 @@ export async function moveHtmlDocument(
   if (storageV2) {
     try {
       const moved = await moveRegisteredDocument({ spaceId, path: from, to })
-      evictWidgetFreshness(spaceId, from)
-      evictWidgetFreshness(spaceId, to)
       invalidateSearchIndex()
       const { data: widget } = await readWidget(spaceId, to)
       if (widget) {
@@ -129,8 +126,6 @@ export async function moveHtmlDocument(
             }
           }
           try {
-            evictWidgetFreshness(spaceId, from)
-            evictWidgetFreshness(spaceId, to)
             invalidateSearchIndex()
 
             const { data: widget } = await readWidget(spaceId, to)

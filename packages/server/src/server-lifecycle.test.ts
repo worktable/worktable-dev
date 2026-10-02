@@ -34,9 +34,8 @@ import {
   notifyWorkspaceChangeAndWait,
   onWorkspaceChange,
 } from "./workspace-events.ts"
-import { notifyDocContentChanged } from "./content-events.ts"
+import { wsManager } from "./ws.ts"
 import { beginLink } from "./linked-runtime.ts"
-import { lintScheduler } from "./wiki-lint.ts"
 import { withVersionKeyLock } from "./version-store.ts"
 import { withWorkspaceExportSnapshot } from "./workspace-export-coordinator.ts"
 import { yjsManager } from "./yjs-manager.ts"
@@ -511,23 +510,16 @@ describe("server lifecycle", () => {
       hostname: "127.0.0.1",
       fetch: () => new Response("occupied"),
     })
-    const previousSkip = process.env["WORKTABLE_SKIP_LINT_SWEEP"]
-    const noteChanged = spyOn(lintScheduler, "noteDocChanged")
-    delete process.env["WORKTABLE_SKIP_LINT_SWEEP"]
+    const handleChange = spyOn(wsManager, "handleChange")
     try {
       expect(() => startServer(occupied.port, "127.0.0.1")).toThrow()
       server = startServer(0, "127.0.0.1")
-      noteChanged.mockClear()
+      handleChange.mockClear()
 
-      notifyDocContentChanged("meta", "one-change")
-      expect(noteChanged).toHaveBeenCalledTimes(1)
+      await notifyWorkspaceChangeAndWait({ type: "space", spaceId: "meta" })
+      expect(handleChange).toHaveBeenCalledTimes(1)
     } finally {
-      if (previousSkip === undefined) {
-        delete process.env["WORKTABLE_SKIP_LINT_SWEEP"]
-      } else {
-        process.env["WORKTABLE_SKIP_LINT_SWEEP"] = previousSkip
-      }
-      noteChanged.mockRestore()
+      handleChange.mockRestore()
       await occupied.stop(true)
     }
   })

@@ -392,8 +392,11 @@ function StartHereSection({
   }
 
   return (
-    <div>
-      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+    <section aria-labelledby="start-here-heading">
+      <h2
+        id="start-here-heading"
+        className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+      >
         Start here
       </h2>
       {pins.length > 0 ? (
@@ -435,7 +438,7 @@ function StartHereSection({
           Pin the documents to read first from their menu.
         </p>
       )}
-    </div>
+    </section>
   )
 }
 

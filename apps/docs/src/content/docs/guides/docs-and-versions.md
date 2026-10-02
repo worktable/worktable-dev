@@ -17,6 +17,24 @@ Agents write docs as Markdown; simple docs are stored as `.md` files you can ope
 
 Need a doc's content somewhere else? **Copy Markdown** in the doc header or the sidebar's right-click menu copies it as clean Markdown, converting from rich text if that's how it's stored. **Download Markdown** saves the same content as a `.md` file. When a rich doc can be represented completely in Markdown, **Save Markdown** also appears and changes the doc back to `.md` storage. Rich-only formatting keeps that action hidden so saving cannot silently lose part of the doc. If another device still has offline edits from before the format changed, Worktable offers to recover them into a separate doc. **Print PDF** opens your browser's print dialog with a clean, chrome-free layout.
 
+## Durable and temporary documents
+
+Every document is durable or temporary. Durable documents stay until someone
+archives them. Temporary documents hold supporting work, such as handoffs,
+drafts, and run notes: they stay out of the main sidebar tree in a Temporary
+section and archive themselves 7 days after their last edit, rename, or
+comment, or on a date you choose.
+
+New documents you create in the app start temporary; clear **New documents are
+temporary** in the Space's **+** menu to create durable ones. On a temporary
+document, the **Archives** chip next to the title offers **Keep** (make it
+durable), a new date, or archiving now. **Make temporary** in a durable
+document's menu does the reverse. Archived documents are never deleted
+automatically; restore one and it comes back durable.
+
+Home lists recent durable documents across Spaces; turn on **Include
+temporary** to see supporting work too.
+
 ## Version history
 
 Every doc keeps history, kept forever by default. Open it from the doc menu to read old versions, mark a checkpoint before risky work, or restore. This is what makes "let the agent rewrite it" a safe instruction because a bad rewrite is one restore away. If a workspace is growing large, trim retention to a time window or a per-doc count in Settings → History; tightening it deletes older versions immediately, so Worktable confirms before applying.

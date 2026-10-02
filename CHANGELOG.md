@@ -20,7 +20,9 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 ### Changed
 
 - **Agents choose a lifetime:** Agents choose durable or temporary whenever they create a document, can change it later, and can list or search one folder at a time.
-
+- **Home:** Home lists recent documents across Spaces, sorted by update or creation and filterable by Space, and orders Spaces by their latest document activity.
+- **Space Home:** Space Home leads with Start here, then recent documents and temporary documents with their archive dates.
+- **Creating documents:** New documents start temporary by default; the Space's + menu remembers your choice.
 - **Space navigation:** Click a Space's name in the sidebar to open it; the arrow beside it expands its contents.
 - **Quieter documents:** Documents no longer show who last edited them next to the title, stale markers, or a review status. Version history still shows who made each change.
 

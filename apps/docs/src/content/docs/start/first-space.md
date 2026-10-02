@@ -35,9 +35,10 @@ that produced it.
 
 ## Open Space Home
 
-Click the space name. Space Home is an automatic overview of recent docs, docs
-by folder, and open instructions. You never need to maintain an index doc by
-hand.
+Click the space name. Space Home shows the documents pinned to Start here,
+recent documents, temporary documents and when they archive, and open
+instructions. Pin a document from its menu to make it a starting point; you
+never need to maintain an index doc by hand.
 
 ## Leave an annotation
 

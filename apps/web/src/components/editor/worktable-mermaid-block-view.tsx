@@ -307,7 +307,7 @@ export default function MermaidBlockComponent({
           name={block.id}
           chart={data.trim()}
           themeMode={resolvedTheme}
-          showToolbar={!isReadOnly}
+          title={title}
         />
       </div>
     </div>

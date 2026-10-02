@@ -813,7 +813,7 @@ export const generatedThemeOutputs = new Map([
     path,
     renderAuthKitCss(),
   ]),
-  ["packages/types/src/mermaid-theme.generated.ts", renderMermaidTs()],
+  ["packages/ui/src/theme/mermaid-theme.generated.ts", renderMermaidTs()],
   ["packages/types/src/drawing-theme.generated.ts", renderDrawingTs()],
 ])
 

@@ -13,7 +13,7 @@ Run `bun run generate:theme` after changing the configuration. It generates and 
 
 - `packages/ui/src/styles/theme.generated.css`, the pure semantic CSS variable contract.
 - `apps/web/src/styles/blocknote-theme.generated.css`, BlockNote-compatible hardcoded colors.
-- `packages/types/src/mermaid-theme.generated.ts`, Mermaid-compatible constants.
+- `packages/ui/src/theme/mermaid-theme.generated.ts`, Mermaid-compatible constants, consumed by `packages/ui/src/theme/mermaid-config.ts`.
 - `packages/types/src/drawing-theme.generated.ts`, shared Quickdraw canvas and ink palettes for the editor and agent previews.
 
 `bun run check:theme` rejects drift. Product CSS consumes `@worktable/ui/theme.css`; React continues using standard Tailwind semantic utilities.

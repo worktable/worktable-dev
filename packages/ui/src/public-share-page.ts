@@ -1,10 +1,23 @@
+import {
+  PUBLIC_SHARE_DIAGRAM_ATTRIBUTE,
+  PUBLIC_SHARE_MERMAID_DIAGRAM,
+} from "@worktable/hosted-contract"
+import { getWorktableMermaidConfig } from "./theme/mermaid-config"
 import { themeConfig } from "./theme/theme-config"
 
 export const PUBLIC_SHARE_ASSET_PATHS = {
   fraunces: "/gateway/assets/fraunces-variable-latin.woff2",
   generalSans: "/gateway/assets/general-sans-variable.woff2",
   icon: "/gateway/assets/worktable-icon.svg",
+  mermaid: "/gateway/assets/mermaid.min.js",
+  diagrams: "/gateway/assets/public-share-diagrams.js",
 } as const
+
+/** The only scripts a share page may load; the gateway CSP admits these exact paths. */
+export const PUBLIC_SHARE_SCRIPT_PATHS = [
+  PUBLIC_SHARE_ASSET_PATHS.mermaid,
+  PUBLIC_SHARE_ASSET_PATHS.diagrams,
+] as const
 
 type PublicDocumentPage =
   | {
@@ -307,6 +320,9 @@ body::before {
 .shared-document hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border); }
 .shared-document img { max-width: 100%; height: auto; border-radius: calc(var(--radius) * .8); }
 .shared-document input[type="checkbox"] { margin-right: .5rem; accent-color: var(--primary); }
+.shared-document .shared-diagram { position: relative; margin: 0 0 1rem; overflow-x: auto; text-align: center; contain: paint; }
+.shared-document .shared-diagram svg { max-width: 100%; height: auto; }
+.shared-document .shared-diagram a { color: inherit; font-weight: inherit; text-decoration: none; }
 .shared-image-placeholder { display: block; padding: 1.75rem; border-radius: var(--radius); color: var(--muted-foreground); background: var(--surface-tint); text-align: center; }
 .html-page { height: 100vh; overflow: hidden; }
 .html-page::before { display: none; }
@@ -367,6 +383,23 @@ ${body}
 </html>`
 }
 
+/** Load the diagram renderer only on Docs whose projection carries diagrams. */
+function diagramScripts(projectionHtml: string): string {
+  // Text escapes "<", so this matches only a diagram element, never prose.
+  if (
+    !projectionHtml.includes(
+      `<pre ${PUBLIC_SHARE_DIAGRAM_ATTRIBUTE}="${PUBLIC_SHARE_MERMAID_DIAGRAM}">`
+    )
+  ) {
+    return ""
+  }
+  const configs = JSON.stringify({
+    light: getWorktableMermaidConfig("light"),
+    dark: getWorktableMermaidConfig("dark"),
+  }).replace(/</g, "\\u003c")
+  return `<script type="application/json" id="worktable-diagram-config">${configs}</script>${PUBLIC_SHARE_SCRIPT_PATHS.map((path) => `<script src="${path}" defer></script>`).join("")}`
+}
+
 export function renderPublicDocumentPage(
   document: PublicDocumentPage,
   iconSvg: string
@@ -374,7 +407,7 @@ export function renderPublicDocumentPage(
   if (document.kind === "doc") {
     return pageDocument(
       "Shared document",
-      `<body>${header(iconSvg, document.title, document.sourceUrl)}<main class="document-shell"><article class="shared-document ${document.format}">${document.projectionHtml}</article></main></body>`
+      `<body>${header(iconSvg, document.title, document.sourceUrl)}<main class="document-shell"><article class="shared-document ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}</body>`
     )
   }
 

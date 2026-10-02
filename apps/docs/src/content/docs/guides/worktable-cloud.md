@@ -71,6 +71,7 @@ For a linked device, the device must remain online and access must be active.
 A shared Doc reflects its latest saved content. Choose **Stop sharing** to
 disable the link. Moving, renaming, archiving, or deleting the document also
 disables it. Sharing the document again creates a new link.
+Mermaid diagrams in a shared Doc appear as diagrams, without their links.
 
 Shared HTML docs keep their layout and safe external links. Scripts, forms,
 Records access, saved interface state, and links to private Worktable content

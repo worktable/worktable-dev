@@ -1,10 +1,3 @@
-import {
-  MERMAID_THEME_CSS,
-  MERMAID_THEME_VARIABLES,
-} from "./mermaid-theme.generated.ts"
-
-export type WorktableMermaidThemeMode = "light" | "dark"
-
 // ── Mermaid block identity (single source of truth) ──────────
 //
 // The client (createReactBlockSpec) and the server's conversion editor
@@ -199,38 +192,4 @@ export function normalizeMermaidBlocks(blocks: unknown[]): {
 
   const normalized = blocks.map(normalize)
   return { blocks: normalized, changed }
-}
-
-export function getWorktableMermaidConfig(
-  themeMode: WorktableMermaidThemeMode
-) {
-  const isDark = themeMode === "dark"
-
-  return {
-    startOnLoad: false,
-    theme: "base" as const,
-    look: "classic" as const,
-    darkMode: isDark,
-    logLevel: "fatal" as const,
-    securityLevel: "strict" as const,
-    htmlLabels: true,
-    fontFamily: "General Sans, system-ui, sans-serif",
-    fontSize: 14,
-    themeVariables: MERMAID_THEME_VARIABLES[themeMode],
-    themeCSS: MERMAID_THEME_CSS[themeMode],
-    flowchart: {
-      curve: "linear" as const,
-      useMaxWidth: true,
-    },
-    sequence: {
-      mirrorActors: true,
-      useMaxWidth: true,
-    },
-    er: {
-      useMaxWidth: true,
-    },
-    gantt: {
-      fontSize: 12,
-    },
-  }
 }

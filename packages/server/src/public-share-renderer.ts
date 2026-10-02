@@ -11,6 +11,8 @@ import {
   SAFE_SVG_ATTRIBUTES,
   LOCAL_SVG_URL,
   DATA_RASTER_IMAGE,
+  PUBLIC_SHARE_DIAGRAM_ATTRIBUTE,
+  PUBLIC_SHARE_MERMAID_DIAGRAM,
   safePublicShareHref,
 } from "@worktable/hosted-contract"
 
@@ -178,6 +180,26 @@ function sanitizeTree(
   }
 }
 
+/** Rebuild Mermaid blocks as marked source text; authored attributes never carry the marker. */
+function markMermaidDiagrams(document: Document): void {
+  for (const element of document.querySelectorAll(
+    `[${PUBLIC_SHARE_DIAGRAM_ATTRIBUTE}]`
+  )) {
+    element.removeAttribute(PUBLIC_SHARE_DIAGRAM_ATTRIBUTE)
+  }
+  for (const code of document.querySelectorAll("pre > code.language-mermaid")) {
+    const diagram = document.createElement("pre")
+    diagram.setAttribute(
+      PUBLIC_SHARE_DIAGRAM_ATTRIBUTE,
+      PUBLIC_SHARE_MERMAID_DIAGRAM
+    )
+    const source = document.createElement("code")
+    source.textContent = code.textContent
+    diagram.append(source)
+    code.parentElement?.replaceWith(diagram)
+  }
+}
+
 async function documentBlocks(
   content: unknown[] | string,
   format: "blocknote" | "markdown"
@@ -206,6 +228,7 @@ export async function renderPublicDocProjection(
   sanitizeTree(dom.window.document, {
     allowStyles: true,
   })
+  markMermaidDiagrams(dom.window.document)
   return dom.window.document.body.innerHTML
 }
 

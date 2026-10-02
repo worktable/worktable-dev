@@ -73,14 +73,14 @@
     display: none !important;
   }
 
-  /* Mermaid: interactive chrome (zoom toolbar, pan hint) and the authoring
+  /* Mermaid: interactive chrome (full-screen control) and the authoring
      shell (title row, Editor/Templates/Lock action row, templates palette,
      CodeMirror source editor) are screen-only — print keeps just the
      rendered diagram. A collapsed block prints as its placeholder card,
      minus the interactive affordances ("Click to expand", unfold icon):
      the diagram cannot be force-rendered for print (Mermaid renders async;
      the snapshot is immediate) and collapsed is the state the author chose. */
-  .mermaid-toolbar,
+  .mermaid-open-control,
   .mermaid-authoring-header,
   .mermaid-authoring-ui,
   .mermaid-source-editor,
@@ -91,14 +91,6 @@
     border: none !important;
     background: transparent !important;
     padding: 0 !important;
-  }
-
-  /* A panned/zoomed diagram would otherwise print its shifted viewport
-     instead of the full diagram. The transition must go too: the print
-     snapshot is taken immediately, mid-animation. */
-  .mermaid-zoom-layer {
-    transform: none !important;
-    transition: none !important;
   }
 
   /* Mermaid SVGs are rendered once with the active theme's palette and can't

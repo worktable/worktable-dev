@@ -41,6 +41,9 @@ path: existing links and bookmarks keep resolving to the doc's new location.
 Worktable checks Mermaid diagrams in docs before saving them. When an agent
 builds a diagram inside an HTML doc, it checks that diagram before embedding it.
 
+Select a diagram, or its **Fullscreen** button, to open it in a viewer where
+you can zoom, pan, fit it to the screen, and download it as an SVG.
+
 ## Drawings
 
 Choose **New → New drawing** beside a Space to open a Quickdraw scratchpad for

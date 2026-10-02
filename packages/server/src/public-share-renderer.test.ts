@@ -58,6 +58,26 @@ describe("public Doc projection", () => {
     expect(html).toContain("<ul")
     expect(html).not.toContain("<script")
   })
+
+  it("carries Mermaid blocks as marked source text for the viewer to draw", async () => {
+    const source = "graph TD\n  A[Start] --> B[End]"
+    const fromBlocks = await renderPublicDocProjection(
+      [{ type: "mermaid", props: { data: source } }],
+      "blocknote"
+    )
+    const fromMarkdown = await renderPublicDocProjection(
+      `\`\`\`mermaid\n${source}\n\`\`\``,
+      "markdown"
+    )
+
+    for (const html of [fromBlocks, fromMarkdown]) {
+      const body = new JSDOM(html).window.document.body
+      expect(body.innerHTML).toBe(
+        '<pre data-worktable-diagram="mermaid"><code>graph TD\n  A[Start] --&gt; B[End]</code></pre>'
+      )
+      expect(body.textContent).toBe(source)
+    }
+  })
 })
 
 describe("public HTML-doc projection", () => {

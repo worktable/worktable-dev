@@ -648,13 +648,19 @@ async function realtimeAccess(identity: TokenIdentity): Promise<{
 // Replaced (not stacked) on each boot; stop awaits an in-flight pass.
 let lintRetirementTimer: ReturnType<typeof setTimeout> | null = null;
 let lintRetirementRun: Promise<void> | null = null;
+let lintRetirementStopping = false;
 const LINT_RETIREMENT_DELAY_MS = 30_000;
 
 async function runLintRetirement(): Promise<void> {
   try {
-    for (const receipt of await retireLintAnnotations()) {
+    const receipts = await retireLintAnnotations({
+      shouldStop: () => lintRetirementStopping,
+    });
+    for (const receipt of receipts) {
+      // Kept findings stay open on every boot; only report actual changes.
+      if (receipt.resolved.length === 0 && receipt.failed.length === 0) continue;
       console.log(
-        `[lint-retirement] space ${receipt.spaceId}: resolved ${receipt.resolved.length}, kept ${receipt.keptWithReplies.length} with replies`
+        `[lint-retirement] space ${receipt.spaceId}: resolved ${receipt.resolved.length}, kept ${receipt.keptWithFeedback.length}, failed ${receipt.failed.length}`
       );
     }
   } catch (err) {
@@ -1035,6 +1041,7 @@ export function startServer(
   // runner (same rationale as the starter-seed guard above).
   if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
   lintRetirementTimer = null;
+  lintRetirementStopping = false;
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] !== "1") {
     lintRetirementTimer = setTimeout(() => {
       lintRetirementTimer = null;
@@ -1185,6 +1192,7 @@ export function startServer(
     recordReconcileSweepTimer = null;
     if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
     lintRetirementTimer = null;
+    lintRetirementStopping = true;
     recordIndex.stop();
   };
   const WIDGET_CHANGE_COALESCE_MS = 250;
@@ -1785,6 +1793,8 @@ export function startServer(
     recordReconcileSweepTimer = null;
     if (lintRetirementTimer) clearTimeout(lintRetirementTimer);
     lintRetirementTimer = null;
+    // An in-flight pass stops at its next annotation; wait only for that.
+    lintRetirementStopping = true;
     const lintStopping = lintRetirementRun ?? Promise.resolve();
 
     stopPromise = (async () => {

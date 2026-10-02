@@ -8,6 +8,8 @@ import {
   createAnnotation,
   listAnnotations,
   replyAnnotation,
+  resolveAnnotation,
+  updateAnnotation,
 } from "./annotation-store.ts"
 import { retireLintAnnotations } from "./lint-retirement.ts"
 import {
@@ -71,7 +73,7 @@ describe("lint retirement", () => {
     ensureWorkspaceManifest()
     mkdirSync(join(testDir, "spaces"), { recursive: true })
     await writeSpace(makeSpace(SPACE))
-    for (const path of ["orphan", "long", "notes"]) {
+    for (const path of ["orphan", "long", "notes", "kept"]) {
       await writeDoc(SPACE, path, `# ${path}`, {
         updatedBy: "test",
         source: "rest-api",
@@ -87,24 +89,27 @@ describe("lint retirement", () => {
     }
   })
 
-  it("resolves generated findings and leaves replies and human notes open", async () => {
+  it("resolves generated findings and leaves engaged findings and human notes open", async () => {
     const orphan = await annotate("orphan", LINT, ["lint", "lint:orphan-doc"])
     const discussed = await annotate("long", LINT, ["lint", "lint:doc-too-long"])
     await replyAnnotation(SPACE, discussed, "Keeping this long on purpose.", {
       type: "user",
       id: "user",
     })
+    const reopened = await annotate("kept", LINT, ["lint", "lint:orphan-doc"])
+    await resolveAnnotation(SPACE, reopened, "Rule passes", LINT.id)
+    await updateAnnotation(SPACE, reopened, { status: "open" }, "user")
     const human = await annotate("notes", { type: "user", id: "user" }, ["lint"])
 
     const [receipt] = await retireLintAnnotations()
 
-    expect(receipt).toEqual({
-      spaceId: SPACE,
-      resolved: [orphan],
-      keptWithReplies: [discussed],
-    })
+    expect(receipt?.spaceId).toBe(SPACE)
+    expect(receipt?.resolved).toEqual([orphan])
+    expect(receipt?.keptWithFeedback.sort()).toEqual([discussed, reopened].sort())
+    expect(receipt?.failed).toEqual([])
     expect(await statusOf(orphan)).toBe("resolved")
     expect(await statusOf(discussed)).toBe("open")
+    expect(await statusOf(reopened)).toBe("open")
     expect(await statusOf(human)).toBe("open")
 
     // A later boot finds nothing new to resolve.

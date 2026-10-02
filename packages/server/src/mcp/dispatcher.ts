@@ -1479,7 +1479,7 @@ async function _dispatchOperationInner(
               archived,
               links,
               backlinks,
-                  ...metadata,
+              ...metadata,
             }
           }
         }

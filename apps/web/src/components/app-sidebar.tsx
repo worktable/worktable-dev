@@ -644,7 +644,7 @@ function SpaceSection({
           {/* The chevron toggles the tree; the name opens the Space overview. */}
           <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
             <CollapsibleTrigger
-              className="flex h-full shrink-0 items-center py-2 pr-1 pl-3"
+              className="flex min-w-10 shrink-0 items-center self-stretch py-2 pr-1 pl-3 sm:min-w-0"
               render={
                 <button
                   type="button"

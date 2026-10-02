@@ -236,3 +236,10 @@ export function safePublicShareHref(value: string): SafeHref | null {
     return null
   }
 }
+
+/**
+ * Marks a Doc projection's Mermaid source. The source stays readable text; the
+ * public viewer's pinned renderer is the only code that draws it.
+ */
+export const PUBLIC_SHARE_DIAGRAM_ATTRIBUTE = "data-worktable-diagram"
+export const PUBLIC_SHARE_MERMAID_DIAGRAM = "mermaid"

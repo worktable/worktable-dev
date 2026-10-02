@@ -201,7 +201,6 @@ export function MarkdownViewer({
                           name={`${docPath}-markdown`}
                           chart={source}
                           themeMode={resolvedTheme}
-                          showToolbar={false}
                           errorFallback={
                             <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
                               <div className="flex items-center gap-2 font-medium">

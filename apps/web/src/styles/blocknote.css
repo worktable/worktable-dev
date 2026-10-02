@@ -815,45 +815,11 @@
 }
 
 /* ============================================
-   Mermaid "Tap to Activate" Touch Handling
+   Mermaid Touch Handling
+   Diagrams are passive in the document; panning and zooming happen in the
+   full-screen viewer. mermaid-touch-handler.ts keeps taps from raising the
+   keyboard.
    ============================================ */
-
-/* Override the plugin's inline touch-action: none so page scrolls through
-   diagrams by default. The JS handler (mermaid-touch-handler.ts) toggles
-   this to "none" when a diagram is activated for interaction. */
-.bn-editor [data-content-type="mermaid"] .mermaid-diagram-area {
-  touch-action: auto !important;
-}
-
-/* When a diagram is activated, restore touch-action so plugin handlers work */
-.bn-editor
-  [data-content-type="mermaid"].mermaid-touch-active
-  .mermaid-diagram-area {
-  touch-action: none !important;
-}
-
-/* Active diagram visual indicator: subtle border glow */
-.bn-editor
-  [data-content-type="mermaid"].mermaid-touch-active
-  .mermaid-interactive-container {
-  outline: 1px solid color-mix(in oklch, var(--primary) 24%, transparent) !important;
-  outline-offset: -1px;
-}
-
-/* "Tap to interact" hint bubble */
-.mermaid-touch-hint {
-  background: color-mix(in oklch, var(--foreground) 62%, transparent);
-  color: var(--background);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: none;
-}
-
-/* Dark mode hint */
-.bn-container[data-color-scheme="dark"] .mermaid-touch-hint {
-  background: color-mix(in oklch, var(--muted) 85%, transparent);
-  color: hsl(25 14% 10%);
-}
 
 /* Prevent ProseMirror from selecting/focusing mermaid blocks on touch.
    This stops the blue focus ring, text selection, keyboard popup, and
@@ -874,29 +840,5 @@
   .ProseMirror .ProseMirror-selectednode:has([data-content-type="mermaid"]),
   .ProseMirror .ProseMirror-selectednode [data-content-type="mermaid"] {
     outline: none !important;
-  }
-
-  /* Diagram area is non-interactive by default; CSS backs up the JS
-     contenteditable=false approach */
-  [data-content-type="mermaid"] .mermaid-diagram-area {
-    pointer-events: none;
-  }
-
-  /* Re-enable when touch-activated */
-  [data-content-type="mermaid"].mermaid-touch-active .mermaid-diagram-area {
-    pointer-events: auto;
-  }
-
-  /* Overlay always needs to receive touches */
-  .mermaid-touch-overlay {
-    pointer-events: auto !important;
-  }
-
-  /* Toolbar buttons always tappable (zoom, fullscreen, download) */
-  [data-content-type="mermaid"] .mermaid-toolbar {
-    pointer-events: auto;
-  }
-  [data-content-type="mermaid"] .mermaid-toolbar button {
-    pointer-events: auto;
   }
 }

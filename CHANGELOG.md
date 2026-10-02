@@ -12,6 +12,13 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-02
+
+### Added
+
+- **Diagram viewer:** Open any Mermaid diagram fullscreen to zoom, pan, and download it, including on phones.
+- **Record field editing:** Click a record's title or field in its details to edit it directly, on full pages and mobile drawers.
+
 ## [0.1.14] - 2026-10-01
 
 ### Added

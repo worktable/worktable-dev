@@ -42,6 +42,7 @@ import {
   useRef,
   useState,
   type RefObject,
+  type SyntheticEvent,
 } from "react"
 import { createPortal } from "react-dom"
 import { useTheme } from "@/components/theme-provider"
@@ -395,8 +396,10 @@ function EditorInner({
   // React capture handlers see events from everything in this React tree,
   // including portaled UI (the mobile toolbar portals to document.body) —
   // but NOT the app chrome outside the editor, which is what keeps a sidebar
-  // navigation click from counting as an editor gesture.
-  const markGesture = useCallback(() => {
+  // navigation click from counting as an editor gesture. The diagram viewer is
+  // portaled the same way but never edits, so its pans and zooms don't count.
+  const markGesture = useCallback((event: SyntheticEvent) => {
+    if ((event.target as Element).closest?.("[data-diagram-viewer]")) return
     lastGestureAtRef.current = Date.now()
   }, [])
 

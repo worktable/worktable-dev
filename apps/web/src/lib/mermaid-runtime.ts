@@ -1,7 +1,7 @@
 import {
   getWorktableMermaidConfig,
   type WorktableMermaidThemeMode,
-} from "@worktable/types"
+} from "@worktable/ui/theme/mermaid-config"
 
 let renderQueue: Promise<void> = Promise.resolve()
 let configuredTheme: WorktableMermaidThemeMode | null = null

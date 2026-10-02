@@ -170,6 +170,17 @@ describe("public analytics collection boundary", () => {
         "docs.worktable.dev"
       )
     ).toEqual({ acquisition_source: "reddit", traffic_type: "verification" })
+    for (const inherited of ["direct_or_unknown", "reddit"]) {
+      expect(
+        publicAcquisitionProperties(
+          `?wt_source=${inherited}&wt_test=1`,
+          "news.ycombinator.com"
+        )
+      ).toEqual({ acquisition_source: "hackernews" })
+    }
+    expect(
+      publicAcquisitionProperties("?wt_source=reddit", "example.com")
+    ).toEqual({ acquisition_source: "other_referral" })
     expect(
       publicAcquisitionProperties(
         "?wt_source=reddit&utm_source=github",

@@ -135,6 +135,9 @@ export function publicAcquisitionProperties(
   const params = new URLSearchParams(search)
   const inherited = params.get("wt_source") ?? ""
   const domain = referringDomain?.toLowerCase().replace(/^www\./, "") ?? ""
+  const linkedJourney =
+    !domain ||
+    ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain)
   const referral =
     (Object.hasOwn(REFERRAL_SOURCES, domain)
       ? REFERRAL_SOURCES[domain]
@@ -150,8 +153,12 @@ export function publicAcquisitionProperties(
     ...campaign,
     acquisition_source:
       campaign.utm_source ??
-      (ACQUISITION_SOURCES.includes(inherited) ? inherited : referral),
-    ...(params.get("wt_test") === "1" ? { traffic_type: "verification" } : {}),
+      (linkedJourney && ACQUISITION_SOURCES.includes(inherited)
+        ? inherited
+        : referral),
+    ...(linkedJourney && params.get("wt_test") === "1"
+      ? { traffic_type: "verification" }
+      : {}),
   }
 }
 
@@ -377,12 +384,14 @@ export function createPublicAnalyticsEarlyCtaScript(
       }
       const inherited = search.get("wt_source");
       const domain = (referrer || "").replace(/^www\\./, "");
+      const linkedJourney = !domain ||
+        ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain);
       const referral = (Object.hasOwn(referralSources, domain) ? referralSources[domain] : undefined) || (!domain ? "direct_or_unknown" :
         ["worktable.dev", "worktable.cloud", "docs.worktable.dev"].includes(domain)
           ? "internal_unknown" : "other_referral");
       properties.acquisition_source = properties.utm_source ||
-        (acquisitionSources.includes(inherited) ? inherited : referral);
-      if (search.get("wt_test") === "1") properties.traffic_type = "verification";
+        (linkedJourney && acquisitionSources.includes(inherited) ? inherited : referral);
+      if (linkedJourney && search.get("wt_test") === "1") properties.traffic_type = "verification";
       return properties;
     }
 

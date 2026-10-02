@@ -27,7 +27,7 @@ their legacy paths. Do not change the manifest version by hand.
         <doc-path>.md             markdown docs
         <doc-path>.json           rich (BlockNote) docs
         <doc-path>.html           HTML docs
-      docs.meta.json              doc archive state and provenance
+      docs.meta.json              doc archive state, lifetime, and provenance
       documents.meta.json         durable document IDs and current paths
       doc-aliases.json            rename aliases for old doc paths and folders
       document-data/
@@ -65,6 +65,11 @@ Treat as Worktable's bookkeeping (editable, but easy to get wrong):
 `worktable.workspace.json`, `space.json`, `docs.meta.json`,
 `documents.meta.json`, `document-data/`, `doc-aliases.json`, thread JSON, and
 `versions/`. Prefer doing those operations through the app or the MCP tools.
+
+In `docs.meta.json`, a temporary document carries `archiveOn`, the time it
+archives itself, and `lifetimeSetAt`, when that date was chosen. A document
+without `archiveOn` is durable. `createdAt` records when a document was created
+through Worktable; documents added another way have none.
 
 ## What is deliberately not here
 

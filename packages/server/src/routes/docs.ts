@@ -1,6 +1,8 @@
 import { requireScope, requireHumanWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
+import { DocumentLifetimeSchema } from "@worktable/types";
+import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import {
   listDocs,
   listDocsByPrefix,
@@ -55,6 +57,9 @@ const RenameDocSchema = z.object({
 const CreateDocSchema = z.object({
   title: z.string().min(1),
   content: z.array(z.unknown()).optional(),
+  /** Omitted lifetimes are durable. */
+  lifetime: DocumentLifetimeSchema.optional(),
+  archiveOn: ArchiveOnSchema.optional(),
 });
 
 async function hasUnportableAnnotationAnchors(
@@ -247,6 +252,11 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
 
+  const lifetimeError = lifetimeCreateError(parsed.data.lifetime, parsed.data.archiveOn);
+  if (lifetimeError) {
+    return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400);
+  }
+
   const base = slugifyDocPath(parsed.data.title);
   if (!base) {
     return c.json({ error: "Title is empty after normalization", code: "VALIDATION_ERROR" }, 400);
@@ -285,8 +295,14 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     },
   });
 
+  const lifetime = await applyLifetimeOnCreate({
+    spaceId,
+    path: docPath,
+    lifetime: parsed.data.lifetime,
+    archiveOn: parsed.data.archiveOn,
+  });
   return c.json(
-    { path: docPath, updatedAt: statResult?.updatedAt ?? Date.now(), provenance },
+    { path: docPath, updatedAt: statResult?.updatedAt ?? Date.now(), provenance, ...lifetime },
     201
   );
 });

@@ -6,7 +6,8 @@ import { dirname } from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
-import { WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
+import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
+import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
@@ -65,6 +66,9 @@ const CreateWidgetSchema = z.object({
   createdBy: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   permissions: WidgetPermissionsInputSchema.optional(),
+  /** Omitted lifetimes are durable. */
+  lifetime: DocumentLifetimeSchema.optional(),
+  archiveOn: ArchiveOnSchema.optional(),
 });
 
 const PutWidgetSchema = z.object({
@@ -270,6 +274,8 @@ widgetsRouter.post("/", async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = CreateWidgetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  const lifetimeError = lifetimeCreateError(parsed.data.lifetime, parsed.data.archiveOn);
+  if (lifetimeError) return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400);
 
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (
@@ -312,8 +318,14 @@ widgetsRouter.post("/", async (c) => {
   if (!outcome.data) return c.json({ error: outcome.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
   const id = outcome.data.id;
   invalidateSearchIndex();
+  const lifetime = await applyLifetimeOnCreate({
+    spaceId,
+    path: id,
+    lifetime: parsed.data.lifetime,
+    archiveOn: parsed.data.archiveOn,
+  });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId: id, data: outcome.data });
-  return c.json({ widget: outcome.data, widgetId: id, warnings }, 201);
+  return c.json({ widget: outcome.data, widgetId: id, warnings, ...lifetime }, 201);
 });
 
 // ---- Handlers ----------------------------------------------------------------

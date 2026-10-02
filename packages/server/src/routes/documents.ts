@@ -1,10 +1,11 @@
 import { documentSourceDisposition } from "../content-disposition.ts"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { z } from "zod"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
   DocumentAnnotationSelectorSchema,
   DocumentFormatClaimSchema,
+  DocumentLifetimeSchema,
 } from "@worktable/types"
 import {
   canManageUserSettings,
@@ -23,6 +24,14 @@ import {
 } from "../document-page-service.ts"
 import { analyzeDocumentPath } from "../document-path.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
+import {
+  applyLifetimeOnCreate,
+  ArchiveOnSchema,
+  DocumentLifetimeError,
+  lifetimeCreateError,
+  setDocumentFolderLifetime,
+  setDocumentLifetime,
+} from "../document-lifetime.ts"
 import { getDocumentSharingConfig } from "../linked-sharing.ts"
 import { readSpace, slugifyDocPath } from "../store.ts"
 import { hasScope } from "../token-store.ts"
@@ -63,11 +72,33 @@ const EncodedSourceSchema = z.object({
   encoding: z.enum(["utf8", "base64"]).default("utf8"),
 })
 
+const LifetimeFieldsSchema = z.object({
+  lifetime: DocumentLifetimeSchema,
+  archiveOn: ArchiveOnSchema.optional(),
+})
+
 const CreateDocumentSchema = EncodedSourceSchema.extend({
   path: z.string().min(1).max(4096),
   format: DocumentFormatClaimSchema,
   reason: z.string().max(2048).optional(),
+  /** Omitted lifetimes are durable; agents choose explicitly over MCP. */
+  lifetime: DocumentLifetimeSchema.optional(),
+  archiveOn: ArchiveOnSchema.optional(),
 })
+
+const DocumentLifetimeRequestSchema = LifetimeFieldsSchema.extend({
+  path: z.string().min(1).max(4096),
+})
+
+function lifetimeErrorResponse(c: Context, error: DocumentLifetimeError) {
+  const status =
+    error.reason === "not-found"
+      ? 404
+      : error.reason === "invalid-date"
+        ? 400
+        : 409
+  return c.json({ error: error.message, code: error.reason.toUpperCase() }, status)
+}
 
 const ReplaceDocumentSchema = EncodedSourceSchema.extend({
   path: z.string().min(1).max(4096),
@@ -459,6 +490,13 @@ documentsRouter.post("/", requireScope("documents:write"), async (c) => {
       400
     )
   }
+  const lifetimeError = lifetimeCreateError(
+    parsed.data.lifetime,
+    parsed.data.archiveOn
+  )
+  if (lifetimeError) {
+    return c.json({ error: lifetimeError, code: "VALIDATION_ERROR" }, 400)
+  }
   try {
     const principal = c.get("identity").principal
     const attribution = documentWriteAttribution(principal)
@@ -471,7 +509,13 @@ documentsRouter.post("/", requireScope("documents:write"), async (c) => {
       source: attribution.source,
       reason: parsed.data.reason,
     })
-    return c.json({ ok: true, ...result }, 201)
+    const lifetime = await applyLifetimeOnCreate({
+      spaceId: c.req.param("spaceId") ?? "",
+      path: result.path,
+      lifetime: parsed.data.lifetime,
+      archiveOn: parsed.data.archiveOn,
+    })
+    return c.json({ ok: true, ...result, ...lifetime }, 201)
   } catch (error) {
     if (error instanceof DocumentWriteError) {
       return c.json(
@@ -623,6 +667,68 @@ documentsRouter.post("/move", requireScope("documents:write"), async (c) => {
     throw error
   }
 })
+
+documentsRouter.post("/lifetime", requireScope("documents:write"), async (c) => {
+  const parsed = DocumentLifetimeRequestSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) {
+    return c.json(
+      { error: parsed.error.message, code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  try {
+    return c.json({
+      ok: true,
+      ...(await setDocumentLifetime({
+        spaceId: c.req.param("spaceId") ?? "",
+        path: parsed.data.path,
+        change: {
+          lifetime: parsed.data.lifetime,
+          ...(parsed.data.archiveOn ? { archiveOn: parsed.data.archiveOn } : {}),
+        },
+      })),
+    })
+  } catch (error) {
+    if (error instanceof DocumentLifetimeError) {
+      return lifetimeErrorResponse(c, error)
+    }
+    throw error
+  }
+})
+
+documentsRouter.post(
+  "/lifetime-folder",
+  requireScope("documents:write"),
+  async (c) => {
+    const parsed = DocumentLifetimeRequestSchema.safeParse(
+      await c.req.json().catch(() => null)
+    )
+    if (!parsed.success) {
+      return c.json(
+        { error: parsed.error.message, code: "VALIDATION_ERROR" },
+        400
+      )
+    }
+    try {
+      const result = await setDocumentFolderLifetime({
+        spaceId: c.req.param("spaceId") ?? "",
+        path: parsed.data.path,
+        change: {
+          lifetime: parsed.data.lifetime,
+          ...(parsed.data.archiveOn ? { archiveOn: parsed.data.archiveOn } : {}),
+        },
+      })
+      return c.json({ ok: true, lifetime: parsed.data.lifetime, ...result })
+    } catch (error) {
+      if (error instanceof DocumentLifetimeError) {
+        return lifetimeErrorResponse(c, error)
+      }
+      throw error
+    }
+  }
+)
 
 documentsRouter.post("/archive", requireScope("documents:write"), async (c) => {
   const parsed = ArchiveDocumentSchema.safeParse(

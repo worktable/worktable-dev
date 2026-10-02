@@ -58,6 +58,10 @@ export interface DocListEntry {
   containsMermaid?: boolean;
   richBlockTypes?: string[];
   archived?: ArchiveInfo;
+  /** When the doc was created through Worktable; absent when unknown. */
+  createdAt?: string;
+  /** Present on temporary docs: when the doc archives itself. */
+  archiveOn?: string;
   provenance?: {
     updatedAt: string;
     updatedBy: string;
@@ -112,6 +116,8 @@ export interface SearchResult {
   recordId?: string;
   /** Plain-text window around the first matched term (title-only matches fall back to the body's start). */
   excerpt?: string;
+  /** Present on temporary documents: when the document archives itself. */
+  archiveOn?: string;
 }
 
 export type SpaceWithDocs = SpaceFile & { docs: DocListEntry[]; widgets?: WidgetFile[] };

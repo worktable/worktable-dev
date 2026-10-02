@@ -1,4 +1,5 @@
 import { CanonicalIdSchema } from "@worktable/types"
+import { noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   analyzeDocumentPath,
@@ -178,6 +179,10 @@ async function publishFolderMove(
   spaceId: string,
   moves: readonly PlannedFolderMove[]
 ): Promise<void> {
+  await noteDocumentActivity(
+    spaceId,
+    moves.map((move) => move.to)
+  )
   for (const move of moves) {
     if (
       move.formatId === BUILTIN_DOCUMENT_FORMATS.html

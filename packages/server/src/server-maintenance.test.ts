@@ -38,6 +38,7 @@ beforeEach(async () => {
   setAppDirOverride(join(root, "app"))
   process.env["WORKTABLE_SKIP_STARTER_SEED"] = "1"
   process.env["WORKTABLE_SKIP_LINT_RETIREMENT"] = "1"
+  process.env["WORKTABLE_SKIP_LIFETIME_SWEEP"] = "1"
   process.env["WORKTABLE_SKIP_RETENTION_SWEEP"] = "1"
   process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] = "1"
   ensureWorkspaceManifest()

@@ -156,6 +156,7 @@ describe("MCP URLs to send in chat", () => {
       {
         request: {
           action: "write",
+          lifetime: "durable",
           spaceId: "shared-space",
           docPath,
           content: "# Research",
@@ -219,6 +220,7 @@ describe("MCP URLs to send in chat", () => {
       {
         request: {
           action: "create",
+          lifetime: "durable",
           spaceId: "shared-space",
           id: "plans/overview",
           name: "Overview",
@@ -372,6 +374,7 @@ describe("MCP URLs to send in chat", () => {
     const written = await callTool("worktable_docs_write", {
       request: {
         action: "write",
+        lifetime: "durable",
         spaceId: "shared-space",
         docPath: "hosted/result",
         content: "# Hosted",
@@ -388,6 +391,7 @@ describe("MCP URLs to send in chat", () => {
       {
         request: {
           action: "write",
+          lifetime: "durable",
           spaceId: "shared-space",
           docPath: "safe/result",
           content: "# Safe",

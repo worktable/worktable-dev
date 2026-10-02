@@ -82,7 +82,11 @@ through `worktable_html_read`.
   destination.
 - Search first. Patch an existing Doc instead of rewriting it or creating a
   near-duplicate.
-- Do not create index Docs; Worktable generates Space Home.
+- Do not create index Docs. Pin a Space's few starting documents to Start here
+  with `worktable_spaces` action `update`, and read those pins first.
+- Choose a lifetime for every document you create: durable for work people
+  will rely on or return to, temporary for supporting work. See
+  [document lifetime](/agents/writing-docs/#choose-a-lifetime).
 - Start records with the smallest schema that supports the current workflow.
 - Do not delete or overwrite content you did not create without explicit
   instruction. Annotate and ask when ownership is unclear.

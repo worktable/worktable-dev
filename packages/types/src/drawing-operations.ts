@@ -1,3 +1,4 @@
+import { DocumentArchiveOnInputSchema, DocumentLifetimeInputSchema } from "./documents.ts"
 import { z } from "zod"
 import { DrawingBindingSchema } from "./quickdraw-document.ts"
 
@@ -209,6 +210,8 @@ export const DrawingsWriteRequestSchema = z.discriminatedUnion("action", [
       action: z.literal("create"),
       ...writeFields,
       title: z.string().trim().min(1).max(200),
+      lifetime: DocumentLifetimeInputSchema,
+      archiveOn: DocumentArchiveOnInputSchema.optional(),
       operations: z.array(DrawingOperationSchema).max(500).optional(),
       previewOnly: z.boolean().optional(),
     })

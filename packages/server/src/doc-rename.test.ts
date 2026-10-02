@@ -131,7 +131,7 @@ describe("document rename lifecycle", () => {
     expect(oldPathRead.docPath).toBe("folder/new")
     expect(oldPathRead.content).toContain("Old")
     await expect(
-      dispatchOperation("docs.write", {
+      dispatchOperation("docs.write", { lifetime: "durable",
         spaceId: "space",
         docPath: "old",
         content: "# Replacement",

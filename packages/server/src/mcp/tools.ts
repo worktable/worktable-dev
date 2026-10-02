@@ -104,14 +104,16 @@ export function mcpToolAuthorized(
 
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_discover:
-    "Orient to the workspace or a Space, search scoped context, or inspect a Space index.",
-  worktable_spaces: "Create a Worktable Space.",
+    "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its Start here pins: read those first.",
+  worktable_spaces:
+    "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
   worktable_documents_read:
     "List every document format, safely read source, or render drawings and HTML as model-visible PNG previews with action render.",
   worktable_documents_write:
-    "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions.",
+    "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
   worktable_docs_read: "List or read Worktable Docs.",
-  worktable_docs_write: "Create, replace, patch, or rename Worktable Docs.",
+  worktable_docs_write:
+    "Create, replace, patch, or rename Worktable Docs. Creating a Doc requires a lifetime: durable or temporary.",
   worktable_drawings_read:
     "Inspect drawings as objects and PNG previews, query text/type/region, render PNG or SVG, or list reversible agent changes. Start with guidance action drawings. Shared document tools list, move, archive and version drawings.",
   worktable_drawings_write:
@@ -423,7 +425,8 @@ export function registerTools(
   server.registerTool(
     "worktable_spaces",
     {
-      ...toolMetadata("worktable_spaces", ADDITIVE_WRITE_ANNOTATIONS),
+      // update and archive can overwrite metadata or hide a whole Space.
+      ...toolMetadata("worktable_spaces", WRITE_ANNOTATIONS),
       inputSchema: SpacesInput,
       outputSchema: WORKTABLE_OUTPUT_SCHEMAS.worktable_spaces,
     },

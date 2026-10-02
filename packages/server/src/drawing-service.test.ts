@@ -41,6 +41,7 @@ const write = (request: DrawingsWriteRequest) =>
 async function create() {
   const result = await write({
     action: "create",
+    lifetime: "durable",
     ...address,
     requestId: "create",
     title: "Checkout",
@@ -633,6 +634,7 @@ describe("drawing agent workflows", () => {
   it("replays concurrent creation and recovers a receipt after source publication across a document move", async () => {
     const request = {
       action: "create",
+      lifetime: "durable",
       ...address,
       requestId: "concurrent",
       title: "One board",
@@ -762,6 +764,7 @@ describe("drawing agent workflows", () => {
       await expectPreviewError(
         write({
           action: "create",
+          lifetime: "durable",
           spaceId,
           path: "drawings/invalid-image",
           title: "Invalid",

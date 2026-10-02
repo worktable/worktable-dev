@@ -513,6 +513,7 @@ describe("HTTP-to-stdio MCP bridge", () => {
         arguments: {
           request: {
             action: "write",
+            lifetime: "durable",
             spaceId,
             docPath: "bridge-proof",
             content: "# Bridge proof\n\nWritten through the MCPB bridge.",

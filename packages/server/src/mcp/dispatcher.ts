@@ -4,6 +4,14 @@ import {
   previewFailure,
 } from "../document-preview-service.ts"
 import {
+  applyLifetimeOnCreate,
+  lifetimeCreateError,
+  setDocumentFolderLifetime,
+  setDocumentLifetime,
+  type DocumentLifetimeChange,
+} from "../document-lifetime.ts"
+import { resolveStartHere, setStartHere } from "../space-start-here.ts"
+import {
   freezeHtmlPreviewSnapshotLocked,
   freezeSavedHtmlPreviewSnapshotLocked,
   type HtmlPreviewSnapshot,
@@ -18,7 +26,9 @@ import { DRAWING_GUIDE } from "./drawing-guide.ts"
 
 import {
   listSpaces,
+  mutateSpace,
   readSpace,
+  setSpaceArchived,
   writeSpace,
   slugify,
   deduplicateSlug,
@@ -31,6 +41,7 @@ import {
   docExists,
   docStat,
   getDocArchiveInfo,
+  getDocLifetimeView,
   getDocProvenance,
   getSpaceArchiveInfo,
 } from "../store.ts"
@@ -76,8 +87,11 @@ import {
   WIDGET_STYLE_TOKENS,
 } from "../widget-authoring.ts"
 import {
+  DOCUMENT_LIFETIME_REQUIRED_MESSAGE,
   WidgetIdSchema,
   type AnnotationAuthor,
+  type DocumentLifetime,
+  type StartHerePin,
   type RecordCollectionSchema,
   type SpaceFile,
   type WidgetFile,
@@ -358,6 +372,40 @@ async function syncDocAfterToolWrite(
   })
 }
 
+const LIST_PAGE_SIZE = 200
+
+function normalizePathPrefix(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim().replace(/^\/+|\/+$/g, "")
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function decodeListCursor(value: unknown): number {
+  if (value === undefined) return 0
+  const offset = typeof value === "string" ? Number(value) : Number.NaN
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error("cursor is invalid; pass the nextCursor from a previous page")
+  }
+  return offset
+}
+
+/** Reject an archive date that would not take effect before writing anything. */
+function assertLifetimeInput(args: Record<string, unknown>): void {
+  const error = lifetimeCreateError(
+    args["lifetime"] as DocumentLifetime | undefined,
+    args["archiveOn"] as string | undefined
+  )
+  if (error) throw new Error(error)
+}
+
+function lifetimeChange(args: Record<string, unknown>): DocumentLifetimeChange {
+  const archiveOn = args["archiveOn"] as string | undefined
+  return {
+    lifetime: args["lifetime"] as DocumentLifetime,
+    ...(archiveOn ? { archiveOn } : {}),
+  }
+}
+
 interface ToolDispatchContext {
   signal?: AbortSignal
   principal?: RequestPrincipal
@@ -578,6 +626,54 @@ async function _dispatchOperationInner(
       await writeSpace(space)
       return { spaceId }
     }
+    case "spaces.update": {
+      const spaceId = args["spaceId"] as string
+      const rawIcon = args["icon"] as string | undefined
+      const rawGroup = args["group"] as string | undefined
+      // Pins validate against current documents; apply them first so an
+      // invalid pin fails the whole update before anything is saved.
+      if (args["startHere"]) {
+        await setStartHere(spaceId, args["startHere"] as StartHerePin[])
+      }
+      const { data: updated, error } = await mutateSpace(spaceId, (space) => ({
+        ...space,
+        ...(args["name"] !== undefined
+          ? { name: (args["name"] as string).replace(/\b\w/g, (c) => c.toUpperCase()) }
+          : {}),
+        ...(args["description"] !== undefined
+          ? { description: args["description"] as string }
+          : {}),
+        ...(rawIcon !== undefined &&
+        ![...rawIcon].some((character) => character.codePointAt(0)! > 127)
+          ? { icon: rawIcon }
+          : {}),
+        ...(rawGroup === ""
+          ? { group: undefined }
+          : rawGroup !== undefined &&
+              (VALID_GROUPS as readonly string[]).includes(rawGroup)
+            ? { group: rawGroup }
+            : {}),
+        updatedAt: new Date().toISOString(),
+      }))
+      if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)
+      wsManager.broadcastAll({ type: "spaces_changed" })
+      return { space: updated, startHere: await resolveStartHere(spaceId, updated) }
+    }
+    case "spaces.archive":
+    case "spaces.restore": {
+      const archived = operationId === "spaces.archive"
+      const { space, error } = archived
+        ? await setSpaceArchived(
+            args["spaceId"] as string,
+            true,
+            actorId,
+            args["reason"] as string | undefined
+          )
+        : await setSpaceArchived(args["spaceId"] as string, false)
+      if (error || !space) throw new Error(error ?? "Space not found")
+      wsManager.broadcastAll({ type: "spaces_changed" })
+      return { ok: true, space }
+    }
     case "html.guide": {
       return {
         profile: "runtime" as const,
@@ -600,19 +696,51 @@ async function _dispatchOperationInner(
         context.signal
       )
     case "documents.list": {
+      const spaceId = args["spaceId"] as string
+      const includeArchived =
+        (args["includeArchived"] as boolean | undefined) ?? false
+      const format = args["format"] as string | undefined
+      const pathPrefix = normalizePathPrefix(args["pathPrefix"])
+      const lifetime = args["lifetime"] as DocumentLifetime | undefined
+      const limit = (args["limit"] as number | undefined) ?? LIST_PAGE_SIZE
+      const offset = decodeListCursor(args["cursor"])
+      const matching = (await listDocuments({ spaceId, includeArchived })).filter(
+        (document) => {
+          const path =
+            document.kind === "document" ? document.path : document.pathKey
+          if (pathPrefix && path !== pathPrefix && !path.startsWith(`${pathPrefix}/`)) {
+            return false
+          }
+          if (format && (document.kind !== "document" || document.format.id !== format)) {
+            return false
+          }
+          // Documents whose storage records no lifetime never auto-archive,
+          // so they count as durable while active.
+          if (
+            lifetime &&
+            (document.kind !== "document" ||
+              document.archived ||
+              (document.lifetime ?? "durable") !== lifetime)
+          ) {
+            return false
+          }
+          return true
+        }
+      )
+      const page = matching.slice(offset, offset + limit)
       return {
-        documents: (
-          await listDocuments({
-            spaceId: args["spaceId"] as string,
-            includeArchived:
-              (args["includeArchived"] as boolean | undefined) ?? false,
-          })
-        ).filter(
-          (document) =>
-            !args["format"] ||
-            (document.kind === "document" &&
-              document.format.id === args["format"])
-        ),
+        documents: page,
+        total: matching.length,
+        ...(offset + limit < matching.length
+          ? { nextCursor: String(offset + limit) }
+          : {}),
+        scope: {
+          spaceId,
+          includeArchived,
+          ...(pathPrefix ? { pathPrefix } : {}),
+          ...(format ? { format } : {}),
+          ...(lifetime ? { lifetime } : {}),
+        },
       }
     }
     case "documents.read": {
@@ -659,6 +787,7 @@ async function _dispatchOperationInner(
       return { versions: result.versions }
     }
     case "documents.create": {
+      assertLifetimeInput(args)
       const result = await createRegisteredDocument({
         spaceId: args["spaceId"] as string,
         path: args["path"] as string,
@@ -674,7 +803,42 @@ async function _dispatchOperationInner(
         source: "mcp",
         reason: args["reason"] as string | undefined,
       })
-      return { ok: true, ...result }
+      return {
+        ok: true,
+        ...result,
+        ...(await applyLifetimeOnCreate({
+          spaceId: args["spaceId"] as string,
+          path: result.path,
+          lifetime: args["lifetime"] as DocumentLifetime | undefined,
+          archiveOn: args["archiveOn"] as string | undefined,
+        })),
+      }
+    }
+    case "documents.set_lifetime": {
+      return {
+        ok: true,
+        ...(await setDocumentLifetime({
+          spaceId: args["spaceId"] as string,
+          path: args["path"] as string,
+          change: lifetimeChange(args),
+        })),
+      }
+    }
+    case "documents.set_folder_lifetime": {
+      const result = await setDocumentFolderLifetime({
+        spaceId: args["spaceId"] as string,
+        path: args["path"] as string,
+        change: lifetimeChange(args),
+      })
+      return {
+        ok: true,
+        lifetime: args["lifetime"] as DocumentLifetime,
+        count: result.changed.length,
+        paths: result.changed,
+        ...(result.unsupported.length > 0
+          ? { unsupported: result.unsupported }
+          : {}),
+      }
     }
     case "documents.replace": {
       const result = await replaceRegisteredDocument({
@@ -964,6 +1128,7 @@ async function _dispatchOperationInner(
       return { ok: true }
     }
     case "html.create": {
+      assertLifetimeInput(args)
       const spaceId = args["spaceId"] as string
       const { data: space, error: sErr } = await readSpace(spaceId)
       if (sErr || !space) throw new Error(sErr ?? "Space not found")
@@ -1028,13 +1193,19 @@ async function _dispatchOperationInner(
       })
       if (!created.data) throw new Error(created.error ?? "Widget write failed")
       const widgetId = created.data.id
+      const lifetime = await applyLifetimeOnCreate({
+        spaceId,
+        path: widgetId,
+        lifetime: args["lifetime"] as DocumentLifetime | undefined,
+        archiveOn: args["archiveOn"] as string | undefined,
+      })
       wsManager.broadcast(spaceId, {
         type: "widget_update",
         spaceId,
         widgetId,
         data: created.data,
       })
-      const result = { widgetId, widget: created.data, warnings }
+      const result = { widgetId, widget: created.data, warnings, ...lifetime }
       if (!args["preview"]) return result
       return previewSnapshot
         ? {
@@ -1298,8 +1469,12 @@ async function _dispatchOperationInner(
         spaceId,
         await listDocsDetailed(spaceId, { includeArchived })
       )
+      const startHere = hasScope(identity.scopes, "documents:read")
+        ? await resolveStartHere(spaceId, space)
+        : []
       return {
         space,
+        ...(startHere.length > 0 ? { startHere } : {}),
         docs,
         ...(hasScope(identity.scopes, "documents:read")
           ? { documents: await listDocuments({ spaceId, includeArchived }) }
@@ -1311,16 +1486,40 @@ async function _dispatchOperationInner(
       const query = args["query"] as string
       const includeArchived = args["includeArchived"] as boolean | undefined
       const commonDocuments = hasScope(identity.scopes, "documents:read")
+      const pathPrefix = normalizePathPrefix(args["pathPrefix"])
+      const limit = 50
 
-      const results = await miniSearch(query, {
+      // A folder-scoped search ranks across a wider candidate set so the
+      // folder's best matches are not crowded out before filtering.
+      const candidateLimit = pathPrefix ? 500 : limit
+      // Ask for one more than needed so `truncated` means more matches exist.
+      const ranked = await miniSearch(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
-        maxResults: 50,
+        maxResults: candidateLimit + 1,
         documentAccess: commonDocuments ? "common" : "legacy",
       })
+      const candidates = ranked.slice(0, candidateLimit)
+      const matching = pathPrefix
+        ? candidates.filter(
+            (hit) =>
+              hit.type === "doc" &&
+              hit.path !== undefined &&
+              (hit.path === pathPrefix || hit.path.startsWith(`${pathPrefix}/`))
+          )
+        : candidates
+      const results = matching.slice(0, limit)
 
-      return { results }
+      return {
+        results,
+        truncated: matching.length > limit || ranked.length > candidateLimit,
+        scope: {
+          ...(spaceId ? { spaceId } : {}),
+          ...(pathPrefix ? { pathPrefix } : {}),
+          includeArchived: includeArchived ?? false,
+        },
+      }
     }
     case "annotations.list": {
       const parsed = ListAnnotationsInput.parse(args)
@@ -1459,6 +1658,7 @@ async function _dispatchOperationInner(
       if (result.error || result.data === null)
         throw new Error(result.error ?? "Failed to read document")
       const archived = await getDocArchiveInfo(spaceId, docPath)
+      const lifetime = await getDocLifetimeView(spaceId, docPath)
       const { links, backlinks } = await getDocLinks(spaceId, docPath)
 
       // If stored as JSON, try to return markdown for agent convenience
@@ -1477,6 +1677,7 @@ async function _dispatchOperationInner(
               format: "markdown",
               storedAs: "json",
               archived,
+              ...lifetime,
               links,
               backlinks,
               ...metadata,
@@ -1491,6 +1692,7 @@ async function _dispatchOperationInner(
           format: "blocknote",
           storedAs: "json",
           archived,
+          ...lifetime,
           links,
           backlinks,
           ...metadata,
@@ -1510,6 +1712,7 @@ async function _dispatchOperationInner(
           format: "markdown",
           storedAs: "md",
           archived,
+          ...lifetime,
           links,
           backlinks,
           ...metadata,
@@ -1523,6 +1726,7 @@ async function _dispatchOperationInner(
         format: result.format,
         storedAs: result.storedAs,
         archived,
+        ...lifetime,
         links,
         backlinks,
       }
@@ -1532,7 +1736,19 @@ async function _dispatchOperationInner(
       const docPath = args["docPath"] as string
       const content = args["content"] as unknown[] | string
       const force = (args["force"] as boolean) ?? false
+      const lifetime = args["lifetime"] as DocumentLifetime | undefined
+      const archiveOn = args["archiveOn"] as string | undefined
 
+      const existed = await docExists(spaceId, docPath)
+      if (!existed && !lifetime) {
+        throw new Error(DOCUMENT_LIFETIME_REQUIRED_MESSAGE)
+      }
+      assertLifetimeInput(args)
+      if (existed && lifetime && (await getDocArchiveInfo(spaceId, docPath))) {
+        throw new Error(
+          `Document is archived: ${docPath}. Restore it first; restored documents are durable.`
+        )
+      }
       const result = await writeDoc(spaceId, docPath, content, {
         force,
         updatedBy: actorId,
@@ -1544,10 +1760,21 @@ async function _dispatchOperationInner(
         throw new Error(result.error ?? "Write failed")
       }
       await syncDocAfterToolWrite(spaceId, docPath)
+      const lifetimeResult: { lifetime?: DocumentLifetime; archiveOn?: string } = !existed
+        ? await applyLifetimeOnCreate({ spaceId, path: docPath, lifetime, archiveOn })
+        : lifetime
+          ? await setDocumentLifetime({
+              spaceId,
+              path: docPath,
+              change: { lifetime, ...(archiveOn ? { archiveOn } : {}) },
+            })
+          : {}
       return {
         ok: true,
         docPath,
         storedAs: result.storedAs,
+        ...(lifetimeResult.lifetime ? { lifetime: lifetimeResult.lifetime } : {}),
+        ...(lifetimeResult.archiveOn ? { archiveOn: lifetimeResult.archiveOn } : {}),
         repairs: result.repairs ?? [],
         warnings: await docWriteWarnings(spaceId, docPath),
       }

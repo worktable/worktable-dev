@@ -47,7 +47,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("accepts valid markdown Mermaid without a separate validation call", async () => {
-    const result = (await dispatchOperation("docs.write", {
+    const result = (await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "valid-markdown",
       content: "# Flow\n\n```mermaid\nflowchart TD\nA-->B\n```\n",
@@ -66,7 +66,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("rejects an invalid agent write atomically with diagram location", async () => {
-    const failure = dispatchOperation("docs.write", {
+    const failure = dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "invalid-new",
       content: "# Broken\n\n```mermaid\nflowchart TD\nA-->\n```\n",
@@ -86,7 +86,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("repairs paired escaped fences before validation and storage", async () => {
-    const result = (await dispatchOperation("docs.write", {
+    const result = (await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "escaped-fence",
       content: "# Flow\n\n\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\n",
@@ -113,7 +113,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("normalizes legacy Mermaid code blocks to the custom block", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "legacy-json",
       content: [
@@ -138,7 +138,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("applies the default source only when custom block data is omitted", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "default-source",
       content: [{ type: "mermaid" }],
@@ -153,7 +153,7 @@ describe("automatic Mermaid document pipeline", () => {
     ])
 
     await expect(
-      dispatchOperation("docs.write", {
+      dispatchOperation("docs.write", { lifetime: "durable",
         spaceId,
         docPath: "explicit-empty-source",
         content: [{ type: "mermaid", props: { data: "" } }],
@@ -163,7 +163,7 @@ describe("automatic Mermaid document pipeline", () => {
 
   it("rejects a present non-string Mermaid source instead of defaulting it", async () => {
     await expect(
-      dispatchOperation("docs.write", {
+      dispatchOperation("docs.write", { lifetime: "durable",
         spaceId,
         docPath: "malformed-source",
         content: [
@@ -180,7 +180,7 @@ describe("automatic Mermaid document pipeline", () => {
 
   it("does not validate literal Mermaid text inside an unmatched code fence", async () => {
     const content = "````text\n```mermaid\nflowchart TD\nA-->\n```\n"
-    const result = (await dispatchOperation("docs.write", {
+    const result = (await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "unterminated-code-sample",
       content,
@@ -193,7 +193,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("rejects an invalid patch without changing the existing document", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "patch-target",
       content: "# Stable\n",
@@ -329,7 +329,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("does not validate Mermaid content in a skipped patch operation", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "skipped-patch-target",
       content: "# Stable\n",
@@ -384,7 +384,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("rejects an unpaired escaped fence inside a patch operation", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "unpaired-patch-target",
       content: "# Stable\n",
@@ -409,7 +409,7 @@ describe("automatic Mermaid document pipeline", () => {
   })
 
   it("returns repairs collected from patch operation content", async () => {
-    await dispatchOperation("docs.write", {
+    await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
       docPath: "repaired-patch-target",
       content: "# Stable\n",

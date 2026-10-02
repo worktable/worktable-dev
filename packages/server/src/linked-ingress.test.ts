@@ -156,6 +156,7 @@ async function mcpRequest(
           arguments: {
             request: {
               action: "write",
+              lifetime: "durable",
               spaceId: "space",
               docPath,
               content: "# Local document",

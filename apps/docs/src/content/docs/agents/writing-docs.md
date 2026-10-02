@@ -7,7 +7,18 @@ Docs are versioned documents — markdown strings or rich BlockNote arrays — f
 
 ## Understand the space before you write
 
-Placement is part of the content. The `space_index` action in `worktable_discover` gives a server-generated map of the space. Use it, or the `list` action in `worktable_docs_read`, to understand the organization before writing.
+Placement is part of the content. Start with the Space's Start here pins in `worktable_discover` action `state`. The `space_index` action gives a server-generated map of the space, and `worktable_documents_read` action `list` accepts `pathPrefix`, `lifetime`, and a `cursor` for one folder at a time.
+
+## Choose a lifetime
+
+Every document you create needs a `lifetime`:
+
+- **durable** — work people will browse, rely on, or return to: deliverables, decisions, maintained references, active plans, standing instructions. It stays until someone archives it.
+- **temporary** — supporting work that can leave browsing once the work moves on: handoffs, evidence and run notes, scratch research, intermediate drafts, one-off comparisons. It archives itself 7 days after its last edit, rename, or comment, or on a later `archiveOn` you set.
+
+If unsure, choose temporary when it only matters for finishing the current work and durable when someone would look for it in a month. Change a lifetime later with `worktable_documents_write` action `set_lifetime` or `set_folder_lifetime`. Archived documents stay searchable with `includeArchived` and come back durable when restored.
+
+Before you finish, make outputs that turned out to matter durable, archive spent temporary documents you created, and archive a document your work replaced with the reason `Superseded by <path>`.
 
 ## Patch before you rewrite
 

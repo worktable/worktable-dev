@@ -12,7 +12,14 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Added
+
+- **Document lifetimes:** Documents are durable or temporary. A temporary document archives itself 7 days after its last edit, rename, or comment, or on a date you choose, and comes back durable when restored.
+- **Start here:** Pin up to seven documents as a Space's starting points; pins follow renames and show when a document was archived.
+
 ### Changed
+
+- **Agents choose a lifetime:** Agents choose durable or temporary whenever they create a document, can change it later, and can list or search one folder at a time.
 
 - **Space navigation:** Click a Space's name in the sidebar to open it; the arrow beside it expands its contents.
 - **Quieter documents:** Documents no longer show who last edited them next to the title, stale markers, or a review status. Version history still shows who made each change.

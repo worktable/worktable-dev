@@ -9,6 +9,7 @@ export { takeResultMedia as takeDrawingMedia } from "./media.ts"
 import { renderDrawing } from "../drawing-render.ts"
 import { measureDrawing } from "../drawing-native.ts"
 import type { OperationId } from "./operations.ts"
+import { applyLifetimeOnCreate, lifetimeCreateError } from "../document-lifetime.ts"
 
 export async function dispatchDrawingOperation(
   operation: OperationId,
@@ -22,6 +23,10 @@ export async function dispatchDrawingOperation(
   const request = writing
     ? DrawingsWriteRequestSchema.parse({ ...args, action })
     : DrawingsReadRequestSchema.parse({ ...args, action })
+  if (request.action === "create") {
+    const error = lifetimeCreateError(request.lifetime, request.archiveOn)
+    if (error) throw new Error(error)
+  }
   const result = writing
     ? await drawingWrite(DrawingsWriteRequestSchema.parse(request), {
         actor,
@@ -29,9 +34,22 @@ export async function dispatchDrawingOperation(
         signal,
       })
     : await drawingRead(DrawingsReadRequestSchema.parse(request), { signal })
-  if (!("drawing" in result)) return result
+  // A saved create records the lifetime the agent chose. Preview-only
+  // creates save nothing; a retried create re-applies the same choice.
+  const lifetime =
+    request.action === "create" &&
+    !request.previewOnly &&
+    !("replayed" in result && result.replayed)
+      ? await applyLifetimeOnCreate({
+          spaceId: request.spaceId,
+          path: "path" in result && typeof result.path === "string" ? result.path : request.path,
+          lifetime: request.lifetime,
+          archiveOn: request.archiveOn,
+        })
+      : {}
+  if (!("drawing" in result)) return { ...result, ...lifetime }
   const { drawing, ...metadata } = result
-  const output: Record<string, unknown> = { ...metadata }
+  const output: Record<string, unknown> = { ...metadata, ...lifetime }
   if (action === "render") {
     delete output.objects
     delete output.assets

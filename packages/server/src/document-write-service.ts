@@ -1,5 +1,6 @@
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { noteDocumentActivity, noteDocumentCreated } from "./document-activity.ts"
+import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { createHash } from "node:crypto"
 import { lstat, rm } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
@@ -65,6 +66,7 @@ import {
   prepareSuppressedDocReplay,
   publishManagedDocGenerationProjection,
   getDocArchiveInfo,
+  getDocLifetimeFactsMap,
   restoreDocVersion,
   setDocsArchiveOn,
   suppressPath,
@@ -1764,8 +1766,18 @@ export async function setRegisteredDocumentArchived(options: {
   archived: boolean
   archivedBy: string
   reason?: string
+  /**
+   * Archive only if the document's lifetime is due by this time, checked
+   * under the same lock as the archive so concurrent activity wins.
+   */
+  onlyIfDueBy?: number
   registry?: DocumentFormatRegistry
-}): Promise<{ documentId: DocumentId; path: string; archived: boolean }> {
+}): Promise<{
+  documentId: DocumentId
+  path: string
+  archived: boolean
+  notDue?: true
+}> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const result = await withDocPathLock(options.spaceId, async () => {
@@ -1779,6 +1791,28 @@ export async function setRegisteredDocumentArchived(options: {
       options.spaceId,
       resolveManagedFileDocument(catalog, options.path, registry)
     )
+    if (options.onlyIfDueBy !== undefined) {
+      const entry = entryAt(catalog, current.path)
+      const facts = (
+        await getDocLifetimeFactsMap(options.spaceId, [current.path])
+      ).get(current.path)
+      const due = effectiveArchiveOn(
+        facts,
+        entry?.kind === "document" ? entry.descriptor.updatedAt : undefined
+      )
+      if (
+        due === undefined ||
+        Date.parse(due) > options.onlyIfDueBy ||
+        (await getDocArchiveInfo(options.spaceId, current.path))
+      ) {
+        return {
+          documentId: current.documentId,
+          path: current.path,
+          archived: false,
+          notDue: true as const,
+        }
+      }
+    }
     if (
       !options.archived &&
       (await getDocArchiveInfo(options.spaceId, current.path))
@@ -1821,6 +1855,7 @@ export async function setRegisteredDocumentArchived(options: {
       archived: options.archived,
     }
   })
+  if (result.notDue) return result
   await publishMutation()
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",

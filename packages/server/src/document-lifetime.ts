@@ -206,8 +206,8 @@ export interface LifetimeSweepReceipt {
 }
 
 /**
- * Archive every temporary document whose date has passed. Due dates come
- * from current state (including recent edits), checked twice per Space.
+ * Archive every temporary document whose date has passed. Each archive
+ * re-derives the due date from current state under the archive lock.
  */
 export async function runLifetimeSweep(
   options: { now?: number; shouldStop?: () => boolean } = {}
@@ -235,12 +235,7 @@ export async function runLifetimeSweep(
     }
     let due: string[]
     try {
-      // List once to find candidates, then confirm them against a fresh
-      // listing so activity during a long sweep keeps a document active.
-      const candidates = await dueNow()
-      if (candidates.length === 0) continue
-      const confirmed = new Set(await dueNow())
-      due = candidates.filter((path) => confirmed.has(path))
+      due = await dueNow()
     } catch (error) {
       console.error(
         `[document-lifetime] could not list documents in ${space.id}:`,
@@ -251,14 +246,17 @@ export async function runLifetimeSweep(
     for (const path of due) {
       if (shouldStop()) break
       try {
-        await setRegisteredDocumentArchived({
+        // The archive re-checks the due date under its own lock, so an edit,
+        // rename, or comment since the listing keeps the document active.
+        const outcome = await setRegisteredDocumentArchived({
           spaceId: space.id,
           path,
           archived: true,
           archivedBy: LIFETIME_ACTOR,
           reason: SWEEP_REASON,
+          onlyIfDueBy: options.now ?? Date.now(),
         })
-        receipt.archived.push(path)
+        if (!outcome.notDue) receipt.archived.push(path)
       } catch (error) {
         receipt.failed.push(path)
         console.error(

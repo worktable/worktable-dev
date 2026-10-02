@@ -7,6 +7,7 @@ import type { DocumentSummary, SpaceFile } from "@worktable/types"
 import { ownerIdentity } from "./auth.ts"
 import { createAnnotation } from "./annotation-store.ts"
 import { runLifetimeSweep, LIFETIME_ACTOR } from "./document-lifetime.ts"
+import { setRegisteredDocumentArchived } from "./document-write-service.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
 import { getDocArchiveInfo, setDocArchived, writeDoc, writeSpace } from "./store.ts"
@@ -188,6 +189,17 @@ describe("document lifetime", () => {
 
     const blocked = await call("POST", "/lifetime", { path: "notes/done", lifetime: "durable" })
     expect(blocked.status).toBe(409)
+
+    // The archive itself re-checks the date under its lock.
+    const raced = await setRegisteredDocumentArchived({
+      spaceId,
+      path: "notes/active",
+      archived: true,
+      archivedBy: LIFETIME_ACTOR,
+      onlyIfDueBy: Date.now(),
+    })
+    expect(raced.notDue).toBe(true)
+    expect((await summary("notes/active"))?.archived).toBeUndefined()
 
     expect((await call("POST", "/restore", { path: "notes/done" })).status).toBe(200)
     const restored = await summary("notes/done")

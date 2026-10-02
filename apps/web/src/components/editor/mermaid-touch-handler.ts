@@ -50,6 +50,8 @@ export function initMermaidTouchHandler(editorRoot: HTMLElement): () => void {
   let startX = 0
   let startY = 0
   let startTime = 0
+  /** A gesture stays a tap only while exactly one finger has touched. */
+  let tapCandidate = false
   let syntheticClickTarget: HTMLElement | null = null
 
   const blurEditor = () => {
@@ -64,7 +66,8 @@ export function initMermaidTouchHandler(editorRoot: HTMLElement): () => void {
 
   const handleTouchStart = (event: TouchEvent) => {
     const target = event.target as HTMLElement
-    if (event.touches.length === 1) {
+    tapCandidate = event.touches.length === 1
+    if (tapCandidate) {
       startX = event.touches[0].clientX
       startY = event.touches[0].clientY
       startTime = Date.now()
@@ -80,7 +83,7 @@ export function initMermaidTouchHandler(editorRoot: HTMLElement): () => void {
     if (!block || isInsideCodeEditor(target)) return
 
     const touch = event.changedTouches[0]
-    if (!touch) return
+    if (!touch || !tapCandidate || event.touches.length > 0) return
     const isTap =
       Math.abs(touch.clientX - startX) < TAP_MAX_DISTANCE &&
       Math.abs(touch.clientY - startY) < TAP_MAX_DISTANCE &&
@@ -91,7 +94,12 @@ export function initMermaidTouchHandler(editorRoot: HTMLElement): () => void {
     const clickTarget = findClickableAncestor(target, block)
     if (!clickTarget) return
     syntheticClickTarget = clickTarget
-    clickTarget.click()
+    // SVG links (Mermaid click directives) have no click() method.
+    if (typeof clickTarget.click === "function") clickTarget.click()
+    else
+      clickTarget.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      )
     syntheticClickTarget = null
   }
 

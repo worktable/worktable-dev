@@ -93,6 +93,8 @@ function ViewerBody({
     () => (svgId ? inlineSvg.replaceAll(svgId, `${svgId}_viewer`) : inlineSvg),
     [inlineSvg, svgId]
   )
+  // Stable, so pan and zoom re-renders never rewrite the drawing.
+  const svgHtml = useMemo(() => ({ __html: svg }), [svg])
   const canvasRef = useRef<HTMLDivElement>(null)
   const size = useMemo(() => diagramNaturalSize(svg), [svg])
   const viewRef = useRef<DiagramView>(INITIAL_VIEW)
@@ -187,6 +189,8 @@ function ViewerBody({
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return
+    // Capturing would retarget the click and swallow a diagram link.
+    if ((event.target as Element).closest("a")) return
     event.currentTarget.setPointerCapture(event.pointerId)
     pointersRef.current.set(event.pointerId, {
       x: event.clientX,
@@ -335,7 +339,7 @@ function ViewerBody({
             height: size?.height,
             transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
           }}
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={svgHtml}
         />
       </div>
     </div>

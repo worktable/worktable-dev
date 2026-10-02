@@ -35,6 +35,10 @@ export function WorktableMermaidRenderer({
   const [rendered, setRendered] = useState({ id: "", svg: "" })
   const [error, setError] = useState("")
   const svg = rendered.svg
+  // A stable object: React rewrites innerHTML whenever this prop's identity
+  // changes, and replacing the drawing mid-click (an editor selection
+  // re-render) makes the browser drop the click.
+  const svgHtml = useMemo(() => ({ __html: svg }), [svg])
 
   useEffect(() => {
     let active = true
@@ -97,11 +101,15 @@ export function WorktableMermaidRenderer({
       <div
         className={cn("mermaid-diagram-area", svg && "cursor-zoom-in")}
         data-mermaid-open=""
-        onClick={() => svg && setViewerOpen(true)}
+        onClick={(event) => {
+          // A diagram link keeps its own navigation.
+          if ((event.target as Element).closest("a")) return
+          if (svg) setViewerOpen(true)
+        }}
       >
         <div
           className="flex min-h-12 items-center justify-center p-3"
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={svgHtml}
         />
       </div>
       {svg && (

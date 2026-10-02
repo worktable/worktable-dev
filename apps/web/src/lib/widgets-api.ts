@@ -52,7 +52,7 @@ export function getWidget(spaceId: string, widgetId: string): Promise<WidgetRead
   ).then((r) => ({ ...r.widget, ...(r.provenance ? { provenance: r.provenance } : {}) }));
 }
 
-export function createWidget(spaceId: string, data: { id?: string; name: string; description?: string; html: string; metadata?: Record<string, unknown> }) {
+export function createWidget(spaceId: string, data: { id?: string; name: string; description?: string; html: string; metadata?: Record<string, unknown>; lifetime?: "durable" | "temporary" }) {
   return fetchJSON<{ widget: WidgetFile; widgetId: string }>(`/api/spaces/${spaceId}/widgets`, {
     method: "POST",
     body: JSON.stringify(data),

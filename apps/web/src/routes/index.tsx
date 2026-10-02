@@ -1,9 +1,9 @@
-import type { JSX } from "react"
 import { useEffect, useMemo, useState } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   AppWindow,
   Archive,
+  Clock3,
   File,
   FileSearch,
   FileText,
@@ -17,26 +17,195 @@ import { resolveIcon } from "@/lib/icons"
 import { RelativeTime } from "@/lib/time"
 import { ListRow, ListRowIcon } from "@/components/list-row"
 import { searchResultDocumentView } from "@/lib/document-views"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
+import {
+  formatArchiveDate,
+  useRecentDocuments,
+  type RecentDocument,
+} from "@/lib/lifetime"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@worktable/ui/components/select"
 import type { SearchResult, SpaceFile } from "@worktable/types"
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 })
 
-function RecentSpaceCard({ space }: { space: SpaceFile }) {
-  const subtitle = [space.description].filter(Boolean).join(" · ")
+const SPACE_GROUP_ORDER = ["work", "side-quests", "career", "church", "meta"]
 
+function isSpaceArchived(space: SpaceFile): boolean {
+  return Boolean(space.settings["archive"])
+}
+
+function groupLabel(group: string | undefined): string {
+  if (!group) return "Other"
+  return group.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase())
+}
+
+function RecentDocumentRow({ item }: { item: RecentDocument }) {
+  const { document } = item
   return (
-    <Link to="/spaces/$spaceId" params={{ spaceId: space.id }}>
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId: item.spaceId, _splat: document.path }}
+    >
       <ListRow
-        iconSlot={
-          <ListRowIcon variant="muted">{resolveIcon(space.icon)}</ListRowIcon>
+        icon={<DocumentFormatIcon formatId={document.format.id} />}
+        title={document.title}
+        subtitle={[
+          item.spaceName,
+          document.path,
+          document.archiveOn
+            ? `Archives ${formatArchiveDate(document.archiveOn)}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        meta={
+          document.updatedAt ? <RelativeTime iso={document.updatedAt} /> : undefined
         }
-        title={space.name}
-        subtitle={subtitle}
-        meta={<RelativeTime iso={space.updatedAt} />}
       />
     </Link>
+  )
+}
+
+function RecentSection({ spaces }: { spaces: SpaceFile[] }) {
+  const [sort, setSort] = useState<"updated" | "created">("updated")
+  const [spaceId, setSpaceId] = useState<string>("all")
+  const [includeTemporary, setIncludeTemporary] = useState(false)
+  const { data, isLoading } = useRecentDocuments({
+    sort,
+    includeTemporary,
+    ...(spaceId === "all" ? {} : { spaceId }),
+  })
+  const spaceNames = new Map(spaces.map((space) => [space.id, space.name]))
+
+  return (
+    <section className="mb-10">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-lg font-semibold text-foreground">Recent</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Sort recent documents">
+            {(["updated", "created"] as const).map((option) => (
+              <Button
+                key={option}
+                size="xs"
+                variant={sort === option ? "secondary" : "ghost"}
+                aria-pressed={sort === option}
+                onClick={() => setSort(option)}
+              >
+                {option === "updated" ? "Updated" : "Created"}
+              </Button>
+            ))}
+          </div>
+          <Select
+            value={spaceId}
+            onValueChange={(value) => {
+              if (value) setSpaceId(value)
+            }}
+          >
+            <SelectTrigger aria-label="Filter by Space" className="h-8 w-auto max-w-44">
+              <SelectValue>
+                {spaceId === "all" ? "All Spaces" : (spaceNames.get(spaceId) ?? spaceId)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Spaces</SelectItem>
+              {spaces.map((space) => (
+                <SelectItem key={space.id} value={space.id}>
+                  {space.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant={includeTemporary ? "secondary" : "outline"}
+            aria-pressed={includeTemporary}
+            onClick={() => setIncludeTemporary(!includeTemporary)}
+          >
+            <Clock3 className="size-3.5" />
+            Include temporary
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
+          ))}
+        </div>
+      ) : data && data.items.length > 0 ? (
+        <div className="space-y-1">
+          {data.items.map((item) => (
+            <RecentDocumentRow key={`${item.spaceId}:${item.document.path}`} item={item} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          {sort === "created" ? "No documents created through Worktable yet." : "No documents yet."}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function SpacesSection({
+  spaces,
+  lastActivity,
+}: {
+  spaces: SpaceFile[]
+  lastActivity: Map<string, string | undefined>
+}) {
+  const groups = new Map<string, SpaceFile[]>()
+  for (const space of spaces) {
+    const key = space.group ?? ""
+    groups.set(key, [...(groups.get(key) ?? []), space])
+  }
+  const activity = (space: SpaceFile) => lastActivity.get(space.id) ?? ""
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
+    const rank = (group: string) =>
+      group === "" ? SPACE_GROUP_ORDER.length + 1 : SPACE_GROUP_ORDER.indexOf(group) + 1 || SPACE_GROUP_ORDER.length
+    return rank(a) - rank(b)
+  })
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-foreground">Spaces</h2>
+      <div className="space-y-6">
+        {orderedGroups.map(([group, groupSpaces]) => (
+          <div key={group || "other"}>
+            {orderedGroups.length > 1 && (
+              <h3 className="mb-1 px-4 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                {groupLabel(group || undefined)}
+              </h3>
+            )}
+            <div className="space-y-1">
+              {[...groupSpaces]
+                .sort((a, b) => activity(b).localeCompare(activity(a)))
+                .map((space) => (
+                  <Link key={space.id} to="/spaces/$spaceId" params={{ spaceId: space.id }}>
+                    <ListRow
+                      iconSlot={
+                        <ListRowIcon variant="muted">{resolveIcon(space.icon)}</ListRowIcon>
+                      }
+                      title={space.name}
+                      subtitle={space.description}
+                      meta={activity(space) ? <RelativeTime iso={activity(space)} /> : undefined}
+                    />
+                  </Link>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -67,11 +236,13 @@ function SearchResultRow({
           title={result.title}
           subtitle={`${space?.name ?? result.spaceId} · ${result.path}`}
           meta={
-            documentView === "html"
-              ? "HTML doc"
-              : documentView === "doc"
-                ? "Doc"
-                : "Document"
+            result.archiveOn
+              ? `Archives ${formatArchiveDate(result.archiveOn)}`
+              : documentView === "html"
+                ? "HTML doc"
+                : documentView === "doc"
+                  ? "Doc"
+                  : "Document"
           }
         />
       </Link>
@@ -246,6 +417,23 @@ function HomePage() {
     () => new Map((spaces ?? []).map((space) => [space.id, space])),
     [spaces]
   )
+  const activeSpaces = useMemo(
+    () => (spaces ?? []).filter((space) => !isSpaceArchived(space)),
+    [spaces]
+  )
+  // Space ordering uses real document activity across all lifetimes.
+  const { data: activityData } = useRecentDocuments({
+    sort: "updated",
+    includeTemporary: true,
+    limit: 1,
+  })
+  const lastActivity = useMemo(
+    () =>
+      new Map(
+        (activityData?.spaces ?? []).map((entry) => [entry.spaceId, entry.lastActivityAt])
+      ),
+    [activityData]
+  )
 
   if (isLoading) {
     return (
@@ -271,20 +459,6 @@ function HomePage() {
     )
   }
 
-  const recentItems: {
-    key: string
-    updatedAt: string
-    render: () => JSX.Element
-  }[] = spaces.map((space) => ({
-    key: `space-${space.id}`,
-    updatedAt: space.updatedAt,
-    render: () => <RecentSpaceCard space={space} />,
-  }))
-
-  recentItems.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  )
-
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
       <SearchPanel
@@ -302,22 +476,10 @@ function HomePage() {
           spacesById={spacesById}
         />
       ) : (
-        <div>
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-foreground">
-              Recent Activity
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your latest spaces across all projects
-            </p>
-          </div>
-
-          <div className="space-y-1">
-            {recentItems.slice(0, 20).map((item) => (
-              <div key={item.key}>{item.render()}</div>
-            ))}
-          </div>
-        </div>
+        <>
+          <RecentSection spaces={activeSpaces} />
+          <SpacesSection spaces={activeSpaces} lastActivity={lastActivity} />
+        </>
       )}
     </div>
   )

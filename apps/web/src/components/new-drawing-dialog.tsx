@@ -17,10 +17,12 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 
 export function NewDrawingDialog({
   spaceId,
+  lifetime,
   onClose,
   onCreated,
 }: {
   spaceId: string
+  lifetime: "durable" | "temporary"
   onClose: () => void
   onCreated: () => void
 }) {
@@ -52,6 +54,7 @@ export function NewDrawingDialog({
         path,
         format: { id: QUICKDRAW_FORMAT, sourceVersion: 1 },
         source: JSON.stringify(emptyQuickdrawDocument(title)),
+        lifetime,
       })
       await queryClient.invalidateQueries({
         queryKey: documentQueryKeys.list(spaceId),

@@ -653,6 +653,7 @@ export function useSpaceSubscription(
           msg.type === "widget_deleted"
         ) {
           void queryClient.invalidateQueries({ queryKey: ["search"] })
+          void queryClient.invalidateQueries({ queryKey: ["recent"] })
         }
 
         if (

@@ -1,4 +1,5 @@
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
+import { readNewDocumentLifetime, writeNewDocumentLifetime } from "@/lib/lifetime"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
   lazy,
@@ -24,6 +25,7 @@ import {
   LayoutGrid,
   Check,
   Archive,
+  Clock3,
   AlertTriangle,
   AppWindow,
   Copy,
@@ -108,6 +110,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
@@ -516,6 +519,9 @@ function SpaceSection({
   // Creation lives on the space row (hover-revealed +) so the tree below starts
   // immediately — no toolbar row between the space header and its content.
   const [newDrawingOpen, setNewDrawingOpen] = useState(false)
+  // New documents start temporary unless the person chooses durable; the
+  // choice is remembered for the next creation.
+  const [newLifetime, setNewLifetime] = useState(readNewDocumentLifetime)
   const [newWidgetOpen, setNewWidgetOpen] = useState(false)
   const [newCollectionOpen, setNewCollectionOpen] = useState(false)
   const createPendingRef = useRef(false)
@@ -524,7 +530,7 @@ function SpaceSection({
     try {
       // `path` is the human-typed title (optionally "folder/Title"); the server
       // slugifies it per-segment and returns the canonical path to navigate to.
-      const { path: created } = await createDoc(space.id, path)
+      const { path: created } = await createDoc(space.id, path, undefined, newLifetime)
       await queryClient.invalidateQueries({
         queryKey: docQueryKeys.docs(space.id),
       })
@@ -619,6 +625,7 @@ function SpaceSection({
         description,
         html: buildWidgetShellHtml(name),
         metadata: { source: "manual-shell" },
+        lifetime: newLifetime,
       })
       void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
       void queryClient.invalidateQueries({
@@ -684,7 +691,7 @@ function SpaceSection({
               <DropdownMenuContent
                 align="end"
                 sideOffset={4}
-                className="min-w-44"
+                className="min-w-60"
               >
                 <DropdownMenuItem onClick={() => handleNewDoc()}>
                   <FileText className="mr-2 h-4 w-4" />
@@ -704,6 +711,19 @@ function SpaceSection({
                   <Database className="mr-2 h-4 w-4" />
                   New record collection
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={newLifetime === "temporary"}
+                  closeOnClick={false}
+                  onCheckedChange={(checked) => {
+                    const next = checked ? "temporary" : "durable"
+                    setNewLifetime(next)
+                    writeNewDocumentLifetime(next)
+                  }}
+                >
+                  <Clock3 className="h-4 w-4" />
+                  New documents are temporary
+                </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <SpaceContextMenuButton
@@ -750,6 +770,7 @@ function SpaceSection({
         <Suspense fallback={null}>
           <NewDrawingDialog
             spaceId={space.id}
+            lifetime={newLifetime}
             onClose={() => setNewDrawingOpen(false)}
             onCreated={() => {
               setExpanded(true)
@@ -1809,9 +1830,21 @@ function SpaceTreeSection({
   const treeSort = { mode: effectiveSort, order: effectiveOrder }
   const allDocuments = [...activeDocuments, ...archivedDocuments]
   const sharedFolderPaths = documentFolderPaths(allDocuments)
-  const tree = buildTree(activeDocuments.map(documentToTreeInput), treeSort, {
-    folderPaths: sharedFolderPaths,
-  })
+  // Temporary documents are supporting work: they leave the main tree for
+  // their own section until they are kept or archive on their date.
+  const isTemporary = (item: DocumentListItem) =>
+    item.kind === "document" && item.lifetime === "temporary"
+  const tree = buildTree(
+    activeDocuments.filter((item) => !isTemporary(item)).map(documentToTreeInput),
+    treeSort,
+    { folderPaths: sharedFolderPaths }
+  )
+  const temporaryDocuments = activeDocuments.filter(isTemporary)
+  const temporaryTree = buildTree(
+    temporaryDocuments.map(documentToTreeInput),
+    treeSort,
+    { folderPaths: sharedFolderPaths }
+  )
   const archivedTree = buildTree(
     archivedDocuments.map(documentToTreeInput),
     treeSort,
@@ -1927,6 +1960,16 @@ function SpaceTreeSection({
       currentPath === `/spaces/${spaceId}/documents/${item.path}`
   )
   const [archivedOpen, setArchivedOpen] = useState(hasArchivedCurrent)
+  const hasTemporaryCurrent = temporaryDocuments.some(
+    (item) =>
+      item.kind === "document" &&
+      currentPath === `/spaces/${spaceId}/documents/${item.path}`
+  )
+  const [temporaryOpen, setTemporaryOpen] = useState(hasTemporaryCurrent)
+
+  useEffect(() => {
+    if (hasTemporaryCurrent) setTemporaryOpen(true)
+  }, [hasTemporaryCurrent])
 
   useEffect(() => {
     if (hasArchivedCurrent) {
@@ -1934,7 +1977,9 @@ function SpaceTreeSection({
     }
   }, [hasArchivedCurrent])
 
-  const hasContent = !isLoading && (tree.length > 0 || archivedTree.length > 0)
+  const hasContent =
+    !isLoading &&
+    (tree.length > 0 || temporaryTree.length > 0 || archivedTree.length > 0)
 
   return (
     <>
@@ -1973,6 +2018,50 @@ function SpaceTreeSection({
                 />
               ))}
             </nav>
+          )}
+
+          {temporaryTree.length > 0 && (
+            <Collapsible open={temporaryOpen} onOpenChange={setTemporaryOpen}>
+              <div className="px-3">
+                <CollapsibleTrigger
+                  className="flex min-h-8 w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase sm:min-h-0"
+                  render={<button type="button" />}
+                >
+                  <ChevronRight
+                    className={`size-3 shrink-0 transition-transform ${temporaryOpen ? "rotate-90" : ""}`}
+                  />
+                  <Clock3 className="size-3 shrink-0" />
+                  <span>Temporary</span>
+                  <span className="font-normal">{temporaryDocuments.length}</span>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent>
+                <nav aria-label="Temporary documents" className="space-y-0.5">
+                  {temporaryTree.map((node) => (
+                    <TreeItem
+                      key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
+                      node={node}
+                      spaceId={spaceId}
+                      currentPath={currentPath}
+                      onNewDoc={onNewDoc}
+                      onNavigate={onNavigate}
+                      onRefresh={onRefresh}
+                      onWidgetRefresh={onWidgetRefresh}
+                      docs={activeDocs}
+                      widgets={allWidgets}
+                      folderMoveUnavailablePaths={folderMoveUnavailablePaths}
+                      folderArchiveUnavailablePaths={
+                        folderArchiveUnavailablePaths
+                      }
+                      folderDeleteUnavailablePaths={
+                        folderDeleteUnavailablePaths
+                      }
+                      folderArchived={false}
+                    />
+                  ))}
+                </nav>
+              </CollapsibleContent>
+            </Collapsible>
           )}
 
           {archivedTree.length > 0 && (

@@ -177,6 +177,8 @@ export function writeDocumentSource(
     source: string
     format?: { id: string; sourceVersion: number }
     expectedRevision?: string
+    /** New documents only; omitted means durable. */
+    lifetime?: "durable" | "temporary"
   }
 ): Promise<{ path: string; documentId: string; sourceRevision: string }> {
   return fetchJSON(`/api/spaces/${encodeURIComponent(spaceId)}/documents`, {

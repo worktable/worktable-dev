@@ -1233,10 +1233,18 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     ),
     blockCount: forActions(z.number().int().nonnegative(), '"patch"'),
     headings: forActions(z.array(z.string()), '"patch"'),
+    lifetime: forActions(
+      z.enum(["durable", "temporary"]),
+      '"write" when creating a Doc or changing its lifetime'
+    ),
+    archiveOn: forActions(z.string(), '"write" for temporary Docs'),
     urlToSendInChat: UrlToSendInChatSchema,
   }),
   worktable_drawings_read: DrawingResultOutputSchema,
-  worktable_drawings_write: DrawingResultOutputSchema,
+  worktable_drawings_write: DrawingResultOutputSchema.extend({
+    lifetime: forActions(z.enum(["durable", "temporary"]), '"create"'),
+    archiveOn: forActions(z.string(), '"create" for temporary drawings'),
+  }),
   worktable_html_read: resultSchema("worktable_html_read", {
     preview: forActions(DocumentPreviewResultSchema, '"render"'),
     path: forActions(z.string(), '"render"'),
@@ -1267,6 +1275,8 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
       z.array(HtmlValidationIssueSchema),
       '"create" or "update"'
     ),
+    lifetime: forActions(z.enum(["durable", "temporary"]), '"create"'),
+    archiveOn: forActions(z.string(), '"create" for temporary HTML docs'),
     ok: forActions(z.literal(true), '"archive" or "restore"'),
     urlToSendInChat: UrlToSendInChatSchema,
   }),

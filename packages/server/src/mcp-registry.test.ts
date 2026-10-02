@@ -211,7 +211,7 @@ describe("consolidated MCP registry", () => {
     })
     expect(byName.worktable_spaces?.annotations).toEqual({
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: false,
     })

@@ -37,7 +37,9 @@ export async function dispatchDrawingOperation(
   // A saved create records the lifetime the agent chose. Preview-only
   // creates save nothing; a retried create re-applies the same choice.
   const lifetime =
-    request.action === "create" && !request.previewOnly
+    request.action === "create" &&
+    !request.previewOnly &&
+    !("replayed" in result && result.replayed)
       ? await applyLifetimeOnCreate({
           spaceId: request.spaceId,
           path: "path" in result && typeof result.path === "string" ? result.path : request.path,

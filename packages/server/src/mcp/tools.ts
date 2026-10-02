@@ -425,7 +425,8 @@ export function registerTools(
   server.registerTool(
     "worktable_spaces",
     {
-      ...toolMetadata("worktable_spaces", ADDITIVE_WRITE_ANNOTATIONS),
+      // update and archive can overwrite metadata or hide a whole Space.
+      ...toolMetadata("worktable_spaces", WRITE_ANNOTATIONS),
       inputSchema: SpacesInput,
       outputSchema: WORKTABLE_OUTPUT_SCHEMAS.worktable_spaces,
     },

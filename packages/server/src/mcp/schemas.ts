@@ -723,7 +723,10 @@ export const SpacesInput = z.strictObject({
       name: z.string().min(1).optional().describe("New name in Title Case"),
       description: z.string().optional().describe("New description"),
       icon: CreateSpaceInput.shape.icon,
-      group: CreateSpaceInput.shape.group,
+      group: z
+        .union([z.enum(VALID_GROUPS), z.literal("")])
+        .optional()
+        .describe(`Category: ${VALID_GROUPS.join(", ")}; "" clears it`),
       startHere: z
         .array(StartHerePinSchema)
         .max(START_HERE_LIMIT)

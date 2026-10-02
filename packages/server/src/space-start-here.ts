@@ -21,9 +21,12 @@ import { mutateSpace, readSpace, sanitizeDocPath } from "./store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 
 export class StartHereError extends Error {
-  constructor(message: string) {
+  readonly reason: "invalid" | "not-found"
+
+  constructor(message: string, reason: "invalid" | "not-found" = "invalid") {
     super(message)
     this.name = "StartHereError"
+    this.reason = reason
   }
 }
 
@@ -74,6 +77,9 @@ export async function setStartHere(
   spaceId: string,
   pins: readonly StartHerePin[]
 ): Promise<ResolvedStartHerePin[]> {
+  if (!(await readSpace(spaceId)).data) {
+    throw new StartHereError(`Space not found: ${spaceId}`, "not-found")
+  }
   if (pins.length > START_HERE_LIMIT) {
     throw new StartHereError(
       `A Space can pin at most ${START_HERE_LIMIT} documents to Start here`
@@ -99,6 +105,7 @@ export async function setStartHere(
   const result = await mutateSpace(spaceId, (space) => ({
     ...space,
     settings: { ...space.settings, startHere: normalized },
+    updatedAt: new Date().toISOString(),
   }))
   if (!result.data) throw new StartHereError(result.error ?? `Space not found: ${spaceId}`)
   await notifyWorkspaceChangeAndWait({ type: "space", spaceId })

@@ -1001,14 +1001,22 @@
                   "type": "string"
                 },
                 "group": {
-                  "description": "Category: work, side-quests, career, church, meta",
-                  "type": "string",
-                  "enum": [
-                    "work",
-                    "side-quests",
-                    "career",
-                    "church",
-                    "meta"
+                  "description": "Category: work, side-quests, career, church, meta; \"\" clears it",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "work",
+                        "side-quests",
+                        "career",
+                        "church",
+                        "meta"
+                      ]
+                    },
+                    {
+                      "type": "string",
+                      "const": ""
+                    }
                   ]
                 },
                 "startHere": {
@@ -1236,7 +1244,7 @@
     },
     "annotations": {
       "readOnlyHint": false,
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": false,
       "openWorldHint": false
     },
@@ -3642,6 +3650,18 @@
           "items": {
             "type": "string"
           }
+        },
+        "lifetime": {
+          "description": "Returned by action \"write\" when creating a Doc or changing its lifetime.",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"write\" for temporary Docs.",
+          "type": "string"
         },
         "urlToSendInChat": {
           "type": "string",
@@ -7478,6 +7498,18 @@
         },
         "urlToSendInChat": {
           "type": "string"
+        },
+        "lifetime": {
+          "description": "Returned by action \"create\".",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"create\" for temporary drawings.",
+          "type": "string"
         }
       },
       "required": [
@@ -8888,6 +8920,18 @@
             ],
             "additionalProperties": {}
           }
+        },
+        "lifetime": {
+          "description": "Returned by action \"create\".",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"create\" for temporary HTML docs.",
+          "type": "string"
         },
         "ok": {
           "description": "Returned by action \"archive\" or \"restore\".",

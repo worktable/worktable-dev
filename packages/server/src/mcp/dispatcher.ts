@@ -647,10 +647,12 @@ async function _dispatchOperationInner(
         ![...rawIcon].some((character) => character.codePointAt(0)! > 127)
           ? { icon: rawIcon }
           : {}),
-        ...(rawGroup !== undefined &&
-        (VALID_GROUPS as readonly string[]).includes(rawGroup)
-          ? { group: rawGroup }
-          : {}),
+        ...(rawGroup === ""
+          ? { group: undefined }
+          : rawGroup !== undefined &&
+              (VALID_GROUPS as readonly string[]).includes(rawGroup)
+            ? { group: rawGroup }
+            : {}),
         updatedAt: new Date().toISOString(),
       }))
       if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)

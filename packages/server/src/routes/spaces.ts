@@ -232,7 +232,9 @@ spacesRouter.put("/:spaceId/start-here", requireWorkspaceOwner(), async (c) => {
     return c.json({ startHere: await setStartHere(spaceId, parsed.data.pins) });
   } catch (error) {
     if (error instanceof StartHereError) {
-      return c.json({ error: error.message, code: "VALIDATION_ERROR" }, 400);
+      return error.reason === "not-found"
+        ? c.json({ error: error.message, code: "NOT_FOUND" }, 404)
+        : c.json({ error: error.message, code: "VALIDATION_ERROR" }, 400);
     }
     throw error;
   }

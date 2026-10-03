@@ -357,10 +357,10 @@ describe("consolidated MCP registry", () => {
     expect(
       DocsWriteInput.safeParse({
         request: {
-          action: "patch",
+          action: "edit",
           spaceId: "s",
           docPath: "d",
-          operations: "[]",
+          edits: [],
         },
       }).success
     ).toBe(false)

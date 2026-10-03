@@ -74,7 +74,7 @@ export const OPERATION_DEFINITIONS = {
   "docs.read": tool("docs:read", "none", "doc"),
   "docs.grep": tool("docs:read", "none"),
   "docs.write": tool("docs:write", "workspace", "doc"),
-  "docs.patch": tool("docs:write", "workspace", "doc"),
+  "docs.edit": tool("docs:write", "workspace", "doc"),
   "docs.rename": tool("docs:write", "workspace", "renamed_doc"),
   "docs.delete": tool("docs:write", "workspace"),
   "drawings.inspect": tool("documents:read", "none", "document"),
@@ -221,7 +221,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
   },
   worktable_docs_write: {
     write: "docs.write",
-    patch: "docs.patch",
+    edit: "docs.edit",
     rename: "docs.rename",
   },
   worktable_drawings_read: {

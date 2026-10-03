@@ -599,13 +599,6 @@
                 "md"
               ]
             },
-            "readFormatHint": {
-              "type": "string",
-              "enum": [
-                "blocknote",
-                "markdown"
-              ]
-            },
             "updatedAt": {
               "type": "number"
             },
@@ -3071,7 +3064,7 @@
   {
     "name": "worktable_docs_read",
     "title": "Read Worktable Docs",
-    "description": "List, read, or grep Worktable Docs. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision, plus any Docs it could not search in skipped; use worktable_discover search to find Docs by meaning. read accepts offset and limit to read a long Doc in line ranges.",
+    "description": "List, read, or grep Worktable Docs. read returns Markdown and the revision that write and edit accept as expectedRevision; offset and limit read a long Doc in line ranges. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision, plus any Docs it could not search in skipped; use worktable_discover search to find Docs by meaning.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3112,6 +3105,14 @@
                 "docPath": {
                   "type": "string",
                   "description": "Extensionless path, e.g. 'notes/readme'"
+                },
+                "format": {
+                  "description": "markdown (default) returns the text that action edit matches against. blocknote returns the stored BlockNote blocks of a rich Doc instead.",
+                  "type": "string",
+                  "enum": [
+                    "markdown",
+                    "blocknote"
+                  ]
                 },
                 "offset": {
                   "description": "First line to return (1-based). Ranged reads return Markdown.",
@@ -3223,7 +3224,7 @@
           ]
         },
         "revision": {
-          "description": "Returned by action \"read\"; changes whenever the stored Doc changes.",
+          "description": "Returned by action \"read\"; changes whenever the stored Doc changes. Pass it as expectedRevision to write or edit.",
           "type": "string"
         },
         "totalLines": {
@@ -3446,16 +3447,15 @@
             }
           ]
         },
-        "readFormatHint": {
+        "lossyFields": {
           "description": "Returned by action \"read\".",
-          "type": "string",
-          "enum": [
-            "markdown",
-            "blocknote"
-          ]
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
-        "reason": {
-          "description": "Returned by action \"read\".",
+        "note": {
+          "description": "Returned by action \"read\" for rich Docs.",
           "type": "string"
         },
         "urlToSendInChat": {
@@ -3486,13 +3486,6 @@
               "enum": [
                 "json",
                 "md"
-              ]
-            },
-            "readFormatHint": {
-              "type": "string",
-              "enum": [
-                "blocknote",
-                "markdown"
               ]
             },
             "updatedAt": {
@@ -3629,7 +3622,7 @@
   {
     "name": "worktable_docs_write",
     "title": "Write Worktable Docs",
-    "description": "Create, replace, patch, or rename Worktable Docs. Creating a Doc requires a lifetime: durable or temporary.",
+    "description": "Create, edit, replace, or rename Worktable Docs. Read the doc, then call edit with oldText copied exactly from the read content. Include enough surrounding text to match once. On ambiguous or no_match, read again; never guess. Use write with expectedRevision only to restructure a whole document. Creating a Doc requires a lifetime: durable or temporary.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3648,7 +3641,7 @@
                 },
                 "docPath": {
                   "type": "string",
-                  "description": "Path of the document to create or update"
+                  "description": "Path of the document to create or replace"
                 },
                 "content": {
                   "anyOf": [
@@ -3660,11 +3653,17 @@
                       "items": {}
                     }
                   ],
-                  "description": "Document content. String = markdown (stored as .md). Array = BlockNote blocks (stored as .json). If writing markdown to an existing .json doc with rich formatting, rejected unless force=true."
+                  "description": "Whole document content. String = Markdown; Array = BlockNote blocks. Markdown replacing a rich Doc keeps the blocks whose text is unchanged, with their formatting."
+                },
+                "expectedRevision": {
+                  "description": "Required to replace an existing Doc: the revision from your latest read. Omit only when creating a Doc.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
                 },
                 "force": {
                   "default": false,
-                  "description": "When true, allows overwriting a .json document containing rich formatting with markdown, accepting data loss.",
+                  "description": "When true, accept losing formatting that Markdown cannot show in the blocks this write changes.",
                   "type": "boolean"
                 },
                 "lifetime": {
@@ -3695,7 +3694,7 @@
               "properties": {
                 "action": {
                   "type": "string",
-                  "const": "patch"
+                  "const": "edit"
                 },
                 "spaceId": {
                   "type": "string",
@@ -3703,71 +3702,48 @@
                 },
                 "docPath": {
                   "type": "string",
-                  "description": "Path of the document to patch"
+                  "description": "Path of the document to edit"
                 },
-                "operations": {
+                "edits": {
+                  "minItems": 1,
+                  "maxItems": 100,
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "action": {
+                      "oldText": {
                         "type": "string",
-                        "enum": [
-                          "replace",
-                          "insert_after",
-                          "insert_before",
-                          "delete",
-                          "append"
-                        ],
-                        "description": "replace: replace targeted section. insert_after/before: insert adjacent to target. delete: remove targeted section. append: add to end of document."
+                        "description": "Exact text copied from the read content, with enough surrounding text to match once."
                       },
-                      "target": {
-                        "description": "How to find the block(s) to act on. Not required for 'append'.",
-                        "type": "object",
-                        "properties": {
-                          "blockId": {
-                            "description": "Exact block ID",
-                            "type": "string"
-                          },
-                          "heading": {
-                            "description": "Find section by heading text (matches first heading containing this text). For replace/delete, targets the heading AND all content until the next heading of equal or higher level.",
-                            "type": "string"
-                          },
-                          "index": {
-                            "description": "Block index (0-based)",
-                            "type": "number"
-                          },
-                          "search": {
-                            "description": "Find first block containing this text",
-                            "type": "string"
-                          }
-                        }
+                      "newText": {
+                        "type": "string",
+                        "description": "Replacement text, in Markdown."
                       },
-                      "content": {
-                        "description": "New content. String = markdown, Array = BlockNote blocks. Not required for 'delete'.",
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "array",
-                            "items": {}
-                          }
-                        ]
+                      "replaceAll": {
+                        "default": false,
+                        "description": "Replace every occurrence instead of requiring exactly one.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
-                      "action"
+                      "oldText",
+                      "newText"
                     ]
                   },
-                  "description": "Patch operations applied sequentially."
+                  "description": "Applied in order to the Markdown from read; each edit sees the previous edits' result. All apply or none do."
+                },
+                "expectedRevision": {
+                  "description": "Revision from your latest read. When set, the edit is refused if the Doc changed since.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
                 }
               },
               "required": [
                 "action",
                 "spaceId",
                 "docPath",
-                "operations"
+                "edits"
               ],
               "additionalProperties": false
             },
@@ -3816,7 +3792,11 @@
           "const": true
         },
         "docPath": {
-          "description": "Returned by action \"write\" or \"patch\".",
+          "description": "Returned by action \"write\" or \"edit\".",
+          "type": "string"
+        },
+        "revision": {
+          "description": "Returned by action \"write\" or \"edit\".",
           "type": "string"
         },
         "oldPath": {
@@ -3828,15 +3808,96 @@
           "type": "string"
         },
         "storedAs": {
-          "description": "Returned by action \"write\" or \"patch\".",
+          "description": "Returned by action \"write\" or \"edit\".",
           "type": "string",
           "enum": [
             "md",
             "json"
           ]
         },
+        "changed": {
+          "description": "Returned by action \"edit\" on a rich Doc.",
+          "type": "object",
+          "properties": {
+            "kept": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "modified": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "inserted": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "removed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "kept",
+            "modified",
+            "inserted",
+            "removed"
+          ],
+          "additionalProperties": {}
+        },
+        "snippet": {
+          "description": "Returned by action \"edit\": the edited lines with their line numbers.",
+          "type": "string"
+        },
+        "formattingDropped": {
+          "description": "Returned by action \"write\" or \"edit\": formatting Markdown could not keep in changed blocks.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "blockId": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "blockId",
+              "fields"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "annotationsAffected": {
+          "description": "Returned by action \"edit\": open annotations on changed or removed text.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "annotationId": {
+                "type": "string"
+              },
+              "quoteStillPresent": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "annotationId",
+              "quoteStillPresent"
+            ],
+            "additionalProperties": {}
+          }
+        },
         "repairs": {
-          "description": "Returned by action \"write\" or \"patch\".",
+          "description": "Returned by action \"write\" or \"edit\".",
           "type": "array",
           "items": {
             "type": "object",
@@ -3871,7 +3932,7 @@
           }
         },
         "warnings": {
-          "description": "Returned by action \"write\" or \"patch\".",
+          "description": "Returned by action \"write\" or \"edit\".",
           "type": "array",
           "items": {
             "type": "object",
@@ -3899,45 +3960,6 @@
               "message"
             ],
             "additionalProperties": {}
-          }
-        },
-        "operationsApplied": {
-          "description": "Returned by action \"patch\".",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "skipped": {
-          "description": "Returned by action \"patch\".",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "index": {
-                "type": "number"
-              },
-              "reason": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "index",
-              "reason"
-            ],
-            "additionalProperties": {}
-          }
-        },
-        "blockCount": {
-          "description": "Returned by action \"patch\".",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "headings": {
-          "description": "Returned by action \"patch\".",
-          "type": "array",
-          "items": {
-            "type": "string"
           }
         },
         "lifetime": {

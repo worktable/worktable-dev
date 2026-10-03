@@ -1,6 +1,6 @@
 ---
 title: Writing docs
-description: How agents write, patch, and place docs in a Worktable workspace.
+description: How agents write, edit, and place docs in a Worktable workspace.
 ---
 
 Docs are versioned documents — markdown strings or rich BlockNote arrays — for prose that should outlive the chat: plans, research, decisions, notes. The `format_spec` action in `worktable_guidance` is the normative source for formats; this page covers the working patterns.
@@ -26,9 +26,30 @@ If unsure, choose temporary when it only matters for finishing the current work 
 
 Before you finish, make outputs that turned out to matter durable, archive spent temporary documents you created, and archive a document your work replaced with the reason `Superseded by <path>`.
 
-## Patch before you rewrite
+## Edit before you rewrite
 
-The `patch` action in `worktable_docs_write` edits surgically by heading, text search, block ID, index, or append. Use `write` for new Docs or deliberate replacements. Extend an existing relevant Doc instead of creating a near-duplicate.
+Read the doc, then call `edit` with `oldText` copied exactly from the read content. Include enough surrounding text to match once. On `ambiguous` or `no_match`, read again; never guess. Use `write` with `expectedRevision` only to restructure a whole document. Extend an existing relevant Doc instead of creating a near-duplicate.
+
+`worktable_docs_read` action `read` returns the doc as Markdown with a `revision`. `edit` takes a list of `{ oldText, newText }` replacements:
+
+```json
+{
+  "action": "edit",
+  "spaceId": "project",
+  "docPath": "plans/launch",
+  "expectedRevision": "<revision from read>",
+  "edits": [
+    { "oldText": "## Risks\n\nNone yet.", "newText": "## Risks\n\nVendor delay." }
+  ]
+}
+```
+
+- Edits apply in order, each to the result of the one before. Every `oldText` must match exactly once unless you set `replaceAll`. All edits apply or none do.
+- Rich docs keep everything you did not change: block ids, colors, alignment, toggles, column widths, diagram titles, nested blocks, and the comments anchored to that text. Inside an edited block, only the characters you changed change; new text takes the formatting of the text it replaces. Markdown docs keep every byte outside the edited text.
+- The result returns the edited lines with line numbers in `snippet`, the new `revision`, and `annotationsAffected` for comments whose quoted text you changed.
+- Refusals have a stable `code`: `no_match` (with the closest lines), `ambiguous` (with line numbers), `empty_old_text`, `no_change`, `revision_conflict`, and `unsupported_block` for a change Markdown cannot apply intact, such as text that crosses from a toggle heading into its nested content, a changed attached file, or a block with properties Worktable does not recognize. Make those changes in Worktable.
+
+Replacing an existing doc with `write` requires `expectedRevision`. Markdown written over a rich doc keeps the blocks whose text is unchanged; if it would drop formatting from changed blocks, the write is refused unless you set `force`.
 
 ## Write for retrieval
 

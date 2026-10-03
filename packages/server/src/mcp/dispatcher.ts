@@ -35,6 +35,7 @@ import {
   listDocsDetailed,
   readDoc,
   readDocSourceSnapshot,
+  type DocSourceRevision,
   sanitizeDocPath,
   writeDoc,
   deleteDoc,
@@ -129,11 +130,11 @@ import {
 import { resolveDocAlias } from "../doc-aliases.ts"
 import { withDocPathLock } from "../doc-path-lock.ts"
 import {
+  MermaidDocumentValidationError,
   extractMarkdownMermaid,
-  prepareDocumentContent,
-  protectEscapedMermaidFences,
-  restoreEscapedMermaidFences,
+  repairEscapedMermaidFences,
 } from "../mermaid-document.ts"
+import type { MermaidDocumentRepair } from "@worktable/types"
 import {
   logRecordPracticeWarnings,
   recordPracticeIdentitiesMatch,
@@ -170,16 +171,23 @@ import { wsManager } from "../ws.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
 import {
   isMarkdownSafe,
-  blocksToMarkdownSafe,
-  markdownToBlocks,
   extractMarkdownHeadings,
   extractHeadings,
   containsMermaidBlock,
   getRichBlockTypes,
-  summarizeBlocks,
-  applyPatchOperations,
-  type PatchOperation,
 } from "../markdown.ts"
+import {
+  DocEditError,
+  applyTextEdits,
+  blocksPlainText,
+  editSnippet,
+  projectBlocks,
+  regionSnippet,
+  spliceBlockEdits,
+  spliceBlockReplacement,
+  type FormattingDrop,
+  type TextEdit,
+} from "../markdown-edit.ts"
 import { previewMermaid, validateMermaid } from "../mermaid.ts"
 import {
   createAnnotation,
@@ -248,20 +256,17 @@ function decodeGenericDocumentSource(
 }
 
 function buildBlockDocMetadata(blocks: unknown[]) {
-  const headings = extractHeadings(blocks)
-  const blockCount = blocks.length
-  const lossy = isMarkdownSafe(blocks)
-  const richBlockTypes = getRichBlockTypes(blocks)
-  const containsMermaid = containsMermaidBlock(blocks)
-
+  const lossyFields = isMarkdownSafe(blocks).lossyFields
   return {
-    headings,
-    blockCount,
-    lossyFields: lossy.lossyFields,
-    readFormatHint: lossy.safe ? ("markdown" as const) : ("blocknote" as const),
-    richBlockTypes,
-    containsMermaid,
-    blockSummary: summarizeBlocks(blocks),
+    headings: extractHeadings(blocks),
+    blockCount: blocks.length,
+    lossyFields,
+    note:
+      lossyFields.length > 0
+        ? `This Doc has formatting Markdown cannot show (${lossyFields.join(", ")}). Edit it with action edit: formatting outside the text you change is kept.`
+        : "Edit it with action edit: formatting outside the text you change is kept.",
+    richBlockTypes: getRichBlockTypes(blocks),
+    containsMermaid: containsMermaidBlock(blocks),
   }
 }
 
@@ -270,74 +275,162 @@ function buildMarkdownDocMetadata(markdown: string) {
     headings: extractMarkdownHeadings(markdown),
     blockCount: null,
     lossyFields: [] as string[],
-    readFormatHint: "markdown" as const,
     richBlockTypes: [] as string[],
     containsMermaid: extractMarkdownMermaid(markdown).length > 0,
-    blockSummary: [] as ReturnType<typeof summarizeBlocks>,
   }
 }
 
-async function restoreProtectedEscapedMermaidBlocks(
-  blocks: unknown[],
-  protection: ReturnType<typeof protectEscapedMermaidFences>
-): Promise<unknown[]> {
-  const replacements = new Map<string, unknown[]>()
-  for (const literal of protection.literals) {
-    replacements.set(
-      literal.placeholder,
-      await markdownToBlocks(literal.markdown)
+/**
+ * Current source of a Doc with its revision. Refuses a stale
+ * `expectedRevision`, and a missing one when `required`.
+ */
+async function docSourceAtRevision(
+  spaceId: string,
+  docPath: string,
+  expectedRevision: string | undefined,
+  required: boolean
+) {
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+  if (
+    snapshot.result.error ||
+    snapshot.result.data === null ||
+    !snapshot.revision
+  ) {
+    throw new Error(snapshot.result.error ?? "Failed to read document")
+  }
+  const revision = docRevisionId(snapshot.revision)
+  if (required && !expectedRevision) {
+    throw new DocEditError(
+      "revision_required",
+      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or use action edit to change part of it.`
     )
   }
-
-  const restore = (values: unknown[]): unknown[] =>
-    values.flatMap((value) => {
-      if (!value || typeof value !== "object") return [value]
-      const block = value as Record<string, unknown>
-      const text = Array.isArray(block.content)
-        ? block.content
-            .map((inline) =>
-              inline && typeof inline === "object"
-                ? ((inline as Record<string, unknown>).text ?? "")
-                : ""
-            )
-            .join("")
-        : ""
-      const replacement = replacements.get(String(text))
-      if (replacement) return replacement
-      const content = Array.isArray(block.content)
-        ? block.content.map((inline) => {
-            if (!inline || typeof inline !== "object") return inline
-            const item = inline as Record<string, unknown>
-            if (typeof item.text !== "string") return inline
-            let restoredText = item.text
-            for (const literal of protection.literals) {
-              restoredText = restoredText.replace(
-                literal.placeholder,
-                literal.markdown
-              )
-            }
-            return restoredText === item.text
-              ? inline
-              : { ...item, text: restoredText }
-          })
-        : block.content
-      return [
-        {
-          ...block,
-          content,
-          ...(Array.isArray(block.children)
-            ? { children: restore(block.children) }
-            : {}),
-        },
-      ]
-    })
-
-  return restore(blocks)
+  if (expectedRevision && expectedRevision !== revision) {
+    throw new DocEditError(
+      "revision_conflict",
+      `${docPath} changed since revision ${expectedRevision}. Read it again and reapply your change.`,
+      { currentRevision: revision }
+    )
+  }
+  return { snapshot, sourceRevision: snapshot.revision, revision }
 }
 
-function parsePatchOperations(raw: unknown): PatchOperation[] {
-  if (Array.isArray(raw)) return raw as PatchOperation[]
-  throw new Error("docs.patch operations must be an array")
+/** The Doc's current revision, or null when it no longer exists. */
+async function currentDocRevision(
+  spaceId: string,
+  docPath: string
+): Promise<string | null> {
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+  return snapshot.revision ? docRevisionId(snapshot.revision) : null
+}
+
+/** The revision a successful write committed, never a later re-read. */
+function committedDocRevision(result: { revision?: DocSourceRevision }): string {
+  if (!result.revision) throw new Error("Write did not report its revision")
+  return docRevisionId(result.revision)
+}
+
+/** A failed guarded write: a concurrent change is a revision conflict. */
+async function docWriteFailure(
+  spaceId: string,
+  docPath: string,
+  result: { error?: string; errorCode?: string }
+): Promise<Error> {
+  if (result.errorCode === "SOURCE_CHANGED") {
+    return new DocEditError(
+      "revision_conflict",
+      `${docPath} changed while this write was being applied. Read it again and reapply your change.`,
+      { currentRevision: await currentDocRevision(spaceId, docPath) }
+    )
+  }
+  return new Error(result.error ?? "Write failed")
+}
+
+function parseTextEdits(raw: unknown): TextEdit[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error("edits must contain at least one { oldText, newText }")
+  }
+  return raw.map((value, index) => {
+    const edit = value as Partial<TextEdit> | null
+    if (
+      !edit ||
+      typeof edit.oldText !== "string" ||
+      typeof edit.newText !== "string"
+    ) {
+      throw new Error(`Edit ${index + 1} needs string oldText and newText`)
+    }
+    return {
+      oldText: edit.oldText,
+      newText: edit.newText,
+      replaceAll: edit.replaceAll === true,
+    }
+  })
+}
+
+/**
+ * Repair over-escaped Mermaid fences in replacement text, as whole writes do.
+ * Only replacement text is touched; the rest of the document is not.
+ */
+function repairEditTexts(edits: TextEdit[]): {
+  edits: TextEdit[]
+  repairs: Array<MermaidDocumentRepair & { editIndex: number }>
+} {
+  const repairs: Array<MermaidDocumentRepair & { editIndex: number }> = []
+  const repaired = edits.map((edit, editIndex) => {
+    const result = repairEscapedMermaidFences(edit.newText)
+    if (result.issues.length > 0) {
+      throw new MermaidDocumentValidationError(result.issues)
+    }
+    repairs.push(...result.repairs.map((repair) => ({ ...repair, editIndex })))
+    return { ...edit, newText: result.markdown }
+  })
+  return { edits: repaired, repairs }
+}
+
+/**
+ * Open annotations whose anchored text an edit changed or removed. `affected`
+ * returns null for an untouched annotation, else whether its quote survives.
+ */
+async function annotationsAffectedByEdit(
+  spaceId: string,
+  docPath: string,
+  affected: (target: { blockId?: string; quote?: string }) => boolean | null
+): Promise<Array<{ annotationId: string; quoteStillPresent: boolean }>> {
+  try {
+    const annotations = []
+    for (let offset: number | undefined = 0; offset !== undefined; ) {
+      const page = await listAnnotations(spaceId, {
+        target: { docPath },
+        limit: 1000,
+        offset,
+      })
+      annotations.push(...page.annotations)
+      offset = page.nextOffset
+    }
+    return annotations.flatMap((annotation) => {
+      const target = annotation.target as { blockId?: string; quote?: string }
+      const quoteStillPresent = affected(target)
+      return quoteStillPresent === null
+        ? []
+        : [{ annotationId: annotation.id, quoteStillPresent }]
+    })
+  } catch {
+    // Reporting must never fail a successful edit.
+    return []
+  }
+}
+
+function blocksById(blocks: unknown[]): Map<string, unknown> {
+  const byId = new Map<string, unknown>()
+  const walk = (values: unknown[]) => {
+    for (const value of values) {
+      const block = value as { id?: unknown; children?: unknown }
+      if (typeof block?.id === "string") byId.set(block.id, block)
+      if (Array.isArray(block?.children)) walk(block.children)
+    }
+  }
+  walk(blocks)
+  return byId
 }
 
 /**
@@ -1715,107 +1808,67 @@ async function _dispatchOperationInner(
       const docPath = aliasResolution.path
       const exists = await docExists(spaceId, docPath)
       if (!exists) throw new Error(`Document not found: ${docPath}`)
-      const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+      const { snapshot, revision } = await docSourceAtRevision(
+        spaceId,
+        docPath,
+        undefined,
+        false
+      )
       const result = snapshot.result
-      if (result.error || result.data === null)
-        throw new Error(result.error ?? "Failed to read document")
       const archived = await getDocArchiveInfo(spaceId, docPath)
       const lifetime = await getDocLifetimeView(spaceId, docPath)
       const { links, backlinks } = await getDocLinks(spaceId, docPath)
-      const revision = snapshot.revision
-        ? { revision: docRevisionId(snapshot.revision) }
-        : {}
       const offset = args["offset"] as number | undefined
       const limit = args["limit"] as number | undefined
       const ranged = offset !== undefined || limit !== undefined
-      // Line numbers here are the ones grep reports for the same revision.
+      // Line numbers here are the ones grep and edit report for the same revision.
       const markdownContent = (markdown: string) =>
         ranged
           ? sliceMarkdownLines(markdown, offset ?? 1, limit)
           : { content: markdown, totalLines: countMarkdownLines(markdown) }
-
-      // If stored as JSON, try to return markdown for agent convenience
-      if (result.storedAs === "json" && Array.isArray(result.data)) {
-        const metadata = buildBlockDocMetadata(result.data)
-
-        // Ranged reads are line-based, so they always use Markdown.
-        if (metadata.readFormatHint === "markdown" || ranged) {
-          // Convert to markdown for the agent. Conversion must never
-          // fail the read: foreign props/styles from other BlockNote
-          // versions fall back to returning the raw blocks below.
-          const markdown = await docMarkdownProjection(
-            spaceId,
-            docPath,
-            snapshot
-          )
-          if (markdown !== null) {
-            return {
-              docPath,
-              ...markdownContent(markdown),
-              format: "markdown",
-              storedAs: "json",
-              ...revision,
-              archived,
-              ...lifetime,
-              links,
-              backlinks,
-              ...metadata,
-            }
-          }
-          if (ranged) {
-            throw new Error(
-              "This Doc cannot be converted to Markdown, so it cannot be read by line. Read it without offset and limit."
-            )
-          }
-        }
-
-        // Return JSON with metadata about why
-        return {
-          docPath,
-          content: result.data,
-          format: "blocknote",
-          storedAs: "json",
-          ...revision,
-          archived,
-          ...lifetime,
-          links,
-          backlinks,
-          ...metadata,
-          reason:
-            metadata.lossyFields.length > 0
-              ? `Document contains rich formatting (${metadata.lossyFields.join(", ")}) that cannot be represented in markdown`
-              : "Markdown conversion unavailable for this document; returning raw blocks",
-        }
-      }
-
-      // Stored as .md: return markdown directly
-      if (result.storedAs === "md" && typeof result.data === "string") {
-        const metadata = buildMarkdownDocMetadata(result.data)
-        return {
-          docPath,
-          ...markdownContent(result.data),
-          format: "markdown",
-          storedAs: "md",
-          ...revision,
-          archived,
-          ...lifetime,
-          links,
-          backlinks,
-          ...metadata,
-        }
-      }
-
-      // Fallback
-      return {
+      const common = {
         docPath,
-        content: result.data,
-        format: result.format,
         storedAs: result.storedAs,
-        ...revision,
+        revision,
         archived,
         ...lifetime,
         links,
         backlinks,
+      }
+
+      if (result.storedAs === "json" && Array.isArray(result.data)) {
+        const metadata = buildBlockDocMetadata(result.data)
+        if (args["format"] === "blocknote") {
+          if (ranged) {
+            throw new Error(
+              "offset and limit read Markdown lines; omit them to read BlockNote blocks."
+            )
+          }
+          return {
+            ...common,
+            content: result.data,
+            format: "blocknote",
+            ...metadata,
+          }
+        }
+        // The text action edit matches against.
+        const markdown = await docMarkdownProjection(spaceId, docPath, snapshot)
+        if (markdown === null) throw new Error("Failed to read document")
+        return {
+          ...common,
+          ...markdownContent(markdown),
+          format: "markdown",
+          ...metadata,
+        }
+      }
+      if (typeof result.data !== "string") {
+        throw new Error("Unexpected document format")
+      }
+      return {
+        ...common,
+        ...markdownContent(result.data),
+        format: "markdown",
+        ...buildMarkdownDocMetadata(result.data),
       }
     }
     case "docs.grep": {
@@ -1864,6 +1917,7 @@ async function _dispatchOperationInner(
       const force = (args["force"] as boolean) ?? false
       const lifetime = args["lifetime"] as DocumentLifetime | undefined
       const archiveOn = args["archiveOn"] as string | undefined
+      const expectedRevision = args["expectedRevision"] as string | undefined
 
       const existed = await docExists(spaceId, docPath)
       if (!existed && !lifetime) {
@@ -1875,15 +1929,55 @@ async function _dispatchOperationInner(
           `Document is archived: ${docPath}. Restore it first; restored documents are durable.`
         )
       }
-      const result = await writeDoc(spaceId, docPath, content, {
+      if (!existed && expectedRevision) {
+        throw new DocEditError(
+          "revision_conflict",
+          `${docPath} does not exist. Omit expectedRevision to create it.`,
+          { currentRevision: null }
+        )
+      }
+
+      let writeContent: unknown[] | string = content
+      let formattingDropped: FormattingDrop[] = []
+      let sourceRevision: DocSourceRevision | undefined
+      if (existed) {
+        const current = await docSourceAtRevision(
+          spaceId,
+          docPath,
+          expectedRevision,
+          true
+        )
+        sourceRevision = current.sourceRevision
+        const stored = current.snapshot.result.data
+        if (typeof content === "string" && Array.isArray(stored)) {
+          // Markdown over a rich Doc: blocks whose Markdown is unchanged keep
+          // their ids and formatting.
+          const splice = await spliceBlockReplacement(stored, content)
+          formattingDropped = splice.formattingDropped
+          if (formattingDropped.length > 0 && !force) {
+            const fields = [
+              ...new Set(formattingDropped.flatMap((drop) => drop.fields)),
+            ]
+            throw new DocEditError(
+              "formatting_dropped",
+              `This write would drop formatting Markdown cannot show from ${formattingDropped.length} changed block(s) (${fields.join(", ")}). Use action edit to change only the text you mean to, or set force=true to accept the loss.`,
+              { formattingDropped }
+            )
+          }
+          writeContent = splice.blocks
+        }
+      }
+      const result = await writeDoc(spaceId, docPath, writeContent, {
         force,
         updatedBy: actorId,
         source: "mcp",
         managedIdentity: true,
         mermaidValidation: "strict",
+        // A create must not replace a Doc another writer created meanwhile.
+        ...(sourceRevision ? { sourceRevision } : { createOnly: true }),
       })
       if (!result.ok) {
-        throw new Error(result.error ?? "Write failed")
+        throw await docWriteFailure(spaceId, docPath, result)
       }
       await syncDocAfterToolWrite(spaceId, docPath)
       const lifetimeResult: { lifetime?: DocumentLifetime; archiveOn?: string } = !existed
@@ -1898,141 +1992,151 @@ async function _dispatchOperationInner(
       return {
         ok: true,
         docPath,
+        revision: committedDocRevision(result),
         storedAs: result.storedAs,
         ...(lifetimeResult.lifetime ? { lifetime: lifetimeResult.lifetime } : {}),
         ...(lifetimeResult.archiveOn ? { archiveOn: lifetimeResult.archiveOn } : {}),
+        formattingDropped,
         repairs: result.repairs ?? [],
         warnings: await docWriteWarnings(spaceId, docPath),
       }
     }
-    case "docs.patch": {
+    case "docs.edit": {
       const spaceId = args["spaceId"] as string
       const docPath = args["docPath"] as string
-      const operations = parsePatchOperations(args["operations"])
+      const { edits, repairs } = repairEditTexts(parseTextEdits(args["edits"]))
+      const expectedRevision = args["expectedRevision"] as string | undefined
 
-      const exists = await docExists(spaceId, docPath)
-      if (!exists) throw new Error(`Document not found: ${docPath}`)
-
-      const mermaidRepairs: import("@worktable/types").MermaidDocumentRepair[] =
-        []
-
-      // Load doc and convert to blocks
-      const snapshot = await readDocSourceSnapshot(spaceId, docPath)
-      const doc = snapshot.result
-      if (doc.error || doc.data === null)
-        throw new Error(doc.error ?? "Failed to read document")
-      if (!snapshot.revision)
-        throw new Error("Failed to capture document source revision")
-
-      let blocks: Awaited<ReturnType<typeof markdownToBlocks>>
-      let escapedFenceProtection: ReturnType<
-        typeof protectEscapedMermaidFences
-      > | null = null
-      if (doc.storedAs === "md" && typeof doc.data === "string") {
-        escapedFenceProtection = protectEscapedMermaidFences(doc.data)
-        blocks = await markdownToBlocks(escapedFenceProtection.markdown)
-      } else if (Array.isArray(doc.data)) {
-        const prepared = await prepareDocumentContent(doc.data, {
-          validation: "allow-invalid",
-        })
-        blocks = prepared.content as Awaited<
-          ReturnType<typeof markdownToBlocks>
-        >
-      } else {
-        throw new Error("Unexpected document format")
+      if (!(await docExists(spaceId, docPath))) {
+        throw new Error(`Document not found: ${docPath}`)
+      }
+      const current = await docSourceAtRevision(
+        spaceId,
+        docPath,
+        expectedRevision,
+        false
+      )
+      const stored = current.snapshot.result.data
+      const writeOptions = {
+        updatedBy: actorId,
+        source: "mcp",
+        reason: "Edited document",
+        mermaidValidation: "strict" as const,
+        repairEscapedMermaidFences: false,
+        sourceRevision: current.sourceRevision,
+        managedIdentity: true,
       }
 
-      // Apply operations
-      const result = await applyPatchOperations(blocks, operations, {
-        prepareContent: async (content) => {
-          const prepared = await prepareDocumentContent(content, {
-            validation: "strict",
-          })
-          mermaidRepairs.push(...prepared.repairs)
-          return prepared.content
-        },
-      })
-      if (result.operationsApplied === 0 && operations.length > 0) {
-        const detail = result.skipped
-          .map(
-            (skip) => `op ${skip.index + 1} (${skip.action}): ${skip.reason}`
+      if (typeof stored === "string") {
+        // Markdown file: exact replacement on the stored text; every byte
+        // outside the edited spans is kept.
+        const edit = applyTextEdits(stored, edits)
+        if (edit.text === stored) {
+          throw new DocEditError(
+            "no_change",
+            "The edits leave the document unchanged."
           )
-          .join("; ")
-        throw new Error(
-          `No patch operations applied. ${detail || "All operations were skipped."}`
-        )
-      }
-
-      // Save back in the original format (or upgrade if needed)
-      let finalStoredAs = doc.storedAs
-      if (doc.storedAs === "md") {
-        const safety = isMarkdownSafe(result.blocks)
-        // Conversion failure must not eat the patch — fall back to .json.
-        let md = safety.safe ? await blocksToMarkdownSafe(result.blocks) : null
-        if (md !== null && escapedFenceProtection) {
-          md = restoreEscapedMermaidFences(md, escapedFenceProtection)
         }
-        if (md !== null) {
-          const written = await writeDoc(spaceId, docPath, md, {
-            updatedBy: actorId,
-            source: "mcp",
-            reason: "Patched markdown document",
-            mermaidValidation: "strict",
-            repairEscapedMermaidFences: false,
-            sourceRevision: snapshot.revision,
-            managedIdentity: true,
-          })
-          if (!written.ok) throw new Error(written.error ?? "Write failed")
-          mermaidRepairs.push(...(written.repairs ?? []))
-          finalStoredAs = "md"
-        } else {
-          // New content has lossy blocks: upgrade to .json
-          const blocksToWrite = escapedFenceProtection
-            ? await restoreProtectedEscapedMermaidBlocks(
-                result.blocks,
-                escapedFenceProtection
+        const written = await writeDoc(spaceId, docPath, edit.text, writeOptions)
+        if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
+        await syncDocAfterToolWrite(spaceId, docPath)
+        const quoteEdited = (quote: string): boolean => {
+          for (
+            let at = stored.indexOf(quote);
+            at !== -1;
+            at = stored.indexOf(quote, at + 1)
+          ) {
+            const end = at + quote.length
+            if (
+              edit.originalRanges.some(
+                (range) => range.start < end && range.end > at
               )
-            : result.blocks
-          const written = await writeDoc(spaceId, docPath, blocksToWrite, {
-            updatedBy: actorId,
-            source: "mcp",
-            reason: "Patched markdown document and upgraded to BlockNote",
-            mermaidValidation: "strict",
-            sourceRevision: snapshot.revision,
-            managedIdentity: true,
-          })
-          if (!written.ok) throw new Error(written.error ?? "Write failed")
-          mermaidRepairs.push(...(written.repairs ?? []))
-          finalStoredAs = "json"
+            ) {
+              return true
+            }
+          }
+          return false
         }
-      } else {
-        // Was .json, stays .json
-        const written = await writeDoc(spaceId, docPath, result.blocks, {
-          updatedBy: actorId,
-          source: "mcp",
-          reason: "Patched BlockNote document",
-          mermaidValidation: "strict",
-          sourceRevision: snapshot.revision,
-          managedIdentity: true,
-        })
-        if (!written.ok) throw new Error(written.error ?? "Write failed")
-        mermaidRepairs.push(...(written.repairs ?? []))
-        finalStoredAs = "json"
+        return {
+          ok: true,
+          docPath,
+          revision: committedDocRevision(written),
+          storedAs: written.storedAs,
+          snippet: editSnippet(edit.text, edit.editedRanges),
+          formattingDropped: [],
+          annotationsAffected: await annotationsAffectedByEdit(
+            spaceId,
+            docPath,
+            ({ quote }) =>
+              quote && quoteEdited(quote) ? edit.text.includes(quote) : null
+          ),
+          repairs: [...repairs, ...(written.repairs ?? [])],
+          warnings: await docWriteWarnings(spaceId, docPath),
+        }
       }
 
+      if (!Array.isArray(stored)) throw new Error("Unexpected document format")
+      const splice = await spliceBlockEdits(stored, edits)
+      const written = await writeDoc(spaceId, docPath, splice.blocks, writeOptions)
+      if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
+      // A live session receives the stored blocks as a whole replacement.
+      // splice.regions names the replaced top-level blocks and what took
+      // their place, so a session can later apply only those regions.
       await syncDocAfterToolWrite(spaceId, docPath)
 
-      const headings = extractHeadings(result.blocks)
+      // Everything below describes what this write stored, even if another
+      // writer has changed the Doc since.
+      const finalBlocks = Array.isArray(written.content) ? written.content : splice.blocks
+      const finalProjection = await projectBlocks(finalBlocks)
+      const warnings: Array<DocConventionIssue | Record<string, string>> =
+        await docWriteWarnings(spaceId, docPath)
+      if (finalProjection.markdown !== splice.editedMarkdown) {
+        warnings.push({
+          severity: "hint",
+          code: "markdown_normalized",
+          message:
+            "Worktable stored the edited text in its normal Markdown form, which differs from the text you sent.",
+          hint: "Read the document again before copying oldText for the next edit.",
+        })
+      }
+      const finalById = blocksById(finalBlocks)
+      const changedIds = new Set([
+        ...splice.changed.modified,
+        ...splice.removedIds,
+      ])
+      const storedText = blocksPlainText(stored)
+      const finalText = blocksPlainText(finalBlocks)
       return {
         ok: true,
         docPath,
-        storedAs: finalStoredAs,
-        repairs: mermaidRepairs,
-        operationsApplied: result.operationsApplied,
-        skipped: result.skipped,
-        blockCount: result.blocks.length,
-        headings,
-        warnings: await docWriteWarnings(spaceId, docPath),
+        revision: committedDocRevision(written),
+        storedAs: written.storedAs,
+        changed: splice.changed,
+        snippet: regionSnippet(finalProjection, splice.regions),
+        formattingDropped: splice.formattingDropped,
+        annotationsAffected: await annotationsAffectedByEdit(
+          spaceId,
+          docPath,
+          ({ blockId, quote }) => {
+            if (blockId && changedIds.has(blockId)) {
+              const block = finalById.get(blockId)
+              if (!quote) return block !== undefined
+              return block
+                ? blocksPlainText([block]).includes(quote)
+                : finalText.includes(quote)
+            }
+            // Anchored by quote alone (or to a block that no longer exists):
+            // affected when the edit removed the quoted text.
+            if (quote && (!blockId || !finalById.has(blockId))) {
+              return storedText.includes(quote) && !finalText.includes(quote)
+                ? false
+                : null
+            }
+            return null
+          }
+        ),
+        repairs: [...repairs, ...(written.repairs ?? [])],
+        warnings,
       }
     }
     case "docs.delete": {

@@ -30,7 +30,7 @@ Reconnect the MCP client after upgrading so it refreshes `tools/list`.
 | `worktable_list_docs`                  | `worktable_docs_read` action `list`                      |
 | `worktable_read_doc`                   | `worktable_docs_read` action `read`                      |
 | `worktable_write_doc`                  | `worktable_docs_write` action `write`                    |
-| `worktable_patch_doc`                  | `worktable_docs_write` action `patch`                    |
+| `worktable_patch_doc`                  | `worktable_docs_write` action `edit` (exact text)        |
 | `worktable_rename_doc`                 | `worktable_docs_write` action `rename`                   |
 | `worktable_delete_doc`                 | `worktable_delete` action `doc`                          |
 | `worktable_get_widget_authoring_guide` | `worktable_html_read` action `guide`                     |
@@ -60,8 +60,9 @@ Reconnect the MCP client after upgrading so it refreshes `tools/list`.
 | `worktable_read_skill`                 | Retired; read workspace `skills/` paths as ordinary Docs |
 | `worktable_validate_mermaid`           | `worktable_mermaid` action `validate`                    |
 | `worktable_preview_mermaid`            | `worktable_mermaid` action `preview`                     |
+| `worktable_docs_write` action `patch`  | `worktable_docs_write` action `edit`                     |
 
-Public HTML arguments use `htmlId`; the internal storage directory and application URL remain named `widgets`. Annotation authorship always comes from the authenticated caller. Patch operations must now be an array rather than a JSON-encoded string.
+Public HTML arguments use `htmlId`; the internal storage directory and application URL remain named `widgets`. Annotation authorship always comes from the authenticated caller.
 
 The HTML guide accepts only the `runtime` profile. Install the optional HTML
 Agent Skill for visual composition and authoring workflow.

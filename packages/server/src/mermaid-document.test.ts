@@ -192,174 +192,45 @@ describe("automatic Mermaid document pipeline", () => {
     )
   })
 
-  it("rejects an invalid patch without changing the existing document", async () => {
+  it("rejects an invalid edit without changing the existing document", async () => {
     await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
-      docPath: "patch-target",
+      docPath: "edit-target",
       content: "# Stable\n",
     })
 
     await expect(
-      dispatchOperation("docs.patch", {
+      dispatchOperation("docs.edit", {
         spaceId,
-        docPath: "patch-target",
-        operations: [
+        docPath: "edit-target",
+        edits: [
           {
-            action: "append",
-            content: "```mermaid\nflowchart TD\nA-->\n```",
+            oldText: "# Stable\n",
+            newText: "# Stable\n\n```mermaid\nflowchart TD\nA-->\n```\n",
           },
         ],
       })
     ).rejects.toBeInstanceOf(MermaidDocumentValidationError)
 
-    expect((await readDoc(spaceId, "patch-target")).data).toBe("# Stable\n")
+    expect((await readDoc(spaceId, "edit-target")).data).toBe("# Stable\n")
   })
 
-  it("preserves escaped Mermaid examples while patching unrelated content", async () => {
+  it("keeps escaped Mermaid examples verbatim while editing unrelated content", async () => {
     const source =
       "# Mermaid syntax\n\n\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\n"
     writeFileSync(
-      join(testDir, "spaces", spaceId, "docs", "literal-patch.md"),
+      join(testDir, "spaces", spaceId, "docs", "literal-edit.md"),
       source
     )
 
-    await dispatchOperation("docs.patch", {
+    await dispatchOperation("docs.edit", {
       spaceId,
-      docPath: "literal-patch",
-      operations: [{ action: "append", content: "## Added\n\nUnrelated." }],
+      docPath: "literal-edit",
+      edits: [{ oldText: "# Mermaid syntax", newText: "# Mermaid syntax notes" }],
     })
 
-    const stored = await readDoc(spaceId, "literal-patch")
-    expect(stored.data).toContain("\\`\\`\\`mermaid")
-    expect(stored.data).toContain("## Added")
-  })
-
-  it("does not resurrect a protected escaped example when its quote is deleted", async () => {
-    const source =
-      "> Delete this quote\n>\n> \\`\\`\\`mermaid\n> flowchart TD\n> A-->B\n> \\`\\`\\`\n\n# Keep\n"
-    writeFileSync(
-      join(testDir, "spaces", spaceId, "docs", "literal-quote.md"),
-      source
-    )
-
-    await dispatchOperation("docs.patch", {
-      spaceId,
-      docPath: "literal-quote",
-      operations: [
-        { action: "delete", target: { search: "Delete this quote" } },
-      ],
-    })
-
-    const stored = await readDoc(spaceId, "literal-quote")
-    expect(stored.data).not.toContain("mermaid")
-    expect(stored.data).not.toContain("WorktableEscapedMermaidPlaceholder")
-    expect(stored.data).toContain("# Keep")
-  })
-
-  it("restores escaped Mermaid examples when a patch upgrades Markdown to rich JSON", async () => {
-    const source =
-      "# Mermaid syntax\n\n\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\n"
-    writeFileSync(
-      join(testDir, "spaces", spaceId, "docs", "literal-upgrade.md"),
-      source
-    )
-
-    const result = (await dispatchOperation("docs.patch", {
-      spaceId,
-      docPath: "literal-upgrade",
-      operations: [
-        {
-          action: "append",
-          content: [
-            {
-              type: "mermaid",
-              props: {
-                data: "flowchart TD\nNew-->Diagram",
-                title: "Named diagram",
-              },
-              children: [],
-            },
-          ],
-        },
-      ],
-    })) as { storedAs: string }
-
-    expect(result.storedAs).toBe("json")
-    const stored = await readDoc(spaceId, "literal-upgrade")
-    expect(JSON.stringify(stored.data)).toContain("```mermaid")
-    expect(JSON.stringify(stored.data)).not.toContain(
-      "WorktableEscapedMermaidPlaceholder"
-    )
-  })
-
-  it("restores an embedded escaped placeholder during a rich JSON upgrade", async () => {
-    const source =
-      "Before\n\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\nAfter\n"
-    writeFileSync(
-      join(testDir, "spaces", spaceId, "docs", "embedded-upgrade.md"),
-      source
-    )
-
-    await dispatchOperation("docs.patch", {
-      spaceId,
-      docPath: "embedded-upgrade",
-      operations: [
-        {
-          action: "append",
-          content: [
-            {
-              type: "mermaid",
-              props: {
-                data: "flowchart TD\nNew-->Diagram",
-                title: "Named diagram",
-              },
-              children: [],
-            },
-          ],
-        },
-      ],
-    })
-
-    const stored = await readDoc(spaceId, "embedded-upgrade")
-    const literalText = (stored.data as Array<any>)[0].content[0].text
-    expect(literalText).toContain("\\`\\`\\`mermaid")
-    expect(JSON.stringify(stored.data)).not.toContain(
-      "WorktableEscapedMermaidPlaceholder"
-    )
-  })
-
-  it("does not validate Mermaid content in a skipped patch operation", async () => {
-    await dispatchOperation("docs.write", { lifetime: "durable",
-      spaceId,
-      docPath: "skipped-patch-target",
-      content: "# Stable\n",
-    })
-
-    const result = (await dispatchOperation("docs.patch", {
-      spaceId,
-      docPath: "skipped-patch-target",
-      operations: [
-        {
-          action: "replace",
-          target: { heading: "Missing" },
-          content: "```mermaid\nflowchart TD\nA-->\n```",
-        },
-        { action: "append", content: "## Applied\n" },
-      ],
-    })) as {
-      operationsApplied: number
-      skipped: Array<{ index: number; reason: string }>
-    }
-
-    expect(result.operationsApplied).toBe(1)
-    expect(result.skipped).toEqual([
-      expect.objectContaining({
-        index: 0,
-        reason: 'target not found: heading="Missing"',
-      }),
-    ])
-    expect((await readDoc(spaceId, "skipped-patch-target")).data).toContain(
-      "## Applied"
+    expect((await readDoc(spaceId, "literal-edit")).data).toBe(
+      source.replace("# Mermaid syntax", "# Mermaid syntax notes")
     )
   })
 
@@ -383,45 +254,45 @@ describe("automatic Mermaid document pipeline", () => {
     expect(guide.guide).toContain('action "preview"')
   })
 
-  it("rejects an unpaired escaped fence inside a patch operation", async () => {
+  it("rejects an unpaired escaped fence in edit text", async () => {
     await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
-      docPath: "unpaired-patch-target",
+      docPath: "unpaired-edit-target",
       content: "# Stable\n",
     })
 
     await expect(
-      dispatchOperation("docs.patch", {
+      dispatchOperation("docs.edit", {
         spaceId,
-        docPath: "unpaired-patch-target",
-        operations: [
+        docPath: "unpaired-edit-target",
+        edits: [
           {
-            action: "append",
-            content: "\\`\\`\\`mermaid\nflowchart TD\nA-->B\n",
+            oldText: "# Stable\n",
+            newText: "# Stable\n\n\\`\\`\\`mermaid\nflowchart TD\nA-->B\n",
           },
         ],
       })
     ).rejects.toBeInstanceOf(MermaidDocumentValidationError)
 
-    expect((await readDoc(spaceId, "unpaired-patch-target")).data).toBe(
+    expect((await readDoc(spaceId, "unpaired-edit-target")).data).toBe(
       "# Stable\n"
     )
   })
 
-  it("returns repairs collected from patch operation content", async () => {
+  it("repairs escaped fences in edit text and reports the repair", async () => {
     await dispatchOperation("docs.write", { lifetime: "durable",
       spaceId,
-      docPath: "repaired-patch-target",
+      docPath: "repaired-edit-target",
       content: "# Stable\n",
     })
 
-    const result = (await dispatchOperation("docs.patch", {
+    const result = (await dispatchOperation("docs.edit", {
       spaceId,
-      docPath: "repaired-patch-target",
-      operations: [
+      docPath: "repaired-edit-target",
+      edits: [
         {
-          action: "append",
-          content: "\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\n",
+          oldText: "# Stable\n",
+          newText: "\\`\\`\\`mermaid\nflowchart TD\nA-->B\n\\`\\`\\`\n",
         },
       ],
     })) as {
@@ -431,14 +302,18 @@ describe("automatic Mermaid document pipeline", () => {
     expect(result.repairs).toEqual([
       expect.objectContaining({
         code: "ESCAPED_MERMAID_FENCE_REPAIRED",
+        editIndex: 0,
         startLine: 1,
         endLine: 4,
       }),
     ])
+    expect((await readDoc(spaceId, "repaired-edit-target")).data).toBe(
+      "```mermaid\nflowchart TD\nA-->B\n```\n"
+    )
   })
 })
 
-// Grammar variants share the actual parser; MCP write/patch atomicity is above.
+// Grammar variants share the actual parser; MCP write/edit atomicity is above.
 describe("Mermaid fence grammar", () => {
   it("validates and repairs fenced diagrams in Markdown containers", async () => {
     for (const { prefix, prelude, marker, language, startLine } of [

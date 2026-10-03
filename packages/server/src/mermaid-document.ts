@@ -159,12 +159,6 @@ interface MarkdownScanResult {
   repairs: MermaidDocumentRepair[]
   issues: MermaidDocumentIssue[]
   replacements: Array<{ start: number; end: number; text: string }>
-  escapedRanges: Array<{
-    start: number
-    end: number
-    markdown: string
-    containerPrefix: string
-  }>
 }
 
 function scanMarkdown(markdown: string): MarkdownScanResult {
@@ -173,13 +167,12 @@ function scanMarkdown(markdown: string): MarkdownScanResult {
   const repairs: MermaidDocumentRepair[] = []
   const issues: MermaidDocumentIssue[] = []
   const replacements: MarkdownScanResult["replacements"] = []
-  const escapedRanges: MarkdownScanResult["escapedRanges"] = []
   if (
     !/(?:`{3,}|~{3,}|(?:\\`){3,}|(?:\\~){3,})[^\S\r\n]*(?:mermaid|mmd)\b/i.test(
       markdown
     )
   ) {
-    return { diagrams, repairs, issues, replacements, escapedRanges }
+    return { diagrams, repairs, issues, replacements }
   }
 
   const unescaped = unescapePotentialMermaidFences(lines)
@@ -253,80 +246,9 @@ function scanMarkdown(markdown: string): MarkdownScanResult {
       startLine,
       endLine,
     })
-    const rangeStart = openingLine.start
-    const rangeEnd = closingLine.start + closingLine.text.length
-    escapedRanges.push({
-      start: rangeStart,
-      end: rangeEnd,
-      markdown: markdown.slice(rangeStart, rangeEnd),
-      containerPrefix: openingLine.text.slice(0, opening.markerStart),
-    })
   }
 
-  return { diagrams, repairs, issues, replacements, escapedRanges }
-}
-
-export interface EscapedMermaidFenceProtection {
-  markdown: string
-  literals: Array<{ placeholder: string; markdown: string }>
-}
-
-export function protectEscapedMermaidFences(
-  markdown: string
-): EscapedMermaidFenceProtection {
-  const scanned = scanMarkdown(markdown)
-  const literals = scanned.escapedRanges.map((range, index) => {
-    let suffix = index + 1
-    let placeholder = `WorktableEscapedMermaidPlaceholder${suffix}`
-    while (markdown.includes(placeholder)) {
-      suffix += scanned.escapedRanges.length + 1
-      placeholder = `WorktableEscapedMermaidPlaceholder${suffix}`
-    }
-    return { ...range, placeholder }
-  })
-  let protectedMarkdown = markdown
-  for (const literal of [...literals].sort((a, b) => b.start - a.start)) {
-    protectedMarkdown =
-      protectedMarkdown.slice(0, literal.start) +
-      literal.containerPrefix +
-      literal.placeholder +
-      protectedMarkdown.slice(literal.end)
-  }
-  return {
-    markdown: protectedMarkdown,
-    literals: literals.map(({ placeholder, markdown: literalMarkdown }) => ({
-      placeholder,
-      markdown: literalMarkdown,
-    })),
-  }
-}
-
-export function restoreEscapedMermaidFences(
-  markdown: string,
-  protection: EscapedMermaidFenceProtection
-): string {
-  let restored = markdown
-  for (const literal of protection.literals) {
-    const placeholderAt = restored.indexOf(literal.placeholder)
-    if (placeholderAt === -1) continue
-    const lineStart = Math.max(
-      restored.lastIndexOf("\n", placeholderAt - 1),
-      restored.lastIndexOf("\r", placeholderAt - 1)
-    ) + 1
-    const nextLineFeed = restored.indexOf("\n", placeholderAt)
-    const nextCarriageReturn = restored.indexOf("\r", placeholderAt)
-    const lineEndCandidates = [nextLineFeed, nextCarriageReturn].filter(
-      (index) => index !== -1
-    )
-    const lineEnd = lineEndCandidates.length
-      ? Math.min(...lineEndCandidates)
-      : restored.length
-    restored =
-      restored.slice(0, lineStart) +
-      literal.markdown +
-      restored.slice(lineEnd)
-  }
-  return restored
+  return { diagrams, repairs, issues, replacements }
 }
 
 export function repairEscapedMermaidFences(markdown: string): {

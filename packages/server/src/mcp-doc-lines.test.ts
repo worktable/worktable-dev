@@ -274,6 +274,7 @@ describe("line-addressed Doc reads", () => {
       spaceId,
       docPath: "plans/brief",
       content: richDoc("The lighthouse replaces the old signal."),
+      expectedRevision: before.data.revision,
     })
     expect(written.isError).toBe(false)
     const grep = await call(connected, "worktable_docs_read", {

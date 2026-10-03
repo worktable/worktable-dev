@@ -118,9 +118,9 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_documents_write:
     "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
   worktable_docs_read:
-    "List, read, or grep Worktable Docs. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision, plus any Docs it could not search in skipped; use worktable_discover search to find Docs by meaning. read accepts offset and limit to read a long Doc in line ranges.",
+    "List, read, or grep Worktable Docs. read returns Markdown and the revision that write and edit accept as expectedRevision; offset and limit read a long Doc in line ranges. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision, plus any Docs it could not search in skipped; use worktable_discover search to find Docs by meaning.",
   worktable_docs_write:
-    "Create, replace, patch, or rename Worktable Docs. Creating a Doc requires a lifetime: durable or temporary.",
+    "Create, edit, replace, or rename Worktable Docs. Read the doc, then call edit with oldText copied exactly from the read content. Include enough surrounding text to match once. On ambiguous or no_match, read again; never guess. Use write with expectedRevision only to restructure a whole document. Creating a Doc requires a lifetime: durable or temporary.",
   worktable_drawings_read:
     "Inspect drawings as objects and PNG previews, query text/type/region, render PNG or SVG, or list reversible agent changes. Start with guidance action drawings. Shared document tools list, move, archive and version drawings.",
   worktable_drawings_write:
@@ -395,11 +395,13 @@ export function registerTools(
           "code" in error &&
           typeof (error as { code?: unknown }).code === "string"
         ) {
+          const details = (error as { details?: unknown }).details
           return mkErr(
             JSON.stringify(
               {
                 error: error.message,
                 code: (error as { code: string }).code,
+                ...(details && typeof details === "object" ? details : {}),
               },
               null,
               2

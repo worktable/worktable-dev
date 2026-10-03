@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { blocksToMarkdown, markdownToBlocks } from "./markdown.ts";
 import { canonicalizeBlocks } from "./blocknote.ts";
+import { projectBlocks, spliceBlockEdits, spliceBlockReplacement } from "./markdown-edit.ts";
 import { readDoc, writeDoc, writeSpace } from "./store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
 import type { SpaceFile } from "@worktable/types";
@@ -469,4 +470,294 @@ describe("storage round-trip through the real store", () => {
     expect(blocks[0].type).toBe("paragraph");
     expect(inlineText(blocks[0].content)).toContain("```mermaid");
   });
+});
+
+// ── 5. Exact-text edits through the Markdown projection ───
+
+/** Every node by id, with children reduced to ids so each node is compared on its own. */
+function nodesById(blocks: any[], into = new Map<string, string>()): Map<string, string> {
+  for (const block of blocks) {
+    into.set(
+      block.id,
+      JSON.stringify({ ...block, children: (block.children ?? []).map((child: any) => child.id) })
+    );
+    nodesById(block.children ?? [], into);
+  }
+  return into;
+}
+
+const run = (t: string, styles: Record<string, unknown> = {}) => ({ type: "text", text: t, styles });
+
+// One node of every kind agents meet in rich Docs, with formatting Markdown cannot show.
+const richCorpus = [
+  { type: "heading", props: { level: 1 }, content: [run("Project brief")] },
+  {
+    type: "paragraph",
+    content: [
+      run("See "),
+      { type: "link", href: "https://example.com", content: [run("the site")] },
+      run(" and "),
+      run("bold", { bold: true }),
+      run(" with "),
+      run("code()", { code: true }),
+      run("."),
+    ],
+  },
+  { type: "paragraph", content: [run("Red words", { textColor: "red" }), run(" then plain.")] },
+  {
+    type: "paragraph",
+    props: { backgroundColor: "yellow", textAlignment: "center" },
+    content: [run("Centered highlight")],
+  },
+  { type: "paragraph", content: [run("Underlined", { underline: true }), run(" tail")] },
+  {
+    type: "bulletListItem",
+    content: [run("Parent bullet")],
+    children: [{ type: "bulletListItem", props: { textColor: "blue" }, content: [run("Blue child")] }],
+  },
+  { type: "bulletListItem", content: [run("Second bullet")] },
+  { type: "numberedListItem", content: [run("First step")] },
+  { type: "numberedListItem", content: [run("Second step")] },
+  { type: "checkListItem", props: { checked: true }, content: [run("Done task")] },
+  { type: "checkListItem", props: { checked: false }, content: [run("Open task")] },
+  {
+    type: "toggleListItem",
+    content: [run("Toggle")],
+    children: [{ type: "paragraph", content: [run("Hidden detail")] }],
+  },
+  {
+    type: "heading",
+    props: { level: 2, isToggleable: true },
+    content: [run("Toggle heading")],
+    children: [{ type: "paragraph", content: [run("Under toggle heading")] }],
+  },
+  { type: "quote", content: [run("Quoted wisdom")] },
+  { type: "codeBlock", props: { language: "typescript" }, content: [run("const x = 1;\nconst y = 2;")] },
+  { type: "mermaid", props: { data: "graph TD; A-->B", title: "Flow" } },
+  {
+    type: "table",
+    content: {
+      type: "tableContent",
+      columnWidths: [120, 200],
+      headerRows: 1,
+      rows: [
+        { cells: [[run("Name")], [run("Role")]] },
+        { cells: [[run("Ada")], [run("Engineer")]] },
+      ],
+    },
+  },
+  { type: "image", props: { url: "https://example.com/pic.png", caption: "A picture", previewWidth: 320 } },
+  { type: "divider" },
+  { type: "file", props: { url: "https://example.com/spec.pdf", name: "spec.pdf" } },
+  { type: "heading", props: { level: 3 }, content: [run("Notes")] },
+  { type: "paragraph", content: [run("Closing line")] },
+  { type: "paragraph", content: [] },
+];
+
+describe("exact-text edits keep every block the edit does not touch", () => {
+  // [edited node, oldText, newText]; null newText: Markdown cannot represent the node intact.
+  const cases: Array<[string, string, string | null]> = [
+    ["heading", "# Project brief", "# Project summary"],
+    ["link text", "the site", "our site"],
+    ["colored text", "Red words", "Red letters"],
+    ["block colors and alignment", "Centered highlight", "Centered note"],
+    ["underlined text", " tail", " end"],
+    ["nested colored child", "Blue child", "Blue kid"],
+    ["bullet", "Second bullet", "Next bullet"],
+    ["numbered item", "Second step", "Final step"],
+    ["checklist item", "[ ] Open task", "[x] Open task"],
+    ["toggle", "* Toggle", "* Toggle here"],
+    ["toggle child", "Hidden detail", "Hidden details"],
+    ["quote", "Quoted wisdom", "Quoted insight"],
+    ["code", "const y = 2;", "const y = 3;"],
+    ["titled Mermaid diagram", "graph TD; A-->B", "graph TD; A-->C"],
+    ["table with column widths", "| Ada        |", "| Grace      |"],
+    ["image with width", "A picture", "A photo"],
+    ["closing paragraph", "Closing line", "Closing remark"],
+    ["toggle heading's child", "Under toggle heading", "Under the toggle heading"],
+    ["file", "[spec.pdf]", null],
+    // Text that crosses a toggle heading into its children cannot say which is which.
+    ["toggle heading with children", "## Toggle heading\n\nUnder", null],
+  ];
+
+  it("changes exactly the edited node, and the result reads back as the edited Markdown", async () => {
+    const stored = (await canonicalizeBlocks(richCorpus)) as any[];
+    const before = nodesById(stored);
+    expect(before.size).toBe(26);
+
+    for (const [name, oldText, newText] of cases) {
+      if (newText === null) {
+        await expect(
+          spliceBlockEdits(stored, [{ oldText, newText: `${oldText}!` }])
+        ).rejects.toMatchObject({ code: "unsupported_block" });
+        continue;
+      }
+      const result = await spliceBlockEdits(stored, [{ oldText, newText }]);
+      const after = (await canonicalizeBlocks(result.blocks)) as any[];
+      const afterNodes = nodesById(after);
+      const changed = [...before].filter(([id, node]) => afterNodes.get(id) !== node);
+      expect({ name, changed: changed.length, nodes: afterNodes.size }).toEqual({
+        name,
+        changed: 1,
+        nodes: before.size,
+      });
+      expect({ name, markdown: (await projectBlocks(after)).markdown }).toEqual({
+        name,
+        markdown: result.editedMarkdown,
+      });
+    }
+
+    // What Markdown cannot show stays with the edited block.
+    const colored = await spliceBlockEdits(stored, [{ oldText: "Red words", newText: "Red letters" }]);
+    expect(colored.blocks[2].content[0]).toMatchObject({ text: "Red letters", styles: { textColor: "red" } });
+    const table = await spliceBlockEdits(stored, [{ oldText: "| Ada        |", newText: "| Grace      |" }]);
+    expect(table.blocks[16].content.columnWidths).toEqual([120, 200]);
+    const centered = await spliceBlockEdits(stored, [{ oldText: "Centered highlight", newText: "Centered note" }]);
+    expect(centered.blocks[3].props).toMatchObject({ backgroundColor: "yellow", textAlignment: "center" });
+    expect(centered.changed).toEqual({ kept: 25, modified: [stored[3].id], inserted: 0, removed: 0 });
+
+    // An insertion adds one node; two distant edits change only their own nodes.
+    const inserted = await spliceBlockEdits(stored, [
+      { oldText: "# Project brief\n", newText: "# Project brief\n\nInserted paragraph.\n" },
+    ]);
+    const insertedNodes = nodesById((await canonicalizeBlocks(inserted.blocks)) as any[]);
+    expect([...before].every(([id, node]) => insertedNodes.get(id) === node)).toBe(true);
+    expect(insertedNodes.size).toBe(before.size + 1);
+
+    // Deleting a block next to an edited one never hands its id to the edited text.
+    const merged = await spliceBlockEdits(stored, [
+      { oldText: "Centered highlight\n\nUnderlined tail", newText: "Underlined end" },
+    ]);
+    expect(merged.removedIds).toEqual([stored[3].id]);
+    expect(merged.changed.modified).toEqual([stored[4].id]);
+
+    const distant = await spliceBlockEdits(stored, [
+      { oldText: "Project brief", newText: "Project plan" },
+      { oldText: "Closing line", newText: "Closing note" },
+    ]);
+    const distantNodes = nodesById((await canonicalizeBlocks(distant.blocks)) as any[]);
+    expect([...before].filter(([id, node]) => distantNodes.get(id) !== node)).toHaveLength(2);
+  }, 20_000);
+
+  /** Ids of nodes whose stored JSON differs between two block trees. */
+  async function changedNodes(before: any[], after: any[]): Promise<string[]> {
+    const old = nodesById(before);
+    const next = nodesById((await canonicalizeBlocks(after)) as any[]);
+    return [...old].filter(([id, node]) => next.get(id) !== node).map(([id]) => id);
+  }
+
+  it("edits list items with nested paragraphs and hard breaks without touching their neighbours", async () => {
+    const stored = (await canonicalizeBlocks([
+      { type: "bulletListItem", content: [run("first item")] },
+      {
+        type: "bulletListItem",
+        content: [run("par")],
+        children: [{ type: "paragraph", content: [run("child para")] }],
+      },
+      { type: "bulletListItem", content: [run("line one\nline two")] },
+      { type: "bulletListItem", content: [run(" leading space")] },
+      { type: "bulletListItem", content: [run("last")] },
+    ])) as any[];
+    const { markdown } = await projectBlocks(stored);
+    // Nested blocks are indented under their item; hard breaks continue it.
+    expect(markdown).toContain("* par\n\n  child para\n");
+    expect(markdown).toContain("* line one\\\n  line two\n");
+
+    const first = await spliceBlockEdits(stored, [{ oldText: "first item", newText: "first thing" }]);
+    expect(await changedNodes(stored, first.blocks)).toEqual([stored[0].id]);
+
+    const child = await spliceBlockEdits(stored, [{ oldText: "child para", newText: "child note" }]);
+    expect(await changedNodes(stored, child.blocks)).toEqual([stored[1].children[0].id]);
+
+    const broken = await spliceBlockEdits(stored, [{ oldText: "line two", newText: "line 2" }]);
+    expect(await changedNodes(stored, broken.blocks)).toEqual([stored[2].id]);
+    expect(broken.blocks[2].content).toEqual([{ type: "text", text: "line one\nline 2", styles: {} }]);
+
+    // Rewriting the document with its own text changes nothing; one changed
+    // item changes one node and keeps the nesting.
+    expect(await changedNodes(stored, (await spliceBlockReplacement(stored, markdown)).blocks)).toEqual([]);
+    const rewritten = await spliceBlockReplacement(stored, markdown.replace("last", "final"));
+    expect(rewritten.formattingDropped).toEqual([]);
+    expect(await changedNodes(stored, rewritten.blocks)).toEqual([stored[4].id]);
+  }, 20_000);
+
+  it("changes only the edited characters of a block", async () => {
+    const stored = (await canonicalizeBlocks([
+      { type: "paragraph", content: [run("*star* literal and friends")] },
+      { type: "paragraph", content: [run("line one\nline two more")] },
+      { type: "paragraph", content: [run("Wrap it in a <div> tag")] },
+      { type: "paragraph", content: [run("Plain "), run("bold words", { bold: true }), run(" tail")] },
+    ])) as any[];
+    const edit = async (oldText: string, newText: string, index: number) =>
+      (await spliceBlockEdits(stored, [{ oldText, newText }])).blocks[index].content;
+
+    expect(await edit("friends", "pals", 0)).toEqual([
+      { type: "text", text: "*star* literal and pals", styles: {} },
+    ]);
+    expect(await edit("more", "most", 1)).toEqual([{ type: "text", text: "line one\nline two most", styles: {} }]);
+    expect(await edit("tag", "element", 2)).toEqual([
+      { type: "text", text: "Wrap it in a <div> element", styles: {} },
+    ]);
+    // Typing inside bold text stays bold; new markup adds its own style.
+    expect(await edit("bold words", "bold phrases", 3)).toEqual([
+      { type: "text", text: "Plain ", styles: {} },
+      { type: "text", text: "bold phrases", styles: { bold: true } },
+      { type: "text", text: " tail", styles: {} },
+    ]);
+    expect(await edit(" tail", " *new* tail", 3)).toContainEqual({ type: "text", text: "new", styles: { italic: true } });
+  }, 20_000);
+
+  it("keeps a moved block and pairs changed blocks only with the block they edit", async () => {
+    const moved = (await canonicalizeBlocks([
+      { type: "heading", props: { level: 1 }, content: [run("Title")] },
+      {
+        type: "paragraph",
+        props: { backgroundColor: "yellow" },
+        content: [run("Alpha "), run("important", { textColor: "red" })],
+      },
+      { type: "paragraph", content: [run("B")] },
+      { type: "paragraph", content: [run("C")] },
+    ])) as any[];
+    const reordered = await spliceBlockReplacement(moved, "# Title\n\nB\n\nC\n\nAlpha important\n");
+    expect(reordered.blocks.map((block: any) => block.id)).toEqual([
+      moved[0].id,
+      moved[2].id,
+      moved[3].id,
+      moved[1].id,
+    ]);
+    expect(reordered.blocks[3]).toEqual(moved[1]);
+    expect(reordered.formattingDropped).toEqual([]);
+
+    const prose = (await canonicalizeBlocks([
+      { type: "paragraph", content: [run("The quarterly report covers revenue growth.")] },
+      { type: "paragraph", content: [run("Hiring stays flat until spring.")] },
+      { type: "paragraph", content: [run("A1")] },
+      { type: "paragraph", content: [run("B1")] },
+    ])) as any[];
+    // Two paragraphs merged into one unrelated sentence lend it no id.
+    const replaced = await spliceBlockEdits(prose, [
+      {
+        oldText: "The quarterly report covers revenue growth.\n\nHiring stays flat until spring.",
+        newText: "Launch moves to Thursday.",
+      },
+    ]);
+    expect(replaced.removedIds).toEqual([prose[0].id, prose[1].id]);
+    expect(replaced.changed.inserted).toBe(1);
+    // Short blocks rewritten slot for slot keep their ids.
+    const rewritten = await spliceBlockEdits(prose, [{ oldText: "A1\n\nB1", newText: "A2\n\nB9" }]);
+    expect(rewritten.changed.modified).toEqual([prose[2].id, prose[3].id]);
+    expect(rewritten.removedIds).toEqual([]);
+  }, 20_000);
+
+  it("refuses to change a block carrying properties the schema does not know", async () => {
+    const stored = [
+      { id: "a", type: "paragraph", props: { foreignProp: "x" }, content: [run("Keep me")], children: [] },
+      { id: "b", type: "paragraph", props: {}, content: [run("Edit me")], children: [] },
+    ];
+    await expect(
+      spliceBlockEdits(stored, [{ oldText: "Keep me", newText: "Kept" }])
+    ).rejects.toMatchObject({ code: "unsupported_block", details: { fields: ["foreignProp"] } });
+    const other = await spliceBlockEdits(stored, [{ oldText: "Edit me", newText: "Edited" }]);
+    expect(other.blocks[0]).toBe(stored[0]);
+  }, 20_000);
 });

@@ -794,7 +794,9 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
   }
 
   // ?format=markdown — export the doc as a markdown string regardless of how
-  // it is stored (md docs pass through; BlockNote docs convert lossily).
+  // it is stored (md docs pass through; BlockNote docs convert lossily). This
+  // is BlockNote's own whole-document Markdown, an export format; it can
+  // differ from the projection agents read and edit (doc-markdown-projection).
   if (c.req.query("format") === "markdown") {
     let markdown: string | null;
     if (result.storedAs === "md") {

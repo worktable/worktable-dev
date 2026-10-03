@@ -68,7 +68,7 @@ export interface MarkdownSafetyResult {
  * `{ type: "tableCell", content, props }` objects. Stored docs contain
  * both forever, so every cell walker must go through this.
  */
-function cellInlines(cell: unknown): unknown[] {
+export function cellInlines(cell: unknown): unknown[] {
   if (Array.isArray(cell)) return cell;
   const content = (cell as Record<string, unknown> | null | undefined)?.content;
   return Array.isArray(content) ? content : [];
@@ -405,24 +405,30 @@ export async function blocksToMarkdownSafe(blocks: unknown[]): Promise<string | 
 
 /**
  * Convert markdown string to BlockNote blocks.
+ *
+ * The parser invents a random id for every block. Those ids are dropped here:
+ * a block without an id inherits the id of the matching existing block on
+ * write (`inheritBlockIds`), and canonicalization mints one for new blocks.
  */
 export async function markdownToBlocks(markdown: string): Promise<Block[]> {
   const editor = await getEditor();
   const parsed = await editor.tryParseMarkdownToBlocks(markdown);
-  return normalizeMermaidBlocks(parsed).blocks as Block[];
+  return withoutBlockIds(normalizeMermaidBlocks(parsed).blocks) as Block[];
+}
+
+function withoutBlockIds(blocks: unknown[]): unknown[] {
+  return blocks.map((value) => {
+    if (!value || typeof value !== "object") return value;
+    const { id: _id, ...block } = value as Block;
+    return Array.isArray(block.children)
+      ? { ...block, children: withoutBlockIds(block.children) }
+      : block;
+  });
 }
 
 // ── Content Format Detection ───────────────────────────────
 
 export type ContentFormat = "markdown" | "blocknote";
-
-export interface BlockSummaryEntry {
-  index: number;
-  id?: string;
-  type: string;
-  text?: string;
-  preview?: string;
-}
 
 /**
  * Detect whether MCP content is a markdown string or BlockNote block array.
@@ -473,55 +479,6 @@ function inlineTextPreview(content: unknown): string {
     .trim();
 }
 
-function blockPreview(block: any): string {
-  const type = typeof block?.type === "string" ? block.type : "unknown";
-
-  if (type === "mermaid") {
-    const data = typeof block?.props?.data === "string" ? block.props.data : "";
-    return data.split(/\r?\n/).find((line: string) => line.trim().length > 0)?.trim() ?? "";
-  }
-
-  if (type === "table" && block?.content?.type === "tableContent") {
-    const firstRow = block.content.rows?.[0];
-    const firstCell = firstRow?.cells?.[0];
-    const text = inlineTextPreview(cellInlines(firstCell));
-    return text ? `table: ${text}` : "table";
-  }
-
-  if (type === "codeBlock") {
-    const text = inlineTextPreview(block?.content);
-    return text.slice(0, 120);
-  }
-
-  return inlineTextPreview(block?.content).slice(0, 160);
-}
-
-export function summarizeBlocks(blocks: unknown[], limit = 50): BlockSummaryEntry[] {
-  return blocks.slice(0, limit).map((rawBlock, index) => {
-    const block = rawBlock as Record<string, unknown> | null | undefined;
-    const type = typeof block?.type === "string" ? block.type : "unknown";
-    const preview = blockPreview(block);
-    const summary: BlockSummaryEntry = {
-      index,
-      type,
-    };
-
-    if (typeof block?.id === "string") {
-      summary.id = block.id;
-    }
-
-    if (preview) {
-      if (type === "heading" || type === "paragraph" || type.endsWith("ListItem")) {
-        summary.text = preview;
-      } else {
-        summary.preview = preview;
-      }
-    }
-
-    return summary;
-  });
-}
-
 export function getRichBlockTypes(blocks: unknown[]): string[] {
   const richTypes = new Set<string>();
 
@@ -556,260 +513,4 @@ export function containsMermaidBlock(blocks: unknown[]): boolean {
   };
   walk(blocks);
   return found;
-}
-
-// ── Patch Operations ───────────────────────────────────────
-
-export interface PatchTarget {
-  blockId?: string;
-  heading?: string;
-  index?: number;
-  search?: string;
-}
-
-export interface PatchOperation {
-  action: "replace" | "insert_after" | "insert_before" | "delete" | "append";
-  target?: PatchTarget;
-  content?: unknown[] | string;
-}
-
-export interface PatchSkip {
-  index: number;
-  action: PatchOperation["action"];
-  reason: string;
-  target?: PatchTarget;
-}
-
-interface ResolvedRange {
-  start: number;
-  end: number; // exclusive
-}
-
-function describeTarget(target?: PatchTarget): string {
-  if (!target) return "(no target provided)";
-  if (target.blockId) return `blockId=${JSON.stringify(target.blockId)}`;
-  if (target.heading) return `heading=${JSON.stringify(target.heading)}`;
-  if (target.index !== undefined) return `index=${target.index}`;
-  if (target.search) return `search=${JSON.stringify(target.search)}`;
-  return "(empty target)";
-}
-
-/**
- * Resolve a target to a block index range within a block array.
- */
-function resolveTarget(blocks: any[], target: PatchTarget): ResolvedRange | null {
-  // By block ID
-  if (target.blockId) {
-    const idx = blocks.findIndex((b: any) => b.id === target.blockId);
-    if (idx === -1) return null;
-    return { start: idx, end: idx + 1 };
-  }
-
-  // By heading text (section: heading through next same-or-higher-level heading)
-  if (target.heading) {
-    const searchText = target.heading.toLowerCase();
-    let startIdx = -1;
-    let headingLevel = 0;
-
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      if (block?.type === "heading") {
-        const text = (block.content ?? [])
-          .filter((c: any) => c?.type === "text")
-          .map((c: any) => c.text ?? "")
-          .join("")
-          .toLowerCase();
-
-        if (startIdx === -1) {
-          // Looking for the start heading
-          if (text.includes(searchText)) {
-            startIdx = i;
-            headingLevel = block.props?.level ?? 1;
-          }
-        } else {
-          // Looking for end of section (same or higher level heading)
-          const level = block.props?.level ?? 1;
-          if (level <= headingLevel) {
-            return { start: startIdx, end: i };
-          }
-        }
-      }
-    }
-
-    // If we found the heading but reached end of doc
-    if (startIdx !== -1) {
-      return { start: startIdx, end: blocks.length };
-    }
-    return null;
-  }
-
-  // By index
-  if (target.index !== undefined) {
-    if (target.index < 0 || target.index >= blocks.length) return null;
-    return { start: target.index, end: target.index + 1 };
-  }
-
-  // By text search
-  if (target.search) {
-    const searchText = target.search.toLowerCase();
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      const content = block?.content;
-      let blockText = "";
-
-      if (Array.isArray(content)) {
-        blockText = content
-          .filter((c: any) => c?.type === "text")
-          .map((c: any) => c.text ?? "")
-          .join("");
-      } else if (content?.type === "tableContent") {
-        // Search through table cells
-        for (const row of content.rows ?? []) {
-          for (const cell of row.cells ?? []) {
-            blockText += (cellInlines(cell) as any[])
-              .filter((c: any) => c?.type === "text")
-              .map((c: any) => c.text ?? "")
-              .join("");
-          }
-        }
-      }
-
-      if (block?.type === "mermaid" && typeof block?.props?.data === "string") {
-        blockText += block.props.data;
-      }
-
-      if (blockText.toLowerCase().includes(searchText)) {
-        return { start: i, end: i + 1 };
-      }
-    }
-    return null;
-  }
-
-  return null;
-}
-
-/**
- * Apply a series of patch operations to a block array.
- * Returns the modified blocks and metadata.
- */
-export async function applyPatchOperations(
-  blocks: any[],
-  operations: PatchOperation[],
-  options?: {
-    prepareContent?: (
-      content: string | unknown[],
-      operation: PatchOperation,
-      index: number
-    ) => Promise<string | unknown[]>;
-  }
-): Promise<{ blocks: any[]; operationsApplied: number; skipped: PatchSkip[] }> {
-  let result = [...blocks];
-  let applied = 0;
-  const skipped: PatchSkip[] = [];
-
-  for (const [index, op] of operations.entries()) {
-    // Preparation may reject malformed input. Run it only after the operation's
-    // other preconditions and target resolve, so skipped content cannot abort a
-    // patch that has valid operations after it.
-    const contentBlocks = async (): Promise<any[] | undefined> => {
-      if (op.content === undefined) return undefined;
-      if (typeof op.content !== "string" && !Array.isArray(op.content)) {
-        throw new Error(
-          `Patch operation ${index + 1} content must be a Markdown string or block array`
-        );
-      }
-      const content = options?.prepareContent
-        ? await options.prepareContent(op.content, op, index)
-        : op.content;
-      return typeof content === "string"
-        ? await markdownToBlocks(content)
-        : content;
-    };
-
-    switch (op.action) {
-      case "append": {
-        if (op.content === undefined) {
-          skipped.push({ index, action: op.action, target: op.target, reason: "append requires content" });
-          break;
-        }
-        result = [...result, ...(await contentBlocks())!];
-        applied++;
-        break;
-      }
-
-      case "delete": {
-        if (!op.target) {
-          skipped.push({ index, action: op.action, reason: "delete requires a target" });
-          break;
-        }
-        const range = resolveTarget(result, op.target);
-        if (!range) {
-          skipped.push({ index, action: op.action, target: op.target, reason: `target not found: ${describeTarget(op.target)}` });
-          break;
-        }
-        result.splice(range.start, range.end - range.start);
-        applied++;
-        break;
-      }
-
-      case "replace": {
-        if (!op.target) {
-          skipped.push({ index, action: op.action, reason: "replace requires a target" });
-          break;
-        }
-        if (op.content === undefined) {
-          skipped.push({ index, action: op.action, target: op.target, reason: "replace requires content" });
-          break;
-        }
-        const range = resolveTarget(result, op.target);
-        if (!range) {
-          skipped.push({ index, action: op.action, target: op.target, reason: `target not found: ${describeTarget(op.target)}` });
-          break;
-        }
-        result.splice(range.start, range.end - range.start, ...(await contentBlocks())!);
-        applied++;
-        break;
-      }
-
-      case "insert_after": {
-        if (!op.target) {
-          skipped.push({ index, action: op.action, reason: "insert_after requires a target" });
-          break;
-        }
-        if (op.content === undefined) {
-          skipped.push({ index, action: op.action, target: op.target, reason: "insert_after requires content" });
-          break;
-        }
-        const range = resolveTarget(result, op.target);
-        if (!range) {
-          skipped.push({ index, action: op.action, target: op.target, reason: `target not found: ${describeTarget(op.target)}` });
-          break;
-        }
-        result.splice(range.end, 0, ...(await contentBlocks())!);
-        applied++;
-        break;
-      }
-
-      case "insert_before": {
-        if (!op.target) {
-          skipped.push({ index, action: op.action, reason: "insert_before requires a target" });
-          break;
-        }
-        if (op.content === undefined) {
-          skipped.push({ index, action: op.action, target: op.target, reason: "insert_before requires content" });
-          break;
-        }
-        const range = resolveTarget(result, op.target);
-        if (!range) {
-          skipped.push({ index, action: op.action, target: op.target, reason: `target not found: ${describeTarget(op.target)}` });
-          break;
-        }
-        result.splice(range.start, 0, ...(await contentBlocks())!);
-        applied++;
-        break;
-      }
-    }
-  }
-
-  return { blocks: result, operationsApplied: applied, skipped };
 }

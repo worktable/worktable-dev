@@ -84,22 +84,36 @@ export const ReadDocInput = z.object({
   docPath: z
     .string({ error: "docPath is required" })
     .describe("Extensionless path, e.g. 'notes/readme'"),
+  format: z
+    .enum(["markdown", "blocknote"])
+    .optional()
+    .describe(
+      "markdown (default) returns the text that action edit matches against. blocknote returns the stored BlockNote blocks of a rich Doc instead."
+    ),
 })
+
+const ExpectedDocRevision = z
+  .string()
+  .min(1)
+  .max(256)
 
 export const WriteDocInput = z.object({
   spaceId: z.string().describe("ID of the space to write the document to"),
-  docPath: z.string().describe("Path of the document to create or update"),
+  docPath: z.string().describe("Path of the document to create or replace"),
   content: z
     .union([z.string(), z.array(z.unknown())])
     .describe(
-      "Document content. String = markdown (stored as .md). Array = BlockNote blocks (stored as .json). If writing markdown to an existing .json doc with rich formatting, rejected unless force=true."
+      "Whole document content. String = Markdown; Array = BlockNote blocks. Markdown replacing a rich Doc keeps the blocks whose text is unchanged, with their formatting."
     ),
+  expectedRevision: ExpectedDocRevision.optional().describe(
+    "Required to replace an existing Doc: the revision from your latest read. Omit only when creating a Doc."
+  ),
   force: z
     .boolean()
     .optional()
     .default(false)
     .describe(
-      "When true, allows overwriting a .json document containing rich formatting with markdown, accepting data loss."
+      "When true, accept losing formatting that Markdown cannot show in the blocks this write changes."
     ),
   lifetime: DocumentLifetimeInputSchema.optional().describe(
     `${DocumentLifetimeInputSchema.description} On an existing document, omit it to keep the current lifetime.`
@@ -107,51 +121,33 @@ export const WriteDocInput = z.object({
   archiveOn: DocumentArchiveOnInputSchema.optional(),
 })
 
-export const PatchDocInput = z.object({
+export const EditDocInput = z.object({
   spaceId: z.string().describe("ID of the space containing the document"),
-  docPath: z.string().describe("Path of the document to patch"),
-  operations: z
+  docPath: z.string().describe("Path of the document to edit"),
+  edits: z
     .array(
       z.object({
-        action: z
-          .enum([
-            "replace",
-            "insert_after",
-            "insert_before",
-            "delete",
-            "append",
-          ])
+        oldText: z
+          .string()
           .describe(
-            "replace: replace targeted section. insert_after/before: insert adjacent to target. delete: remove targeted section. append: add to end of document."
+            "Exact text copied from the read content, with enough surrounding text to match once."
           ),
-        target: z
-          .object({
-            blockId: z.string().optional().describe("Exact block ID"),
-            heading: z
-              .string()
-              .optional()
-              .describe(
-                "Find section by heading text (matches first heading containing this text). For replace/delete, targets the heading AND all content until the next heading of equal or higher level."
-              ),
-            index: z.number().optional().describe("Block index (0-based)"),
-            search: z
-              .string()
-              .optional()
-              .describe("Find first block containing this text"),
-          })
+        newText: z.string().describe("Replacement text, in Markdown."),
+        replaceAll: z
+          .boolean()
           .optional()
-          .describe(
-            "How to find the block(s) to act on. Not required for 'append'."
-          ),
-        content: z
-          .union([z.string(), z.array(z.unknown())])
-          .optional()
-          .describe(
-            "New content. String = markdown, Array = BlockNote blocks. Not required for 'delete'."
-          ),
+          .default(false)
+          .describe("Replace every occurrence instead of requiring exactly one."),
       })
     )
-    .describe("Patch operations applied sequentially."),
+    .min(1)
+    .max(100)
+    .describe(
+      "Applied in order to the Markdown from read; each edit sees the previous edits' result. All apply or none do."
+    ),
+  expectedRevision: ExpectedDocRevision.optional().describe(
+    "Revision from your latest read. When set, the edit is refused if the Doc changed since."
+  ),
 })
 
 export const DeleteDocInput = z.object({
@@ -963,7 +959,7 @@ export const DocumentsWriteInput = z.strictObject({
 export const DocsWriteInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("write", WriteDocInput.shape),
-    actionSchema("patch", PatchDocInput.shape),
+    actionSchema("edit", EditDocInput.shape),
     actionSchema("rename", RenameDocInput.shape),
   ]),
 })

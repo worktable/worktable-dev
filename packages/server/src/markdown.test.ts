@@ -12,8 +12,6 @@ import {
   detectContentFormat,
   containsMermaidBlock,
   getRichBlockTypes,
-  summarizeBlocks,
-  applyPatchOperations,
   blocksToMarkdownSafe,
 } from "./markdown.ts";
 import { dispatchOperation } from "./mcp/dispatcher.ts";
@@ -309,18 +307,6 @@ describe("markdown support", () => {
       expect(containsMermaidBlock(blocks)).toBe(true);
       expect(getRichBlockTypes(blocks)).toEqual(["mermaid"]);
     });
-
-    it("summarizes blocknote blocks for agent discovery", () => {
-      const blocks = [
-        { id: "h1", type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Atlas", styles: {} }], children: [] },
-        { id: "m1", type: "mermaid", props: { data: "flowchart TD\nA-->B" }, content: [], children: [] },
-      ];
-
-      expect(summarizeBlocks(blocks)).toEqual([
-        { index: 0, id: "h1", type: "heading", text: "Atlas" },
-        { index: 1, id: "m1", type: "mermaid", preview: "flowchart TD" },
-      ]);
-    });
   });
 
   // ── detectContentFormat ────────────────────────────────
@@ -423,125 +409,17 @@ describe("markdown support", () => {
       expect(result.ok).toBe(true);
     });
 
-    it("allows markdown write to safe json doc without force", async () => {
+    it("allows markdown write to safe json doc without force, keeping unchanged block ids", async () => {
       await writeDoc("test-space", "safe-doc", [
         { type: "paragraph", props: {}, content: [{ type: "text", text: "plain", styles: {} }], children: [] },
       ]);
+      const [original] = (await readDoc("test-space", "safe-doc")).data as any[];
 
-      const result = await writeDoc("test-space", "safe-doc", "# Safe overwrite");
+      const result = await writeDoc("test-space", "safe-doc", "plain\n\n# Safe addition");
       expect(result.ok).toBe(true);
-    });
-  });
-
-  // ── Patch operations ───────────────────────────────────
-
-  describe("applyPatchOperations", () => {
-    const makeBlocks = () => [
-      { id: "h1", type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Overview" }], children: [] },
-      { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "Intro text." }], children: [] },
-      { id: "h2", type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Status" }], children: [] },
-      { id: "p2", type: "paragraph", props: {}, content: [{ type: "text", text: "All good." }], children: [] },
-      { id: "h3", type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Next Steps" }], children: [] },
-      { id: "p3", type: "paragraph", props: {}, content: [{ type: "text", text: "Do things." }], children: [] },
-    ];
-
-    it("appends content", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        { action: "append", content: [{ id: "new", type: "paragraph", content: [{ type: "text", text: "Appended" }] }] },
-      ]);
-      expect(result.operationsApplied).toBe(1);
-      expect(result.blocks.length).toBe(7);
-      expect(result.blocks[6].id).toBe("new");
-    });
-
-    it("deletes by block ID", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        { action: "delete", target: { blockId: "p2" } },
-      ]);
-      expect(result.operationsApplied).toBe(1);
-      expect(result.blocks.length).toBe(5);
-      expect(result.blocks.find((b: any) => b.id === "p2")).toBeUndefined();
-    });
-
-    it("replaces by heading (full section)", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        {
-          action: "replace",
-          target: { heading: "Status" },
-          content: [
-            { id: "new-h", type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Status" }], children: [] },
-            { id: "new-p", type: "paragraph", props: {}, content: [{ type: "text", text: "Updated!" }], children: [] },
-          ],
-        },
-      ]);
-      expect(result.operationsApplied).toBe(1);
-      // Status section (h2 + p2) replaced with new h + p. Total: 6 -> 6
-      expect(result.blocks.length).toBe(6);
-      expect(result.blocks[2].id).toBe("new-h");
-      expect(result.blocks[3].id).toBe("new-p");
-    });
-
-    it("inserts after heading section", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        {
-          action: "insert_after",
-          target: { heading: "Status" },
-          content: [{ id: "inserted", type: "paragraph", content: [{ type: "text", text: "Inserted!" }] }],
-        },
-      ]);
-      expect(result.operationsApplied).toBe(1);
-      expect(result.blocks.length).toBe(7);
-      // Inserted after Status section (which ends before "Next Steps")
-      expect(result.blocks[4].id).toBe("inserted");
-    });
-
-    it("deletes by text search", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        { action: "delete", target: { search: "All good" } },
-      ]);
-      expect(result.operationsApplied).toBe(1);
-      expect(result.blocks.length).toBe(5);
-    });
-
-    it("skips operations with invalid targets", async () => {
-      const blocks = makeBlocks();
-      const result = await applyPatchOperations(blocks, [
-        { action: "delete", target: { heading: "Nonexistent" } },
-      ]);
-      expect(result.operationsApplied).toBe(0);
-      expect(result.blocks.length).toBe(6);
-      expect(result.skipped).toEqual([
-        {
-          index: 0,
-          action: "delete",
-          target: { heading: "Nonexistent" },
-          reason: 'target not found: heading="Nonexistent"',
-        },
-      ]);
-    });
-
-    it("rejects malformed compatibility content before spreading it", async () => {
-      await expect(
-        applyPatchOperations(
-          [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text: "existing", styles: {} }],
-              children: [],
-            },
-          ],
-          [
-          { action: "append", content: null as never },
-          ]
-        )
-      ).rejects.toThrow(
-        "Patch operation 1 content must be a Markdown string or block array"
-      );
+      const blocks = (await readDoc("test-space", "safe-doc")).data as any[];
+      expect(blocks.map((block) => block.type)).toEqual(["paragraph", "heading"]);
+      expect(blocks[0].id).toBe(original.id);
     });
   });
 

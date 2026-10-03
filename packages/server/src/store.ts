@@ -16,7 +16,6 @@ import {
   extractHeadings,
   extractMarkdownHeadings,
   getRichBlockTypes,
-  isMarkdownSafe,
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocks, inheritBlockIds } from "./blocknote.ts";
@@ -496,8 +495,8 @@ export async function atomicWriteText(filePath: string, text: string): Promise<v
 /**
  * Canonicalize a BlockNote block array for a .json write. Every block write
  * funnels through here so on-disk content is in one normal form (stable
- * IDs, default props) regardless of caller — agent MCP writes, REST, restore,
- * and patch. This makes content hashes reflect meaning rather than incidental
+ * IDs, default props) regardless of caller — agent MCP writes and edits, REST,
+ * and restore. This makes content hashes reflect meaning rather than incidental
  * shape, so a semantic no-op (e.g. the browser's initial editor sync) produces
  * an identical hash and records no version. Falls back to the raw blocks if
  * canonicalization throws, so a write never fails on unexpected content.
@@ -1860,27 +1859,23 @@ export async function listDocsDetailed(
     let blockCount: number | null = null;
     let containsMermaid = false;
     let richBlockTypes: string[] = [];
-    let readFormatHint: "blocknote" | "markdown" = storedAs === "md" ? "markdown" : "blocknote";
 
     if (Array.isArray(readResult.data)) {
       headings = extractHeadings(readResult.data);
       blockCount = readResult.data.length;
       containsMermaid = containsMermaidBlock(readResult.data);
       richBlockTypes = getRichBlockTypes(readResult.data);
-      readFormatHint = isMarkdownSafe(readResult.data).safe ? "markdown" : "blocknote";
     } else if (typeof readResult.data === "string") {
       headings = extractMarkdownHeadings(readResult.data);
       blockCount = null;
       containsMermaid = extractMarkdownMermaid(readResult.data).length > 0;
       richBlockTypes = [];
-      readFormatHint = "markdown";
     }
 
     return {
       path,
       format: statResult?.format === "md" ? "markdown" as const : "blocknote" as const,
       storedAs,
-      readFormatHint,
       // File mtime (ms) — the "last updated" fallback for docs that predate
       // provenance tracking.
       updatedAt: statResult?.updatedAt,
@@ -2120,6 +2115,8 @@ export interface DocWriteOptions {
   sourceRevision?: DocSourceRevision;
   /** Managed product writes opt into durable identity admission. */
   managedIdentity?: boolean;
+  /** Fail with SOURCE_CHANGED instead of replacing a document that exists. */
+  createOnly?: boolean;
 }
 
 type DocWriteTransactionOptions = DocWriteOptions & {
@@ -2131,8 +2128,16 @@ export interface DocWriteResult {
   ok: boolean;
   storedAs: DocFileFormat;
   error?: string;
-  errorCode?: "NOT_FOUND";
+  /**
+   * SOURCE_CHANGED: the source no longer matched `sourceRevision`, or a
+   * `createOnly` write found an existing document; nothing was written.
+   */
+  errorCode?: "NOT_FOUND" | "SOURCE_CHANGED";
   lossyFields?: string[];
+  /** The source this write committed (or found unchanged), on success. */
+  revision?: DocSourceRevision;
+  /** The content stored at `revision`, on success. */
+  content?: unknown[] | string;
   repairs?: import("@worktable/types").MermaidDocumentRepair[];
 }
 
@@ -2874,6 +2879,22 @@ export async function restoreDocVersion(
   });
 }
 
+function committedRevision(
+  spaceId: string,
+  filePath: string,
+  content: unknown[] | string
+): DocSourceRevision {
+  const bytes = Buffer.from(
+    typeof content === "string" ? content : JSON.stringify(content, null, 2),
+    "utf8"
+  );
+  return {
+    relativePath: relative(spaceDir(spaceId), filePath).split(sep).join("/"),
+    size: bytes.byteLength,
+    sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
 async function writeDocUnlocked(
   spaceId: string,
   docPath: string,
@@ -2894,6 +2915,14 @@ async function writeDocUnlocked(
       error: aliasError,
     };
   }
+  if (options?.createOnly && resolved) {
+    return {
+      ok: false,
+      storedAs: resolved.format,
+      error: "Document already exists.",
+      errorCode: "SOURCE_CHANGED",
+    };
+  }
   const sourceSnapshot = resolved
     ? await readDocSourceSnapshot(spaceId, sanitizedDocPath)
     : null;
@@ -2906,6 +2935,7 @@ async function writeDocUnlocked(
       ok: false,
       storedAs: resolved?.format ?? (isMarkdownContent ? "md" : "json"),
       error: "Document changed while it was being updated. Try again.",
+      errorCode: "SOURCE_CHANGED",
     };
   }
   const sourceChanged = async (): Promise<boolean> =>
@@ -2921,6 +2951,7 @@ async function writeDocUnlocked(
     ok: false,
     storedAs,
     error: "Document changed while it was being updated. Try again.",
+    errorCode: "SOURCE_CHANGED",
   });
   const { prepareDocumentContent } = await import("./mermaid-document.ts");
   const prepared = await prepareDocumentContent(content, {
@@ -2963,8 +2994,27 @@ async function writeDocUnlocked(
       });
     }
     notifyDocContentChanged(spaceId, docPath);
-    return { ok: true, storedAs, repairs };
+    return {
+      ok: true,
+      storedAs,
+      repairs,
+      revision: committedRevision(
+        spaceId,
+        storedAs === "md" ? docFilePathMd(spaceId, docPath) : docFilePathJson(spaceId, docPath),
+        writtenContent
+      ),
+      content: writtenContent,
+    };
   };
+  const unchangedResult = (storedAs: DocFileFormat): DocWriteResult => ({
+    ok: true,
+    storedAs,
+    repairs,
+    ...(sourceSnapshot?.revision ? { revision: sourceSnapshot.revision } : {}),
+    ...(before?.data !== undefined && before?.data !== null
+      ? { content: before.data as unknown[] | string }
+      : {}),
+  });
 
   if (isMarkdownContent) {
     // Agent is writing markdown
@@ -2981,12 +3031,13 @@ async function writeDocUnlocked(
         return {
           ok: false,
           storedAs: "json",
-          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or use worktable_docs_write action patch for surgical edits.`,
+          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or use worktable_docs_write action edit to change exact text.`,
           lossyFields: safety.lossyFields,
         };
       }
 
-      // Convert markdown to blocks and write as .json
+      // Convert markdown to blocks and write as .json. Parsed blocks carry no
+      // ids, so unchanged blocks inherit theirs from the existing document.
       const blocks = await markdownToBlocks(content as string);
       await mkdir(dirname(resolved.path), { recursive: true });
       const preparedBlocks = await prepareBlocksCanonical(
@@ -2997,7 +3048,7 @@ async function writeDocUnlocked(
       // change event — an idempotent rewrite must not alter provenance.
       if (preparedBlocks.skipped) {
         if (await sourceChanged()) return staleSourceResult("json");
-        return { ok: true, storedAs: "json", repairs };
+        return unchangedResult("json");
       }
       let staleSource = false;
       const markdownPath = docFilePathMd(spaceId, docPath);
@@ -3090,7 +3141,13 @@ async function writeDocUnlocked(
         return { ok: false, storedAs: "md", error: durable.error };
       }
       notifyDocContentChanged(spaceId, docPath);
-      return { ok: true, storedAs: "json", repairs };
+      return {
+        ok: true,
+        storedAs: "json",
+        repairs,
+        revision: committedRevision(spaceId, jsonPath, preparedBlocks.content),
+        content: preparedBlocks.content,
+      };
     }
     if (
       sourceSnapshot?.revision &&
@@ -3104,6 +3161,7 @@ async function writeDocUnlocked(
         ok: false,
         storedAs: "md",
         error: "Document changed while it was being updated. Try again.",
+        errorCode: "SOURCE_CHANGED",
       };
     }
   }
@@ -3125,7 +3183,7 @@ async function writeDocUnlocked(
     ) {
       return staleSourceResult("json");
     }
-    return { ok: true, storedAs: "json", repairs };
+    return unchangedResult("json");
   }
   let staleSource = false;
   await withWriteLock(jsonPath, async () => {

@@ -123,11 +123,11 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_drawings_read:
     "Inspect drawings as objects and PNG previews, query text/type/region, render PNG or SVG, or list reversible agent changes. Start with guidance action drawings. Shared document tools list, move, archive and version drawings.",
   worktable_drawings_write:
-    "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request.",
+    "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request. Change a lifetime later with worktable_documents_write action set_lifetime.",
   worktable_html_read:
     "Return the HTML runtime contract, list or read HTML Docs, or render a read-only PNG preview. Rendering reports incomplete loads and requires Records read scope for Records data.",
   worktable_html_write:
-    "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save.",
+    "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save. Change a lifetime later with worktable_documents_write action set_lifetime.",
   worktable_records_read:
     "List Record collections, query Records, or read one.",
   worktable_records_write:

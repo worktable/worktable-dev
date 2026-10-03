@@ -409,6 +409,8 @@ export interface DocumentLifetimeTarget {
   archived: boolean
   /** Whether this document's storage records a lifetime. */
   supported: boolean
+  /** The lifetime fields document lists report for this document. */
+  view: Pick<DocumentSummary, "createdAt" | "lifetime" | "archiveOn">
 }
 
 /**
@@ -432,12 +434,18 @@ export async function listDocumentLifetimeTargetsLocked(
     return context.catalog.entries.flatMap((entry) => {
       const classified = classifyEntry(entry, context, true)
       if (!classified || classified.kind !== "document") return []
+      const { createdAt, lifetime, archiveOn } = classified.item
       return [
         {
           path: classified.claim.path,
           archived: classified.item.archived === true,
           supported:
             classified.claim.archiveProvider === "legacy-doc-metadata",
+          view: {
+            ...(createdAt ? { createdAt } : {}),
+            ...(lifetime ? { lifetime } : {}),
+            ...(archiveOn ? { archiveOn } : {}),
+          },
         },
       ]
     })

@@ -133,6 +133,7 @@ describe("drawing tools through MCP", () => {
       })
     )
     expect(inspected.sourceRevision).toBe(saved.sourceRevision)
+    expect(inspected.lifetime).toBe("durable")
     expect(inspected.objects).toHaveLength(2)
     const queried = await call(client, "read", {
       action: "query",

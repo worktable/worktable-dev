@@ -101,7 +101,13 @@ import {
   usesHtmlDocumentStorageV2,
 } from "../html-document-storage-v2.ts"
 import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
-import { listDocuments, readDocument } from "../document-query.ts"
+import {
+  listDocumentLifetimeTargets,
+  listDocumentLifetimeTargetsLocked,
+  listDocuments,
+  readDocument,
+  type DocumentLifetimeTarget,
+} from "../document-query.ts"
 import { readDocumentVersions } from "../document-page-service.ts"
 import {
   checkpointRegisteredDocument,
@@ -403,6 +409,21 @@ function lifetimeChange(args: Record<string, unknown>): DocumentLifetimeChange {
   return {
     lifetime: args["lifetime"] as DocumentLifetime,
     ...(archiveOn ? { archiveOn } : {}),
+  }
+}
+
+/**
+ * An HTML Doc's lifetime as document reads report it. HTML Docs already carry
+ * their own createdAt, so only the lifetime fields are added.
+ */
+function htmlLifetime(
+  targets: readonly DocumentLifetimeTarget[],
+  path: string
+): Pick<DocumentLifetimeTarget["view"], "lifetime" | "archiveOn"> {
+  const view = targets.find((target) => target.path === path)?.view
+  return {
+    ...(view?.lifetime ? { lifetime: view.lifetime } : {}),
+    ...(view?.archiveOn ? { archiveOn: view.archiveOn } : {}),
   }
 }
 
@@ -942,8 +963,13 @@ async function _dispatchOperationInner(
         (args["includeArchived"] as boolean | undefined) ?? false
       const { data: space, error } = await readSpace(spaceId)
       if (error || !space) throw new Error(error ?? "Space not found")
+      const widgets = await listWidgets(spaceId, { includeArchived })
+      const lifetimes = await listDocumentLifetimeTargets(spaceId)
       return {
-        widgets: await listWidgets(spaceId, { includeArchived }),
+        widgets: widgets.map((widget) => ({
+          ...widget,
+          ...htmlLifetime(lifetimes, widget.id),
+        })),
       }
     }
     case "html.read": {
@@ -961,7 +987,7 @@ async function _dispatchOperationInner(
           )
         }
         const widgetId = aliasResolution.path
-        return withWidgetWriteLock(spaceId, widgetId, async () => {
+        const result = await withWidgetWriteLock(spaceId, widgetId, async () => {
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
             if (error || !widget) throw new Error(error ?? "Widget not found")
@@ -976,6 +1002,14 @@ async function _dispatchOperationInner(
             warnings: validateWidgetHtml(data.html, data.widget.permissions),
           }
         })
+        const lifetimes = await listDocumentLifetimeTargetsLocked(spaceId)
+        return {
+          ...result,
+          widget: {
+            ...result.widget,
+            ...htmlLifetime(lifetimes, result.widget.id),
+          },
+        }
       })
     }
     case "records.list_collections": {

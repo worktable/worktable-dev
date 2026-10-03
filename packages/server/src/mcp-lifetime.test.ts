@@ -159,6 +159,47 @@ describe("agent document lifetimes over MCP", () => {
     expect((search.data["results"] as Array<{ path?: string }>).every((r) => r.path?.startsWith("notes/"))).toBe(true)
   })
 
+  it("reports an HTML Doc's lifetime when listing and reading it", async () => {
+    const created = await tool("worktable_html_write", {
+      action: "create",
+      spaceId,
+      id: "views/status",
+      name: "Status",
+      html: "<!doctype html><html><body><h1>Status</h1></body></html>",
+      lifetime: "temporary",
+    })
+    expect(created.ok).toBe(true)
+    const archiveOn = created.data["archiveOn"] as string
+    expect(archiveOn).toBeDefined()
+
+    const read = await tool("worktable_html_read", {
+      action: "read",
+      spaceId,
+      htmlId: "views/status",
+    })
+    expect(read.data["htmlDoc"]).toMatchObject({ lifetime: "temporary", archiveOn })
+    const listed = await tool("worktable_html_read", { action: "list", spaceId })
+    expect(listed.data["htmlDocs"]).toMatchObject([
+      { id: "views/status", lifetime: "temporary", archiveOn },
+    ])
+
+    await tool("worktable_documents_write", {
+      action: "set_lifetime",
+      spaceId,
+      path: "views/status",
+      lifetime: "durable",
+    })
+    const durable = await tool("worktable_html_read", {
+      action: "read",
+      spaceId,
+      htmlId: "views/status",
+      includeHtml: false,
+    })
+    const htmlDoc = durable.data["htmlDoc"] as Record<string, unknown>
+    expect(htmlDoc["lifetime"]).toBe("durable")
+    expect(htmlDoc["archiveOn"]).toBeUndefined()
+  })
+
   it("pins Start here documents that follow renames and report archiving", async () => {
     await writeDoc("guide", { lifetime: "durable" })
     await writeDoc("plan", { lifetime: "durable" })

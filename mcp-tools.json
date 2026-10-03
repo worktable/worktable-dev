@@ -4941,6 +4941,22 @@
         },
         "urlToSendInChat": {
           "type": "string"
+        },
+        "lifetime": {
+          "description": "Returned by action \"inspect\" for active drawings.",
+          "type": "string",
+          "enum": [
+            "durable",
+            "temporary"
+          ]
+        },
+        "archiveOn": {
+          "description": "Returned by action \"inspect\" for temporary drawings.",
+          "type": "string"
+        },
+        "createdAt": {
+          "description": "Returned by action \"inspect\" when the drawing was created through Worktable.",
+          "type": "string"
         }
       },
       "required": [
@@ -4975,7 +4991,7 @@
   {
     "name": "worktable_drawings_write",
     "title": "Edit Worktable drawings",
-    "description": "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request.",
+    "description": "Create drawings or apply atomic typed edits, preview proposed edits, and undo/redo a specific batch. Requires documents:read and documents:write. Returns a saved-revision preview by default. Reuse requestId only when retrying the same request. Change a lifetime later with worktable_documents_write action set_lifetime.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -7944,14 +7960,14 @@
           "description": "Returned by action \"list\".",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/HtmlDocSummary"
+            "$ref": "#/definitions/HtmlDocReadSummary"
           }
         },
         "htmlDoc": {
           "description": "Returned by action \"read\".",
           "allOf": [
             {
-              "$ref": "#/definitions/HtmlDocSummary"
+              "$ref": "#/definitions/HtmlDocReadSummary"
             }
           ]
         },
@@ -8046,7 +8062,7 @@
       "additionalProperties": {},
       "description": "Structured result from worktable_html_read. Fields vary by request.action.",
       "definitions": {
-        "HtmlDocSummary": {
+        "HtmlDocReadSummary": {
           "type": "object",
           "properties": {
             "id": {
@@ -8104,6 +8120,17 @@
                 "state"
               ],
               "additionalProperties": {}
+            },
+            "lifetime": {
+              "type": "string",
+              "enum": [
+                "durable",
+                "temporary"
+              ]
+            },
+            "archiveOn": {
+              "description": "Present on temporary documents: when the document archives.",
+              "type": "string"
             }
           },
           "required": [
@@ -8162,7 +8189,7 @@
   {
     "name": "worktable_html_write",
     "title": "Write Worktable HTML Docs",
-    "description": "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save.",
+    "description": "Create, update, rename, move, archive, or restore Worktable HTML Docs. Create/update may request an opt-in PNG preview; preview failure never undoes a successful save. Change a lifetime later with worktable_documents_write action set_lifetime.",
     "inputSchema": {
       "type": "object",
       "properties": {

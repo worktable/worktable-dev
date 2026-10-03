@@ -106,7 +106,7 @@ export function DocumentLifetimeChip({
         <div>
           <p className="text-sm font-medium text-popover-foreground">Temporary</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {label}. Edits, renames, and comments keep it longer.
+            {label}. Edits, moves, and comments keep it longer.
           </p>
         </div>
         <Button

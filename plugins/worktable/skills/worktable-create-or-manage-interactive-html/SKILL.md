@@ -16,7 +16,7 @@ Treat an HTML Doc as a **durable interface**, not decorated prose. Help the user
 
 ## Build the artifact
 
-1. Discover the workspace and related artifacts. Update the existing HTML Doc when it already owns the job. A new HTML Doc needs a `lifetime`: `durable` for interfaces people will return to, `temporary` for a one-off view that only supports current work.
+1. Discover the workspace and related artifacts. Update the existing HTML Doc when it already owns the job. A new HTML Doc needs a `lifetime`: `durable` for interfaces people will return to, `temporary` for a one-off view that only supports current work. Check a document's lifetime with `worktable_documents_read`; change it later with `worktable_documents_write` action `set_lifetime`.
 2. Before updating an existing HTML Doc, read its complete source with `worktable_html_read` action `read`. List open annotations with `worktable_annotations_read` filtered by its `htmlId`, inspect the context of relevant instructions, and preserve user-owned content that the request does not replace.
 3. Define the audience, purpose, 30-second takeaway, and one memorable compositional idea before writing markup. Give each viewport one dominant idea and reveal supporting depth only when useful.
 4. Read `worktable_html_read` action `guide` with the `runtime` profile for the authoritative sandbox, bridge, permission, and data contract. Do not treat visual workflow guidance as a server security boundary.

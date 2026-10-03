@@ -41,7 +41,7 @@ import {
   mintDocumentId,
   updateDocumentInventory,
 } from "./document-inventory.ts"
-import { getDocArchiveInfo } from "./store.ts"
+import { getDocArchiveInfo, getDocLifetimeView } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import {
   ensureRealDocumentStorageDirectory,
@@ -238,6 +238,34 @@ export async function resolveHtmlDocumentStorageV2(
       ? { updatedAt: entry.descriptor.updatedAt }
       : {}),
     archived: Boolean(entry.handle.archived),
+  }
+}
+
+/**
+ * One HTML Doc's lifetime as document reads report it, without listing the
+ * Space. Like the document catalog, it counts the source file's last change.
+ * Callers hold the document namespace lock for a consistent snapshot.
+ */
+export async function htmlDocumentLifetimeV2(
+  spaceId: string,
+  path: string
+): Promise<{ lifetime?: "durable" | "temporary"; archiveOn?: string }> {
+  if (!(await usesHtmlDocumentStorageV2())) return {}
+  let updatedAt: string | undefined
+  try {
+    const info = await lstat(
+      resolve(getWorkspaceRoot(), "spaces", spaceId, "docs", `${path}.html`)
+    )
+    if (info.isFile()) updatedAt = info.mtime.toISOString()
+  } catch {
+    // A missing source has no content change to count.
+  }
+  const { lifetime, archiveOn } = await getDocLifetimeView(spaceId, path, {
+    updatedAt,
+  })
+  return {
+    ...(lifetime ? { lifetime } : {}),
+    ...(archiveOn ? { archiveOn } : {}),
   }
 }
 

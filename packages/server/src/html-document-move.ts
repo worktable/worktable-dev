@@ -4,6 +4,7 @@ import {
   type DocumentId,
 } from "@worktable/types"
 import { withDocPathLock } from "./doc-path-lock.ts"
+import { noteDocumentActivity } from "./document-activity.ts"
 import { DocumentInventorySpaceNotFoundError } from "./document-inventory.ts"
 import { moveDurableHtmlExactlyLocked } from "./document-lifecycle-journal.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
@@ -177,6 +178,8 @@ export async function moveHtmlDocument(
       error: outcome.error ?? "Could not move this HTML doc. Try again.",
     }
   }
+  // A move keeps a temporary document active, as registered moves do.
+  await noteDocumentActivity(spaceId, [to])
   return {
     ok: true,
     from,

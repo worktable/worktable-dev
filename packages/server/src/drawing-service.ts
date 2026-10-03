@@ -13,6 +13,7 @@ import {
 import {
   createRegisteredDocument,
   readRegisteredDocumentSource,
+  readRegisteredDocumentSourceLocked,
   replaceRegisteredDocument,
   replayRegisteredDocumentMutation,
   DocumentWriteError,
@@ -23,6 +24,8 @@ import {
   readDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { withDocPathLock } from "./doc-path-lock.ts"
+import { getDocLifetimeView } from "./store.ts"
 import {
   drawingCanonical as canonical,
   drawingDiff as diff,
@@ -111,7 +114,22 @@ export async function drawingRead(
 ) {
   options.signal?.throwIfAborted()
   const request = DrawingsReadRequestSchema.parse(raw)
-  const source = await readRegisteredDocumentSource(request)
+  // Inspect reports the lifetime from the same snapshot as the source.
+  const { source, lifetime } = await withDocPathLock(
+    request.spaceId,
+    async () => {
+      const source = await readRegisteredDocumentSourceLocked(request)
+      return {
+        source,
+        lifetime:
+          request.action === "inspect"
+            ? await getDocLifetimeView(request.spaceId, source.path, {
+                updatedAt: source.updatedAt,
+              })
+            : {},
+      }
+    }
+  )
   if (
     "expectedRevision" in request &&
     request.expectedRevision &&
@@ -291,6 +309,7 @@ export async function drawingRead(
     ...(request.versionId
       ? { versionId: request.versionId, historical: true }
       : {}),
+    ...lifetime,
     retention,
   }
 }

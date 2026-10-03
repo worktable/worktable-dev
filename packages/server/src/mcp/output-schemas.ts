@@ -164,6 +164,11 @@ const LifetimeOutputFields = {
     .describe("Present on temporary documents: when the document archives."),
 }
 
+const DrawingInspectOutputSchema = DrawingResultOutputSchema.extend({
+  ...LifetimeOutputFields,
+  createdAt: z.string().optional(),
+})
+
 const GenericDocumentMutationOutputSchema = z.looseObject({
   ok: z.literal(true),
   documentId: z.string(),
@@ -441,12 +446,14 @@ const DocRenameOutputSchema = z.looseObject({
   urlToSendInChat: UrlToSendInChatSchema,
 })
 
-const HtmlDocListEntrySchema = PortableHtmlDocSchema.meta({
+const HtmlDocReadSchema = PortableHtmlDocSchema.extend(LifetimeOutputFields)
+
+const HtmlDocListEntrySchema = HtmlDocReadSchema.meta({
   id: "HtmlDocListEntry",
 })
 
 const HtmlReadOutputSchema = z.looseObject({
-  htmlDoc: PortableHtmlDocSchema,
+  htmlDoc: HtmlDocReadSchema,
   html: z.string().optional(),
   warnings: z.array(HtmlValidationIssueSchema).optional(),
   urlToSendInChat: UrlToSendInChatSchema,
@@ -772,7 +779,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "docs.patch": [DocPatchOutputSchema],
   "docs.rename": [DocRenameOutputSchema],
   "docs.delete": [z.looseObject({ ok: z.literal(true), docPath: z.string() })],
-  "drawings.inspect": [DrawingResultOutputSchema],
+  "drawings.inspect": [DrawingInspectOutputSchema],
   "drawings.query": [DrawingResultOutputSchema],
   "drawings.render": [DrawingResultOutputSchema],
   "drawings.changes": [DrawingResultOutputSchema],
@@ -918,6 +925,10 @@ const CompactHtmlDocSchema = z
       .optional(),
   })
   .meta({ id: "HtmlDocSummary" })
+
+const CompactHtmlDocReadSchema = CompactHtmlDocSchema.extend(
+  LifetimeOutputFields
+).meta({ id: "HtmlDocReadSummary" })
 
 const CompactRecordSchema = z
   .looseObject({
@@ -1240,7 +1251,17 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     archiveOn: forActions(z.string(), '"write" for temporary Docs'),
     urlToSendInChat: UrlToSendInChatSchema,
   }),
-  worktable_drawings_read: DrawingResultOutputSchema,
+  worktable_drawings_read: DrawingResultOutputSchema.extend({
+    lifetime: forActions(
+      z.enum(["durable", "temporary"]),
+      '"inspect" for active drawings'
+    ),
+    archiveOn: forActions(z.string(), '"inspect" for temporary drawings'),
+    createdAt: forActions(
+      z.string(),
+      '"inspect" when the drawing was created through Worktable'
+    ),
+  }),
   worktable_drawings_write: DrawingResultOutputSchema.extend({
     lifetime: forActions(z.enum(["durable", "temporary"]), '"create"'),
     archiveOn: forActions(z.string(), '"create" for temporary drawings'),
@@ -1253,8 +1274,8 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     profile: forActions(z.literal("runtime"), '"guide"'),
     guide: forActions(z.string(), '"guide"'),
     tokens: forActions(z.array(z.string()), '"guide"'),
-    htmlDocs: forActions(z.array(CompactHtmlDocSchema), '"list"'),
-    htmlDoc: forActions(CompactHtmlDocSchema, '"read"'),
+    htmlDocs: forActions(z.array(CompactHtmlDocReadSchema), '"list"'),
+    htmlDoc: forActions(CompactHtmlDocReadSchema, '"read"'),
     html: forActions(z.string(), '"read" when source is requested'),
     warnings: forActions(z.array(HtmlValidationIssueSchema), '"read"'),
     urlToSendInChat: forActions(UrlToSendInChatSchema, '"read"'),

@@ -1056,6 +1056,8 @@ export async function readRegisteredDocumentSource(options: {
   format: DocumentFormatClaim
   bytes: Uint8Array
   sourceRevision: string
+  /** When the source last changed, as the document catalog records it. */
+  updatedAt?: string
 }> {
   return withDocPathLock(options.spaceId, () =>
     readRegisteredDocumentSourceLocked(options)
@@ -1073,6 +1075,7 @@ export async function readRegisteredDocumentSourceLocked(options: {
   format: DocumentFormatClaim
   bytes: Uint8Array
   sourceRevision: string
+  updatedAt?: string
 }> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -1086,6 +1089,9 @@ export async function readRegisteredDocumentSourceLocked(options: {
     allowAliases: true,
   })
   const bytes = await readSource(workspaceRoot, options.spaceId, document)
+  const entry = entryAt(catalog, document.path)
+  const updatedAt =
+    entry?.kind === "document" ? entry.descriptor.updatedAt : undefined
   return {
     documentId: document.documentId,
     path: document.path,
@@ -1095,6 +1101,7 @@ export async function readRegisteredDocumentSourceLocked(options: {
       ...document,
       bytes,
     }),
+    ...(updatedAt ? { updatedAt } : {}),
   }
 }
 

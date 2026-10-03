@@ -97,11 +97,17 @@ import {
   type WidgetFile,
 } from "@worktable/types"
 import {
+  htmlDocumentLifetimeV2,
   isHtmlDocumentPath,
   usesHtmlDocumentStorageV2,
 } from "../html-document-storage-v2.ts"
 import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
-import { listDocuments, readDocument } from "../document-query.ts"
+import {
+  listDocumentLifetimeTargetsLocked,
+  listDocuments,
+  readDocument,
+  type DocumentLifetimeTarget,
+} from "../document-query.ts"
 import { readDocumentVersions } from "../document-page-service.ts"
 import {
   checkpointRegisteredDocument,
@@ -403,6 +409,21 @@ function lifetimeChange(args: Record<string, unknown>): DocumentLifetimeChange {
   return {
     lifetime: args["lifetime"] as DocumentLifetime,
     ...(archiveOn ? { archiveOn } : {}),
+  }
+}
+
+/**
+ * An HTML Doc's lifetime as document reads report it. HTML Docs already carry
+ * their own createdAt, so only the lifetime fields are added.
+ */
+function htmlLifetime(
+  targets: readonly DocumentLifetimeTarget[],
+  path: string
+): Pick<DocumentLifetimeTarget["view"], "lifetime" | "archiveOn"> {
+  const view = targets.find((target) => target.path === path)?.view
+  return {
+    ...(view?.lifetime ? { lifetime: view.lifetime } : {}),
+    ...(view?.archiveOn ? { archiveOn: view.archiveOn } : {}),
   }
 }
 
@@ -942,9 +963,17 @@ async function _dispatchOperationInner(
         (args["includeArchived"] as boolean | undefined) ?? false
       const { data: space, error } = await readSpace(spaceId)
       if (error || !space) throw new Error(error ?? "Space not found")
-      return {
-        widgets: await listWidgets(spaceId, { includeArchived }),
-      }
+      // List HTML Docs and their lifetimes from one namespace snapshot.
+      return withDocPathLock(spaceId, async () => {
+        const widgets = await listWidgets(spaceId, { includeArchived })
+        const lifetimes = await listDocumentLifetimeTargetsLocked(spaceId)
+        return {
+          widgets: widgets.map((widget) => ({
+            ...widget,
+            ...htmlLifetime(lifetimes, widget.id),
+          })),
+        }
+      })
     }
     case "html.read": {
       const spaceId = args["spaceId"] as string
@@ -965,13 +994,21 @@ async function _dispatchOperationInner(
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
             if (error || !widget) throw new Error(error ?? "Widget not found")
-            return { widget }
+            return {
+              widget: {
+                ...widget,
+                ...(await htmlDocumentLifetimeV2(spaceId, widget.id)),
+              },
+            }
           }
           const { data, error } = await readWidgetDocument(spaceId, widgetId)
           if (error || !data)
             throw new Error(error ?? "Widget content not found")
           return {
-            widget: data.widget,
+            widget: {
+              ...data.widget,
+              ...(await htmlDocumentLifetimeV2(spaceId, data.widget.id)),
+            },
             html: data.html,
             warnings: validateWidgetHtml(data.html, data.widget.permissions),
           }

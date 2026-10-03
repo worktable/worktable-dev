@@ -12,6 +12,10 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Changed
+
+- **Lifetimes in HTML and drawing reads:** Agents listing or reading HTML Docs, or inspecting drawings, now see whether each one is durable or temporary and when a temporary one archives.
+
 ### Fixed
 
 - **Agents can manage Spaces:** Agents with content access can rename, describe, archive, and restore Spaces and set their Start here pins, including on Worktable Cloud. Only you can delete a Space.

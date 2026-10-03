@@ -71,6 +71,7 @@ export const OPERATION_DEFINITIONS = {
   "documents.delete_folder": tool("documents:write", "workspace"),
   "docs.list": tool("docs:read", "none"),
   "docs.read": tool("docs:read", "none", "doc"),
+  "docs.grep": tool("docs:read", "none"),
   "docs.write": tool("docs:write", "workspace", "doc"),
   "docs.patch": tool("docs:write", "workspace", "doc"),
   "docs.rename": tool("docs:write", "workspace", "renamed_doc"),
@@ -211,7 +212,11 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     archive_folder: "documents.archive_folder",
     restore_folder: "documents.restore_folder",
   },
-  worktable_docs_read: { list: "docs.list", read: "docs.read" },
+  worktable_docs_read: {
+    list: "docs.list",
+    read: "docs.read",
+    grep: "docs.grep",
+  },
   worktable_docs_write: {
     write: "docs.write",
     patch: "docs.patch",

@@ -9,6 +9,12 @@ Docs are versioned documents — markdown strings or rich BlockNote arrays — f
 
 Placement is part of the content. Start with the Space's Start here pins in `worktable_discover` action `state`. The `space_index` action gives a server-generated map of the space, and `worktable_documents_read` action `list` accepts `pathPrefix`, `lifetime`, and a `cursor` for one folder at a time.
 
+## Find exact text
+
+`worktable_discover` action `search` finds Docs by meaning. To find exact text, such as a name you are about to change, use `worktable_docs_read` action `grep`. It matches one line at a time, literally by default or as a JavaScript regular expression with `regex: true`, across a Space or every Space you can read. Each match returns its Doc, 1-based `line`, the Doc's `revision`, and optional `context` lines; `pathPrefix` limits it to a folder. `truncated` means more lines matched than were returned, because of `maxResults` or the response size limit. Very long lines come back shortened with `lineTruncated`; read the Doc at that line for the full text. `skipped` lists Docs that could not be searched, so a match in them would be missing. A regular expression that runs too long stops with an error; simplify it or narrow the scope.
+
+Line numbers match the Markdown that `read` returns. Pass `offset` and `limit` to `read` to get part of a long Doc; `totalLines` tells you how much remains. Ranges contain the exact text, so you can copy it into an edit.
+
 ## Choose a lifetime
 
 Every document you create needs a `lifetime`:

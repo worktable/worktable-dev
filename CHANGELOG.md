@@ -12,6 +12,10 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Added
+
+- **Find exact text in Docs:** Agents can find exact text or a regular expression across Docs, with line numbers and surrounding lines, and read long Docs in line ranges.
+
 ### Changed
 
 - **Lifetimes in HTML and drawing reads:** Agents listing or reading HTML Docs, or inspecting drawings, now see whether each one is durable or temporary and when a temporary one archives.

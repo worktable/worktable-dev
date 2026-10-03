@@ -146,6 +146,14 @@ import {
   noteRecordMutated,
 } from "../search-index.ts"
 import { decorateDocsWithBacklinkCounts, getDocLinks } from "../link-graph.ts"
+import {
+  countMarkdownLines,
+  docMarkdownProjection,
+  docRevisionId,
+  grepDocs,
+  sliceMarkdownLines,
+  validateGrepPattern,
+} from "../doc-markdown-projection.ts"
 import { buildSpaceIndex } from "../space-index.ts"
 import {
   validateDocConventions,
@@ -201,6 +209,7 @@ import {
   AcceptThreadDeliveryInput,
   ProgressThreadDeliveryInput,
   FailThreadDeliveryInput,
+  GrepDocsInput,
   MoveDocumentFolderInput,
   ArchiveDocumentFolderInput,
   RestoreDocumentFolderInput,
@@ -1691,34 +1700,57 @@ async function _dispatchOperationInner(
       const docPath = aliasResolution.path
       const exists = await docExists(spaceId, docPath)
       if (!exists) throw new Error(`Document not found: ${docPath}`)
-      const result = await readDoc(spaceId, docPath)
+      const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+      const result = snapshot.result
       if (result.error || result.data === null)
         throw new Error(result.error ?? "Failed to read document")
       const archived = await getDocArchiveInfo(spaceId, docPath)
       const lifetime = await getDocLifetimeView(spaceId, docPath)
       const { links, backlinks } = await getDocLinks(spaceId, docPath)
+      const revision = snapshot.revision
+        ? { revision: docRevisionId(snapshot.revision) }
+        : {}
+      const offset = args["offset"] as number | undefined
+      const limit = args["limit"] as number | undefined
+      const ranged = offset !== undefined || limit !== undefined
+      // Line numbers here are the ones grep reports for the same revision.
+      const markdownContent = (markdown: string) =>
+        ranged
+          ? sliceMarkdownLines(markdown, offset ?? 1, limit)
+          : { content: markdown, totalLines: countMarkdownLines(markdown) }
 
       // If stored as JSON, try to return markdown for agent convenience
       if (result.storedAs === "json" && Array.isArray(result.data)) {
         const metadata = buildBlockDocMetadata(result.data)
 
-        if (metadata.readFormatHint === "markdown") {
+        // Ranged reads are line-based, so they always use Markdown.
+        if (metadata.readFormatHint === "markdown" || ranged) {
           // Convert to markdown for the agent. Conversion must never
           // fail the read: foreign props/styles from other BlockNote
           // versions fall back to returning the raw blocks below.
-          const markdown = await blocksToMarkdownSafe(result.data)
+          const markdown = await docMarkdownProjection(
+            spaceId,
+            docPath,
+            snapshot
+          )
           if (markdown !== null) {
             return {
               docPath,
-              content: markdown,
+              ...markdownContent(markdown),
               format: "markdown",
               storedAs: "json",
+              ...revision,
               archived,
               ...lifetime,
               links,
               backlinks,
               ...metadata,
             }
+          }
+          if (ranged) {
+            throw new Error(
+              "This Doc cannot be converted to Markdown, so it cannot be read by line. Read it without offset and limit."
+            )
           }
         }
 
@@ -1728,6 +1760,7 @@ async function _dispatchOperationInner(
           content: result.data,
           format: "blocknote",
           storedAs: "json",
+          ...revision,
           archived,
           ...lifetime,
           links,
@@ -1745,9 +1778,10 @@ async function _dispatchOperationInner(
         const metadata = buildMarkdownDocMetadata(result.data)
         return {
           docPath,
-          content: result.data,
+          ...markdownContent(result.data),
           format: "markdown",
           storedAs: "md",
+          ...revision,
           archived,
           ...lifetime,
           links,
@@ -1762,10 +1796,50 @@ async function _dispatchOperationInner(
         content: result.data,
         format: result.format,
         storedAs: result.storedAs,
+        ...revision,
         archived,
         ...lifetime,
         links,
         backlinks,
+      }
+    }
+    case "docs.grep": {
+      const parsed = GrepDocsInput.parse(args)
+      validateGrepPattern(parsed)
+      const pathPrefix = normalizePathPrefix(parsed.pathPrefix)
+      const includeArchived = parsed.includeArchived ?? false
+      let spaceIds: string[]
+      if (parsed.spaceId) {
+        const { data: space, error } = await readSpace(parsed.spaceId)
+        if (error || !space) throw new Error(error ?? "Space not found")
+        if (!includeArchived && getSpaceArchiveInfo(space)) {
+          throw new Error(
+            `Space is archived: ${parsed.spaceId}. Re-run with includeArchived=true to search it.`
+          )
+        }
+        spaceIds = [space.id]
+      } else {
+        spaceIds = (await listSpaces())
+          .filter((space) => includeArchived || !getSpaceArchiveInfo(space))
+          .map((space) => space.id)
+          .sort()
+      }
+      const { matches, total, skipped } = await grepDocs({
+        ...parsed,
+        spaceIds,
+        pathPrefix,
+        includeArchived,
+      })
+      return {
+        matches,
+        total,
+        truncated: total > matches.length,
+        skipped,
+        scope: {
+          ...(parsed.spaceId ? { spaceId: parsed.spaceId } : {}),
+          ...(pathPrefix ? { pathPrefix } : {}),
+          includeArchived,
+        },
       }
     }
     case "docs.write": {

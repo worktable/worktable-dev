@@ -72,6 +72,10 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
     timeout: 30_000,
   })
   const canvas = page.getByLabel("Drawing canvas")
+  await expect(canvas.getByRole("button", { name: "Select — V" })).toHaveClass(
+    /\bon\b/
+  )
+  await canvas.getByRole("button", { name: "Draw — D" }).click()
   const initial = (await canvas.boundingBox())!
   await expect(
     page.getByRole("button", { name: "Save", exact: true })
@@ -141,6 +145,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   })
   const actions = () =>
     page.getByRole("button", { name: "Actions for Scratchpad", exact: true })
+  await canvas.getByRole("button", { name: "Draw — D" }).click()
   await actions().click()
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click()
   await expect(
@@ -200,6 +205,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
     Buffer.from((await moved.json()).source, "base64").toString()
   )
   expect(Object.keys(movedSource.snapshot.document.store)).toHaveLength(3)
+  await canvas.getByRole("button", { name: "Draw — D" }).click()
 
   // Discard must cancel autosave even when reading the saved drawing is slow.
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
@@ -237,6 +243,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   // The server may commit a stroke while its acknowledgement is lost. Opening
   // that saved source must remove the matching draft, not resurrect it later.
   loseAcknowledgement = true
+  await canvas.getByRole("button", { name: "Draw — D" }).click()
   await pointer(page, "pointerdown", "pen", 1, x, y + 120)
   await pointer(page, "pointerup", "pen", 1, x + 40, y + 120)
   await page.clock.fastForward(1000)
@@ -254,6 +261,119 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
     timeout: 30_000,
   })
   expect(await drafts()).toHaveLength(0)
+})
+
+test("drawing backdrops survive refresh, failed saves, and external updates", async ({
+  page,
+  request,
+}) => {
+  const spaceId = "drawing-settings"
+  const path = "paper"
+  const endpoint = `${harness.apiUrl}/api/spaces/${spaceId}/documents`
+  expect(
+    (
+      await request.post(`${harness.apiUrl}/api/spaces`, {
+        data: { name: "Drawing settings", id: spaceId },
+      })
+    ).ok()
+  ).toBe(true)
+  expect(
+    (
+      await request.post(endpoint, {
+        data: {
+          path,
+          source: JSON.stringify(emptyQuickdrawDocument("Paper")),
+          encoding: "utf8",
+          format: { id: "worktable.quickdraw", sourceVersion: 1 },
+        },
+      })
+    ).ok()
+  ).toBe(true)
+  const readSaved = async () => {
+    const result = await (
+      await request.get(`${endpoint}/editable-source?path=${path}`)
+    ).json()
+    return {
+      revision: result.sourceRevision,
+      drawing: JSON.parse(Buffer.from(result.source, "base64").toString()),
+    }
+  }
+  const canvas = page.getByLabel("Drawing canvas")
+  const menu = canvas.getByRole("button", { name: "Board menu", exact: true })
+  const grid = canvas.locator(".qd-has-sub")
+  const expectGrid = async (label: string) => {
+    await menu.click()
+    await expect(grid.locator(".qd-mi-value")).toHaveText(label)
+    await menu.click()
+  }
+  const pickGrid = async (label: string) => {
+    await menu.click()
+    await grid.hover()
+    await grid.getByRole("button", { name: label, exact: true }).click()
+    await menu.click()
+  }
+  await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/${path}`)
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
+  await expectGrid("Dots") // Existing documents without a saved grid still open.
+  for (const [value, label] of [
+    ["none", "None"],
+    ["lines", "Lines"],
+    ["ruled", "Ruled"],
+    ["crosses", "Crosses"],
+    ["iso", "Isometric"],
+    ["dots", "Dots"],
+  ]) {
+    await pickGrid(label!)
+    await expect(page.getByRole("status")).toHaveText("Saved")
+    expect((await readSaved()).drawing.grid).toBe(value)
+    await page.reload()
+    await expect(page.getByRole("status")).toHaveText("Saved")
+    await expect(
+      canvas.getByRole("button", { name: "Select — V" })
+    ).toHaveClass(/\bon\b/)
+    await expectGrid(label!)
+  }
+
+  // A settings-only edit uses the same recovery draft as ink.
+  let failSave = true
+  await page.route(`**/api/spaces/${spaceId}/documents`, async (route) => {
+    if (route.request().method() === "PUT" && failSave)
+      await route.fulfill({ status: 503, json: { error: "Temporary failure" } })
+    else await route.continue()
+  })
+  await pickGrid("None")
+  await expect(page.getByRole("alert")).toContainText("Retrying")
+  expect((await readSaved()).drawing.grid).toBe("dots")
+  failSave = false
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.reload()
+  await expect(page.getByRole("status")).toHaveText("Saved")
+  await expectGrid("None")
+  const saved = await readSaved()
+  expect(saved.drawing.grid).toBe("none")
+  expect(saved.drawing.snapshot.document.store).toEqual({})
+
+  // Remote settings refresh alongside content without manufacturing a local edit.
+  const updated = await request.put(endpoint, {
+    data: {
+      path,
+      source: JSON.stringify({
+        ...saved.drawing,
+        grid: "iso",
+        title: "Remote paper",
+      }),
+      encoding: "utf8",
+      expectedRevision: saved.revision,
+    },
+  })
+  expect(updated.ok()).toBe(true)
+  await expect(
+    page.getByRole("banner").getByText("Remote paper", { exact: true })
+  ).toBeVisible()
+  await expectGrid("Isometric")
+  await expect(page.getByRole("status")).toHaveText("Saved")
 })
 
 // The editor must follow agent saves while idle, preserving the reader's view,
@@ -385,6 +505,7 @@ test("agent saves refresh an idle canvas and preserve active local ink", async (
     }
     // A saved local gesture remains undoable after an unrelated agent edit.
     // Redo also survives a later external refresh; neither rewinds the agent.
+    await canvas.getByRole("button", { name: "Draw — D" }).click()
     await pointer(page, "pointerdown", "pen", 19, x, y + 50)
     await pointer(page, "pointerup", "pen", 19, x + 60, y + 50)
     await expect(page.getByRole("status")).toHaveText("Saved", {

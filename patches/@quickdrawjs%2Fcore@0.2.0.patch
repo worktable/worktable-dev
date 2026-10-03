@@ -328,9 +328,12 @@ index 68ec28e2f152d2dfc2760c31556326621a9b4c0f..de0d2a33b8944888dc56a821a2e2a702
        this._tx = null
        if (!isDiffEmpty(diff)) {
 diff --git a/types/index.d.ts b/types/index.d.ts
-index 595f061a8a15f6eb83e56c81478f955651d42daf..8d10d8019a7a9e202785f1ce9a1cb446c2c8e5c1 100644
+index 595f061a8a15f6eb83e56c81478f955651d42daf..b82dfb18a6d4d6da9e62535c03c8346962df2385 100644
 --- a/types/index.d.ts
 +++ b/types/index.d.ts
+@@ -19 +19 @@
+-export type GridId = 'none' | 'lines' | 'dots'
++export type GridId = 'none' | 'lines' | 'ruled' | 'dots' | 'crosses' | 'iso'
 @@ -160,6 +160,9 @@ export class Store {
     */
    listenHistory(fn: () => void): () => void

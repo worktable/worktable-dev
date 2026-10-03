@@ -12,6 +12,8 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-10-03
+
 ### Added
 
 - **Find exact text in Docs:** Agents can find exact text or a regular expression across Docs, with line numbers and surrounding lines, and read long Docs in line ranges.

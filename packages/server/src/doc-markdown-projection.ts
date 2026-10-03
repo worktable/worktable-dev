@@ -3,13 +3,14 @@
 // ============================================================
 //
 // `worktable_docs_read` returns a Doc as Markdown, numbers its lines for
-// ranged reads, and greps it line by line. All three must see the same text,
-// so they share this projection. Converting BlockNote JSON to Markdown is the
+// ranged reads, and greps it line by line; `worktable_docs_write` action edit
+// matches exact text against it. All of them must see the same text, so they
+// share this projection (`projectBlocks` for BlockNote JSON). Converting BlockNote JSON to Markdown is the
 // expensive step; results are cached by the exact source revision, so a stale
 // entry can never be served. Change events only release memory early.
 
 import { onDocContentChanged } from "./content-events.ts"
-import { blocksToMarkdownSafe } from "./markdown.ts"
+import { projectBlocks } from "./markdown-edit.ts"
 import {
   getDocArchiveInfoMap,
   listDocs,
@@ -88,7 +89,7 @@ onWorkspaceChange((event) => {
 
 /**
  * Markdown for one source snapshot: `.md` source as stored, BlockNote JSON
- * converted. Null when the snapshot is unreadable or conversion fails.
+ * projected block by block. Null when the snapshot is unreadable.
  */
 export async function docMarkdownProjection(
   spaceId: string,
@@ -108,7 +109,7 @@ export async function docMarkdownProjection(
     remember(key, cached)
     return cached.markdown
   }
-  const markdown = await blocksToMarkdownSafe(result.data)
+  const { markdown } = await projectBlocks(result.data)
   remember(key, { revision, markdown })
   return markdown
 }

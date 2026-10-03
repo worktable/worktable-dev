@@ -95,7 +95,10 @@ describe("agent document lifetimes over MCP", () => {
     const archiveOn = created.data["archiveOn"] as string
     expect(Math.abs(Date.parse(archiveOn) - (Date.now() + 7 * DAY))).toBeLessThan(60_000)
 
-    const updated = await writeDoc("plans/handoff", { content: "# Handoff\n\nNext steps.\n" })
+    const updated = await writeDoc("plans/handoff", {
+      content: "# Handoff\n\nNext steps.\n",
+      expectedRevision: created.data["revision"],
+    })
     expect(updated.ok).toBe(true)
     const read = await tool("worktable_docs_read", {
       action: "read",

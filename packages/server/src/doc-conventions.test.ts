@@ -82,7 +82,7 @@ describe("doc conventions", () => {
       expect(codes(result.warnings)).toEqual(["broken_outbound_link"]);
     });
 
-    it("clean write returns empty warnings; patch returns warnings on final state", async () => {
+    it("clean write returns empty warnings; edit returns warnings on final state", async () => {
       const clean = (await dispatchOperation("docs.write", { lifetime: "durable",
         spaceId: SPACE,
         docPath: "notes",
@@ -90,13 +90,13 @@ describe("doc conventions", () => {
       })) as { warnings: DocConventionIssue[] };
       expect(clean.warnings).toEqual([]);
 
-      const patched = (await dispatchOperation("docs.patch", {
+      const edited = (await dispatchOperation("docs.edit", {
         spaceId: SPACE,
         docPath: "notes",
-        operations: [{ action: "append", content: "See [missing](/not-yet-written)." }],
+        edits: [{ oldText: "fine", newText: "fine\n\nSee [missing](/not-yet-written)." }],
       })) as { ok: boolean; warnings: DocConventionIssue[] };
-      expect(patched.ok).toBe(true);
-      expect(codes(patched.warnings)).toEqual(["broken_outbound_link"]);
+      expect(edited.ok).toBe(true);
+      expect(codes(edited.warnings)).toEqual(["broken_outbound_link"]);
     });
   });
 });

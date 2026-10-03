@@ -299,23 +299,23 @@ describe("managed document identity admission", () => {
     ).toBe("# Original\n")
 
     expect(
-      (await writeDoc(spaceId, "patched-provisional", "# Draft\n")).ok
+      (await writeDoc(spaceId, "edited-provisional", "# Draft\n")).ok
     ).toBe(true)
-    expect((await catalogDocument("patched-provisional")).handle.identity).toBe(
+    expect((await catalogDocument("edited-provisional")).handle.identity).toBe(
       "provisional"
     )
-    await dispatchOperation("docs.patch", {
+    await dispatchOperation("docs.edit", {
       spaceId,
-      docPath: "patched-provisional",
-      operations: [{ action: "append", content: "Agent update" }],
+      docPath: "edited-provisional",
+      edits: [{ oldText: "# Draft\n", newText: "# Draft\n\nAgent update\n" }],
     })
-    const patched = await catalogDocument("patched-provisional")
-    expect(patched.handle.identity).toBe("durable")
+    const edited = await catalogDocument("edited-provisional")
+    expect(edited.handle.identity).toBe("durable")
     expect(
       await listDocumentGenerationsV2({
         workspaceRoot: root,
         spaceId,
-        documentId: patched.handle.documentId,
+        documentId: edited.handle.documentId,
       })
     ).toHaveLength(2)
 

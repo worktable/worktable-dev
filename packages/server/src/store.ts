@@ -496,8 +496,8 @@ export async function atomicWriteText(filePath: string, text: string): Promise<v
 /**
  * Canonicalize a BlockNote block array for a .json write. Every block write
  * funnels through here so on-disk content is in one normal form (stable
- * IDs, default props) regardless of caller — agent MCP writes, REST, restore,
- * and patch. This makes content hashes reflect meaning rather than incidental
+ * IDs, default props) regardless of caller — agent MCP writes and edits, REST,
+ * and restore. This makes content hashes reflect meaning rather than incidental
  * shape, so a semantic no-op (e.g. the browser's initial editor sync) produces
  * an identical hash and records no version. Falls back to the raw blocks if
  * canonicalization throws, so a write never fails on unexpected content.
@@ -2131,7 +2131,8 @@ export interface DocWriteResult {
   ok: boolean;
   storedAs: DocFileFormat;
   error?: string;
-  errorCode?: "NOT_FOUND";
+  /** SOURCE_CHANGED: the source no longer matched `sourceRevision`; nothing was written. */
+  errorCode?: "NOT_FOUND" | "SOURCE_CHANGED";
   lossyFields?: string[];
   repairs?: import("@worktable/types").MermaidDocumentRepair[];
 }
@@ -2906,6 +2907,7 @@ async function writeDocUnlocked(
       ok: false,
       storedAs: resolved?.format ?? (isMarkdownContent ? "md" : "json"),
       error: "Document changed while it was being updated. Try again.",
+      errorCode: "SOURCE_CHANGED",
     };
   }
   const sourceChanged = async (): Promise<boolean> =>
@@ -2921,6 +2923,7 @@ async function writeDocUnlocked(
     ok: false,
     storedAs,
     error: "Document changed while it was being updated. Try again.",
+    errorCode: "SOURCE_CHANGED",
   });
   const { prepareDocumentContent } = await import("./mermaid-document.ts");
   const prepared = await prepareDocumentContent(content, {
@@ -2981,12 +2984,13 @@ async function writeDocUnlocked(
         return {
           ok: false,
           storedAs: "json",
-          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or use worktable_docs_write action patch for surgical edits.`,
+          error: `Document contains rich formatting (${safety.lossyFields.join(", ")}) that would be lost. Use force=true to overwrite, or use worktable_docs_write action edit to change exact text.`,
           lossyFields: safety.lossyFields,
         };
       }
 
-      // Convert markdown to blocks and write as .json
+      // Convert markdown to blocks and write as .json. Parsed blocks carry no
+      // ids, so unchanged blocks inherit theirs from the existing document.
       const blocks = await markdownToBlocks(content as string);
       await mkdir(dirname(resolved.path), { recursive: true });
       const preparedBlocks = await prepareBlocksCanonical(
@@ -3104,6 +3108,7 @@ async function writeDocUnlocked(
         ok: false,
         storedAs: "md",
         error: "Document changed while it was being updated. Try again.",
+        errorCode: "SOURCE_CHANGED",
       };
     }
   }

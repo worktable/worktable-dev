@@ -239,14 +239,6 @@ const DocLinkSchema = z.looseObject({
   resolved: z.boolean(),
 })
 
-const BlockSummarySchema = z.looseObject({
-  index: z.number().int().nonnegative(),
-  id: z.string().optional(),
-  type: z.string(),
-  text: z.string().optional(),
-  preview: z.string().optional(),
-})
-
 const MermaidRepairSchema = z.looseObject({
   code: z.literal("ESCAPED_MERMAID_FENCE_REPAIRED"),
   diagramIndex: z.number().int().nonnegative(),
@@ -415,7 +407,7 @@ const DocReadOutputSchema = z.looseObject({
   endLine: z.number().int().nonnegative().optional(),
   format: z.enum(["markdown", "blocknote"]),
   storedAs: z.enum(["md", "json"]),
-  revision: z.string().optional(),
+  revision: z.string(),
   archived: PortableArchiveInfoSchema.optional(),
   links: z.array(DocLinkSchema),
   backlinks: z.array(z.string()),
@@ -424,49 +416,48 @@ const DocReadOutputSchema = z.looseObject({
   headings: z.array(z.string()).optional(),
   blockCount: z.number().int().nonnegative().nullable().optional(),
   lossyFields: z.array(z.string()).optional(),
-  readFormatHint: z.enum(["markdown", "blocknote"]).optional(),
+  note: z.string().optional(),
   richBlockTypes: z.array(z.string()).optional(),
   containsMermaid: z.boolean().optional(),
-  blockSummary: z.array(BlockSummarySchema).optional(),
-  reason: z.string().optional(),
   urlToSendInChat: UrlToSendInChatSchema,
+})
+
+const FormattingDroppedSchema = z.looseObject({
+  blockId: z.string(),
+  fields: z.array(z.string()),
 })
 
 const DocWriteOutputSchema = z.looseObject({
   ok: z.literal(true),
   docPath: z.string(),
+  revision: z.string(),
   storedAs: z.enum(["md", "json"]),
   ...LifetimeOutputFields,
+  formattingDropped: z.array(FormattingDroppedSchema).optional(),
   repairs: z.array(MermaidRepairSchema),
   warnings: z.array(GuidanceIssueSchema),
   urlToSendInChat: UrlToSendInChatSchema,
 })
 
-const PatchTargetSchema = z.looseObject({
-  blockId: z.string().optional(),
-  heading: z.string().optional(),
-  index: z.number().int().nonnegative().optional(),
-  search: z.string().optional(),
-})
+const DocEditChangesSchema = z
+  .looseObject({
+    kept: z.number().int().nonnegative(),
+    modified: z.array(z.string()),
+    inserted: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative(),
+  })
+  .describe("Block-level effect on a rich Doc: kept and modified block ids keep their identity.")
 
-const DocPatchOutputSchema = DocWriteOutputSchema.extend({
-  operationsApplied: z.number().int().nonnegative(),
-  skipped: z.array(
+const DocEditOutputSchema = DocWriteOutputSchema.extend({
+  changed: DocEditChangesSchema.optional(),
+  snippet: z.string(),
+  formattingDropped: z.array(FormattingDroppedSchema),
+  annotationsAffected: z.array(
     z.looseObject({
-      index: z.number().int().nonnegative(),
-      action: z.enum([
-        "replace",
-        "insert_after",
-        "insert_before",
-        "delete",
-        "append",
-      ]),
-      reason: z.string(),
-      target: PatchTargetSchema.optional(),
+      annotationId: z.string(),
+      quoteStillPresent: z.boolean(),
     })
   ),
-  blockCount: z.number().int().nonnegative(),
-  headings: z.array(z.string()),
 })
 
 const DocRenameOutputSchema = z.looseObject({
@@ -828,7 +819,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
     }),
   ],
   "docs.write": [DocWriteOutputSchema],
-  "docs.patch": [DocPatchOutputSchema],
+  "docs.edit": [DocEditOutputSchema],
   "docs.rename": [DocRenameOutputSchema],
   "docs.delete": [z.looseObject({ ok: z.literal(true), docPath: z.string() })],
   "drawings.inspect": [DrawingInspectOutputSchema],
@@ -1283,7 +1274,7 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     content: forActions(z.union([z.string(), z.array(z.unknown())]), '"read"'),
     revision: forActions(
       z.string(),
-      '"read"; changes whenever the stored Doc changes'
+      '"read"; changes whenever the stored Doc changes. Pass it as expectedRevision to write or edit'
     ),
     totalLines: forActions(
       z.number().int().nonnegative(),
@@ -1327,25 +1318,37 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     ),
     headings: forActions(z.array(z.string()), '"read"'),
     blockCount: forActions(z.number().int().nonnegative().nullable(), '"read"'),
-    readFormatHint: forActions(z.enum(["markdown", "blocknote"]), '"read"'),
-    reason: forActions(z.string(), '"read"'),
+    lossyFields: forActions(z.array(z.string()), '"read"'),
+    note: forActions(z.string(), '"read" for rich Docs'),
     urlToSendInChat: forActions(UrlToSendInChatSchema, '"read"'),
   }),
   worktable_docs_write: resultSchema("worktable_docs_write", {
     ok: z.literal(true),
-    docPath: forActions(z.string(), '"write" or "patch"'),
+    docPath: forActions(z.string(), '"write" or "edit"'),
+    revision: forActions(z.string(), '"write" or "edit"'),
     oldPath: forActions(z.string(), '"rename"'),
     newPath: forActions(z.string(), '"rename"'),
-    storedAs: forActions(z.enum(["md", "json"]), '"write" or "patch"'),
-    repairs: forActions(z.array(MermaidRepairSchema), '"write" or "patch"'),
-    warnings: forActions(z.array(GuidanceIssueSchema), '"write" or "patch"'),
-    operationsApplied: forActions(z.number().int().nonnegative(), '"patch"'),
-    skipped: forActions(
-      z.array(z.looseObject({ index: z.number(), reason: z.string() })),
-      '"patch"'
+    storedAs: forActions(z.enum(["md", "json"]), '"write" or "edit"'),
+    changed: forActions(DocEditChangesSchema, '"edit" on a rich Doc'),
+    snippet: forActions(
+      z.string(),
+      '"edit": the edited lines with their line numbers'
     ),
-    blockCount: forActions(z.number().int().nonnegative(), '"patch"'),
-    headings: forActions(z.array(z.string()), '"patch"'),
+    formattingDropped: forActions(
+      z.array(FormattingDroppedSchema),
+      '"write" or "edit": formatting Markdown could not keep in changed blocks'
+    ),
+    annotationsAffected: forActions(
+      z.array(
+        z.looseObject({
+          annotationId: z.string(),
+          quoteStillPresent: z.boolean(),
+        })
+      ),
+      '"edit": open annotations on changed or removed text'
+    ),
+    repairs: forActions(z.array(MermaidRepairSchema), '"write" or "edit"'),
+    warnings: forActions(z.array(GuidanceIssueSchema), '"write" or "edit"'),
     lifetime: forActions(
       z.enum(["durable", "temporary"]),
       '"write" when creating a Doc or changing its lifetime'

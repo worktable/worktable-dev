@@ -30,7 +30,7 @@ Reconnect the MCP client after upgrading so it refreshes `tools/list`.
 | `worktable_list_docs`                  | `worktable_docs_read` action `list`                      |
 | `worktable_read_doc`                   | `worktable_docs_read` action `read`                      |
 | `worktable_write_doc`                  | `worktable_docs_write` action `write`                    |
-| `worktable_patch_doc`                  | `worktable_docs_write` action `patch`                    |
+| `worktable_patch_doc`                  | `worktable_docs_write` action `edit` (exact text)        |
 | `worktable_rename_doc`                 | `worktable_docs_write` action `rename`                   |
 | `worktable_delete_doc`                 | `worktable_delete` action `doc`                          |
 | `worktable_get_widget_authoring_guide` | `worktable_html_read` action `guide`                     |

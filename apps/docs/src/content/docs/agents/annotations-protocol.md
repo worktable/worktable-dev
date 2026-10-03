@@ -20,7 +20,7 @@ and anchor confidence.
 
 ## The loop
 
-1. **Act** on what the thread asks, often with the `patch` action in `worktable_docs_write`.
+1. **Act** on what the thread asks, often with the `edit` action in `worktable_docs_write`.
 2. **Reply** with `worktable_annotations_write` action `reply`. Ask in the thread instead of guessing when instructions are ambiguous.
 3. **Resolve** with action `resolve` once the work is done. An open thread means “not handled yet” to the human.
 

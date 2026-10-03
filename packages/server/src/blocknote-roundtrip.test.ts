@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { blocksToMarkdown, markdownToBlocks } from "./markdown.ts";
 import { canonicalizeBlocks } from "./blocknote.ts";
+import { projectBlocks, spliceBlockEdits } from "./markdown-edit.ts";
 import { readDoc, writeDoc, writeSpace } from "./store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
 import type { SpaceFile } from "@worktable/types";
@@ -468,5 +469,171 @@ describe("storage round-trip through the real store", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe("paragraph");
     expect(inlineText(blocks[0].content)).toContain("```mermaid");
+  });
+});
+
+// ── 5. Exact-text edits through the Markdown projection ───
+
+/** Every node by id, with children reduced to ids so each node is compared on its own. */
+function nodesById(blocks: any[], into = new Map<string, string>()): Map<string, string> {
+  for (const block of blocks) {
+    into.set(
+      block.id,
+      JSON.stringify({ ...block, children: (block.children ?? []).map((child: any) => child.id) })
+    );
+    nodesById(block.children ?? [], into);
+  }
+  return into;
+}
+
+const run = (t: string, styles: Record<string, unknown> = {}) => ({ type: "text", text: t, styles });
+
+// One node of every kind agents meet in rich Docs, with formatting Markdown cannot show.
+const richCorpus = [
+  { type: "heading", props: { level: 1 }, content: [run("Project brief")] },
+  {
+    type: "paragraph",
+    content: [
+      run("See "),
+      { type: "link", href: "https://example.com", content: [run("the site")] },
+      run(" and "),
+      run("bold", { bold: true }),
+      run(" with "),
+      run("code()", { code: true }),
+      run("."),
+    ],
+  },
+  { type: "paragraph", content: [run("Red words", { textColor: "red" }), run(" then plain.")] },
+  {
+    type: "paragraph",
+    props: { backgroundColor: "yellow", textAlignment: "center" },
+    content: [run("Centered highlight")],
+  },
+  { type: "paragraph", content: [run("Underlined", { underline: true }), run(" tail")] },
+  {
+    type: "bulletListItem",
+    content: [run("Parent bullet")],
+    children: [{ type: "bulletListItem", props: { textColor: "blue" }, content: [run("Blue child")] }],
+  },
+  { type: "bulletListItem", content: [run("Second bullet")] },
+  { type: "numberedListItem", content: [run("First step")] },
+  { type: "numberedListItem", content: [run("Second step")] },
+  { type: "checkListItem", props: { checked: true }, content: [run("Done task")] },
+  { type: "checkListItem", props: { checked: false }, content: [run("Open task")] },
+  {
+    type: "toggleListItem",
+    content: [run("Toggle")],
+    children: [{ type: "paragraph", content: [run("Hidden detail")] }],
+  },
+  {
+    type: "heading",
+    props: { level: 2, isToggleable: true },
+    content: [run("Toggle heading")],
+    children: [{ type: "paragraph", content: [run("Under toggle heading")] }],
+  },
+  { type: "quote", content: [run("Quoted wisdom")] },
+  { type: "codeBlock", props: { language: "typescript" }, content: [run("const x = 1;\nconst y = 2;")] },
+  { type: "mermaid", props: { data: "graph TD; A-->B", title: "Flow" } },
+  {
+    type: "table",
+    content: {
+      type: "tableContent",
+      columnWidths: [120, 200],
+      headerRows: 1,
+      rows: [
+        { cells: [[run("Name")], [run("Role")]] },
+        { cells: [[run("Ada")], [run("Engineer")]] },
+      ],
+    },
+  },
+  { type: "image", props: { url: "https://example.com/pic.png", caption: "A picture", previewWidth: 320 } },
+  { type: "divider" },
+  { type: "file", props: { url: "https://example.com/spec.pdf", name: "spec.pdf" } },
+  { type: "heading", props: { level: 3 }, content: [run("Notes")] },
+  { type: "paragraph", content: [run("Closing line")] },
+  { type: "paragraph", content: [] },
+];
+
+describe("exact-text edits keep every block the edit does not touch", () => {
+  // [edited node, oldText, newText]; null newText: Markdown cannot represent the node intact.
+  const cases: Array<[string, string, string | null]> = [
+    ["heading", "# Project brief", "# Project summary"],
+    ["link text", "the site", "our site"],
+    ["colored text", "Red words", "Red letters"],
+    ["block colors and alignment", "Centered highlight", "Centered note"],
+    ["underlined text", " tail", " end"],
+    ["nested colored child", "Blue child", "Blue kid"],
+    ["bullet", "Second bullet", "Next bullet"],
+    ["numbered item", "Second step", "Final step"],
+    ["checklist item", "[ ] Open task", "[x] Open task"],
+    ["toggle", "* Toggle", "* Toggle here"],
+    ["toggle child", "Hidden detail", "Hidden details"],
+    ["quote", "Quoted wisdom", "Quoted insight"],
+    ["code", "const y = 2;", "const y = 3;"],
+    ["titled Mermaid diagram", "graph TD; A-->B", "graph TD; A-->C"],
+    ["table with column widths", "| Ada        |", "| Grace      |"],
+    ["image with width", "A picture", "A photo"],
+    ["closing paragraph", "Closing line", "Closing remark"],
+    ["toggle heading with children", "Under toggle heading", null],
+    ["file", "[spec.pdf]", null],
+  ];
+
+  it("changes exactly the edited node, and the result reads back as the edited Markdown", async () => {
+    const stored = (await canonicalizeBlocks(richCorpus)) as any[];
+    const before = nodesById(stored);
+    expect(before.size).toBe(26);
+
+    for (const [name, oldText, newText] of cases) {
+      if (newText === null) {
+        await expect(
+          spliceBlockEdits(stored, [{ oldText, newText: `${oldText}!` }])
+        ).rejects.toMatchObject({ code: "unsupported_block" });
+        continue;
+      }
+      const result = await spliceBlockEdits(stored, [{ oldText, newText }]);
+      const after = (await canonicalizeBlocks(result.blocks)) as any[];
+      const afterNodes = nodesById(after);
+      const changed = [...before].filter(([id, node]) => afterNodes.get(id) !== node);
+      expect({ name, changed: changed.length, nodes: afterNodes.size }).toEqual({
+        name,
+        changed: 1,
+        nodes: before.size,
+      });
+      expect({ name, markdown: (await projectBlocks(after)).markdown }).toEqual({
+        name,
+        markdown: result.editedMarkdown,
+      });
+    }
+
+    // What Markdown cannot show stays with the edited block.
+    const colored = await spliceBlockEdits(stored, [{ oldText: "Red words", newText: "Red letters" }]);
+    expect(colored.blocks[2].content[0]).toMatchObject({ text: "Red letters", styles: { textColor: "red" } });
+    const table = await spliceBlockEdits(stored, [{ oldText: "| Ada        |", newText: "| Grace      |" }]);
+    expect(table.blocks[16].content.columnWidths).toEqual([120, 200]);
+    const centered = await spliceBlockEdits(stored, [{ oldText: "Centered highlight", newText: "Centered note" }]);
+    expect(centered.blocks[3].props).toMatchObject({ backgroundColor: "yellow", textAlignment: "center" });
+    expect(centered.changed).toEqual({ kept: 25, modified: [stored[3].id], inserted: 0, removed: 0 });
+
+    // An insertion adds one node; two distant edits change only their own nodes.
+    const inserted = await spliceBlockEdits(stored, [
+      { oldText: "# Project brief\n", newText: "# Project brief\n\nInserted paragraph.\n" },
+    ]);
+    const insertedNodes = nodesById((await canonicalizeBlocks(inserted.blocks)) as any[]);
+    expect([...before].every(([id, node]) => insertedNodes.get(id) === node)).toBe(true);
+    expect(insertedNodes.size).toBe(before.size + 1);
+
+    // Deleting a block next to an edited one never hands its id to the edited text.
+    const merged = await spliceBlockEdits(stored, [
+      { oldText: "Centered highlight\n\nUnderlined tail", newText: "Underlined end" },
+    ]);
+    expect(merged.removedIds).toEqual([stored[3].id]);
+    expect(merged.changed.modified).toEqual([stored[4].id]);
+
+    const distant = await spliceBlockEdits(stored, [
+      { oldText: "Project brief", newText: "Project plan" },
+      { oldText: "Closing line", newText: "Closing note" },
+    ]);
+    const distantNodes = nodesById((await canonicalizeBlocks(distant.blocks)) as any[]);
+    expect([...before].filter(([id, node]) => distantNodes.get(id) !== node)).toHaveLength(2);
   });
 });

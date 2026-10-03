@@ -1515,7 +1515,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256,
-                  "description": "Earlier point: a sourceRevision from a previous read or write, or a version id from action versions"
+                  "description": "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from action versions"
                 },
                 "to": {
                   "description": "Later point in the same forms; defaults to the current source",
@@ -1845,7 +1845,7 @@
           "type": "string"
         },
         "to": {
-          "description": "Returned by action \"diff\"; the later point, or the current sourceRevision by default.",
+          "description": "Returned by action \"diff\"; the later point; by default the current revision, in the same scheme as from (Doc revision or sourceRevision).",
           "type": "string"
         },
         "unified": {

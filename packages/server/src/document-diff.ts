@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import { DocumentGenerationIdSchema } from "@worktable/types"
 import { useResolvedDocumentHandle, type ResolvedDocumentHandle } from "./document-query.ts"
@@ -11,13 +12,17 @@ import {
 } from "./document-version-store-v2.ts"
 import { registeredDocumentSourceRevision } from "./document-write-service.ts"
 import { blocksToMarkdownSafe } from "./markdown.ts"
-import { getDocVersion } from "./store.ts"
+import { docRevisionId } from "./doc-markdown-projection.ts"
+import { getDocVersion, listDocVersions } from "./store.ts"
 import {
   DOCUMENT_DIFF_DEFAULT_CONTEXT,
   DOCUMENT_DIFF_MAX_CONTEXT,
   unifiedLineDiff,
 } from "./text-diff.ts"
-import { getWidgetVersion } from "./widget-version-store.ts"
+import {
+  getWidgetVersion,
+  listWidgetVersions,
+} from "./widget-version-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 
@@ -133,9 +138,21 @@ function notInHistory(ref: string): DocumentDiffError {
   )
 }
 
+/** A stored state of the document: its format and exact source bytes. */
+interface StoredSource {
+  formatId: string
+  bytes: Uint8Array
+}
+
+type SourceMatcher = (source: StoredSource) => Promise<boolean> | boolean
+
+// Revision lookups hash every candidate, so stop after a bounded history.
+const REVISION_SCAN_LIMIT = 500
+
 interface HistoryReader {
   version(id: string): Promise<VersionContent | null>
-  revision(revision: string): Promise<VersionContent | null>
+  /** Newest stored state the matcher accepts, scanning a bounded history. */
+  find(matches: SourceMatcher): Promise<StoredSource | null>
 }
 
 function historyFor(
@@ -175,16 +192,13 @@ function historyFor(
             : undefined
         )
       },
-      // A source revision hashes the document's identity with its exact
-      // bytes, so a stored generation of the same format reproduces it.
-      async revision(revision) {
+      async find(matches) {
         const manifests = await listDocumentGenerationsV2({
           workspaceRoot,
           spaceId,
           documentId: handle.documentId,
         })
-        for (const manifest of manifests) {
-          if (manifest.format.id !== formatId) continue
+        for (const manifest of manifests.slice(0, REVISION_SCAN_LIMIT)) {
           const generation = await readDocumentGenerationV2({
             workspaceRoot,
             spaceId,
@@ -193,40 +207,87 @@ function historyFor(
           })
           const bytes = generation ? generationBytes(generation) : null
           if (!bytes) continue
-          const candidate = await registeredDocumentSourceRevision({
-            documentId: handle.documentId,
-            path: handle.document.path,
-            format: handle.document.format,
-            source: handle.source,
-            bytes,
-          })
-          if (candidate === revision) return generationContent(generation!)
+          const source = { formatId: manifest.format.id, bytes }
+          if (await matches(source)) return source
         }
         return null
       },
     }
   }
   // Older storage and not-yet-registered documents keep history in the
-  // Doc and HTML Doc version stores, addressed by version id only.
+  // Doc and HTML Doc version stores, which hold parsed content rather than
+  // bytes; re-serialize it the way those stores write sources.
+  const readSnapshot = (id: string) =>
+    legacyKind === "docs"
+      ? getDocVersion(spaceId, handle.document.path, id)
+      : getWidgetVersion(spaceId, handle.document.path, id)
   return {
     async version(id) {
-      const snapshot =
-        legacyKind === "docs"
-          ? await getDocVersion(spaceId, handle.document.path, id)
-          : await getWidgetVersion(spaceId, handle.document.path, id)
+      const snapshot = await readSnapshot(id)
       return snapshot ? contentFromSnapshot(snapshot.after.content) : null
     },
-    async revision() {
+    async find(matches) {
+      const entries =
+        legacyKind === "docs"
+          ? await listDocVersions(spaceId, handle.document.path)
+          : await listWidgetVersions(spaceId, handle.document.path)
+      for (const entry of entries.slice(0, REVISION_SCAN_LIMIT)) {
+        const snapshot = await readSnapshot(entry.id)
+        if (!snapshot) continue
+        const content = contentFromSnapshot(snapshot.after.content)
+        const source: StoredSource =
+          content.kind === "blocks"
+            ? {
+                formatId: BUILTIN_DOCUMENT_FORMATS.richText,
+                bytes: new TextEncoder().encode(
+                  JSON.stringify(content.blocks, null, 2)
+                ),
+              }
+            : {
+                formatId:
+                  content.kind === "html"
+                    ? BUILTIN_DOCUMENT_FORMATS.html
+                    : BUILTIN_DOCUMENT_FORMATS.markdown,
+                bytes: new TextEncoder().encode(content.text),
+              }
+        if (await matches(source)) return source
+      }
       return null
     },
   }
 }
 
+const DOC_REVISION = /^(md|json):sha256:([0-9a-f]{64})$/
+
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+/** The Doc revision worktable_docs_read returns for a file source. */
+function currentDocRevision(
+  handle: ResolvedDocumentHandle,
+  bytes: Uint8Array
+): string | null {
+  if (
+    handle.source.kind !== "file" ||
+    (handle.document.format.id !== BUILTIN_DOCUMENT_FORMATS.markdown &&
+      handle.document.format.id !== BUILTIN_DOCUMENT_FORMATS.richText)
+  ) {
+    return null
+  }
+  return docRevisionId({
+    relativePath: handle.source.relativePath,
+    size: bytes.byteLength,
+    sha256: sha256Hex(bytes),
+  })
+}
+
 /**
  * Compare a document's readable text between two points in its history.
- * `from` and `to` accept a version id from action versions or a
- * sourceRevision returned by an earlier read or write; `to` defaults to the
- * current source.
+ * `from` and `to` accept a version id from action versions, a sourceRevision
+ * (`rev_...`) from the document tools, or a Doc revision (`md:sha256:...`,
+ * `json:sha256:...`) from the Doc tools. `to` defaults to the current source
+ * and is reported in the same revision scheme as `from`.
  */
 export async function diffDocumentText(options: {
   spaceId: string
@@ -271,25 +332,57 @@ export async function diffDocumentText(options: {
               bytes: currentBytes,
             })
           : null
+      const docRevision = currentDocRevision(handle, currentBytes)
       const current = contentFromBytes(formatId, currentBytes)
       const history = historyFor(options.spaceId, handle, storageV2)
+      // A sourceRevision hashes the document's identity with its exact bytes,
+      // so only a stored state of the current format can reproduce it.
+      const matchesSourceRevision =
+        (ref: string): SourceMatcher =>
+        async (source) =>
+          source.formatId === formatId &&
+          (await registeredDocumentSourceRevision({
+            documentId: handle.documentId,
+            path: handle.document.path,
+            format: handle.document.format,
+            source: handle.source,
+            bytes: source.bytes,
+          })) === ref
+      // A Doc revision names the storage kind and hashes the stored bytes.
+      const matchesDocRevision =
+        (kind: string, sha256: string): SourceMatcher =>
+        (source) =>
+          source.formatId ===
+            (kind === "md"
+              ? BUILTIN_DOCUMENT_FORMATS.markdown
+              : BUILTIN_DOCUMENT_FORMATS.richText) &&
+          sha256Hex(source.bytes) === sha256
       const contentAt = async (ref: string): Promise<VersionContent> => {
-        if (ref === currentRevision) return current
-        if (ref.startsWith("rev_")) {
-          const content = await history.revision(ref)
-          if (!content) throw notInHistory(`Revision ${ref}`)
-          return content
+        if (ref === currentRevision || ref === docRevision) return current
+        const docRef = DOC_REVISION.exec(ref)
+        if (ref.startsWith("rev_") || docRef) {
+          const found = await history.find(
+            docRef
+              ? matchesDocRevision(docRef[1]!, docRef[2]!)
+              : matchesSourceRevision(ref)
+          )
+          if (!found) throw notInHistory(`Revision ${ref}`)
+          return contentFromBytes(found.formatId, found.bytes)
         }
         assertSafeVersionId(ref)
         const content = await history.version(ref)
         if (!content) throw notInHistory(`Version ${ref}`)
         return content
       }
+      const currentLabel =
+        (DOC_REVISION.test(options.from) ? docRevision : null) ??
+        currentRevision ??
+        "current"
       return {
         path: handle.document.path,
         from: await contentAt(options.from),
         to: options.to === undefined ? current : await contentAt(options.to),
-        toLabel: options.to ?? currentRevision ?? "current",
+        toLabel: options.to ?? currentLabel,
       }
     }
   )

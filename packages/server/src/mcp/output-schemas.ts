@@ -1199,7 +1199,7 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     from: forActions(z.string(), '"diff"; the earlier point as requested'),
     to: forActions(
       z.string(),
-      '"diff"; the later point, or the current sourceRevision by default'
+      '"diff"; the later point; by default the current revision, in the same scheme as from (Doc revision or sourceRevision)'
     ),
     unified: forActions(
       z.string(),

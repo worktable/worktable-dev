@@ -35,9 +35,11 @@ those operations. Its `list` action filters by folder (`pathPrefix`), path
 `glob`, format, and lifetime. In a glob, `*` and `?` match within one folder
 and a `**` segment spans folders, matched against the extensionless path.
 Action `diff` returns a unified line diff of a Doc's Markdown or an HTML Doc's
-source between two points in its history. Each point is a `sourceRevision`
-returned by an earlier read or write, or a version id from action `versions`;
-the later point defaults to the current source. A revision that is no longer in
+source between two points in its history. Each point is a revision returned
+by an earlier read or write (a `sourceRevision`, or the Doc `revision` that
+`worktable_docs_read` returns), or a version id from action `versions`. The
+later point defaults to the current source, reported in the same revision
+scheme as the earlier one. A revision that is no longer in
 the retained history returns an error; use a version id instead. Formats without
 a text projection, such as drawings, cannot be diffed. It requires
 `documents:read`; the specialized Doc and HTML Doc tools remain available for

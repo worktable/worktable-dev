@@ -867,7 +867,7 @@ export const DocumentsReadInput = z.strictObject({
         .min(1)
         .max(256)
         .describe(
-          "Earlier point: a sourceRevision from a previous read or write, or a version id from action versions"
+          "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from action versions"
         ),
       to: z
         .string()

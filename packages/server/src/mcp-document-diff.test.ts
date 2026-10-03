@@ -80,7 +80,7 @@ beforeEach(async () => {
   ensureWorkspaceManifest()
   invalidateSearchIndex()
   await writeSpace(space())
-  const server = createWorktableMcpServer({ version: "test", scopes: ["documents:read", "docs:write", "widgets:write"] })
+  const server = createWorktableMcpServer({ version: "test", scopes: ["documents:read", "docs:read", "docs:write", "widgets:write"] })
   client = new Client({ name: "diff-test", version: "1" })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -149,6 +149,29 @@ describe("document diffs over MCP", () => {
       expect(missing.text).toContain("not in this document's version history")
       expect(missing.text).toContain("action versions")
     }
+  })
+
+  it("diffs from the revision a Doc read returned, in the same scheme", async () => {
+    const readDoc = async () =>
+      (await tool("worktable_docs_read", { action: "read", spaceId, docPath: "notes/plan" })).data[
+        "revision"
+      ] as string
+    await writeRichDoc(["Alpha", "Beta"], { lifetime: "durable" })
+    const lastRead = await readDoc()
+    expect(lastRead).toMatch(/^json:sha256:[0-9a-f]{64}$/)
+    await writeRichDoc(["Alpha", "Beta revised"])
+    await writeRichDoc(["Alpha", "Beta revised", "Gamma"])
+
+    const changed = await diff({ path: "notes/plan", from: lastRead, context: 0 })
+    expect(changed.data).toMatchObject({
+      from: lastRead,
+      to: await readDoc(),
+      stats: { added: 3, removed: 1 },
+    })
+    expect(changed.data["unified"]).toContain("-Beta\n+Beta revised\n")
+
+    const missing = await diff({ path: "notes/plan", from: `json:sha256:${"0".repeat(64)}` })
+    expect(missing.text).toContain("action versions")
   })
 
   it("diffs HTML source and rejects formats without text", async () => {

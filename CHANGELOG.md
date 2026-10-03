@@ -16,6 +16,7 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 - **Agents can manage Spaces:** Agents with content access can rename, describe, archive, and restore Spaces and set their Start here pins, including on Worktable Cloud. Only you can delete a Space.
 - **Clearer permission errors:** When an agent lacks the access an action needs, the error names the missing permission and says you can grant it by reconnecting the agent with broader access.
+- **OpenClaw replies across restarts:** An OpenClaw agent's reply is no longer lost when Worktable restarts or is briefly unreachable during its turn; the reply is posted once Worktable is back, and an interrupted turn is retried instead of being reported as complete.
 
 ## [0.1.16] - 2026-10-02
 

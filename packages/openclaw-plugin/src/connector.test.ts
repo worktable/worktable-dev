@@ -489,8 +489,12 @@ describe("OpenClaw Worktable connector", () => {
     const dedupe: DeliveryDedupe = {
       claim: async () => {
         claimAttempts += 1
+        // OpenClaw rejects the pending claim when its owner releases it.
         return claimAttempts === 1
-          ? { kind: "inflight", pending: Promise.resolve(false) }
+          ? {
+              kind: "inflight",
+              pending: Promise.reject(new Error("claim released")),
+            }
           : { kind: "claimed" }
       },
       commit: async () => true,
@@ -807,61 +811,148 @@ describe("OpenClaw Worktable connector", () => {
     ).toBe(true)
   })
 
-  it("cancels an active turn after sustained heartbeat failures", async () => {
+  it("retries an interrupted turn instead of completing it", async () => {
     const client = new FakeWorktableClient()
-    client.deliveries.push(delivery("msg_lease_risk", "thr_lease_risk"))
-    let progressCalls = 0
-    client.progress = (messageId, _leaseId, phase, receivedCharacters) => {
-      client.progressEvents.push({ messageId, phase, receivedCharacters })
-      progressCalls += 1
-      return progressCalls === 1
-        ? Promise.resolve()
-        : Promise.reject(
-            Object.assign(new Error("offline"), { code: "ECONNRESET" })
-          )
+    const dedupe = memoryDedupe()
+    const replyOutbox = createMemoryReplyOutbox()
+    client.claim = (_waitSeconds?: number, signal?: AbortSignal) => {
+      const next = client.deliveries.shift()
+      if (next) return Promise.resolve(next)
+      return new Promise((resolve) => {
+        if (signal?.aborted) resolve(null)
+        else
+          signal?.addEventListener("abort", () => resolve(null), {
+            once: true,
+          })
+      })
     }
-    let dispatchAborted = false
-    let heartbeat: (() => void | Promise<void>) | undefined
-    const heartbeatTimer = {
-      start(callback: () => void | Promise<void>) {
-        heartbeat = callback
-        return 1 as unknown as ReturnType<typeof setInterval>
-      },
-      stop() {
-        heartbeat = undefined
-      },
-    }
-    const dispatcher: AgentDispatcher = {
-      async dispatch(_input, _callbacks, signal) {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          await heartbeat?.()
-        }
+    let markStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const interrupted: AgentDispatcher = {
+      dispatch(_input, _callbacks, signal) {
+        markStarted?.()
+        // Like OpenClaw, an interrupted turn resolves without a reply.
         return new Promise((resolve) => {
-          const finish = () => {
-            dispatchAborted = true
-            resolve("Reply that must not be posted")
-          }
-          if (signal?.aborted) finish()
-          else signal?.addEventListener("abort", finish, { once: true })
+          signal?.addEventListener("abort", () => resolve(""), { once: true })
         })
       },
+    }
+    client.deliveries.push(delivery("msg_interrupted", "thr_interrupted"))
+    const stop = new AbortController()
+    const running = new WorktableConnector({
+      client,
+      dispatcher: interrupted,
+      dedupe,
+      replyOutbox,
+      accountId: "default",
+    }).run(stop.signal)
+    await started
+    stop.abort()
+    await running
+
+    client.deliveries.push(delivery("msg_interrupted", "thr_interrupted"))
+    const dispatcher = new RecordingDispatcher()
+    await new WorktableConnector({
+      client,
+      dispatcher,
+      dedupe,
+      replyOutbox,
+      accountId: "default",
+    }).processOne()
+
+    expect(dispatcher.calls).toHaveLength(1)
+    expect(client.replies.map(({ body }) => body)).toEqual([
+      "Reply 1 in thr_interrupted",
+    ])
+    expect(client.failed).toEqual([])
+  })
+
+  it("posts a reply finished after its lease expired under the next lease", async () => {
+    const client = new FakeWorktableClient()
+    const heartbeats: Array<() => void | Promise<void>> = []
+    const heartbeatTimer = {
+      start(callback: () => void | Promise<void>) {
+        heartbeats.push(callback)
+        return heartbeats.length as unknown as ReturnType<typeof setInterval>
+      },
+      stop() {},
+    }
+    // Worktable restarts during the turn: one renewal cannot connect and the
+    // next finds the lease expired.
+    const firstLeaseRenewals: Array<Error | undefined> = [
+      undefined,
+      Object.assign(new Error("offline"), { code: "ECONNRESET" }),
+      Object.assign(new Error("expired"), { code: "LEASE_LOST" }),
+    ]
+    const progress = client.progress.bind(client)
+    client.progress = (messageId, leaseId, phase, receivedCharacters) => {
+      const failure =
+        leaseId === "lease_first" ? firstLeaseRenewals.shift() : undefined
+      return failure
+        ? Promise.reject(failure)
+        : progress(messageId, leaseId, phase, receivedCharacters)
+    }
+    let markLeaseLost: (() => void) | undefined
+    const leaseLost = new Promise<void>((resolve) => {
+      markLeaseLost = resolve
+    })
+    let finishTurn: (() => void) | undefined
+    const turnFinished = new Promise<void>((resolve) => {
+      finishTurn = resolve
+    })
+    let dispatches = 0
+    const dispatcher: AgentDispatcher = {
+      async dispatch(_input, _callbacks, signal) {
+        dispatches += 1
+        await heartbeats[0]?.()
+        await heartbeats[0]?.()
+        markLeaseLost?.()
+        await turnFinished
+        return signal?.aborted ? "" : "Reply finished after a restart"
+      },
+    }
+    const dedupe = memoryDedupe()
+    const claim = dedupe.claim.bind(dedupe)
+    let markWaiting: (() => void) | undefined
+    const secondAttemptWaiting = new Promise<void>((resolve) => {
+      markWaiting = resolve
+    })
+    dedupe.claim = async (...args) => {
+      const result = await claim(...args)
+      if (result.kind === "inflight") markWaiting?.()
+      return result
     }
     const connector = new WorktableConnector({
       client,
       dispatcher,
-      dedupe: memoryDedupe(),
+      dedupe,
       replyOutbox: createMemoryReplyOutbox(),
       accountId: "default",
-      heartbeatMs: 2,
       heartbeatTimer,
     })
+    const first = delivery("msg_restart", "thr_restart")
+    first.leaseId = "lease_first"
+    client.deliveries.push(first)
+    const firstAttempt = connector.processOne()
+    await leaseLost
 
-    await connector.processOne()
+    const second = delivery("msg_restart", "thr_restart")
+    second.leaseId = "lease_second"
+    client.deliveries.push(second)
+    const secondAttempt = connector.processOne()
+    await secondAttemptWaiting
+    finishTurn?.()
+    await Promise.all([firstAttempt, secondAttempt])
 
-    expect(dispatchAborted).toBe(true)
-    expect(progressCalls).toBeGreaterThanOrEqual(4)
-    expect(client.replies).toHaveLength(0)
-    expect(client.failed.at(-1)?.code).toBe("LEASE_HEARTBEAT_FAILED")
+    expect(dispatches).toBe(1)
+    expect(client.replies).toHaveLength(1)
+    expect(client.replies[0]).toMatchObject({
+      body: "Reply finished after a restart",
+      deliveryLeaseId: "lease_second",
+    })
+    expect(client.failed).toEqual([])
   })
 
   it("cancels a pending claim when the channel stops", async () => {

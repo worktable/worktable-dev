@@ -55,7 +55,7 @@ Build and package the plugin from this directory:
 
 ```sh
 bun run pack:dogfood
-openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-0.0.13.tgz --pin
+openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-0.0.14.tgz --pin
 ```
 
 The Worktable OpenClaw adapter is available under the [MIT License](LICENSE).

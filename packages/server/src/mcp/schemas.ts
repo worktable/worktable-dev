@@ -21,6 +21,11 @@ import {
   ThreadLocationSchema,
   ThreadMessageIdSchema,
 } from "@worktable/types"
+import { PATH_GLOB_MAX_LENGTH } from "../path-glob.ts"
+import {
+  DOCUMENT_DIFF_DEFAULT_CONTEXT,
+  DOCUMENT_DIFF_MAX_CONTEXT,
+} from "../text-diff.ts"
 
 // ---- Core CRUD schemas ----
 
@@ -814,6 +819,14 @@ export const DocumentsReadInput = z.strictObject({
         .max(4096)
         .optional()
         .describe("Only documents at or under this folder path, e.g. 'plans'"),
+      glob: z
+        .string()
+        .min(1)
+        .max(PATH_GLOB_MAX_LENGTH)
+        .optional()
+        .describe(
+          "Only documents whose extensionless path matches, e.g. 'plans/**/2026-*' or '**/*-review'. * and ? stay within one folder; ** spans folders."
+        ),
       lifetime: z
         .enum(["durable", "temporary"])
         .optional()
@@ -845,6 +858,30 @@ export const DocumentsReadInput = z.strictObject({
       spaceId: ReadDocInput.shape.spaceId,
       path: z.string().min(1).max(4096),
       all: z.boolean().optional().default(false),
+    }),
+    actionSchema("diff", {
+      spaceId: ReadDocInput.shape.spaceId,
+      path: z.string().min(1).max(4096),
+      from: z
+        .string()
+        .min(1)
+        .max(256)
+        .describe(
+          "Earlier point: a sourceRevision from a previous read or write, or a version id from action versions"
+        ),
+      to: z
+        .string()
+        .min(1)
+        .max(256)
+        .optional()
+        .describe("Later point in the same forms; defaults to the current source"),
+      context: z
+        .number()
+        .int()
+        .min(0)
+        .max(DOCUMENT_DIFF_MAX_CONTEXT)
+        .optional()
+        .describe(`Unchanged lines around each change (default ${DOCUMENT_DIFF_DEFAULT_CONTEXT})`),
     }),
   ]),
 })

@@ -7,7 +7,7 @@ Docs are versioned documents — markdown strings or rich BlockNote arrays — f
 
 ## Understand the space before you write
 
-Placement is part of the content. Start with the Space's Start here pins in `worktable_discover` action `state`. The `space_index` action gives a server-generated map of the space, and `worktable_documents_read` action `list` accepts `pathPrefix`, `lifetime`, and a `cursor` for one folder at a time.
+Placement is part of the content. Start with the Space's Start here pins in `worktable_discover` action `state`. The `space_index` action gives a server-generated map of the space, and `worktable_documents_read` action `list` accepts `pathPrefix`, a path `glob` such as `plans/**/2026-*`, `lifetime`, and a `cursor` for one folder at a time.
 
 ## Find exact text
 

@@ -114,7 +114,7 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_spaces:
     "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
   worktable_documents_read:
-    "List every document format, safely read source, or render drawings and HTML as model-visible PNG previews with action render.",
+    "List every document format, safely read source or versions, diff a document's text against an earlier revision, or render drawings and HTML as model-visible PNG previews with action render.",
   worktable_documents_write:
     "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
   worktable_docs_read:

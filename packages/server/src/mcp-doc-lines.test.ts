@@ -5,6 +5,7 @@ import type { SpaceFile } from "@worktable/types"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { setGrepTimeLimitForTests } from "./doc-markdown-projection.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { setDocArchived, writeSpace } from "./store.ts"
@@ -68,6 +69,7 @@ describe("line-addressed Doc reads", () => {
     text: string
     before: string[]
     after: string[]
+    lineTruncated?: true
   }
   const text = (value: string) => ({ type: "text", text: value, styles: {} })
   const richDoc = (closing: string) => [
@@ -123,6 +125,7 @@ describe("line-addressed Doc reads", () => {
       join(docs, "plans", "brief.json"),
       JSON.stringify(richDoc("Closing note."))
     )
+    await writeFile(join(docs, "plans", "broken.json"), "{")
     await writeFile(join(docs, "notes", "field.md"), "A beacon was sighted.")
     await writeFile(join(docs, "notes", "old.md"), "The old beacon log.")
     await setDocArchived(spaceId, "notes/old", true, "test")
@@ -141,6 +144,7 @@ describe("line-addressed Doc reads", () => {
     expect(scoped.data).toMatchObject({
       total: 4,
       truncated: false,
+      skipped: [{ spaceId, docPath: "plans/broken", reason: "unreadable" }],
       scope: { spaceId, pathPrefix: "plans", includeArchived: false },
     })
     const matches = scoped.data.matches as GrepMatch[]
@@ -189,9 +193,56 @@ describe("line-addressed Doc reads", () => {
     const invalid = await grep({ pattern: "(beacon", regex: true })
     expect(invalid.isError).toBe(true)
     expect(invalid.message).toContain("Invalid regular expression")
-    const catastrophic = await grep({ pattern: "(a+)+$", regex: true })
-    expect(catastrophic.isError).toBe(true)
-    expect(catastrophic.message).toContain("Regular expression rejected")
+  })
+
+  it("bounds grep time and response size", async () => {
+    const docs = join(root, "spaces", spaceId, "docs")
+    await mkdir(docs, { recursive: true })
+    await writeFile(join(docs, "runaway.md"), `${"a".repeat(10_000)}\n`)
+    await writeFile(join(docs, "wide.md"), `needle ${"w".repeat(50_000)}\n`)
+    await writeFile(
+      join(docs, "many.md"),
+      Array.from({ length: 200 }, () => `pin ${"p".repeat(1_500)}`).join("\n")
+    )
+    const connected = await connect(["docs:read"])
+    const grep = (request: Record<string, unknown>) =>
+      call(connected, "worktable_docs_read", { action: "grep", spaceId, ...request })
+
+    // A backtracking regex is stopped at the limit while the server keeps running.
+    setGrepTimeLimitForTests(500)
+    try {
+      let lastTick = performance.now()
+      let longestPause = 0
+      const ticker = setInterval(() => {
+        const now = performance.now()
+        longestPause = Math.max(longestPause, now - lastTick)
+        lastTick = now
+      }, 10)
+      const started = performance.now()
+      const runaway = await grep({ pattern: "^a*a*a*a*a*a*ab$", regex: true })
+      const elapsed = performance.now() - started
+      clearInterval(ticker)
+      expect(runaway.isError).toBe(true)
+      expect(runaway.message).toContain("grep stopped after 0.5 seconds")
+      expect(elapsed).toBeLessThan(3_000)
+      expect(longestPause).toBeLessThan(250)
+    } finally {
+      setGrepTimeLimitForTests(null)
+    }
+    const recovered = await grep({ pattern: "^needle", regex: true })
+    expect(recovered.data).toMatchObject({ total: 1 })
+
+    const wide = (recovered.data.matches as GrepMatch[])[0]
+    expect(wide.lineTruncated).toBe(true)
+    expect(wide.text.length).toBeLessThan(2_100)
+    expect(wide.text.startsWith("needle www")).toBe(true)
+
+    const many = await grep({ pattern: "pin", maxResults: 500 })
+    const returned = many.data.matches as GrepMatch[]
+    expect(many.data).toMatchObject({ total: 200, truncated: true })
+    expect(returned.length).toBeGreaterThan(0)
+    expect(returned.length).toBeLessThan(200)
+    expect(JSON.stringify(returned).length).toBeLessThan(150_000)
   })
 
   it("reads long Docs in line ranges and greps the latest revision", async () => {
@@ -236,5 +287,15 @@ describe("line-addressed Doc reads", () => {
     expect(before.data.revision).not.toBe(match.revision)
     expect(after.data.revision).toBe(match.revision)
     expect(after.data.content).toBe(`${match.text}\n`)
+
+    // Identical bytes stored as Markdown and as BlockNote are different revisions.
+    const docs = join(root, "spaces", spaceId, "docs")
+    await writeFile(join(docs, "same-markdown.md"), "[]")
+    await writeFile(join(docs, "same-blocks.json"), "[]")
+    const markdown = await read("same-markdown")
+    const blocks = await read("same-blocks")
+    expect(markdown.data.content).toBe("[]")
+    expect(blocks.data.storedAs).toBe("json")
+    expect(markdown.data.revision).not.toBe(blocks.data.revision)
   })
 })

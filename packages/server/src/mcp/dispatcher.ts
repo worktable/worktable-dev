@@ -147,12 +147,12 @@ import {
 } from "../search-index.ts"
 import { decorateDocsWithBacklinkCounts, getDocLinks } from "../link-graph.ts"
 import {
-  compileLineMatcher,
+  countMarkdownLines,
   docMarkdownProjection,
   docRevisionId,
   grepDocs,
-  markdownLines,
   sliceMarkdownLines,
+  validateGrepPattern,
 } from "../doc-markdown-projection.ts"
 import { buildSpaceIndex } from "../space-index.ts"
 import {
@@ -1717,7 +1717,7 @@ async function _dispatchOperationInner(
       const markdownContent = (markdown: string) =>
         ranged
           ? sliceMarkdownLines(markdown, offset ?? 1, limit)
-          : { content: markdown, totalLines: markdownLines(markdown).length }
+          : { content: markdown, totalLines: countMarkdownLines(markdown) }
 
       // If stored as JSON, try to return markdown for agent convenience
       if (result.storedAs === "json" && Array.isArray(result.data)) {
@@ -1805,7 +1805,7 @@ async function _dispatchOperationInner(
     }
     case "docs.grep": {
       const parsed = GrepDocsInput.parse(args)
-      const matcher = compileLineMatcher(parsed)
+      validateGrepPattern(parsed)
       const pathPrefix = normalizePathPrefix(parsed.pathPrefix)
       const includeArchived = parsed.includeArchived ?? false
       let spaceIds: string[]
@@ -1824,18 +1824,17 @@ async function _dispatchOperationInner(
           .map((space) => space.id)
           .sort()
       }
-      const { matches, total } = await grepDocs({
+      const { matches, total, skipped } = await grepDocs({
+        ...parsed,
         spaceIds,
         pathPrefix,
         includeArchived,
-        matcher,
-        context: parsed.context,
-        maxResults: parsed.maxResults,
       })
       return {
         matches,
         total,
         truncated: total > matches.length,
+        skipped,
         scope: {
           ...(parsed.spaceId ? { spaceId: parsed.spaceId } : {}),
           ...(pathPrefix ? { pathPrefix } : {}),

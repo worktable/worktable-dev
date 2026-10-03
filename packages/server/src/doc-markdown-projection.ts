@@ -19,9 +19,16 @@ import {
 } from "./store.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 
-/** The revision agents see for a Doc: a hash of its exact stored bytes. */
+/**
+ * The revision agents see for a Doc: its storage kind and a hash of its exact
+ * stored bytes, e.g. `md:sha256:…`. A `.md` and a `.json` source with
+ * identical bytes are different revisions.
+ */
 export function docRevisionId(revision: DocSourceRevision): string {
-  return `sha256:${revision.sha256}`
+  const extension = revision.relativePath.slice(
+    revision.relativePath.lastIndexOf(".") + 1
+  )
+  return `${extension}:sha256:${revision.sha256}`
 }
 
 interface CachedProjection {
@@ -106,19 +113,33 @@ export async function docMarkdownProjection(
   return markdown
 }
 
-/**
- * Lines as `read` numbers them: split on "\n", where a trailing newline ends
- * the last line rather than starting an empty one.
- */
-export function markdownLines(content: string): string[] {
-  if (content === "") return []
-  const lines = content.split("\n")
-  if (lines[lines.length - 1] === "") lines.pop()
-  return lines
+// ---- lines ----
+//
+// `read` numbers lines by splitting on "\n", where a trailing newline ends the
+// last line rather than starting an empty one. These helpers scan newline
+// offsets, so a long Doc never becomes an array of line strings.
+
+export function countMarkdownLines(content: string): number {
+  if (content === "") return 0
+  let newlines = 0
+  for (
+    let at = content.indexOf("\n");
+    at !== -1;
+    at = content.indexOf("\n", at + 1)
+  ) {
+    newlines += 1
+  }
+  return content.endsWith("\n") ? newlines : newlines + 1
+}
+
+/** Offset of the line after the one starting at `from`. */
+function nextLineStart(content: string, from: number): number {
+  const newline = content.indexOf("\n", from)
+  return newline === -1 ? content.length : newline + 1
 }
 
 /**
- * Lines `startLine` through `endLine` (1-based, inclusive) with their line
+ * Lines `offset` through `offset + limit - 1` (1-based) with their line
  * endings, so consecutive slices concatenate back to the exact content.
  */
 export function sliceMarkdownLines(
@@ -126,125 +147,180 @@ export function sliceMarkdownLines(
   offset: number,
   limit: number | undefined
 ): { content: string; totalLines: number; startLine: number; endLine: number } {
-  const lines = markdownLines(content)
-  const totalLines = lines.length
+  const totalLines = countMarkdownLines(content)
   if (offset > Math.max(totalLines, 1)) {
     throw new Error(
       `offset ${offset} is past the end of the Doc, which has ${totalLines} line${totalLines === 1 ? "" : "s"}`
     )
   }
-  const start = offset - 1
-  const end = Math.min(totalLines, limit === undefined ? totalLines : start + limit)
-  const selected = lines.slice(start, end)
-  const endsWithNewline = end < totalLines || content.endsWith("\n")
+  const endLine = Math.min(
+    totalLines,
+    limit === undefined ? totalLines : offset - 1 + limit
+  )
+  let start = 0
+  for (let line = 1; line < offset; line += 1) {
+    start = nextLineStart(content, start)
+  }
+  let end = start
+  for (let line = offset; line <= endLine; line += 1) {
+    end = nextLineStart(content, end)
+  }
   return {
-    content:
-      selected.length === 0
-        ? ""
-        : `${selected.join("\n")}${endsWithNewline ? "\n" : ""}`,
+    content: content.slice(start, end),
     totalLines,
     startLine: offset,
-    endLine: end,
+    endLine,
+  }
+}
+
+function forEachLine(
+  content: string,
+  visit: (line: string, index: number) => void
+): void {
+  let start = 0
+  for (let index = 0; start < content.length; index += 1) {
+    const newline = content.indexOf("\n", start)
+    const end = newline === -1 ? content.length : newline
+    visit(content.slice(start, end), index)
+    start = end + 1
   }
 }
 
 // ---- grep ----
 
-/** Regex matching examines at most this many characters of one line. */
-const MAX_REGEX_LINE_CHARS = 10_000
-/** One grep stops rather than holding the server for longer than this. */
-export const GREP_TIME_LIMIT_MS = 10_000
+/** Returned match and context lines are cut to this many characters. */
+export const GREP_LINE_CHARS = 2_000
+/** One grep returns at most about this many characters of line text. */
+export const GREP_RESULT_CHARS = 100_000
+const LINE_TRUNCATION_MARKER = " …[line truncated]"
+const DEFAULT_GREP_TIME_LIMIT_MS = 10_000
 
-export type LineMatcher = (line: string) => boolean
+let grepTimeLimitMs = DEFAULT_GREP_TIME_LIMIT_MS
 
-/**
- * Reject regex constructs whose backtracking can grow exponentially with the
- * line length: a repeated group that itself repeats or alternates, e.g.
- * `(a+)+` or `(a|ab)*`, and backreferences.
- */
-function unsafeRegexReason(pattern: string): string | null {
-  // Each open group records whether it contains a quantifier or alternation.
-  const groups: Array<{ risky: boolean }> = []
-  let inClass = false
-  let lastClosedRisky = false
-  for (let i = 0; i < pattern.length; i += 1) {
-    const char = pattern[i]
-    const closedRisky = lastClosedRisky
-    lastClosedRisky = false
-    if (char === "\\") {
-      const next = pattern[i + 1] ?? ""
-      if (!inClass && (/[1-9]/.test(next) || next === "k")) {
-        return "backreferences are not supported"
-      }
-      i += 1
-      continue
-    }
-    if (inClass) {
-      if (char === "]") inClass = false
-      continue
-    }
-    if (char === "[") {
-      inClass = true
-      continue
-    }
-    if (char === "(") {
-      groups.push({ risky: false })
-      continue
-    }
-    if (char === ")") {
-      const group = groups.pop()
-      lastClosedRisky = group?.risky ?? false
-      if (group?.risky && groups.length > 0) groups[groups.length - 1].risky = true
-      continue
-    }
-    const quantifier =
-      char === "*" ||
-      char === "+" ||
-      (char === "{" && /^\{\d+(,\d*)?\}/.test(pattern.slice(i)))
-    if (quantifier) {
-      if (closedRisky) {
-        return "a repeated group cannot contain another repetition or alternation"
-      }
-      if (groups.length > 0) groups[groups.length - 1].risky = true
-      continue
-    }
-    if (char === "|" && groups.length > 0) {
-      groups[groups.length - 1].risky = true
-    }
-  }
-  return null
+export function setGrepTimeLimitForTests(limitMs: number | null): void {
+  grepTimeLimitMs = limitMs ?? DEFAULT_GREP_TIME_LIMIT_MS
 }
 
-export function compileLineMatcher(options: {
+function grepTimeoutError(): Error {
+  return new Error(
+    `grep stopped after ${grepTimeLimitMs / 1000} seconds. Narrow spaceId or pathPrefix, or simplify the pattern.`
+  )
+}
+
+/**
+ * Runs in a worker, so a regex that backtracks badly is stopped by terminating
+ * the worker instead of blocking the server. It is serialized with toString(),
+ * so it must stay self-contained. Its line splitting matches forEachLine.
+ */
+function regexWorkerMain(): void {
+  const scope = globalThis as unknown as {
+    onmessage: (event: { data: Record<string, unknown> }) => void
+    postMessage: (message: unknown) => void
+  }
+  let regex: RegExp | undefined
+  scope.onmessage = (event) => {
+    const data = event.data
+    if (typeof data.pattern === "string") {
+      regex = new RegExp(data.pattern, data.flags as string)
+      return
+    }
+    const content = data.content as string
+    const hits: number[] = []
+    let start = 0
+    for (let index = 0; start < content.length; index += 1) {
+      const newline = content.indexOf("\n", start)
+      const end = newline === -1 ? content.length : newline
+      if (regex?.test(content.slice(start, end))) hits.push(index)
+      start = end + 1
+    }
+    scope.postMessage({ id: data.id, hits })
+  }
+}
+
+let regexWorkerUrl: string | undefined
+
+/** One worker per regex grep, terminated when the grep ends or times out. */
+class RegexLineMatcher {
+  private worker: Worker | undefined
+  private nextId = 0
+  private readonly pattern: string
+  private readonly flags: string
+
+  constructor(pattern: string, flags: string) {
+    this.pattern = pattern
+    this.flags = flags
+  }
+
+  /** 0-based indexes of matching lines, in order. */
+  matchingLines(content: string, deadline: number): Promise<number[]> {
+    if (!this.worker) {
+      regexWorkerUrl ??= URL.createObjectURL(
+        new Blob([`(${regexWorkerMain.toString()})()`], {
+          type: "application/javascript",
+        })
+      )
+      this.worker = new Worker(regexWorkerUrl)
+      this.worker.postMessage({ pattern: this.pattern, flags: this.flags })
+    }
+    const worker = this.worker
+    const id = (this.nextId += 1)
+    return new Promise((resolve, reject) => {
+      const finish = () => {
+        clearTimeout(timer)
+        worker.removeEventListener("message", onMessage)
+        worker.removeEventListener("error", onError)
+      }
+      const onMessage = (event: MessageEvent) => {
+        if (event.data?.id !== id) return
+        finish()
+        resolve(event.data.hits as number[])
+      }
+      const onError = (event: ErrorEvent) => {
+        finish()
+        this.close()
+        reject(new Error(`grep failed: ${event.message}`))
+      }
+      const timer = setTimeout(
+        () => {
+          finish()
+          this.close()
+          reject(grepTimeoutError())
+        },
+        Math.max(0, deadline - performance.now())
+      )
+      worker.addEventListener("message", onMessage)
+      worker.addEventListener("error", onError)
+      worker.postMessage({ id, content })
+    })
+  }
+
+  close(): void {
+    this.worker?.terminate()
+    this.worker = undefined
+  }
+}
+
+export interface GrepPattern {
   pattern: string
   regex: boolean
   caseSensitive: boolean
-}): LineMatcher {
-  const { pattern, regex, caseSensitive } = options
-  if (/[\r\n]/.test(pattern)) {
-    throw new Error("grep matches one line at a time; pattern cannot contain a line break")
+}
+
+/** Reject a pattern before any Doc is read. */
+export function validateGrepPattern(options: GrepPattern): void {
+  if (/[\r\n]/.test(options.pattern)) {
+    throw new Error(
+      "grep matches one line at a time; pattern cannot contain a line break"
+    )
   }
-  if (!regex) {
-    if (caseSensitive) return (line) => line.includes(pattern)
-    const needle = pattern.toLowerCase()
-    return (line) => line.toLowerCase().includes(needle)
-  }
-  const unsafe = unsafeRegexReason(pattern)
-  if (unsafe) {
-    throw new Error(`Regular expression rejected: ${unsafe}. Simplify the pattern.`)
-  }
-  let compiled: RegExp
+  if (!options.regex) return
   try {
-    compiled = new RegExp(pattern, caseSensitive ? "" : "i")
+    new RegExp(options.pattern, options.caseSensitive ? "" : "i")
   } catch (err) {
     throw new Error(
       `Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`
     )
   }
-  return (line) =>
-    compiled.test(
-      line.length > MAX_REGEX_LINE_CHARS ? line.slice(0, MAX_REGEX_LINE_CHARS) : line
-    )
 }
 
 export interface DocGrepMatch {
@@ -255,62 +331,134 @@ export interface DocGrepMatch {
   text: string
   before: string[]
   after: string[]
+  lineTruncated?: true
+}
+
+export interface DocGrepSkip {
+  spaceId: string
+  docPath: string
+  reason: "unreadable" | "conversion-failed"
 }
 
 /**
  * Match every active Doc in the given Spaces line by line, in Space then path
- * order. Counts every match; returns at most `maxResults`.
+ * order. Counts every match; returns at most `maxResults` within the
+ * character budget, and names the Docs it could not search.
  */
-export async function grepDocs(options: {
-  spaceIds: string[]
-  pathPrefix?: string
-  includeArchived: boolean
-  matcher: LineMatcher
-  context: number
-  maxResults: number
-}): Promise<{ matches: DocGrepMatch[]; total: number }> {
-  const { pathPrefix, matcher, context, maxResults } = options
-  const deadline = performance.now() + GREP_TIME_LIMIT_MS
+export async function grepDocs(
+  options: GrepPattern & {
+    spaceIds: string[]
+    pathPrefix?: string
+    includeArchived: boolean
+    context: number
+    maxResults: number
+  }
+): Promise<{ matches: DocGrepMatch[]; total: number; skipped: DocGrepSkip[] }> {
+  validateGrepPattern(options)
+  const { pathPrefix, context, maxResults } = options
+  const deadline = performance.now() + grepTimeLimitMs
+  const needle = options.caseSensitive
+    ? options.pattern
+    : options.pattern.toLowerCase()
+  const lineMatches = (line: string) =>
+    options.caseSensitive
+      ? line.includes(needle)
+      : line.toLowerCase().includes(needle)
+  // Regex matching runs off the main thread; literal matching stays here.
+  const regex = options.regex
+    ? new RegexLineMatcher(options.pattern, options.caseSensitive ? "" : "i")
+    : undefined
   const matches: DocGrepMatch[] = []
+  const skipped: DocGrepSkip[] = []
   let total = 0
-  for (const spaceId of options.spaceIds) {
-    const paths = (await listDocs(spaceId))
-      .filter(
-        (path) =>
-          !pathPrefix || path === pathPrefix || path.startsWith(`${pathPrefix}/`)
-      )
-      .sort()
-    const archived = options.includeArchived
-      ? new Map()
-      : await getDocArchiveInfoMap(spaceId, paths)
-    for (const docPath of paths) {
-      if (archived.has(docPath)) continue
-      const snapshot = await readDocSourceSnapshot(spaceId, docPath)
-      if (!snapshot.revision) continue
-      const markdown = await docMarkdownProjection(spaceId, docPath, snapshot)
-      if (markdown === null) continue
-      const revision = docRevisionId(snapshot.revision)
-      const lines = markdownLines(markdown)
-      for (let index = 0; index < lines.length; index += 1) {
-        if ((index & 0xff) === 0 && performance.now() > deadline) {
-          throw new Error(
-            `grep stopped after ${GREP_TIME_LIMIT_MS / 1000} seconds. Narrow spaceId or pathPrefix, or simplify the pattern.`
-          )
+  let budget = GREP_RESULT_CHARS
+  // Once maxResults or the budget is reached, later matches are only counted.
+  let collecting = true
+
+  const clip = (line: string, match: DocGrepMatch): string => {
+    let text = line
+    if (line.length > GREP_LINE_CHARS) {
+      text = `${line.slice(0, GREP_LINE_CHARS)}${LINE_TRUNCATION_MARKER}`
+      match.lineTruncated = true
+    }
+    budget -= text.length
+    return text
+  }
+
+  try {
+    for (const spaceId of options.spaceIds) {
+      const paths = (await listDocs(spaceId))
+        .filter(
+          (path) =>
+            !pathPrefix ||
+            path === pathPrefix ||
+            path.startsWith(`${pathPrefix}/`)
+        )
+        .sort()
+      const archived = options.includeArchived
+        ? new Map()
+        : await getDocArchiveInfoMap(spaceId, paths)
+      for (const docPath of paths) {
+        if (archived.has(docPath)) continue
+        const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+        if (!snapshot.revision || snapshot.result.error) {
+          skipped.push({ spaceId, docPath, reason: "unreadable" })
+          continue
         }
-        if (!matcher(lines[index])) continue
-        total += 1
-        if (matches.length >= maxResults) continue
-        matches.push({
-          spaceId,
-          docPath,
-          revision,
-          line: index + 1,
-          text: lines[index],
-          before: lines.slice(Math.max(0, index - context), index),
-          after: lines.slice(index + 1, index + 1 + context),
+        const markdown = await docMarkdownProjection(spaceId, docPath, snapshot)
+        if (markdown === null) {
+          skipped.push({ spaceId, docPath, reason: "conversion-failed" })
+          continue
+        }
+        const revision = docRevisionId(snapshot.revision)
+        const hits = regex && (await regex.matchingLines(markdown, deadline))
+        let nextHit = 0
+        const recent: string[] = []
+        let open: Array<{ match: DocGrepMatch; remaining: number }> = []
+        forEachLine(markdown, (line, index) => {
+          if ((index & 0xff) === 0 && performance.now() > deadline) {
+            throw grepTimeoutError()
+          }
+          for (const pending of open) {
+            pending.match.after.push(clip(line, pending.match))
+            pending.remaining -= 1
+          }
+          open = open.filter((pending) => pending.remaining > 0)
+          let hit: boolean
+          if (hits) {
+            hit = hits[nextHit] === index
+            if (hit) nextHit += 1
+          } else {
+            hit = lineMatches(line)
+          }
+          if (hit) {
+            total += 1
+            if (matches.length >= maxResults || budget <= 0) collecting = false
+            if (collecting) {
+              const match: DocGrepMatch = {
+                spaceId,
+                docPath,
+                revision,
+                line: index + 1,
+                text: "",
+                before: [],
+                after: [],
+              }
+              match.text = clip(line, match)
+              match.before = recent.map((previous) => clip(previous, match))
+              matches.push(match)
+              if (context > 0) open.push({ match, remaining: context })
+            }
+          }
+          if (context > 0) {
+            recent.push(line)
+            if (recent.length > context) recent.shift()
+          }
         })
       }
     }
+  } finally {
+    regex?.close()
   }
-  return { matches, total }
+  return { matches, total, skipped }
 }

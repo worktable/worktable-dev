@@ -355,6 +355,18 @@ const DocGrepMatchSchema = z.looseObject({
   text: z.string(),
   before: z.array(z.string()),
   after: z.array(z.string()),
+  lineTruncated: z
+    .literal(true)
+    .optional()
+    .describe(
+      "A returned line was too long and was cut; read the Doc at this line for the full text"
+    ),
+})
+
+const DocGrepSkipSchema = z.looseObject({
+  spaceId: PortableCanonicalIdSchema,
+  docPath: z.string(),
+  reason: z.enum(["unreadable", "conversion-failed"]),
 })
 
 const SearchResultSchema = z.looseObject({
@@ -798,6 +810,7 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       matches: z.array(DocGrepMatchSchema),
       total: z.number().int().nonnegative(),
       truncated: z.boolean(),
+      skipped: z.array(DocGrepSkipSchema),
       scope: ListScopeSchema,
     }),
   ],
@@ -1258,7 +1271,11 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     ),
     truncated: forActions(
       z.boolean(),
-      '"grep"; true when more lines matched than were returned'
+      '"grep"; true when more lines matched than were returned, because of maxResults or the response size limit'
+    ),
+    skipped: forActions(
+      z.array(DocGrepSkipSchema),
+      '"grep"; Docs in scope that could not be searched, so a match there would be missing'
     ),
     scope: forActions(ListScopeSchema, '"grep"'),
     format: forActions(z.enum(["markdown", "blocknote"]), '"read"'),

@@ -2986,7 +2986,7 @@
   {
     "name": "worktable_docs_read",
     "title": "Read Worktable Docs",
-    "description": "List, read, or grep Worktable Docs. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision; use worktable_discover search to find Docs by meaning. read accepts offset and limit to read a long Doc in line ranges.",
+    "description": "List, read, or grep Worktable Docs. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision, plus any Docs it could not search in skipped; use worktable_discover search to find Docs by meaning. read accepts offset and limit to read a long Doc in line ranges.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -3194,6 +3194,11 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "lineTruncated": {
+                "description": "A returned line was too long and was cut; read the Doc at this line for the full text",
+                "type": "boolean",
+                "const": true
               }
             },
             "required": [
@@ -3215,8 +3220,36 @@
           "maximum": 9007199254740991
         },
         "truncated": {
-          "description": "Returned by action \"grep\"; true when more lines matched than were returned.",
+          "description": "Returned by action \"grep\"; true when more lines matched than were returned, because of maxResults or the response size limit.",
           "type": "boolean"
+        },
+        "skipped": {
+          "description": "Returned by action \"grep\"; Docs in scope that could not be searched, so a match there would be missing.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "spaceId": {
+                "$ref": "#/definitions/CanonicalId"
+              },
+              "docPath": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "unreadable",
+                  "conversion-failed"
+                ]
+              }
+            },
+            "required": [
+              "spaceId",
+              "docPath",
+              "reason"
+            ],
+            "additionalProperties": {}
+          }
         },
         "scope": {
           "description": "Returned by action \"grep\".",

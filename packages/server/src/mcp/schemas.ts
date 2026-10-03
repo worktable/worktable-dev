@@ -106,7 +106,7 @@ export const WriteDocInput = z.object({
       "Whole document content. String = Markdown; Array = BlockNote blocks. Markdown replacing a rich Doc keeps the blocks whose text is unchanged, with their formatting."
     ),
   expectedRevision: ExpectedDocRevision.optional().describe(
-    "Required to replace an existing Doc: the revision from your latest read. Omit only when creating a Doc."
+    "Required to replace an existing Doc: the revision from your latest read. Omit only when creating a Doc. While the Doc is open in Worktable, the write is refused only if blocks it changes were changed since, and other changes made since are kept."
   ),
   force: z
     .boolean()
@@ -146,7 +146,7 @@ export const EditDocInput = z.object({
       "Applied in order to the Markdown from read; each edit sees the previous edits' result. All apply or none do."
     ),
   expectedRevision: ExpectedDocRevision.optional().describe(
-    "Revision from your latest read. When set, the edit is refused if the Doc changed since."
+    "Revision from your latest read. When set, the edit is refused if the Doc changed since; while the Doc is open in Worktable, only if the blocks the edit changes were changed since."
   ),
 })
 

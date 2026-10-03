@@ -8,8 +8,14 @@ import { join } from "node:path"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
+import * as decoding from "lib0/decoding"
+import * as encoding from "lib0/encoding"
+import * as syncProtocol from "y-protocols/sync"
+import * as Y from "yjs"
+import { getServerEditor } from "./blocknote.ts"
 import { readDoc, writeSpace } from "./store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
+import { yjsManager } from "./yjs-manager.ts"
 
 const spaceId = "edits"
 const DAY = 86_400_000
@@ -318,5 +324,174 @@ describe("worktable_docs_write action write on an existing Doc", () => {
     const forced = await write("colors", "note.\n", { expectedRevision: current.data.revision, force: true })
     expect(forced.ok).toBe(true)
     expect(forced.data.formattingDropped).toHaveLength(1)
+  }, 20_000)
+
+  it("keeps properties Worktable does not recognize until their own block changes", async () => {
+    await write(
+      "foreign",
+      [paragraph("Flagged by another tool.", { props: { reviewState: "flagged" } }), paragraph("Plain.")],
+      { lifetime: "durable" }
+    )
+    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+
+    expect((await edit("foreign", [{ oldText: "Plain.", newText: "Plain, edited." }])).ok).toBe(true)
+    const current = await read("foreign")
+    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+    expect(
+      (await write("foreign", "Flagged by another tool.\n\nRewritten.\n", { expectedRevision: current.data.revision })).ok
+    ).toBe(true)
+    expect((await storedBlocks("foreign"))[0].props.reviewState).toBe("flagged")
+
+    const refused = await write("foreign", "Changed.\n\nRewritten.\n", {
+      expectedRevision: (await read("foreign")).data.revision,
+    })
+    expect(refused.error.formattingDropped[0].fields).toEqual(["prop:reviewState"])
+    const forced = await write("foreign", "Changed.\n\nRewritten.\n", {
+      expectedRevision: (await read("foreign")).data.revision,
+      force: true,
+    })
+    expect(forced.ok).toBe(true)
+    expect((await storedBlocks("foreign"))[0].props).not.toHaveProperty("reviewState")
+  }, 20_000)
+})
+
+// ── Docs open in Worktable ──────────────────────────────────
+
+const MESSAGE_SYNC = 0
+const MESSAGE_INTENT = 43
+
+class FakeWs {
+  sent: Uint8Array[] = []
+  send(data: string | ArrayBuffer | Uint8Array) {
+    if (data instanceof Uint8Array) this.sent.push(data)
+  }
+  close() {}
+}
+
+function syncFrame(write: (encoder: encoding.Encoder) => void): Uint8Array {
+  const encoder = encoding.createEncoder()
+  encoding.writeVarUint(encoder, MESSAGE_SYNC)
+  write(encoder)
+  return encoding.toUint8Array(encoder)
+}
+
+/** A browser editor connected to the Doc, whose own typing is sent only on `send`. */
+async function openInBrowser(docPath: string) {
+  const ws = new FakeWs()
+  const doc = new Y.Doc()
+  const unsent: Uint8Array[] = []
+  doc.on("update", (update: Uint8Array, origin: unknown) => {
+    if (origin === "person") unsent.push(update)
+  })
+  await yjsManager.handleConnection(ws, spaceId, docPath)
+  yjsManager.handleMessage(ws, spaceId, docPath, syncFrame((encoder) => syncProtocol.writeSyncStep1(encoder, doc)))
+  let received = 0
+  const browser = {
+    doc,
+    /** Apply what the server sent since the last call; returns its size in bytes. */
+    receive(): number {
+      let bytes = 0
+      for (const frame of ws.sent.slice(received)) {
+        const decoder = decoding.createDecoder(frame)
+        if (decoding.readVarUint(decoder) !== MESSAGE_SYNC) continue
+        bytes += frame.byteLength
+        syncProtocol.readSyncMessage(decoder, encoding.createEncoder(), doc, "server")
+      }
+      received = ws.sent.length
+      return bytes
+    },
+    type(blockId: string, typed: string): void {
+      const group = doc.getXmlFragment("document-store").get(0) as Y.XmlElement
+      const container = group
+        .toArray()
+        .find((item) => item instanceof Y.XmlElement && item.getAttribute("id") === blockId) as Y.XmlElement
+      const run = (container.get(0) as Y.XmlElement).get(0) as Y.XmlText
+      doc.transact(() => run.insert(run.length, typed), "person")
+    },
+    /** Send the typing, and that a person typed it, as the editor does. */
+    send(): void {
+      for (const update of unsent.splice(0)) {
+        yjsManager.handleMessage(ws, spaceId, docPath, syncFrame((encoder) => syncProtocol.writeUpdate(encoder, update)))
+      }
+      yjsManager.handleMessage(ws, spaceId, docPath, new Uint8Array([MESSAGE_INTENT]))
+    },
+    async blocks(): Promise<any[]> {
+      return (await getServerEditor()).yDocToBlocks(doc, "document-store")
+    },
+  }
+  browser.receive()
+  return browser
+}
+
+const plainText = (blocks: any[]) => blocks.map((block) => block.content?.map((run: any) => run.text).join("") ?? "")
+
+describe("edits to a Doc open in Worktable", () => {
+  afterEach(async () => {
+    await yjsManager.shutdown()
+  })
+
+  it("replaces only the edited block, so a person's unsent typing survives and both sides converge", async () => {
+    const filler = Array.from({ length: 40 }, (_, index) =>
+      paragraph(`Background paragraph ${index + 1} with enough words to give the document some weight.`)
+    )
+    await write("live", [paragraph("Alpha notes."), ...filler, paragraph("Beta notes.")], { lifetime: "durable" })
+    const before = await storedBlocks("live")
+    const browser = await openInBrowser("live")
+    const wholeDocumentBytes = Y.encodeStateAsUpdate(browser.doc).byteLength
+
+    browser.type(before[0].id, " Typed by a person.")
+    const result = await edit("live", [{ oldText: "Beta notes.", newText: "Beta notes, revised by an agent." }], {
+      expectedRevision: (await read("live")).data.revision,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.data.changed.modified).toEqual([before.at(-1).id])
+
+    const agentBytes = browser.receive()
+    expect(agentBytes).toBeGreaterThan(0)
+    expect(agentBytes).toBeLessThan(wholeDocumentBytes / 10)
+    browser.send()
+
+    const live = (await yjsManager.liveBlocks(spaceId, "live")) as any[]
+    expect(await browser.blocks()).toEqual(live)
+    expect(live.map((block) => block.id)).toEqual(before.map((block) => block.id))
+    expect(plainText(live)[0]).toBe("Alpha notes. Typed by a person.")
+    expect(plainText(live).at(-1)).toBe("Beta notes, revised by an agent.")
+
+    // Without a revision, an edit matches what people see now.
+    const followUp = await edit("live", [{ oldText: "Typed by a person.", newText: "Typed, then tidied." }])
+    expect(followUp.ok).toBe(true)
+    browser.receive()
+    expect(plainText(await browser.blocks())[0]).toBe("Alpha notes. Typed, then tidied.")
+    await yjsManager.flushPersist(spaceId, "live")
+    expect(plainText(await storedBlocks("live"))).toEqual(plainText(await browser.blocks()))
+  }, 20_000)
+
+  it("applies a stale revision only where the open Doc has not changed since", async () => {
+    await write("shared", [paragraph("Alpha notes."), paragraph("Beta notes.")], { lifetime: "durable" })
+    const [alpha, beta] = await storedBlocks("shared")
+    const seen = await read("shared")
+    const browser = await openInBrowser("shared")
+    browser.type(alpha.id, " Typed by a person.")
+    browser.send()
+
+    const conflict = await edit("shared", [{ oldText: "Alpha notes.", newText: "Alpha, rewritten." }], {
+      expectedRevision: seen.data.revision,
+    })
+    expect(conflict.ok).toBe(false)
+    expect(conflict.error).toMatchObject({ code: "revision_conflict", blockId: alpha.id })
+    expect(conflict.error.currentRevision).toBe((await read("shared")).data.revision)
+
+    const elsewhere = await edit("shared", [{ oldText: "Beta notes.", newText: "Beta, revised." }], {
+      expectedRevision: seen.data.revision,
+    })
+    expect(elsewhere.ok).toBe(true)
+    browser.receive()
+    expect(plainText(await browser.blocks())).toEqual(["Alpha notes. Typed by a person.", "Beta, revised."])
+    expect(plainText(await storedBlocks("shared"))).toEqual(["Alpha notes. Typed by a person.", "Beta, revised."])
+    expect((await storedBlocks("shared")).map((block) => block.id)).toEqual([alpha.id, beta.id])
+
+    // A whole-Doc write from the old revision is held to the same rule.
+    const overwrite = await write("shared", "Alpha, replaced.\n\nBeta notes.\n", { expectedRevision: seen.data.revision })
+    expect(overwrite.error.code).toBe("revision_conflict")
   }, 20_000)
 })

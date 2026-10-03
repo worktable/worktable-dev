@@ -21,6 +21,7 @@ import {
   stableHash,
 } from "./store.ts";
 import { wsManager } from "./ws.ts";
+import { rebaseRegions, type BlockRegion } from "./block-regions.ts";
 import {
   requireWorkspaceRecovery,
   workspaceRecoveryRequired,
@@ -51,6 +52,8 @@ const MAX_PENDING_CONNECTION_BYTES = 8 * 1024 * 1024;
 const MAX_DOC_PATH_MOVE_TRANSITIONS = 128;
 const ORIGIN_FILE_WATCHER = "file-watcher"; // Skip persist for disk-originated updates
 const ORIGIN_INITIAL_LOAD = "initial-load";
+// An agent write already committed to disk, applied by block. Not persisted again.
+const ORIGIN_AGENT_WRITE = "agent-write";
 const YJS_STATE_FILE_TYPE = "worktable.yjs-state";
 const YJS_STATE_FILE_VERSION = 1;
 const YJS_STATE_MAGIC = "WTYJS1\n";
@@ -152,6 +155,29 @@ interface PreparedDocPathMove {
 // The server-side BlockNote editor and its custom schema live in
 // ./blocknote.ts so every path shares one canonical form.
 const getEditor = getServerEditor;
+
+/** Detached Yjs blockContainers for top-level blocks, ready to insert. */
+function blockContainers(editor: any, blocks: unknown[]): Y.XmlElement[] {
+  if (blocks.length === 0) return [];
+  const doc = new Y.Doc();
+  try {
+    const fragment = doc.getXmlFragment(FRAGMENT_NAME);
+    editor.blocksToYXmlFragment(normalizeMermaidBlocks(blocks).blocks, fragment);
+    const group = fragment.length === 1 ? fragment.get(0) : null;
+    const items = group instanceof Y.XmlElement && group.nodeName === "blockGroup"
+      ? group.toArray()
+      : [];
+    if (
+      items.length !== blocks.length ||
+      items.some((item) => !(item instanceof Y.XmlElement) || item.nodeName !== "blockContainer")
+    ) {
+      throw new Error("blocks did not convert to one container each");
+    }
+    return items.map((item) => (item as Y.XmlElement).clone());
+  } finally {
+    doc.destroy();
+  }
+}
 
 // ── Doc key helper ───────────────────────────────────────────
 
@@ -467,10 +493,14 @@ export class YjsDocManager {
     // Listen for updates: broadcast to other clients + schedule persist
     ydoc.on("update", (update: Uint8Array, origin: unknown) => {
       liveDoc.contentGeneration = ++this.nextContentGeneration;
-      // Skip persist for file-watcher and initial-load origins.
-      // Everything else, including browser edits, restores, and API writes,
-      // updates the canonical Yjs state and exported JSON snapshot.
-      if (origin !== ORIGIN_FILE_WATCHER && origin !== ORIGIN_INITIAL_LOAD) {
+      // Skip persist for file-watcher, initial-load and agent-write origins:
+      // their content is already on disk. Everything else, including browser
+      // edits, updates the canonical Yjs state and exported JSON snapshot.
+      if (
+        origin !== ORIGIN_FILE_WATCHER &&
+        origin !== ORIGIN_INITIAL_LOAD &&
+        origin !== ORIGIN_AGENT_WRITE
+      ) {
         this.schedulePersist(liveDoc.key, spaceId, liveDoc.docPath);
       }
 
@@ -825,7 +855,8 @@ export class YjsDocManager {
 
   /**
    * Replace a loaded doc's live content with the CANONICAL on-disk blocks the
-   * caller just wrote (MCP tool writes, REST PUT, version restore). This is
+   * caller just wrote (REST PUT, version restore; agent Doc edits and writes
+   * use commitAgentWrite, which replaces only changed blocks). This is
    * disk content, so it gets the same treatment as a watcher sync — applied
    * with the file-watcher origin (broadcasts to clients, schedules no echo
    * persist) and with all bookkeeping armed SYNCHRONOUSLY: waiting for a
@@ -848,6 +879,233 @@ export class YjsDocManager {
       blocks,
       intentAtStart
     );
+  }
+
+  /** The open Doc's current blocks, or null when it is not open. */
+  async liveBlocks(spaceId: string, docPath: string): Promise<unknown[] | null> {
+    const editor = await getEditor();
+    const liveDoc = this.docs.get(docKey(spaceId, docPath));
+    return liveDoc ? editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME) : null;
+  }
+
+  /**
+   * Commit an agent write of a rich Doc and apply it to the open session by
+   * top-level block, so people typing elsewhere in the Doc are not
+   * interrupted.
+   *
+   * While the Doc is open, `commit` runs in the room's persist slot after
+   * what people typed has been persisted as their own version, and receives
+   * the live blocks: no persist can run between that read and applying the
+   * result. On success the regions are applied to the session in one
+   * transaction — each replaces only the blocks it names, with the committed
+   * blocks of the same ids. When that is not possible the session receives
+   * the whole committed content instead (logged), as other writes do.
+   *
+   * When the Doc is not open, `commit` receives null; a session that opened
+   * meanwhile receives the result the same way.
+   */
+  async commitAgentWrite<T extends { ok: boolean; content?: unknown }>(
+    spaceId: string,
+    docPath: string,
+    regions: readonly BlockRegion[] | null,
+    commit: (liveBlocks: unknown[] | null) => Promise<T>
+  ): Promise<T> {
+    const key = docKey(spaceId, docPath);
+    const editor = await getEditor();
+    const liveDoc = this.docs.get(key);
+    if (!liveDoc) {
+      const result = await commit(null);
+      const opened = this.docs.get(key);
+      if (opened && result.ok && Array.isArray(result.content)) {
+        const written = result.content;
+        await this.withPersistSlot(opened, () =>
+          this.applyAgentWrite(opened, regions, written, true)
+        );
+      }
+      return result;
+    }
+    return this.withPersistSlot(liveDoc, async () => {
+      if (liveDoc.persistTimer) {
+        clearTimeout(liveDoc.persistTimer);
+        liveDoc.persistTimer = null;
+        await this.persistDoc(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
+      }
+      const result = await commit(editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME));
+      if (
+        result.ok &&
+        Array.isArray(result.content) &&
+        this.docs.get(liveDoc.key) === liveDoc
+      ) {
+        await this.applyAgentWrite(liveDoc, regions, result.content, false);
+      }
+      return result;
+    });
+  }
+
+  /**
+   * Hold a room's persist slot: persists requested meanwhile wait, and run
+   * before the slot is released, exactly as runPersist replays them.
+   */
+  private async withPersistSlot<T>(
+    liveDoc: LiveDoc,
+    task: () => Promise<T>
+  ): Promise<T> {
+    while (liveDoc.persistPromise) {
+      await liveDoc.persistPromise.catch(() => undefined);
+    }
+    let release!: () => void;
+    const slot = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    liveDoc.persistPromise = slot;
+    try {
+      return await task();
+    } finally {
+      try {
+        while (liveDoc.persistAgain && this.docs.get(liveDoc.key) === liveDoc) {
+          liveDoc.persistAgain = false;
+          await this.persistDoc(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
+        }
+      } catch (error) {
+        console.error("[YjsManager] persist error:", error);
+        this.schedulePersist(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
+      } finally {
+        if (liveDoc.persistPromise === slot) liveDoc.persistPromise = null;
+        release();
+      }
+    }
+  }
+
+  /**
+   * Apply committed agent content to a session (see commitAgentWrite) and
+   * arm the same guards as a disk sync. Edit signals are left alone: the
+   * session may still hold typing that is not on disk yet.
+   */
+  private async applyAgentWrite(
+    liveDoc: LiveDoc,
+    regions: readonly BlockRegion[] | null,
+    written: unknown[],
+    skipIfApplied: boolean
+  ): Promise<void> {
+    const { spaceId, docPath } = liveDoc;
+    const editor = await getEditor();
+    const intentAtStart = this.snapshotEditIntent(liveDoc);
+    const fileStat = await docStat(spaceId, docPath);
+    const provenance = await getDocProvenance(spaceId, docPath);
+    if (this.docs.get(liveDoc.key) !== liveDoc) return;
+
+    const outcome = regions
+      ? this.applyRegionsToRoom(editor, liveDoc, regions, written, skipIfApplied)
+      : "the change has no block regions";
+    if (outcome !== "applied" && outcome !== "unchanged") {
+      console.warn(
+        `[YjsManager] agent write to ${spaceId}/${docPath} replaced the whole live document: ${outcome}`
+      );
+      await this.applyDiskContent(liveDoc, spaceId, docPath, written, intentAtStart);
+      return;
+    }
+
+    const protectedSource =
+      provenance?.source &&
+      !isBrowserSource(provenance.source) &&
+      provenance.source !== "rest-api";
+    liveDoc.lastPersistMs = fileStat?.updatedAt ?? Date.now();
+    liveDoc.protectedUntilMs = protectedSource ? Date.now() + 15_000 : 0;
+    try {
+      await writeYjsStateFile(
+        yjsStatePath(spaceId, docPath),
+        Y.encodeStateAsUpdate(liveDoc.ydoc),
+        provenance
+      );
+    } catch (error) {
+      console.warn(
+        `[YjsManager] failed to refresh derived Yjs state for ${spaceId}/${docPath}:`,
+        error
+      );
+    }
+  }
+
+  /**
+   * Replace the regions' top-level blocks in the live fragment, in one
+   * transaction, with the committed blocks of the same ids. Synchronous, so
+   * no client update lands between reading the live blocks and the change.
+   * Returns "applied", "unchanged", or why the regions could not be applied
+   * (in which case the room is either untouched or must be replaced whole).
+   */
+  private applyRegionsToRoom(
+    editor: any,
+    liveDoc: LiveDoc,
+    regions: readonly BlockRegion[],
+    written: unknown[],
+    skipIfApplied: boolean
+  ): string {
+    const { ydoc } = liveDoc;
+    if (
+      skipIfApplied &&
+      stableHash(editor.yDocToBlocks(ydoc, FRAGMENT_NAME)) === stableHash(written)
+    ) {
+      return "unchanged";
+    }
+    const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);
+    const group = fragment.length === 1 ? fragment.get(0) : null;
+    if (!(group instanceof Y.XmlElement) || group.nodeName !== "blockGroup") {
+      return "the live document has an unexpected structure";
+    }
+    const containerIds = (): Array<string | undefined> =>
+      group.toArray().map((item) =>
+        item instanceof Y.XmlElement && item.nodeName === "blockContainer"
+          ? item.getAttribute("id")
+          : undefined
+      );
+    const current: Array<{ id: string }> = [];
+    for (const id of containerIds()) {
+      if (typeof id !== "string") return "a live block has no id";
+      current.push({ id });
+    }
+
+    const writtenById = new Map<string, Record<string, unknown>>();
+    for (const block of written as Array<Record<string, unknown>>) {
+      if (typeof block?.["id"] === "string") writtenById.set(block["id"], block);
+    }
+    const committed: BlockRegion[] = [];
+    for (const region of regions) {
+      const blocks = region.blocks.map((block) => writtenById.get(String(block?.["id"])));
+      if (blocks.some((block) => block === undefined)) {
+        return "the written document does not contain a changed block";
+      }
+      committed.push({ ...region, blocks: blocks as Array<Record<string, unknown>> });
+    }
+    const rebased = rebaseRegions(current, committed);
+    if (!rebased.ok) return rebased.reason;
+    if (rebased.blocks.length === 0) return "the change leaves no blocks";
+
+    let operations: Array<{ index: number; deleteCount: number; items: Y.XmlElement[] }>;
+    try {
+      operations = rebased.operations.map((operation) => ({
+        index: operation.index,
+        deleteCount: operation.deleteCount,
+        items: blockContainers(editor, operation.blocks),
+      }));
+    } catch (error) {
+      return `the changed blocks could not be converted (${error instanceof Error ? error.message : String(error)})`;
+    }
+
+    ydoc.transact(() => {
+      for (const operation of operations) {
+        if (operation.deleteCount > 0) group.delete(operation.index, operation.deleteCount);
+        if (operation.items.length > 0) group.insert(operation.index, operation.items);
+      }
+    }, ORIGIN_AGENT_WRITE);
+
+    const expected = rebased.blocks.map((block) => block["id"]);
+    const actual = containerIds();
+    if (
+      actual.length !== expected.length ||
+      actual.some((id, index) => id !== expected[index])
+    ) {
+      return "the live document did not take the change as expected";
+    }
+    return "applied";
   }
 
   /**

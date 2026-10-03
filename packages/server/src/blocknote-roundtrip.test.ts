@@ -679,6 +679,26 @@ describe("exact-text edits keep every block the edit does not touch", () => {
     const rewritten = await spliceBlockReplacement(stored, markdown.replace("last", "final"));
     expect(rewritten.formattingDropped).toEqual([]);
     expect(await changedNodes(stored, rewritten.blocks)).toEqual([stored[4].id]);
+
+    // Deleting only a parent item's line keeps its nested items, ids and all.
+    const nested = (await canonicalizeBlocks([
+      {
+        type: "bulletListItem",
+        content: [run("parent")],
+        children: [
+          { type: "bulletListItem", content: [run("child one")], children: [{ type: "bulletListItem", content: [run("grandchild")] }] },
+          { type: "bulletListItem", content: [run("child two")] },
+        ],
+      },
+      { type: "bulletListItem", content: [run("solo parent")], children: [{ type: "bulletListItem", content: [run("only child")] }] },
+    ])) as any[];
+    const promoted = await spliceBlockEdits(nested, [{ oldText: "* parent\n", newText: "" }]);
+    expect(promoted.blocks.slice(0, 2)).toEqual(nested[0].children);
+    expect(promoted.removedIds).toEqual([nested[0].id]);
+    expect(promoted.changed).toMatchObject({ inserted: 0, removed: 1, modified: [] });
+    const single = await spliceBlockEdits(nested, [{ oldText: "* solo parent\n", newText: "" }]);
+    expect(single.blocks[1]).toEqual(nested[1].children[0]);
+    expect(single.removedIds).toEqual([nested[1].id]);
   }, 20_000);
 
   it("changes only the edited characters of a block", async () => {
@@ -705,6 +725,18 @@ describe("exact-text edits keep every block the edit does not touch", () => {
       { type: "text", text: " tail", styles: {} },
     ]);
     expect(await edit(" tail", " *new* tail", 3)).toContainEqual({ type: "text", text: "new", styles: { italic: true } });
+
+    // Spaces at either end of a block read the same wherever it sits, and an
+    // edit elsewhere in the block keeps them.
+    const spaced = (await canonicalizeBlocks([
+      { type: "paragraph", content: [run("Opening line")] },
+      { type: "paragraph", content: [run(" Ends with a space ")] },
+    ])) as any[];
+    expect((await projectBlocks([spaced[1]])).markdown).toBe(" Ends with a space \n");
+    expect((await projectBlocks(spaced)).markdown).toBe("Opening line\n\n Ends with a space \n");
+    expect((await projectBlocks([spaced[1], spaced[0]])).markdown).toBe(" Ends with a space \n\nOpening line\n");
+    const respaced = await spliceBlockEdits(spaced, [{ oldText: "Ends with", newText: "Finishes with" }]);
+    expect(respaced.blocks[1].content).toEqual([{ type: "text", text: " Finishes with a space ", styles: {} }]);
   }, 20_000);
 
   it("keeps a moved block and pairs changed blocks only with the block they edit", async () => {

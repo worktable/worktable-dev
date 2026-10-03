@@ -1220,28 +1220,38 @@ describe("YjsDocManager sync persistence", () => {
   });
 
   it("arms the stale-cache window synchronously when an agent write reaches a loaded doc", async () => {
-    // An agent write to a LOADED doc goes: writeDoc → replaceContent (applies
-    // the canonical disk content). replaceContent must arm protectedUntilMs
+    // An agent write to a LOADED doc commits through commitAgentWrite, which
+    // applies the changed blocks to the room. It must arm protectedUntilMs
     // IMMEDIATELY — not on some later debounced persist — or a stale browser
     // update landing right after the agent write would be accepted over it.
     await writeDoc("test-space", "protect-doc", [para("browser content")], {
       updatedBy: "user",
       source: "browser-yjs",
     });
+    const [loaded] = (await readDoc("test-space", "protect-doc")).data as Array<{ id: string }>;
     await yjsManager.getOrCreateDoc("test-space", "protect-doc");
     const loadStat = statSync(getDocPath("test-space", "protect-doc"));
 
-    await writeDoc("test-space", "protect-doc", [para("agent content")], {
-      updatedBy: "worktable-agent",
-      source: "mcp",
-    });
-    // Keep the file mtime inside the mtime-guard slack — the worst case, where
-    // the mtime guard cannot catch the stale write either.
-    utimesSync(getDocPath("test-space", "protect-doc"), loadStat.atime, loadStat.mtime);
-    // Sync the live doc from the canonical disk blocks, exactly like the MCP
-    // path (syncDocAfterToolWrite) does after a tool write.
-    const written = await readDoc("test-space", "protect-doc");
-    await yjsManager.replaceContent("test-space", "protect-doc", written.data as unknown[]);
+    const agentBlock = { ...para("agent content"), id: "agent-block" };
+    const written = await yjsManager.commitAgentWrite(
+      "test-space",
+      "protect-doc",
+      [{ replacedBlockIds: [loaded!.id], blocks: [agentBlock] }],
+      async () => {
+        const result = await writeDoc("test-space", "protect-doc", [agentBlock], {
+          updatedBy: "worktable-agent",
+          source: "mcp",
+        });
+        // Keep the file mtime inside the mtime-guard slack — the worst case,
+        // where the mtime guard cannot catch the stale write either.
+        utimesSync(getDocPath("test-space", "protect-doc"), loadStat.atime, loadStat.mtime);
+        return result;
+      }
+    );
+    expect(written.ok).toBe(true);
+    const editor = await getServerEditor();
+    const room = await yjsManager.getOrCreateDoc("test-space", "protect-doc");
+    expect(editor.yDocToBlocks(room, "document-store")).toEqual(written.content);
 
     // A stale browser state diverges the live doc with no human intent,
     // IMMEDIATELY after the agent write (no debounce has fired in between).
@@ -1251,6 +1261,41 @@ describe("YjsDocManager sync persistence", () => {
 
     const after = await getDocProvenance("test-space", "protect-doc");
     expect(after?.source).toBe("mcp");
+  });
+
+  it("replaces the whole room when an agent write cannot be applied by block", async () => {
+    await writeDoc("test-space", "fallback-doc", [para("first"), para("second")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const room = await yjsManager.getOrCreateDoc("test-space", "fallback-doc");
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+    let written;
+    try {
+      written = await yjsManager.commitAgentWrite(
+        "test-space",
+        "fallback-doc",
+        // Names a block the room does not have.
+        [{ replacedBlockIds: ["not-in-the-room"], blocks: [] }],
+        (live) => {
+          expect(live).toHaveLength(2);
+          return writeDoc("test-space", "fallback-doc", [para("agent rewrite")], {
+            updatedBy: "worktable-agent",
+            source: "mcp",
+          });
+        }
+      );
+    } finally {
+      console.warn = warn;
+    }
+    expect(written.ok).toBe(true);
+    const editor = await getServerEditor();
+    expect(editor.yDocToBlocks(room, "document-store")).toEqual(written.content);
+    expect(warnings.join("\n")).toContain("replaced the whole live document");
   });
 
   it("spends the human edit signal on the persist it attributes", async () => {

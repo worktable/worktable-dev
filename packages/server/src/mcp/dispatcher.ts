@@ -36,6 +36,8 @@ import {
   readDoc,
   readDocSourceSnapshot,
   type DocSourceRevision,
+  type DocWriteOptions,
+  type DocWriteResult,
   sanitizeDocPath,
   writeDoc,
   deleteDoc,
@@ -110,7 +112,15 @@ import {
   type DocumentLifetimeTarget,
 } from "../document-query.ts"
 import { readDocumentVersions } from "../document-page-service.ts"
-import { diffDocumentText } from "../document-diff.ts"
+import { randomUUID } from "node:crypto"
+import { diffDocumentText, docBlocksAtRevision } from "../document-diff.ts"
+import { canonicalizeBlocks, inheritBlockIds } from "../blocknote.ts"
+import {
+  narrowRegions,
+  rebaseRegions,
+  type BlockRegion,
+  type RebaseResult,
+} from "../block-regions.ts"
 import { compilePathGlob } from "../path-glob.ts"
 import {
   checkpointRegisteredDocument,
@@ -315,6 +325,172 @@ async function docSourceAtRevision(
   return { snapshot, sourceRevision: snapshot.revision, revision }
 }
 
+/**
+ * What an agent's edit or write of an existing Doc applies to, with the
+ * current source revision.
+ *
+ * Without `expectedRevision` the change matches the current content: what
+ * people see now when the Doc is open in Worktable, else the stored source.
+ * With it, the change matches the content at that revision: the stored
+ * source when it is still at that revision; otherwise, while the Doc is open
+ * (where people's typing moves the revision on), the stored version with
+ * that revision. A Doc that is not open must still be at `expectedRevision`.
+ * Whether the open Doc's blocks the change replaces are still as they were
+ * is checked when it commits (`commitAgentBlocks`).
+ */
+async function agentChangeBase(
+  spaceId: string,
+  docPath: string,
+  expectedRevision: string | undefined,
+  required: boolean
+) {
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath)
+  if (
+    snapshot.result.error ||
+    snapshot.result.data === null ||
+    !snapshot.revision
+  ) {
+    throw new Error(snapshot.result.error ?? "Failed to read document")
+  }
+  const revision = docRevisionId(snapshot.revision)
+  if (required && !expectedRevision) {
+    throw new DocEditError(
+      "revision_required",
+      `${docPath} already exists. Read it and pass its revision as expectedRevision to replace it, or use action edit to change part of it.`
+    )
+  }
+  const stored = snapshot.result.data
+  const live = Array.isArray(stored)
+    ? await yjsManager.liveBlocks(spaceId, docPath)
+    : null
+  let base: unknown[] | string | null = null
+  if (!expectedRevision) {
+    base = live ?? stored
+  } else if (expectedRevision === revision) {
+    base = stored
+  } else if (live) {
+    base = await docBlocksAtRevision({
+      spaceId,
+      path: docPath,
+      revision: expectedRevision,
+    })
+  }
+  if (base === null) {
+    throw new DocEditError(
+      "revision_conflict",
+      `${docPath} changed since revision ${expectedRevision}. Read it again and reapply your change.`,
+      { currentRevision: revision }
+    )
+  }
+  const baseIsSource = base === stored
+  // Blocks match the open Doc by id; give id-less legacy blocks the ids the
+  // session gave them.
+  if (live && Array.isArray(base)) base = inheritBlockIds(base, live)
+  return {
+    snapshot,
+    sourceRevision: snapshot.revision,
+    revision,
+    base,
+    baseIsSource,
+  }
+}
+
+/** Blocks by id, as JSON of their canonical form. */
+async function canonicalById(blocks: unknown[]): Promise<Map<string, string>> {
+  let canonical: unknown[]
+  try {
+    canonical = await canonicalizeBlocks(blocks)
+  } catch {
+    canonical = blocks
+  }
+  return new Map(
+    (canonical as Array<Record<string, unknown>>).map((block) => [
+      String(block?.["id"]),
+      JSON.stringify(block),
+    ])
+  )
+}
+
+/**
+ * Write the blocks of an agent's change to a rich Doc.
+ *
+ * `blocks` is `base` with the change applied, and `regions` the top-level
+ * blocks of `base` it replaced. When `base` is the stored source at
+ * `sourceRevision` and the Doc is not open, `blocks` is written as is.
+ * Otherwise the change is applied to the current blocks at commit time —
+ * what people see when the Doc is open, else the stored source: the blocks
+ * it replaces must still be as they were in `base` (else revision_conflict)
+ * and every other block is written as it is now. An open Doc's session
+ * receives only the replaced blocks. Nested changes replace their top-level
+ * block.
+ */
+async function commitAgentBlocks(input: {
+  spaceId: string
+  docPath: string
+  base: unknown[]
+  baseIsSource: boolean
+  blocks: unknown[]
+  regions: ReadonlyArray<{
+    replacedBlockIds: readonly string[]
+    blocks: readonly unknown[]
+    followingBlockId?: string
+  }>
+  sourceRevision: DocSourceRevision
+  writeOptions: Omit<DocWriteOptions, "sourceRevision">
+}): Promise<DocWriteResult> {
+  const { spaceId, docPath, base } = input
+  let regions: BlockRegion[] | null
+  try {
+    regions = narrowRegions(
+      base as Array<Record<string, unknown>>,
+      input.regions as Parameters<typeof narrowRegions>[1]
+    )
+  } catch {
+    // Blocks without ids cannot be applied by block; a session that opens
+    // meanwhile receives the whole document.
+    regions = null
+  }
+  return yjsManager.commitAgentWrite(spaceId, docPath, regions, async (live) => {
+    if (!live && input.baseIsSource) {
+      return writeDoc(spaceId, docPath, input.blocks, {
+        ...input.writeOptions,
+        sourceRevision: input.sourceRevision,
+      })
+    }
+    const current = await readDocSourceSnapshot(spaceId, docPath)
+    if (!current.revision) {
+      throw new Error(current.result.error ?? "Failed to read document")
+    }
+    const target = live ?? current.result.data
+    let rebased: RebaseResult = { ok: false, reason: "its blocks have no ids" }
+    if (!Array.isArray(target)) {
+      rebased = { ok: false, reason: "it is no longer a rich Doc" }
+    } else if (regions) {
+      // Compare blocks in canonical form; live blocks already are.
+      const before = await canonicalById(base)
+      const now = live ? undefined : await canonicalById(target)
+      rebased = rebaseRegions(target as Array<Record<string, unknown>>, regions, (block) => {
+        const id = String(block["id"])
+        return before.get(id) === (now ? now.get(id) : JSON.stringify(block))
+      })
+    }
+    if (!rebased.ok) {
+      throw new DocEditError(
+        "revision_conflict",
+        `${docPath} changed where this change applies: ${rebased.reason}. Read it again and reapply your change.`,
+        {
+          currentRevision: docRevisionId(current.revision),
+          ...(rebased.blockId ? { blockId: rebased.blockId } : {}),
+        }
+      )
+    }
+    return writeDoc(spaceId, docPath, rebased.blocks, {
+      ...input.writeOptions,
+      sourceRevision: current.revision,
+    })
+  })
+}
+
 /** The Doc's current revision, or null when it no longer exists. */
 async function currentDocRevision(
   spaceId: string,
@@ -420,6 +596,21 @@ async function annotationsAffectedByEdit(
   }
 }
 
+/** Blocks with a fresh id wherever one is missing. */
+function withBlockIds(blocks: unknown[]): unknown[] {
+  return blocks.map((value) => {
+    if (!value || typeof value !== "object") return value
+    const block = value as { id?: unknown; children?: unknown }
+    return {
+      ...block,
+      id: typeof block.id === "string" ? block.id : randomUUID(),
+      ...(Array.isArray(block.children)
+        ? { children: withBlockIds(block.children) }
+        : {}),
+    }
+  })
+}
+
 function blocksById(blocks: unknown[]): Map<string, unknown> {
   const byId = new Map<string, unknown>()
   const walk = (values: unknown[]) => {
@@ -456,6 +647,10 @@ async function docWriteWarnings(
   }
 }
 
+/**
+ * Announce a committed tool write. An open Doc has already received it from
+ * commitAgentBlocks.
+ */
 async function syncDocAfterToolWrite(
   spaceId: string,
   docPath: string
@@ -463,10 +658,6 @@ async function syncDocAfterToolWrite(
   invalidateSearchIndex()
 
   const doc = await readDoc(spaceId, docPath)
-  if (!doc.error && Array.isArray(doc.data)) {
-    await yjsManager.replaceContent(spaceId, docPath, doc.data)
-  }
-
   const statResult = await docStat(spaceId, docPath)
   const provenance = await getDocProvenance(spaceId, docPath)
   wsManager.broadcast(spaceId, {
@@ -1937,45 +2128,78 @@ async function _dispatchOperationInner(
         )
       }
 
-      let writeContent: unknown[] | string = content
+      const writeOptions = {
+        force,
+        updatedBy: actorId,
+        source: "mcp",
+        managedIdentity: true,
+        mermaidValidation: "strict" as const,
+      }
       let formattingDropped: FormattingDrop[] = []
-      let sourceRevision: DocSourceRevision | undefined
-      if (existed) {
-        const current = await docSourceAtRevision(
+      let result: DocWriteResult
+      if (!existed) {
+        // A create must not replace a Doc another writer created meanwhile.
+        result = await writeDoc(spaceId, docPath, content, {
+          ...writeOptions,
+          createOnly: true,
+        })
+      } else {
+        const current = await agentChangeBase(
           spaceId,
           docPath,
           expectedRevision,
           true
         )
-        sourceRevision = current.sourceRevision
-        const stored = current.snapshot.result.data
-        if (typeof content === "string" && Array.isArray(stored)) {
-          // Markdown over a rich Doc: blocks whose Markdown is unchanged keep
-          // their ids and formatting.
-          const splice = await spliceBlockReplacement(stored, content)
-          formattingDropped = splice.formattingDropped
-          if (formattingDropped.length > 0 && !force) {
-            const fields = [
-              ...new Set(formattingDropped.flatMap((drop) => drop.fields)),
+        const base = current.base
+        if (Array.isArray(base)) {
+          let blocks: unknown[]
+          let regions: Parameters<typeof commitAgentBlocks>[0]["regions"]
+          if (typeof content === "string") {
+            // Markdown over a rich Doc: blocks whose Markdown is unchanged
+            // keep their ids and formatting.
+            const splice = await spliceBlockReplacement(base, content)
+            formattingDropped = splice.formattingDropped
+            if (formattingDropped.length > 0 && !force) {
+              const fields = [
+                ...new Set(formattingDropped.flatMap((drop) => drop.fields)),
+              ]
+              throw new DocEditError(
+                "formatting_dropped",
+                `This write would drop formatting Markdown cannot show from ${formattingDropped.length} changed block(s) (${fields.join(", ")}). Use action edit to change only the text you mean to, or set force=true to accept the loss.`,
+                { formattingDropped }
+              )
+            }
+            blocks = splice.blocks
+            regions = splice.regions
+          } else {
+            // Blocks replace the whole Doc. Ids let an open session take them.
+            blocks = withBlockIds(inheritBlockIds(content, base))
+            regions = [
+              {
+                replacedBlockIds: base.map((block) =>
+                  String((block as { id?: unknown })?.id)
+                ),
+                blocks,
+              },
             ]
-            throw new DocEditError(
-              "formatting_dropped",
-              `This write would drop formatting Markdown cannot show from ${formattingDropped.length} changed block(s) (${fields.join(", ")}). Use action edit to change only the text you mean to, or set force=true to accept the loss.`,
-              { formattingDropped }
-            )
           }
-          writeContent = splice.blocks
+          result = await commitAgentBlocks({
+            spaceId,
+            docPath,
+            base,
+            baseIsSource: current.baseIsSource,
+            blocks,
+            regions,
+            sourceRevision: current.sourceRevision,
+            writeOptions,
+          })
+        } else {
+          result = await writeDoc(spaceId, docPath, content, {
+            ...writeOptions,
+            sourceRevision: current.sourceRevision,
+          })
         }
       }
-      const result = await writeDoc(spaceId, docPath, writeContent, {
-        force,
-        updatedBy: actorId,
-        source: "mcp",
-        managedIdentity: true,
-        mermaidValidation: "strict",
-        // A create must not replace a Doc another writer created meanwhile.
-        ...(sourceRevision ? { sourceRevision } : { createOnly: true }),
-      })
       if (!result.ok) {
         throw await docWriteFailure(spaceId, docPath, result)
       }
@@ -2010,20 +2234,19 @@ async function _dispatchOperationInner(
       if (!(await docExists(spaceId, docPath))) {
         throw new Error(`Document not found: ${docPath}`)
       }
-      const current = await docSourceAtRevision(
+      const current = await agentChangeBase(
         spaceId,
         docPath,
         expectedRevision,
         false
       )
-      const stored = current.snapshot.result.data
+      const stored = current.base
       const writeOptions = {
         updatedBy: actorId,
         source: "mcp",
         reason: "Edited document",
         mermaidValidation: "strict" as const,
         repairEscapedMermaidFences: false,
-        sourceRevision: current.sourceRevision,
         managedIdentity: true,
       }
 
@@ -2037,7 +2260,10 @@ async function _dispatchOperationInner(
             "The edits leave the document unchanged."
           )
         }
-        const written = await writeDoc(spaceId, docPath, edit.text, writeOptions)
+        const written = await writeDoc(spaceId, docPath, edit.text, {
+          ...writeOptions,
+          sourceRevision: current.sourceRevision,
+        })
         if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
         await syncDocAfterToolWrite(spaceId, docPath)
         const quoteEdited = (quote: string): boolean => {
@@ -2077,11 +2303,17 @@ async function _dispatchOperationInner(
 
       if (!Array.isArray(stored)) throw new Error("Unexpected document format")
       const splice = await spliceBlockEdits(stored, edits)
-      const written = await writeDoc(spaceId, docPath, splice.blocks, writeOptions)
+      const written = await commitAgentBlocks({
+        spaceId,
+        docPath,
+        base: stored,
+        baseIsSource: current.baseIsSource,
+        blocks: splice.blocks,
+        regions: splice.regions,
+        sourceRevision: current.sourceRevision,
+        writeOptions,
+      })
       if (!written.ok) throw await docWriteFailure(spaceId, docPath, written)
-      // A live session receives the stored blocks as a whole replacement.
-      // splice.regions names the replaced top-level blocks and what took
-      // their place, so a session can later apply only those regions.
       await syncDocAfterToolWrite(spaceId, docPath)
 
       // Everything below describes what this write stored, even if another
@@ -2090,7 +2322,23 @@ async function _dispatchOperationInner(
       const finalProjection = await projectBlocks(finalBlocks)
       const warnings: Array<DocConventionIssue | Record<string, string>> =
         await docWriteWarnings(spaceId, docPath)
-      if (finalProjection.markdown !== splice.editedMarkdown) {
+      // The edited text as stored: the changed blocks as written, in the
+      // document the edit was matched against (an open Doc may hold other
+      // people's changes elsewhere).
+      const writtenTopLevel = new Map(
+        (finalBlocks as Array<{ id?: unknown }>).map((block) => [block?.id, block])
+      )
+      const changedTopLevel = new Set(
+        splice.regions.flatMap((region) => region.blocks.map((block) => block.id))
+      )
+      const storedEdit = await projectBlocks(
+        splice.blocks.map((block) =>
+          changedTopLevel.has(block.id)
+            ? (writtenTopLevel.get(block.id) ?? block)
+            : block
+        )
+      )
+      if (storedEdit.markdown !== splice.editedMarkdown) {
         warnings.push({
           severity: "hint",
           code: "markdown_normalized",

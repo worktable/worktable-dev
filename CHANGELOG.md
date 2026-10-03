@@ -22,6 +22,7 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 - **Lifetimes in HTML and drawing reads:** Agents listing or reading HTML Docs, or inspecting drawings, now see whether each one is durable or temporary and when a temporary one archives.
 - **Agents edit Docs by exact text:** Agents change a Doc by replacing exact text copied from what they read, and everything they did not change stays as it was: formatting Markdown cannot show, block identity, and the comments anchored to that text. Markdown files keep every character outside the edit. Reading a Doc always returns Markdown with its current revision.
+- **Agent edits no longer interrupt your typing:** When an agent edits or rewrites a Doc you have open, only the blocks it changes are updated, so what you are typing elsewhere in the Doc stays put. An agent working from an earlier read is refused only if you changed the same blocks.
 - **Breaking for agents:** The `patch` action of `worktable_docs_write` is removed in favor of `edit`, replacing an existing Doc with `write` now requires the revision from the latest read, and Doc listings no longer include `readFormatHint`. Reconnect MCP clients and update installed Worktable skills.
 
 ### Fixed

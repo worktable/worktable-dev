@@ -14,6 +14,7 @@
  * canonicalize to byte-identical output, so `stableHash` can detect no-ops.
  */
 
+import { randomUUID } from "node:crypto";
 import { BlockNoteSchema, createBlockSpec, createCodeBlockSpec, defaultProps } from "@blocknote/core";
 import { codeBlockOptions } from "@blocknote/code-block";
 import {
@@ -125,6 +126,64 @@ export async function canonicalizeBlocks(blocks: unknown[]): Promise<unknown[]> 
   } finally {
     ydoc.destroy();
   }
+}
+
+/** Props a block carries that the schema does not define for its type. */
+export function unknownPropKeys(block: unknown): string[] {
+  const value = block as { type?: unknown; props?: Record<string, unknown> } | null;
+  const schema = (serverSchema.blockSchema as Record<string, { propSchema?: object }>)[
+    String(value?.type)
+  ]?.propSchema;
+  if (!schema || !value?.props || typeof value.props !== "object") return [];
+  return Object.keys(value.props).filter((key) => !(key in schema));
+}
+
+/**
+ * Canonicalize blocks for a write, keeping props the schema does not define
+ * (written by another tool or a newer Worktable) on every block that keeps
+ * its id and type. Canonicalization alone drops them. The editor cannot hold
+ * them either, so a person's next edit of the open Doc still loses them.
+ */
+export async function canonicalizeBlocksForWrite(blocks: unknown[]): Promise<unknown[]> {
+  // Canonicalization mints ids for blocks without one; minting them first
+  // lets the kept props find their block.
+  const withIds = (values: unknown[]): unknown[] =>
+    values.map((value) => {
+      if (!value || typeof value !== "object") return value;
+      const block = value as Record<string, unknown>;
+      return {
+        ...block,
+        ...(typeof block["id"] === "string" ? {} : { id: randomUUID() }),
+        ...(Array.isArray(block["children"]) ? { children: withIds(block["children"]) } : {}),
+      };
+    });
+  const source = withIds(normalizeMermaidBlocks(blocks).blocks);
+  const kept = new Map<string, { type: unknown; props: Record<string, unknown> }>();
+  const collect = (values: unknown[]) => {
+    for (const value of values) {
+      const block = value as Record<string, any> | null;
+      const keys = unknownPropKeys(block);
+      if (keys.length > 0 && typeof block?.["id"] === "string") {
+        kept.set(block["id"], {
+          type: block["type"],
+          props: Object.fromEntries(keys.map((key) => [key, block["props"][key]])),
+        });
+      }
+      if (Array.isArray(block?.["children"])) collect(block["children"]);
+    }
+  };
+  collect(source);
+  const canonical = await canonicalizeBlocks(source);
+  if (kept.size === 0) return canonical;
+  const restore = (values: unknown[]): unknown[] =>
+    values.map((value) => {
+      const block = value as Record<string, any>;
+      const extra = kept.get(block?.["id"]);
+      const children = Array.isArray(block?.["children"]) ? restore(block["children"]) : block?.["children"];
+      if (!extra || extra.type !== block["type"]) return { ...block, children };
+      return { ...block, props: { ...block["props"], ...extra.props }, children };
+    });
+  return restore(canonical);
 }
 
 // ── Block id inheritance ─────────────────────────────────────

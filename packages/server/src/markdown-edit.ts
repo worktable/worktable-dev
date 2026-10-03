@@ -25,13 +25,13 @@
  * only when an edit changes its own text in a way that needs parsing.
  *
  * The result also lists, per top-level region, which blocks were replaced by
- * which. A live collaborative session can use those regions to apply the same
- * change surgically instead of replacing the whole document.
+ * which. A Doc open in a live session receives the change through those
+ * regions, replacing only the blocks they name (`block-regions.ts`).
  */
 
 import { randomUUID } from "node:crypto"
 import { normalizeMermaidBlocks } from "@worktable/types"
-import { getServerEditor, serverSchema } from "./blocknote.ts"
+import { getServerEditor, serverSchema, unknownPropKeys } from "./blocknote.ts"
 import {
   blocksToMarkdownSafe,
   cellInlines,
@@ -500,6 +500,41 @@ function chunkKind(block: Block): ChunkKind {
   return "single"
 }
 
+const SEPARATOR = { type: "paragraph", content: [{ type: "text", text: SEPARATOR_TEXT, styles: {} }] }
+
+/**
+ * Serialize groups of blocks in one call, each group between separator
+ * paragraphs. The serializer trims whitespace at the very start and end of
+ * its output only, so fencing every group keeps a block's leading and
+ * trailing spaces wherever it sits. Null when the output does not split back
+ * into one part per group.
+ */
+async function fencedMarkdown(groups: unknown[][], safe: boolean): Promise<string[] | null> {
+  const batch: unknown[] = [SEPARATOR]
+  for (const group of groups) batch.push(...group, SEPARATOR)
+  let output: string | null
+  if (safe) {
+    output = await blocksToMarkdownSafe(batch)
+  } else {
+    try {
+      const editor = await getServerEditor()
+      output = await editor.blocksToMarkdownLossy(normalizeMermaidBlocks(batch).blocks)
+    } catch {
+      output = null
+    }
+  }
+  if (output === null) return null
+  const text = output.replace(/\n+$/, "")
+  const open = `${SEPARATOR_TEXT}\n\n`
+  const close = `\n\n${SEPARATOR_TEXT}`
+  if (!text.startsWith(open) || !text.endsWith(close) || text.length < open.length + SEPARATOR_TEXT.length) {
+    return null
+  }
+  const inner = text.length === open.length + SEPARATOR_TEXT.length ? "" : text.slice(open.length, -close.length)
+  const parts = inner.split(`\n\n${SEPARATOR_TEXT}\n\n`)
+  return parts.length === groups.length ? parts : null
+}
+
 /**
  * Serialize the own text of every block not yet cached, in as few editor
  * calls as possible: simple blocks share a call and split on blank lines,
@@ -533,26 +568,17 @@ async function primeOwnMarkdown(blocks: Block[]): Promise<void> {
   }
   const individually = async (chunk: (typeof chunks)[number]) => {
     for (const [key, block] of chunk.entries) {
-      rememberOwn(key, normalizeOwn(block, await blocksToMarkdownSafe([structuredClone(block)])))
+      const fenced = await fencedMarkdown([[structuredClone(block)]], true)
+      const markdown = fenced ? fenced[0]! : await blocksToMarkdownSafe([structuredClone(block)])
+      rememberOwn(key, normalizeOwn(block, markdown))
     }
   }
 
-  const editor = await getServerEditor()
-  const separator = { type: "paragraph", content: [{ type: "text", text: SEPARATOR_TEXT, styles: {} }] }
-  const batch: unknown[] = []
-  chunks.forEach((chunk, index) => {
-    if (index > 0) batch.push(separator)
-    for (const [, block] of chunk.entries) batch.push(block)
-  })
-  let output: string
-  try {
-    output = await editor.blocksToMarkdownLossy(normalizeMermaidBlocks(batch).blocks)
-  } catch {
-    for (const chunk of chunks) await individually(chunk)
-    return
-  }
-  const parts = output.replace(/\n+$/, "").split(`\n\n${SEPARATOR_TEXT}\n\n`)
-  if (parts.length !== chunks.length) {
+  const parts = await fencedMarkdown(
+    chunks.map((chunk) => chunk.entries.map(([, block]) => block)),
+    false
+  )
+  if (!parts) {
     for (const chunk of chunks) await individually(chunk)
     return
   }
@@ -828,11 +854,7 @@ function propSchemaOf(type: unknown): Record<string, unknown> | undefined {
   return (serverSchema as any).blockSchema[String(type)]?.propSchema
 }
 
-function foreignProps(block: Block): string[] {
-  const schema = propSchemaOf(block?.type)
-  if (!schema) return []
-  return Object.keys(block?.props ?? {}).filter((key) => !(key in schema))
-}
+const foreignProps = unknownPropKeys
 
 interface RoundTrip {
   supported: boolean
@@ -1335,7 +1357,8 @@ function refuseUnsupported(block: Block, context: SpliceContext, reason?: string
 
 function recordModified(stored: Block, result: Block, context: SpliceContext): void {
   context.modified.push(String(stored.id))
-  // Storage drops properties the schema does not know from a changed block.
+  // A changed block loses properties the schema does not know; untouched
+  // blocks keep theirs.
   const remaining = new Set(ownLossyFields(result).filter((field) => !field.startsWith("prop:")))
   const dropped = ownLossyFields(stored).filter((field) => !remaining.has(field))
   if (dropped.length > 0) {
@@ -1359,8 +1382,18 @@ async function changeOwn(
   if (foreignProps(stored).length > 0 && context.mode === "edit") refuseUnsupported(stored, context)
   const spliced = await spliceInline(stored, oldMarkdown, newMarkdown, indent, contPrefix)
   if (spliced) {
-    recordModified(stored, spliced, context)
-    return spliced
+    const foreign = foreignProps(spliced)
+    const result =
+      foreign.length > 0
+        ? {
+            ...spliced,
+            props: Object.fromEntries(
+              Object.entries(spliced.props).filter(([key]) => !foreign.includes(key))
+            ),
+          }
+        : spliced
+    recordModified(stored, result, context)
+    return result
   }
   let parsed = parsedHint
   if (!parsed) {
@@ -1614,13 +1647,51 @@ async function spliceParsed(stored: Block[], parsed: Block[], context: SpliceCon
   return output
 }
 
-async function spliceChanged(
+function containsRun(keys: readonly string[], run: readonly string[]): boolean {
+  for (let start = 0; start + run.length <= keys.length; start++) {
+    if (run.every((key, offset) => keys[start + offset] === key)) return true
+  }
+  return false
+}
+
+/**
+ * Split a changed block whose nested blocks reappear, unchanged and in order,
+ * among the parsed blocks into its own text and those nested blocks: its own
+ * line was removed or its nested blocks were outdented. The nested blocks
+ * then pair with themselves and keep their ids.
+ */
+async function promoteChildren(
   stored: Block[],
   storedKeys: string[],
+  parsedKeys: string[]
+): Promise<{ stored: Block[]; storedKeys: string[] }> {
+  const blocks: Block[] = []
+  const keys: string[] = []
+  for (const [index, block] of stored.entries()) {
+    const children: Block[] = Array.isArray(block.children) ? block.children.filter(isVisible) : []
+    if (children.length > 0) {
+      const childKeys = await Promise.all(children.map(async (child) => (await standaloneMarkdown(child)).full))
+      if (containsRun(parsedKeys, childKeys)) {
+        const own = { ...block, children: [] }
+        blocks.push(own, ...children)
+        keys.push((await standaloneMarkdown(own)).full, ...childKeys)
+        continue
+      }
+    }
+    blocks.push(block)
+    keys.push(storedKeys[index]!)
+  }
+  return { stored: blocks, storedKeys: keys }
+}
+
+async function spliceChanged(
+  storedBlocks: Block[],
+  storedBlockKeys: string[],
   parsed: Block[],
   parsedKeys: string[],
   context: SpliceContext
 ): Promise<Block[]> {
+  const { stored, storedKeys } = await promoteChildren(storedBlocks, storedBlockKeys, parsedKeys)
   if (stored.length === 0) return insertBlocks(parsed, context, parsedKeys)
   if (parsed.length === 0) {
     stored.forEach((block, index) => removeBlock(block, storedKeys[index]!, context))

@@ -18,7 +18,7 @@ import {
   getRichBlockTypes,
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
-import { canonicalizeBlocks, inheritBlockIds } from "./blocknote.ts";
+import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir } from "./workspace.ts";
@@ -495,7 +495,8 @@ export async function atomicWriteText(filePath: string, text: string): Promise<v
 /**
  * Canonicalize a BlockNote block array for a .json write. Every block write
  * funnels through here so on-disk content is in one normal form (stable
- * IDs, default props) regardless of caller — agent MCP writes and edits, REST,
+ * IDs, default props; props the schema does not define are kept on the
+ * blocks that carry them) regardless of caller — agent MCP writes and edits, REST,
  * and restore. This makes content hashes reflect meaning rather than incidental
  * shape, so a semantic no-op (e.g. the browser's initial editor sync) produces
  * an identical hash and records no version. Falls back to the raw blocks if
@@ -517,11 +518,11 @@ async function prepareBlocksCanonical(
     const withIds = Array.isArray(previousBlocks)
       ? inheritBlockIds(blocks, previousBlocks)
       : blocks;
-    canonical = await canonicalizeBlocks(withIds);
+    canonical = await canonicalizeBlocksForWrite(withIds);
 
     if (Array.isArray(previousBlocks)) {
       const previousCanonicalHash = stableHash(
-        await canonicalizeBlocks(inheritBlockIds(previousBlocks, canonical))
+        await canonicalizeBlocksForWrite(inheritBlockIds(previousBlocks, canonical))
       );
       if (previousCanonicalHash === stableHash(canonical)) {
         return { skipped: true, content: canonical };

@@ -51,6 +51,8 @@ Read the doc, then call `edit` with `oldText` copied exactly from the read conte
 
 Replacing an existing doc with `write` requires `expectedRevision`. Markdown written over a rich doc keeps the blocks whose text is unchanged; if it would drop formatting from changed blocks, the write is refused unless you set `force`.
 
+When someone has the doc open in Worktable, `edit` and `write` change only the blocks your change touches, so their typing elsewhere is not interrupted. Without `expectedRevision`, `edit` matches what they see now. With it, a revision that their typing has since moved on still works, unless they changed a block your change touches; then you get `revision_conflict`. Read again and reapply.
+
 ## Write for retrieval
 
 You will read this doc again in a later session — so will other agents, and so will the human.

@@ -390,6 +390,59 @@ function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex")
 }
 
+/**
+ * A Doc revision names the storage kind and hashes the stored bytes; stored
+ * versions record that hash, so most candidates need no read.
+ */
+function matchesDocRevision(kind: string, sha256: string): CandidateMatcher {
+  return async (candidate, budget) => {
+    const expectedFormat =
+      kind === "md"
+        ? BUILTIN_DOCUMENT_FORMATS.markdown
+        : BUILTIN_DOCUMENT_FORMATS.richText
+    if (candidate.format.id !== expectedFormat) return false
+    if (candidate.sha256 !== undefined) return candidate.sha256 === sha256
+    const bytes = await candidate.bytes()
+    return (
+      bytes !== null &&
+      budget.take(bytes.byteLength) &&
+      sha256Hex(bytes) === sha256
+    )
+  }
+}
+
+/**
+ * The blocks a rich Doc had at a Doc revision (`json:sha256:…`), looked up in
+ * its retained history within the same bounds as diff. Null when the revision
+ * is not a rich Doc revision or is no longer in history.
+ */
+export async function docBlocksAtRevision(options: {
+  spaceId: string
+  path: string
+  revision: string
+}): Promise<unknown[] | null> {
+  const docRef = DOC_REVISION.exec(options.revision)
+  if (!docRef || docRef[1] !== "json") return null
+  const storageV2 =
+    (await readWorkspaceStorageLayoutAt(getWorkspaceRoot())).kind === "v2"
+  try {
+    const resolution = await useResolvedDocumentHandle(
+      { spaceId: options.spaceId, path: options.path, includeArchived: true },
+      async (handle) => ({
+        content: await historyFor(options.spaceId, handle, storageV2).find(
+          matchesDocRevision(docRef[1]!, docRef[2]!)
+        ),
+      })
+    )
+    return "content" in resolution && resolution.content?.kind === "blocks"
+      ? resolution.content.blocks
+      : null
+  } catch (error) {
+    if (error instanceof DocumentDiffError) return null
+    throw error
+  }
+}
+
 /** The Doc revision worktable_docs_read returns for a file source. */
 function currentDocRevision(
   handle: ResolvedDocumentHandle,
@@ -487,24 +540,6 @@ export async function diffDocumentText(options: {
             if (revision === ref) return true
           }
           return false
-        }
-      // A Doc revision names the storage kind and hashes the stored bytes;
-      // stored versions record that hash, so most candidates need no read.
-      const matchesDocRevision =
-        (kind: string, sha256: string): CandidateMatcher =>
-        async (candidate, budget) => {
-          const expectedFormat =
-            kind === "md"
-              ? BUILTIN_DOCUMENT_FORMATS.markdown
-              : BUILTIN_DOCUMENT_FORMATS.richText
-          if (candidate.format.id !== expectedFormat) return false
-          if (candidate.sha256 !== undefined) return candidate.sha256 === sha256
-          const bytes = await candidate.bytes()
-          return (
-            bytes !== null &&
-            budget.take(bytes.byteLength) &&
-            sha256Hex(bytes) === sha256
-          )
         }
       const contentAt = async (ref: string): Promise<VersionContent> => {
         if (ref === currentRevision || ref === docRevision) return current

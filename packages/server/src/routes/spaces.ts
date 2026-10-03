@@ -103,7 +103,7 @@ spacesRouter.post("/", requireScope("docs:write"), async (c) => {
   return c.json({ spaceId }, 201);
 });
 
-spacesRouter.post("/:spaceId/archive", requireWorkspaceOwner(), async (c) => {
+spacesRouter.post("/:spaceId/archive", requireScope("docs:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const body = await c.req.json().catch(() => ({}));
   const parsed = ArchiveSpaceSchema.safeParse(body);
@@ -125,7 +125,7 @@ spacesRouter.post("/:spaceId/archive", requireWorkspaceOwner(), async (c) => {
   return c.json({ ok: true, space });
 });
 
-spacesRouter.post("/:spaceId/restore", requireWorkspaceOwner(), async (c) => {
+spacesRouter.post("/:spaceId/restore", requireScope("docs:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const { space, error } = await setSpaceArchived(spaceId, false);
   if (error || !space) {
@@ -222,7 +222,7 @@ const StartHereBodySchema = z.object({
   pins: z.array(StartHerePinSchema).max(START_HERE_LIMIT),
 });
 
-spacesRouter.put("/:spaceId/start-here", requireWorkspaceOwner(), async (c) => {
+spacesRouter.put("/:spaceId/start-here", requireScope("docs:write"), requireScope("documents:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const parsed = StartHereBodySchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
@@ -248,7 +248,7 @@ const UpdateSpaceSchema = z.object({
   group: z.string().optional(),
 });
 
-spacesRouter.put("/:spaceId", requireWorkspaceOwner(), async (c) => {
+spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const body = await c.req.json().catch(() => null);
   if (!body) {

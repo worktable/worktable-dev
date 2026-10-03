@@ -11,6 +11,8 @@ Every successful object result is returned as MCP `structuredContent` together
 with the JSON text fallback used by older clients. Tool descriptors include a
 human-readable title, explicit safety annotations, and OAuth authentication
 metadata. Worktable permissions are enforced server-side after authentication.
+A refused action names the missing scope; reconnect the agent with broader
+access to grant it.
 
 ## Discovery and optional skills
 
@@ -49,6 +51,10 @@ all-or-nothing change. Both require `documents:write`. If any document format
 does not support deletion, the action fails before removing anything. One
 folder deletion can contain up to 128 documents, and it revokes their share
 links.
+
+`worktable_spaces` creates, updates, archives, and restores Spaces with
+`docs:write`. Setting a Space's Start here pins also requires
+`documents:write`.
 
 With `documents:read`, the `search` action in `worktable_discover` searches
 Docs, HTML Docs, and other registered document formats, returning safe text

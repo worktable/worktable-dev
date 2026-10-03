@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
-import type { SpaceFile } from "@worktable/types"
+import { DEFAULT_AGENT_TOKEN_SCOPES, type SpaceFile } from "@worktable/types"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -29,8 +29,10 @@ function space(): SpaceFile {
   }
 }
 
-async function connect(): Promise<Client> {
-  const server = createWorktableMcpServer({ version: "test", scopes: ["*"] })
+// Agents connect with the default content scopes, not full access.
+async function connect(scopes: readonly string[] = DEFAULT_AGENT_TOKEN_SCOPES): Promise<Client> {
+  await client?.close()
+  const server = createWorktableMcpServer({ version: "test", scopes: [...scopes] })
   client = new Client({ name: "lifetime-test", version: "1" })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -212,5 +214,19 @@ describe("agent document lifetimes over MCP", () => {
     expect(archived.data).toMatchObject({ ok: true })
     const restored = await tool("worktable_spaces", { action: "restore", spaceId })
     expect(restored.data).toMatchObject({ ok: true })
+
+    await connect(["docs:read"])
+    const readOnly = await tool("worktable_spaces", { action: "archive", spaceId })
+    expect(readOnly.ok).toBe(false)
+    expect(readOnly.text).toContain('requires "docs:write"')
+    expect(readOnly.text).toContain("reconnecting this agent with broader access")
+
+    // Pins point at documents, so changing them also needs documents:write.
+    await connect(["docs:write"])
+    const pins = await tool("worktable_spaces", { action: "update", spaceId, startHere: [] })
+    expect(pins.ok).toBe(false)
+    expect(pins.text).toContain('requires "documents:write"')
+    const renamed = await tool("worktable_spaces", { action: "update", spaceId, name: "Renamed" })
+    expect(renamed.ok).toBe(true)
   })
 })

@@ -28,7 +28,7 @@ import {
   readDocumentInventory,
   updateDocumentInventory,
 } from "./document-inventory.ts";
-import type { SpaceFile } from "@worktable/types";
+import { DEFAULT_AGENT_TOKEN_SCOPES, type SpaceFile } from "@worktable/types";
 
 function makeSpace(id: string): SpaceFile {
   const now = new Date().toISOString();
@@ -48,7 +48,8 @@ function buildTestApp() {
   const app = new Hono();
   // Route behavior fixtures enter after the production identity boundary.
   app.use("*", async (c, next) => {
-    c.set("identity", ownerIdentity());
+    const scopes = c.req.header("x-test-scopes")?.split(",");
+    c.set("identity", scopes ? { ...ownerIdentity(), scopes } : ownerIdentity());
     await next();
   });
   app.use("*", cors());
@@ -567,6 +568,25 @@ describe("doc UX routes", () => {
         "alpha",
         "folder/nested",
       ]);
+    });
+
+    it("lets a content-scoped agent edit Space metadata but not the order", async () => {
+      const asAgent = (path: string, body: unknown) =>
+        app.fetch(
+          new Request(`http://localhost${path}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "x-test-scopes": DEFAULT_AGENT_TOKEN_SCOPES.join(","),
+            },
+            body: JSON.stringify(body),
+          })
+        );
+      expect((await asAgent("/api/spaces/doc-ux-space", { name: "Renamed" })).status).toBe(200);
+      expect((await readSpace("doc-ux-space")).data?.name).toBe("Renamed");
+      expect(
+        (await asAgent("/api/spaces/doc-ux-space/doc-order", { order: ["a"] })).status
+      ).toBe(403);
     });
 
     it("survives an unrelated space metadata update", async () => {

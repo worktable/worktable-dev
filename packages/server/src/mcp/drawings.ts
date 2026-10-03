@@ -10,7 +10,6 @@ import { renderDrawing } from "../drawing-render.ts"
 import { measureDrawing } from "../drawing-native.ts"
 import type { OperationId } from "./operations.ts"
 import { applyLifetimeOnCreate, lifetimeCreateError } from "../document-lifetime.ts"
-import { listDocumentLifetimeTargets } from "../document-query.ts"
 
 export async function dispatchDrawingOperation(
   operation: OperationId,
@@ -35,26 +34,19 @@ export async function dispatchDrawingOperation(
         signal,
       })
     : await drawingRead(DrawingsReadRequestSchema.parse(request), { signal })
-  const path =
-    "path" in result && typeof result.path === "string" ? result.path : request.path
   // A saved create records the lifetime the agent chose. Preview-only
   // creates save nothing; a retried create re-applies the same choice.
-  // Inspect reports the lifetime as document reads do.
   const lifetime =
     request.action === "create" &&
     !request.previewOnly &&
     !("replayed" in result && result.replayed)
       ? await applyLifetimeOnCreate({
           spaceId: request.spaceId,
-          path,
+          path: "path" in result && typeof result.path === "string" ? result.path : request.path,
           lifetime: request.lifetime,
           archiveOn: request.archiveOn,
         })
-      : request.action === "inspect"
-        ? ((await listDocumentLifetimeTargets(request.spaceId)).find(
-            (target) => target.path === path
-          )?.view ?? {})
-        : {}
+      : {}
   if (!("drawing" in result)) return { ...result, ...lifetime }
   const { drawing, ...metadata } = result
   const output: Record<string, unknown> = { ...metadata, ...lifetime }

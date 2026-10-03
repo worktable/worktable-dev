@@ -494,4 +494,34 @@ describe("edits to a Doc open in Worktable", () => {
     const overwrite = await write("shared", "Alpha, replaced.\n\nBeta notes.\n", { expectedRevision: seen.data.revision })
     expect(overwrite.error.code).toBe("revision_conflict")
   }, 20_000)
+
+  it("keeps a change made on disk that the open Doc has not loaded yet", async () => {
+    await write("synced", [paragraph("Alpha."), paragraph("Beta.")], { lifetime: "durable" })
+    const browser = await openInBrowser("synced")
+    // Another program edits the file; the change has not reached the room.
+    const onDisk = await storedBlocks("synced")
+    onDisk[0].content[0].text = "Alpha, changed on disk."
+    await writeFile(join(root, "spaces", spaceId, "docs", "synced.json"), JSON.stringify(onDisk, null, 2))
+
+    expect((await edit("synced", [{ oldText: "Beta.", newText: "Beta, by an agent." }])).ok).toBe(true)
+    browser.receive()
+    expect(plainText(await storedBlocks("synced"))).toEqual(["Alpha, changed on disk.", "Beta, by an agent."])
+    expect(plainText(await browser.blocks())).toEqual(["Alpha, changed on disk.", "Beta, by an agent."])
+  }, 20_000)
+
+  it("replaces only the changed blocks when a write sends minimal blocks", async () => {
+    await write("blocks", [paragraph("Alpha notes."), paragraph("Beta notes.")], { lifetime: "durable" })
+    const [alpha] = await storedBlocks("blocks")
+    const browser = await openInBrowser("blocks")
+    browser.type(alpha.id, " Typed by a person.")
+
+    const result = await write("blocks", [paragraph("Alpha notes."), paragraph("Beta notes, rewritten.")], {
+      expectedRevision: (await read("blocks")).data.revision,
+    })
+    expect(result.ok).toBe(true)
+    expect(browser.receive()).toBeLessThan(600)
+    browser.send()
+    expect(plainText(await browser.blocks())).toEqual(["Alpha notes. Typed by a person.", "Beta notes, rewritten."])
+    expect((await browser.blocks())[0].id).toBe(alpha.id)
+  }, 20_000)
 })

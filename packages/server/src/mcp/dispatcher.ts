@@ -114,7 +114,12 @@ import {
 import { readDocumentVersions } from "../document-page-service.ts"
 import { randomUUID } from "node:crypto"
 import { diffDocumentText, docBlocksAtRevision } from "../document-diff.ts"
-import { canonicalizeBlocks, inheritBlockIds } from "../blocknote.ts"
+import {
+  canonicalizeBlocks,
+  canonicalizeBlocksForWrite,
+  inheritBlockIds,
+  unknownPropKeys,
+} from "../blocknote.ts"
 import {
   narrowRegions,
   rebaseRegions,
@@ -484,10 +489,50 @@ async function commitAgentBlocks(input: {
         }
       )
     }
-    return writeDoc(spaceId, docPath, rebased.blocks, {
+    const blocks =
+      live && Array.isArray(current.result.data)
+        ? await keepStoredProps(rebased.blocks, current.result.data, regions!)
+        : rebased.blocks
+    return writeDoc(spaceId, docPath, blocks, {
       ...input.writeOptions,
       sourceRevision: current.revision,
     })
+  })
+}
+
+function hasUnknownProps(block: unknown): boolean {
+  const children = (block as { children?: unknown })?.children
+  return (
+    unknownPropKeys(block).length > 0 ||
+    (Array.isArray(children) && children.some(hasUnknownProps))
+  )
+}
+
+/**
+ * The open Doc cannot hold block props the schema does not define. Write the
+ * stored block instead of the live one for every block the change leaves
+ * alone that only differs by those props.
+ */
+async function keepStoredProps(
+  blocks: Array<Record<string, unknown>>,
+  stored: unknown[],
+  regions: readonly BlockRegion[]
+): Promise<Array<Record<string, unknown>>> {
+  const withProps = (stored as Array<Record<string, unknown>>).filter(hasUnknownProps)
+  if (withProps.length === 0) return blocks
+  const changed = new Set(
+    regions.flatMap((region) => region.blocks.map((block) => block["id"]))
+  )
+  const storedById = new Map(withProps.map((block) => [block["id"], block]))
+  const canonical = await canonicalById(withProps)
+  return blocks.map((block) => {
+    const id = block["id"]
+    const original = storedById.get(id)
+    return original &&
+      !changed.has(id) &&
+      canonical.get(String(id)) === JSON.stringify(block)
+      ? original
+      : block
   })
 }
 
@@ -2173,7 +2218,13 @@ async function _dispatchOperationInner(
             regions = splice.regions
           } else {
             // Blocks replace the whole Doc. Ids let an open session take them.
+            // Canonical form, so blocks equal to the current ones match them.
             blocks = withBlockIds(inheritBlockIds(content, base))
+            try {
+              blocks = await canonicalizeBlocksForWrite(blocks)
+            } catch {
+              // Written as given; writeDoc reports what it cannot store.
+            }
             regions = [
               {
                 replacedBlockIds: base.map((block) =>
@@ -2331,13 +2382,12 @@ async function _dispatchOperationInner(
       const changedTopLevel = new Set(
         splice.regions.flatMap((region) => region.blocks.map((block) => block.id))
       )
-      const storedEdit = await projectBlocks(
-        splice.blocks.map((block) =>
-          changedTopLevel.has(block.id)
-            ? (writtenTopLevel.get(block.id) ?? block)
-            : block
-        )
+      const editedBlocks = splice.blocks.map((block) =>
+        changedTopLevel.has(block.id)
+          ? (writtenTopLevel.get(block.id) ?? block)
+          : block
       )
+      const storedEdit = await projectBlocks(editedBlocks)
       if (storedEdit.markdown !== splice.editedMarkdown) {
         warnings.push({
           severity: "hint",
@@ -2347,13 +2397,15 @@ async function _dispatchOperationInner(
           hint: "Read the document again before copying oldText for the next edit.",
         })
       }
-      const finalById = blocksById(finalBlocks)
+      // Annotations are judged by this edit alone: the document it matched
+      // against, before and after, not other people's changes in an open Doc.
+      const finalById = blocksById(editedBlocks)
       const changedIds = new Set([
         ...splice.changed.modified,
         ...splice.removedIds,
       ])
       const storedText = blocksPlainText(stored)
-      const finalText = blocksPlainText(finalBlocks)
+      const finalText = blocksPlainText(editedBlocks)
       return {
         ok: true,
         docPath,

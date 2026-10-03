@@ -117,6 +117,12 @@ interface LiveDoc {
   // arriving DURING a persist or disk sync describes an edit that is not in
   // that snapshot and must survive for the next persist.
   intentGeneration: number;
+  // Hash of the portable blocks the room was last loaded from, synced with or
+  // saved as. A different hash on disk is a change the room has not seen.
+  diskContentHash: string;
+  // While set, client frames accepted after this sequence wait (an agent
+  // write is committing against the room's current blocks).
+  frameHoldCutoff: number | null;
 }
 
 interface YjsStateHeader {
@@ -488,6 +494,8 @@ export class YjsDocManager {
       humanEdited: false,
       contentGeneration: ++this.nextContentGeneration,
       intentGeneration: 0,
+      diskContentHash: stableHash(current.data),
+      frameHoldCutoff: null,
     };
 
     // Listen for updates: broadcast to other clients + schedule persist
@@ -732,6 +740,9 @@ export class YjsDocManager {
     ) {
       return true
     }
+    if (liveDoc.frameHoldCutoff !== null && frame.sequence > liveDoc.frameHoldCutoff) {
+      return true
+    }
     const docCutoff = this.pausedDocMutationCutoffs.get(liveDoc.key)
     return docCutoff !== undefined && frame.sequence > docCutoff
   }
@@ -749,7 +760,7 @@ export class YjsDocManager {
       if (this.clientDocs.get(client) !== pending.liveDoc) continue
       for (const frame of pending.frames) {
         try {
-          this.processMessage(client, pending.liveDoc, frame.bytes)
+          this.dispatchOrQueueMessage(client, pending.liveDoc, frame)
         } catch (error) {
           console.warn(
             `[YjsManager] closing ${pending.liveDoc.spaceId}/${pending.liveDoc.docPath}: queued frame replay failed`,
@@ -925,21 +936,99 @@ export class YjsDocManager {
       return result;
     }
     return this.withPersistSlot(liveDoc, async () => {
-      if (liveDoc.persistTimer) {
-        clearTimeout(liveDoc.persistTimer);
-        liveDoc.persistTimer = null;
-        await this.persistDoc(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
+      await this.refreshRoomForAgentWrite(liveDoc);
+      // Client frames wait from here until the result is applied, so the
+      // blocks the change replaces are exactly the ones it was checked
+      // against. Typing that arrives meanwhile lands after the change.
+      liveDoc.frameHoldCutoff = this.acceptedFrameSequence;
+      try {
+        const baseline = liveDoc.diskContentHash;
+        const result = await commit(editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME));
+        if (
+          result.ok &&
+          Array.isArray(result.content) &&
+          this.docs.get(liveDoc.key) === liveDoc
+        ) {
+          if (liveDoc.diskContentHash === baseline) {
+            await this.applyAgentWrite(liveDoc, regions, result.content, false);
+          } else {
+            // Other disk content replaced the room while the write committed
+            // (a REST write or a disk sync): the room must follow the disk.
+            console.warn(
+              `[YjsManager] ${liveDoc.spaceId}/${liveDoc.docPath} changed on disk during an agent write; syncing the room from disk`
+            );
+            await this.syncFromDisk(liveDoc.spaceId, liveDoc.docPath);
+          }
+        }
+        return result;
+      } finally {
+        this.releaseClientFrames(liveDoc);
       }
-      const result = await commit(editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME));
-      if (
-        result.ok &&
-        Array.isArray(result.content) &&
-        this.docs.get(liveDoc.key) === liveDoc
-      ) {
-        await this.applyAgentWrite(liveDoc, regions, result.content, false);
-      }
-      return result;
     });
+  }
+
+  /**
+   * Before an agent write reads the room: apply disk changes the room has
+   * not seen yet (a failed or not yet delivered disk sync), as a persist
+   * would, then persist what people typed as their own version.
+   */
+  private async refreshRoomForAgentWrite(liveDoc: LiveDoc): Promise<void> {
+    const { spaceId, docPath } = liveDoc;
+    const requiredDiskSync = this.requiredDiskSyncs.get(liveDoc);
+    if (requiredDiskSync !== undefined) {
+      if (liveDoc.contentGeneration === requiredDiskSync) {
+        await this.syncFromDisk(spaceId, docPath, {
+          ifContentGeneration: requiredDiskSync,
+        });
+      } else {
+        this.requiredDiskSyncs.delete(liveDoc);
+      }
+    }
+    const disk = await readDoc(spaceId, docPath);
+    if (
+      Array.isArray(disk.data) &&
+      disk.storedAs !== "md" &&
+      stableHash(disk.data) !== liveDoc.diskContentHash
+    ) {
+      console.log(
+        `[YjsManager] ${docPath} changed on disk since the room last synced; syncing before an agent write`
+      );
+      await this.syncFromDisk(spaceId, docPath);
+    }
+    if (liveDoc.persistTimer) {
+      clearTimeout(liveDoc.persistTimer);
+      liveDoc.persistTimer = null;
+      await this.persistDoc(liveDoc.key, spaceId, docPath);
+    }
+  }
+
+  /** End a frame hold and apply the frames it held, in order. */
+  private releaseClientFrames(liveDoc: LiveDoc): void {
+    liveDoc.frameHoldCutoff = null;
+    if (workspaceRecoveryRequired()) return;
+    const queued = [...this.pausedClientFrames.entries()].filter(
+      ([, pending]) => pending.liveDoc === liveDoc
+    );
+    for (const [client] of queued) this.pausedClientFrames.delete(client);
+    for (const [client, pending] of queued) {
+      if (this.clientDocs.get(client) !== liveDoc) continue;
+      for (const frame of pending.frames) {
+        try {
+          this.dispatchOrQueueMessage(client, liveDoc, frame);
+        } catch (error) {
+          console.warn(
+            `[YjsManager] closing ${liveDoc.spaceId}/${liveDoc.docPath}: held frame replay failed`,
+            error
+          );
+          this.detachClient(client, {
+            close: true,
+            keepPending: false,
+            scheduleUnload: true,
+          });
+          break;
+        }
+      }
+    }
   }
 
   /**
@@ -1011,6 +1100,7 @@ export class YjsDocManager {
       provenance.source !== "rest-api";
     liveDoc.lastPersistMs = fileStat?.updatedAt ?? Date.now();
     liveDoc.protectedUntilMs = protectedSource ? Date.now() + 15_000 : 0;
+    liveDoc.diskContentHash = stableHash(written);
     try {
       await writeYjsStateFile(
         yjsStatePath(spaceId, docPath),
@@ -1242,6 +1332,7 @@ export class YjsDocManager {
     // derived machine-local state file cannot be refreshed.
     liveDoc.lastPersistMs = fileStat?.updatedAt ?? Date.now();
     liveDoc.protectedUntilMs = protectedSource ? Date.now() + 15_000 : 0;
+    liveDoc.diskContentHash = stableHash(blocks);
     // Disk content just replaced the doc: an earlier edit signal referred to
     // content that is now persisted or superseded, so spend it AND acknowledge
     // it — clearing without the ack would leave the client's replay marker
@@ -2022,18 +2113,7 @@ export class YjsDocManager {
     }
 
     const provenance = await getDocProvenance(spaceId, docPath);
-    // Stale-cache guard: briefly refuse to overwrite a fresh agent/filesystem
-    // version with a reconnecting browser's possibly-stale cached state. Only
-    // applies when no human edit was signaled — a genuine local edit must never
-    // be discarded, and intent gating already attributes it correctly.
     const protectedSource = provenance?.source && !isBrowserSource(provenance.source) && provenance.source !== "rest-api";
-    if (protectedSource && !liveDoc.humanEdited && Date.now() < liveDoc.protectedUntilMs) {
-      console.log(
-        `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${docPath}`
-      );
-      await this.syncFromDisk(spaceId, docPath);
-      return;
-    }
 
     const editor = await getEditor();
     const blocks = editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME);
@@ -2093,6 +2173,7 @@ export class YjsDocManager {
           provenance
         );
         liveDoc.lastPersistMs = fileStat?.updatedAt ?? liveDoc.lastPersistMs;
+        liveDoc.diskContentHash = stableHash(current.data);
         // Belt to replaceContent's synchronous arming: if a no-op persist
         // observes a fresh protected version (e.g. the open-echo of an agent
         // doc), arm the stale-cache window here too — anchored at the file
@@ -2113,6 +2194,18 @@ export class YjsDocManager {
       }
     }
 
+    // Stale-cache guard: briefly refuse to overwrite a fresh agent/filesystem
+    // version with a reconnecting browser's possibly-stale cached state. Only
+    // applies to a genuine content change with no human edit signaled — a
+    // genuine local edit must never be discarded, and a no-op needs no sync.
+    if (protectedSource && !hadIntent && Date.now() < liveDoc.protectedUntilMs) {
+      console.log(
+        `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${docPath}`
+      );
+      await this.syncFromDisk(spaceId, docPath);
+      return;
+    }
+
     // A genuine content change. Attribute it to a human only when a connected
     // client signaled a real local edit (MESSAGE_INTENT) BEFORE this snapshot
     // was exported; otherwise it is machine normalization drift and must not
@@ -2131,6 +2224,7 @@ export class YjsDocManager {
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");
       }
+      liveDoc.diskContentHash = stableHash(writeResult.content ?? blocks);
       // The edit signal is spent by the persist it attributed, and the
       // consumption is acknowledged so clients drop their replay markers. A
       // live client re-asserts on every local edit, so only content that

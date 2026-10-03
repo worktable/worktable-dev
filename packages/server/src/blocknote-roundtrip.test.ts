@@ -687,13 +687,14 @@ describe("exact-text edits keep every block the edit does not touch", () => {
         content: [run("parent")],
         children: [
           { type: "bulletListItem", content: [run("child one")], children: [{ type: "bulletListItem", content: [run("grandchild")] }] },
+          { type: "paragraph", content: [] },
           { type: "bulletListItem", content: [run("child two")] },
         ],
       },
       { type: "bulletListItem", content: [run("solo parent")], children: [{ type: "bulletListItem", content: [run("only child")] }] },
     ])) as any[];
     const promoted = await spliceBlockEdits(nested, [{ oldText: "* parent\n", newText: "" }]);
-    expect(promoted.blocks.slice(0, 2)).toEqual(nested[0].children);
+    expect(promoted.blocks.slice(0, 3)).toEqual(nested[0].children);
     expect(promoted.removedIds).toEqual([nested[0].id]);
     expect(promoted.changed).toMatchObject({ inserted: 0, removed: 1, modified: [] });
     const single = await spliceBlockEdits(nested, [{ oldText: "* solo parent\n", newText: "" }]);

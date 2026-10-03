@@ -101,55 +101,41 @@ export function narrowRegions(
   }))
 }
 
-const MAX_MATCHING_CELLS = 4_000_000
-
 /**
- * Index pairs of identical blocks, in order: shared ends, then the longest
- * common subsequence of the rest when it is small enough to compute.
+ * Index pairs of identical blocks, in order, as many as possible. Identical
+ * blocks share an id, and ids are unique within a document, so each block
+ * has at most one candidate: the longest common subsequence is the longest
+ * increasing run of candidate positions, found in O(n log n).
  */
 function commonBlocks(left: readonly Block[], right: readonly Block[]): Array<readonly [number, number]> {
-  let start = 0
-  while (start < left.length && start < right.length && sameBlock(left[start], right[start])) start++
-  let end = 0
-  while (
-    end < left.length - start &&
-    end < right.length - start &&
-    sameBlock(left[left.length - 1 - end], right[right.length - 1 - end])
-  ) {
-    end++
-  }
+  const rightIndex = new Map<string, number>()
+  right.forEach((block, index) => {
+    if (typeof block?.id === "string" && !rightIndex.has(block.id)) rightIndex.set(block.id, index)
+  })
+  const candidates: Array<readonly [number, number]> = []
+  left.forEach((block, index) => {
+    const match = typeof block?.id === "string" ? rightIndex.get(block.id) : undefined
+    if (match !== undefined && sameBlock(block, right[match])) candidates.push([index, match])
+  })
+  // Patience sorting over right positions, remembering predecessors.
+  const tails: number[] = []
+  const previous: number[] = []
+  candidates.forEach(([, position], index) => {
+    let low = 0
+    let high = tails.length
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (candidates[tails[mid]!]![1] < position) low = mid + 1
+      else high = mid
+    }
+    previous[index] = low > 0 ? tails[low - 1]! : -1
+    tails[low] = index
+  })
   const pairs: Array<readonly [number, number]> = []
-  for (let index = 0; index < start; index++) pairs.push([index, index])
-  const a = left.slice(start, left.length - end)
-  const b = right.slice(start, right.length - end)
-  if (a.length > 0 && b.length > 0 && a.length * b.length <= MAX_MATCHING_CELLS) {
-    const width = b.length + 1
-    const table = new Uint32Array((a.length + 1) * width)
-    for (let i = a.length - 1; i >= 0; i--) {
-      for (let j = b.length - 1; j >= 0; j--) {
-        table[i * width + j] = sameBlock(a[i], b[j])
-          ? table[(i + 1) * width + j + 1]! + 1
-          : Math.max(table[(i + 1) * width + j]!, table[i * width + j + 1]!)
-      }
-    }
-    let i = 0
-    let j = 0
-    while (i < a.length && j < b.length) {
-      if (sameBlock(a[i], b[j])) {
-        pairs.push([start + i, start + j])
-        i++
-        j++
-      } else if (table[(i + 1) * width + j]! >= table[i * width + j + 1]!) {
-        i++
-      } else {
-        j++
-      }
-    }
+  for (let index = tails.at(-1) ?? -1; index !== -1; index = previous[index]!) {
+    pairs.push(candidates[index]!)
   }
-  for (let index = 0; index < end; index++) {
-    pairs.push([left.length - end + index, right.length - end + index])
-  }
-  return pairs
+  return pairs.reverse()
 }
 
 /** One splice of the current top-level blocks. */

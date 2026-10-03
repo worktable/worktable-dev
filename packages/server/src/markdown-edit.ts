@@ -1597,13 +1597,14 @@ function removeBlock(block: Block, key: string, context: SpliceContext): void {
  * with the block they are an edit of, the rest are removed or inserted.
  * Invisible stored blocks (empty paragraphs) stay where they were.
  */
-async function spliceParsed(stored: Block[], parsed: Block[], context: SpliceContext): Promise<Block[]> {
-  await primeOwnMarkdown([...stored, ...parsed])
+async function spliceParsed(storedBlocks: Block[], parsed: Block[], context: SpliceContext): Promise<Block[]> {
+  await primeOwnMarkdown([...storedBlocks, ...parsed])
+  const parsedKeys = await Promise.all(parsed.map(async (block) => (await standaloneMarkdown(block)).full))
+  const stored = await promoteChildren(storedBlocks, parsedKeys)
   const visibleStored = stored
     .map((block, index) => ({ block, index }))
     .filter(({ block }) => isVisible(block))
   const storedKeys = await Promise.all(visibleStored.map(async ({ block }) => (await standaloneMarkdown(block)).full))
-  const parsedKeys = await Promise.all(parsed.map(async (block) => (await standaloneMarkdown(block)).full))
   const anchors = lcs(storedKeys, parsedKeys, (a, b) => a === b)
 
   const output: Block[] = []
@@ -1655,43 +1656,35 @@ function containsRun(keys: readonly string[], run: readonly string[]): boolean {
 }
 
 /**
- * Split a changed block whose nested blocks reappear, unchanged and in order,
- * among the parsed blocks into its own text and those nested blocks: its own
- * line was removed or its nested blocks were outdented. The nested blocks
- * then pair with themselves and keep their ids.
+ * Split a stored block whose nested blocks reappear, unchanged and in order,
+ * among the parsed blocks into its own text and all its nested blocks: its
+ * own line was removed or its nested blocks were outdented. The nested
+ * blocks then match themselves and keep their ids; empty ones stay in place.
  */
-async function promoteChildren(
-  stored: Block[],
-  storedKeys: string[],
-  parsedKeys: string[]
-): Promise<{ stored: Block[]; storedKeys: string[] }> {
+async function promoteChildren(stored: Block[], parsedKeys: string[]): Promise<Block[]> {
   const blocks: Block[] = []
-  const keys: string[] = []
-  for (const [index, block] of stored.entries()) {
-    const children: Block[] = Array.isArray(block.children) ? block.children.filter(isVisible) : []
-    if (children.length > 0) {
-      const childKeys = await Promise.all(children.map(async (child) => (await standaloneMarkdown(child)).full))
+  for (const block of stored) {
+    const children: Block[] = Array.isArray(block.children) ? block.children : []
+    const visible = children.filter(isVisible)
+    if (visible.length > 0) {
+      const childKeys = await Promise.all(visible.map(async (child) => (await standaloneMarkdown(child)).full))
       if (containsRun(parsedKeys, childKeys)) {
-        const own = { ...block, children: [] }
-        blocks.push(own, ...children)
-        keys.push((await standaloneMarkdown(own)).full, ...childKeys)
+        blocks.push({ ...block, children: [] }, ...children)
         continue
       }
     }
     blocks.push(block)
-    keys.push(storedKeys[index]!)
   }
-  return { stored: blocks, storedKeys: keys }
+  return blocks
 }
 
 async function spliceChanged(
-  storedBlocks: Block[],
-  storedBlockKeys: string[],
+  stored: Block[],
+  storedKeys: string[],
   parsed: Block[],
   parsedKeys: string[],
   context: SpliceContext
 ): Promise<Block[]> {
-  const { stored, storedKeys } = await promoteChildren(storedBlocks, storedBlockKeys, parsedKeys)
   if (stored.length === 0) return insertBlocks(parsed, context, parsedKeys)
   if (parsed.length === 0) {
     stored.forEach((block, index) => removeBlock(block, storedKeys[index]!, context))

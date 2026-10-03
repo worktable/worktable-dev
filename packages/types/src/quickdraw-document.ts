@@ -149,6 +149,10 @@ export const QuickdrawDocumentSchema = z
     type: z.literal(QUICKDRAW_FORMAT),
     version: z.literal(1),
     title: z.string().trim().min(1).max(200),
+    // Older drawings predate saved backdrops and open with the original dots.
+    grid: z
+      .enum(["none", "lines", "ruled", "dots", "crosses", "iso"])
+      .optional(),
     snapshot: z
       .object({
         document: z

@@ -283,6 +283,7 @@ function DrawingEditor({
           )
         }
         drawing = saved
+        instance.editor.setGrid(saved.grid ?? "dots")
         revision = result.sourceRevision
         conflict = false
         setConflictError(false)
@@ -360,8 +361,9 @@ function DrawingEditor({
           }
         } else clearDraft()
         instance.editor.store.loadSnapshot(drawing.snapshot)
+        instance.editor.setGrid(drawing.grid ?? "dots")
         instance.ui.setHidden(false)
-        instance.editor.setTool("draw")
+        instance.editor.setTool("select")
         instance.editor.fitContent()
         setTitle(drawing.title)
       } catch (cause) {
@@ -443,15 +445,27 @@ function DrawingEditor({
         if (dirty.current) throw new DrawingUnsavedError()
       }
     )
-    const unsubscribe = instance.editor.store.listen(
-      () => {
-        dirty.current = true
-        change += 1
-        setStatus("Unsaved changes")
-        scheduleSave()
-      },
-      { source: "user" }
-    )
+    const markChanged = () => {
+      dirty.current = true
+      change += 1
+      setStatus("Unsaved changes")
+      scheduleSave()
+    }
+    const unsubscribe = instance.editor.store.listen(markChanged, {
+      source: "user",
+    })
+    // Backdrops are editor state, outside the store's shape/asset snapshot.
+    // Restoring the saved grid must not turn a load or remote refresh into an edit.
+    const unsubscribeGrid = instance.editor.on("grid", () => {
+      if (
+        loading ||
+        !drawing ||
+        instance.editor.grid === (drawing.grid ?? "dots")
+      )
+        return
+      drawing = { ...drawing, grid: instance.editor.grid }
+      markChanged()
+    })
     const unsubscribeEvents = subscribe((message) => {
       if (
         message.type === "subscribed" ||
@@ -516,6 +530,7 @@ function DrawingEditor({
       disposed = true
       clearTimeout(timer)
       unsubscribe()
+      unsubscribeGrid()
       unregisterSave()
       unsubscribeEvents()
       unsubscribeEditing()

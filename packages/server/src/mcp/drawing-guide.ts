@@ -1,7 +1,7 @@
 /** Kept with the tool implementation so examples use the same public contract. */
 export const DRAWING_GUIDE = `Drawings are ordinary Worktable documents with a visual editing surface.
 
-Find: worktable_documents_read action list lists every format; drawing format id is worktable.quickdraw. Use the returned extensionless path. Search finds titles and typed labels, not the meaning of freehand strokes. Shared worktable_documents_write handles move, archive, restore, checkpoint and restore_version; worktable_delete action document deletes a whole drawing. Raw read_source/replace remain available for exact source round trips.
+Find: worktable_documents_read action list lists every format; drawing format id is worktable.quickdraw. Use the returned extensionless path. Search finds titles and typed labels, not the meaning of freehand strokes. Shared worktable_documents_write handles move, archive, restore, checkpoint and restore_version; worktable_delete action document deletes a whole drawing. Raw read_source/replace remain available for exact source round trips; preserve the full envelope, including its optional grid background, as well as existing records. Read worktable_guidance action="format_spec" for the raw format contract.
 
 General preview: worktable_documents_read action render accepts spaceId, path, optional expectedRevision and preview {theme,width}. HTML uses the same generic action with optional viewport height, fullPage, CSS-pixel clip and timeoutMs. PNG bytes arrive as image content, not a URL or base64 text.
 

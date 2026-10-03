@@ -202,6 +202,7 @@ describe("drawing agent workflows", () => {
     // A browser may save an unrelated edit while its font metrics differ.
     // The attachment and free endpoint still express the same authored intent.
     const browserSource = structuredClone(human.drawing)
+    browserSource.grid = "none"
     const cachedArrow = browserSource.snapshot.document.store[arrowId]!
     if (cachedArrow.typeName !== "shape" || cachedArrow.type !== "arrow")
       throw new Error("Expected connector")
@@ -222,6 +223,7 @@ describe("drawing agent workflows", () => {
       changeId: edited.changeId,
     })
     if (!("changeId" in undone)) throw new Error("Expected undo")
+    expect(undone.drawing.grid).toBe("none")
     expect(JSON.stringify(undone.drawing)).toContain("Payments API")
     expect(JSON.stringify(undone.drawing)).toContain("Retry on timeout")
     const redone = await write({
@@ -232,6 +234,7 @@ describe("drawing agent workflows", () => {
       changeId: undone.changeId,
     })
     expect(JSON.stringify(redone.drawing)).toContain("Retry after 10 seconds")
+    expect(redone.drawing.grid).toBe("none")
     const retry = await write({
       ...edit,
       operations: [...edit.operations],

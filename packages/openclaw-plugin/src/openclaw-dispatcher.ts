@@ -19,6 +19,22 @@ import type {
 export const WORKTABLE_COLLABORATION_PROMPT =
   "Worktable collaboration rules: Treat inspection, research, review, and discussion as read-only unless the message explicitly asks for edits. Make only requested changes. After changing Worktable content, name every changed Worktable path in the reply and use portable Worktable links."
 
+// OpenClaw remembers inbound message IDs in process memory, including turns
+// that were interrupted. A Worktable message dispatched again by this process
+// gets a new ID so OpenClaw runs it instead of skipping it as a duplicate.
+const MAX_UNFINISHED_DISPATCHES = 1_000
+const unfinishedDispatches = new Map<string, number>()
+
+function dispatchMessageId(eventId: string): string {
+  const previous = unfinishedDispatches.get(eventId) ?? 0
+  unfinishedDispatches.delete(eventId)
+  unfinishedDispatches.set(eventId, previous + 1)
+  if (unfinishedDispatches.size > MAX_UNFINISHED_DISPATCHES) {
+    unfinishedDispatches.delete(unfinishedDispatches.keys().next().value!)
+  }
+  return previous === 0 ? eventId : `${eventId}/retry-${previous}`
+}
+
 function visibleText(payload: ReplyPayload): string {
   if (
     payload.isReasoning ||
@@ -63,6 +79,7 @@ export class OpenClawAgentDispatcher implements AgentDispatcher {
       conversationId
     )
     const eventId = `${conversationId}/${input.messageId}`
+    const messageId = dispatchMessageId(eventId)
     const storePath = core.channel.session.resolveStorePath(
       this.#cfg.session?.store,
       { agentId }
@@ -80,7 +97,7 @@ export class OpenClawAgentDispatcher implements AgentDispatcher {
       SessionKey: sessionKey,
       AgentId: agentId,
       AccountId: input.accountId,
-      MessageSid: eventId,
+      MessageSid: messageId,
       SenderId: input.sender.id,
       SenderName: input.sender.name,
       Provider: "worktable",
@@ -100,7 +117,7 @@ export class OpenClawAgentDispatcher implements AgentDispatcher {
     })
 
     await callbacks.onWorking()
-    await core.channel.inbound.dispatchReply({
+    const result = await core.channel.inbound.dispatchReply({
       cfg: this.#cfg,
       channel: "worktable",
       accountId: input.accountId,
@@ -135,9 +152,22 @@ export class OpenClawAgentDispatcher implements AgentDispatcher {
         abortSignal: signal,
       },
       record: {},
-      messageId: eventId,
+      messageId,
     })
 
+    // OpenClaw resolves an interrupted or unadmitted turn without an error.
+    // Neither is a completed reply, so the caller must be able to retry it.
+    if (signal?.aborted) {
+      throw Object.assign(new Error("The OpenClaw turn was interrupted"), {
+        code: "OPENCLAW_TURN_INTERRUPTED",
+      })
+    }
+    if (!result.dispatched) {
+      throw Object.assign(new Error("OpenClaw did not run this turn"), {
+        code: "OPENCLAW_TURN_NOT_DISPATCHED",
+      })
+    }
+    unfinishedDispatches.delete(eventId)
     return parts.join("\n\n").trim()
   }
 }

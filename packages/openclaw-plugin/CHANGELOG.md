@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.14
+
+- Keep an agent's reply when Worktable is briefly unavailable or restarts during a turn, and post it once Worktable is back.
+- Retry an interrupted turn instead of reporting it as complete.
+
 ## 0.0.13
 
 - Include the Worktable skills with the plugin so OpenClaw agents receive the matching workflow guidance automatically.

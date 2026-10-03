@@ -98,6 +98,10 @@ export interface AgentDispatchCallbacks {
 }
 
 export interface AgentDispatcher {
+  /**
+   * Resolves with the visible reply, or "" when a completed turn produced none.
+   * Rejects when the turn was interrupted or did not run.
+   */
   dispatch(
     input: AgentDispatchInput,
     callbacks: AgentDispatchCallbacks,

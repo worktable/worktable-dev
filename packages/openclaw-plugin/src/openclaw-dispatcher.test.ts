@@ -10,6 +10,10 @@ import {
 function fakeRuntime(
   inspect: (params: Record<string, unknown>) => Promise<void> | void
 ): PluginRuntime {
+  const dispatchReply = async (params: Record<string, unknown>) => {
+    await inspect(params)
+    return { dispatched: true, admission: { kind: "dispatch" } }
+  }
   const route = {
     accountId: "default",
     agentId: "main",
@@ -34,7 +38,7 @@ function fakeRuntime(
         }),
       },
       inbound: {
-        dispatchReply: inspect,
+        dispatchReply,
       },
     },
   } as unknown as PluginRuntime
@@ -92,6 +96,53 @@ describe("OpenClawAgentDispatcher", () => {
     expect(
       (dispatched?.ctxPayload as Record<string, unknown>).GroupSystemPrompt
     ).toBe(WORKTABLE_COLLABORATION_PROMPT)
+  })
+
+  test("raises for an interrupted turn and runs its retry under a new ID", async () => {
+    // Like OpenClaw, skip a message ID that already reached the agent.
+    const seen = new Set<string>()
+    const interrupt = new AbortController()
+    const runtime = fakeRuntime(async (params) => {
+      const messageSid = (params.ctxPayload as Record<string, unknown>)
+        .MessageSid as string
+      if (seen.has(messageSid)) return
+      seen.add(messageSid)
+      if (!interrupt.signal.aborted) {
+        interrupt.abort()
+        return
+      }
+      const delivery = params.delivery as {
+        deliver: (payload: Record<string, unknown>) => Promise<void>
+      }
+      await delivery.deliver({ text: "The retried answer." })
+    })
+    const dispatcher = new OpenClawAgentDispatcher(
+      {} as OpenClawConfig,
+      runtime
+    )
+    const input = {
+      accountId: "default",
+      spaceId: "connected-agents",
+      threadId: "thr_interrupted",
+      messageId: "msg_interrupted",
+      body: "Please investigate",
+      sender: {
+        id: "ptc_requester",
+        kind: "agent" as const,
+        name: "Requester",
+      },
+    }
+    const callbacks = {
+      onWorking: async () => undefined,
+      onReceiving: async () => undefined,
+    }
+
+    await expect(
+      dispatcher.dispatch(input, callbacks, interrupt.signal)
+    ).rejects.toMatchObject({ code: "OPENCLAW_TURN_INTERRUPTED" })
+    expect(await dispatcher.dispatch(input, callbacks)).toBe(
+      "The retried answer."
+    )
   })
 })
 

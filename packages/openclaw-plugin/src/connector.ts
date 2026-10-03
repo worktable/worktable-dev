@@ -8,7 +8,6 @@ import type {
 } from "./types.js"
 
 const HEARTBEAT_MS = 15_000
-const MAX_CONSECUTIVE_HEARTBEAT_FAILURES = 3
 const MAX_CONCURRENT_TURNS = 4
 const DEFAULT_SHUTDOWN_DRAIN_MS = 5_000
 
@@ -51,7 +50,8 @@ async function claimSettledDelivery(
   while (true) {
     const claim = await dedupe.claim(eventId, { namespace })
     if (claim.kind !== "inflight") return claim
-    if (await claim.pending) return { kind: "duplicate" }
+    // OpenClaw rejects the pending claim when the other attempt releases it.
+    if (await claim.pending.catch(() => false)) return { kind: "duplicate" }
   }
 }
 
@@ -81,6 +81,12 @@ function localStateFailure(error: unknown): boolean {
 function safeErrorMessage(error: unknown): string {
   const code = errorCode(error)
   return `OpenClaw could not complete this message (${code}).`
+}
+
+function channelStoppedError(): Error {
+  return Object.assign(new Error("Worktable channel stopped"), {
+    code: "CHANNEL_STOPPED",
+  })
 }
 
 function deliveryLocation(
@@ -529,25 +535,13 @@ export class WorktableConnector {
     const location = deliveryLocation(delivery)
     const conversationId = deliveryConversationId(delivery)
     const eventId = deliveryEventId(delivery)
-    const claim = await claimSettledDelivery(this.#dedupe, eventId, namespace)
-    if (claim.kind === "duplicate") {
-      await this.#replyOutbox.delete(eventId).catch((error) => {
-        stopOnLocalFailure?.(error)
-      })
-      await this.#client.fail(
-        delivery.messageId,
-        delivery.leaseId,
-        false,
-        "DUPLICATE_EVENT",
-        "This message was already completed by OpenClaw."
-      )
-      return
-    }
 
     let heartbeat: ReturnType<typeof setInterval> | undefined
     let heartbeatRunning = false
-    let heartbeatFailures = 0
-    let leaseFailure: unknown
+    // Set when Worktable reports that this lease expired. The turn still
+    // finishes; its retained reply is posted when the message is claimed again.
+    let lostLease: unknown
+    let claimed = false
     const turnAbort = new AbortController()
     const abortTurn = () => turnAbort.abort(signal?.reason)
     signal?.addEventListener("abort", abortTurn, { once: true })
@@ -569,7 +563,6 @@ export class WorktableConnector {
         progressPhase,
         receivedCharacters
       )
-      heartbeatFailures = 0
     }
     const stopHeartbeat = () => {
       if (heartbeat) {
@@ -577,32 +570,35 @@ export class WorktableConnector {
         heartbeat = undefined
       }
     }
+    // Renewal failures never cancel the turn: Worktable may be briefly
+    // unreachable, for example while it restarts.
+    const renewLease = async (
+      phase: "working" | "receiving" = progressPhase,
+      characters = receivedCharacters
+    ) => {
+      if (lostLease) return
+      try {
+        await reportProgress(phase, characters)
+      } catch (error) {
+        const code = errorCode(error)
+        if (code !== "LEASE_LOST") {
+          this.#logger.warn?.(
+            `Worktable heartbeat failed for ${delivery.messageId} (${code}); the turn continues`
+          )
+          return
+        }
+        lostLease = error
+        stopHeartbeat()
+        this.#logger.warn?.(
+          `Worktable lease for ${delivery.messageId} expired; its reply will be posted when the message is claimed again`
+        )
+      }
+    }
     const heartbeatTick = async () => {
       if (heartbeatRunning || turnAbort.signal.aborted) return
       heartbeatRunning = true
       try {
-        await reportProgress(progressPhase, receivedCharacters)
-      } catch (error) {
-        heartbeatFailures += 1
-        const code = errorCode(error)
-        this.#logger.warn?.(
-          `Worktable heartbeat failed for ${delivery.messageId} (${code}); attempt ${heartbeatFailures}/${MAX_CONSECUTIVE_HEARTBEAT_FAILURES}`
-        )
-        if (
-          code === "LEASE_LOST" ||
-          heartbeatFailures >= MAX_CONSECUTIVE_HEARTBEAT_FAILURES
-        ) {
-          leaseFailure =
-            code === "LEASE_LOST"
-              ? error
-              : Object.assign(
-                  new Error(
-                    "Worktable lease heartbeat failed repeatedly; cancelling the active agent turn."
-                  ),
-                  { code: "LEASE_HEARTBEAT_FAILED" }
-                )
-          turnAbort.abort(leaseFailure)
-        }
+        await renewLease()
       } finally {
         heartbeatRunning = false
       }
@@ -612,6 +608,25 @@ export class WorktableConnector {
       await reportProgress("working")
       heartbeat = this.#startHeartbeat(heartbeatTick, this.#heartbeatMs)
       turnAbort.signal.addEventListener("abort", stopHeartbeat, { once: true })
+      // An earlier lease for this message may still be finishing its turn in
+      // this process. Keep this lease alive while waiting for its outcome.
+      const claim = await claimSettledDelivery(this.#dedupe, eventId, namespace)
+      if (claim.kind === "duplicate") {
+        await this.#replyOutbox.delete(eventId).catch((error) => {
+          stopOnLocalFailure?.(error)
+        })
+        await this.#client
+          .fail(
+            delivery.messageId,
+            delivery.leaseId,
+            false,
+            "DUPLICATE_EVENT",
+            "This message was already completed by OpenClaw."
+          )
+          .catch(() => undefined)
+        return
+      }
+      claimed = true
       await this.#withThreadTurn(conversationId, turnAbort.signal, async () => {
         let retained = await this.#replyOutbox.get(eventId)
         if (retained) retained = upgradeRetainedReply(delivery, retained)
@@ -657,13 +672,14 @@ export class WorktableConnector {
               sender,
             },
             {
-              onWorking: () =>
-                reportProgress(progressPhase, receivedCharacters),
-              onReceiving: (characters) =>
-                reportProgress("receiving", characters),
+              onWorking: () => renewLease(),
+              onReceiving: (characters) => renewLease("receiving", characters),
             },
             turnAbort.signal
           )
+          // OpenClaw returns normally from an interrupted turn. Its output is
+          // incomplete, so the message must be retried rather than finalized.
+          if (turnAbort.signal.aborted) throw channelStoppedError()
           if (!reply.trim()) {
             terminalAfterDispatch = true
             throw Object.assign(new Error("OpenClaw returned an empty reply"), {
@@ -691,14 +707,8 @@ export class WorktableConnector {
             throw error
           }
         }
-        if (turnAbort.signal.aborted) {
-          throw (
-            leaseFailure ??
-            Object.assign(new Error("Worktable channel stopped"), {
-              code: "CHANNEL_STOPPED",
-            })
-          )
-        }
+        if (turnAbort.signal.aborted) throw channelStoppedError()
+        if (lostLease) throw lostLease
         await this.#client.reply({
           ...retained,
           ...(delivery.thread.version === 3
@@ -759,10 +769,16 @@ export class WorktableConnector {
           .catch(() => undefined)
         return
       }
-      this.#dedupe.release(eventId, { namespace, error })
+      if (claimed) this.#dedupe.release(eventId, { namespace, error })
       if (signal?.aborted) {
         this.#logger.info?.(
           `Stopped Worktable message ${delivery.messageId}; its lease will recover`
+        )
+        return
+      }
+      if (lostLease) {
+        this.#logger.info?.(
+          `Worktable message ${delivery.messageId} will continue under its next lease (${errorCode(error)})`
         )
         return
       }
@@ -801,19 +817,10 @@ export class WorktableConnector {
     let cancelWait: (() => void) | undefined
     const aborted = new Promise<void>((_, reject) => {
       if (signal.aborted) {
-        reject(
-          Object.assign(new Error("Worktable channel stopped"), {
-            code: "CHANNEL_STOPPED",
-          })
-        )
+        reject(channelStoppedError())
         return
       }
-      cancelWait = () =>
-        reject(
-          Object.assign(new Error("Worktable channel stopped"), {
-            code: "CHANNEL_STOPPED",
-          })
-        )
+      cancelWait = () => reject(channelStoppedError())
       signal.addEventListener("abort", cancelWait, { once: true })
     })
 

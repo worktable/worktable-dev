@@ -42,6 +42,19 @@ describe("unified line diffs", () => {
     expect(diff("", "x\n").unified).toBe("--- a\n+++ b\n@@ -0,0 +1 @@\n+x\n")
   })
 
+  it("reports a change to only the final newline", () => {
+    expect(diff("a\nb\n", "a\nb")).toEqual({
+      unified: "--- a\n+++ b\n@@ -1,2 +1,2 @@\n a\n-b\n+b\n\\ No newline at end of file\n",
+      added: 1,
+      removed: 1,
+      truncated: false,
+    })
+    expect(diff("a\nb", "a\nb\nc").unified).toBe(
+      "--- a\n+++ b\n@@ -1,2 +1,3 @@\n a\n-b\n\\ No newline at end of file\n+b\n+c\n\\ No newline at end of file\n"
+    )
+    expect(diff("a\nb", "a\nb").added).toBe(0)
+  })
+
   it("stays correct past the minimal-edit bound and truncates at a line", () => {
     const before = Array.from({ length: 3000 }, (_, i) => `old ${i}\n`).join("")
     const changedEvery = (step: number) =>
@@ -60,5 +73,11 @@ describe("unified line diffs", () => {
     expect(shortened.unified.endsWith("\n")).toBe(true)
     expect(Buffer.byteLength(shortened.unified)).toBeLessThanOrEqual(1024)
     expect([shortened.added, shortened.removed]).toEqual([full.added, full.removed])
+
+    // One contiguous hunk far larger than the output limit.
+    const huge = Array.from({ length: 400_000 }, (_, i) => `${i}\n`).join("")
+    const removedAll = diff(huge, "", 3, 64 * 1024)
+    expect(removedAll).toMatchObject({ added: 0, removed: 400_000, truncated: true })
+    expect(Buffer.byteLength(removedAll.unified)).toBeLessThanOrEqual(64 * 1024)
   })
 })

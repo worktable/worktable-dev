@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { SpaceFile } from "@worktable/types"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createWorktableMcpServer } from "./mcp/server.ts"
@@ -80,7 +80,7 @@ beforeEach(async () => {
   ensureWorkspaceManifest()
   invalidateSearchIndex()
   await writeSpace(space())
-  const server = createWorktableMcpServer({ version: "test", scopes: ["documents:read", "docs:read", "docs:write", "widgets:write"] })
+  const server = createWorktableMcpServer({ version: "test", scopes: ["documents:read", "documents:write", "docs:read", "docs:write", "widgets:write"] })
   client = new Client({ name: "diff-test", version: "1" })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
@@ -207,5 +207,68 @@ describe("document diffs over MCP", () => {
     const drawing = await diff({ path: "sketch", from: oldest })
     expect(drawing.ok).toBe(false)
     expect(drawing.text).toContain("no text projection")
+  })
+
+  it("resolves revisions read before a move and a Doc storage change", async () => {
+    const write = (docPath: string, content: unknown, extra: Record<string, unknown> = {}) =>
+      tool("worktable_docs_write", { action: "write", spaceId, docPath, content, ...extra })
+    await write("drafts/plan", "# Plan\n\nAlpha\n", { lifetime: "durable" })
+    const readBeforeMove = await tool("worktable_documents_read", {
+      action: "read_source",
+      spaceId,
+      path: "drafts/plan",
+    })
+    const moved = await tool("worktable_documents_write", {
+      action: "move",
+      spaceId,
+      path: "drafts/plan",
+      to: "plans/plan",
+    })
+    expect(moved.ok).toBe(true)
+    // A table moves the Doc from Markdown to rich-text storage.
+    await write("plans/plan", [
+      { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Plan", styles: {} }], children: [] },
+      { type: "table", content: { type: "tableContent", rows: [{ cells: [[{ type: "text", text: "Owner", styles: {} }]] }] }, children: [] },
+      paragraph("Omega"),
+    ])
+
+    const changed = await diff({ path: "plans/plan", from: readBeforeMove.data["sourceRevision"] })
+    expect(changed.ok).toBe(true)
+    expect(changed.data["unified"]).toContain("-Alpha")
+    expect(changed.data["unified"]).toContain("+Omega")
+  })
+
+  it("resolves revisions from stored source alone and reports unknown ones", async () => {
+    await tool("worktable_html_write", {
+      action: "create",
+      lifetime: "durable",
+      spaceId,
+      id: "status",
+      name: "Status",
+      html: "<p>Open</p>\n",
+    })
+    const lastRead = (
+      await tool("worktable_documents_read", { action: "read_source", spaceId, path: "status" })
+    ).data["sourceRevision"] as string
+    await tool("worktable_html_write", { action: "update", spaceId, htmlId: "status", html: "<p>Closed</p>\n" })
+
+    // Revision lookup reads only each version's source, never its companions.
+    const documents = join(root, "versions", spaceId, "documents")
+    let removed = 0
+    for (const documentId of await readdir(documents)) {
+      for (const generation of await readdir(join(documents, documentId))) {
+        const directory = join(documents, documentId, generation)
+        if (!(await readdir(directory)).includes("companions")) continue
+        await rm(join(directory, "companions"), { recursive: true })
+        removed += 1
+      }
+    }
+    expect(removed).toBeGreaterThan(1)
+    const changed = await diff({ path: "status", from: lastRead })
+    expect(changed.data).toMatchObject({ stats: { added: 1, removed: 1 } })
+
+    const mistyped = await diff({ path: "status", from: `${lastRead}x` })
+    expect(mistyped.ok).toBe(false)
+    expect(mistyped.text).toContain("Use action versions")
   })
 })

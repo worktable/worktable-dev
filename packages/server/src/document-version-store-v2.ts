@@ -864,6 +864,56 @@ export async function commitDocumentAgentMutationV2(input: {
   })
 }
 
+/** Read one generation's manifest without loading any of its payload. */
+export async function readDocumentGenerationManifestV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  generationId: string
+}): Promise<DocumentGenerationManifestV2 | null> {
+  const root = documentGenerationV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId,
+    input.generationId
+  )
+  if (!(await pathExists(root))) return null
+  await requireRealDocumentStorageDirectory(input.workspaceRoot, root)
+  const manifest = await readGenerationManifestAt(root)
+  if (
+    manifest.id !== input.generationId ||
+    manifest.spaceId !== input.spaceId ||
+    manifest.documentId !== input.documentId
+  ) {
+    throw new Error("document generation identity mismatch")
+  }
+  return manifest
+}
+
+/**
+ * Read and verify one authored source entry of a listed generation, skipping
+ * its companions. Returns null when the entry is absent or exceeds maxBytes.
+ */
+export async function readDocumentGenerationSourceEntryV2(input: {
+  workspaceRoot: string
+  manifest: DocumentGenerationManifestV2
+  entryPath: string
+  maxBytes: number
+}): Promise<Uint8Array | null> {
+  const entry = input.manifest.authoredSource.entries.find(
+    (candidate) => candidate.path === input.entryPath
+  )
+  if (!entry || entry.bytes > input.maxBytes) return null
+  const root = documentGenerationV2Directory(
+    input.workspaceRoot,
+    input.manifest.spaceId,
+    input.manifest.documentId,
+    input.manifest.id
+  )
+  await requireRealDocumentStorageDirectory(input.workspaceRoot, root)
+  return (await readEntry(join(root, "source"), entry)).bytes
+}
+
 export async function readDocumentGenerationV2(input: {
   workspaceRoot: string
   spaceId: string

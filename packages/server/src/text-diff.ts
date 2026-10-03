@@ -20,10 +20,16 @@ export interface UnifiedLineDiff {
   truncated: boolean
 }
 
+// Split lines never contain "\n", so a trailing one marks a final line that
+// lacks its newline: it then differs from the same line with one, and renders
+// with the standard "\ No newline at end of file" marker.
+const NO_NEWLINE = "\n"
+
 function splitLines(text: string): string[] {
   if (text.length === 0) return []
   const lines = text.split("\n")
   if (lines.at(-1) === "") lines.pop()
+  else lines[lines.length - 1] += NO_NEWLINE
   return lines
 }
 
@@ -160,7 +166,21 @@ export function unifiedLineDiff(input: {
     return { unified: "", added, removed, truncated: false }
   }
 
-  const lines = [`--- ${input.fromLabel}`, `+++ ${input.toLabel}`]
+  // Append line by line so output stops at the byte limit without first
+  // materializing (or spreading) a hunk of any size.
+  let unified = ""
+  let bytes = 0
+  const emit = (line: string): boolean => {
+    const size = Buffer.byteLength(line) + 1
+    if (bytes + size > input.maxBytes) return false
+    unified += `${line}\n`
+    bytes += size
+    return true
+  }
+  const truncated = { unified: "", added, removed, truncated: true }
+  if (!emit(`--- ${input.fromLabel}`) || !emit(`+++ ${input.toLabel}`)) {
+    return truncated
+  }
   let index = 0
   let oldLine = 1
   let newLine = 1
@@ -179,31 +199,30 @@ export function unifiedLineDiff(input: {
       end += 1
     }
     end = Math.min(ops.length, lastChange + input.context + 1)
-    for (let skip = index; skip < start; skip += 1) {
-      oldLine += 1
-      newLine += 1
+    oldLine += start - index
+    newLine += start - index
+    let oldCount = 0
+    let newCount = 0
+    for (let at = start; at < end; at += 1) {
+      if (ops[at]!.kind !== "+") oldCount += 1
+      if (ops[at]!.kind !== "-") newCount += 1
     }
-    const hunk = ops.slice(start, end)
-    const oldCount = hunk.filter((op) => op.kind !== "+").length
-    const newCount = hunk.filter((op) => op.kind !== "-").length
-    lines.push(
-      `@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`,
-      ...hunk.map((op) => `${op.kind}${op.line}`)
-    )
+    if (!emit(`@@ -${range(oldLine, oldCount)} +${range(newLine, newCount)} @@`)) {
+      return { ...truncated, unified }
+    }
+    for (let at = start; at < end; at += 1) {
+      const { kind, line } = ops[at]!
+      const complete = !line.endsWith(NO_NEWLINE)
+      if (
+        !emit(`${kind}${complete ? line : line.slice(0, -NO_NEWLINE.length)}`) ||
+        (!complete && !emit("\\ No newline at end of file"))
+      ) {
+        return { ...truncated, unified }
+      }
+    }
     oldLine += oldCount
     newLine += newCount
     index = end
-  }
-
-  let unified = ""
-  let bytes = 0
-  for (const line of lines) {
-    const size = Buffer.byteLength(line) + 1
-    if (bytes + size > input.maxBytes) {
-      return { unified, added, removed, truncated: true }
-    }
-    unified += `${line}\n`
-    bytes += size
   }
   return { unified, added, removed, truncated: false }
 }

@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
-import { DocumentGenerationIdSchema } from "@worktable/types"
+import {
+  DocumentGenerationIdSchema,
+  type DocumentFormatClaim,
+  type DocumentGenerationManifestV2,
+  type DocumentSource,
+} from "@worktable/types"
 import { useResolvedDocumentHandle, type ResolvedDocumentHandle } from "./document-query.ts"
-import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
+import {
+  BUILTIN_DOCUMENT_FORMATS,
+  createBuiltinDocumentFormatRegistry,
+} from "./document-format-registry.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
 import {
   listDocumentGenerationsV2,
   readCompatibleDocumentVersionV2,
-  readDocumentGenerationV2,
-  type ReadDocumentGenerationV2Result,
+  readDocumentGenerationManifestV2,
+  readDocumentGenerationSourceEntryV2,
 } from "./document-version-store-v2.ts"
 import { registeredDocumentSourceRevision } from "./document-write-service.ts"
 import { blocksToMarkdownSafe } from "./markdown.ts"
@@ -29,6 +37,11 @@ import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 const DIFF_MAX_OUTPUT_BYTES = 64 * 1024
 const DIFF_MAX_SOURCE_BYTES = 8 * 1024 * 1024
 const DIFF_SOURCE_TIMEOUT_MS = 30_000
+// Resolving a revision hashes stored states newest first; stop at whichever
+// bound comes first and report the revision as not found.
+const LOOKUP_MAX_VERSIONS = 200
+const LOOKUP_MAX_BYTES = 64 * 1024 * 1024
+const LOOKUP_TIMEOUT_MS = 10_000
 
 export class DocumentDiffError extends Error {
   constructor(message: string) {
@@ -87,27 +100,20 @@ function contentFromSnapshot(content: unknown): VersionContent {
   throw new DocumentDiffError("This version has no readable text to compare")
 }
 
-function generationBytes(
-  generation: ReadDocumentGenerationV2Result
-): Uint8Array | null {
-  const entries = generation.authoredSource.entries
-  if (generation.authoredSource.kind === "file") {
-    return entries.length === 1 ? entries[0]!.bytes : null
-  }
-  if (generation.manifest.format.id === BUILTIN_DOCUMENT_FORMATS.html) {
-    return entries.find((entry) => entry.path === "index.html")?.bytes ?? null
-  }
-  return null
+/** The authored entry holding a generation's readable source, if any. */
+function sourceEntryPath(manifest: DocumentGenerationManifestV2): string | null {
+  const entries = manifest.authoredSource.entries
+  if (manifest.authoredSource.kind === "file") return entries[0]!.path
+  return manifest.format.id === BUILTIN_DOCUMENT_FORMATS.html &&
+    entries.some((entry) => entry.path === "index.html")
+    ? "index.html"
+    : null
 }
 
-function generationContent(
-  generation: ReadDocumentGenerationV2Result
-): VersionContent {
-  const bytes = generationBytes(generation)
-  if (!bytes) {
-    throw new DocumentDiffError("This version has no readable text to compare")
-  }
-  return contentFromBytes(generation.manifest.format.id, bytes)
+function tooLarge(): DocumentDiffError {
+  return new DocumentDiffError(
+    "This version is too large to compare; diff a smaller range of versions or read it directly"
+  )
 }
 
 /** Docs compare as the Markdown that worktable_docs_read returns; HTML as source. */
@@ -138,21 +144,67 @@ function notInHistory(ref: string): DocumentDiffError {
   )
 }
 
-/** A stored state of the document: its format and exact source bytes. */
-interface StoredSource {
-  formatId: string
-  bytes: Uint8Array
+/** A stored state of the document, read lazily. */
+interface HistoryCandidate {
+  format: DocumentFormatClaim
+  /** The document's logical path when this state was stored. */
+  logicalPath: string
+  /** Size of the stored source, when known before reading it. */
+  size?: number
+  /** SHA-256 (hex) of the stored source, when recorded without reading it. */
+  sha256?: string
+  /** The sourceRevision an agent write recorded for this state. */
+  recordedRevision?: string
+  /** The exact stored source, or null when it exceeds the size budget. */
+  bytes(): Promise<Uint8Array | null>
 }
 
-type SourceMatcher = (source: StoredSource) => Promise<boolean> | boolean
+type CandidateMatcher = (
+  candidate: HistoryCandidate,
+  budget: LookupBudget
+) => Promise<boolean> | boolean
 
-// Revision lookups hash every candidate, so stop after a bounded history.
-const REVISION_SCAN_LIMIT = 500
+class LookupBudget {
+  readonly #deadline = performance.now() + LOOKUP_TIMEOUT_MS
+  #remainingBytes = LOOKUP_MAX_BYTES
+
+  get expired(): boolean {
+    return performance.now() > this.#deadline || this.#remainingBytes <= 0
+  }
+
+  /** Reserve bytes to read for hashing; false once the budget is spent. */
+  take(bytes: number): boolean {
+    if (bytes > this.#remainingBytes) {
+      this.#remainingBytes = 0
+      return false
+    }
+    this.#remainingBytes -= bytes
+    return true
+  }
+}
 
 interface HistoryReader {
   version(id: string): Promise<VersionContent | null>
-  /** Newest stored state the matcher accepts, scanning a bounded history. */
-  find(matches: SourceMatcher): Promise<StoredSource | null>
+  /** Newest stored state the matcher accepts, within the lookup bounds. */
+  find(matches: CandidateMatcher): Promise<VersionContent | null>
+}
+
+async function firstMatch(
+  candidates: AsyncIterable<HistoryCandidate>,
+  matches: CandidateMatcher
+): Promise<VersionContent | null> {
+  const budget = new LookupBudget()
+  let examined = 0
+  for await (const candidate of candidates) {
+    if (examined >= LOOKUP_MAX_VERSIONS || budget.expired) return null
+    examined += 1
+    if (await matches(candidate, budget)) {
+      const bytes = await candidate.bytes()
+      if (!bytes) throw tooLarge()
+      return contentFromBytes(candidate.format.id, bytes)
+    }
+  }
+  return null
 }
 
 function historyFor(
@@ -165,16 +217,53 @@ function historyFor(
   const legacyKind =
     formatId === BUILTIN_DOCUMENT_FORMATS.html ? "widgets" : "docs"
   if (storageV2 && handle.identity === "durable") {
+    // Only the authored source entry is read, never companions, and only
+    // within the same size budget as the current source.
+    const candidate = (
+      manifest: DocumentGenerationManifestV2
+    ): HistoryCandidate | null => {
+      const entryPath = sourceEntryPath(manifest)
+      const entry = manifest.authoredSource.entries.find(
+        (item) => item.path === entryPath
+      )
+      if (!entryPath || !entry) return null
+      return {
+        format: manifest.format,
+        logicalPath: manifest.logicalPath,
+        size: entry.bytes,
+        sha256: entry.sha256,
+        ...(manifest.agentMutation
+          ? { recordedRevision: manifest.agentMutation.sourceRevision }
+          : {}),
+        bytes: () =>
+          readDocumentGenerationSourceEntryV2({
+            workspaceRoot,
+            manifest,
+            entryPath,
+            maxBytes: DIFF_MAX_SOURCE_BYTES,
+          }),
+      }
+    }
     return {
       async version(id) {
         if (DocumentGenerationIdSchema.safeParse(id).success) {
-          const generation = await readDocumentGenerationV2({
+          const manifest = await readDocumentGenerationManifestV2({
             workspaceRoot,
             spaceId,
             documentId: handle.documentId,
             generationId: id,
           })
-          if (generation) return generationContent(generation)
+          if (manifest) {
+            const stored = candidate(manifest)
+            if (!stored) {
+              throw new DocumentDiffError(
+                "This version has no readable text to compare"
+              )
+            }
+            const bytes = await stored.bytes()
+            if (!bytes) throw tooLarge()
+            return contentFromBytes(manifest.format.id, bytes)
+          }
         }
         const legacy = await readCompatibleDocumentVersionV2({
           workspaceRoot,
@@ -193,24 +282,22 @@ function historyFor(
         )
       },
       async find(matches) {
+        // Manifests are small; payloads are read only for candidates the
+        // matcher cannot decide from recorded hashes.
         const manifests = await listDocumentGenerationsV2({
           workspaceRoot,
           spaceId,
           documentId: handle.documentId,
         })
-        for (const manifest of manifests.slice(0, REVISION_SCAN_LIMIT)) {
-          const generation = await readDocumentGenerationV2({
-            workspaceRoot,
-            spaceId,
-            documentId: handle.documentId,
-            generationId: manifest.id,
-          })
-          const bytes = generation ? generationBytes(generation) : null
-          if (!bytes) continue
-          const source = { formatId: manifest.format.id, bytes }
-          if (await matches(source)) return source
-        }
-        return null
+        return firstMatch(
+          (async function* () {
+            for (const manifest of manifests) {
+              const stored = candidate(manifest)
+              if (stored) yield stored
+            }
+          })(),
+          matches
+        )
       },
     }
   }
@@ -231,30 +318,70 @@ function historyFor(
         legacyKind === "docs"
           ? await listDocVersions(spaceId, handle.document.path)
           : await listWidgetVersions(spaceId, handle.document.path)
-      for (const entry of entries.slice(0, REVISION_SCAN_LIMIT)) {
-        const snapshot = await readSnapshot(entry.id)
-        if (!snapshot) continue
-        const content = contentFromSnapshot(snapshot.after.content)
-        const source: StoredSource =
-          content.kind === "blocks"
-            ? {
-                formatId: BUILTIN_DOCUMENT_FORMATS.richText,
-                bytes: new TextEncoder().encode(
-                  JSON.stringify(content.blocks, null, 2)
-                ),
-              }
-            : {
-                formatId:
-                  content.kind === "html"
-                    ? BUILTIN_DOCUMENT_FORMATS.html
-                    : BUILTIN_DOCUMENT_FORMATS.markdown,
-                bytes: new TextEncoder().encode(content.text),
-              }
-        if (await matches(source)) return source
-      }
-      return null
+      return firstMatch(
+        (async function* () {
+          for (const entry of entries) {
+            const snapshot = await readSnapshot(entry.id)
+            if (!snapshot) continue
+            const content = contentFromSnapshot(snapshot.after.content)
+            const bytes = new TextEncoder().encode(
+              content.kind === "blocks"
+                ? JSON.stringify(content.blocks, null, 2)
+                : content.text
+            )
+            yield {
+              format: {
+                id:
+                  content.kind === "blocks"
+                    ? BUILTIN_DOCUMENT_FORMATS.richText
+                    : content.kind === "html"
+                      ? BUILTIN_DOCUMENT_FORMATS.html
+                      : BUILTIN_DOCUMENT_FORMATS.markdown,
+                sourceVersion: 1,
+              },
+              logicalPath: handle.document.path,
+              bytes: async () =>
+                bytes.byteLength > DIFF_MAX_SOURCE_BYTES ? null : bytes,
+            } satisfies HistoryCandidate
+          }
+        })(),
+        matches
+      )
     },
   }
+}
+
+const builtinFormats = createBuiltinDocumentFormatRegistry()
+
+/**
+ * Source locators a stored state may have had: the current one when the path
+ * and format are unchanged, and the canonical file for its logical path and
+ * format, which covers states from before a move or a Doc storage change.
+ */
+function historicalSources(
+  handle: ResolvedDocumentHandle,
+  candidate: HistoryCandidate
+): DocumentSource[] {
+  const sources: DocumentSource[] = []
+  if (
+    candidate.logicalPath === handle.document.path &&
+    candidate.format.id === handle.document.format.id &&
+    candidate.format.sourceVersion === handle.document.format.sourceVersion
+  ) {
+    sources.push(handle.source)
+  }
+  const extension = builtinFormats.fileSource(candidate.format)?.source.extension
+  if (extension) {
+    const relativePath = `docs/${candidate.logicalPath}${extension}`
+    if (
+      !sources.some(
+        (source) => source.kind === "file" && source.relativePath === relativePath
+      )
+    ) {
+      sources.push({ kind: "file", relativePath })
+    }
+  }
+  return sources
 }
 
 const DOC_REVISION = /^(md|json):sha256:([0-9a-f]{64})$/
@@ -335,28 +462,50 @@ export async function diffDocumentText(options: {
       const docRevision = currentDocRevision(handle, currentBytes)
       const current = contentFromBytes(formatId, currentBytes)
       const history = historyFor(options.spaceId, handle, storageV2)
-      // A sourceRevision hashes the document's identity with its exact bytes,
-      // so only a stored state of the current format can reproduce it.
+      // A sourceRevision hashes the document's identity at the time (path,
+      // format and source locator) with its exact bytes, so rebuild that
+      // identity from each stored state rather than the current one.
       const matchesSourceRevision =
-        (ref: string): SourceMatcher =>
-        async (source) =>
-          source.formatId === formatId &&
-          (await registeredDocumentSourceRevision({
-            documentId: handle.documentId,
-            path: handle.document.path,
-            format: handle.document.format,
-            source: handle.source,
-            bytes: source.bytes,
-          })) === ref
-      // A Doc revision names the storage kind and hashes the stored bytes.
+        (ref: string): CandidateMatcher =>
+        async (candidate, budget) => {
+          if (candidate.recordedRevision === ref) return true
+          if (candidate.size !== undefined && !budget.take(candidate.size)) {
+            return false
+          }
+          const bytes = await candidate.bytes()
+          if (!bytes || (candidate.size === undefined && !budget.take(bytes.byteLength))) {
+            return false
+          }
+          for (const source of historicalSources(handle, candidate)) {
+            const revision = await registeredDocumentSourceRevision({
+              documentId: handle.documentId,
+              path: candidate.logicalPath,
+              format: candidate.format,
+              source,
+              bytes,
+            })
+            if (revision === ref) return true
+          }
+          return false
+        }
+      // A Doc revision names the storage kind and hashes the stored bytes;
+      // stored versions record that hash, so most candidates need no read.
       const matchesDocRevision =
-        (kind: string, sha256: string): SourceMatcher =>
-        (source) =>
-          source.formatId ===
-            (kind === "md"
+        (kind: string, sha256: string): CandidateMatcher =>
+        async (candidate, budget) => {
+          const expectedFormat =
+            kind === "md"
               ? BUILTIN_DOCUMENT_FORMATS.markdown
-              : BUILTIN_DOCUMENT_FORMATS.richText) &&
-          sha256Hex(source.bytes) === sha256
+              : BUILTIN_DOCUMENT_FORMATS.richText
+          if (candidate.format.id !== expectedFormat) return false
+          if (candidate.sha256 !== undefined) return candidate.sha256 === sha256
+          const bytes = await candidate.bytes()
+          return (
+            bytes !== null &&
+            budget.take(bytes.byteLength) &&
+            sha256Hex(bytes) === sha256
+          )
+        }
       const contentAt = async (ref: string): Promise<VersionContent> => {
         if (ref === currentRevision || ref === docRevision) return current
         const docRef = DOC_REVISION.exec(ref)
@@ -367,7 +516,7 @@ export async function diffDocumentText(options: {
               : matchesSourceRevision(ref)
           )
           if (!found) throw notInHistory(`Revision ${ref}`)
-          return contentFromBytes(found.formatId, found.bytes)
+          return found
         }
         assertSafeVersionId(ref)
         const content = await history.version(ref)

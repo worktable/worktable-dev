@@ -67,6 +67,8 @@ you can zoom, pan, fit it to the screen, and download it as an SVG.
 Choose **New → New drawing** beside a Space to open a Quickdraw scratchpad for
 freehand notes, shapes, text, and images. This action is available on Worktables
 using V2 document storage. Changes save automatically after you stop drawing.
+Drawings open with the selection arrow active. Choose a background from
+**Board menu → Grid**; the choice saves with the drawing and stays when you reopen it.
 The document menu offers **Download PNG**, **Download drawing**, and **Save a copy**.
 
 Agents can inspect PNG or SVG previews and edit specific objects, including

@@ -117,7 +117,8 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
     "List every document format, safely read source, or render drawings and HTML as model-visible PNG previews with action render.",
   worktable_documents_write:
     "Create, replace, checkpoint, restore, move, archive, or restore registered documents and mixed-format folders through format-neutral actions. Every create chooses a lifetime (durable or temporary); set_lifetime and set_folder_lifetime change it later.",
-  worktable_docs_read: "List or read Worktable Docs.",
+  worktable_docs_read:
+    "List, read, or grep Worktable Docs. grep finds exact text or a regex line by line and returns each match's Doc, line number, and revision; use worktable_discover search to find Docs by meaning. read accepts offset and limit to read a long Doc in line ranges.",
   worktable_docs_write:
     "Create, replace, patch, or rename Worktable Docs. Creating a Doc requires a lifetime: durable or temporary.",
   worktable_drawings_read:

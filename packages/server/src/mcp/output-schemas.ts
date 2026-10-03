@@ -343,6 +343,20 @@ const ListScopeSchema = z
   })
   .describe("The scope these results cover; absence of a match is only within it.")
 
+const DocGrepMatchSchema = z.looseObject({
+  spaceId: PortableCanonicalIdSchema,
+  docPath: z.string(),
+  revision: z.string(),
+  line: z
+    .number()
+    .int()
+    .positive()
+    .describe("1-based line number in the Doc's read content"),
+  text: z.string(),
+  before: z.array(z.string()),
+  after: z.array(z.string()),
+})
+
 const SearchResultSchema = z.looseObject({
   spaceId: PortableCanonicalIdSchema,
   type: z.enum(["doc", "record"]),
@@ -384,8 +398,12 @@ const SpaceIndexSchema = z.looseObject({
 const DocReadOutputSchema = z.looseObject({
   docPath: z.string(),
   content: z.union([z.string(), z.array(z.unknown())]),
+  totalLines: z.number().int().nonnegative().optional(),
+  startLine: z.number().int().positive().optional(),
+  endLine: z.number().int().nonnegative().optional(),
   format: z.enum(["markdown", "blocknote"]),
   storedAs: z.enum(["md", "json"]),
+  revision: z.string().optional(),
   archived: PortableArchiveInfoSchema.optional(),
   links: z.array(DocLinkSchema),
   backlinks: z.array(z.string()),
@@ -775,6 +793,14 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   ],
   "docs.list": [z.looseObject({ docs: z.array(DocListEntrySchema) })],
   "docs.read": [DocReadOutputSchema],
+  "docs.grep": [
+    z.looseObject({
+      matches: z.array(DocGrepMatchSchema),
+      total: z.number().int().nonnegative(),
+      truncated: z.boolean(),
+      scope: ListScopeSchema,
+    }),
+  ],
   "docs.write": [DocWriteOutputSchema],
   "docs.patch": [DocPatchOutputSchema],
   "docs.rename": [DocRenameOutputSchema],
@@ -1209,6 +1235,32 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     docs: forActions(z.array(DocListEntrySchema), '"list"'),
     docPath: forActions(z.string(), '"read"'),
     content: forActions(z.union([z.string(), z.array(z.unknown())]), '"read"'),
+    revision: forActions(
+      z.string(),
+      '"read"; changes whenever the stored Doc changes'
+    ),
+    totalLines: forActions(
+      z.number().int().nonnegative(),
+      '"read" when content is Markdown'
+    ),
+    startLine: forActions(
+      z.number().int().positive(),
+      '"read" with offset or limit; first line in content'
+    ),
+    endLine: forActions(
+      z.number().int().nonnegative(),
+      '"read" with offset or limit; last line in content'
+    ),
+    matches: forActions(z.array(DocGrepMatchSchema), '"grep"'),
+    total: forActions(
+      z.number().int().nonnegative(),
+      '"grep"; every matching line in scope'
+    ),
+    truncated: forActions(
+      z.boolean(),
+      '"grep"; true when more lines matched than were returned'
+    ),
+    scope: forActions(ListScopeSchema, '"grep"'),
     format: forActions(z.enum(["markdown", "blocknote"]), '"read"'),
     storedAs: forActions(z.enum(["md", "json"]), '"read"'),
     archived: forActions(PortableArchiveInfoSchema, '"read"'),

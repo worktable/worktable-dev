@@ -32,6 +32,7 @@ const ACTIONS: Array<{
   { tool: "worktable_documents_write", request: { action: "restore_folder", spaceId: "s", path: "a" }, scope: "documents:write" },
   { tool: "worktable_docs_read", request: { action: "list", spaceId: "s" }, scope: "docs:read" },
   { tool: "worktable_docs_read", request: { action: "read", spaceId: "s", docPath: "d" }, scope: "docs:read" },
+  { tool: "worktable_docs_read", request: { action: "grep", pattern: "x" }, scope: "docs:read" },
   { tool: "worktable_docs_write", request: { action: "write", spaceId: "s", docPath: "d", content: "x" }, scope: "docs:write" },
   { tool: "worktable_docs_write", request: { action: "patch", spaceId: "s", docPath: "d", operations: [] }, scope: "docs:write" },
   { tool: "worktable_docs_write", request: { action: "rename", spaceId: "s", oldPath: "a", newPath: "b" }, scope: "docs:write" },

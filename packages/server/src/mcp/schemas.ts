@@ -745,10 +745,54 @@ export const SpacesInput = z.strictObject({
   ]),
 })
 
+export const GrepDocsInput = z.object({
+  pattern: z
+    .string()
+    .min(1)
+    .max(1000)
+    .describe("Text to find on one line; a JavaScript regular expression when regex is true"),
+  regex: z.boolean().optional().default(false),
+  caseSensitive: z.boolean().optional().default(true),
+  spaceId: z
+    .string()
+    .optional()
+    .describe("Space to search. Omit to search every active Space."),
+  pathPrefix: z
+    .string()
+    .max(4096)
+    .optional()
+    .describe("Only Docs at or under this folder path, e.g. 'plans'"),
+  context: z
+    .number()
+    .int()
+    .min(0)
+    .max(5)
+    .optional()
+    .default(0)
+    .describe("Lines to return before and after each match"),
+  maxResults: z.number().int().min(1).max(500).optional().default(100),
+  includeArchived: ListDocsInput.shape.includeArchived,
+})
+
 export const DocsReadInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("list", ListDocsInput.shape),
-    actionSchema("read", ReadDocInput.shape),
+    actionSchema("read", {
+      ...ReadDocInput.shape,
+      offset: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("First line to return (1-based). Ranged reads return Markdown."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Number of lines to return"),
+    }),
+    actionSchema("grep", GrepDocsInput.shape),
   ]),
 })
 

@@ -109,6 +109,8 @@ import {
   type DocumentLifetimeTarget,
 } from "../document-query.ts"
 import { readDocumentVersions } from "../document-page-service.ts"
+import { diffDocumentText } from "../document-diff.ts"
+import { compilePathGlob } from "../path-glob.ts"
 import {
   checkpointRegisteredDocument,
   createRegisteredDocument,
@@ -732,6 +734,8 @@ async function _dispatchOperationInner(
       const format = args["format"] as string | undefined
       const pathPrefix = normalizePathPrefix(args["pathPrefix"])
       const lifetime = args["lifetime"] as DocumentLifetime | undefined
+      const glob = args["glob"] as string | undefined
+      const matchesGlob = glob === undefined ? null : compilePathGlob(glob)
       const limit = (args["limit"] as number | undefined) ?? LIST_PAGE_SIZE
       const offset = decodeListCursor(args["cursor"])
       const matching = (await listDocuments({ spaceId, includeArchived })).filter(
@@ -741,6 +745,7 @@ async function _dispatchOperationInner(
           if (pathPrefix && path !== pathPrefix && !path.startsWith(`${pathPrefix}/`)) {
             return false
           }
+          if (matchesGlob && !matchesGlob(path)) return false
           if (format && (document.kind !== "document" || document.format.id !== format)) {
             return false
           }
@@ -770,6 +775,7 @@ async function _dispatchOperationInner(
           ...(pathPrefix ? { pathPrefix } : {}),
           ...(format ? { format } : {}),
           ...(lifetime ? { lifetime } : {}),
+          ...(glob !== undefined ? { glob } : {}),
         },
       }
     }
@@ -815,6 +821,15 @@ async function _dispatchOperationInner(
         )
       }
       return { versions: result.versions }
+    }
+    case "documents.diff": {
+      return diffDocumentText({
+        spaceId: args["spaceId"] as string,
+        path: args["path"] as string,
+        from: args["from"] as string,
+        to: args["to"] as string | undefined,
+        context: args["context"] as number | undefined,
+      })
     }
     case "documents.create": {
       assertLifetimeInput(args)

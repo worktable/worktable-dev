@@ -219,6 +219,57 @@ describe("agent document lifetimes over MCP", () => {
     expect(htmlDoc["archiveOn"]).toBeUndefined()
   })
 
+  it("lists documents by path glob with the other filters and paging", async () => {
+    for (const path of [
+      "plans/2026-q1",
+      "plans/2025-q4",
+      "plans/team/2026-roadmap",
+      "plans/team/deep/2026-budget",
+      "notes/2026-sync",
+      "launch-review",
+      "plans/team/design-review",
+    ]) {
+      await writeDoc(path, { lifetime: path.endsWith("budget") ? "temporary" : "durable" })
+    }
+    const list = async (request: Record<string, unknown>) => {
+      const result = await tool("worktable_documents_read", { action: "list", spaceId, ...request })
+      return {
+        ...result,
+        paths: ((result.data["documents"] ?? []) as Array<{ path: string }>).map((d) => d.path),
+      }
+    }
+
+    expect((await list({ glob: "plans/**/2026-*" })).paths).toEqual([
+      "plans/2026-q1",
+      "plans/team/2026-roadmap",
+      "plans/team/deep/2026-budget",
+    ])
+    expect((await list({ glob: "plans/*" })).paths).toEqual(["plans/2025-q4", "plans/2026-q1"])
+    expect((await list({ glob: "**/*-review" })).paths).toEqual([
+      "launch-review",
+      "plans/team/design-review",
+    ])
+
+    const first = await list({ glob: "plans/**/2026-*", lifetime: "durable", limit: 1 })
+    expect(first.paths).toEqual(["plans/2026-q1"])
+    expect(first.data).toMatchObject({
+      total: 2,
+      scope: { spaceId, glob: "plans/**/2026-*", lifetime: "durable" },
+    })
+    const second = await list({
+      glob: "plans/**/2026-*",
+      lifetime: "durable",
+      limit: 1,
+      cursor: first.data["nextCursor"],
+    })
+    expect(second.paths).toEqual(["plans/team/2026-roadmap"])
+    expect(second.data["nextCursor"]).toBeUndefined()
+
+    const invalid = await list({ glob: "plans/**draft" })
+    expect(invalid.ok).toBe(false)
+    expect(invalid.text).toContain("Invalid glob: ** must be a whole path segment")
+  })
+
   it("pins Start here documents that follow renames and report archiving", async () => {
     await writeDoc("guide", { lifetime: "durable" })
     await writeDoc("plan", { lifetime: "durable" })

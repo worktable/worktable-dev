@@ -1266,7 +1266,7 @@
   {
     "name": "worktable_documents_read",
     "title": "Read Worktable documents",
-    "description": "List every document format, safely read source, or render drawings and HTML as model-visible PNG previews with action render.",
+    "description": "List every document format, safely read source or versions, diff a document's text against an earlier revision, or render drawings and HTML as model-visible PNG previews with action render.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1295,6 +1295,12 @@
                   "description": "Only documents at or under this folder path, e.g. 'plans'",
                   "type": "string",
                   "maxLength": 4096
+                },
+                "glob": {
+                  "description": "Only documents whose extensionless path matches, e.g. 'plans/**/2026-*' or '**/*-review'. * and ? stay within one folder; ** spans folders.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
                 },
                 "lifetime": {
                   "description": "Only durable or only temporary documents",
@@ -1487,6 +1493,48 @@
                 "action",
                 "spaceId",
                 "path"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "const": "diff"
+                },
+                "spaceId": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "from": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "Earlier point: a revision from a previous read or write (a sourceRevision rev_..., or a Doc revision md:sha256:... / json:sha256:... from worktable_docs_read), or a version id from action versions"
+                },
+                "to": {
+                  "description": "Later point in the same forms; defaults to the current source",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "context": {
+                  "description": "Unchanged lines around each change (default 3)",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10
+                }
+              },
+              "required": [
+                "action",
+                "spaceId",
+                "path",
+                "from"
               ],
               "additionalProperties": false
             }
@@ -1741,7 +1789,7 @@
           "type": "string"
         },
         "path": {
-          "description": "Returned by action \"read_source\".",
+          "description": "Returned by action \"read_source\" or \"diff\".",
           "type": "string"
         },
         "format": {
@@ -1791,6 +1839,43 @@
           "items": {
             "$ref": "#/definitions/DocumentVersionSummary"
           }
+        },
+        "from": {
+          "description": "Returned by action \"diff\"; the earlier point as requested.",
+          "type": "string"
+        },
+        "to": {
+          "description": "Returned by action \"diff\"; the later point; by default the current revision, in the same scheme as from (Doc revision or sourceRevision).",
+          "type": "string"
+        },
+        "unified": {
+          "description": "Returned by action \"diff\"; unified line diff of the readable text, empty when unchanged.",
+          "type": "string"
+        },
+        "stats": {
+          "description": "Returned by action \"diff\"; changed line counts for the whole diff.",
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "removed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "added",
+            "removed"
+          ],
+          "additionalProperties": false
+        },
+        "truncated": {
+          "description": "Returned by action \"diff\"; true when unified stops before the end of the diff.",
+          "type": "boolean"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",

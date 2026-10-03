@@ -733,6 +733,19 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
       versions: z.array(PortableDocumentVersionSummarySchema),
     }),
   ],
+  "documents.diff": [
+    z.looseObject({
+      path: z.string(),
+      from: z.string(),
+      to: z.string(),
+      unified: z.string(),
+      stats: z.object({
+        added: z.number().int().nonnegative(),
+        removed: z.number().int().nonnegative(),
+      }),
+      truncated: z.boolean(),
+    }),
+  ],
   "documents.create": [
     GenericDocumentMutationOutputSchema.extend(LifetimeOutputFields),
   ],
@@ -1173,7 +1186,7 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     scope: forActions(ListScopeSchema, '"list"'),
     result: forActions(PortableDocumentReadResultSchema, '"read"'),
     documentId: forActions(z.string(), '"read_source"'),
-    path: forActions(z.string(), '"read_source"'),
+    path: forActions(z.string(), '"read_source" or "diff"'),
     format: forActions(DocumentFormatClaimSchema, '"read_source"'),
     source: forActions(z.string(), '"read_source"'),
     encoding: forActions(z.literal("base64"), '"read_source"'),
@@ -1182,6 +1195,26 @@ export const WORKTABLE_OUTPUT_SCHEMAS = {
     versions: forActions(
       z.array(PortableDocumentVersionSummarySchema),
       '"versions"'
+    ),
+    from: forActions(z.string(), '"diff"; the earlier point as requested'),
+    to: forActions(
+      z.string(),
+      '"diff"; the later point; by default the current revision, in the same scheme as from (Doc revision or sourceRevision)'
+    ),
+    unified: forActions(
+      z.string(),
+      '"diff"; unified line diff of the readable text, empty when unchanged'
+    ),
+    stats: forActions(
+      z.object({
+        added: z.number().int().nonnegative(),
+        removed: z.number().int().nonnegative(),
+      }),
+      '"diff"; changed line counts for the whole diff'
+    ),
+    truncated: forActions(
+      z.boolean(),
+      '"diff"; true when unified stops before the end of the diff'
     ),
   }),
   worktable_documents_write: resultSchema("worktable_documents_write", {

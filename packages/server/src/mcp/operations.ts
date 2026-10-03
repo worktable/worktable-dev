@@ -55,6 +55,7 @@ export const OPERATION_DEFINITIONS = {
   "documents.read": tool("documents:read", "none"),
   "documents.read_source": tool("documents:read", "none"),
   "documents.versions": tool("documents:read", "none"),
+  "documents.diff": tool("documents:read", "none"),
   "documents.create": tool("documents:write", "workspace"),
   "documents.replace": tool("documents:write", "workspace"),
   "documents.checkpoint": tool("documents:write", "workspace"),
@@ -197,6 +198,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     render: "documents.render",
     read_source: "documents.read_source",
     versions: "documents.versions",
+    diff: "documents.diff",
   },
   worktable_documents_write: {
     create: "documents.create",

@@ -31,8 +31,19 @@ promotes them to instructions.
 `worktable_documents_read` lists Docs, HTML Docs, and other registered document
 formats, then reads supported formats through one bounded text projection. It
 can also return the exact source and version history for formats that support
-those operations. It requires `documents:read`; the specialized Doc and HTML
-Doc tools remain available for format-specific operations.
+those operations. Its `list` action filters by folder (`pathPrefix`), path
+`glob`, format, and lifetime. In a glob, `*` and `?` match within one folder
+and a `**` segment spans folders, matched against the extensionless path.
+Action `diff` returns a unified line diff of a Doc's Markdown or an HTML Doc's
+source between two points in its history. Each point is a revision returned
+by an earlier read or write (a `sourceRevision`, or the Doc `revision` that
+`worktable_docs_read` returns), or a version id from action `versions`. The
+later point defaults to the current source, reported in the same revision
+scheme as the earlier one. A revision that is no longer in
+the retained history returns an error; use a version id instead. Formats without
+a text projection, such as drawings, cannot be diffed. It requires
+`documents:read`; the specialized Doc and HTML Doc tools remain available for
+format-specific operations.
 
 `worktable_documents_write` performs operations that span registered document
 formats. It can create, replace, checkpoint, restore a version, move, archive,

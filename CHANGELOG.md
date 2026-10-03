@@ -15,6 +15,8 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 ### Added
 
 - **Find exact text in Docs:** Agents can find exact text or a regular expression across Docs, with line numbers and surrounding lines, and read long Docs in line ranges.
+- **Find documents by pattern:** Agents can list documents whose path matches a glob, such as `plans/**/2026-*` or `**/*-review`, together with the folder, format, and lifetime filters.
+- **Document diffs for agents:** Agents can compare a Doc or HTML Doc with an earlier revision or version and get only the changed lines, so resumed work starts from what changed.
 
 ### Changed
 

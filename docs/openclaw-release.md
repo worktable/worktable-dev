@@ -21,9 +21,9 @@ The package version, plugin manifest version, and tag version must match. A
 ClawHub version is immutable; a failed or withdrawn version is replaced by a
 new patch version rather than overwritten.
 
-## First ClawHub publication
+## Publish to ClawHub
 
-The first release is manual. From a clean checkout of the protected tag:
+Publishing is manual until trusted publishing is configured. From a clean checkout of the protected tag:
 
 ```sh
 cd packages/openclaw-plugin
@@ -32,7 +32,7 @@ bun run pack:dogfood
 clawhub package publish ./artifacts/worktable-openclaw-<version>.tgz \
   --family code-plugin \
   --owner worktable \
-  --name openclaw \
+  --name @worktable/openclaw \
   --display-name Worktable \
   --version <version> \
   --changelog "<release summary>" \
@@ -44,7 +44,7 @@ clawhub package publish ./artifacts/worktable-openclaw-<version>.tgz \
   --dry-run
 ```
 
-Review the dry-run output, then repeat without `--dry-run`. Wait for ClawHub's
+Review the dry-run output, then repeat without `--dry-run`. `--name` must equal the `name` in `package.json`; the dry run does not check it. Wait for ClawHub's
 security scan to become clean before changing Worktable's user-facing install
 command. Download the published package and verify its SHA-256 against the
 locally retained checksum file.

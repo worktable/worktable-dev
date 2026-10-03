@@ -12,6 +12,8 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-10-03
+
 ### Fixed
 
 - **Drawing preferences:** Drawings keep their selected grid background after reopening and start with the selection arrow active.

@@ -79,27 +79,33 @@ function managedCredentialIdentity(
   }
 }
 
+/** The first scope this request needs but the token lacks, or null. */
+export function missingMcpScope(
+  toolName: WorktableToolName,
+  request: Record<string, unknown>,
+  scopes: string[]
+): string | null {
+  const { id } = resolvePublicOperation(toolName, request)
+  const definition = OPERATION_DEFINITIONS[id]
+  const required: string[] = definition.scope ? [definition.scope] : []
+  if (
+    (id === "html.create" || id === "html.update") &&
+    request.preview !== undefined
+  )
+    required.push("widgets:read")
+  if (id.startsWith("drawings.") && definition.mutation !== "none")
+    required.push("documents:read")
+  if (id === "spaces.update" && request.startHere !== undefined)
+    required.push("documents:write")
+  return required.find((scope) => !hasScope(scopes, scope)) ?? null
+}
+
 export function mcpToolAuthorized(
   toolName: WorktableToolName,
   request: Record<string, unknown>,
   scopes: string[]
 ): boolean {
-  const { id } = resolvePublicOperation(toolName, request)
-  const required = OPERATION_DEFINITIONS[id].scope
-  if (
-    (id === "html.create" || id === "html.update") &&
-    request.preview !== undefined &&
-    !hasScope(scopes, "widgets:read")
-  )
-    return false
-  return (
-    (!required || hasScope(scopes, required)) &&
-    (!(
-      id.startsWith("drawings.") &&
-      OPERATION_DEFINITIONS[id].mutation !== "none"
-    ) ||
-      hasScope(scopes, "documents:read"))
-  )
+  return missingMcpScope(toolName, request, scopes) === null
 }
 
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
@@ -325,18 +331,13 @@ export function registerTools(
     ) => {
       const operation = resolvePublicOperation(toolName, request)
       const definition = OPERATION_DEFINITIONS[operation.id]
-      if (!mcpToolAuthorized(toolName, request, scopes)) {
+      const missingScope = missingMcpScope(toolName, request, scopes)
+      if (missingScope) {
         const urlOrigin = configuredUrlOrigin ?? resolveLocalWorkspaceOrigin()
-        const requiredScope =
-          definition.scope && !hasScope(scopes, definition.scope)
-            ? definition.scope
-            : operation.id.startsWith("html.")
-              ? "widgets:read"
-              : "documents:read"
         return mkAuthErr(
-          `Insufficient scope: ${toolName} action "${String(request.action)}" requires "${requiredScope}". This token is not authorized for that action.`,
+          `Insufficient scope: ${toolName} action "${String(request.action)}" requires "${missingScope}". The workspace owner can grant it by reconnecting this agent with broader access.`,
           urlOrigin,
-          requiredScope
+          missingScope
         )
       }
       try {

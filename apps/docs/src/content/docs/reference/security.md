@@ -35,6 +35,11 @@ act as the human owner.
 The browser collaboration channel is reserved for human principals. Agents edit
 through MCP or the scoped REST APIs.
 
+Content scopes let agents create, edit, archive, and restore Spaces with
+`docs:write`; changing a Space's Start here pins also requires
+`documents:write`. Deleting a Space and arranging its document tree stay with
+the workspace owner.
+
 Revoking a local token or signing out all owner-password sessions also detaches
 their existing realtime subscriptions on the
 next credential check, normally within one second plus local I/O and scheduling.

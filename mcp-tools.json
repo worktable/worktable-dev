@@ -1020,7 +1020,7 @@
                   ]
                 },
                 "startHere": {
-                  "description": "Replace the Space's pinned starting points (at most 7), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role.",
+                  "description": "Replace the Space's pinned starting points (at most 7), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role. Requires documents:write.",
                   "maxItems": 7,
                   "type": "array",
                   "items": {

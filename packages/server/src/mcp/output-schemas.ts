@@ -219,7 +219,6 @@ const DocListEntrySchema = z
     path: z.string(),
     format: z.enum(["blocknote", "markdown"]),
     storedAs: z.enum(["json", "md"]).optional(),
-    readFormatHint: z.enum(["blocknote", "markdown"]).optional(),
     updatedAt: z.number().optional(),
     headings: z.array(z.string()).optional(),
     blockCount: z.number().int().nonnegative().nullable().optional(),

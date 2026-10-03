@@ -182,6 +182,7 @@ import {
   blocksPlainText,
   editSnippet,
   projectBlocks,
+  regionSnippet,
   spliceBlockEdits,
   spliceBlockReplacement,
   type FormattingDrop,
@@ -314,13 +315,19 @@ async function docSourceAtRevision(
   return { snapshot, sourceRevision: snapshot.revision, revision }
 }
 
+/** The Doc's current revision, or null when it no longer exists. */
 async function currentDocRevision(
   spaceId: string,
   docPath: string
-): Promise<string> {
+): Promise<string | null> {
   const snapshot = await readDocSourceSnapshot(spaceId, docPath)
-  if (!snapshot.revision) throw new Error("Failed to read document revision")
-  return docRevisionId(snapshot.revision)
+  return snapshot.revision ? docRevisionId(snapshot.revision) : null
+}
+
+/** The revision a successful write committed, never a later re-read. */
+function committedDocRevision(result: { revision?: DocSourceRevision }): string {
+  if (!result.revision) throw new Error("Write did not report its revision")
+  return docRevisionId(result.revision)
 }
 
 /** A failed guarded write: a concurrent change is a revision conflict. */
@@ -390,10 +397,16 @@ async function annotationsAffectedByEdit(
   affected: (target: { blockId?: string; quote?: string }) => boolean | null
 ): Promise<Array<{ annotationId: string; quoteStillPresent: boolean }>> {
   try {
-    const { annotations } = await listAnnotations(spaceId, {
-      target: { docPath },
-      limit: 1000,
-    })
+    const annotations = []
+    for (let offset: number | undefined = 0; offset !== undefined; ) {
+      const page = await listAnnotations(spaceId, {
+        target: { docPath },
+        limit: 1000,
+        offset,
+      })
+      annotations.push(...page.annotations)
+      offset = page.nextOffset
+    }
     return annotations.flatMap((annotation) => {
       const target = annotation.target as { blockId?: string; quote?: string }
       const quoteStillPresent = affected(target)
@@ -1960,7 +1973,8 @@ async function _dispatchOperationInner(
         source: "mcp",
         managedIdentity: true,
         mermaidValidation: "strict",
-        ...(sourceRevision ? { sourceRevision } : {}),
+        // A create must not replace a Doc another writer created meanwhile.
+        ...(sourceRevision ? { sourceRevision } : { createOnly: true }),
       })
       if (!result.ok) {
         throw await docWriteFailure(spaceId, docPath, result)
@@ -1978,7 +1992,7 @@ async function _dispatchOperationInner(
       return {
         ok: true,
         docPath,
-        revision: await currentDocRevision(spaceId, docPath),
+        revision: committedDocRevision(result),
         storedAs: result.storedAs,
         ...(lifetimeResult.lifetime ? { lifetime: lifetimeResult.lifetime } : {}),
         ...(lifetimeResult.archiveOn ? { archiveOn: lifetimeResult.archiveOn } : {}),
@@ -2046,7 +2060,7 @@ async function _dispatchOperationInner(
         return {
           ok: true,
           docPath,
-          revision: await currentDocRevision(spaceId, docPath),
+          revision: committedDocRevision(written),
           storedAs: written.storedAs,
           snippet: editSnippet(edit.text, edit.editedRanges),
           formattingDropped: [],
@@ -2070,14 +2084,13 @@ async function _dispatchOperationInner(
       // their place, so a session can later apply only those regions.
       await syncDocAfterToolWrite(spaceId, docPath)
 
-      const after = await readDocSourceSnapshot(spaceId, docPath)
-      const finalBlocks = Array.isArray(after.result.data)
-        ? after.result.data
-        : splice.blocks
-      const finalMarkdown = (await projectBlocks(finalBlocks)).markdown
+      // Everything below describes what this write stored, even if another
+      // writer has changed the Doc since.
+      const finalBlocks = Array.isArray(written.content) ? written.content : splice.blocks
+      const finalProjection = await projectBlocks(finalBlocks)
       const warnings: Array<DocConventionIssue | Record<string, string>> =
         await docWriteWarnings(spaceId, docPath)
-      if (finalMarkdown !== splice.editedMarkdown) {
+      if (finalProjection.markdown !== splice.editedMarkdown) {
         warnings.push({
           severity: "hint",
           code: "markdown_normalized",
@@ -2091,27 +2104,35 @@ async function _dispatchOperationInner(
         ...splice.changed.modified,
         ...splice.removedIds,
       ])
+      const storedText = blocksPlainText(stored)
       const finalText = blocksPlainText(finalBlocks)
       return {
         ok: true,
         docPath,
-        revision: after.revision
-          ? docRevisionId(after.revision)
-          : await currentDocRevision(spaceId, docPath),
+        revision: committedDocRevision(written),
         storedAs: written.storedAs,
         changed: splice.changed,
-        snippet: editSnippet(finalMarkdown, splice.edit.editedRanges),
+        snippet: regionSnippet(finalProjection, splice.regions),
         formattingDropped: splice.formattingDropped,
         annotationsAffected: await annotationsAffectedByEdit(
           spaceId,
           docPath,
           ({ blockId, quote }) => {
-            if (!blockId || !changedIds.has(blockId)) return null
-            const block = finalById.get(blockId)
-            if (!quote) return block !== undefined
-            return block
-              ? blocksPlainText([block]).includes(quote)
-              : finalText.includes(quote)
+            if (blockId && changedIds.has(blockId)) {
+              const block = finalById.get(blockId)
+              if (!quote) return block !== undefined
+              return block
+                ? blocksPlainText([block]).includes(quote)
+                : finalText.includes(quote)
+            }
+            // Anchored by quote alone (or to a block that no longer exists):
+            // affected when the edit removed the quoted text.
+            if (quote && (!blockId || !finalById.has(blockId))) {
+              return storedText.includes(quote) && !finalText.includes(quote)
+                ? false
+                : null
+            }
+            return null
           }
         ),
         repairs: [...repairs, ...(written.repairs ?? [])],

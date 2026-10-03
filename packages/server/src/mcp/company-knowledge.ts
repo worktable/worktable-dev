@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { CanonicalIdSchema, documentReferenceHref } from "@worktable/types"
 import { z } from "zod"
-import { blocksToMarkdownSafe } from "../markdown.ts"
+import { docMarkdownProjection } from "../doc-markdown-projection.ts"
 import { readDocumentWithView } from "../document-query.ts"
 import { analyzeDocumentPath } from "../document-path.ts"
 import { readRecord, readRecordCollectionSchema } from "../record-store.ts"
@@ -15,7 +15,7 @@ import {
 import {
   getDocArchiveInfo,
   getSpaceArchiveInfo,
-  readDoc,
+  readDocSourceSnapshot,
   readSpace,
   sanitizeDocPath,
 } from "../store.ts"
@@ -320,7 +320,10 @@ export function registerCompanyKnowledgeTools(
           if (await getDocArchiveInfo(target.spaceId, target.docPath)) {
             return mkErr(`Doc is archived: ${target.docPath}`)
           }
-          const result = await readDoc(target.spaceId, target.docPath)
+          // The same text docs read, grep and edit see, so fetched text can be
+          // copied into an edit as oldText.
+          const snapshot = await readDocSourceSnapshot(target.spaceId, target.docPath)
+          const result = snapshot.result
           if (result.error || result.data === null) {
             return mkErr(result.error ?? `Doc not found: ${target.docPath}`)
           }
@@ -331,7 +334,7 @@ export function registerCompanyKnowledgeTools(
           const text =
             typeof result.data === "string"
               ? result.data
-              : ((await blocksToMarkdownSafe(result.data)) ??
+              : ((await docMarkdownProjection(target.spaceId, target.docPath, snapshot)) ??
                 extractBlockNoteText(result.data))
           return ok({
             id,

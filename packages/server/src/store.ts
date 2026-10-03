@@ -16,7 +16,6 @@ import {
   extractHeadings,
   extractMarkdownHeadings,
   getRichBlockTypes,
-  isMarkdownSafe,
   prepareMarkdownStorageConversion,
 } from "./markdown.ts";
 import { canonicalizeBlocks, inheritBlockIds } from "./blocknote.ts";
@@ -1860,27 +1859,23 @@ export async function listDocsDetailed(
     let blockCount: number | null = null;
     let containsMermaid = false;
     let richBlockTypes: string[] = [];
-    let readFormatHint: "blocknote" | "markdown" = storedAs === "md" ? "markdown" : "blocknote";
 
     if (Array.isArray(readResult.data)) {
       headings = extractHeadings(readResult.data);
       blockCount = readResult.data.length;
       containsMermaid = containsMermaidBlock(readResult.data);
       richBlockTypes = getRichBlockTypes(readResult.data);
-      readFormatHint = isMarkdownSafe(readResult.data).safe ? "markdown" : "blocknote";
     } else if (typeof readResult.data === "string") {
       headings = extractMarkdownHeadings(readResult.data);
       blockCount = null;
       containsMermaid = extractMarkdownMermaid(readResult.data).length > 0;
       richBlockTypes = [];
-      readFormatHint = "markdown";
     }
 
     return {
       path,
       format: statResult?.format === "md" ? "markdown" as const : "blocknote" as const,
       storedAs,
-      readFormatHint,
       // File mtime (ms) — the "last updated" fallback for docs that predate
       // provenance tracking.
       updatedAt: statResult?.updatedAt,
@@ -2120,6 +2115,8 @@ export interface DocWriteOptions {
   sourceRevision?: DocSourceRevision;
   /** Managed product writes opt into durable identity admission. */
   managedIdentity?: boolean;
+  /** Fail with SOURCE_CHANGED instead of replacing a document that exists. */
+  createOnly?: boolean;
 }
 
 type DocWriteTransactionOptions = DocWriteOptions & {
@@ -2131,9 +2128,16 @@ export interface DocWriteResult {
   ok: boolean;
   storedAs: DocFileFormat;
   error?: string;
-  /** SOURCE_CHANGED: the source no longer matched `sourceRevision`; nothing was written. */
+  /**
+   * SOURCE_CHANGED: the source no longer matched `sourceRevision`, or a
+   * `createOnly` write found an existing document; nothing was written.
+   */
   errorCode?: "NOT_FOUND" | "SOURCE_CHANGED";
   lossyFields?: string[];
+  /** The source this write committed (or found unchanged), on success. */
+  revision?: DocSourceRevision;
+  /** The content stored at `revision`, on success. */
+  content?: unknown[] | string;
   repairs?: import("@worktable/types").MermaidDocumentRepair[];
 }
 
@@ -2875,6 +2879,22 @@ export async function restoreDocVersion(
   });
 }
 
+function committedRevision(
+  spaceId: string,
+  filePath: string,
+  content: unknown[] | string
+): DocSourceRevision {
+  const bytes = Buffer.from(
+    typeof content === "string" ? content : JSON.stringify(content, null, 2),
+    "utf8"
+  );
+  return {
+    relativePath: relative(spaceDir(spaceId), filePath).split(sep).join("/"),
+    size: bytes.byteLength,
+    sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
 async function writeDocUnlocked(
   spaceId: string,
   docPath: string,
@@ -2893,6 +2913,14 @@ async function writeDocUnlocked(
       ok: false,
       storedAs: resolved?.format ?? (isMarkdownContent ? "md" : "json"),
       error: aliasError,
+    };
+  }
+  if (options?.createOnly && resolved) {
+    return {
+      ok: false,
+      storedAs: resolved.format,
+      error: "Document already exists.",
+      errorCode: "SOURCE_CHANGED",
     };
   }
   const sourceSnapshot = resolved
@@ -2966,8 +2994,27 @@ async function writeDocUnlocked(
       });
     }
     notifyDocContentChanged(spaceId, docPath);
-    return { ok: true, storedAs, repairs };
+    return {
+      ok: true,
+      storedAs,
+      repairs,
+      revision: committedRevision(
+        spaceId,
+        storedAs === "md" ? docFilePathMd(spaceId, docPath) : docFilePathJson(spaceId, docPath),
+        writtenContent
+      ),
+      content: writtenContent,
+    };
   };
+  const unchangedResult = (storedAs: DocFileFormat): DocWriteResult => ({
+    ok: true,
+    storedAs,
+    repairs,
+    ...(sourceSnapshot?.revision ? { revision: sourceSnapshot.revision } : {}),
+    ...(before?.data !== undefined && before?.data !== null
+      ? { content: before.data as unknown[] | string }
+      : {}),
+  });
 
   if (isMarkdownContent) {
     // Agent is writing markdown
@@ -3001,7 +3048,7 @@ async function writeDocUnlocked(
       // change event — an idempotent rewrite must not alter provenance.
       if (preparedBlocks.skipped) {
         if (await sourceChanged()) return staleSourceResult("json");
-        return { ok: true, storedAs: "json", repairs };
+        return unchangedResult("json");
       }
       let staleSource = false;
       const markdownPath = docFilePathMd(spaceId, docPath);
@@ -3094,7 +3141,13 @@ async function writeDocUnlocked(
         return { ok: false, storedAs: "md", error: durable.error };
       }
       notifyDocContentChanged(spaceId, docPath);
-      return { ok: true, storedAs: "json", repairs };
+      return {
+        ok: true,
+        storedAs: "json",
+        repairs,
+        revision: committedRevision(spaceId, jsonPath, preparedBlocks.content),
+        content: preparedBlocks.content,
+      };
     }
     if (
       sourceSnapshot?.revision &&
@@ -3130,7 +3183,7 @@ async function writeDocUnlocked(
     ) {
       return staleSourceResult("json");
     }
-    return { ok: true, storedAs: "json", repairs };
+    return unchangedResult("json");
   }
   let staleSource = false;
   await withWriteLock(jsonPath, async () => {

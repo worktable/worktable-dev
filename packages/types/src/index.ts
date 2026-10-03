@@ -50,7 +50,6 @@ export interface DocListEntry {
   path: string;
   format: "blocknote" | "markdown";
   storedAs?: "json" | "md";
-  readFormatHint?: "blocknote" | "markdown";
   /** File mtime (ms) — last-updated fallback for docs without provenance. */
   updatedAt?: number;
   headings?: string[];

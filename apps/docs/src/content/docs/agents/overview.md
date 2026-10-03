@@ -80,7 +80,7 @@ through `worktable_html_read`.
   be nested when that genuinely improves retrieval.
 - Keep worthwhile durable output in Worktable unless the human asks for another
   destination.
-- Search first. Patch an existing Doc instead of rewriting it or creating a
+- Search first. Edit an existing Doc instead of rewriting it or creating a
   near-duplicate.
 - Do not create index Docs. Pin a Space's few starting documents to Start here
   with `worktable_spaces` action `update`, and read those pins first.

@@ -45,9 +45,9 @@ Read the doc, then call `edit` with `oldText` copied exactly from the read conte
 ```
 
 - Edits apply in order, each to the result of the one before. Every `oldText` must match exactly once unless you set `replaceAll`. All edits apply or none do.
-- Rich docs keep everything you did not change: block ids, colors, alignment, toggles, column widths, diagram titles, and the comments anchored to that text. Markdown docs keep every byte outside the edited text.
+- Rich docs keep everything you did not change: block ids, colors, alignment, toggles, column widths, diagram titles, nested blocks, and the comments anchored to that text. Inside an edited block, only the characters you changed change; new text takes the formatting of the text it replaces. Markdown docs keep every byte outside the edited text.
 - The result returns the edited lines with line numbers in `snippet`, the new `revision`, and `annotationsAffected` for comments whose quoted text you changed.
-- Refusals have a stable `code`: `no_match` (with the closest lines), `ambiguous` (with line numbers), `empty_old_text`, `no_change`, `revision_conflict`, and `unsupported_block` for a block Markdown cannot represent intact, such as a toggle heading with nested content or an attached file. Edit those in Worktable.
+- Refusals have a stable `code`: `no_match` (with the closest lines), `ambiguous` (with line numbers), `empty_old_text`, `no_change`, `revision_conflict`, and `unsupported_block` for a change Markdown cannot apply intact, such as text that crosses from a toggle heading into its nested content, a changed attached file, or a block with properties Worktable does not recognize. Make those changes in Worktable.
 
 Replacing an existing doc with `write` requires `expectedRevision`. Markdown written over a rich doc keeps the blocks whose text is unchanged; if it would drop formatting from changed blocks, the write is refused unless you set `force`.
 

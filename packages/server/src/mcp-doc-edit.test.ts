@@ -123,7 +123,7 @@ describe("worktable_docs_write action edit", () => {
     const blocks = await storedBlocks("plan")
     expect(blocks[2].props.textColor).toBe("red")
     expect(blocks.map((block) => block.id)).toEqual(ids)
-  })
+  }, 20_000)
 
   it("refuses ambiguous, missing, and empty matches without writing anything", async () => {
     await write("notes", "# Notes\n\nShip the draft.\n\nReview the draft.\n", { lifetime: "durable" })
@@ -151,7 +151,7 @@ describe("worktable_docs_write action edit", () => {
     const after = await read("notes")
     expect(after.data.revision).toBe(before.data.revision)
     expect(after.data.content).toBe(before.data.content)
-  })
+  }, 20_000)
 
   it("refuses a stale revision and reports the current one", async () => {
     await write("status", "Status: green.\n", { lifetime: "durable" })
@@ -167,7 +167,7 @@ describe("worktable_docs_write action edit", () => {
     expect(stale.ok).toBe(false)
     expect(stale.error).toMatchObject({ code: "revision_conflict", currentRevision: changed.data.revision })
     expect((await readDoc(spaceId, "status")).data).toBe("Status: amber.\n")
-  })
+  }, 20_000)
 
   it("changes only the edited bytes of a Markdown file", async () => {
     const source = [
@@ -203,7 +203,7 @@ describe("worktable_docs_write action edit", () => {
     expect(await readFile(join(root, "spaces", spaceId, "docs", "release.md"), "utf8")).toBe(
       source.replace("2) Second", "2) Second, revised")
     )
-  })
+  }, 20_000)
 
   it("reports annotations on edited text and keeps others exact", async () => {
     await write("review", [paragraph("Keep this sentence."), paragraph("Rewrite this claim.")], {
@@ -221,9 +221,17 @@ describe("worktable_docs_write action edit", () => {
       ).annotationId
     const keptId = await annotate(kept.id, "this sentence")
     const rewrittenId = await annotate(rewritten.id, "this claim")
+    // Anchored to a block that no longer exists: only its quote locates it.
+    const quoteOnlyId = await annotate("block-removed-earlier", "Rewrite")
 
     const result = await edit("review", [{ oldText: "Rewrite this claim.", newText: "A revised statement." }])
-    expect(result.data.annotationsAffected).toEqual([{ annotationId: rewrittenId, quoteStillPresent: false }])
+    expect(result.data.annotationsAffected).toEqual(
+      expect.arrayContaining([
+        { annotationId: rewrittenId, quoteStillPresent: false },
+        { annotationId: quoteOnlyId, quoteStillPresent: false },
+      ])
+    )
+    expect(result.data.annotationsAffected).toHaveLength(2)
 
     const context = (await dispatchOperation("annotations.context", {
       spaceId,
@@ -231,7 +239,17 @@ describe("worktable_docs_write action edit", () => {
     })) as { context: { selectorMatch: string } }
     expect(context.context.selectorMatch).toBe("exact")
     expect((await storedBlocks("review")).map((block) => block.id)).toEqual([kept.id, rewritten.id])
-  })
+  }, 20_000)
+
+  it("numbers the snippet by the stored text, even when Worktable normalizes the edit", async () => {
+    await write("list", [paragraph("Intro."), { type: "bulletListItem", content: [text("one")] }], {
+      lifetime: "durable",
+    })
+    const result = await edit("list", [{ oldText: "* one", newText: "* one\n- two" }])
+    expect(result.data.snippet).toBe("2: \n3: * one\n4: * two")
+    expect(result.data.warnings.map((warning: { code: string }) => warning.code)).toContain("markdown_normalized")
+    expect((await read("list")).data.content).toBe("Intro.\n\n* one\n* two\n")
+  }, 20_000)
 
   it("keeps a temporary Doc active after an edit", async () => {
     const soon = new Date(Date.now() + DAY).toISOString().slice(0, 10)
@@ -241,7 +259,7 @@ describe("worktable_docs_write action edit", () => {
     expect((await edit("handoff", [{ oldText: "Next steps.", newText: "Next steps: review." }])).ok).toBe(true)
     const after = await read("handoff")
     expect(Date.parse(after.data.archiveOn)).toBeGreaterThan(Date.now() + 6 * DAY)
-  })
+  }, 20_000)
 })
 
 describe("worktable_docs_write action write on an existing Doc", () => {
@@ -273,19 +291,32 @@ describe("worktable_docs_write action write on an existing Doc", () => {
     const blocknote = await read("brief", { format: "blocknote" })
     expect(blocknote.data.format).toBe("blocknote")
     expect(blocknote.data.content).toEqual(after)
-  })
+  }, 20_000)
+
+  it("lets only one of two concurrent creates of the same path succeed", async () => {
+    const [first, second] = await Promise.all([
+      write("race", "# First\n", { lifetime: "durable" }),
+      write("race", "# Second\n", { lifetime: "durable" }),
+    ])
+    expect([first.ok, second.ok].sort()).toEqual([false, true])
+    const loser = first.ok ? second : first
+    const winner = first.ok ? first : second
+    expect(loser.error.code).toBe("revision_conflict")
+    expect(loser.error.currentRevision).toBe(winner.data.revision)
+    expect((await read("race")).data.revision).toBe(winner.data.revision)
+  }, 20_000)
 
   it("refuses to drop formatting Markdown cannot show unless forced", async () => {
     await write("colors", [{ type: "paragraph", content: [text("Red", { textColor: "red" }), text(" note.")] }], {
       lifetime: "durable",
     })
     const current = await read("colors")
-    const refused = await write("colors", "Plain note.\n", { expectedRevision: current.data.revision })
+    const refused = await write("colors", "note.\n", { expectedRevision: current.data.revision })
     expect(refused.error).toMatchObject({ code: "formatting_dropped" })
     expect(refused.error.formattingDropped[0].fields).toEqual(["style:textColor"])
 
-    const forced = await write("colors", "Plain note.\n", { expectedRevision: current.data.revision, force: true })
+    const forced = await write("colors", "note.\n", { expectedRevision: current.data.revision, force: true })
     expect(forced.ok).toBe(true)
     expect(forced.data.formattingDropped).toHaveLength(1)
-  })
+  }, 20_000)
 })

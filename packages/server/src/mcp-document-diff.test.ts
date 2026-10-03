@@ -49,7 +49,14 @@ const paragraph = (text: string) => ({
   children: [],
 })
 
+/** The revision an existing Doc must be replaced at. */
+async function currentRevision(docPath: string): Promise<string> {
+  const read = await tool("worktable_docs_read", { action: "read", spaceId, docPath })
+  return read.data["revision"] as string
+}
+
 async function writeRichDoc(texts: string[], extra: Record<string, unknown> = {}) {
+  if (!("lifetime" in extra)) extra = { ...extra, expectedRevision: await currentRevision("notes/plan") }
   const written = await tool("worktable_docs_write", {
     action: "write",
     spaceId,
@@ -226,11 +233,12 @@ describe("document diffs over MCP", () => {
     })
     expect(moved.ok).toBe(true)
     // A table moves the Doc from Markdown to rich-text storage.
-    await write("plans/plan", [
+    const stored = await write("plans/plan", [
       { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Plan", styles: {} }], children: [] },
       { type: "table", content: { type: "tableContent", rows: [{ cells: [[{ type: "text", text: "Owner", styles: {} }]] }] }, children: [] },
       paragraph("Omega"),
-    ])
+    ], { expectedRevision: await currentRevision("plans/plan") })
+    expect(stored.ok).toBe(true)
 
     const changed = await diff({ path: "plans/plan", from: readBeforeMove.data["sourceRevision"] })
     expect(changed.ok).toBe(true)

@@ -545,7 +545,6 @@ describe("doc store", () => {
 
       expect(diagramDoc?.storedAs).toBe("json")
       expect(diagramDoc?.format).toBe("blocknote")
-      expect(diagramDoc?.readFormatHint).toBe("markdown")
       expect(diagramDoc?.containsMermaid).toBe(true)
       expect(diagramDoc?.richBlockTypes).toEqual(["mermaid"])
       expect(diagramDoc?.headings).toEqual(["Architecture"])

@@ -97,41 +97,51 @@ export function documentTreeInputResolver(
   }
 }
 
+/** Temporary documents are supporting work the sidebar lists on their own. */
+export function isTemporaryDocument(item: DocumentListItem): boolean {
+  return item.kind === "document" && item.lifetime === "temporary"
+}
+
 export interface SpaceDocumentTrees {
-  /** Active documents, including temporary ones, in sidebar order. */
+  /** Active documents in sidebar order; includes temporary ones unless separated. */
   active: TreeNode[]
+  /** Temporary documents, when separated from the active tree. */
+  temporary: TreeNode[]
   archived: TreeNode[]
 }
 
+/** The catalog as the sidebar and breadcrumb both present it. */
 export function buildSpaceDocumentTrees({
   documents,
   docs,
   widgets,
   sort,
   order,
+  separateTemporary = false,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
   widgets: WidgetListEntry[]
   sort: DocSortMode
   order?: string[]
+  separateTemporary?: boolean
 }): SpaceDocumentTrees {
   const toTreeInput = documentTreeInputResolver(docs, widgets)
   const options = { folderPaths: documentFolderPaths(documents) }
   const treeSort = { mode: sort, order }
+  const build = (items: DocumentListItem[]) =>
+    buildTree(items.map(toTreeInput), treeSort, options)
+  const active = documents.filter((item) => !documentListItemArchived(item))
   return {
-    active: buildTree(
-      documents
-        .filter((item) => !documentListItemArchived(item))
-        .map(toTreeInput),
-      treeSort,
-      options
+    active: build(
+      separateTemporary
+        ? active.filter((item) => !isTemporaryDocument(item))
+        : active
     ),
-    archived: buildTree(
-      documents.filter(documentListItemArchived).map(toTreeInput),
-      treeSort,
-      options
-    ),
+    temporary: separateTemporary
+      ? build(active.filter(isTemporaryDocument))
+      : [],
+    archived: build(documents.filter(documentListItemArchived)),
   }
 }
 

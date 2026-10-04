@@ -129,7 +129,11 @@ function HeaderSheetHandle({
   const lift = (distance: number, transition = "none") => {
     const popup = popupRef.current
     if (!popup) return
-    popup.style.transition = transition
+    // The sheet still follows the finger, but releases do not animate.
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches
+    popup.style.transition = reduceMotion ? "none" : transition
     popup.style.transform = distance ? `translateY(${-distance}px)` : ""
   }
 

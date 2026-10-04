@@ -848,7 +848,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .header-sheet,
-  .header-sheet > div {
+  .header-sheet > div,
+  .header-sheet[data-starting-style],
+  .header-sheet[data-ending-style],
+  .header-sheet[data-starting-style] > div,
+  .header-sheet[data-ending-style] > div {
     clip-path: none;
     transform: none;
     transition: opacity 120ms ease-out;

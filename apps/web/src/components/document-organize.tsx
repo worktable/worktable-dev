@@ -126,6 +126,15 @@ export function DocumentLifetimeControls({
   )
   const changeDateRef = useRef<HTMLButtonElement>(null)
   const restoreDateFocus = useRef(false)
+  // A save can outlive these controls (the page changed); its completion
+  // must not close whatever surface is open by then.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   useEffect(() => {
     if (!editingDate && restoreDateFocus.current) {
       changeDateRef.current?.focus()
@@ -149,7 +158,7 @@ export function DocumentLifetimeControls({
     const saved = await action()
     setPending(null)
     onPendingChange?.(false)
-    if (saved) onDone()
+    if (saved && mounted.current) onDone()
   }
 
   if (editingDate) {
@@ -210,7 +219,11 @@ export function DocumentLifetimeControls({
         variant="outline"
         className="justify-start"
         disabled={pending !== null}
-        onClick={() => setEditingDate(true)}
+        onClick={() => {
+          // Start from the date as it is now; activity may have moved it.
+          setDate(currentDate)
+          setEditingDate(true)
+        }}
       >
         <CalendarDays />
         Change date

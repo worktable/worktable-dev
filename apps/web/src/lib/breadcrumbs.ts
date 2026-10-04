@@ -49,7 +49,7 @@ export interface BreadcrumbInput {
   parentTitleOverride?: string
   spaceName?: string
   spaceIcon?: string
-  documents?: SpaceDocumentTrees
+  documents?: Pick<SpaceDocumentTrees, "active" | "archived">
 }
 
 /** The space whose name and documents label the route, if any. */
@@ -176,14 +176,16 @@ export function buildBreadcrumbs({
     DOCUMENT_SECTIONS.has(section) &&
     segments.some(Boolean)
   ) {
-    const currentPath = segments.join("/")
-    segments.forEach((segment, index) => {
-      const path = segments.slice(0, index + 1).join("/")
+    // A trailing or doubled slash names no document of its own.
+    const parts = segments.filter(Boolean)
+    const currentPath = parts.join("/")
+    parts.forEach((segment, index) => {
+      const path = parts.slice(0, index + 1).join("/")
       const active = documents && findTreeNode(documents.active, path)
       const node =
         active ?? (documents && findTreeNode(documents.archived, path))
       const label = node?.label ?? humanizeSegment(segment)
-      if (index === segments.length - 1) {
+      if (index === parts.length - 1) {
         crumbs.push({
           kind: "text",
           role: "document",

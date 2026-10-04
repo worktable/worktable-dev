@@ -58,22 +58,29 @@ export function PageMenu() {
   const { pageMeta } = usePageMeta()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const [open, setOpen] = useState(false)
-  // Any navigation closes the sheet, including the browser's back gesture.
+  const [shareOpen, setShareOpen] = useState(false)
+  // Any navigation closes the sheet and its share dialog, including the
+  // browser's back gesture.
   const [shownPath, setShownPath] = useState(pathname)
   if (shownPath !== pathname) {
     setShownPath(pathname)
     setOpen(false)
+    setShareOpen(false)
   }
   // Set when a chosen action takes over. The closing sheet then leaves focus
   // to the action instead of returning it to the title behind a new drawer.
   const [handingOff, setHandingOff] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
-  // A lifetime change in flight keeps the sheet open, like the header chip.
-  const [lifetimePending, setLifetimePending] = useState(false)
+  const document = pageMeta?.document
+  // A lifetime change in flight keeps its document's sheet open, like the
+  // header chip. Keyed by document so a save that outlives navigation never
+  // blocks another page.
+  const [pendingDocument, setPendingDocument] = useState<string | null>(null)
+  const documentKey = document ? `${document.spaceId}:${document.path}` : null
+  const lifetimePending =
+    documentKey !== null && pendingDocument === documentKey
   const sharingAvailable = useDocumentSharingAvailable()
   const shared = useDocumentShareStatus(pageMeta?.shareTarget).data?.share
   const scrollRef = useScrollFade<HTMLDivElement>()
-  const document = pageMeta?.document
   if (crumbs.length === 0) return null
 
   // Panes that title themselves leave the header to name their location.
@@ -183,14 +190,19 @@ export function PageMenu() {
               )}
               {document ? (
                 <DocumentActions
-                  key={`${document.spaceId}:${document.path}`}
+                  key={documentKey}
                   spaceId={document.spaceId}
                   path={document.path}
                   overflowActions={overflowActions}
                   select={select}
                   onDone={close}
                   pending={lifetimePending}
-                  onPendingChange={setLifetimePending}
+                  onPendingChange={(pending) => {
+                    const key = `${document.spaceId}:${document.path}`
+                    setPendingDocument((current) =>
+                      pending ? key : current === key ? null : current
+                    )
+                  }}
                 />
               ) : (
                 overflowActions.length > 0 && (

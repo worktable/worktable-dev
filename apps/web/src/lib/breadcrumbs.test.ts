@@ -40,6 +40,16 @@ describe("buildBreadcrumbs", () => {
       kind: "folder",
       currentPath: "guides/on call/escalation",
     })
+    // A trailing slash adds no crumb.
+    expect(
+      summary(
+        buildBreadcrumbs({
+          pathname: "/spaces/platform/documents/guides/on%20call/escalation/",
+          spaceName: "Platform Engineering",
+          documents,
+        })
+      )
+    ).toEqual(summary(crumbs))
     // A page that names itself (HTML docs, drawings) keeps its live title.
     expect(
       buildBreadcrumbs({

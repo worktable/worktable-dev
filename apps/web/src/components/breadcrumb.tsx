@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, Clock3, Folder } from "lucide-react"
 import {
   DropdownMenu,
@@ -15,24 +14,12 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { usePageMeta } from "@/hooks/use-page-meta"
-import {
-  breadcrumbSpaceId,
-  buildBreadcrumbs,
-  isDocumentPathname,
-} from "@/lib/breadcrumbs"
+import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import type {
   Breadcrumb as BreadcrumbItem,
   BreadcrumbTarget,
 } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow } from "@/lib/document-views"
-import { documentsQueryOptions } from "@/lib/documents-queries"
-import { spaceDocsQueryOptions } from "@/lib/docs-queries"
-import { useSpaces } from "@/lib/queries"
-import {
-  buildSpaceDocumentTrees,
-  getDocOrder,
-  getDocSort,
-} from "@/lib/space-document-tree"
 import type { TreeNode } from "@/lib/tree"
 
 /** Marks the open document and the folders leading to it in folder menus. */
@@ -44,40 +31,7 @@ const crumbActionClass =
 export function Breadcrumb() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { pageMeta } = usePageMeta()
-  const spaceId = breadcrumbSpaceId(pathname)
-  const { data: spaces } = useSpaces()
-  const space = spaces?.find((candidate) => candidate.id === spaceId)
-  // Labels and folder contents come from the same catalog as the sidebar.
-  const documentsEnabled = !!spaceId && isDocumentPathname(pathname)
-  const { data: documents } = useQuery({
-    ...documentsQueryOptions(spaceId ?? ""),
-    enabled: documentsEnabled,
-  })
-  const { data: docs } = useQuery({
-    ...spaceDocsQueryOptions(spaceId ?? ""),
-    enabled: documentsEnabled,
-  })
-  const trees = useMemo(
-    () =>
-      documentsEnabled && space && documents && docs
-        ? buildSpaceDocumentTrees({
-            documents,
-            docs,
-            widgets: space.widgets ?? [],
-            sort: getDocSort(space),
-            order: getDocOrder(space),
-          })
-        : undefined,
-    [documentsEnabled, space, documents, docs]
-  )
-
-  const crumbs = buildBreadcrumbs({
-    pathname,
-    titleOverride: pageMeta?.titleOverride,
-    parentTitleOverride: pageMeta?.parentTitleOverride,
-    spaceName: space?.name,
-    documents: trees,
-  })
+  const crumbs = useBreadcrumbs()
   if (crumbs.length === 0) return null
 
   const updatedAtLabel = pageMeta?.updatedAtLabel
@@ -89,12 +43,7 @@ export function Breadcrumb() {
       className="flex items-center gap-1 overflow-hidden text-xs text-muted-foreground"
     >
       {crumbs.map((crumb, i) => (
-        <span
-          key={i}
-          className={`min-w-0 items-center gap-1 ${
-            crumb.mobileHidden ? "hidden md:flex" : "flex"
-          }`}
-        >
+        <span key={i} className="flex min-w-0 items-center gap-1">
           {i > 0 && (
             <ChevronRight className="size-3 shrink-0 text-muted-foreground/40" />
           )}
@@ -126,7 +75,11 @@ export function Breadcrumb() {
 
 function AncestorCrumb({ crumb }: { crumb: BreadcrumbItem }) {
   if (crumb.kind === "link") {
-    return <CrumbLink target={crumb.target} label={crumb.label} />
+    return (
+      <CrumbLink target={crumb.target} className={crumbActionClass}>
+        {crumb.label}
+      </CrumbLink>
+    )
   }
   if (crumb.kind === "folder") {
     return (
@@ -140,7 +93,7 @@ function AncestorCrumb({ crumb }: { crumb: BreadcrumbItem }) {
         <DropdownMenuContent className="w-auto max-w-72 min-w-44">
           <FolderMenuEntries
             spaceId={crumb.spaceId}
-            folder={crumb.folder}
+            folder={crumb.node}
             currentPath={crumb.currentPath}
           />
         </DropdownMenuContent>
@@ -150,35 +103,27 @@ function AncestorCrumb({ crumb }: { crumb: BreadcrumbItem }) {
   return <span className="truncate">{crumb.label}</span>
 }
 
-function CrumbLink({
+/** A link to the page a crumb names. */
+export function CrumbLink({
   target,
-  label,
+  className,
+  style,
+  onClick,
+  children,
 }: {
   target: BreadcrumbTarget
-  label: string
+  className: string
+  style?: CSSProperties
+  onClick?: () => void
+  children: ReactNode
 }) {
+  const props = { className, style, onClick, children }
   switch (target.to) {
     case "/spaces/$spaceId":
-      return (
-        <Link
-          to={target.to}
-          params={target.params}
-          className={crumbActionClass}
-        >
-          {label}
-        </Link>
-      )
+      return <Link to={target.to} params={target.params} {...props} />
     case "/spaces/$spaceId/records/$":
     case "/spaces/$spaceId/threads/$":
-      return (
-        <Link
-          to={target.to}
-          params={target.params}
-          className={crumbActionClass}
-        >
-          {label}
-        </Link>
-      )
+      return <Link to={target.to} params={target.params} {...props} />
     case "/threads/$":
       // Keep the list's location filter when returning from a thread.
       return (
@@ -189,10 +134,8 @@ function CrumbLink({
             location: prev.location ?? "all",
             spaceId: prev.spaceId,
           })}
-          className={crumbActionClass}
-        >
-          {label}
-        </Link>
+          {...props}
+        />
       )
   }
 }

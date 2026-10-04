@@ -36,10 +36,26 @@ import {
 
 type CopyState = "idle" | "copied" | "error"
 
-export function ShareDocumentAction({ target }: { target: PageShareTarget }) {
+export function ShareDocumentAction({
+  target,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: {
+  target: PageShareTarget
+  /** Lets another control, such as the narrow-screen page menu, open it. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  showTrigger?: boolean
+}) {
   const deployment = useDeploymentInfo()
   const queryClient = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [confirmingStop, setConfirmingStop] = useState(false)
   const [copyState, setCopyState] = useState<CopyState>("idle")
   const [announcement, setAnnouncement] = useState("")
@@ -119,22 +135,24 @@ export function ShareDocumentAction({ target }: { target: PageShareTarget }) {
 
   return (
     <>
-      <Button
-        type="button"
-        size="xs"
-        variant={shared ? "secondary" : "outline"}
-        className="shrink-0"
-        aria-label="Share document"
-        title={shared ? "Share link active" : "Share document"}
-        onClick={() => setOpen(true)}
-      >
-        {shared ? (
-          <Check className="size-3.5" />
-        ) : (
-          <Share2 className="size-3.5" />
-        )}
-        <span className="hidden sm:inline">Share</span>
-      </Button>
+      {showTrigger && (
+        <Button
+          type="button"
+          size="xs"
+          variant={shared ? "secondary" : "outline"}
+          className="shrink-0"
+          aria-label="Share document"
+          title={shared ? "Share link active" : "Share document"}
+          onClick={() => setOpen(true)}
+        >
+          {shared ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Share2 className="size-3.5" />
+          )}
+          <span className="hidden sm:inline">Share</span>
+        </Button>
+      )}
 
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent className="sm:max-w-md">

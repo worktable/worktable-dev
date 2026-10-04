@@ -79,6 +79,7 @@ import {
 } from "@/hooks/use-page-lifecycle"
 import { PageMetaContext } from "@/hooks/use-page-meta"
 import { Breadcrumb } from "@/components/breadcrumb"
+import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
@@ -596,10 +597,11 @@ function RootLayout() {
 
               {/* Breadcrumb */}
               <div className="min-w-0 flex-1">
-                <Breadcrumb />
+                {isMobile ? <PageMenu /> : <Breadcrumb />}
               </div>
 
-              {secondaryAction && SecondaryActionIcon && (
+              {/* Narrow screens keep one action; the page menu holds the rest. */}
+              {secondaryAction && SecondaryActionIcon && !(isMobile && primaryAction) && (
                 <Button
                   variant={secondaryAction.displayLabel ? "outline" : "ghost"}
                   size={secondaryAction.displayLabel ? "sm" : "icon"}
@@ -626,7 +628,7 @@ function RootLayout() {
                 </Button>
               )}
 
-              {pageMeta?.annotations && (
+              {!isMobile && pageMeta?.annotations && (
                 <Button
                   variant={pageMeta.annotations.open ? "secondary" : "ghost"}
                   size="sm"
@@ -660,7 +662,7 @@ function RootLayout() {
                 </Button>
               )}
 
-              {pageMeta?.document && (
+              {!isMobile && pageMeta?.document && (
                 <DocumentLifetimeChip
                   key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
                   spaceId={pageMeta.document.spaceId}
@@ -668,14 +670,14 @@ function RootLayout() {
                 />
               )}
 
-              {pageMeta?.shareTarget && (
+              {!isMobile && pageMeta?.shareTarget && (
                 <ShareDocumentAction
                   key={`${pageMeta.shareTarget.kind}:${pageMeta.shareTarget.spaceId}:${pageMeta.shareTarget.artifactKey}`}
                   target={pageMeta.shareTarget}
                 />
               )}
 
-              {pageMeta?.overflowActions?.length || pageMeta?.document ? (
+              {!isMobile && (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label="More actions"

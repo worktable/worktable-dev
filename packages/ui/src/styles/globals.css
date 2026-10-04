@@ -790,6 +790,66 @@
   }
 }
 
+/* Header sheet: the panel unrolls from beneath the header edge while its
+   contents settle into place, then rolls back up faster than it opened.
+   Negative side and bottom insets keep the floating shadow unclipped. */
+.header-sheet {
+  clip-path: inset(0 -2rem -2rem -2rem);
+  transition: clip-path 360ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.header-sheet[data-starting-style],
+.header-sheet[data-ending-style] {
+  clip-path: inset(0 -2rem 100% -2rem);
+}
+
+.header-sheet[data-ending-style] {
+  transition-duration: 220ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+.header-sheet > div {
+  transition:
+    opacity 260ms ease-out 40ms,
+    transform 360ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.header-sheet[data-starting-style] > div,
+.header-sheet[data-ending-style] > div {
+  opacity: 0;
+  transform: translateY(-0.5rem);
+}
+
+/* Contents fade for the whole roll-up so no empty panel trails behind. */
+.header-sheet[data-ending-style] > div {
+  transition:
+    opacity 220ms cubic-bezier(0.4, 0, 1, 1),
+    transform 220ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.header-sheet-backdrop {
+  background-color: var(--navigation-backdrop);
+  transition: opacity 300ms ease-out;
+}
+
+.header-sheet-backdrop[data-starting-style],
+.header-sheet-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.header-sheet-backdrop[data-ending-style] {
+  transition-duration: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-sheet,
+  .header-sheet > div {
+    clip-path: none;
+    transform: none;
+    transition: opacity 120ms ease-out;
+  }
+}
+
 /* ═══════════════════════════════════════════
    Pane Resize — active-drag state (useResizable)
    Outside @layer alongside the other global state rules

@@ -7,7 +7,7 @@ function summary(crumbs: Breadcrumb[]) {
   return crumbs.map((crumb) => {
     if (crumb.kind === "link") return [crumb.label, crumb.target.to]
     if (crumb.kind === "folder") {
-      return [crumb.label, crumb.folder.children.map((child) => child.label)]
+      return [crumb.label, crumb.node.children.map((child) => child.label)]
     }
     return [crumb.label]
   })
@@ -40,12 +40,6 @@ describe("buildBreadcrumbs", () => {
       kind: "folder",
       currentPath: "guides/on call/escalation",
     })
-    expect(crumbs.map((crumb) => !!crumb.mobileHidden)).toEqual([
-      false,
-      true,
-      false,
-      false,
-    ])
     // A page that names itself (HTML docs, drawings) keeps its live title.
     expect(
       buildBreadcrumbs({

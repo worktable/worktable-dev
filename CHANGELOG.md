@@ -15,6 +15,7 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 ### Added
 
 - **Breadcrumb navigation:** Breadcrumbs open the space, record collection, or thread list they name, and folders open a menu of their contents. Breadcrumbs now use the same names as the sidebar.
+- **Page menu on phones:** On narrow screens, tap the page title to see where the page lives, browse its folders, and reach its actions. The header keeps only the page's main action.
 
 ## [0.1.18] - 2026-10-03
 

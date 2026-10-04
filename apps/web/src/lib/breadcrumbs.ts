@@ -11,17 +11,31 @@ export type BreadcrumbTarget =
     }
   | { to: "/threads/$"; params: { _splat: string } }
 
+/** What a crumb names, for icons and narrow-screen presentation. */
+export type BreadcrumbRole =
+  | "home"
+  | "space"
+  | "threads"
+  | "thread"
+  | "collection"
+  | "record"
+  | "folder"
+  | "document"
+
 export type Breadcrumb = {
   label: string
-  /** Hidden on narrow screens where the pane already titles itself. */
+  role: BreadcrumbRole
+  /** The catalog entry a folder or document crumb names, once loaded. */
+  node?: TreeNode
+  /** A pane title that narrow screens leave to the pane itself. */
   mobileHidden?: boolean
 } & (
   | { kind: "text" }
   | { kind: "link"; target: BreadcrumbTarget }
   | {
       kind: "folder"
+      node: TreeNode
       spaceId: string
-      folder: TreeNode
       /** The open document, marked in the folder's menu. */
       currentPath: string
     }
@@ -59,11 +73,12 @@ export function buildBreadcrumbs({
   const crumbs: Breadcrumb[] = []
   const spaceCrumb = (spaceId: string, fallback?: string): Breadcrumb => ({
     kind: "link",
+    role: "space",
     label: spaceName ?? fallback ?? humanizeSegment(spaceId),
     target: { to: "/spaces/$spaceId", params: { spaceId } },
   })
 
-  if (pathname === "/") return [{ kind: "text", label: "Home" }]
+  if (pathname === "/") return [{ kind: "text", role: "home", label: "Home" }]
 
   const threadsMatch = pathname.match(/^\/threads(?:\/(.*))?$/)
   if (threadsMatch) {
@@ -76,13 +91,19 @@ export function buildBreadcrumbs({
       splat
         ? {
             kind: "link",
+            role: "threads",
             label: "Threads",
             target: { to: "/threads/$", params: { _splat: "" } },
           }
-        : { kind: "text", label: "Threads" }
+        : { kind: "text", role: "threads", label: "Threads" }
     )
     if (titleOverride) {
-      crumbs.push({ kind: "text", label: titleOverride, mobileHidden: true })
+      crumbs.push({
+        kind: "text",
+        role: "thread",
+        label: titleOverride,
+        mobileHidden: true,
+      })
     }
     return crumbs
   }
@@ -100,31 +121,46 @@ export function buildBreadcrumbs({
       threadId
         ? {
             kind: "link",
+            role: "threads",
             label: "Threads",
             target: {
               to: "/spaces/$spaceId/threads/$",
               params: { spaceId, _splat: "" },
             },
           }
-        : { kind: "text", label: "Threads" }
+        : { kind: "text", role: "threads", label: "Threads" }
     )
     if (titleOverride) {
-      crumbs.push({ kind: "text", label: titleOverride, mobileHidden: true })
+      crumbs.push({
+        kind: "text",
+        role: "thread",
+        label: titleOverride,
+        mobileHidden: true,
+      })
     }
   } else if (section === "records" && segments[0]) {
     const [collectionId, recordId] = segments
     if (recordId) {
       crumbs.push({
         kind: "link",
+        role: "collection",
         label: parentTitleOverride ?? collectionId,
         target: {
           to: "/spaces/$spaceId/records/$",
           params: { spaceId, _splat: collectionId },
         },
       })
-      crumbs.push({ kind: "text", label: titleOverride ?? recordId })
+      crumbs.push({
+        kind: "text",
+        role: "record",
+        label: titleOverride ?? recordId,
+      })
     } else {
-      crumbs.push({ kind: "text", label: titleOverride ?? collectionId })
+      crumbs.push({
+        kind: "text",
+        role: "collection",
+        label: titleOverride ?? collectionId,
+      })
     }
   } else if (
     (section === "documents" || section === "docs" || section === "widgets") &&
@@ -138,24 +174,27 @@ export function buildBreadcrumbs({
         (documents && findTreeNode(documents.archived, path))
       const label = node?.label ?? humanizeSegment(segment)
       if (index === segments.length - 1) {
-        crumbs.push({ kind: "text", label: titleOverride ?? label })
+        crumbs.push({
+          kind: "text",
+          role: "document",
+          label: titleOverride ?? label,
+          node,
+        })
         return
       }
-      // Narrow screens keep only the folder the document sits in.
-      const mobileHidden = index < segments.length - 2
       // Folders whose contents are all archived have nothing to open.
       const folder = documents && findTreeNode(documents.active, path)
       crumbs.push(
         folder && (folder.children.length > 0 || folder.kind !== "folder")
           ? {
               kind: "folder",
+              role: "folder",
               label,
-              mobileHidden,
+              node: folder,
               spaceId,
-              folder,
               currentPath,
             }
-          : { kind: "text", label, mobileHidden }
+          : { kind: "text", role: "folder", label, node }
       )
     })
   }

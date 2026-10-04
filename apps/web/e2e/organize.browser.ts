@@ -26,7 +26,9 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   )
   expect(durable.ok()).toBe(true)
 
-  await page.goto(`${harness.webUrl}/spaces/organize`)
+  await page.goto(`${harness.webUrl}/spaces/organize`, {
+    waitUntil: "domcontentloaded",
+  })
   const row = page
     .getByRole("button", { name: /^(Expand|Collapse) Organize$/ })
     .locator("../..")
@@ -41,13 +43,17 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   const chip = page.getByRole("button", { name: /^Temporary\. Archives / })
   await expect(chip).toBeVisible()
   await expect(
-    page.getByRole("navigation", { name: "Temporary documents" }).getByRole("link", { name: "Untitled" })
+    page
+      .getByRole("navigation", { name: "Temporary documents" })
+      .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
   await page.goto(`${harness.webUrl}/`)
   const recent = page.locator("section").filter({ hasText: "Recent" }).first()
   const untitled = recent.getByRole("link", { name: /^Untitled / })
-  await expect(recent.getByRole("link", { name: /^Product brief /i })).toBeVisible()
+  await expect(
+    recent.getByRole("link", { name: /^Product brief /i })
+  ).toBeVisible()
   await expect(untitled).toHaveCount(0)
   await recent.getByRole("button", { name: "Include temporary" }).click()
   await expect(untitled).toBeVisible()
@@ -55,9 +61,13 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   await untitled.click()
   await page.getByRole("button", { name: /^Temporary\. Archives / }).click()
   await page.getByRole("button", { name: "Keep", exact: true }).click()
-  await expect(page.getByRole("button", { name: /^Temporary\. Archives / })).toHaveCount(0)
   await expect(
-    page.getByRole("navigation", { name: "Active documents" }).getByRole("link", { name: "Untitled" })
+    page.getByRole("button", { name: /^Temporary\. Archives / })
+  ).toHaveCount(0)
+  await expect(
+    page
+      .getByRole("navigation", { name: "Active documents" })
+      .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 
   await page.getByRole("button", { name: "More actions" }).click()
@@ -65,6 +75,113 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   await page.getByRole("link", { name: "Organize", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   await expect(
-    page.getByRole("region", { name: "Start here" }).getByRole("link", { name: "Untitled" })
+    page
+      .getByRole("region", { name: "Start here" })
+      .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+})
+
+test.describe("archive date editing", () => {
+  test.use({ timezoneId: "America/Los_Angeles" })
+
+  test("date changes are explicit, cancellable, and recoverable after a failed save", async ({
+    page,
+  }) => {
+    const space = await page.request.post(`${harness.apiUrl}/api/spaces`, {
+      data: { name: "Archive dates" },
+    })
+    expect(space.ok()).toBe(true)
+    const archiveOn = new Date(Date.now() + 7 * 86_400_000).toISOString()
+    const created = await page.request.post(
+      `${harness.apiUrl}/api/spaces/archive-dates/docs`,
+      {
+        data: {
+          title: "Schedule",
+          content: [],
+          lifetime: "temporary",
+          archiveOn,
+        },
+      }
+    )
+    expect(created.ok()).toBe(true)
+    const endpoint = `${harness.apiUrl}/api/spaces/archive-dates/documents`
+    const savedDate = async () => {
+      const response = await page.request.get(endpoint)
+      const { documents } = await response.json()
+      return documents.find(
+        (document: { path: string }) => document.path === "schedule"
+      ).archiveOn
+    }
+
+    await page.goto(
+      `${harness.webUrl}/spaces/archive-dates/documents/schedule`,
+      {
+        waitUntil: "domcontentloaded",
+      }
+    )
+    const nextDate = await page.evaluate((iso) => {
+      const next = new Date(iso)
+      next.setDate(next.getDate() + 1)
+      next.setHours(0, 0, 0, 0)
+      return next.toISOString()
+    }, archiveOn)
+    const chip = page.getByRole("button", { name: /^Temporary\. Archives / })
+    await chip.click()
+    await page.getByRole("button", { name: "Change date", exact: true }).click()
+    const save = page.getByRole("button", { name: "Save date", exact: true })
+    await expect(save).toBeDisabled()
+    const selected = page
+      .getByRole("gridcell", { selected: true })
+      .getByRole("button")
+    await expect(selected).toBeFocused()
+    await selected.press("ArrowRight")
+    await page.keyboard.press("Enter")
+    await expect(save).toBeEnabled()
+    await page.getByRole("button", { name: "Back", exact: true }).click()
+    await expect(
+      page.getByRole("button", { name: "Change date", exact: true })
+    ).toBeFocused()
+    expect(await savedDate()).toBe(archiveOn)
+
+    await page.getByRole("button", { name: "Change date", exact: true }).click()
+    await expect(save).toBeDisabled()
+    await selected.press("ArrowRight")
+    await page.keyboard.press("Enter")
+    const lifetimeRoute = "**/api/spaces/archive-dates/documents/lifetime"
+    await page.route(lifetimeRoute, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Temporarily unavailable" }),
+      })
+    )
+    await save.click()
+    await expect(
+      page.getByText("Couldn’t change when this document archives.")
+    ).toBeVisible()
+    await expect(
+      page.getByRole("dialog", { name: "Change archive date" })
+    ).toBeVisible()
+    await expect(save).toBeEnabled()
+    expect(await savedDate()).toBe(archiveOn)
+
+    await page.unroute(lifetimeRoute)
+    await save.click()
+    await expect(page.getByRole("dialog")).toHaveCount(0)
+    expect(await savedDate()).toBe(nextDate)
+    const label = await page.evaluate(
+      (iso) =>
+        new Date(iso).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          ...(new Date(iso).getFullYear() !== new Date().getFullYear()
+            ? { year: "numeric" as const }
+            : {}),
+        }),
+      nextDate
+    )
+    await expect(chip).toHaveAccessibleName(`Temporary. Archives ${label}`)
+    await page.reload()
+    await expect(chip).toHaveAccessibleName(`Temporary. Archives ${label}`)
+  })
 })

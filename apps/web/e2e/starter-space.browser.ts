@@ -245,7 +245,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       data: {
         id: "plans/live-status",
         name: "Live Status",
-        html: `<!doctype html><!-- mention <head> here --><head><script>const forgedNavigationToken="forged-navigation-token";const rawNavigationId="raw-navigation-attempt";try{Object.defineProperty(Navigator.prototype,"userActivation",{configurable:true,get:()=>({isActive:true})})}catch{}const originalFunctionCall=Function.prototype.call;Function.prototype.call=function(thisArg,...args){if(thisArg===navigator.userActivation)return true;return Reflect.apply(originalFunctionCall,this,args)};setTimeout(()=>{parent.postMessage({type:"worktable.navigation.handshake",widgetId:"plans/live-status",spaceId:"welcome",navigationToken:forgedNavigationToken},"*");parent.postMessage({type:"worktable.navigation.open-document",id:rawNavigationId,widgetId:"plans/live-status",spaceId:"welcome",path:"plans/move-note",navigationToken:forgedNavigationToken},"*");void worktable.navigation.openDocument("plans/move-note").catch(()=>{});document.querySelector("#automatic-navigation-result").textContent="Automatic navigation attempted"},0)</script></head><body><main><h1>Ready now</h1><p>The heliograph beacon is online.</p><p id="automatic-navigation-result">Checking automatic navigation…</p><button type="button">Open move note</button><button type="button">Open then leave</button></main><script>const buttons=document.querySelectorAll("button");buttons[0].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note")});buttons[1].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note");location.href="/iframe-navigation"})</script></body>`,
+        html: `<!doctype html><!-- mention <head> here --><head><script>const forgedNavigationToken="forged-navigation-token";const rawNavigationId="raw-navigation-attempt";try{Object.defineProperty(Navigator.prototype,"userActivation",{configurable:true,get:()=>({isActive:true})})}catch{}const originalFunctionCall=Function.prototype.call;Function.prototype.call=function(thisArg,...args){if(thisArg===navigator.userActivation)return true;return Reflect.apply(originalFunctionCall,this,args)};document.addEventListener("DOMContentLoaded",()=>{parent.postMessage({type:"worktable.navigation.handshake",widgetId:"plans/live-status",spaceId:"welcome",navigationToken:forgedNavigationToken},"*");parent.postMessage({type:"worktable.navigation.open-document",id:rawNavigationId,widgetId:"plans/live-status",spaceId:"welcome",path:"plans/move-note",navigationToken:forgedNavigationToken},"*");void worktable.navigation.openDocument("plans/move-note").catch(()=>{});document.querySelector("#automatic-navigation-result").textContent="Automatic navigation attempted"},{once:true})</script></head><body><main><h1>Ready now</h1><p>The heliograph beacon is online.</p><p id="automatic-navigation-result">Checking automatic navigation…</p><button type="button">Open move note</button><button type="button">Open then leave</button></main><script>const buttons=document.querySelectorAll("button");buttons[0].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note")});buttons[1].addEventListener("click",()=>{void worktable.navigation.openDocument("plans/move-note");location.href="/iframe-navigation"})</script></body>`,
       },
     }
   )
@@ -436,6 +436,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/ways-to-work$/
   )
+  // The URL changes before the renderer commits. Finish leaving the cached
+  // document before exercising a fresh mount during the concurrent move.
+  await expect(
+    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+  ).toBeVisible()
   await expect(
     racePage.getByRole("link", { name: "Live Status", exact: true })
   ).toBeVisible()
@@ -502,6 +507,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/ways-to-work$/
   )
+  // The URL changes before the renderer commits. Finish leaving the cached
+  // document before exercising a fresh mount during the concurrent move.
+  await expect(
+    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+  ).toBeVisible()
 
   let docMovedDuringRead = false
   let releaseMovedDocRead!: () => void

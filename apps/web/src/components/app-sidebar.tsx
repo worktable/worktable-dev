@@ -160,6 +160,13 @@ import {
   supportsManagedFolderMove,
 } from "@/lib/document-views"
 import { canonicalConflictPath, HttpError } from "@/lib/http"
+import {
+  documentFolderPaths,
+  documentListItemArchived,
+  documentTreeInputResolver,
+  getDocOrder,
+  getDocSort,
+} from "@/lib/space-document-tree"
 
 // ── Group Definitions ────────────────────────────────────────
 
@@ -181,40 +188,6 @@ function getGroupDef(id: string) {
 
 function isSpaceArchived(space: SpaceFile) {
   return !!getSpaceArchiveInfo(space)
-}
-
-/** Manual sidebar doc order from space settings (untrusted on-disk data). */
-function getDocOrder(space: SpaceFile): string[] | undefined {
-  const value = space.settings["docOrder"]
-  if (!Array.isArray(value)) return undefined
-  const paths = value.filter((v): v is string => typeof v === "string")
-  return paths.length > 0 ? paths : undefined
-}
-
-/** Sidebar doc sort mode from space settings; default is custom order. */
-function getDocSort(space: SpaceFile): DocSortMode {
-  const value = space.settings["docSort"]
-  return value === "alphabetical" || value === "updated" ? value : "custom"
-}
-
-function documentListItemArchived(item: DocumentListItem): boolean {
-  if (item.kind === "document") return item.archived === true
-  const documents = item.claims.filter((claim) => claim.kind === "document")
-  return (
-    documents.length > 0 && documents.every((claim) => claim.archived === true)
-  )
-}
-
-function documentFolderPaths(items: DocumentListItem[]): Set<string> {
-  const paths = new Set<string>()
-  for (const item of items) {
-    const documentPath = item.kind === "conflict" ? item.pathKey : item.path
-    const segments = documentPath.split("/")
-    for (let index = 1; index < segments.length; index += 1) {
-      paths.add(segments.slice(0, index).join("/"))
-    }
-  }
-  return paths
 }
 
 function folderLifecycleError(error: unknown, fallback: string): string {
@@ -1751,55 +1724,10 @@ function SpaceTreeSection({
   const pendingSaveRef = useRef<string[] | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
-  const docDetails = new Map(
-    [...activeDocs, ...archivedDocs].map((doc) => [doc.path, doc])
+  const documentToTreeInput = documentTreeInputResolver(
+    [...activeDocs, ...archivedDocs],
+    [...activeWidgets, ...archivedWidgets]
   )
-  const widgetDetails = new Map(
-    [...activeWidgets, ...archivedWidgets].map((widget) => [widget.id, widget])
-  )
-  const legacyDocFor = (
-    item: Extract<DocumentListItem, { kind: "document" }>
-  ) => {
-    const candidate = docDetails.get(item.path)
-    return candidate &&
-      !!candidate.archived === !!item.archived &&
-      ((item.format.id === "worktable.markdown" &&
-        candidate.format === "markdown") ||
-        (item.format.id === "worktable.rich-text" &&
-          candidate.format === "blocknote"))
-      ? candidate
-      : undefined
-  }
-  const documentToTreeInput = (item: DocumentListItem) => {
-    if (item.kind === "conflict") {
-      return {
-        path: item.pathKey,
-        kind: "conflict" as const,
-        health: item.health,
-      }
-    }
-    const widgetCandidate = widgetDetails.get(item.path)
-    const doc = legacyDocFor(item)
-    const widget =
-      widgetCandidate &&
-      item.format.id === "worktable.html" &&
-      !!widgetCandidate.archive === !!item.archived
-        ? widgetCandidate
-        : undefined
-    return {
-      path: item.path,
-      kind: "document" as const,
-      title: doc?.headings?.[0]?.trim() || widget?.name || item.title,
-      format: item.format,
-      health: item.health,
-      archived: item.archived,
-      updatedAt:
-        doc?.provenance?.updatedAt ??
-        (typeof doc?.updatedAt === "number"
-          ? new Date(doc.updatedAt).toISOString()
-          : (widget?.updatedAt ?? item.updatedAt)),
-    }
-  }
   const treeSort = { mode: effectiveSort, order: effectiveOrder }
   const allDocuments = [...activeDocuments, ...archivedDocuments]
   const sharedFolderPaths = documentFolderPaths(allDocuments)

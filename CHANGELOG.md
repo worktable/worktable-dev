@@ -12,6 +12,10 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+### Added
+
+- **Breadcrumb navigation:** Breadcrumbs open the space, record collection, or thread list they name, and folders open a menu of their contents. Breadcrumbs now use the same names as the sidebar.
+
 ## [0.1.18] - 2026-10-03
 
 ### Fixed

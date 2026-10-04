@@ -19,7 +19,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
 } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import {
@@ -36,8 +35,6 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import {
   PanelLeft,
   PanelRight,
-  ChevronRight,
-  Clock3,
   MessageSquareText,
   MoreHorizontal,
   Pencil,
@@ -80,7 +77,9 @@ import {
   useDiscardRecovery,
   ReconnectingOverlay,
 } from "@/hooks/use-page-lifecycle"
-import { PageMetaContext, usePageMeta } from "@/hooks/use-page-meta"
+import { PageMetaContext, narrowHeaderAction } from "@/hooks/use-page-meta"
+import { Breadcrumb } from "@/components/breadcrumb"
+import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
@@ -226,283 +225,6 @@ function RouteLoadingBar() {
       <div className="h-full w-1/2 animate-[loading-bar_1s_ease-in-out_infinite] bg-primary" />
     </div>
   )
-}
-
-// ── Breadcrumb ───────────────────────────────────────────────
-
-function Breadcrumb() {
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { pageMeta } = usePageMeta()
-  const [metaOpen, setMetaOpen] = useState(false)
-  const [metaMounted, setMetaMounted] = useState(false)
-  const [metaPosition, setMetaPosition] = useState<CSSProperties>({})
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const unmountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastPointerTypeRef = useRef<string | null>(null)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const contentRef = useRef<HTMLDivElement | null>(null)
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current)
-      closeTimerRef.current = null
-    }
-    if (unmountTimerRef.current) {
-      clearTimeout(unmountTimerRef.current)
-      unmountTimerRef.current = null
-    }
-  }, [])
-
-  const updateMetaPosition = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setMetaPosition({
-      position: "fixed",
-      top: rect.bottom + 8,
-      right: Math.max(16, window.innerWidth - rect.right),
-      zIndex: 50,
-    })
-  }, [])
-
-  const openMeta = useCallback(() => {
-    clearCloseTimer()
-    updateMetaPosition()
-    setMetaMounted(true)
-    requestAnimationFrame(() => setMetaOpen(true))
-  }, [clearCloseTimer, updateMetaPosition])
-
-  const closeMeta = useCallback(() => {
-    clearCloseTimer()
-    setMetaOpen(false)
-    unmountTimerRef.current = setTimeout(() => {
-      setMetaMounted(false)
-      unmountTimerRef.current = null
-    }, 160)
-  }, [clearCloseTimer])
-
-  const closeMetaSoon = useCallback(() => {
-    clearCloseTimer()
-    closeTimerRef.current = setTimeout(() => {
-      closeTimerRef.current = null
-      closeMeta()
-    }, 120)
-  }, [clearCloseTimer, closeMeta])
-
-  useEffect(() => {
-    closeMeta()
-  }, [pathname, closeMeta])
-
-  useEffect(() => {
-    return clearCloseTimer
-  }, [clearCloseTimer])
-
-  useEffect(() => {
-    if (!metaOpen) return
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null
-      if (!target) return
-      if (
-        triggerRef.current?.contains(target) ||
-        contentRef.current?.contains(target)
-      )
-        return
-      closeMeta()
-    }
-    const handleViewportChange = () => {
-      if (lastPointerTypeRef.current === "mouse") {
-        updateMetaPosition()
-        return
-      }
-      closeMeta()
-    }
-
-    window.addEventListener("click", handlePointerDown)
-    window.addEventListener("resize", handleViewportChange)
-    window.addEventListener("scroll", handleViewportChange, true)
-    return () => {
-      window.removeEventListener("click", handlePointerDown)
-      window.removeEventListener("resize", handleViewportChange)
-      window.removeEventListener("scroll", handleViewportChange, true)
-    }
-  }, [metaOpen, updateMetaPosition, closeMeta])
-
-  // Route context belongs to the shell. Pane and content titles remain local.
-  const parts: {
-    label: string
-    path?: string
-    mobileHidden?: boolean
-  }[] = []
-
-  if (pathname === "/") {
-    parts.push({ label: "Home" })
-  } else if (pathname.startsWith("/threads")) {
-    const spaceThreadMatch = pathname.match(
-      /^\/threads\/spaces\/([^/]+)\/(?:[^/]+)$/
-    )
-    if (spaceThreadMatch) {
-      const spaceId = spaceThreadMatch[1]!
-      parts.push({
-        label: pageMeta?.parentTitleOverride ?? prettifyRouteSegment(spaceId),
-        path: `/spaces/${spaceId}`,
-      })
-    }
-    parts.push({ label: "Threads" })
-    if (pageMeta?.titleOverride) {
-      parts.push({ label: pageMeta.titleOverride, mobileHidden: true })
-    }
-  }
-
-  const spaceMatch = pathname.match(/^\/spaces\/([^/]+)/)
-  if (spaceMatch) {
-    const spaceId = spaceMatch[1]
-    // Prettify space ID for breadcrumb
-    const spaceName = prettifyRouteSegment(spaceId)
-    parts.push({ label: spaceName, path: `/spaces/${spaceId}` })
-
-    const documentMatch = pathname.match(
-      /^\/spaces\/[^/]+\/(?:documents|docs|widgets)\/(.+)/
-    )
-    const threadsMatch = pathname.match(/^\/spaces\/[^/]+\/threads(?:\/|$)/)
-    // Anchored to the route position: a doc path may contain a /records/
-    // folder segment and must keep rendering as a doc crumb.
-    const recordsMatch = pathname.match(
-      /^\/spaces\/[^/]+\/records\/([^/]+)(?:\/([^/]+))?/
-    )
-
-    if (threadsMatch) {
-      parts.push({ label: "Threads" })
-      if (pageMeta?.titleOverride) {
-        parts.push({ label: pageMeta.titleOverride, mobileHidden: true })
-      }
-    } else if (recordsMatch) {
-      const collectionId = recordsMatch[1]!
-      const recordId = recordsMatch[2]
-      parts.push({
-        label:
-          (recordId
-            ? pageMeta?.parentTitleOverride
-            : pageMeta?.titleOverride) ?? collectionId,
-        path: recordId
-          ? `/spaces/${spaceId}/records/${collectionId}`
-          : undefined,
-      })
-      if (recordId) {
-        parts.push({ label: pageMeta?.titleOverride ?? recordId })
-      }
-    } else if (documentMatch) {
-      const documentParts = documentMatch[1].split("/")
-      documentParts.forEach((part, i) => {
-        const isLast = i === documentParts.length - 1
-        parts.push({
-          label:
-            isLast && pageMeta?.titleOverride ? pageMeta.titleOverride : part,
-        })
-      })
-    }
-  }
-
-  if (parts.length === 0) return null
-
-  const pageDetails =
-    pageMeta?.updatedAtLabel && pageMeta.provenanceLabel ? pageMeta : null
-
-  return (
-    <nav className="flex items-center gap-1 overflow-hidden text-xs text-muted-foreground">
-      {parts.map((part, i) => (
-        <span
-          key={i}
-          className={`min-w-0 items-center gap-1 ${
-            part.mobileHidden ? "hidden md:flex" : "flex"
-          }`}
-        >
-          {i > 0 && (
-            <ChevronRight className="size-3 shrink-0 text-muted-foreground/40" />
-          )}
-          {i === parts.length - 1 && pageDetails ? (
-            <span className="relative inline-flex max-w-full min-w-0 items-center gap-2">
-              <span className="inline-flex min-w-0 items-center truncate font-medium text-foreground">
-                {part.label}
-              </span>
-              <button
-                ref={triggerRef}
-                type="button"
-                className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                onPointerDown={(event) => {
-                  lastPointerTypeRef.current = event.pointerType
-                }}
-                onPointerEnter={(event) => {
-                  if (event.pointerType === "mouse") openMeta()
-                }}
-                onPointerLeave={(event) => {
-                  if (event.pointerType === "mouse") closeMetaSoon()
-                }}
-                onClick={() => {
-                  if (lastPointerTypeRef.current === "mouse") return
-                  if (metaOpen) {
-                    closeMeta()
-                    return
-                  }
-                  openMeta()
-                }}
-                aria-expanded={metaOpen}
-                aria-label={`View details for ${part.label}`}
-                title="View details"
-              >
-                <Clock3 className="size-3.5" />
-              </button>
-              {metaMounted && (
-                <div
-                  ref={contentRef}
-                  style={metaPosition}
-                  className={`overlay-floating w-max max-w-[min(18rem,calc(100vw-2rem))] rounded-xl bg-popover p-3 text-xs text-popover-foreground transition-all duration-150 ease-out outline-none ${
-                    metaOpen
-                      ? "translate-y-0 scale-100 opacity-100"
-                      : "pointer-events-none -translate-y-1 scale-95 opacity-0"
-                  }`}
-                  onPointerEnter={(event) => {
-                    if (event.pointerType === "mouse") clearCloseTimer()
-                  }}
-                  onPointerLeave={(event) => {
-                    if (event.pointerType === "mouse") closeMetaSoon()
-                  }}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <Clock3 className="size-3.5" />
-                    </div>
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="leading-5 font-medium text-popover-foreground">
-                        {pageDetails.updatedAtLabel}
-                      </div>
-                      <div className="truncate leading-5 text-muted-foreground">
-                        {pageDetails.provenanceLabel}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </span>
-          ) : (
-            <span
-              className={`truncate ${
-                i === parts.length - 1 ? "font-medium text-foreground" : ""
-              }`}
-            >
-              {part.label}
-            </span>
-          )}
-        </span>
-      ))}
-    </nav>
-  )
-}
-
-function prettifyRouteSegment(segment: string): string {
-  return segment
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ")
 }
 
 // ── Mobile Sidebar Overlay ───────────────────────────────────
@@ -875,10 +597,11 @@ function RootLayout() {
 
               {/* Breadcrumb */}
               <div className="min-w-0 flex-1">
-                <Breadcrumb />
+                {isMobile ? <PageMenu /> : <Breadcrumb />}
               </div>
 
-              {secondaryAction && SecondaryActionIcon && (
+              {/* Narrow screens keep one action; the page menu holds the rest. */}
+              {secondaryAction && SecondaryActionIcon && (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
                 <Button
                   variant={secondaryAction.displayLabel ? "outline" : "ghost"}
                   size={secondaryAction.displayLabel ? "sm" : "icon"}
@@ -905,7 +628,7 @@ function RootLayout() {
                 </Button>
               )}
 
-              {pageMeta?.annotations && (
+              {!isMobile && pageMeta?.annotations && (
                 <Button
                   variant={pageMeta.annotations.open ? "secondary" : "ghost"}
                   size="sm"
@@ -939,7 +662,7 @@ function RootLayout() {
                 </Button>
               )}
 
-              {pageMeta?.document && (
+              {!isMobile && pageMeta?.document && (
                 <DocumentLifetimeChip
                   key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
                   spaceId={pageMeta.document.spaceId}
@@ -947,14 +670,14 @@ function RootLayout() {
                 />
               )}
 
-              {pageMeta?.shareTarget && (
+              {!isMobile && pageMeta?.shareTarget && (
                 <ShareDocumentAction
                   key={`${pageMeta.shareTarget.kind}:${pageMeta.shareTarget.spaceId}:${pageMeta.shareTarget.artifactKey}`}
                   target={pageMeta.shareTarget}
                 />
               )}
 
-              {pageMeta?.overflowActions?.length || pageMeta?.document ? (
+              {!isMobile && (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label="More actions"

@@ -105,10 +105,7 @@ function DocumentPageRoute() {
   const page = pageQuery.data
   if (page.kind === "conflict") {
     return (
-      <ConflictDocumentPage
-        path={path}
-        claimCount={page.conflict.claims.length}
-      />
+      <ConflictDocumentPage claimCount={page.conflict.claims.length} />
     )
   }
   if (page.document.path !== path) {
@@ -139,18 +136,8 @@ function DocumentPageRoute() {
   )
 }
 
-function ConflictDocumentPage({
-  path,
-  claimCount,
-}: {
-  path: string
-  claimCount: number
-}) {
-  const { setPageMeta } = usePageMeta()
-  useEffect(() => {
-    setPageMeta({ titleOverride: path.split("/").at(-1) || path })
-    return () => setPageMeta(null)
-  }, [path, setPageMeta])
+/** The breadcrumb names the conflicted path from the catalog, like the sidebar. */
+function ConflictDocumentPage({ claimCount }: { claimCount: number }) {
   return (
     <DocumentState
       icon={AlertTriangle}

@@ -109,6 +109,8 @@ Portaled surfaces use semantic elevation recipes from the canonical theme: `--ov
 
 Application notifications use the shared `Toaster` and `toast` exports from `@worktable/ui/components/sonner`; product code must not import Sonner directly. The adapter preserves Sonner's behavior while applying the opaque popover surface, `.overlay-floating` elevation, semantic status icons, General Sans typography, and shared `xs` button treatment for toast actions.
 
+On narrow screens the header title opens the page menu, a `HeaderSheet` from `@worktable/ui/components/header-sheet`. It unrolls from beneath the header at full width with `.header-sheet` and `.header-sheet-backdrop`, then rolls back up faster than it opened. It holds the page's location and every page action except the main one, which stays in the header. Folders in it expand in place with the shared collapsible height transition. The whole stretch between the logo and the header actions opens it. Its bottom handle closes it on tap, or follows a drag up and slides it back under the header, springing back when released early.
+
 Mobile navigation is shell chrome rather than a portaled content overlay. It uses `--navigation-surface`, `--navigation-backdrop`, and `--navigation-drawer-shadow` through `.navigation-drawer` and `.navigation-backdrop`. The navigation surface is opaque so nested translucent sidebar roles resolve against the canonical canvas instead of recompositing the dimmed page. App and docs mobile navigation must share this contract.
 
 ### Typography

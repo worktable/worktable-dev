@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
   Check,
@@ -23,12 +23,12 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
 import { cn } from "@worktable/ui/lib/utils"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
+import { useDocumentShareStatus } from "@/hooks/use-document-share"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { copyText } from "@/lib/clipboard"
 import {
   createDocumentShare,
-  getDocumentShare,
   shareQueryKey,
   stopDocumentShare,
   type ShareStatus,
@@ -36,22 +36,32 @@ import {
 
 type CopyState = "idle" | "copied" | "error"
 
-export function ShareDocumentAction({ target }: { target: PageShareTarget }) {
-  const deployment = useDeploymentInfo()
+export function ShareDocumentAction({
+  target,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: {
+  target: PageShareTarget
+  /** Lets another control, such as the narrow-screen page menu, open it. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  showTrigger?: boolean
+}) {
   const queryClient = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [confirmingStop, setConfirmingStop] = useState(false)
   const [copyState, setCopyState] = useState<CopyState>("idle")
   const [announcement, setAnnouncement] = useState("")
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const available = deployment.data?.capabilities.documentSharing === true
+  const available = useDocumentSharingAvailable()
   const queryKey = shareQueryKey(target)
-  const status = useQuery({
-    queryKey,
-    queryFn: () => getDocumentShare(target),
-    enabled: available,
-    staleTime: 10_000,
-  })
+  const status = useDocumentShareStatus(target)
 
   const create = useMutation({
     mutationFn: () => createDocumentShare(target),
@@ -119,22 +129,24 @@ export function ShareDocumentAction({ target }: { target: PageShareTarget }) {
 
   return (
     <>
-      <Button
-        type="button"
-        size="xs"
-        variant={shared ? "secondary" : "outline"}
-        className="shrink-0"
-        aria-label="Share document"
-        title={shared ? "Share link active" : "Share document"}
-        onClick={() => setOpen(true)}
-      >
-        {shared ? (
-          <Check className="size-3.5" />
-        ) : (
-          <Share2 className="size-3.5" />
-        )}
-        <span className="hidden sm:inline">Share</span>
-      </Button>
+      {showTrigger && (
+        <Button
+          type="button"
+          size="xs"
+          variant={shared ? "secondary" : "outline"}
+          className="shrink-0"
+          aria-label="Share document"
+          title={shared ? "Share link active" : "Share document"}
+          onClick={() => setOpen(true)}
+        >
+          {shared ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Share2 className="size-3.5" />
+          )}
+          <span className="hidden sm:inline">Share</span>
+        </Button>
+      )}
 
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent className="sm:max-w-md">

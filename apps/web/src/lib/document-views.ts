@@ -107,13 +107,18 @@ export function supportsManagedFolderDelete(
   return supportsManagedFolderOperation(document, "delete")
 }
 
+/** The server's identity for a document path: NFC, case-insensitive. */
+export function documentPathKey(path: string): string {
+  return path.normalize("NFC").toLowerCase()
+}
+
 /** Match server folder membership for paths already admitted to discovery. */
 export function documentPathIsAtOrBelow(
   candidatePath: string,
   ancestorPath: string
 ): boolean {
-  const candidateKey = candidatePath.normalize("NFC").toLowerCase()
-  const ancestorKey = ancestorPath.normalize("NFC").toLowerCase()
+  const candidateKey = documentPathKey(candidatePath)
+  const ancestorKey = documentPathKey(ancestorPath)
   return (
     candidateKey === ancestorKey || candidateKey.startsWith(`${ancestorKey}/`)
   )

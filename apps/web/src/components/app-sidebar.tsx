@@ -17,6 +17,7 @@ import {
   FilePlus,
   FileText,
   Folder,
+  AlertTriangle,
   LayoutDashboard,
   Plus,
   Briefcase,
@@ -27,7 +28,6 @@ import {
   Check,
   Archive,
   Clock3,
-  AlertTriangle,
   AppWindow,
   Copy,
   Database,
@@ -68,10 +68,11 @@ const NewDrawingDialog = lazy(() =>
 )
 import type { WidgetListEntry } from "@/lib/widgets-api"
 import { docQueryKeys, useSpaceDocs } from "@/lib/docs-queries"
+import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useSidebar } from "@/hooks/use-sidebar"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { buildTree, flattenTreeOrder } from "@/lib/tree"
+import { flattenTreeOrder } from "@/lib/tree"
 import type { DocSortMode } from "@/lib/tree"
 import {
   createSpace,
@@ -160,6 +161,14 @@ import {
   supportsManagedFolderMove,
 } from "@/lib/document-views"
 import { canonicalConflictPath, HttpError } from "@/lib/http"
+import { DocumentNodeIcon } from "@/components/document-node-icon"
+import {
+  buildSpaceDocumentTrees,
+  documentListItemArchived,
+  getDocOrder,
+  getDocSort,
+  isTemporaryDocument,
+} from "@/lib/space-document-tree"
 
 // ── Group Definitions ────────────────────────────────────────
 
@@ -181,40 +190,6 @@ function getGroupDef(id: string) {
 
 function isSpaceArchived(space: SpaceFile) {
   return !!getSpaceArchiveInfo(space)
-}
-
-/** Manual sidebar doc order from space settings (untrusted on-disk data). */
-function getDocOrder(space: SpaceFile): string[] | undefined {
-  const value = space.settings["docOrder"]
-  if (!Array.isArray(value)) return undefined
-  const paths = value.filter((v): v is string => typeof v === "string")
-  return paths.length > 0 ? paths : undefined
-}
-
-/** Sidebar doc sort mode from space settings; default is custom order. */
-function getDocSort(space: SpaceFile): DocSortMode {
-  const value = space.settings["docSort"]
-  return value === "alphabetical" || value === "updated" ? value : "custom"
-}
-
-function documentListItemArchived(item: DocumentListItem): boolean {
-  if (item.kind === "document") return item.archived === true
-  const documents = item.claims.filter((claim) => claim.kind === "document")
-  return (
-    documents.length > 0 && documents.every((claim) => claim.archived === true)
-  )
-}
-
-function documentFolderPaths(items: DocumentListItem[]): Set<string> {
-  const paths = new Set<string>()
-  for (const item of items) {
-    const documentPath = item.kind === "conflict" ? item.pathKey : item.path
-    const segments = documentPath.split("/")
-    for (let index = 1; index < segments.length; index += 1) {
-      paths.add(segments.slice(0, index).join("/"))
-    }
-  }
-  return paths
 }
 
 function folderLifecycleError(error: unknown, fallback: string): string {
@@ -794,67 +769,8 @@ function SpaceContent({
     isError: documentsError,
     refetch: refetchDocuments,
   } = useDocuments(spaceId)
-  const { subscribe } = useSpaceEvents(spaceId)
   const queryClient = useQueryClient()
-
-  // Keep the merged tree live: a doc's sidebar label derives from its first
-  // heading, so an edit that adds an H1 must show up without navigating away
-  // and back. Widget events (create/rename/archive/delete) arrive as
-  // widget_update / widget_deleted — the widget list rides on the spaces query,
-  // so invalidate it. space_update carries settings changes (manual doc order,
-  // sort mode) written by another client.
-  useEffect(() => {
-    return subscribe((msg) => {
-      if (msg.type === "doc_update" || msg.type === "doc_deleted") {
-        void refetch()
-        void refetchDocuments()
-      }
-      if (
-        msg.type === "space_update" ||
-        msg.type === "widget_update" ||
-        msg.type === "widget_moved" ||
-        msg.type === "widget_deleted"
-      ) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.spaces,
-          exact: true,
-        })
-        // The per-space embed lists this Space's widgets for the overview;
-        // refresh it too so an edit elsewhere shows up live.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.space(spaceId),
-          exact: true,
-        })
-        // A background expanded Space may be the only subscriber for this
-        // event. Refresh the exact HTML detail owner as well as its lists so a
-        // previously visited doc cannot remain fresh with stale content or
-        // metadata. For moves, widgetId is the canonical target; the mounted
-        // old route is deliberately left to its redirect owner.
-        if (
-          msg.type !== "space_update" &&
-          msg.type !== "widget_deleted" &&
-          msg.widgetId
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.widget(spaceId, msg.widgetId),
-            exact: true,
-          })
-        }
-      }
-      // Collection list + counts in the records section below the tree. The
-      // recordCollections key is the prefix of every record query, so this
-      // also refreshes an open grid when the space page isn't mounted.
-      if (
-        msg.type === "record_update" ||
-        msg.type === "record_deleted" ||
-        msg.type === "record_collection_update"
-      ) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.recordCollections(spaceId),
-        })
-      }
-    })
-  }, [subscribe, refetch, refetchDocuments, queryClient, spaceId])
+  useLiveSpaceCatalog(spaceId)
 
   const activeDocs = (docs ?? []).filter((doc) => !doc.archived)
   const archivedDocs = (docs ?? []).filter((doc) => doc.archived)
@@ -1751,78 +1667,22 @@ function SpaceTreeSection({
   const pendingSaveRef = useRef<string[] | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
-  const docDetails = new Map(
-    [...activeDocs, ...archivedDocs].map((doc) => [doc.path, doc])
-  )
-  const widgetDetails = new Map(
-    [...activeWidgets, ...archivedWidgets].map((widget) => [widget.id, widget])
-  )
-  const legacyDocFor = (
-    item: Extract<DocumentListItem, { kind: "document" }>
-  ) => {
-    const candidate = docDetails.get(item.path)
-    return candidate &&
-      !!candidate.archived === !!item.archived &&
-      ((item.format.id === "worktable.markdown" &&
-        candidate.format === "markdown") ||
-        (item.format.id === "worktable.rich-text" &&
-          candidate.format === "blocknote"))
-      ? candidate
-      : undefined
-  }
-  const documentToTreeInput = (item: DocumentListItem) => {
-    if (item.kind === "conflict") {
-      return {
-        path: item.pathKey,
-        kind: "conflict" as const,
-        health: item.health,
-      }
-    }
-    const widgetCandidate = widgetDetails.get(item.path)
-    const doc = legacyDocFor(item)
-    const widget =
-      widgetCandidate &&
-      item.format.id === "worktable.html" &&
-      !!widgetCandidate.archive === !!item.archived
-        ? widgetCandidate
-        : undefined
-    return {
-      path: item.path,
-      kind: "document" as const,
-      title: doc?.headings?.[0]?.trim() || widget?.name || item.title,
-      format: item.format,
-      health: item.health,
-      archived: item.archived,
-      updatedAt:
-        doc?.provenance?.updatedAt ??
-        (typeof doc?.updatedAt === "number"
-          ? new Date(doc.updatedAt).toISOString()
-          : (widget?.updatedAt ?? item.updatedAt)),
-    }
-  }
-  const treeSort = { mode: effectiveSort, order: effectiveOrder }
   const allDocuments = [...activeDocuments, ...archivedDocuments]
-  const sharedFolderPaths = documentFolderPaths(allDocuments)
   // Temporary documents are supporting work: they leave the main tree for
   // their own section until they are kept or archive on their date.
-  const isTemporary = (item: DocumentListItem) =>
-    item.kind === "document" && item.lifetime === "temporary"
-  const tree = buildTree(
-    activeDocuments.filter((item) => !isTemporary(item)).map(documentToTreeInput),
-    treeSort,
-    { folderPaths: sharedFolderPaths }
-  )
-  const temporaryDocuments = activeDocuments.filter(isTemporary)
-  const temporaryTree = buildTree(
-    temporaryDocuments.map(documentToTreeInput),
-    treeSort,
-    { folderPaths: sharedFolderPaths }
-  )
-  const archivedTree = buildTree(
-    archivedDocuments.map(documentToTreeInput),
-    treeSort,
-    { folderPaths: sharedFolderPaths }
-  )
+  const {
+    active: tree,
+    temporary: temporaryTree,
+    archived: archivedTree,
+  } = buildSpaceDocumentTrees({
+    documents: allDocuments,
+    docs: [...activeDocs, ...archivedDocs],
+    widgets: [...activeWidgets, ...archivedWidgets],
+    sort: effectiveSort,
+    order: effectiveOrder,
+    separateTemporary: true,
+  })
+  const temporaryDocuments = activeDocuments.filter(isTemporaryDocument)
   const folderMoveUnavailablePaths = allDocuments.flatMap((item) => {
     if (item.kind === "conflict") return [item.pathKey]
     return supportsManagedFolderMove(item) ? [] : [item.path]
@@ -2221,6 +2081,7 @@ function UnavailableDocumentTreeItem({
     node,
     reorder
   )
+  // An entry without a working view reads as a plain file, whatever its format.
   const StateIcon = node.kind === "conflict" ? AlertTriangle : File
   const isActive = currentPath === `/spaces/${spaceId}/documents/${node.path}`
   return (
@@ -2544,11 +2405,10 @@ function DocTreeItem({
                       : "text-sidebar-item-foreground"
                   }`}
                 >
-                  {node.kind === "conflict" ? (
-                    <AlertTriangle className="size-4 shrink-0 text-sidebar-foreground/40" />
-                  ) : (
-                    <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
-                  )}
+                  <DocumentNodeIcon
+                    node={node}
+                    className={`size-4 shrink-0 ${node.kind === "conflict" ? "text-sidebar-foreground/40" : "text-sidebar-primary/60"}`}
+                  />
                   <span className="truncate">{node.label}</span>
                 </SpecializedDocumentLink>
               </div>
@@ -2684,19 +2544,10 @@ function DocTreeItem({
               : "text-sidebar-item-foreground"
           }`}
         >
-          {node.format?.id === "worktable.quickdraw" ? (
-            <Pencil
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          ) : node.format?.id === "worktable.markdown" ? (
-            <File
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          ) : (
-            <FileText
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          )}
+          <DocumentNodeIcon
+            node={node}
+            className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+          />
           <span className="truncate">{node.label}</span>
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/doc:opacity-100 has-[[data-popup-open]]:opacity-100">

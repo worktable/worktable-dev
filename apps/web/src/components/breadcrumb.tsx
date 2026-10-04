@@ -117,7 +117,14 @@ export function CrumbLink({
   onClick?: () => void
   children: ReactNode
 }) {
-  const props = { className, style, onClick, children }
+  // Ancestors are never the current page, even though the route is inside them.
+  const props = {
+    className,
+    style,
+    onClick,
+    children,
+    activeOptions: { exact: true },
+  }
   switch (target.to) {
     case "/spaces/$spaceId":
       return <Link to={target.to} params={target.params} {...props} />

@@ -1,14 +1,38 @@
 "use client"
 
-import { useRef } from "react"
+import { createContext, useContext, useRef } from "react"
 import type { PointerEvent, RefObject } from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
 import { cn } from "@worktable/ui/lib/utils"
 
+const PopupRefContext = createContext<RefObject<HTMLDivElement | null> | null>(
+  null
+)
+
+/** Clear what a drag wrote, in case the popup is reused before it unmounts. */
+function clearDrag(popup: HTMLDivElement | null) {
+  popup?.style.removeProperty("transition")
+  popup?.style.removeProperty("transform")
+  popup?.style.removeProperty("clip-path")
+}
+
 /** A modal panel that unfolds from beneath a full-width anchor such as the app header. */
-function HeaderSheet({ ...props }: PopoverPrimitive.Root.Props) {
-  return <PopoverPrimitive.Root data-slot="header-sheet" modal {...props} />
+function HeaderSheet({ onOpenChange, ...props }: PopoverPrimitive.Root.Props) {
+  const popupRef = useRef<HTMLDivElement>(null)
+  return (
+    <PopupRefContext.Provider value={popupRef}>
+      <PopoverPrimitive.Root
+        data-slot="header-sheet"
+        modal
+        {...props}
+        onOpenChange={(open, details) => {
+          if (open) clearDrag(popupRef.current)
+          onOpenChange?.(open, details)
+        }}
+      />
+    </PopupRefContext.Provider>
+  )
 }
 
 function HeaderSheetTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
@@ -22,13 +46,17 @@ function HeaderSheetContent({
   className,
   children,
   onDismiss,
+  dismissible = true,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<PopoverPrimitive.Positioner.Props, "anchor"> & {
     /** Adds a handle that closes the sheet when dragged up or tapped. */
     onDismiss?: () => void
+    /** While false, the handle springs back instead of dismissing. */
+    dismissible?: boolean
   }) {
-  const popupRef = useRef<HTMLDivElement>(null)
+  const ownRef = useRef<HTMLDivElement>(null)
+  const popupRef = useContext(PopupRefContext) ?? ownRef
   return (
     <PopoverPrimitive.Portal>
       {/* Below the header's stacking layer so the header stays legible. */}
@@ -54,7 +82,11 @@ function HeaderSheetContent({
           <div className="flex min-h-0 flex-1 flex-col">
             {children}
             {onDismiss && (
-              <HeaderSheetHandle popupRef={popupRef} onDismiss={onDismiss} />
+              <HeaderSheetHandle
+                popupRef={popupRef}
+                onDismiss={onDismiss}
+                dismissible={dismissible}
+              />
             )}
           </div>
         </PopoverPrimitive.Popup>
@@ -74,9 +106,11 @@ const LEAVE = "cubic-bezier(0.4, 0, 1, 1)"
 function HeaderSheetHandle({
   popupRef,
   onDismiss,
+  dismissible,
 }: {
   popupRef: RefObject<HTMLDivElement | null>
   onDismiss: () => void
+  dismissible: boolean
 }) {
   const drag = useRef<{
     startY: number
@@ -116,7 +150,11 @@ function HeaderSheetHandle({
       state.velocity > 0.5 && event.timeStamp - state.lastTime < 100
     // An interrupted gesture (pointercancel) never dismisses: its coordinates
     // are not a release point.
-    if (!cancelled && (distance > Math.min(96, height * 0.3) || flicked)) {
+    if (
+      dismissible &&
+      !cancelled &&
+      (distance > Math.min(96, height * 0.3) || flicked)
+    ) {
       // Hold the open clip so the roll-up exit cannot run alongside the slide.
       popup.style.clipPath = "inset(0 -2rem -2rem -2rem)"
       lift(height, `transform 220ms ${LEAVE}`)
@@ -163,7 +201,7 @@ function HeaderSheetHandle({
       onPointerCancel={(event) => release(event, true)}
       onClick={(event) => {
         if (event.timeStamp < ignoreClickUntil.current) return
-        onDismiss()
+        if (dismissible) onDismiss()
       }}
     >
       <span className="h-1 w-9 rounded-full bg-muted-foreground/30 transition-colors group-hover/handle:bg-muted-foreground/50 group-focus-visible/handle:bg-ring" />

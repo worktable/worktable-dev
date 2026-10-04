@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react"
 import type { ReactNode } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useRouterState } from "@tanstack/react-router"
 import {
   ChevronDown,
   ChevronRight,
@@ -56,7 +56,14 @@ type PageMenuAction = PageOverflowAction & { detail?: string }
 export function PageMenu() {
   const crumbs = useBreadcrumbs()
   const { pageMeta } = usePageMeta()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const [open, setOpen] = useState(false)
+  // Any navigation closes the sheet, including the browser's back gesture.
+  const [shownPath, setShownPath] = useState(pathname)
+  if (shownPath !== pathname) {
+    setShownPath(pathname)
+    setOpen(false)
+  }
   // Set when a chosen action takes over. The closing sheet then leaves focus
   // to the action instead of returning it to the title behind a new drawer.
   const [handingOff, setHandingOff] = useState(false)
@@ -139,9 +146,8 @@ export function PageMenu() {
             window.document.querySelector("[data-worktable-app-header]")
           }
           aria-label="Page"
-          onDismiss={() => {
-            if (!lifetimePending) close()
-          }}
+          onDismiss={close}
+          dismissible={!lifetimePending}
           finalFocus={!handingOff}
           aria-busy={lifetimePending}
         >
@@ -151,7 +157,8 @@ export function PageMenu() {
           >
             {/* One wrapper, so the fade sees the content grow as rows expand. */}
             <div className="p-2">
-              <nav aria-label="Breadcrumb">
+              {/* Nothing else runs while a lifetime change is saving. */}
+              <nav aria-label="Breadcrumb" inert={lifetimePending}>
                 <PathTrail
                   crumbs={crumbs}
                   index={0}
@@ -168,7 +175,11 @@ export function PageMenu() {
                 </div>
               )}
               {pageActions.length > 0 && (
-                <ActionGroup actions={pageActions} select={select} />
+                <ActionGroup
+                  actions={pageActions}
+                  select={select}
+                  disabled={lifetimePending}
+                />
               )}
               {document ? (
                 <DocumentActions
@@ -178,6 +189,7 @@ export function PageMenu() {
                   overflowActions={overflowActions}
                   select={select}
                   onDone={close}
+                  pending={lifetimePending}
                   onPendingChange={setLifetimePending}
                 />
               ) : (
@@ -209,6 +221,7 @@ function DocumentActions({
   overflowActions,
   select,
   onDone,
+  pending,
   onPendingChange,
 }: {
   spaceId: string
@@ -216,6 +229,7 @@ function DocumentActions({
   overflowActions: PageOverflowAction[]
   select: (action: () => void) => () => void
   onDone: () => void
+  pending: boolean
   onPendingChange: (pending: boolean) => void
 }) {
   const archiveLabel = useTemporaryArchiveLabel(spaceId, path)
@@ -243,7 +257,9 @@ function DocumentActions({
           />
         </div>
       )}
-      {actions.length > 0 && <ActionGroup actions={actions} select={select} />}
+      {actions.length > 0 && (
+        <ActionGroup actions={actions} select={select} disabled={pending} />
+      )}
     </>
   )
 }
@@ -251,9 +267,11 @@ function DocumentActions({
 function ActionGroup({
   actions,
   select,
+  disabled = false,
 }: {
   actions: PageMenuAction[]
   select: (action: () => void) => () => void
+  disabled?: boolean
 }) {
   return (
     <div className="mt-2 border-t border-border/60 pt-2">
@@ -268,7 +286,7 @@ function ActionGroup({
           )}
           <button
             type="button"
-            disabled={action.disabled}
+            disabled={disabled || action.disabled}
             onClick={select(action.onSelect)}
             className={cn(
               rowClass,

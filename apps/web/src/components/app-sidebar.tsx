@@ -13,9 +13,11 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   ChevronRight,
   ChevronDown,
+  File,
   FilePlus,
   FileText,
   Folder,
+  AlertTriangle,
   LayoutDashboard,
   Plus,
   Briefcase,
@@ -2168,10 +2170,16 @@ function UnavailableDocumentTreeItem({
             : "text-sidebar-item-foreground"
         }`}
       >
-        <DocumentNodeIcon
-          node={node}
-          className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-        />
+        {/* An entry without a working view reads as a plain file, whatever its format. */}
+        {node.kind === "conflict" ? (
+          <AlertTriangle
+            className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+          />
+        ) : (
+          <File
+            className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+          />
+        )}
         <span className="truncate">{node.label}</span>
       </Link>
     </div>

@@ -179,9 +179,9 @@ export function buildBreadcrumbs({
     const currentPath = segments.join("/")
     segments.forEach((segment, index) => {
       const path = segments.slice(0, index + 1).join("/")
+      const active = documents && findTreeNode(documents.active, path)
       const node =
-        (documents && findTreeNode(documents.active, path)) ??
-        (documents && findTreeNode(documents.archived, path))
+        active ?? (documents && findTreeNode(documents.archived, path))
       const label = node?.label ?? humanizeSegment(segment)
       if (index === segments.length - 1) {
         crumbs.push({
@@ -193,14 +193,13 @@ export function buildBreadcrumbs({
         return
       }
       // Folders whose contents are all archived have nothing to open.
-      const folder = documents && findTreeNode(documents.active, path)
       crumbs.push(
-        folder
+        active
           ? {
               kind: "folder",
               role: "folder",
               label,
-              node: folder,
+              node: active,
               spaceId,
               currentPath,
             }

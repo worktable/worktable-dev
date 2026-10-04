@@ -793,6 +793,11 @@
 /* Header sheet: the panel unrolls from beneath the header edge while its
    contents settle into place, then rolls back up faster than it opened.
    Negative side and bottom insets keep the floating shadow unclipped. */
+/* A fixed edge at the header: a sheet dragged up slides beneath it. */
+.header-sheet-positioner {
+  clip-path: inset(0 -2rem -2rem -2rem);
+}
+
 .header-sheet {
   clip-path: inset(0 -2rem -2rem -2rem);
   transition: clip-path 360ms cubic-bezier(0.32, 0.72, 0, 1);

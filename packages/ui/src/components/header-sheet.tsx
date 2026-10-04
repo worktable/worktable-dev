@@ -40,7 +40,7 @@ function HeaderSheetContent({
         // Cover the header's bottom border with the sheet's own edge.
         sideOffset={-1}
         collisionPadding={0}
-        className="z-40 outline-none"
+        className="header-sheet-positioner z-40 outline-none"
       >
         <PopoverPrimitive.Popup
           ref={popupRef}
@@ -86,15 +86,13 @@ function HeaderSheetHandle({
   } | null>(null)
   const dragged = useRef(false)
 
-  // Lift the sheet while clipping at its top so it never covers the header.
+  // Only the transform moves. The positioner's fixed clip at the header edge
+  // hides what passes above it, so nothing can drift out of step.
   const lift = (distance: number, transition = "none") => {
     const popup = popupRef.current
     if (!popup) return
     popup.style.transition = transition
     popup.style.transform = distance ? `translateY(${-distance}px)` : ""
-    popup.style.clipPath = distance
-      ? `inset(${distance}px -2rem -2rem -2rem)`
-      : ""
   }
 
   const release = (event: PointerEvent<HTMLButtonElement>) => {
@@ -108,11 +106,13 @@ function HeaderSheetHandle({
     const flicked =
       state.velocity > 0.5 && event.timeStamp - state.lastTime < 100
     if (distance > Math.min(96, height * 0.3) || flicked) {
-      lift(height, `transform 220ms ${LEAVE}, clip-path 220ms ${LEAVE}`)
+      // Hold the open clip so the roll-up exit cannot run alongside the slide.
+      popup.style.clipPath = "inset(0 -2rem -2rem -2rem)"
+      lift(height, `transform 220ms ${LEAVE}`)
       onDismiss()
       return
     }
-    lift(0, `transform 280ms ${SETTLE}, clip-path 280ms ${SETTLE}`)
+    lift(0, `transform 280ms ${SETTLE}`)
     popup.addEventListener(
       "transitionend",
       () => {

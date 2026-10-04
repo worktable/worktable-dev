@@ -72,7 +72,10 @@ test("temporary documents stay aside until kept, and pinned documents start the 
 
   await page.getByRole("button", { name: "More actions" }).click()
   await page.getByRole("menuitem", { name: "Pin to Start here" }).click()
-  await page.getByRole("link", { name: "Organize", exact: true }).click()
+  await page
+    .getByRole("navigation", { name: "Breadcrumb" })
+    .getByRole("link", { name: "Organize", exact: true })
+    .click()
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   await expect(
     page

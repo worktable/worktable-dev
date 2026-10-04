@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import {
@@ -29,7 +29,7 @@ import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { DocumentLifetimeControls } from "@/components/document-organize"
 import { ShareDocumentAction } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
 import {
   useDocumentOrganizeActions,
   useTemporaryArchiveLabel,
@@ -40,7 +40,6 @@ import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import type { Breadcrumb } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow } from "@/lib/document-views"
 import { resolveIcon } from "@/lib/icons"
-import { useSpaces } from "@/lib/queries"
 import type { TreeNode } from "@/lib/tree"
 
 const rowClass =
@@ -57,9 +56,11 @@ export function PageMenu() {
   const crumbs = useBreadcrumbs()
   const { pageMeta } = usePageMeta()
   const [open, setOpen] = useState(false)
+  // Set when a chosen action takes over. The closing sheet then leaves focus
+  // to the action instead of returning it to the title behind a new drawer.
+  const [handingOff, setHandingOff] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const sharingAvailable =
-    useDeploymentInfo().data?.capabilities.documentSharing === true
+  const sharingAvailable = useDocumentSharingAvailable()
   const scrollRef = useScrollFade<HTMLDivElement>()
   const document = pageMeta?.document
   if (crumbs.length === 0) return null
@@ -69,6 +70,7 @@ export function PageMenu() {
     [...crumbs].reverse().find((crumb) => !crumb.mobileHidden) ?? crumbs[0]!
   const close = () => setOpen(false)
   const select = (action: () => void) => () => {
+    setHandingOff(true)
     close()
     action()
   }
@@ -108,7 +110,13 @@ export function PageMenu() {
 
   return (
     <>
-      <HeaderSheet open={open} onOpenChange={setOpen}>
+      <HeaderSheet
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setHandingOff(false)
+          setOpen(next)
+        }}
+      >
         <HeaderSheetTrigger
           render={<button type="button" />}
           // The whole stretch between the logo and the actions opens it.
@@ -123,6 +131,7 @@ export function PageMenu() {
           }
           aria-label="Page"
           onDismiss={close}
+          finalFocus={!handingOff}
         >
           <div
             ref={scrollRef}
@@ -201,9 +210,12 @@ function DocumentActions({
   const actions = [
     ...overflowActions,
     // The lifetime row already offers Keep.
-    ...organizeActions.filter(
-      (action) => !(archiveLabel && action.id === "keep")
-    ),
+    ...organizeActions
+      .filter((action) => !(archiveLabel && action.id === "keep"))
+      .map((action, index) => ({
+        ...action,
+        separatorBefore: index === 0 && overflowActions.length > 0,
+      })),
   ]
   return (
     <>
@@ -231,32 +243,40 @@ function ActionGroup({
 }) {
   return (
     <div className="mt-2 border-t border-border/60 pt-2">
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          disabled={action.disabled}
-          onClick={select(action.onSelect)}
-          className={cn(
-            rowClass,
-            "disabled:pointer-events-none disabled:opacity-50",
-            action.tone === "destructive" &&
-              "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 active:bg-destructive/10"
+      {actions.map((action, index) => (
+        <Fragment key={action.id}>
+          {/* Desktop's More menu separates these groups the same way. */}
+          {action.separatorBefore && index > 0 && (
+            <div
+              role="separator"
+              className="mx-3 my-2 border-t border-border/60"
+            />
           )}
-        >
-          <action.icon
+          <button
+            type="button"
+            disabled={action.disabled}
+            onClick={select(action.onSelect)}
             className={cn(
-              iconClass,
-              action.tone === "destructive" && "text-destructive"
+              rowClass,
+              "disabled:pointer-events-none disabled:opacity-50",
+              action.tone === "destructive" &&
+                "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 active:bg-destructive/10"
             )}
-          />
-          <span className="min-w-0 flex-1 truncate">{action.label}</span>
-          {action.detail && (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {action.detail}
-            </span>
-          )}
-        </button>
+          >
+            <action.icon
+              className={cn(
+                iconClass,
+                action.tone === "destructive" && "text-destructive"
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">{action.label}</span>
+            {action.detail && (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {action.detail}
+              </span>
+            )}
+          </button>
+        </Fragment>
       ))}
     </div>
   )
@@ -417,14 +437,10 @@ function CrumbIcon({
   current: boolean
 }) {
   const className = cn(iconClass, current && "text-primary-text")
-  const { data: spaces } = useSpaces()
-  if (crumb.role === "space" && crumb.kind === "link") {
-    const spaceId =
-      "spaceId" in crumb.target.params ? crumb.target.params.spaceId : undefined
-    const space = spaces?.find((candidate) => candidate.id === spaceId)
+  if (crumb.role === "space") {
     return (
       <span className={cn(className, "[&>svg]:size-4")}>
-        {resolveIcon(space?.icon)}
+        {resolveIcon(crumb.icon)}
       </span>
     )
   }
@@ -513,14 +529,11 @@ function TreeRows({
   depth: number
   onNavigate: () => void
 }) {
-  const visible = nodes.filter(
-    (node) => node.kind !== "folder" || node.children.length > 0
-  )
-  if (visible.length === 0) return null
+  if (nodes.length === 0) return null
   return (
     <Collapsible open={open}>
       <CollapsibleContent>
-        {visible.map((node) =>
+        {nodes.map((node) =>
           node.isFolder && node.children.length > 0 ? (
             <TreeFolder
               key={node.path}

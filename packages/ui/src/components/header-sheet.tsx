@@ -95,7 +95,10 @@ function HeaderSheetHandle({
     popup.style.transform = distance ? `translateY(${-distance}px)` : ""
   }
 
-  const release = (event: PointerEvent<HTMLButtonElement>) => {
+  const release = (
+    event: PointerEvent<HTMLButtonElement>,
+    cancelled = false
+  ) => {
     const state = drag.current
     drag.current = null
     const popup = popupRef.current
@@ -105,7 +108,9 @@ function HeaderSheetHandle({
     // A finger that paused before lifting is not a flick.
     const flicked =
       state.velocity > 0.5 && event.timeStamp - state.lastTime < 100
-    if (distance > Math.min(96, height * 0.3) || flicked) {
+    // An interrupted gesture (pointercancel) never dismisses: its coordinates
+    // are not a release point.
+    if (!cancelled && (distance > Math.min(96, height * 0.3) || flicked)) {
       // Hold the open clip so the roll-up exit cannot run alongside the slide.
       popup.style.clipPath = "inset(0 -2rem -2rem -2rem)"
       lift(height, `transform 220ms ${LEAVE}`)
@@ -113,13 +118,11 @@ function HeaderSheetHandle({
       return
     }
     lift(0, `transform 280ms ${SETTLE}`)
-    popup.addEventListener(
-      "transitionend",
-      () => {
-        popup.style.transition = ""
-      },
-      { once: true }
-    )
+    // Restore the stylesheet transitions even when the sheet was already at
+    // rest and no transition runs to signal its end.
+    window.setTimeout(() => {
+      if (!drag.current) popup.style.transition = ""
+    }, 280)
   }
 
   return (
@@ -151,7 +154,7 @@ function HeaderSheetHandle({
         if (dragged.current) lift(distance)
       }}
       onPointerUp={release}
-      onPointerCancel={release}
+      onPointerCancel={(event) => release(event, true)}
       onClick={() => {
         // A drag ends in a click; only a tap or keyboard press closes here.
         if (dragged.current) {

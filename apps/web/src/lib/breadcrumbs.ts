@@ -25,6 +25,8 @@ export type BreadcrumbRole =
 export type Breadcrumb = {
   label: string
   role: BreadcrumbRole
+  /** The space's chosen icon, on its crumb. */
+  icon?: string
   /** The catalog entry a folder or document crumb names, once loaded. */
   node?: TreeNode
   /** A pane title that narrow screens leave to the pane itself. */
@@ -46,6 +48,7 @@ export interface BreadcrumbInput {
   titleOverride?: string
   parentTitleOverride?: string
   spaceName?: string
+  spaceIcon?: string
   documents?: SpaceDocumentTrees
 }
 
@@ -68,6 +71,7 @@ export function buildBreadcrumbs({
   titleOverride,
   parentTitleOverride,
   spaceName,
+  spaceIcon,
   documents,
 }: BreadcrumbInput): Breadcrumb[] {
   const crumbs: Breadcrumb[] = []
@@ -75,6 +79,7 @@ export function buildBreadcrumbs({
     kind: "link",
     role: "space",
     label: spaceName ?? fallback ?? humanizeSegment(spaceId),
+    icon: spaceIcon,
     target: { to: "/spaces/$spaceId", params: { spaceId } },
   })
 
@@ -185,7 +190,7 @@ export function buildBreadcrumbs({
       // Folders whose contents are all archived have nothing to open.
       const folder = documents && findTreeNode(documents.active, path)
       crumbs.push(
-        folder && (folder.children.length > 0 || folder.kind !== "folder")
+        folder
           ? {
               kind: "folder",
               role: "folder",

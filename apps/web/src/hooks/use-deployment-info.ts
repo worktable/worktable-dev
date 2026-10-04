@@ -13,3 +13,8 @@ export function useDeploymentInfo() {
       query.state.data?.mode === "self-managed" ? 5000 : false,
   })
 }
+
+/** Whether this deployment can publish read-only document links. */
+export function useDocumentSharingAvailable(): boolean {
+  return useDeploymentInfo().data?.capabilities.documentSharing === true
+}

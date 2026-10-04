@@ -52,6 +52,7 @@ export function useBreadcrumbs(): Breadcrumb[] {
     titleOverride: pageMeta?.titleOverride,
     parentTitleOverride: pageMeta?.parentTitleOverride,
     spaceName: space?.name,
+    spaceIcon: space?.icon,
     documents: trees,
   })
 }

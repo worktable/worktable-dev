@@ -23,7 +23,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
 import { cn } from "@worktable/ui/lib/utils"
-import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { copyText } from "@/lib/clipboard"
 import {
@@ -48,7 +48,6 @@ export function ShareDocumentAction({
   onOpenChange?: (open: boolean) => void
   showTrigger?: boolean
 }) {
-  const deployment = useDeploymentInfo()
   const queryClient = useQueryClient()
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlledOpen ?? uncontrolledOpen
@@ -60,7 +59,7 @@ export function ShareDocumentAction({
   const [copyState, setCopyState] = useState<CopyState>("idle")
   const [announcement, setAnnouncement] = useState("")
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const available = deployment.data?.capabilities.documentSharing === true
+  const available = useDocumentSharingAvailable()
   const queryKey = shareQueryKey(target)
   const status = useQuery({
     queryKey,

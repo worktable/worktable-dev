@@ -150,9 +150,7 @@ function FolderMenuEntries({
   currentPath: string
 }) {
   const ownDocument = folder.kind !== "folder"
-  const entries = folder.children.filter(
-    (child) => child.kind !== "folder" || child.children.length > 0
-  )
+  const entries = folder.children
   return (
     <>
       {ownDocument && (

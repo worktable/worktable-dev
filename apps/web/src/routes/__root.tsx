@@ -77,7 +77,7 @@ import {
   useDiscardRecovery,
   ReconnectingOverlay,
 } from "@/hooks/use-page-lifecycle"
-import { PageMetaContext } from "@/hooks/use-page-meta"
+import { PageMetaContext, narrowHeaderAction } from "@/hooks/use-page-meta"
 import { Breadcrumb } from "@/components/breadcrumb"
 import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
@@ -601,7 +601,7 @@ function RootLayout() {
               </div>
 
               {/* Narrow screens keep one action; the page menu holds the rest. */}
-              {secondaryAction && SecondaryActionIcon && !(isMobile && primaryAction) && (
+              {secondaryAction && SecondaryActionIcon && (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
                 <Button
                   variant={secondaryAction.displayLabel ? "outline" : "ghost"}
                   size={secondaryAction.displayLabel ? "sm" : "icon"}

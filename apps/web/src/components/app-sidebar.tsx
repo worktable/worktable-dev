@@ -13,7 +13,6 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   ChevronRight,
   ChevronDown,
-  File,
   FilePlus,
   FileText,
   Folder,
@@ -27,7 +26,6 @@ import {
   Check,
   Archive,
   Clock3,
-  AlertTriangle,
   AppWindow,
   Copy,
   Database,
@@ -160,6 +158,7 @@ import {
   supportsManagedFolderMove,
 } from "@/lib/document-views"
 import { canonicalConflictPath, HttpError } from "@/lib/http"
+import { DocumentNodeIcon } from "@/components/document-node-icon"
 import {
   documentFolderPaths,
   documentListItemArchived,
@@ -2149,7 +2148,6 @@ function UnavailableDocumentTreeItem({
     node,
     reorder
   )
-  const StateIcon = node.kind === "conflict" ? AlertTriangle : File
   const isActive = currentPath === `/spaces/${spaceId}/documents/${node.path}`
   return (
     <div
@@ -2170,7 +2168,8 @@ function UnavailableDocumentTreeItem({
             : "text-sidebar-item-foreground"
         }`}
       >
-        <StateIcon
+        <DocumentNodeIcon
+          node={node}
           className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
         />
         <span className="truncate">{node.label}</span>
@@ -2472,11 +2471,10 @@ function DocTreeItem({
                       : "text-sidebar-item-foreground"
                   }`}
                 >
-                  {node.kind === "conflict" ? (
-                    <AlertTriangle className="size-4 shrink-0 text-sidebar-foreground/40" />
-                  ) : (
-                    <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
-                  )}
+                  <DocumentNodeIcon
+                    node={node}
+                    className={`size-4 shrink-0 ${node.kind === "conflict" ? "text-sidebar-foreground/40" : "text-sidebar-primary/60"}`}
+                  />
                   <span className="truncate">{node.label}</span>
                 </SpecializedDocumentLink>
               </div>
@@ -2612,19 +2610,10 @@ function DocTreeItem({
               : "text-sidebar-item-foreground"
           }`}
         >
-          {node.format?.id === "worktable.quickdraw" ? (
-            <Pencil
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          ) : node.format?.id === "worktable.markdown" ? (
-            <File
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          ) : (
-            <FileText
-              className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-            />
-          )}
+          <DocumentNodeIcon
+            node={node}
+            className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+          />
           <span className="truncate">{node.label}</span>
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/doc:opacity-100 has-[[data-popup-open]]:opacity-100">

@@ -85,6 +85,10 @@ function HeaderSheetHandle({
     velocity: number
   } | null>(null)
   const dragged = useRef(false)
+  // A drag may or may not end in a click (pointercancel never does, and some
+  // mobile browsers drop it). Ignore only a click that follows the drag closely
+  // so a later keyboard press still closes.
+  const ignoreClickUntil = useRef(0)
 
   // Only the transform moves. The positioner's fixed clip at the header edge
   // hides what passes above it, so nothing can drift out of step.
@@ -103,6 +107,8 @@ function HeaderSheetHandle({
     drag.current = null
     const popup = popupRef.current
     if (!state || !popup || !dragged.current) return
+    dragged.current = false
+    ignoreClickUntil.current = event.timeStamp + 400
     const distance = Math.max(0, state.startY - event.clientY)
     const height = popup.offsetHeight
     // A finger that paused before lifting is not a flick.
@@ -155,12 +161,8 @@ function HeaderSheetHandle({
       }}
       onPointerUp={release}
       onPointerCancel={(event) => release(event, true)}
-      onClick={() => {
-        // A drag ends in a click; only a tap or keyboard press closes here.
-        if (dragged.current) {
-          dragged.current = false
-          return
-        }
+      onClick={(event) => {
+        if (event.timeStamp < ignoreClickUntil.current) return
         onDismiss()
       }}
     >

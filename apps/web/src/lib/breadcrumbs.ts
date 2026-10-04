@@ -58,8 +58,35 @@ export function breadcrumbSpaceId(pathname: string): string | undefined {
   return match ? safeDecode(match[1]!) : undefined
 }
 
+/** Route sections that open a document; `docs` and `widgets` redirect. */
+const DOCUMENT_SECTIONS = new Set(["documents", "docs", "widgets"])
+
 export function isDocumentPathname(pathname: string): boolean {
-  return /^\/spaces\/[^/]+\/(?:documents|docs|widgets)\/./.test(pathname)
+  const [, section, ...segments] =
+    pathname.match(/^\/spaces\/[^/]+\/([^/]+)\/(.*)$/) ?? []
+  return !!section && DOCUMENT_SECTIONS.has(section) && segments.join("") !== ""
+}
+
+/** "Threads", linking to the list when a thread is open, then its title. */
+function threadsCrumbs(
+  list: BreadcrumbTarget,
+  threadOpen: boolean,
+  titleOverride: string | undefined
+): Breadcrumb[] {
+  const crumbs: Breadcrumb[] = [
+    threadOpen
+      ? { kind: "link", role: "threads", label: "Threads", target: list }
+      : { kind: "text", role: "threads", label: "Threads" },
+  ]
+  if (titleOverride) {
+    crumbs.push({
+      kind: "text",
+      role: "thread",
+      label: titleOverride,
+      mobileHidden: true,
+    })
+  }
+  return crumbs
 }
 
 /**
@@ -93,23 +120,12 @@ export function buildBreadcrumbs({
       crumbs.push(spaceCrumb(safeDecode(spaceThread[1]!), parentTitleOverride))
     }
     crumbs.push(
-      splat
-        ? {
-            kind: "link",
-            role: "threads",
-            label: "Threads",
-            target: { to: "/threads/$", params: { _splat: "" } },
-          }
-        : { kind: "text", role: "threads", label: "Threads" }
+      ...threadsCrumbs(
+        { to: "/threads/$", params: { _splat: "" } },
+        splat !== "",
+        titleOverride
+      )
     )
-    if (titleOverride) {
-      crumbs.push({
-        kind: "text",
-        role: "thread",
-        label: titleOverride,
-        mobileHidden: true,
-      })
-    }
     return crumbs
   }
 
@@ -121,28 +137,16 @@ export function buildBreadcrumbs({
 
   const [section, ...segments] = rest
   if (section === "threads") {
-    const threadId = segments.join("/")
     crumbs.push(
-      threadId
-        ? {
-            kind: "link",
-            role: "threads",
-            label: "Threads",
-            target: {
-              to: "/spaces/$spaceId/threads/$",
-              params: { spaceId, _splat: "" },
-            },
-          }
-        : { kind: "text", role: "threads", label: "Threads" }
+      ...threadsCrumbs(
+        {
+          to: "/spaces/$spaceId/threads/$",
+          params: { spaceId, _splat: "" },
+        },
+        segments.join("/") !== "",
+        titleOverride
+      )
     )
-    if (titleOverride) {
-      crumbs.push({
-        kind: "text",
-        role: "thread",
-        label: titleOverride,
-        mobileHidden: true,
-      })
-    }
   } else if (section === "records" && segments[0]) {
     const [collectionId, recordId] = segments
     if (recordId) {
@@ -168,7 +172,8 @@ export function buildBreadcrumbs({
       })
     }
   } else if (
-    (section === "documents" || section === "docs" || section === "widgets") &&
+    section !== undefined &&
+    DOCUMENT_SECTIONS.has(section) &&
     segments.some(Boolean)
   ) {
     const currentPath = segments.join("/")

@@ -68,6 +68,18 @@ export interface PageMeta {
   parentTitleOverride?: string
 }
 
+/**
+ * The one action a narrow-screen header keeps. Every other page control
+ * lives in the page menu.
+ */
+export function narrowHeaderAction(
+  meta: PageMeta | null
+): "primary" | "secondary" | null {
+  if (meta?.primaryAction) return "primary"
+  if (meta?.secondaryAction) return "secondary"
+  return null
+}
+
 export interface PageMetaContextValue {
   pageMeta: PageMeta | null
   setPageMeta: (meta: PageMeta | null) => void

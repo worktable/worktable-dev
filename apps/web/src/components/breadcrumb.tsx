@@ -374,21 +374,37 @@ function PageDetailsCrumb({
             if (event.pointerType === "mouse") closeMetaSoon()
           }}
         >
-          <div className="flex items-start gap-2.5">
-            <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Clock3 className="size-3.5" />
-            </div>
-            <div className="min-w-0 space-y-0.5">
-              <div className="leading-5 font-medium text-popover-foreground">
-                {updatedAtLabel}
-              </div>
-              <div className="truncate leading-5 text-muted-foreground">
-                {provenanceLabel}
-              </div>
-            </div>
-          </div>
+          <PageDetailsSummary
+            updatedAtLabel={updatedAtLabel}
+            provenanceLabel={provenanceLabel}
+          />
         </div>
       )}
     </span>
+  )
+}
+
+/** When the open page last changed and where it comes from. */
+export function PageDetailsSummary({
+  updatedAtLabel,
+  provenanceLabel,
+}: {
+  updatedAtLabel: string
+  provenanceLabel: string
+}) {
+  return (
+    <div className="flex items-start gap-2.5 text-xs">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Clock3 className="size-3.5" />
+      </div>
+      <div className="min-w-0 space-y-0.5">
+        <div className="leading-5 font-medium text-popover-foreground">
+          {updatedAtLabel}
+        </div>
+        <div className="truncate leading-5 text-muted-foreground">
+          {provenanceLabel}
+        </div>
+      </div>
+    </div>
   )
 }

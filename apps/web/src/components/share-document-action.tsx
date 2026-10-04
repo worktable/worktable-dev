@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
   Check,
@@ -24,11 +24,11 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { cn } from "@worktable/ui/lib/utils"
 import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
+import { useDocumentShareStatus } from "@/hooks/use-document-share"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { copyText } from "@/lib/clipboard"
 import {
   createDocumentShare,
-  getDocumentShare,
   shareQueryKey,
   stopDocumentShare,
   type ShareStatus,
@@ -61,12 +61,7 @@ export function ShareDocumentAction({
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const available = useDocumentSharingAvailable()
   const queryKey = shareQueryKey(target)
-  const status = useQuery({
-    queryKey,
-    queryFn: () => getDocumentShare(target),
-    enabled: available,
-    staleTime: 10_000,
-  })
+  const status = useDocumentShareStatus(target)
 
   const create = useMutation({
     mutationFn: () => createDocumentShare(target),

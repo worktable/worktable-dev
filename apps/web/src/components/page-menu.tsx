@@ -24,18 +24,19 @@ import {
   HeaderSheetTrigger,
 } from "@worktable/ui/components/header-sheet"
 import { cn } from "@worktable/ui/lib/utils"
-import { CrumbLink } from "@/components/breadcrumb"
+import { CrumbLink, PageDetailsSummary } from "@/components/breadcrumb"
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { DocumentLifetimeControls } from "@/components/document-organize"
 import { ShareDocumentAction } from "@/components/share-document-action"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
+import { useDocumentShareStatus } from "@/hooks/use-document-share"
 import {
   useDocumentOrganizeActions,
   useTemporaryArchiveLabel,
 } from "@/hooks/use-document-organize"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { narrowHeaderAction, usePageMeta } from "@/hooks/use-page-meta"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import type { Breadcrumb } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow } from "@/lib/document-views"
@@ -60,7 +61,10 @@ export function PageMenu() {
   // to the action instead of returning it to the title behind a new drawer.
   const [handingOff, setHandingOff] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  // A lifetime change in flight keeps the sheet open, like the header chip.
+  const [lifetimePending, setLifetimePending] = useState(false)
   const sharingAvailable = useDocumentSharingAvailable()
+  const shared = useDocumentShareStatus(pageMeta?.shareTarget).data?.share
   const scrollRef = useScrollFade<HTMLDivElement>()
   const document = pageMeta?.document
   if (crumbs.length === 0) return null
@@ -76,8 +80,11 @@ export function PageMenu() {
   }
 
   const pageActions: PageMenuAction[] = []
-  // The header keeps the main action; a second one moves here.
-  if (pageMeta?.primaryAction && pageMeta.secondaryAction) {
+  // Everything except the header's one action lives here.
+  if (
+    pageMeta?.secondaryAction &&
+    narrowHeaderAction(pageMeta) !== "secondary"
+  ) {
     const { label, icon, onClick, disabled, pending } = pageMeta.secondaryAction
     pageActions.push({
       id: "secondary",
@@ -102,6 +109,7 @@ export function PageMenu() {
     pageActions.push({
       id: "share",
       label: "Share",
+      detail: shared ? "Link active" : undefined,
       icon: Share2,
       onSelect: () => setShareOpen(true),
     })
@@ -113,6 +121,7 @@ export function PageMenu() {
       <HeaderSheet
         open={open}
         onOpenChange={(next) => {
+          if (!next && lifetimePending) return
           if (next) setHandingOff(false)
           setOpen(next)
         }}
@@ -130,51 +139,53 @@ export function PageMenu() {
             window.document.querySelector("[data-worktable-app-header]")
           }
           aria-label="Page"
-          onDismiss={close}
+          onDismiss={() => {
+            if (!lifetimePending) close()
+          }}
           finalFocus={!handingOff}
+          aria-busy={lifetimePending}
         >
           <div
             ref={scrollRef}
-            className="scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+            className="scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
-            <nav aria-label="Breadcrumb">
-              <PathTrail
-                crumbs={crumbs}
-                index={0}
-                depth={0}
-                onNavigate={close}
-              />
-            </nav>
-            {pageMeta?.updatedAtLabel && pageMeta.provenanceLabel && (
-              <div className="flex items-start gap-3 px-3 pt-1 pb-2 text-xs">
-                <Clock3 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 space-y-0.5">
-                  <div className="leading-5 font-medium text-foreground">
-                    {pageMeta.updatedAtLabel}
-                  </div>
-                  <div className="truncate leading-5 text-muted-foreground">
-                    {pageMeta.provenanceLabel}
-                  </div>
+            {/* One wrapper, so the fade sees the content grow as rows expand. */}
+            <div className="p-2">
+              <nav aria-label="Breadcrumb">
+                <PathTrail
+                  crumbs={crumbs}
+                  index={0}
+                  depth={0}
+                  onNavigate={close}
+                />
+              </nav>
+              {pageMeta?.updatedAtLabel && pageMeta.provenanceLabel && (
+                <div className="px-3 pt-2 pb-1">
+                  <PageDetailsSummary
+                    updatedAtLabel={pageMeta.updatedAtLabel}
+                    provenanceLabel={pageMeta.provenanceLabel}
+                  />
                 </div>
-              </div>
-            )}
-            {pageActions.length > 0 && (
-              <ActionGroup actions={pageActions} select={select} />
-            )}
-            {document ? (
-              <DocumentActions
-                key={`${document.spaceId}:${document.path}`}
-                spaceId={document.spaceId}
-                path={document.path}
-                overflowActions={overflowActions}
-                select={select}
-                onDone={close}
-              />
-            ) : (
-              overflowActions.length > 0 && (
-                <ActionGroup actions={overflowActions} select={select} />
-              )
-            )}
+              )}
+              {pageActions.length > 0 && (
+                <ActionGroup actions={pageActions} select={select} />
+              )}
+              {document ? (
+                <DocumentActions
+                  key={`${document.spaceId}:${document.path}`}
+                  spaceId={document.spaceId}
+                  path={document.path}
+                  overflowActions={overflowActions}
+                  select={select}
+                  onDone={close}
+                  onPendingChange={setLifetimePending}
+                />
+              ) : (
+                overflowActions.length > 0 && (
+                  <ActionGroup actions={overflowActions} select={select} />
+                )
+              )}
+            </div>
           </div>
         </HeaderSheetContent>
       </HeaderSheet>
@@ -198,12 +209,14 @@ function DocumentActions({
   overflowActions,
   select,
   onDone,
+  onPendingChange,
 }: {
   spaceId: string
   path: string
   overflowActions: PageOverflowAction[]
   select: (action: () => void) => () => void
   onDone: () => void
+  onPendingChange: (pending: boolean) => void
 }) {
   const archiveLabel = useTemporaryArchiveLabel(spaceId, path)
   const organizeActions = useDocumentOrganizeActions(spaceId, path)
@@ -226,6 +239,7 @@ function DocumentActions({
             path={path}
             label={archiveLabel}
             onDone={onDone}
+            onPendingChange={onPendingChange}
           />
         </div>
       )}
@@ -287,11 +301,13 @@ function LifetimeRow({
   path,
   label,
   onDone,
+  onPendingChange,
 }: {
   spaceId: string
   path: string
   label: string
   onDone: () => void
+  onPendingChange: (pending: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   return (
@@ -315,6 +331,7 @@ function LifetimeRow({
             spaceId={spaceId}
             path={path}
             onDone={onDone}
+            onPendingChange={onPendingChange}
             heading={(step) =>
               step === "date" && (
                 <p className="text-xs text-muted-foreground">
@@ -489,6 +506,7 @@ function FolderTrail({
         node={node}
         spaceId={spaceId}
         depth={depth}
+        expandable={before.length + after.length > 0}
         expanded={expanded}
         onExpandedChange={setExpanded}
         onNavigate={onNavigate}
@@ -603,6 +621,7 @@ function FolderRow({
   node,
   spaceId,
   depth,
+  expandable = true,
   expanded,
   onExpandedChange,
   onNavigate,
@@ -610,6 +629,8 @@ function FolderRow({
   node: TreeNode
   spaceId: string
   depth: number
+  /** False when the folder holds nothing beyond the entry on the trail. */
+  expandable?: boolean
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   onNavigate: () => void
@@ -620,6 +641,17 @@ function FolderRow({
       className={cn(iconClass, "text-primary/60")}
     />
   )
+  if (node.kind === "folder" && !expandable) {
+    return (
+      <div
+        className={cn(rowClass, "hover:bg-transparent")}
+        style={indent(depth)}
+      >
+        {icon}
+        <span className="truncate">{node.label}</span>
+      </div>
+    )
+  }
   if (node.kind === "folder") {
     return (
       <button
@@ -647,17 +679,19 @@ function FolderRow({
         {icon}
         <span className="truncate">{node.label}</span>
       </Link>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-label={
-          expanded ? `Collapse ${node.label}` : `Expand ${node.label}`
-        }
-        onClick={() => onExpandedChange(!expanded)}
-        className="flex size-11 shrink-0 items-center justify-center rounded-lg transition-colors outline-none hover:bg-accent focus-visible:bg-accent active:bg-accent"
-      >
-        <Disclosure expanded={expanded} />
-      </button>
+      {expandable && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={
+            expanded ? `Collapse ${node.label}` : `Expand ${node.label}`
+          }
+          onClick={() => onExpandedChange(!expanded)}
+          className="flex size-11 shrink-0 items-center justify-center rounded-lg transition-colors outline-none hover:bg-accent focus-visible:bg-accent active:bg-accent"
+        >
+          <Disclosure expanded={expanded} />
+        </button>
+      )}
     </div>
   )
 }

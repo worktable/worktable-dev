@@ -111,7 +111,8 @@ export function PageMenu() {
       <HeaderSheet open={open} onOpenChange={setOpen}>
         <HeaderSheetTrigger
           render={<button type="button" />}
-          className="group/title flex max-w-full min-w-0 items-center gap-1 rounded-md py-1 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          // The whole stretch between the logo and the actions opens it.
+          className="group/title flex min-h-11 w-full min-w-0 items-center gap-1 rounded-md text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <span className="truncate">{title.label}</span>
           <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] group-data-popup-open/title:rotate-180" />
@@ -121,6 +122,7 @@ export function PageMenu() {
             window.document.querySelector("[data-worktable-app-header]")
           }
           aria-label="Page"
+          onDismiss={close}
         >
           <div
             ref={scrollRef}

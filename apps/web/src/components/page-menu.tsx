@@ -39,7 +39,7 @@ import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { narrowHeaderAction, usePageMeta } from "@/hooks/use-page-meta"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import type { Breadcrumb } from "@/lib/breadcrumbs"
-import { documentPathIsAtOrBelow } from "@/lib/document-views"
+import { documentPathIsAtOrBelow, documentPathKey } from "@/lib/document-views"
 import { resolveIcon } from "@/lib/icons"
 import type { TreeNode } from "@/lib/tree"
 
@@ -596,7 +596,9 @@ function TreeRows({
               key={node.path}
               node={node}
               spaceId={spaceId}
-              current={node.path === currentPath}
+              current={
+                documentPathKey(node.path) === documentPathKey(currentPath)
+              }
               depth={depth}
               onNavigate={onNavigate}
             />

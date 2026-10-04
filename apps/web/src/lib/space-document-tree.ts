@@ -4,6 +4,7 @@ import type {
   SpaceFile,
 } from "@worktable/types"
 import type { WidgetListEntry } from "./widgets-api"
+import { documentPathKey } from "./document-views"
 import { buildTree } from "./tree"
 import type { DocSortMode, TreeInput, TreeNode } from "./tree"
 
@@ -151,8 +152,11 @@ export function findTreeNode(
 ): TreeNode | undefined {
   let current: TreeNode | undefined
   let level = nodes
+  // Paths that differ only in case or Unicode form name the same document,
+  // as they do on the server (conflict pages keep the URL as typed).
   for (const segment of path.split("/")) {
-    current = level.find((node) => node.name === segment)
+    const key = documentPathKey(segment)
+    current = level.find((node) => documentPathKey(node.name) === key)
     if (!current) return undefined
     level = current.children
   }

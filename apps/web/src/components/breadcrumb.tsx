@@ -19,7 +19,7 @@ import type {
   Breadcrumb as BreadcrumbItem,
   BreadcrumbTarget,
 } from "@/lib/breadcrumbs"
-import { documentPathIsAtOrBelow } from "@/lib/document-views"
+import { documentPathIsAtOrBelow, documentPathKey } from "@/lib/document-views"
 import type { TreeNode } from "@/lib/tree"
 
 /** Marks the open document and the folders leading to it in folder menus. */
@@ -211,14 +211,15 @@ function FolderMenuDocument({
   node: TreeNode
   currentPath: string
 }) {
+  const current = documentPathKey(node.path) === documentPathKey(currentPath)
   return (
     <DropdownMenuItem
-      className={node.path === currentPath ? currentEntryClass : undefined}
+      className={current ? currentEntryClass : undefined}
       render={
         <Link
           to="/spaces/$spaceId/documents/$"
           params={{ spaceId, _splat: node.path }}
-          aria-current={node.path === currentPath ? "page" : undefined}
+          aria-current={current ? "page" : undefined}
         />
       }
     >

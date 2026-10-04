@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import type { InvalidateQueryFilters } from "@tanstack/react-query"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { docQueryKeys } from "@/lib/docs-queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
@@ -17,15 +18,19 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
 
   useEffect(() => {
     if (!spaceId) return
+    // The sidebar and breadcrumb may both subscribe to one Space. Joining a
+    // refetch already in flight keeps their invalidations from restarting it.
+    const refresh = (filters: InvalidateQueryFilters) =>
+      void queryClient.invalidateQueries(filters, { cancelRefetch: false })
     return subscribe((msg) => {
       // A doc's label derives from its first heading, so an edit that adds an
       // H1 must show up without navigating away and back.
       if (msg.type === "doc_update" || msg.type === "doc_deleted") {
-        void queryClient.invalidateQueries({
+        refresh({
           queryKey: docQueryKeys.docs(spaceId),
           exact: true,
         })
-        void queryClient.invalidateQueries({
+        refresh({
           queryKey: documentQueryKeys.list(spaceId),
           exact: true,
         })
@@ -40,13 +45,13 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
         msg.type === "widget_moved" ||
         msg.type === "widget_deleted"
       ) {
-        void queryClient.invalidateQueries({
+        refresh({
           queryKey: queryKeys.spaces,
           exact: true,
         })
         // The per-space embed lists this Space's widgets for the overview;
         // refresh it too so an edit elsewhere shows up live.
-        void queryClient.invalidateQueries({
+        refresh({
           queryKey: queryKeys.space(spaceId),
           exact: true,
         })
@@ -60,7 +65,7 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
           msg.type !== "widget_deleted" &&
           msg.widgetId
         ) {
-          void queryClient.invalidateQueries({
+          refresh({
             queryKey: queryKeys.widget(spaceId, msg.widgetId),
             exact: true,
           })
@@ -74,7 +79,7 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
         msg.type === "record_deleted" ||
         msg.type === "record_collection_update"
       ) {
-        void queryClient.invalidateQueries({
+        refresh({
           queryKey: queryKeys.recordCollections(spaceId),
         })
       }

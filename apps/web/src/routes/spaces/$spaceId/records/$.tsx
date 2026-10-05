@@ -49,12 +49,13 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@worktab
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@worktable/ui/components/tooltip"
 import { CanonicalIdSchema, RecordPredicateOpSchema, type RecordFile, type RecordQuery } from "@worktable/types"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
+import { useRecordFieldColumns } from "@/hooks/use-record-field-columns"
 import { usePageMeta } from "@/hooks/use-page-meta"
 import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
-import { applyColumnOrder, collectRecordQueryWarnings, columnLabel, compileFilters, indexDanglingRelations, isValidFilter, recordFieldColumns, recordTitle, resolveDocumentGroupValue, type ColumnPrefs, type RecordFieldColumn, type RecordFilter } from "@/lib/records"
+import { applyColumnOrder, collectRecordQueryWarnings, columnLabel, compileFilters, indexDanglingRelations, isValidFilter, recordTitle, resolveDocumentGroupValue, type ColumnPrefs, type RecordFieldColumn, type RecordFilter } from "@/lib/records"
 import { ColumnConfig } from "@/components/records/column-config"
 import { EditableCell } from "@/components/records/editable-cell"
 import { DocumentReferenceScope, FieldValue, type ExpandedRecords } from "@/components/records/field-value"
@@ -301,7 +302,7 @@ function RecordsPage() {
     return merged
   }, [pagesQuery.data])
 
-  const allFieldColumns = useMemo(() => recordFieldColumns(schema, rows), [schema, rows])
+  const allFieldColumns = useRecordFieldColumns(`${spaceId}/${collectionId}`, schema, rows)
   const unmodeledCount = allFieldColumns.filter((column) => !column.field).length
   const fieldColumns = useMemo(() => allFieldColumns.filter((column) => column.field || showUnmodeled), [allFieldColumns, showUnmodeled])
   // Display order and visibility come from the column prefs; the ordered FULL

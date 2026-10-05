@@ -392,16 +392,23 @@ test("table view changes retain the scrolled columns while new rows resolve", as
 
 test("empty and failed table searches preserve columns and recover without stale results", async ({ page }) => {
   test.setTimeout(120_000)
+  await request(`${base}/${recordId}`, "PATCH", { data: { externalNote: "Unmodeled data" } })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${harness.webUrl}/spaces/inline-editing/records/tasks`)
   const table = page.getByRole("table")
   const scroller = table.locator("..")
   await expect(table.locator("tbody tr")).toHaveCount(2, { timeout: 60_000 })
+  await page.getByRole("button", { name: "Collection actions", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Show unmodeled fields" }).click()
+  await page.keyboard.press("Escape")
+  await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(1)
+  const headings = await table.getByRole("columnheader").allTextContents()
   await scroller.evaluate((element) => { element.scrollLeft = 600 })
   const left = await scroller.evaluate((element) => element.scrollLeft)
   const search = page.getByRole("textbox", { name: "Search records" })
   await search.fill("No such record")
   await expect(page.getByRole("heading", { name: "No matching records" })).toBeVisible()
+  await expect(table.getByRole("columnheader")).toHaveText(headings)
   expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
   await search.fill("")
   await expect(table.locator("tbody tr")).toHaveCount(2)
@@ -420,6 +427,7 @@ test("empty and failed table searches preserve columns and recover without stale
   await page.getByRole("button", { name: "Retry", exact: true }).click()
   await expect(table.locator("tbody tr")).toHaveCount(1)
   await expect(table.locator("tbody tr")).toContainText("Follow up")
+  await expect(table.getByRole("columnheader")).toHaveText(headings)
   expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
 
   // Keeping previous results is confined to this collection.
@@ -435,6 +443,7 @@ test("empty and failed table searches preserve columns and recover without stale
   await page.locator('a[href="/spaces/inline-editing/records/other"]').click()
   try {
     await expect(table.getByText("Follow up", { exact: true })).toHaveCount(0)
+    await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(0)
     await expect(page.getByRole("status")).toHaveText("Updating records…")
   } finally {
     release()

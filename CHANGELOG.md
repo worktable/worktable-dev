@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-10-05
+
 ### Added
 
 - **Agent setup skill:** Agents can help install Worktable, connect to a workspace, and install the skills they need.
@@ -21,6 +23,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Record tables:** Sorting, filtering, and opening or closing record details keep your place in the table, with column headings available while results load or a search is empty.
 - **Documentation interactions:** Sidebar navigation keeps its place, copy buttons behave consistently, and search keeps existing results visible until new matches are ready.
 - **Agent-created Spaces:** Agents can use your own group names instead of a fixed list.
 - **HTML data requests:** HTML Docs with network permission can fetch external data while external scripts and styles remain blocked.

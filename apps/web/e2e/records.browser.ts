@@ -302,3 +302,151 @@ test("the full page and mobile drawer share direct editing while the table keeps
     drawer.getByRole("heading", { name: "Full page title", exact: true })
   ).toBeVisible()
 })
+
+test("table view changes retain the scrolled columns while new rows resolve", async ({ page }) => {
+  test.setTimeout(120_000)
+  const browsingBase = "/api/spaces/inline-editing/records/browsing"
+  await request("/api/spaces/inline-editing/records", "POST", {
+    id: "browsing",
+    name: "Browsing",
+    fields: {
+      title: { type: "string", required: true },
+      ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`note${i}`, { type: "text" }])),
+      status: { type: "select", values: ["Active", "Done"] },
+      score: { type: "number" },
+    },
+  })
+  for (let i = 1; i <= 36; i++) {
+    await request(browsingBase, "POST", {
+      data: { title: `Browse ${String(i).padStart(2, "0")}`, score: 37 - i, status: i % 2 ? "Active" : "Done" },
+    })
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${harness.webUrl}/spaces/inline-editing/records/browsing`)
+  const table = page.getByRole("table")
+  const scroller = table.locator("..")
+  await expect(table.locator("tbody tr")).toHaveCount(36, { timeout: 60_000 })
+  await scroller.evaluate((element) => { element.scrollLeft = element.scrollWidth })
+  const left = await scroller.evaluate((element) => element.scrollLeft)
+  expect(left).toBeGreaterThan(500)
+
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  let requested!: () => void
+  const started = new Promise<void>((resolve) => { requested = resolve })
+  await page.route(`**${browsingBase}/query`, async (route) => {
+    requested()
+    await pending
+    await route.continue()
+  })
+  const originalFirstRow = await table.locator("tbody tr").first().innerText()
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await started
+  try {
+    await expect(page.getByRole("status")).toHaveText("Updating records…")
+    await expect(table.locator("tbody tr")).toHaveCount(36)
+    await expect(table.locator("tbody tr").first()).toHaveText(originalFirstRow, { useInnerText: true })
+    expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+    // Scrolling remains possible while the next view is loading.
+    await scroller.evaluate((element) => { element.scrollTop = 300 })
+  } finally {
+    release()
+  }
+  await expect(page.getByRole("status")).toBeEmpty()
+  await expect(table.locator("tbody tr").first()).toContainText("Browse 01")
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+  await page.unroute(`**${browsingBase}/query`)
+
+  // Reordering an already-scrolled table must not follow the browser's row anchor.
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await expect(table.locator("tbody tr").first()).toContainText("Browse 36")
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await expect(table.locator("tbody tr").first()).toContainText("Browse 01")
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+
+  // Background edits and the record inspector must leave the view in place too.
+  await request(`${browsingBase}/browse-15`, "PATCH", { data: { status: "Done" } })
+  await expect(table.locator('[data-record-id="browse-15"]')).toContainText("Done")
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+  await table.locator('[data-record-id="browse-08"]').getByRole("cell").nth(8).click()
+  await expect(page.getByRole("button", { name: "Close record details" })).toBeVisible()
+  await page.getByRole("button", { name: "Close record details" }).click()
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+
+  await page.getByRole("button", { name: "Add filter", exact: true }).click()
+  await page.getByLabel("Filter field").click()
+  await page.getByRole("option", { name: "Status", exact: true }).click()
+  await page.getByRole("button", { name: "Active", exact: true }).click()
+  await page.getByRole("button", { name: "Add filter", exact: true }).last().click()
+  await expect(table.locator("tbody tr")).toHaveCount(17)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  await page.getByRole("button", { name: "Remove Status filter", exact: true }).click()
+  await expect(table.locator("tbody tr")).toHaveCount(36)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+})
+
+test("empty and failed table searches preserve columns and recover without stale results", async ({ page }) => {
+  test.setTimeout(120_000)
+  await request(`${base}/${recordId}`, "PATCH", { data: { externalNote: "Unmodeled data" } })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${harness.webUrl}/spaces/inline-editing/records/tasks`)
+  const table = page.getByRole("table")
+  const scroller = table.locator("..")
+  await expect(table.locator("tbody tr")).toHaveCount(2, { timeout: 60_000 })
+  await page.getByRole("button", { name: "Collection actions", exact: true }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Show unmodeled fields" }).click()
+  await page.keyboard.press("Escape")
+  await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(1)
+  const headings = await table.getByRole("columnheader").allTextContents()
+  await scroller.evaluate((element) => { element.scrollLeft = 600 })
+  const left = await scroller.evaluate((element) => element.scrollLeft)
+  const search = page.getByRole("textbox", { name: "Search records" })
+  await search.fill("No such record")
+  await expect(page.getByRole("heading", { name: "No matching records" })).toBeVisible()
+  await expect(table.getByRole("columnheader")).toHaveText(headings)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  await search.fill("")
+  await expect(table.locator("tbody tr")).toHaveCount(2)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+
+  let fail = true
+  await page.route(`**${base}/query`, async (route) => {
+    if (fail) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable" }) })
+    else await route.continue()
+  })
+  await search.fill("Follow up")
+  await expect(page.getByRole("alert")).toContainText("Couldn’t update records")
+  await expect(page.getByRole("heading", { name: "No matching records" })).toHaveCount(0)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+  fail = false
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
+  await expect(table.locator("tbody tr")).toHaveCount(1)
+  await expect(table.locator("tbody tr")).toContainText("Follow up")
+  await expect(table.getByRole("columnheader")).toHaveText(headings)
+  expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(left)
+
+  // Keeping previous results is confined to this collection.
+  await request("/api/spaces/inline-editing/records", "POST", {
+    id: "other", name: "Other", fields: { title: { type: "string" } },
+  })
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  await page.route("**/records/other/query", async (route) => {
+    await pending
+    await route.continue()
+  })
+  await page.locator('a[href="/spaces/inline-editing/records/other"]').click()
+  try {
+    await expect(table.getByText("Follow up", { exact: true })).toHaveCount(0)
+    await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("status")).toHaveText("Updating records…")
+  } finally {
+    release()
+  }
+  await expect(page.getByRole("heading", { name: "No records yet" })).toBeVisible()
+})

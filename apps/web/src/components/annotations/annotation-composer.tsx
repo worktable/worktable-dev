@@ -12,6 +12,7 @@ import {
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
 import { Toggle } from "@worktable/ui/components/toggle";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export interface AnnotationDraft {
   blockId: string;
@@ -38,6 +39,7 @@ export function AnnotationComposer({
 }) {
   const [category, setCategory] = useState<AnnotationCategory>(draft?.category ?? "comment");
   const [body, setBody] = useState("");
+  const isMobile = useIsMobile();
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -73,6 +75,7 @@ export function AnnotationComposer({
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">Note</label>
             <Textarea
+              autoFocus={isMobile}
               value={body}
               onChange={(event) => setBody(event.target.value)}
               placeholder={category === "instruction" ? "Write an instruction..." : "Write a comment..."}

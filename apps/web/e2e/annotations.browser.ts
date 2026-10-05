@@ -95,6 +95,7 @@ for (const mobile of [true, false]) {
       await selectQuote()
       const composer = page.getByRole("dialog", { name: "Add Annotation" })
       await expect(composer.locator("blockquote")).toHaveText(quote)
+      if (mobile) await expect(composer.getByRole("textbox")).toBeFocused()
       await composer
         .getByRole("button", { name: "Cancel", exact: true })
         .click()
@@ -104,11 +105,14 @@ for (const mobile of [true, false]) {
       await selectQuote()
       await expect(composer.locator("blockquote")).toHaveText(quote)
       if (mobile) {
+        await expect(composer.getByRole("textbox")).toBeFocused()
+        await page.keyboard.insertText("Please clarify the wording.")
         await composer
           .getByRole("button", { name: "Instruction", exact: true })
           .tap()
+      } else {
+        await composer.getByRole("textbox").fill("Please clarify the wording.")
       }
-      await composer.getByRole("textbox").fill("Please clarify the wording.")
       await composer
         .getByRole("button", { name: "Add Annotation", exact: true })
         .click()

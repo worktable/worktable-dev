@@ -10,10 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildProgram } from "../apps/cli/src/index.ts";
+import { DrawingsWriteInput } from "../packages/server/src/mcp/schemas.ts";
 import {
   escapeMdText,
   renderCliCommandsPage,
   renderHtmlRuntimePage,
+  renderDrawingGuidePage,
   renderMcpToolsPage,
   removeRetiredGeneratedPages,
   renderWhatsNewPage,
@@ -48,6 +50,7 @@ function pages(): Record<string, string> {
     "cli-commands": renderCliCommandsPage(buildProgram() as never),
     "whats-new": renderWhatsNewPage(changelog),
     "html-doc-runtime": renderHtmlRuntimePage(),
+    "drawing-operations": renderDrawingGuidePage(),
   };
 }
 
@@ -94,7 +97,7 @@ describe("generate-docs-content", () => {
     expect(page).toContain("### worktable service logs");
   });
 
-  test("mcp-tools covers every registry entry", () => {
+  test("MCP reference covers every tool and provides valid drawing arguments", () => {
     const tools = JSON.parse(readFileSync(join(root, "mcp-tools.json"), "utf8")) as Array<{
       name: string;
     }>;
@@ -102,6 +105,9 @@ describe("generate-docs-content", () => {
     for (const tool of tools) {
       expect(page).toContain(`### ${tool.name}`);
     }
+    const example = renderDrawingGuidePage().match(/```json\n([\s\S]*?)\n```/);
+    expect(example).not.toBeNull();
+    expect(() => DrawingsWriteInput.parse(JSON.parse(example![1]!))).not.toThrow();
   });
 
   test("removes the retired generated orientation page from reused checkouts", () => {

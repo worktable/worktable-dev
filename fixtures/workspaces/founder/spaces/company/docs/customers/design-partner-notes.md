@@ -1,5 +1,7 @@
 # Enterprise design partner notes
 
+> Synthetic example for Cedarline, a fictional company. People, figures, capabilities, and business claims are invented.
+
 ## Northstar Logistics
 
 - **Team:** 180 people across operations, finance, and product

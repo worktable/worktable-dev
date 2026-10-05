@@ -1,57 +1,67 @@
 ---
-title: Organize and find your work
-description: Choose Spaces, Docs, records, HTML docs, threads, and annotations without over-structuring the workspace.
+title: Spaces
+description: Organize projects, find content, and manage temporary and durable documents.
 ---
 
-Worktable works best when structure follows the work instead of anticipating
-every possible category.
+A Space groups related work: a project, a client, or an ongoing area of
+interest. Start with one and add structure as the work grows.
 
-## Start with a Space
+## Create and organize
 
-Create one Space for a project, team, client, or durable area of responsibility.
-Do not create a Space for every task or meeting. **Space Home** already gives
-you a current overview, so you do not need to maintain index docs by hand.
+Create a Space from the sidebar. Its **+** menu creates documents, drawings,
+and folders. Keep names descriptive and paths shallow; related prose, drawings,
+and HTML docs can share a folder.
 
-Inside the Space, choose the smallest useful artifact:
+Drag documents and folders to set their sidebar order. Use **Rename** to change
+a document's name or path, such as `research/interviews`. Existing document
+links and bookmarks keep resolving after a rename or move. Folder actions
+apply to the documents inside, so review the contents before archiving or
+deleting a folder.
 
-- **Doc** for prose, plans, notes, research, and decisions.
-- **Record collection** for items that change independently and benefit from
-  fields, filtering, or validation.
-- **HTML doc** for a visual or interactive view, often backed by records.
-- **Annotation** for feedback attached to existing work.
-- **Space thread** for a durable conversation whose context is the whole Space,
-  rather than one passage in a doc.
+Before creating a second document about the same subject, search for an existing
+one to update. This keeps its context and history together.
 
-Use a top-level **Worktable thread** when a conversation does not belong to any
-one Space.
+## Start here
 
-## Keep paths shallow
+Click a Space name to open Space Home. It shows pinned documents, recent work,
+temporary documents and their archive dates, and open instructions.
 
-Clear names beat deep folder trees. A small amount of nesting can group a real
-body of work, but prefer paths such as `research/interviews` over elaborate
-taxonomies. Rename and reorganize when a pattern has proved useful.
+Choose **Pin to Start here** from a document's menu to make it an entry point.
+Use this for the project brief, current plan, or another document people should
+read first. You do not need a separate index document just to list a Space's
+contents.
 
-Markdown, rich-text, and HTML docs share one nested sidebar tree. Their format
-does not decide where they can live, so one folder can keep related prose and
-interactive work together. To move an HTML doc, use **Rename** in the sidebar
-and enter its full path, such as `research/interviews`. Existing bookmarks keep
-opening the doc at its new location. Renaming, archiving, restoring, or
-permanently deleting a folder applies to all Docs and HTML docs inside it.
+## Document lifetimes
 
-Before creating something new, search the workspace and extend an existing doc
-or collection when it already owns the subject. This keeps decisions and
-history together instead of producing near-duplicates.
+Documents can be **durable** or **temporary**:
 
-## Find work again
+- Durable documents stay active until someone archives them.
+- Temporary documents appear separately from the main sidebar tree. By default,
+  they archive seven days after their last edit, rename, or comment. You can
+  choose an archive date; later edits, renames, or comments can extend it.
 
-Use workspace search to find content across Spaces, then narrow from a Space
-when you know the context. Space Home surfaces current contents and
-needs-attention signals. Top-level **Threads** brings Worktable and Space
-conversations into one list; the location filter narrows it further.
+New documents created in the app start temporary. Clear **New documents are
+temporary** in the Space's **+** menu to change that default. When asking an
+agent to create work, specify whether you want to keep it or archive it later.
 
-Archive completed or one-off artifacts when they no longer belong in the active
-view. Archive is recoverable. Reserve permanent deletion for content you know
-you no longer need.
+On a temporary document, open the **Archives** chip to choose **Keep**, change
+the archive date, or select **Archive now**. A durable document's menu offers
+**Make temporary**.
 
-For the underlying artifact choices, see
-[Worktable's content model](/concepts/content-model/).
+Archiving removes a document from active views without deleting it. Restoring
+an archived document makes it durable. Archived documents are never deleted
+automatically; permanent deletion is a separate action.
+
+## Find content
+
+Use search to find documents and records across Spaces. Drawings are searchable
+by typed text; freehand marks require visual inspection.
+
+Home shows recent durable documents across Spaces. Turn on **Include temporary**
+to include supporting work. Space Home narrows the view to one Space.
+
+Open the top-level **Threads** page for conversations across Worktable, or a
+Space's **Threads** page for its conversations. Threads have their own location
+filter.
+
+For the different content formats, see the [overview](/#choose-content).

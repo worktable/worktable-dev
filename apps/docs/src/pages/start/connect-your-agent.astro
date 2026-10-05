@@ -1,0 +1,27 @@
+---
+import { getEntry, render } from "astro:content"
+import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro"
+
+// One authored guide, presented in either navigation section.
+const entry = await getEntry("docs", "agents/connections")
+if (!entry) throw new Error("The Connections guide is missing")
+const { Content, headings } = await render(entry)
+const canonical = new URL("/agents/connections/", Astro.site).href
+const { title, description, head } = entry.data
+---
+
+<StarlightPage
+  headings={headings}
+  frontmatter={{
+    title,
+    description,
+    pagefind: false,
+    head: [
+      ...head,
+      { tag: "link", attrs: { rel: "canonical", href: canonical } },
+      { tag: "meta", attrs: { property: "og:url", content: canonical } },
+    ],
+  }}
+>
+  <Content />
+</StarlightPage>

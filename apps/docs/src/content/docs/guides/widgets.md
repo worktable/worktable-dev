@@ -1,51 +1,62 @@
 ---
 title: HTML docs
-description: Ask your agent for a tool or visual plan, and it produces sandboxed HTML docs over your workspace data.
+description: Create interactive tools, explanations, and interfaces inside a Space.
 ---
 
-Some results shouldn't be prose. A project visual plan, a planning board, a review room for research sources, a one-off calculator. For these, ask your agent for an **HTML doc**: a self-contained interactive page that lives in your space. Docs come in three formats — markdown, rich text, and HTML — and HTML docs are the interactive kind.
+An HTML doc is a self-contained interactive page: a calculator, visual plan,
+data explorer, or custom interface. It can use supplied data on its own or work
+with a records collection.
 
-## Asking for one
+## Create a tool
 
-Describe the interface:
+Give a connected agent the task, inputs, and expected interactions:
 
-```txt
-Build me an HTML doc that shows the launch-tasks records as a kanban
-board grouped by status, with a count per column.
+```text
+Create an HTML doc for the Community workshop budget. Let me change
+attendance and equipment cost, and show the resulting total. Use the
+figures in the project brief and display all assumptions beside the controls.
+Keep it durable.
 ```
 
-Worktable gives the agent the HTML authoring guidance it needs, and the agent
-builds a single self-contained file. Iterate the same way you would on any doc.
-"Make the columns collapsible" is a normal follow-up.
+Open the result and try the controls. Ask for revisions to the same HTML doc.
+The [interactive tools workflow](/workflows/interactive-tools/) provides a
+complete fictional example.
 
-## The sandbox
+## View and inspect
 
-HTML docs run in a sandbox. They have no network access unless you enable it for
-that doc. An HTML doc can query and update **records**, remember its own
-interface settings, and follow your theme, so it remains a live view of the
-same data rather than a frozen snapshot.
+Open the HTML doc from the sidebar. Use the fullscreen control for more room,
+or **Open in new tab** from its menu. **Copy HTML** copies the source for use in
+another tool or conversation.
 
-## HTML docs + records
+HTML docs run in a sandbox. Network access is disabled by default, and access
+to records or navigation depends on the document's permissions. Agents with
+write access can also set HTML permissions, so permissions are part of what you
+should inspect when reviewing an agent-built tool. See the
+[HTML runtime](/reference/html-doc-runtime/) for exact capabilities and limits.
 
-Records hold the structured state while the HTML doc presents it. The kanban board above doesn't own the tasks, the record collection does. Close the doc, edit a record by hand or by agent, reopen: the board reflects it. Data outlives interface.
+## Use records
 
-Use the built-in records table for generic inspection and quick edits. When the collection needs a board, planner, dashboard, form, or workflow-specific interface, ask an agent to build an HTML doc over the records. Keep durable domain data in the records; use HTML-doc state only for interface-local preferences.
+An HTML doc can query or update records when permitted. For example, a request
+board can display the same collection you edit in the built-in table. Use
+records for independently changing items; use HTML-doc state for local
+interface preferences such as a selected view.
 
-## Viewing them
+An HTML doc does not need records when its inputs are fixed or its calculations
+are self-contained.
 
-Click an HTML doc and it opens full-bleed in the main pane, title in the breadcrumb, just like any other doc. Use the fullscreen toggle in the header for more room; "Open in new tab" is still available from the doc's menu if you want it in its own window.
+## Revise and recover
 
-Need the source itself? **Copy HTML** — in the header, the doc's menu, or the sidebar's right-click menu — copies the full HTML to your clipboard so you can paste it into a conversation, another tool, or back to an agent.
+HTML docs have version history and checkpoints. Restoring a version restores
+the HTML source, but does not roll back saved interface state or changes the
+tool made to records.
 
-## Managing them
+Move, rename, archive, restore, or delete an HTML doc from its menu. To move it
+into a folder, choose **Rename** and enter a path such as `plans/budget`. Its
+history, comments, saved state, and existing bookmarks follow it.
 
-HTML docs have a normal lifecycle (move, rename, archive, restore, delete). Use
-**Rename** in the sidebar and enter a path such as `plans/launch-board` to file
-one in a folder. Its history, comments, saved interface state, and old bookmarks
-follow it. Archive liberally: a doc built for one review session did its job;
-archiving keeps it recoverable without cluttering the space. HTML docs are
-stored as portable, inspectable files like the rest of the workspace.
+Links and buttons can open supported documents in the same Space by path. This
+can make an HTML doc a useful project entry point; pin it to **Start here** if
+people should open it first.
 
-An HTML doc can also act as a folder home. Buttons and links can open any
-supported document in the same Space by path, and keep working after the target
-document or its folder moves.
+For a public version, see [Sharing](/guides/sharing/). Shared HTML does not run
+the tool's scripts or provide access to private records.

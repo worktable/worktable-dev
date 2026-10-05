@@ -29,14 +29,6 @@ import {
 
 // ---- Core CRUD schemas ----
 
-export const VALID_GROUPS = [
-  "work",
-  "side-quests",
-  "career",
-  "church",
-  "meta",
-] as const
-
 export const DEFAULT_ICON = "folder"
 
 export const CreateSpaceInput = z.object({
@@ -49,9 +41,9 @@ export const CreateSpaceInput = z.object({
       `Lucide icon name in kebab-case (e.g. 'flask-conical', 'bar-chart-3', 'layout-dashboard'). Any icon from lucide.dev works. Defaults to '${DEFAULT_ICON}'.`
     ),
   group: z
-    .enum(VALID_GROUPS)
+    .string()
     .optional()
-    .describe(`Category: ${VALID_GROUPS.join(", ")}`),
+    .describe("Optional workspace group name; reuse an existing group when appropriate"),
 })
 
 export const GetStateInput = z.object({
@@ -725,9 +717,9 @@ export const SpacesInput = z.strictObject({
       description: z.string().optional().describe("New description"),
       icon: CreateSpaceInput.shape.icon,
       group: z
-        .union([z.enum(VALID_GROUPS), z.literal("")])
+        .string()
         .optional()
-        .describe(`Category: ${VALID_GROUPS.join(", ")}; "" clears it`),
+        .describe('Workspace group name; "" clears it'),
       startHere: z
         .array(StartHerePinSchema)
         .max(START_HERE_LIMIT)

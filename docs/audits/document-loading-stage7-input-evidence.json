@@ -1,5 +1,5 @@
 {
-  "origin": "http://192.168.2.211:39087",
+  "origin": "http://audit-host.example.test:39087",
   "profiles": {
     "normal": {
       "latency": 100,
@@ -27,7 +27,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 856.5,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 899.5,
@@ -238,7 +238,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 438.19999998807907,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 465.19999998807907,
@@ -419,7 +419,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 731,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 887.4000000357628,
@@ -674,7 +674,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 516.5999999642372,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 574.8999999761581,
@@ -889,7 +889,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 727.3999999761581,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/plain",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 928.1999999880791,
@@ -1023,7 +1023,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 345,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/plain",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 386.2999999523163,
@@ -1127,7 +1127,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 1831.1000000238419,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 2264.300000011921,
@@ -1316,7 +1316,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 695.2999999523163,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1162.5999999642372,
@@ -1483,7 +1483,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 2313.2000000476837,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3625.400000035763,
@@ -1732,7 +1732,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 731.1999999880791,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1205.5999999642372,
@@ -1947,7 +1947,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 1818.300000011921,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/plain",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 2245.800000011921,
@@ -2069,7 +2069,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 644.7999999523163,
       "navigation": {
-        "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/plain",
+        "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/plain",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1103.0999999642372,

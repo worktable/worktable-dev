@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { runInNewContext } from "node:vm"
 import {
   approvedCampaignProperties,
+  createPublicAnalyticsEarlyCtaScript,
   publicAcquisitionProperties,
   isApprovedCta,
   isDoNotTrackEnabled,
@@ -135,6 +137,54 @@ describe("public analytics collection boundary", () => {
     expect(isDoNotTrackEnabled({ doNotTrack: "0" }, { doNotTrack: "0" })).toBe(
       false
     )
+  })
+
+  test("early pageviews ignore retired preferences but keep collection boundaries", async () => {
+    const cases = [
+      { hostname: "docs.worktable.dev", expected: 1 },
+      { hostname: "docs.worktable.dev", doNotTrack: "1", expected: 0 },
+      { hostname: "preview.example.com", expected: 0 },
+      { hostname: "docs.worktable.dev", pathname: "/private", expected: 0 },
+      { hostname: "docs.worktable.dev", projectToken: "", expected: 0 },
+    ]
+
+    for (const scenario of cases) {
+      const beacons: Blob[] = []
+      const context = {
+        window: {
+          location: location(scenario.hostname, scenario.pathname ?? "/"),
+          localStorage: { getItem: () => "off" },
+          __worktablePublicAnalyticsDocumentOptOut: true,
+        },
+        navigator: {
+          doNotTrack: scenario.doNotTrack,
+          userAgent: "Test browser",
+          sendBeacon: (_url: string, body: Blob) => {
+            beacons.push(body)
+            return true
+          },
+        },
+        document: { referrer: "", addEventListener: () => {} },
+        crypto,
+        Blob,
+        URLSearchParams,
+        btoa,
+      }
+      const script = createPublicAnalyticsEarlyCtaScript({
+        ...config("worktable_docs"),
+        projectToken: scenario.projectToken ?? PROJECT_TOKEN,
+      })
+      runInNewContext(script, context)
+      runInNewContext(script, context)
+      expect(beacons.length).toBe(scenario.expected)
+      if (beacons[0]) {
+        const body = new URLSearchParams(await beacons[0].text())
+        const event = JSON.parse(atob(body.get("data")!)).batch[0]
+        expect(event.event).toBe("$pageview")
+        expect(event.properties.$cookieless_mode).toBe(true)
+        expect(event.properties.distinct_id).toBe("$posthog_cookieless")
+      }
+    }
   })
 
   test("accepts only the contract's CTA and placement pairs", () => {

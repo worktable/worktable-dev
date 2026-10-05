@@ -7,13 +7,22 @@
 import { Icon } from "@astrojs/starlight/components"
 import { tabForPath } from "./tabs"
 
-const { dir, pagination } = Astro.locals.starlightRoute
+const { dir, pagination, sidebar } = Astro.locals.starlightRoute
 let { prev, next } = pagination
 const isRtl = dir === "rtl"
 
 const currentTab = tabForPath(Astro.url.pathname)
-if (prev && tabForPath(prev.href).id !== currentTab.id) prev = undefined
-if (next && tabForPath(next.href).id !== currentTab.id) next = undefined
+// A page linked from two sections can inherit Starlight's neighbors from its
+// first occurrence. Use its own section when those neighbors cross tabs.
+type Entry = (typeof sidebar)[number]
+const flatten = (entries: Entry[]): Array<NonNullable<typeof prev>> =>
+  entries.flatMap((entry) => entry.type === "group" ? flatten(entry.entries) : [entry])
+const links = flatten(sidebar.filter((entry) => entry.type === "group" && currentTab.groups.includes(entry.label)))
+  .filter((link) => link.href.startsWith("/") && tabForPath(link.href).id === currentTab.id)
+const normalize = (path: string) => path.replace(/\/$/, "")
+const index = links.findIndex((link) => normalize(link.href) === normalize(Astro.url.pathname))
+if (prev && tabForPath(prev.href).id !== currentTab.id) prev = index > 0 ? links[index - 1] : undefined
+if (next && tabForPath(next.href).id !== currentTab.id) next = index >= 0 ? links[index + 1] : undefined
 ---
 
 {

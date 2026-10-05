@@ -1,4 +1,6 @@
-# Document opening status and layout follow-up
+# Opening layout
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 The opening preview, rich editor and Markdown reader now share their page frame:
 64 px below the document header, with the existing rich-text horizontal spacing.
@@ -63,16 +65,6 @@ Two earlier browser runs had intermittent failures: a sidebar-resizing handle ha
 no bounding box after a double-click, and a nested-paste case hit its five-second
 editor-startup limit. The final run passed all seven with zero retries. Neither
 test was weakened or changed for this UI work.
-
-The existing copied-data LAN preview was also checked with normal font delivery.
-Its rich-text, Markdown and HTML pages opened without browser page errors. Both
-rich text and Markdown had the 64 px opening gap at desktop and mobile widths.
-The desktop rich-text preview and editor also matched their two-line title height
-with fonts loaded. Some navigations omitted the optional server preview under
-its existing 250 ms budget; those personal-data runs only verify the final layout.
-Private document screenshots and checks remain alongside that preview, outside
-the repository. The existing copied workspace/session were retained when updating
-its assets.
 
 ## Scope and limits
 

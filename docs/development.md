@@ -19,7 +19,7 @@ cd worktable-dev
 bun install --frozen-lockfile
 ```
 
-## Run the web app and API
+## Run locally
 
 Use a disposable workspace and separate application state so development does
 not change your everyday workspace. In the first terminal, from the repo root:
@@ -47,7 +47,7 @@ The development web app loads General Sans from Fontshare. Raw General Sans
 font files are not included in this repository. See the
 [font setup notes](../apps/desktop/ui/fonts/README.md) for Desktop.
 
-## Find your way around
+## Repository map
 
 | Directory                                       | Purpose                                                        |
 | ----------------------------------------------- | -------------------------------------------------------------- |
@@ -91,27 +91,29 @@ follow the source-identity setup in [Building](building.md) first.
 No test requires a production Cloud deployment.
 
 Boot the affected runtime path and exercise the behavior as well as running
-tests. Keep examples synthetic and describe what you verified in the PR.
+tests. Use the [synthetic fixtures](../fixtures/README.md) where useful and
+describe what you verified in the PR.
 
-Repository README, contributor guides, and issue templates use focused CI
-checks for local Markdown links, YAML parsing, and unresolved merge conflicts.
-Run `bun scripts/repository-docs.ts` to check these documents locally. Changes confined to `apps/docs` (optionally with repository guides) build the
-documentation site and check its generated content. Changes to documentation
-generators, shared contracts, catalogs, or CLI sources retain product checks.
-Other product changes always retain build, typecheck and required tests. Independent web,
-Desktop, CLI, plugin and lab changes select their owning expensive lanes;
-shared inputs and unknown paths retain full verification. Public main, manual
-runs and the weekly schedule run full verification. The weekly run omits the
-Rust build cache to preserve cold-build evidence. Source checks, artifact builds,
-required tests, native contracts and selected browser tests run on independent
-runners. The required `verify` result checks every planned job and combines raw
-test evidence bound to the same source, run and attempt; missing evidence fails.
-Task caches cover declared build/typecheck outputs, never passing test results.
-The release lab owns the production web build in CI, so the earlier workspace
-build omits that surface. Plugin distribution checks
-run only when plugin or build inputs change, with the required job still present.
+## Documentation checks
 
-## Generated files and docs
+For repository guides and issue templates:
+
+```sh
+bun scripts/repository-docs.ts
+```
+
+This checks local links, YAML, and unresolved merge conflicts in its configured
+scope. For product documentation, run `bun run build:docs`. The build generates
+reference content from the owning source.
+
+CI selects checks from the changed paths. Documentation-only changes use the
+repository and site checks. Product changes retain build, typecheck, and required
+tests; shared contracts and unknown paths select all lanes. Public `main`, manual
+runs, and the weekly schedule run full verification. The required `verify` result
+checks the selected jobs and their evidence for the same source and run.
+See [CI](../.github/workflows/ci.yml) for lane selection and job details.
+
+## Generated files
 
 MCP metadata, theme files, brand assets, and drawing preview assets are checked
 in but generated. Regenerate the corresponding output with `generate:tools`,
@@ -133,5 +135,8 @@ ordinary build and test commands do not repeat this check. Regenerate and review
 stale outputs rather than bypassing the check.
 
 For product docs, use `bun run dev:docs` or `bun run build:docs`. CLI and MCP
-reference pages are generated from source; edit the owning source instead.
+reference pages, runtime references, skill pages, and skill downloads are generated
+from their owning sources. Edit the command/tool definitions, runtime guide, or
+canonical skill instead of the published output. Keep page titles within three
+words where possible and link shared procedures rather than copying them.
 See [Contributing](../CONTRIBUTING.md) before opening a pull request.

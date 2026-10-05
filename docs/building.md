@@ -1,4 +1,4 @@
-# Build Worktable artifacts
+# Build artifacts
 
 For an editable web app and API, start with [Development](development.md).
 This guide covers production builds, release archives, and their source identity.
@@ -15,7 +15,7 @@ bun run check:theme
 bun run check:brand
 ```
 
-## Bind a release to its source
+## Source identity
 
 Release builds require a clean Git tree and an explicit public source identity.
 Commit your changes and make that exact source available at the repository you
@@ -54,7 +54,7 @@ local environment files in build directories, and ignored files in web public
 assets or the OpenClaw skill staging directory. Build from a fresh checkout.
 These checks establish build inputs; they do not publish or approve a release.
 
-## Runtime sources and verification
+## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)
 identifies the matching runtime source and rebuild archive by URL, SHA-256, and
@@ -105,7 +105,7 @@ its source checks. Missing or incompatible proof runs those checks again.
 Release candidate validation, compiled artifact smoke tests, signing, publication
 and installed updater checks remain separate release guarantees.
 
-## Managed visual preview runtime
+## Preview runtime
 
 Normal CLI and server archives include `preview-runtime/`: the pinned
 Playwright driver, its matching Chromium headless shell, upstream notices and a

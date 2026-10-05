@@ -1,16 +1,12 @@
-# Drawing documents and Storage V2 rollout
+# Drawing rollout
 
-Drawing documents work in a prepared Storage V2 workspace, but the ordinary
-product does not get new or existing users into that state. Completing delivery
-requires fixing first-run setup and workspace import, then exposing a supported
-storage upgrade through the existing application lifecycle.
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
-This is an investigation and proposed implementation sequence, dated September
-30, 2026, against public main `9074c80629591eb2792c3ec7c6a40615a0cca0ff`.
-Synthetic probes used temporary workspaces and separate application state.
-The candidate implementation is in this branch; the findings below describe the
-baseline, not a released fix. Release and installed-product rollout remain
-separate from source verification.
+The September 30 investigation used baseline `9074c80629591eb2792c3ec7c6a40615a0cca0ff`
+and synthetic temporary workspaces. The implementation merged in `7bd89cd`:
+V2 is now the active format and legacy workspaces upgrade before normal operation.
+The baseline findings and candidate verification below are retained as history.
+For current behavior, see [workspace storage](https://docs.worktable.dev/reference/workspace-files/).
 
 ## Confirmed gaps
 

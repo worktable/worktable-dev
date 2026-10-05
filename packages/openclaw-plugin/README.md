@@ -1,11 +1,8 @@
 # Worktable for OpenClaw
 
-Worktable is a private local-first, file-backed workspace shared by you and your agents.
-This plugin brings an OpenClaw agent into that workspace as a participant.
-
-The agent can join durable Worktable threads alongside the docs, plans, records, and
-other work that should outlive any one chat. Use it with Worktable running
-locally, on infrastructure you self-host, or in Worktable Cloud.
+Connect an OpenClaw agent to a local, self-hosted, or Cloud Worktable workspace.
+The plugin makes the agent a participant in Worktable threads and includes
+workflow skills for working with documents, drawings, records, and feedback.
 
 ## Install
 
@@ -31,10 +28,10 @@ openclaw worktable connect \
 ```
 
 Then start or restart the OpenClaw Gateway. Learn more in the Worktable docs for
-[agents](https://docs.worktable.dev/agents/overview/) and
+[connections](https://docs.worktable.dev/agents/connections/) and
 [threads](https://docs.worktable.dev/guides/threads/).
 
-The plugin includes Worktable's workflow skills. OpenClaw loads them while
+Browse the included [skills](https://docs.worktable.dev/agents/skills/). OpenClaw loads them while
 the plugin is enabled. A same-named skill in an agent workspace,
 `~/.agents/skills`, or another higher-priority location overrides the plugin
 copy; remove an older standalone copy if you want the plugin to provide it.
@@ -55,7 +52,12 @@ Build and package the plugin from this directory:
 
 ```sh
 bun run pack:dogfood
-openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-0.0.14.tgz --pin
+openclaw plugins install npm-pack:/absolute/path/to/worktable-openclaw-<version>.tgz --pin
 ```
 
-The Worktable OpenClaw adapter is available under the [MIT License](LICENSE).
+Use the archive path printed by `pack:dogfood`. See the
+[release guide](https://github.com/worktable/worktable-dev/blob/main/docs/openclaw-release.md) for publication.
+
+## License
+
+The adapter uses the [MIT License](LICENSE).

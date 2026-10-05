@@ -1,9 +1,15 @@
 ---
 import { Icon } from "@astrojs/starlight/components"
 import PublicAnalytics from "./PublicAnalytics.astro"
+import Navigation from "./Navigation.astro"
 ---
 
+<Navigation />
 <PublicAnalytics />
+
+<script>
+  import "./copy-button"
+</script>
 
 {/* Override of Starlight's ThemeProvider: first-time visitors get dark
     (seamless handoff from the dark worktable.dev), not the OS preference.

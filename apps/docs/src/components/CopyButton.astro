@@ -1,0 +1,8 @@
+---
+import { toHtml } from "@astrojs/starlight/expressive-code/hast"
+import { copyControl, type CopyControlOptions } from "../lib/copy-buttons"
+
+interface Props extends CopyControlOptions {}
+---
+
+<Fragment set:html={toHtml(copyControl(Astro.props))} />

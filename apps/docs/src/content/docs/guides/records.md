@@ -1,42 +1,60 @@
 ---
 title: Records
-description: Structured state as readable YAML is shared memory between you, your agents, and your HTML docs.
+description: Track independently changing items with shared fields, filters, and schemas.
 ---
 
-Records are for independently useful things that repeat, change separately, or benefit from shared fields and queries: tasks, sources, feedback items, inventory, metrics. Instead of an agent reconstructing current state from prose every session, it queries records, and so do HTML docs, and so do you.
+Use records for tasks, requests, inventory, sources, or other items that need
+separate updates. A **collection** groups them; its **schema** defines fields
+and validation. Use a document when the information is better read as prose.
 
-## YAML you can read
+## Open a collection
 
-Every record is one YAML file in your workspace, like a small envelope of bookkeeping, with your fields under `data`:
+Choose a collection from the sidebar's **Records** section. The table supports
+search, sorting, filter chips, grouping, and column selection. Groups can show
+counts and sums. Your view settings persist across reloads, and the table URL
+preserves the view for another person with workspace access.
 
-```yaml
-version: 1
-kind: worktable.record
-id: ship-onboarding-flow
-collectionId: launch-tasks
-createdBy: agent
-data:
-  title: Ship the onboarding flow
-  status: in-progress
-  owner: me
-  due: 2026-07-10
-```
+Edit a cell directly, or open a row's detail view. On wide screens it appears
+beside the table; on narrow screens it opens as a drawer. Use previous and next
+to move between records, or **Open** for the full record page. You can edit,
+duplicate, archive, or delete a record there.
 
-Open it in an editor, change a field under `data`, and the app and your agents see it immediately. There's no database hiding behind the product; the files are the database.
+## Define fields
 
-## Collections and schemas
+Edit the schema from the collection grid to add or reorder fields, set display
+names, choose types, and configure select options or relation targets. Document
+fields link records to related work in the Space.
 
-Records live in collections, and collections can have schemas as field names and types that validate future writes. Edit a schema right from the collection's grid: add fields, set a display name, configure select options, relation targets, or a document field linking to another doc in the space, reorder fields, and change types, all without hand-editing YAML. A change that would break existing records is rejected and names the affected rows, so you fix the data or loosen the change instead of losing it silently.
+A schema change that would invalidate existing records is rejected and reports
+the affected rows. Correct those values or adjust the proposed schema before
+trying again.
 
-Agents start with the smallest schema that supports what you are doing now, then evolve it as repeated use reveals a need. Collection descriptions stay very concise. Field descriptions are optional when the name, type, and choices are already clear. A complex operational collection is welcome when its fields have real jobs; the goal is understandable structure, not a low field count.
+Choose fields needed for editing, queries, or validation. For example, an
+equipment-request collection could start with item, quantity, status, and
+contact. Add other fields when they serve a specific task. The
+[request workflow](/workflows/track-requests/) walks through an example.
 
-## Where records show up
+## Work with agents
 
-- **The sidebar's Records section** lists your collections; open one for a sortable, searchable grid where every cell edits in place, and click a row to open its detail view, a resizable rail on wide screens or a drawer on narrow ones, with previous/next navigation, connected documents, provenance, and an Open link to the full record page when you want more room. From there you can edit, duplicate, archive, or delete the record. The built-in table is for generic inspection, correction, and lightweight management. Filter with chips, group rows by a field for live per-group counts and sums, and show, hide, or reorder columns. Your filters, grouping, sorting, and column choices persist across reloads, and the current table can be shared with its URL. If files changed outside Worktable faster than the grid could catch up, a chip shows how many are indexed with a one-click Reconcile action.
-- **Search**: records are first-class results, searchable from the sidebar on any page, not just Space Home.
-- **HTML docs** — the interface layer for a collection when a generic table is not enough: boards, calendars, dashboards, forms, planners, and workflow-specific tools that stay live as records change.
-- **Agents** — querying with filters and ordering instead of paging through files.
+Ask an agent to find the relevant collection and inspect its schema before
+creating or changing records. It can filter and sort records through Worktable's
+tools, update selected items, and propose schema changes.
 
-## Records or a doc?
+Records are also search results, so you can find them without opening the
+collection first.
 
-Meaning in prose → Doc. Independently changing items that need shared operations → Records. Most projects want both, connected: the decisions Doc explains *why*, while the collection tracks *what and where it stands*. Repeated headings alone are not a reason to extract records. See [records and schemas](/agents/records-and-schemas/) for the agent-side practice.
+## Build a view
+
+Use the built-in table for routine inspection and edits. An
+[HTML doc](/guides/widgets/) can provide a board, calendar, form, or other
+interface over the same collection. Keep the items in records so the table,
+HTML doc, and agents all use the same data.
+
+## Underlying files
+
+Each record is a readable YAML file with its fields under `data`. Worktable
+maintains a query index over those files. If external file edits outpace the
+index, the table can show a **Reconcile** action to refresh it.
+
+For file envelopes, field types, validation, and queries, see the
+[records reference](/reference/records/).

@@ -1,6 +1,8 @@
-# Document opening: implementation and acceptance targets
+# Implementation log
 
-Status: implementation validated locally. See [final results and LAN review](document-loading-results.md). Reading targets were met in the controlled fixtures; editing and interaction targets remain unmet. These are not production release claims.
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
+
+Status: implementation validated locally. See [final results](document-loading-results.md). Reading targets were met in the controlled fixtures; editing and interaction targets remain unmet. These are not production release claims.
 
 The target is readable saved content within 1 second on the controlled normal
 profile and 2.5 seconds on a constrained connection, ordinary-document editing
@@ -244,12 +246,6 @@ misses the target. Proxy scheduling differs from CDP; compare these pairs with
 each other, not their absolute durations with the CDP table.
 [Proxy evidence](document-loading-html-proxy-evidence.json).
 
-Current validated LAN build:
-`http://192.168.2.211:39085/spaces/loading-audit/documents/rich-10`.
-The review password is unchanged and is deliberately not stored in this report.
-Use the sidebar for the 2,000-paragraph, Markdown, HTML, and rich-block fixtures.
-The workspace is isolated from real user documents.
-
 ## Fresh original-code comparison of the saved checkpoint
 
 Commit `7c7cb76` is the validated implementation checkpoint. The old baseline
@@ -385,12 +381,6 @@ interaction durations were 288/616 ms, so the overall 200 ms interaction target
 is not established. Warm small interactions were faster, but do not substitute
 those values for cold behavior. Typing/undo preserved fixture content in every run.
 
-Stage 7 review is served on the LAN at
-`http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10` with the existing
-fixture password (kept outside Git). Stable assets are copied to
-`/tmp/worktable-stage7-assets`; the previous validated stage 5 remains on port
-39085. These are isolated test workspaces.
-
 Next investigation: avoid redundant React.lazy suspension after successful code
 preloads. The installed React 19 production scheduler contains the 300 ms
 fallback throttle, and upstream tracks the
@@ -428,7 +418,7 @@ editor's separate mount-state skeleton (BlockNote mounts in its DOM ref before
 readiness effects); share the HTML skeleton between the server response and
 client renderer, with an explicit frame-ready/error handoff. The hint remains
 code-only and never seeds queries or collaboration. Production validation and
-measurements are pending. The stage-7 LAN build remains the recommended review.
+measurements are pending. The stage-7 build was the review candidate at this point.
 
 ### Stage 9 validated: earlier code execution and one HTML loading surface
 
@@ -458,10 +448,7 @@ metadata failure. [Mobile color/edit/reload](document-loading-stage9-mobile-evid
 and [Mermaid/table/code-theme/settings checks](document-loading-stage9-rich-blocks-evidence.json)
 passed without page errors. Desktop and mobile screenshots were visually reviewed.
 
-Stage 9 is available at
-`http://192.168.2.211:39089/spaces/loading-audit/documents/rich-10` with the existing
-fixture password. Its fixed production assets are `/tmp/worktable-stage9-assets`.
-Stage 7 remains available on port 39087 for comparison. Remaining targets are
+Remaining targets are
 ordinary editing below two seconds and dependable sub-200 ms interactions;
 these have not been demonstrated. A residual BlockNote hot path still looks up
 every changed block by document position even though traversal already supplied
@@ -510,5 +497,4 @@ as a flawless first pass. No collaboration persistence code changed in stage 10.
 
 [Final results](document-loading-results.md) consolidate the complete original vs
 stage-10 paired comparison, correctly constrained HTML iframe tests, cold/warm
-input checks, reproduction commands, and explicit remaining targets. The final
-review is on LAN port 39090. No production deployment was performed.
+input checks, reproduction commands, and explicit remaining targets. No production deployment was performed during that review.

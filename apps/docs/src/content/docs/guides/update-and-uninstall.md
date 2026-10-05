@@ -1,12 +1,12 @@
 ---
-title: Update and uninstall
-description: Update in place from the app or the CLI; uninstall without losing a single file of your work.
+title: Updates
+description: Update Worktable, upgrade workspace storage, or remove the installation.
 ---
 
 The update controls on this page apply to Desktop, local, and self-hosted
 Worktable. Worktable Cloud updates automatically.
 
-## Update Worktable Desktop
+## Update Desktop
 
 Signed Desktop releases check once after startup and at most once per day.
 Nothing downloads until you choose **Download and Restart**.
@@ -22,13 +22,16 @@ A Desktop-owned local host stops for restart; a CLI or managed
 service that Desktop only attached to keeps running. See the
 [Desktop reference](/reference/desktop/) for connection and storage boundaries.
 
-## Update from the app
+## Update a service
 
-On a local or self-hosted install, open Settings → System → Software update. It shows the running version, checks for a newer release and names it once found, downloads it in the background, and restarts the service into it. You keep working until the restart. Already on the latest release? It says so instead of offering to update again. If the release server cannot be reached, the panel offers to retry the check and does not offer an update until the release is confirmed.
+For a local or self-hosted service, open **Settings → System → Software update**.
+The panel checks for a release, downloads it, and restarts into it. You can keep
+working until the restart. If the release check fails, retry before updating.
 
-You don't have to go looking: a dot appears on the sidebar's Settings entry once a release is available, and the System entry carries an Update badge. Settings still opens normally on General, so the update never gets in the way when you came to change something else. A one-time toast announces each release; its Review update action opens System directly.
+A dot on **Settings**, an **Update** badge on **System**, and a release
+notification indicate when an update is available.
 
-## Update from the CLI
+## CLI updates
 
 ```sh
 worktable update --check   # is there a newer release?
@@ -42,7 +45,7 @@ override for automated or managed installations.
 
 What shipped in each release is on [What's new](/whats-new/).
 
-## First opening after the workspace upgrade
+## Workspace upgrades
 
 Starting with 0.1.13, an older workspace upgrades automatically when the updated
 Worktable server starts. No manual export, import, or version selection is needed.
@@ -70,12 +73,23 @@ workspace files; rollback requires the matching original workspace copy.
 worktable uninstall
 ```
 
-It shows what it will remove — the launcher, installed releases, app data, shell completions, agent registrations — and asks first (`--yes` to skip the prompt).
+The command previews removal of the launcher, installed releases, app data,
+shell completions, managed agent registrations, and installed skills, then asks
+for confirmation.
+Use `--yes` to confirm non-interactively. Locally modified skill files are
+preserved and reported.
 
-**Your workspace folder survives.** Uninstalling removes Worktable, not your work: every doc, record, and annotation stays on disk, readable without Worktable installed. The one exception is explicit:
+The workspace folder remains by default. Keep that folder to reopen your work
+with a later installation. To delete the configured workspace as well:
 
 ```sh
-worktable uninstall --purge   # ALSO deletes the workspace folder
+worktable uninstall --purge
 ```
 
-Reinstalling later picks the same workspace folder right back up.
+Export any content you need before purging. Review the paths shown by the
+command; deletion cannot be recovered through Worktable history.
+
+This command removes a CLI installation. To remove Desktop, quit it and remove
+the application from Applications. Removing the app does not delete a workspace
+folder you keep separately. Cloud cancellation is covered in
+[Cloud account](/guides/cloud-account/).

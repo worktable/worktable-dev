@@ -1,0 +1,128 @@
+---
+import { ClientRouter } from "astro:transitions"
+---
+
+<ClientRouter fallback="swap" />
+
+<script>
+  import { tabForPath } from "./tabs"
+
+  const sidebarScroll = new Map<string, number>()
+  const mobileSidebarScroll = new Map<string, number>()
+  let cleanupPage = () => {}
+  let navigated = false
+  const normalize = (path: string) => path.replace(/\/+$/, "") || "/"
+
+  const rememberMobileScroll = () => {
+    const pane = document.getElementById("starlight__sidebar")
+    if (pane && document.body.hasAttribute("data-mobile-menu-expanded")) {
+      mobileSidebarScroll.set(tabForPath(location.pathname).id, pane.scrollTop)
+    }
+  }
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest("starlight-menu-button")) return
+    rememberMobileScroll()
+  }, { capture: true })
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest("starlight-menu-button")) return
+    const pane = document.getElementById("starlight__sidebar")
+    if (pane && document.body.hasAttribute("data-mobile-menu-expanded")) {
+      pane.scrollTop = mobileSidebarScroll.get(tabForPath(location.pathname).id) ?? 0
+    }
+  })
+
+  // Search remains mounted across pages, retaining its Pagefind instance and
+  // single keyboard shortcut listener. Close it before its result is opened.
+  document.addEventListener("astro:before-preparation", () => {
+    document.querySelector<HTMLDialogElement>("site-search dialog[open]")?.close()
+  })
+
+  document.addEventListener("astro:before-swap", (event) => {
+    // Keep navigation immediate. Skipping the native animation intentionally
+    // rejects `ready`; the DOM update and its errors still belong to Astro.
+    void event.viewTransition.ready.catch(() => {})
+    event.viewTransition.skipTransition()
+    cleanupPage()
+    rememberMobileScroll()
+    // Astro attaches the incoming body before moving persisted elements. Keep
+    // its search placeholder empty so a discarded Search constructor cannot
+    // register an extra global shortcut listener.
+    if (document.querySelector("site-search")) {
+      event.newDocument.querySelector(".wt-sidebar-search")?.replaceChildren()
+    }
+    const region = document.querySelector<HTMLElement>(".wt-sidebar-groups")
+    if (region?.dataset.section) sidebarScroll.set(region.dataset.section, region.scrollTop)
+    const theme = document.documentElement.dataset.theme
+    if (theme) event.newDocument.documentElement.dataset.theme = theme
+    navigated = true
+  })
+
+  const syncShell = () => {
+    const region = document.querySelector<HTMLElement>(".wt-sidebar-groups")
+    const tab = tabForPath(location.pathname)
+
+    // Persistent shell elements need the new route's selection, even though
+    // their original server-rendered DOM is retained.
+    for (const link of document.querySelectorAll<HTMLAnchorElement>(".wt-tabs a, .wt-sidebar-tabs a")) {
+      if (tabForPath(new URL(link.href).pathname).id === tab.id) link.setAttribute("aria-current", "true")
+      else link.removeAttribute("aria-current")
+    }
+    for (const link of document.querySelectorAll<HTMLAnchorElement>(".wt-sidebar-groups a")) {
+      if (normalize(new URL(link.href).pathname) === normalize(location.pathname)) link.setAttribute("aria-current", "page")
+      else link.removeAttribute("aria-current")
+    }
+    if (region) region.scrollTop = sidebarScroll.get(tab.id) ?? 0
+  }
+  document.addEventListener("astro:after-swap", syncShell)
+
+  document.addEventListener("astro:page-load", () => {
+    syncShell()
+    const controller = new AbortController()
+    const options = { passive: true, signal: controller.signal }
+    const region = document.querySelector<HTMLElement>(".wt-sidebar-groups")
+    const pane = document.getElementById("starlight__sidebar")
+    pane?.classList.add("scroll-fade")
+
+    const updateScroll = () => {
+      const html = document.documentElement
+      html.toggleAttribute("data-scrolled", window.scrollY > 8)
+      html.toggleAttribute("data-scroll-end", window.scrollY + window.innerHeight >= html.scrollHeight - 8)
+      if (region) {
+        region.toggleAttribute("data-scroll-top", region.scrollTop > 4)
+        region.toggleAttribute("data-scroll-bottom", region.scrollTop + region.clientHeight < region.scrollHeight - 4)
+      }
+      if (pane) {
+        pane.toggleAttribute("data-scroll-top", pane.scrollTop > 4)
+        pane.toggleAttribute("data-scroll-bottom", pane.scrollTop + pane.clientHeight < pane.scrollHeight - 4)
+        rememberMobileScroll()
+      }
+    }
+    window.addEventListener("scroll", updateScroll, options)
+    window.addEventListener("resize", updateScroll, options)
+    region?.addEventListener("scroll", updateScroll, options)
+    pane?.addEventListener("scroll", updateScroll, options)
+    const observer = new ResizeObserver(updateScroll)
+    if (region) observer.observe(region)
+    if (pane) observer.observe(pane)
+    observer.observe(document.body)
+    updateScroll()
+    cleanupPage = () => {
+      controller.abort()
+      observer.disconnect()
+    }
+
+    // Move keyboard focus into the new content without changing Astro's
+    // anchor/back-navigation scroll restoration.
+    if (navigated) {
+      let anchor = location.hash.slice(1)
+      try { anchor = decodeURIComponent(anchor) } catch { /* Keep malformed fragments literal. */ }
+      const heading = anchor
+        ? document.getElementById(anchor)
+        : document.querySelector<HTMLElement>("main h1")
+      if (heading) {
+        heading.tabIndex = -1
+        heading.focus({ preventScroll: true })
+      }
+    }
+  })
+</script>

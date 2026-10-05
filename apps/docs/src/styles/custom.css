@@ -13,18 +13,10 @@
    ═══════════════════════════════════════════ */
 @import "@worktable/ui/theme.css";
 @import "@worktable/ui/backdrop.css";
+@import "./copy-button.css";
+@import "./search.css";
 @import url("https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
-
-/* Only the modal backdrop is Starlight-specific. The dialog border and
-   elevation come from the shared structural theme contract. */
-:root {
-  --docs-backdrop: oklch(0.1 0.006 250 / 55%);
-}
-
-:root[data-theme="light"] {
-  --docs-backdrop: oklch(0.3 0.012 250 / 30%);
-}
 
 /* ── Starlight scale (dark = default theme) */
 :root {
@@ -451,55 +443,9 @@ starlight-toc a[aria-current="true"]::before {
   box-shadow: var(--field-shadow);
 }
 
-/* Copy button — flat outline-action recipe */
-.expressive-code .copy button {
-  background-color: var(--card);
-  background-image: var(--outline-button-image);
-  box-shadow: var(--outline-button-shadow);
-  border-radius: 0.5rem;
-}
-
-.expressive-code .copy button:active {
-  box-shadow: var(--outline-button-shadow);
-}
-
-/* ── Search ───────────────────────────────────
-   Trigger and field use the flat shared control finish.
-   Modal: opaque (portal rule — dialogs never blur), popover
-   surface, cobalt action color. Colors/radius/shadow only —
-   the dialog-frame's layout and focus plumbing stay untouched. */
-site-search button[data-open-modal] {
-  /* Lives at the top of the sidebar pane — full-width row */
-  width: 100%;
-  border: 1px solid var(--border-chrome);
-  border-radius: 0.5rem;
-  font-size: 0.8125rem;
-  color: oklch(from var(--foreground) l c h / 75%);
-  background-color: var(--card);
-  background-image: var(--outline-button-image);
-  box-shadow: var(--outline-button-shadow);
-}
-
-site-search button[data-open-modal]:hover {
-  background-color: var(--surface-tint);
-  filter: none;
-  border-color: var(--border-chrome);
-}
-
-site-search button[data-open-modal]:active {
-  filter: none;
-  box-shadow: var(--outline-button-shadow);
-  transform: none;
-}
-
-site-search button[data-open-modal] kbd {
-  background-color: var(--well-bg);
-  box-shadow: var(--field-shadow);
-  border-radius: 0.25rem;
-}
-
 /* Starlight's mobile navigation trigger is also a secondary action. */
 starlight-menu-button button {
+  color: var(--foreground);
   border: 1px solid var(--border-chrome);
   background-color: var(--card);
   background-image: var(--outline-button-image);
@@ -509,51 +455,6 @@ starlight-menu-button button {
 starlight-menu-button button:active {
   box-shadow: var(--outline-button-shadow);
   transform: none;
-}
-
-site-search dialog {
-  background: var(--popover);
-  border: 1px solid var(--overlay-border);
-  border-radius: 0.75rem;
-  box-shadow: var(--overlay-dialog-shadow);
-}
-
-site-search dialog::backdrop {
-  background: var(--docs-backdrop);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-site-search {
-  --sl-search-corners: 0.5rem;
-  --pagefind-ui-primary: var(--primary-text);
-  --pagefind-ui-text: var(--foreground);
-  --pagefind-ui-background: var(--popover);
-  --pagefind-ui-border: var(--border);
-  --pagefind-ui-border-radius: 0.5rem;
-  --pagefind-ui-font: var(--sl-font);
-}
-
-#starlight__search .pagefind-ui__search-input {
-  background-color: var(--well-bg);
-  border: 1px solid var(--border-chrome);
-  box-shadow: var(--field-shadow);
-  font-weight: 480;
-  outline: none;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-}
-
-#starlight__search .pagefind-ui__search-input:hover:not(:focus-visible) {
-  background-color: var(--well-hover-bg);
-  border-color: var(--input-hover);
-}
-
-#starlight__search .pagefind-ui__search-input:focus-visible {
-  border-color: var(--ring);
-  box-shadow: var(--field-focus-shadow);
 }
 
 /* Theme toggle styling lives in the ThemeSelect override component. */

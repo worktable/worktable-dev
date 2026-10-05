@@ -29,7 +29,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 6,
           "columnNumber": 21766
         }
@@ -39,7 +39,7 @@
         "frame": {
           "functionName": "a",
           "scriptId": "7",
-          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "url": "http://audit-host.example.test:39085/assets/main-BIFY64eM.js",
           "lineNumber": 55,
           "columnNumber": 40540
         }
@@ -59,7 +59,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 87,
           "columnNumber": 50375
         }
@@ -79,7 +79,7 @@
         "frame": {
           "functionName": "La",
           "scriptId": "55",
-          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "url": "http://audit-host.example.test:39085/assets/app-sidebar-DQ5IVYhV.js",
           "lineNumber": 1,
           "columnNumber": 28463
         }
@@ -89,7 +89,7 @@
         "frame": {
           "functionName": "renderHTML",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 182,
           "columnNumber": 14850
         }
@@ -99,7 +99,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "55",
-          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "url": "http://audit-host.example.test:39085/assets/app-sidebar-DQ5IVYhV.js",
           "lineNumber": 1,
           "columnNumber": 6972
         }
@@ -109,7 +109,7 @@
         "frame": {
           "functionName": "Ie",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 91,
           "columnNumber": 1668
         }
@@ -129,7 +129,7 @@
         "frame": {
           "functionName": "child",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11257
         }
@@ -139,7 +139,7 @@
         "frame": {
           "functionName": "a",
           "scriptId": "7",
-          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "url": "http://audit-host.example.test:39085/assets/main-BIFY64eM.js",
           "lineNumber": 55,
           "columnNumber": 40540
         }
@@ -149,7 +149,7 @@
         "frame": {
           "functionName": "Zf",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 47731
         }
@@ -159,7 +159,7 @@
         "frame": {
           "functionName": "get nodeSize",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 21849
         }
@@ -169,7 +169,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "7",
-          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "url": "http://audit-host.example.test:39085/assets/main-BIFY64eM.js",
           "lineNumber": 0,
           "columnNumber": 0
         }
@@ -179,7 +179,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 0,
           "columnNumber": 0
         }
@@ -189,7 +189,7 @@
         "frame": {
           "functionName": "get nodeSize",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 21849
         }
@@ -199,7 +199,7 @@
         "frame": {
           "functionName": "uf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 91,
           "columnNumber": 5197
         }
@@ -209,7 +209,7 @@
         "frame": {
           "functionName": "integrate",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 5,
           "columnNumber": 16469
         }
@@ -219,7 +219,7 @@
         "frame": {
           "functionName": "child",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11257
         }
@@ -229,7 +229,7 @@
         "frame": {
           "functionName": "kc",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 1,
           "columnNumber": 12340
         }
@@ -239,7 +239,7 @@
         "frame": {
           "functionName": "Nc",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 1,
           "columnNumber": 15778
         }
@@ -249,7 +249,7 @@
         "frame": {
           "functionName": "Zf",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 47731
         }
@@ -259,7 +259,7 @@
         "frame": {
           "functionName": "Zf",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 47731
         }
@@ -269,7 +269,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 24156
         }
@@ -279,7 +279,7 @@
         "frame": {
           "functionName": "Nc",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 1,
           "columnNumber": 15778
         }
@@ -289,7 +289,7 @@
         "frame": {
           "functionName": "Pe",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 87,
           "columnNumber": 53945
         }
@@ -299,7 +299,7 @@
         "frame": {
           "functionName": "kc",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 1,
           "columnNumber": 12340
         }
@@ -309,7 +309,7 @@
         "frame": {
           "functionName": "findIndex",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11608
         }
@@ -319,7 +319,7 @@
         "frame": {
           "functionName": "mv",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 116512
         }
@@ -329,7 +329,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 24156
         }
@@ -339,7 +339,7 @@
         "frame": {
           "functionName": "td",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 6,
           "columnNumber": 8530
         }
@@ -349,7 +349,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "55",
-          "url": "http://192.168.2.211:39085/assets/app-sidebar-DQ5IVYhV.js",
+          "url": "http://audit-host.example.test:39085/assets/app-sidebar-DQ5IVYhV.js",
           "lineNumber": 1,
           "columnNumber": 13848
         }
@@ -359,7 +359,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 2,
           "columnNumber": 4424
         }
@@ -369,7 +369,7 @@
         "frame": {
           "functionName": "kc",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 1,
           "columnNumber": 12340
         }
@@ -379,7 +379,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 2,
           "columnNumber": 4424
         }
@@ -389,7 +389,7 @@
         "frame": {
           "functionName": "ch",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 3,
           "columnNumber": 12906
         }
@@ -399,7 +399,7 @@
         "frame": {
           "functionName": "findIndex",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11608
         }
@@ -409,7 +409,7 @@
         "frame": {
           "functionName": "s",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 13,
           "columnNumber": 6592
         }
@@ -419,7 +419,7 @@
         "frame": {
           "functionName": "Ht",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 10,
           "columnNumber": 73181
         }
@@ -429,7 +429,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "27",
-          "url": "http://192.168.2.211:39085/spaces/loading-audit/documents/rich-2000",
+          "url": "http://audit-host.example.test:39085/spaces/loading-audit/documents/rich-2000",
           "lineNumber": 0,
           "columnNumber": 10502
         }
@@ -439,7 +439,7 @@
         "frame": {
           "functionName": "a",
           "scriptId": "7",
-          "url": "http://192.168.2.211:39085/assets/main-BIFY64eM.js",
+          "url": "http://audit-host.example.test:39085/assets/main-BIFY64eM.js",
           "lineNumber": 55,
           "columnNumber": 40540
         }
@@ -449,7 +449,7 @@
         "frame": {
           "functionName": "ul",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 12861
         }
@@ -484,7 +484,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 87,
           "columnNumber": 50375
         }
@@ -504,7 +504,7 @@
         "frame": {
           "functionName": "child",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11257
         }
@@ -544,7 +544,7 @@
         "frame": {
           "functionName": "$1",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 95193
         }
@@ -574,7 +574,7 @@
         "frame": {
           "functionName": "$1",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 95193
         }
@@ -584,7 +584,7 @@
         "frame": {
           "functionName": "findIndex",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11608
         }
@@ -604,7 +604,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 2,
           "columnNumber": 4424
         }
@@ -624,7 +624,7 @@
         "frame": {
           "functionName": "child",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11257
         }
@@ -644,7 +644,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 24156
         }
@@ -654,7 +654,7 @@
         "frame": {
           "functionName": "get nodeSize",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 21849
         }
@@ -664,7 +664,7 @@
         "frame": {
           "functionName": "findIndex",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 11608
         }
@@ -694,7 +694,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 2,
           "columnNumber": 4424
         }
@@ -704,7 +704,7 @@
         "frame": {
           "functionName": "apply",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 97,
           "columnNumber": 71172
         }
@@ -714,7 +714,7 @@
         "frame": {
           "functionName": "get isLeaf",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 24156
         }
@@ -724,7 +724,7 @@
         "frame": {
           "functionName": "Ld.afterTransactionHandler",
           "scriptId": "46",
-          "url": "http://192.168.2.211:39085/assets/doc-document-CnZJYPiH.js",
+          "url": "http://audit-host.example.test:39085/assets/doc-document-CnZJYPiH.js",
           "lineNumber": 3,
           "columnNumber": 24695
         }
@@ -734,7 +734,7 @@
         "frame": {
           "functionName": "qb",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 184,
           "columnNumber": 33055
         }
@@ -754,7 +754,7 @@
         "frame": {
           "functionName": "hv",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 117684
         }
@@ -774,7 +774,7 @@
         "frame": {
           "functionName": "s",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 185,
           "columnNumber": 14347
         }
@@ -784,7 +784,7 @@
         "frame": {
           "functionName": "Y7",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 185,
           "columnNumber": 15666
         }
@@ -804,7 +804,7 @@
         "frame": {
           "functionName": "$1",
           "scriptId": "8",
-          "url": "http://192.168.2.211:39085/assets/react-runtime-BSZOUHax.js",
+          "url": "http://audit-host.example.test:39085/assets/react-runtime-BSZOUHax.js",
           "lineNumber": 7,
           "columnNumber": 95193
         }
@@ -824,7 +824,7 @@
         "frame": {
           "functionName": "get nodeSize",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 1,
           "columnNumber": 21849
         }
@@ -844,7 +844,7 @@
         "frame": {
           "functionName": "",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 184,
           "columnNumber": 29256
         }
@@ -864,7 +864,7 @@
         "frame": {
           "functionName": "Qs",
           "scriptId": "52",
-          "url": "http://192.168.2.211:39085/assets/editor-DxBorHY4.js",
+          "url": "http://audit-host.example.test:39085/assets/editor-DxBorHY4.js",
           "lineNumber": 184,
           "columnNumber": 48740
         }

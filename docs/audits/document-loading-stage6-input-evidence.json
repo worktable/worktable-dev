@@ -1,5 +1,5 @@
 {
-  "origin": "http://192.168.2.211:39086",
+  "origin": "http://audit-host.example.test:39086",
   "profiles": {
     "normal": {
       "latency": 100,
@@ -27,7 +27,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 771.1999999880791,
       "navigation": {
-        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39086/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1318.699999988079,
@@ -236,7 +236,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 426.19999998807907,
       "navigation": {
-        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39086/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 426.80000001192093,
@@ -403,7 +403,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 880.7999999523163,
       "navigation": {
-        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39086/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1572,
@@ -664,7 +664,7 @@
       "errors": [],
       "previewPaintOpportunityMs": 593.1000000238419,
       "navigation": {
-        "name": "http://192.168.2.211:39086/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39086/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 645.4000000357628,

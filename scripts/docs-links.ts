@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
-import { join, relative, resolve } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 
 type Page = {
   path: string
@@ -68,7 +68,8 @@ export async function checkDocsLinks(
     if (url.origin !== origin) return
     const path = decodeURIComponent(url.pathname)
     const file = join(root, path)
-    if (!file.startsWith(root + "/") && file !== root)
+    const fromRoot = relative(root, file)
+    if (fromRoot === ".." || fromRoot.startsWith(".." + sep) || isAbsolute(fromRoot))
       return "Path leaves the site"
     const target =
       existsSync(file) && statSync(file).isDirectory()

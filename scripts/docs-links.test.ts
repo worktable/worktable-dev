@@ -10,7 +10,7 @@ test("checks built targets and anchors through redirects without requesting exte
     for (const path of ["guide", "old"]) mkdirSync(join(root, path))
     writeFileSync(
       join(root, "index.html"),
-      '<a href="/old/#setup">Valid</a><a href="/guide/#missing">Missing anchor</a><img src="/missing.png"><a href="https://example.invalid/">External</a>'
+      '<a href="/old/#setup">Valid</a><a href="/guide/#missing">Missing anchor</a><img src="/missing.png"><a href="/..%2foutside.html">Outside</a><a href="https://example.invalid/">External</a>'
     )
     writeFileSync(
       join(root, "old/index.html"),
@@ -21,6 +21,7 @@ test("checks built targets and anchors through redirects without requesting exte
     expect(result.errors).toEqual([
       "/: /guide/#missing (Missing anchor #missing)",
       "/: /missing.png (Missing file)",
+      "/: /..%2foutside.html (Path leaves the site)",
     ])
   } finally {
     rmSync(root, { recursive: true, force: true })

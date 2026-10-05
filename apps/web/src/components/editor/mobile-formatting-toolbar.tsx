@@ -520,7 +520,7 @@ function MobilePopoverContent(props: ComponentProps["Generic"]["Popover"]["Conte
   return <PopoverPrimitive.Portal container={context.portalTarget}>{content}</PopoverPrimitive.Portal>;
 }
 
-export function MobileFormattingToolbar() {
+export function MobileFormattingToolbar({ children }: { children?: ReactNode }) {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | undefined>(undefined);
   const toolbarItems = getFormattingToolbarItems();
 
@@ -564,8 +564,13 @@ export function MobileFormattingToolbar() {
     <PortalTargetContext.Provider value={portalTarget}>
       <ComponentsContext.Provider value={mobileComponents}>
         <FormattingToolbar>
+          {children}
           {toolbarItems.flatMap((item) => {
-            if (item.key === "colorStyleButton") {
+            if (
+              item.key === "colorStyleButton" ||
+              item.key === "addCommentButton" ||
+              item.key === "addTiptapCommentButton"
+            ) {
               return [];
             }
 

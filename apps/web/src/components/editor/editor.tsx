@@ -440,7 +440,10 @@ function EditorInner({
           sideMenu={false}
         >
           {isMobile ? (
-            <MobileEditorToolbarController scrollRootRef={editorScrollRef} />
+            <MobileEditorToolbarController
+              scrollRootRef={editorScrollRef}
+              onAnnotate={onCreateAnnotation}
+            />
           ) : (
             <FormattingToolbarController
               formattingToolbar={() => (
@@ -476,8 +479,10 @@ function getSelectionRect() {
 
 function MobileEditorToolbarController({
   scrollRootRef,
+  onAnnotate,
 }: {
   scrollRootRef: RefObject<HTMLDivElement | null>
+  onAnnotate?: (request: AnnotationCreateRequest) => void
 }) {
   const editor = useBlockNoteEditor()
   const toolbarRef = useRef<HTMLDivElement>(null)
@@ -614,7 +619,9 @@ function MobileEditorToolbarController({
       data-active={active ? "true" : "false"}
       aria-hidden={!active}
     >
-      <MobileFormattingToolbar />
+      <MobileFormattingToolbar>
+        <AnnotationToolbarButton onAnnotate={onAnnotate} />
+      </MobileFormattingToolbar>
     </div>
   )
 

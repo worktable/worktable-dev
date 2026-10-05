@@ -11,7 +11,7 @@ import {
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog";
 import { Textarea } from "@worktable/ui/components/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@worktable/ui/components/select";
+import { Toggle } from "@worktable/ui/components/toggle";
 
 export interface AnnotationDraft {
   blockId: string;
@@ -45,22 +45,31 @@ export function AnnotationComposer({
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Add Annotation</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Attach an annotation to the current block.
+            {draft?.quote ? "Annotate the selected text." : "Annotate the current block."}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Type</label>
-            <Select value={category} onValueChange={(value) => setCategory(value as AnnotationCategory)}>
-              <SelectTrigger>
-                <SelectValue>{categoryLabel[category]}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="comment">Comment</SelectItem>
-                <SelectItem value="instruction">Instruction</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {draft?.quote && (
+            <blockquote className="line-clamp-3 border-l-2 border-border pl-3 text-sm italic text-muted-foreground">
+              {draft.quote}
+            </blockquote>
+          )}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-foreground">Type</legend>
+            <div className="flex gap-2">
+              {(["comment", "instruction"] as const).map((value) => (
+                <Toggle
+                  key={value}
+                  variant="outline"
+                  className="h-11 flex-1"
+                  pressed={category === value}
+                  onPressedChange={() => setCategory(value)}
+                >
+                  {categoryLabel[value]}
+                </Toggle>
+              ))}
+            </div>
+          </fieldset>
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">Note</label>
             <Textarea
@@ -70,7 +79,6 @@ export function AnnotationComposer({
               className="min-h-32"
             />
           </div>
-          {draft && <p className="text-xs text-muted-foreground">Anchored to block <span className="font-mono">{draft.blockId.slice(0, 12)}</span></p>}
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

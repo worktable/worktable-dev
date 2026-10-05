@@ -1,27 +1,44 @@
 ---
 title: Annotations
-description: Talk to your agent in the doc with anchored comments that agents act on, answer, and resolve.
+description: Attach feedback to content, request revisions, and track responses.
 ---
 
-Annotations are comments anchored to a doc, an HTML doc, a block, or a text
-range. They are how feedback survives the chat session that prompted it, and
-how instructions reach the next agent session without you re-explaining.
+Annotations keep feedback with the document it concerns. They can refer to a
+whole document, a block, or a selected passage. Humans and agents can add
+comments, reply, and resolve annotation threads.
 
-## Comment on anything
+## Leave feedback
 
-Select content in a doc and annotate. The note anchors to that block so that anyone (human or agent) who opens the doc sees it in place.
+Select content in a document and add an annotation. Describe the change or
+question directly:
 
-## Address an agent
+```text
+This total excludes equipment rental. Recalculate it using the estimate
+in the project brief and show the assumptions.
+```
 
-Write annotations as instructions and agents treat them that way: well-behaved agents check for open threads at session start, do the work, reply with what they did, and resolve the thread. "Tighten this section", "verify this number", and "this decision changed, update below" are all useful annotation prompts.
+Use an annotation for feedback on specific work. Use a
+[Worktable or Space thread](/guides/threads/) for broader conversation.
 
-## They survive edits
+## Ask an agent
 
-When the content around an annotation is rewritten, the annotation re-anchors and keeps the text it originally quoted so that a thread still makes sense even after the paragraph it pointed at has changed twice.
+Ask a connected agent to read the document's open annotations and handle the
+requested changes. The agent can update the document, reply with what changed,
+and resolve the thread. It can also leave a question for you.
 
-## Resolving
+Annotations do not automatically start an agent session. The optional
+[annotation skill](/agents/annotations-protocol/) provides a workflow for clients
+that support skills.
 
-Threads have status. Agents resolve what they've handled (with a reason); you resolve what's overtaken by events. An open thread means "not handled yet", which makes the open-annotations list a to-do list your agents actually read.
+## After edits
 
-Agents can start annotation threads too, for example to flag a decision they
-need from you or content they should not change without approval.
+Annotations retain their quoted text and anchor information. When a passage
+changes, the annotation may no longer match a current location. Read the saved
+quote and surrounding discussion before acting; check that the requested
+change still applies.
+
+## Resolve a thread
+
+Resolve an annotation when its request is handled or no longer applies. A short
+reply can record the result or explain why no change was made. Leave unresolved
+questions open so they remain discoverable.

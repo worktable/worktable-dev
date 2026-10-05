@@ -8,29 +8,38 @@ export interface DocsTab {
   href: string
   prefixes: string[]
   groups: string[]
+  secondary?: boolean
 }
 
 export const TABS: DocsTab[] = [
   {
     id: "docs",
-    label: "Documentation",
+    label: "User guide",
     href: "/",
-    prefixes: ["/start", "/concepts", "/guides"],
-    groups: ["Start", "Concepts", "Guides"],
+    prefixes: ["/start", "/guides", "/workflows"],
+    groups: ["Get started", "Workflows", "Use Worktable", "Manage Worktable"],
   },
   {
     id: "agents",
     label: "Agents",
     href: "/agents/overview/",
     prefixes: ["/agents"],
-    groups: ["Agents"],
+    groups: ["Agent setup", "Agent workflows"],
   },
   {
     id: "reference",
     label: "Reference",
     href: "/reference/cli/",
     prefixes: ["/reference"],
-    groups: ["Reference"],
+    groups: ["Installation", "Agent tools", "Data and access"],
+  },
+  {
+    id: "contributing",
+    label: "Contributing",
+    href: "/contributing/",
+    prefixes: ["/contributing"],
+    groups: ["Contributing"],
+    secondary: true,
   },
   {
     id: "changelog",
@@ -38,6 +47,7 @@ export const TABS: DocsTab[] = [
     href: "/whats-new/",
     prefixes: ["/whats-new"],
     groups: ["Project"],
+    secondary: true,
   },
 ]
 

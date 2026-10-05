@@ -1,4 +1,6 @@
-# Second pass: cold startup, visible loading stages, and delivery
+# Startup investigation
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 This records the **pre-change baseline**. See [implemented fixes and verification](document-loading-fixes.md) for the subsequent changes and measurements.
 

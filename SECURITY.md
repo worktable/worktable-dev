@@ -1,6 +1,6 @@
 # Security policy
 
-## Report a vulnerability privately
+## Private reports
 
 Use [GitHub private vulnerability reporting](https://github.com/worktable/worktable-dev/security/advisories/new)
 or email **security@worktable.dev**. Do not report vulnerabilities in public

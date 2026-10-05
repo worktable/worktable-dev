@@ -1,21 +1,29 @@
 # Changelog
 
-All notable, user-facing changes to Worktable are documented here. This file is
-the source for published release notes: the release workflow extracts the section
-matching the version being released. Agent PRs bind one public-docs and release-note decision
-to their final head before readiness; a post-merge workflow handles a missing result. Entries are reviewed
-before a release is cut. Format follows
+User-facing changes are recorded here. Release automation extracts the section
+matching the released version. Entries follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Keep entries public-safe — describe what changed for someone _using_ Worktable.
-No internal infrastructure, repository names, PR numbers, or commit SHAs.
+Describe the behavior someone using Worktable will notice. Keep private
+infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
 ### Added
 
+- **Agent setup skill:** Agents can help install Worktable, connect to a workspace, and install the skills they need.
 - **Breadcrumb navigation:** Breadcrumbs open the space, record collection, or thread list they name, and folders open a menu of their contents. Breadcrumbs now use the same names as the sidebar.
 - **Page menu on phones:** On narrow screens, tap the page title to see where the page lives, browse its folders, and reach its actions. The header keeps only the page's main action.
+
+### Changed
+
+- **Documentation:** Reorganized user guides, agent guidance, workflows, and references, with downloadable skills and examples for the current product.
+
+### Fixed
+
+- **Documentation interactions:** Sidebar navigation keeps its place, copy buttons behave consistently, and search keeps existing results visible until new matches are ready.
+- **Agent-created Spaces:** Agents can use your own group names instead of a fixed list.
+- **HTML data requests:** HTML Docs with network permission can fetch external data while external scripts and styles remain blocked.
 
 ## [0.1.18] - 2026-10-03
 

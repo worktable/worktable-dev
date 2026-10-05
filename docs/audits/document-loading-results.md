@@ -1,20 +1,10 @@
-# Document loading: implemented changes and measured results
+# Loading results
 
-The implementation is saved on `t3code/improve-document-loading`. This is a
-validated local review build, not a production deployment. Reading is much faster;
-full editing and large-document interactions still miss the desired budgets.
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
-Review on another computer on the same LAN:
-
-- [Small rich document](http://192.168.2.211:39090/spaces/loading-audit/documents/rich-10)
-- [2,000-paragraph document](http://192.168.2.211:39090/spaces/loading-audit/documents/rich-2000)
-- [HTML document](http://192.168.2.211:39090/spaces/loading-audit/documents/html-audit)
-- [Markdown document](http://192.168.2.211:39090/spaces/loading-audit/documents/plain)
-- [Original comparison](http://192.168.2.211:45747/spaces/loading-audit/documents/rich-2000)
-
-Use the fixture password provided in the conversation. These are isolated test
-documents. The servers are running on this machine; the links require it to remain
-available. Candidate assets are fixed in `/tmp/worktable-stage10-assets`.
+This report records the September 2026 implementation and local validation.
+Reading improved in the measured fixtures; editing and large-document interactions
+still missed their budgets. Temporary review servers are no longer available.
 
 ## Before and after
 

@@ -3,7 +3,7 @@
   "version": 1,
   "id": "company",
   "name": "Company",
-  "description": "Strategy, operating reviews, customers, and team planning.",
+  "description": "Synthetic operating data for Cedarline, a fictional project-delivery company.",
   "createdAt": "2026-01-01T00:00:00.000Z",
   "updatedAt": "2026-01-01T00:00:00.000Z",
   "createdBy": "user",

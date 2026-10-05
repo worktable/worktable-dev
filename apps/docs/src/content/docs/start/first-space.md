@@ -1,71 +1,59 @@
 ---
-title: Your First Space
-description: Put a real project in Worktable, create durable work, and close the review loop.
+title: First project
+description: Save one useful document, revise it with an agent, and keep it easy to find.
 ---
 
-A workspace contains spaces. A space is a project, workstream, or operating
-context. The fastest way to understand Worktable is to skip the test note and
-start with something real.
+Start with one project brief. You need an open Worktable workspace; to use the
+prompts below, [connect an agent](/start/connect-your-agent/) first.
 
-## Make it a real project
+## Create a brief
 
-Create a space from the sidebar. Give it a name that will still make sense in
-six months. A useful first space often has:
+Use an existing Space for the project, or create one from the sidebar. From the
+Space's **+** menu, choose **New doc**. Write the objective, constraints, and next
+question you need to answer.
 
-- A short project brief.
-- A running decisions doc.
-- One living handoff or status doc.
-- A record collection when repeated items need separate updates or queries.
-
-You can create and edit all of these yourself. A connected agent can do the
-same through Worktable's tools.
-
-## Create the first durable result
-
-Ask a connected agent:
+You can instead give your agent the source material and ask:
 
 ```text
-Create a space for <project> in my Worktable workspace. Write a short
-project brief from what you know, and start a decisions doc.
+Find or create a Space called Community workshop in Worktable.
+Create a project brief from these notes: a two-hour repair workshop for
+20 people, one main room, and four volunteers. We have not chosen a date.
+Separate confirmed details from open questions. Keep the brief durable.
 ```
 
-Or create a new doc yourself and write the objective, current state, and open
-questions. The important part is that the result now lives outside the chat
-that produced it.
+These are fictional details; replace them with your own when ready. Ask the
+agent for a link to the result and open it in Worktable.
 
-## Open Space Home
+## Keep it accessible
 
-Click the space name. Space Home shows the documents pinned to Start here,
-recent documents, temporary documents and when they archive, and open
-instructions. Pin a document from its menu to make it a starting point; you
-never need to maintain an index doc by hand.
+New documents created in the app start temporary by default. If the brief is
+temporary, open **Archives** and choose **Keep** so it will stay until you archive it.
+Then choose **Pin to Start here** from the document menu.
 
-## Leave an annotation
+Click the Space name to open Space Home. Your brief appears under **Start here**,
+alongside recent work, temporary documents, and open instructions.
 
-Open the brief, select a block or text range, and leave a correction, question,
-or instruction. Annotations stay attached to the work. Agents can read open
-annotation threads, act on them, reply, and resolve them.
+## Request a revision
 
-This is the core loop:
+Select a passage in the brief and leave an annotation, such as:
 
-1. You or an agent creates durable work.
-2. You review it in Worktable and annotate what should change.
-3. The next agent session finds the open instruction, updates the artifact, and
-   reports back in the annotation thread.
+```text
+Add a checklist of questions to resolve before choosing a date.
+Do not assume volunteer availability.
+```
 
-## Find the underlying files
+Ask the agent to read and address the open annotation. Review the change and its
+reply. An annotation records the request; it does not by itself start an agent
+session.
 
-On local or self-hosted Worktable, `worktable doctor` prints the live workspace
-folder. The default local path is `~/Worktable`; docs are Markdown or JSON,
-records are YAML, HTML docs are HTML, and threads and annotations are JSON.
+You can also edit the document yourself. Open its history to compare a previous
+version or restore it.
 
-Worktable Cloud keeps the live folder on the hosted workspace. Use
-**Settings → Import & Export** to download the same portable content in a
-standard `.wtb` package that you can extract and browse without Worktable.
+## Continue later
 
-## Next
+In a later session, ask your agent to find the Community workshop Space, read
+the brief, and summarize the unresolved questions. It can retrieve the saved
+work even when that session has no earlier chat context.
 
-- [Organize and find your work](/guides/organize-and-find/).
-- [What to use Worktable for](/guides/what-to-use-it-for/).
-- [Agent handoffs](/guides/agent-handoffs/).
-- [Worktable and Space threads](/guides/threads/).
+Next, explore [Spaces](/guides/organize-and-find/) or follow a
+[worked example](/workflows/).

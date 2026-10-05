@@ -9,6 +9,8 @@ import { readFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { buildProgram } from "../apps/cli/src/index.ts"
 import { getHtmlAuthoringGuide } from "../packages/server/src/widget-authoring.ts"
+import { DRAWING_GUIDE } from "../packages/server/src/mcp/drawing-guide.ts"
+import { publishSkills } from "./docs-skills.ts"
 
 type AnyCommand = {
   name(): string
@@ -71,9 +73,11 @@ const TOOL_GROUPS: Array<{
   },
   {
     title: "Workspace & discovery",
-    matches: (n) => n === "worktable_discover" || n === "worktable_spaces",
+    matches: (n) => ["worktable_discover", "worktable_spaces", "search", "fetch"].includes(n),
   },
+  { title: "Documents", matches: (n) => n.includes("_documents_") },
   { title: "Docs", matches: (n) => n.includes("_docs_") },
+  { title: "Drawings", matches: (n) => n.includes("_drawings_") },
   { title: "HTML docs", matches: (n) => n.includes("_html_") },
   { title: "Records", matches: (n) => n.includes("record") },
   { title: "Annotations", matches: (n) => n.includes("annotation") },
@@ -83,7 +87,9 @@ const TOOL_GROUPS: Array<{
 
 const TOOL_GROUP_ORDER = [
   "Workspace & discovery",
+  "Documents",
   "Docs",
+  "Drawings",
   "HTML docs",
   "Records",
   "Annotations",
@@ -155,7 +161,7 @@ export function renderMcpToolsPage(tools: ToolEntry[]): string {
     .join("\n\n")
   return [
     "---",
-    "title: MCP tool catalog",
+    "title: MCP tools",
     "description: Every MCP tool the Worktable server exposes to connected agents.",
     "---",
     "",
@@ -250,7 +256,7 @@ export function renderCliCommandsPage(program: AnyCommand): string {
     .join("\n\n")
   return [
     "---",
-    "title: CLI command reference",
+    "title: CLI commands",
     "description: Every worktable CLI command and flag, generated from the CLI itself.",
     "---",
     "",
@@ -315,7 +321,7 @@ export function renderHtmlRuntimePage(): string {
     .trim()
   return [
     "---",
-    "title: HTML doc runtime",
+    "title: HTML runtime",
     "description: The sandbox, data, state, theme, diagnostics, and network contract for interactive HTML docs.",
     "---",
     "",
@@ -328,6 +334,22 @@ export function renderHtmlRuntimePage(): string {
   ].join("\n")
 }
 
+export function renderDrawingGuidePage(): string {
+  return [
+    "---",
+    "title: Drawing operations",
+    "description: Drawing inspection, edits, previews, and recovery returned by Worktable's tools.",
+    "---",
+    "",
+    generatedNote("the drawing guide shipped with the server"),
+    "",
+    "Returned by `worktable_guidance` with action `drawings`. See [MCP tools](/reference/mcp-tools/#drawings) for the input schemas.",
+    "",
+    escapeMdText(DRAWING_GUIDE).trim(),
+    "",
+  ].join("\n")
+}
+
 // ── Main ────────────────────────────────────────────────────────
 
 export const GENERATED_PAGES = [
@@ -335,6 +357,7 @@ export const GENERATED_PAGES = [
   "apps/docs/src/content/docs/reference/cli-commands.md",
   "apps/docs/src/content/docs/whats-new.md",
   "apps/docs/src/content/docs/reference/html-doc-runtime.md",
+  "apps/docs/src/content/docs/reference/drawing-operations.md",
 ] as const
 
 export const RETIRED_GENERATED_PAGES = [
@@ -362,11 +385,14 @@ export async function generateAll(rootDir: string): Promise<void> {
     "apps/docs/src/content/docs/whats-new.md": renderWhatsNewPage(changelog),
     "apps/docs/src/content/docs/reference/html-doc-runtime.md":
       renderHtmlRuntimePage(),
+    "apps/docs/src/content/docs/reference/drawing-operations.md":
+      renderDrawingGuidePage(),
   }
   for (const [relPath, content] of Object.entries(outputs)) {
     await Bun.write(join(rootDir, relPath), content)
   }
-  console.log(`Generated ${Object.keys(outputs).length} docs pages`)
+  const skills = await publishSkills(rootDir)
+  console.log(`Generated ${Object.keys(outputs).length} reference pages and ${skills.length} skill pages`)
 }
 
 if (import.meta.main) {

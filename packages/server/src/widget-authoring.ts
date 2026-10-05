@@ -21,7 +21,8 @@ export type WidgetValidationIssue = {
 const EXTERNAL_ASSET_URL_RE =
   /(?:\bsrc\s*=\s*["']https?:\/\/|<(?!a\b)[^>]*\bhref\s*=\s*["']https?:\/\/)/i
 const EXTERNAL_CSS_URL_RE = /url\(\s*["']?https?:\/\//i
-const EXTERNAL_JS_URL_RE = /\b(?:fetch|import)\s*\(\s*["']https?:\/\//i
+// Network permission governs data requests. Executable assets must stay bundled.
+const EXTERNAL_JS_URL_RE = /\bimport\s*\(\s*["']https?:\/\//i
 const EXTERNAL_CSS_RE = /<link\b[^>]*rel\s*=\s*["']stylesheet["'][^>]*>/i
 const EXTERNAL_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=/i
 const INLINE_EVENT_HANDLER_RE = /\son[a-z]+\s*=/i

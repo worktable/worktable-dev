@@ -6,7 +6,7 @@
     "ready": 3971,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#"
     ],
     "previewMs": null,
     "longtasks": [
@@ -298,7 +298,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 816,
@@ -374,7 +374,7 @@
     "ready": 3630,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -704,7 +704,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1262.7999999523163,
@@ -780,7 +780,7 @@
     "ready": 3511,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -1102,7 +1102,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1195.4000000357628,
@@ -1178,7 +1178,7 @@
     "ready": 3985,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#"
     ],
     "previewMs": null,
     "longtasks": [
@@ -1470,7 +1470,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1456.0999999642372,
@@ -1546,7 +1546,7 @@
     "ready": 4166,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#"
     ],
     "previewMs": null,
     "longtasks": [
@@ -1842,7 +1842,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1435.8999999761581,
@@ -1918,7 +1918,7 @@
     "ready": 3248,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -2240,7 +2240,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/html-audit",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/html-audit",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1147,
@@ -2316,8 +2316,8 @@
     "ready": 5440,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 3763.199999988079,
     "previewAvailableMs": 3660.199999988079,
@@ -2682,7 +2682,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1439.199999988079,
@@ -2758,7 +2758,7 @@
     "ready": 4499,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -3143,7 +3143,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1421.1000000238419,
@@ -3219,7 +3219,7 @@
     "ready": 4887,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -3600,7 +3600,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1358,
@@ -3676,8 +3676,8 @@
     "ready": 5688,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 4170.199999988079,
     "previewAvailableMs": 4072.199999988079,
@@ -4050,7 +4050,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1625.199999988079,
@@ -4126,8 +4126,8 @@
     "ready": 5226,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 4062.5,
     "previewAvailableMs": 3965.400000035763,
@@ -4496,7 +4496,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1410.300000011921,
@@ -4572,7 +4572,7 @@
     "ready": 4256,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -4941,7 +4941,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-10",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-10",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 553.6000000238419,
@@ -5017,8 +5017,8 @@
     "ready": 15368,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 4609.800000011921,
     "previewAvailableMs": 4490.100000023842,
@@ -5419,7 +5419,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1612.4000000357628,
@@ -5495,7 +5495,7 @@
     "ready": 7722,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -5888,7 +5888,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 896.5,
@@ -5964,7 +5964,7 @@
     "ready": 7489,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -6365,7 +6365,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1373.8999999761581,
@@ -6441,8 +6441,8 @@
     "ready": 14457,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 4407.800000011921,
     "previewAvailableMs": 4317.400000035763,
@@ -6843,7 +6843,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1498.9000000357628,
@@ -6919,8 +6919,8 @@
     "ready": 14904,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css#",
-      "http://192.168.2.211:45747/assets/main-s3sQKeml.css"
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css#",
+      "http://audit-host.example.test:45747/assets/main-s3sQKeml.css"
     ],
     "previewMs": 4388.5,
     "previewAvailableMs": 4241.899999976158,
@@ -7321,7 +7321,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:45747/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:45747/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1473,
@@ -7397,7 +7397,7 @@
     "ready": 7475,
     "errors": [],
     "stylesheets": [
-      "http://192.168.2.211:39087/assets/app-DHhTJZKu.css",
+      "http://audit-host.example.test:39087/assets/app-DHhTJZKu.css",
       "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
       "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap"
     ],
@@ -7790,7 +7790,7 @@
       }
     ],
     "navigation": {
-      "name": "http://192.168.2.211:39087/spaces/loading-audit/documents/rich-2000",
+      "name": "http://audit-host.example.test:39087/spaces/loading-audit/documents/rich-2000",
       "entryType": "navigation",
       "startTime": 0,
       "duration": 1316.5,

@@ -1,4 +1,6 @@
-# Document opening: loading and performance audit
+# Loading investigation
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 This records the **pre-change investigation**. See [implemented fixes and verification](document-loading-fixes.md) for the current implementation.
 

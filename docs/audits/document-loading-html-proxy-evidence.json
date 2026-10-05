@@ -6,7 +6,7 @@
       "readyMs": 7644,
       "errors": [],
       "frameNavigation": {
-        "name": "http://192.168.2.211:39083/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "name": "http://audit-host.example.test:39083/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 510.19999998807907,
@@ -536,7 +536,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1980.800000011921,
@@ -592,7 +592,7 @@
       "readyMs": 5823,
       "errors": [],
       "frameNavigation": {
-        "name": "http://192.168.2.211:39085/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "name": "http://audit-host.example.test:39085/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 497.60000002384186,
@@ -876,7 +876,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39085/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39085/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 1866,
@@ -932,7 +932,7 @@
       "readyMs": 5723,
       "errors": [],
       "frameNavigation": {
-        "name": "http://192.168.2.211:39085/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "name": "http://audit-host.example.test:39085/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 509,
@@ -1216,7 +1216,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39085/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39085/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 2236.199999988079,
@@ -1272,7 +1272,7 @@
       "readyMs": 7580,
       "errors": [],
       "frameNavigation": {
-        "name": "http://192.168.2.211:39083/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
+        "name": "http://audit-host.example.test:39083/api/spaces/loading-audit/widgets/__document/aHRtbC1hdWRpdA/content?theme=dark&v=33301cb6b0ceec878ce7abe81f9007b3febe486c008ffa510be2f9686b871f1f",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 481.2999999523163,
@@ -1802,7 +1802,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 2012.199999988079,

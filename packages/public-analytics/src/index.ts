@@ -1,8 +1,5 @@
 export const PUBLIC_ANALYTICS_SCHEMA_VERSION = 2 as const
 export const PUBLIC_ANALYTICS_API_HOST = "https://edge.worktable.dev"
-export const PUBLIC_ANALYTICS_PREFERENCE_KEY = "worktable.public-analytics"
-export const PUBLIC_ANALYTICS_PREFERENCE_EVENT =
-  "worktable:public-analytics-preference"
 
 export const PUBLIC_ANALYTICS_CTA_ATTRIBUTE = "data-public-analytics-cta"
 export const PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE =
@@ -286,9 +283,6 @@ export function createPublicAnalyticsEarlyCtaScript(
   })
   const ctaPlacements = serializeForInlineScript(CTA_PLACEMENTS)
   const activeCampaignValues = serializeForInlineScript(ACTIVE_CAMPAIGN_VALUES)
-  const preferenceKey = serializeForInlineScript(
-    PUBLIC_ANALYTICS_PREFERENCE_KEY
-  )
   const ctaAttribute = serializeForInlineScript(PUBLIC_ANALYTICS_CTA_ATTRIBUTE)
   const placementAttribute = serializeForInlineScript(
     PUBLIC_ANALYTICS_PLACEMENT_ATTRIBUTE
@@ -304,7 +298,6 @@ export function createPublicAnalyticsEarlyCtaScript(
     const activeCampaignValues = ${activeCampaignValues};
     const referralSources = ${serializeForInlineScript(REFERRAL_SOURCES)};
     const acquisitionSources = ${serializeForInlineScript(ACQUISITION_SOURCES)};
-    const preferenceKey = ${preferenceKey};
     const ctaAttribute = ${ctaAttribute};
     const placementAttribute = ${placementAttribute};
 
@@ -318,15 +311,6 @@ export function createPublicAnalyticsEarlyCtaScript(
         .some((value) => value === "1" || value === "yes");
     }
 
-    function optedOut() {
-      if (window.__worktablePublicAnalyticsDocumentOptOut === true) return true;
-      try {
-        return window.localStorage.getItem(preferenceKey) === "off";
-      } catch {
-        return false;
-      }
-    }
-
     function contextAllowed() {
       if (window.location.hostname !== config.productionHost) return false;
       if (!config.allowedPathnames.includes(normalizedPathname())) return false;
@@ -336,7 +320,7 @@ export function createPublicAnalyticsEarlyCtaScript(
         const environment = search.get("environment");
         if (environment !== null && environment !== "production") return false;
       }
-      return !doNotTrackEnabled() && !optedOut();
+      return !doNotTrackEnabled();
     }
 
     function referringDomain() {

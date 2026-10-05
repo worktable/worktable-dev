@@ -952,15 +952,8 @@
                   "type": "string"
                 },
                 "group": {
-                  "description": "Category: work, side-quests, career, church, meta",
-                  "type": "string",
-                  "enum": [
-                    "work",
-                    "side-quests",
-                    "career",
-                    "church",
-                    "meta"
-                  ]
+                  "description": "Optional workspace group name; reuse an existing group when appropriate",
+                  "type": "string"
                 }
               },
               "required": [
@@ -994,23 +987,8 @@
                   "type": "string"
                 },
                 "group": {
-                  "description": "Category: work, side-quests, career, church, meta; \"\" clears it",
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "enum": [
-                        "work",
-                        "side-quests",
-                        "career",
-                        "church",
-                        "meta"
-                      ]
-                    },
-                    {
-                      "type": "string",
-                      "const": ""
-                    }
-                  ]
+                  "description": "Workspace group name; \"\" clears it",
+                  "type": "string"
                 },
                 "startHere": {
                   "description": "Replace the Space's pinned starting points (at most 7), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role. Requires documents:write.",

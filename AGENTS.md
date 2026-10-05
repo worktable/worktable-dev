@@ -1,4 +1,4 @@
-# Worktable — agent guide
+# Repository guidance
 
 ## Working principles
 
@@ -8,7 +8,7 @@ patterns. Protect persisted data and known consumers. Inspect affected callers
 and sibling paths when changing a shared contract. Exercise the real runtime
 path and self-review before pushing.
 
-## UI and product copy
+## Product copy
 
 Read `DESIGN_SYSTEM.md` before frontend changes. Inspect adjacent screens and
 reuse established components, layout, and interaction patterns before

@@ -3,11 +3,12 @@ name: worktable-create-or-manage-records
 description: Organize repeated structured information as durable Worktable Records. Use for research datasets, inventories, directories, pipelines, trackers, and other collections whose items need identity, fields, filtering, links, validation, or individual updates.
 ---
 
-# Organize Worktable Records
+# Manage records
 
-Treat a Record as a **thing with identity and a lifecycle**, not a row extracted from prose. Treat a collection schema as shared operational vocabulary that makes real items easier to find, compare, update, validate, and reuse.
+Use Records for items with their own identity and updates. A collection schema
+defines the fields that people, agents, and HTML docs share.
 
-## Decide whether Records earn their keep
+## Choose Records
 
 Use Records when people or agents will repeatedly create, update, compare, filter, sort, group, assign, or validate individual items. Keep a plan, decision, argument, or research synthesis in a Doc when its meaning lives in the whole. Use an HTML Doc only when a task-specific view materially improves work over the canonical Records.
 
@@ -22,7 +23,7 @@ Use Records when people or agents will repeatedly create, update, compare, filte
 ## Build safely
 
 1. Discover related Docs and collections. Query likely matches before creating a collection or Record; reuse established names and identities.
-2. Define the minimum viable schema before the first insert. For a large or ambiguous extraction, confirm the proposed count and a representative sample before writing the full set.
+2. Define the minimum viable schema before the first insert. For an ambiguous extraction, resolve material uncertainty about identity or scope before writing. Use a sample when it helps; do not interrupt an already authorized, well-defined import merely because it is large.
 3. Evolve populated schemas additively. Carry forward existing fields, preserve compatible types, and resolve validation conflicts rather than bypassing them.
 4. Write or update Records, then query them through the filters and ordering the real workflow uses. Verify count, identity, field values, relations, and expanded references where relevant.
 5. Use the built-in table for generic inspection. Add an HTML view only when its controls or visual form materially improve the task.
@@ -31,4 +32,4 @@ Use Records when people or agents will repeatedly create, update, compare, filte
 
 Do not invent missing values, duplicate a collection under a near-synonymous name, or replace a relation with copied display text. Treat warnings as evidence: repair duplicate identities, unrecognizable titles, schema conflicts, and invalid references when the source supports a correction.
 
-Never delete Records, collections, or fields during routine organization. Use the explicit destructive surface only for an exact user-requested Record; collection and field deletion are not public skill operations. The result is complete when the collection remains understandable in the built-in table, contains no near-duplicate identities, and supports a real query or update without rereading the source transcript.
+Do not delete records or remove schema fields as incidental cleanup. Permanent record deletion uses `worktable_delete` and needs an unambiguous target within the user's request. Removing a field from a schema does not purge its stored values. The result is complete when the collection remains understandable in the built-in table, contains no near-duplicate identities, and supports a real query or update without rereading the source transcript.

@@ -1,0 +1,108 @@
+/* Shared by commands, skills, and Expressive Code blocks. */
+worktable-copy {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  vertical-align: middle;
+  margin: 0;
+  font: 400 0.75rem / 1.5 var(--sl-font);
+}
+
+worktable-copy[hidden] { display: none; }
+
+worktable-copy > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-chrome);
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  background: var(--card);
+  cursor: pointer;
+}
+
+worktable-copy > button:hover { background: var(--surface-tint); color: var(--foreground); }
+worktable-copy > button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+worktable-copy > button:disabled { cursor: wait; }
+worktable-copy > button > svg { display: block; width: 0.875rem; height: 0.875rem; margin: 0; }
+worktable-copy > button > .wt-copy-check { display: none; }
+worktable-copy[data-state="copied"] > button { color: var(--primary-text); }
+worktable-copy[data-state="copied"] > button > .wt-copy-icon { display: none; }
+worktable-copy[data-state="copied"] > button > .wt-copy-check { display: block; }
+
+worktable-copy > .wt-copy-tooltip {
+  position: absolute;
+  z-index: 10;
+  inset-inline-end: 0;
+  bottom: calc(100% + 0.25rem);
+  width: max-content;
+  max-width: 20rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  color: var(--background);
+  background: var(--foreground);
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+worktable-copy:not([data-dismissed]) > button:focus-visible + .wt-copy-tooltip {
+  visibility: visible;
+}
+
+@media (hover: hover) {
+  worktable-copy:not([data-dismissed]):hover > .wt-copy-tooltip { visibility: visible; }
+}
+
+/* Success is announced without adding a second visual message. */
+worktable-copy > .wt-copy-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+worktable-copy[data-state="error"] > .wt-copy-status {
+  z-index: 10;
+  inset-inline-end: 0;
+  top: calc(100% + 0.25rem);
+  width: max-content;
+  max-width: min(20rem, 75vw);
+  height: auto;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--overlay-border);
+  border-radius: 0.375rem;
+  color: var(--foreground);
+  background: var(--popover);
+  box-shadow: var(--overlay-floating-shadow);
+  clip-path: none;
+  white-space: normal;
+}
+
+.expressive-code .frame { position: relative; }
+.expressive-code .frame > worktable-copy {
+  position: absolute;
+  inset-block-start: var(--button-spacing, 0.5rem);
+  inset-inline-end: 0.5rem;
+}
+.expressive-code .frame pre { padding-inline-end: 3rem; }
+
+@media (pointer: coarse) {
+  worktable-copy > button { width: 2.75rem; height: 2.75rem; }
+  .expressive-code .frame pre { padding-inline-end: 4rem; }
+}
+
+@media print {
+  worktable-copy { display: none; }
+}

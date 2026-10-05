@@ -1,27 +1,25 @@
 ---
-title: MCP reference
+title: MCP
 description: Endpoints, transports, authentication, supported clients, and diagnostics.
 ---
 
-Worktable registers its tools once and exposes the same workspace over
-Streamable HTTP and stdio. The tools are listed in the
+Worktable uses the same tool registry for Streamable HTTP and local stdio. The tools are listed in the
 [MCP tool catalog](/reference/mcp-tools/).
 
 Every successful object result is returned as MCP `structuredContent` together
 with the JSON text fallback used by older clients. Tool descriptors include a
 human-readable title, explicit safety annotations, and OAuth authentication
 metadata. Worktable permissions are enforced server-side after authentication.
-A refused action names the missing scope; reconnect the agent with broader
-access to grant it.
+A refused action names the missing scope. Grant broader access only if the
+requested task needs it.
 
-## Discovery and optional skills
+## Content operations
 
-The initialize response states only that Worktable stores private Docs, HTML
-Docs, Records, annotations, and threads. Tool descriptions explain their own
-functions without prescribing cross-tool workflows or loading external
-behavioral instructions.
+The initialize response identifies the workspace content and tool surface.
+Tool schemas define supported arguments, and descriptions provide usage guidance.
+Optional skills supply broader workflows.
 
-`worktable_guidance` exposes the immutable `format_spec` action required to
+`worktable_guidance` exposes the `format_spec` action used to
 serialize Worktable content. `worktable_html_read` action `guide` exposes the
 HTML sandbox, bridge, permission, theme, and runtime contract. The former
 skill-list and skill-read actions are retired. Workspace Docs under `skills/`
@@ -78,10 +76,10 @@ Worktable suite for higher-level workflow judgment. Skills are not required for
 MCP operation and do not replace server-side authentication, authorization,
 validation, path boundaries, or destructive-operation separation.
 
-## ChatGPT Company Knowledge
+## Search and fetch
 
-The hosted MCP server exposes the exact read-only pair ChatGPT uses for Company
-Knowledge:
+The MCP server exposes a read-only search and retrieval pair for compatible
+clients:
 
 - `search` searches non-archived Worktable documents and Records and returns
   opaque IDs, titles, and absolute user-openable Worktable URLs.
@@ -104,14 +102,13 @@ Worktable Cloud uses the hosted origin's canonical `/api/mcp` endpoint. Always
 copy the endpoint or generated configuration from **Settings → Agents** rather
 than adapting a localhost example.
 
-Use HTTP for Claude Code, ChatGPT / Codex, Cursor, OpenCode, VS Code, Goose, and
-other provider clients that support a Streamable HTTP MCP server. Worktable's
+Use HTTP for clients that support Streamable HTTP MCP. Worktable's
 connector and **Settings → Agents** render the endpoint appropriate to the
 current install.
 
 ## stdio
 
-The existing in-process Worktable stdio server is:
+The in-process stdio server opens the selected local workspace:
 
 ```json
 {
@@ -121,6 +118,7 @@ The existing in-process Worktable stdio server is:
 ```
 
 `worktable --mcp` is an equivalent hidden spawn form retained for compatibility.
+This is a local workspace process, not a proxy to a remote HTTP endpoint.
 
 Claude Desktop uses a different stdio shape: its MCPB launches a bundled bridge
 that proxies the configured Worktable HTTP endpoint. This keeps one server tool
@@ -158,14 +156,14 @@ OpenClaw uses WorkOS Agent Registration instead of a static Cloud token. Follow
 the claim flow once for each installation. Its default access is limited to
 conversations, and you can disconnect it later from **Settings → Agents**.
 
-## Supported clients and setup kinds
+## Client configuration
 
 Support maturity and configuration method are separate:
 
 | Client ID        | Product                                            | Setup                                                   |
 | ---------------- | -------------------------------------------------- | ------------------------------------------------------- |
 | `claude-code`    | Claude Code                                        | Connector-installable                                   |
-| `codex`          | ChatGPT desktop, Codex CLI, Codex IDE              | Connector-installable or provider-native Settings       |
+| `codex`          | Codex CLI and IDE              | Connector-installable or provider-native Settings       |
 | `cursor`         | Cursor                                             | Connector-installable                                   |
 | `opencode`       | OpenCode                                           | Connector-installable                                   |
 | `vscode`         | VS Code                                            | Connector-installable                                   |
@@ -184,7 +182,7 @@ from ClawHub, then use the pairing command shown by a local/self-hosted
 Worktable or the Cloud agent-registration flow. Its default Cloud scope is
 conversation-only.
 
-## HTTP-to-stdio bridge contract
+## HTTP-to-stdio bridge
 
 The normal Worktable binary also carries the shared machine-facing bridge:
 
@@ -199,7 +197,7 @@ bridge does not replace `mcp stdio` or `--mcp`.
 
 ## Claude extension download
 
-Compatible local and self-hosted installs serve their matching macOS extension
+Compatible local and self-hosted installations serve their matching macOS extension
 from `/integrations/claude-desktop.mcpb`. The artifact is secret-free and the
 route is intentionally unauthenticated. Worktable Cloud disables this download
 and uses OAuth. Extension upgrades are installed manually.
@@ -213,7 +211,31 @@ worktable mcp repair    # re-apply connected client configuration
 ```
 
 Desktop-local endpoints are available only while Worktable Desktop is running.
-Closing its window keeps it running; quitting Worktable stops it. Revoking a
-token requires replacing it in the provider that stored it. Switching
-Desktop workspaces changes the selected endpoint, so update Claude or ChatGPT to
-the endpoint shown for the new workspace.
+Closing its window keeps it running; quitting Worktable stops it. After revoking
+a token, reconnect the client with a new credential. When switching
+workspaces or hosts, verify the endpoint shown in Settings and
+update client configurations if it changed.
+
+## Prose edits
+
+`worktable_docs_read` action `grep` matches literal text or a JavaScript regular
+expression one line at a time. It returns 1-based line numbers and revisions.
+Check `truncated`, `lineTruncated`, and `skipped` before claiming a complete
+search. `read` accepts `offset` and `limit` for exact line ranges.
+
+`worktable_docs_write` action `edit` applies exact `oldText`/`newText` replacements.
+Each match must be unique unless `replaceAll` is set. A batch applies completely
+or not at all. Copy text from a read; reread after `no_match`, `ambiguous`, or
+`revision_conflict`. Unsupported rich-block changes must be made in Worktable.
+
+An edit preserves unchanged content and formatting. With `expectedRevision`,
+concurrent edits to unrelated blocks can survive, while overlapping changes
+can produce a conflict. Whole-document `write` requires `expectedRevision` for
+an existing document and refuses formatting loss unless `force` is supplied.
+Do not use `force` merely to bypass a refusal.
+
+HTML previews capture the saved source with persistent writes and external
+network disabled. A failed preview does not undo a successful save: retry the
+read `render` action rather than repeating the mutation. See
+[HTML runtime](/reference/html-doc-runtime/) and [Drawings](/agents/drawings/)
+for format-specific verification.

@@ -1,6 +1,6 @@
 ---
-title: Reach Worktable from another machine
-description: Protect a self-hosted Worktable with an owner password, agent access, and HTTPS.
+title: Remote access
+description: Reach a local or self-hosted workspace from another device or agent.
 ---
 
 Worktable is available only on its own machine by default. Reachable mode lets
@@ -68,8 +68,8 @@ in Settings or print the client configuration from the Worktable host:
 worktable mcp print-config <client> --with-token
 ```
 
-The token is shown once. Copy it directly into the client and do not put it in
-a URL or shared document.
+This command prints a credential. Copy it directly into the client and keep it
+out of shared documents, URLs, and command logs.
 
 ## Manage access
 
@@ -82,10 +82,37 @@ Claude Desktop and ChatGPT use the **Desktop apps** section. The self-hosted
 address must be reachable from the Mac or service running the app. A browser on
 another device signs in with the owner password.
 
-## Return to local-only use
+## Return to loopback
 
 Run `worktable setup` again and choose loopback. Previously created agent
 connections remain listed, so revoke any you no longer want to use.
 
 The [security model](/reference/security/) explains the password, token, and
 HTTPS boundaries in detail.
+
+## Worktable Link
+
+Where available for your Cloud account, Worktable Link connects a local or
+self-hosted installation to supported AI apps and public document sharing.
+Check **Settings → Worktable Cloud** for availability and the device limit.
+A remote self-hosted installation needs an HTTPS address.
+
+1. Choose **Sign in** in **Settings → Worktable Cloud**. Complete browser
+   sign-in and confirm the server address when prompted.
+2. Return to Settings and turn on **Worktable Link**. Sign-in alone does not
+   enable remote access. Complete subscription setup if requested.
+3. Copy the device's **MCP URL** into your AI app's connector setup and choose
+   OAuth authentication.
+4. Sign in with the same Cloud account and approve the connection.
+
+Keep the device online and Worktable running. Authorized requests pass through
+Cloud to the device; Link does not copy its workspace into the hosted workspace,
+synchronize the two, or expose the full local interface remotely.
+
+Turn off **Worktable Link** to pause AI access and public sharing. Turning it on
+again restores the same MCP URL, share links, and approved connections. You can
+also pause, resume, or disconnect individual apps under **Manage devices**.
+
+**Unlink** ends that device's access. Linking again creates a new MCP URL.
+Replacing the local workspace also requires linking again. Signing out of Cloud
+in local Settings does not unlink the device; pause or unlink it to stop access.

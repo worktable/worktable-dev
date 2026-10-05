@@ -1,11 +1,12 @@
-# Worktable
+# Worktable plugin
 
-Worktable gives agents a shared workspace for private Docs, interactive HTML,
-structured Records, annotations, and threaded handoffs. This package connects
-supported agents to Worktable and adds six skills for working with that content.
+Connect a supported agent to **Worktable Cloud** and install Worktable's workflow
+skills. This package uses the Cloud MCP endpoint; for local or self-hosted
+workspaces, follow [Connections](https://docs.worktable.dev/agents/connections/).
 
-The package follows the Agent Plugins 1.0 standard. It also includes compatibility
-adapters for Claude Code and OpenAI clients.
+The package follows Agent Plugins 1.0 and includes Claude Code and OpenAI client
+adapters. Browse the [skills](https://docs.worktable.dev/agents/skills/) before
+installing, or use their standalone installation instructions.
 
 ## Install
 
@@ -16,8 +17,8 @@ claude plugin marketplace add worktable/worktable-dev
 claude plugin install worktable@worktable
 ```
 
-In Claude Code, run `/mcp`, select `plugin:worktable:worktable`, and choose
-**Authenticate** if Worktable is not already connected.
+Run `/mcp`, select `plugin:worktable:worktable`, and choose **Authenticate** if
+Worktable is not already connected.
 
 ### Codex
 
@@ -26,45 +27,44 @@ codex plugin marketplace add worktable/worktable-dev
 codex plugin add worktable@worktable
 ```
 
-### Other compatible agents
+### Other agents
 
-Install the `plugins/worktable` directory as an Agent Plugins 1.0 package. The
-standard `plugin.json`, `mcp.json`, and `skills/` directory are at its root.
+Install `plugins/worktable` as an Agent Plugins 1.0 package. Its root contains
+`plugin.json`, `mcp.json`, and `skills/`.
 
-Complete the Worktable sign-in and consent flow when your agent first connects.
-OAuth credentials are managed by the agent host and are not included in this
-package.
+Complete Worktable's sign-in and consent flow when your agent connects. The agent
+host manages OAuth credentials; this package contains none.
 
 ## Use
 
-Ask your agent to find or create Worktable content, build an interactive HTML
-Doc, manage Records, review with annotations, or collaborate in a thread. Thread
-checks happen when the collaboration workflow runs; this package does not run a
-background inbox listener.
+Ask the agent to find existing work, revise a document, build an HTML tool,
+manage records, review with annotations, or collaborate in a thread. Skills guide
+these workflows. Thread checks happen when the workflow runs; the package does
+not listen for incoming messages in the background.
 
 ## Update or remove
 
-Claude Code users can update or uninstall the package with:
+In Claude Code:
 
 ```text
 claude plugin update worktable@worktable
 claude plugin uninstall worktable@worktable
 ```
 
-Removing the plugin removes its skills and MCP connection. It does not delete
-content from Worktable or close your account. Disconnect Worktable separately
-if you also want to revoke access.
+Other hosts manage packages through their plugin interface. Removing the plugin
+removes its connection and bundled skills. It does not delete workspace content
+or close your account. Revoke access in Worktable separately.
 
 ## Privacy and support
 
-Worktable receives only the operations you ask your agent to perform. Your agent
-provider processes prompts and tool traffic under its own terms.
+Worktable processes requests made through the connection. Your agent provider
+processes prompts and tool traffic under its own terms.
 
-- [Setup documentation](https://docs.worktable.dev/start/connect-your-agent)
+- [Connections](https://docs.worktable.dev/agents/connections/)
 - [Privacy](https://www.worktable.cloud/privacy)
 - [Terms](https://www.worktable.cloud/terms)
 - [Support](https://www.worktable.cloud/support)
 
 ## License
 
-This package is licensed under the included MIT License.
+This package uses the included [MIT License](LICENSE).

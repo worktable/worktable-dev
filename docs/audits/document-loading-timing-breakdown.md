@@ -1,4 +1,6 @@
-# What took 12.31 seconds?
+# Timing breakdown
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 This explains the actual median sample, `editor-prototype-1`, from the [critical investigation](document-loading-critical-follow-up.md). It is a cold **2,000-paragraph** editor opening, with 100 ms latency, 10 Mbps download, 4 Mbps upload, and 4× CPU slowdown. It is not an unthrottled localhost result or the small-document result. It is still too slow. The small-document editor median in the earlier series was 5.417 seconds.
 

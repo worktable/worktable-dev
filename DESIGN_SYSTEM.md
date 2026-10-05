@@ -1,15 +1,15 @@
-# Worktable Design System
+# Design system
 
 **Theme:** Neutral Drafting Room — Cobalt × Bronze
 Neutral structure, paper for content, real tools for primary action.
 This file records the durable usage rules. Exact values and generated adapters
 come from the canonical theme configuration below.
 
-## Theme source and generated artifacts
+## Theme source
 
 [`packages/ui/src/theme/theme-config.ts`](packages/ui/src/theme/theme-config.ts) is the only human-edited source for structural colors, accents, statuses, charts, backdrop geometry, control finishes, overlay elevation, browser shell colors, and the BlockNote, Mermaid, and drawing adapter palettes. Read that file for exact values; do not copy its values into documentation or product CSS.
 
-Run `bun run generate:theme` after changing the configuration. It generates and commits:
+Run `bun run generate:theme` after changing the configuration. It generates these tracked files; review and commit the output:
 
 - `packages/ui/src/styles/theme.generated.css`, the pure semantic CSS variable contract.
 - `apps/web/src/styles/blocknote-theme.generated.css`, BlockNote-compatible hardcoded colors.
@@ -121,8 +121,9 @@ Mobile navigation is shell chrome rather than a portaled content overlay. It use
 | Fraunces       | `--font-display` | Headings      |
 | JetBrains Mono | `--font-mono`    | Code          |
 
-Body weight: 480 (slightly heavier than normal for screen readability). Long-form prose uses `--reading-foreground`, which is deliberately softer than UI `--foreground`; headings, labels, links, statuses, and syntax colors keep their existing semantic roles.
-Letter spacing: 0.015em body, -0.005em headings.
+Use the body weight and tracking defined in `packages/ui/src/styles/globals.css`.
+Long-form prose uses `--reading-foreground`, which is deliberately softer than UI `--foreground`; headings, labels, links, statuses, and syntax colors keep their existing semantic roles.
+
 
 Operational state titles such as empty states, errors, and recovery prompts use the body font at a larger semibold weight. Reserve the display font for major page and artifact headings where its character has enough size and space to read clearly.
 
@@ -155,17 +156,14 @@ Glass panes use `backdrop-filter` for frosted blur effects. Three tiers:
 
 - Glass utilities live OUTSIDE `@layer utilities` in globals.css. Tailwind v4 strips unprefixed `backdrop-filter` from `@layer` blocks. Always keep them outside.
 - Both `-webkit-backdrop-filter` and `backdrop-filter` must be declared (Chrome needs unprefixed).
-- Portaled elements (dropdowns, popovers) cannot use backdrop-filter because they render outside the layout stacking context. Use fully opaque backgrounds for these.
+- Use opaque backgrounds for portaled menus and popovers so their contrast does not depend on the content behind them.
 - Mobile navigation drawers are opaque shell surfaces, not glass. Use `.navigation-drawer`; do not apply `.glass-heavy` to navigation.
 
-### Opacity Guidelines
+### Surface opacity
 
-| Surface            | Opacity                | Why                                           |
-| ------------------ | ---------------------- | --------------------------------------------- |
-| Desktop sidebar    | 72%                    | Needs blur to frost; more opaque = less bleed |
-| Cards              | 78%                    | Sits over content; semi-transparent for depth |
-| Popovers/Dropdowns | 100% (opaque)          | Portaled, can't blur                          |
-| Header             | 75% (via inline style) | Blurs page content scrolling underneath       |
+Use the semantic surface recipes in the theme and shared styles. Do not copy
+opacity values into components. Sidebar and header glass may reveal the canvas;
+menus, dialogs, and mobile navigation need their prescribed opaque surfaces.
 
 ## Scroll Fade
 
@@ -331,7 +329,7 @@ Sidebar rows share `--sidebar-item-radius`; `--sidebar-hover` is deliberately qu
 ## Anti-Patterns
 
 - **Don't put `backdrop-filter` in `@layer utilities`.** Tailwind v4 strips the unprefixed version.
-- **Don't use `backdrop-filter` on portaled elements.** Popovers, dropdowns, tooltips render outside the DOM hierarchy. Use opaque backgrounds.
+- **Use opaque overlay surfaces.** Menus and popovers must keep predictable contrast over any content.
 - **Don't combine a hard edge and a scroll fade at the same boundary.** Choose the treatment that matches the surrounding surface.
 - **Don't use `useRef` for scroll fade on conditionally rendered elements.** Use `useScrollFade` (callback ref) or `ScrollFadeArea`.
 - **Don't forget `has-[[data-popup-open]]`** on hover-to-reveal triggers. Without it, the trigger disappears when the dropdown opens.

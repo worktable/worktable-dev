@@ -52,6 +52,16 @@ apps/docs/src/content/docs/reference/cli-commands.md
 apps/docs/src/content/docs/reference/html-doc-runtime.md
 apps/docs/src/content/docs/whats-new.md
 apps/docs/src/content/docs/agents/orientation.md
+apps/docs/src/content/docs/reference/drawing-operations.md
+apps/docs/src/content/docs/agents/setup.md
+apps/docs/src/content/docs/agents/find-context.md
+apps/docs/src/content/docs/agents/writing-docs.md
+apps/docs/src/content/docs/agents/building-widgets.md
+apps/docs/src/content/docs/agents/records-and-schemas.md
+apps/docs/src/content/docs/agents/annotations-protocol.md
+apps/docs/src/content/docs/agents/threads.md
+apps/docs/public/.well-known/skills/
+apps/docs/public/downloads/skills/
 
 # PR diff/metadata the docsync + relnotes CI workflows capture for the skill
 .pr-context/

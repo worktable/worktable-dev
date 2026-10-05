@@ -7,7 +7,7 @@
     "predev": "bun run --cwd ../.. generate:docs-content",
     "dev": "astro dev --port 7435",
     "prebuild": "bun run --cwd ../.. generate:docs-content",
-    "build": "astro check && astro build",
+    "build": "astro check && astro build && bun ../../scripts/docs-links.ts dist",
     "precheck": "bun run --cwd ../.. generate:docs-content",
     "check": "astro check",
     "preview": "astro preview",

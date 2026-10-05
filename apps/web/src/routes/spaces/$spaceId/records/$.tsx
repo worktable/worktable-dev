@@ -48,6 +48,7 @@ import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@worktable/ui/components/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@worktable/ui/components/tooltip"
 import { CanonicalIdSchema, RecordPredicateOpSchema, type RecordFile, type RecordQuery } from "@worktable/types"
+import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { usePageMeta } from "@/hooks/use-page-meta"
 import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
@@ -151,6 +152,7 @@ function RecordsPage() {
   const groupBy = typeof routeSearch.groupBy === "string" && routeSearch.groupBy ? routeSearch.groupBy : undefined
   const urlSort = useMemo(() => sanitizeSort(routeSearch.sort), [routeSearch.sort])
   const navigate = Route.useNavigate()
+  const tableScrollRef = useScrollFadeX<HTMLDivElement>()
 
   // Persistence writes only after the user (or the restore) actually touched
   // the table state in THIS collection visit. Without this, merely opening a
@@ -161,7 +163,7 @@ function RecordsPage() {
   /** Patch the URL-carried table state (undefined removes a key). */
   const setTableState = (patch: Partial<Pick<RecordsSearch, "filters" | "groupBy" | "sort">>) => {
     tableStateTouchedRef.current = true
-    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
   }
 
   // Live updates ride the parent SpaceDetailPage's space subscription, which
@@ -222,7 +224,7 @@ function RecordsPage() {
     if (sanitizeSort(saved.sort)) patch.sort = sanitizeSort(saved.sort)
     if (Object.keys(patch).length > 0) {
       tableStateTouchedRef.current = true
-      void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+      void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once per collection
   }, [spaceId, collectionId])
@@ -286,6 +288,9 @@ function RecordsPage() {
   })
 
   const rows = useMemo(() => pagesQuery.data?.pages.flatMap((page) => page.records) ?? [], [pagesQuery.data])
+  // Derive the footer from the displayed pages too: the query's hasNextPage
+  // drops to false during placeholder data, which would briefly shrink the grid.
+  const hasMoreRows = Boolean(pagesQuery.data?.pages.at(-1)?.nextCursor)
   const expanded = useMemo<ExpandedRecords>(() => {
     const merged: ExpandedRecords = {}
     for (const page of pagesQuery.data?.pages ?? []) {
@@ -320,6 +325,7 @@ function RecordsPage() {
         return next
       },
       replace: true,
+      resetScroll: false,
     })
   }
 
@@ -617,7 +623,7 @@ function RecordsPage() {
   const totalLabel =
     collection !== undefined && !includeArchived && !scoped
       ? `${collection.count} ${collection.count === 1 ? "record" : "records"}`
-      : `${rows.length}${pagesQuery.hasNextPage ? "+" : ""} loaded`
+      : `${rows.length}${hasMoreRows ? "+" : ""} loaded`
   const visibleRecordIds = (groupedRows
     ? groupedRows.flatMap(([, group]) => group.rows)
     : table.getRowModel().rows
@@ -634,7 +640,7 @@ function RecordsPage() {
   const closePeek = () => {
     const closingId = peekRecordId
     openPeek(undefined)
-    if (closingId) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${closingId}"]`)?.focus())
+    if (closingId) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${closingId}"]`)?.focus({ preventScroll: true }))
   }
 
   return (
@@ -643,8 +649,10 @@ function RecordsPage() {
       <RecordsPageMeta name={collection?.name ?? schema?.name ?? collectionId} collectionId={collectionId} updatedAt={schema?.updatedAt} />
       <DocumentReferenceScope spaceId={spaceId} paths={documentPaths}>
       <div className="flex min-h-0 flex-1">
+        {/* Match the inspector's width transition: dropping the gutter instantly
+            briefly widens the grid and clamps a scroll position at its right edge. */}
         <div
-          className={`flex min-w-0 flex-1 flex-col px-4 pt-4 sm:px-6 ${peekRecordId && !detailDrawer ? "xl:pr-0" : ""}`}
+          className={`flex min-w-0 flex-1 flex-col px-4 pt-4 transition-[padding-right] duration-300 ease-out sm:px-6 ${peekRecordId && !detailDrawer ? "xl:pr-0" : ""}`}
         >
           {/* Toolbar */}
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
@@ -825,14 +833,180 @@ function RecordsPage() {
             </div>
           )}
 
-          {/* Grid */}
-          {pagesQuery.isLoading || collectionsLoading ? (
-            <div className="space-y-2 py-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-9 animate-pulse rounded-lg bg-muted/20" />
-              ))}
+          {/* Keep the frame mounted through loading, empty results, and errors. */}
+          <div className="relative min-h-0" aria-busy={pagesQuery.isFetching}>
+            <span role="status" className="sr-only">
+              {pagesQuery.isFetching && !pagesQuery.isFetchingNextPage ? "Updating records…" : ""}
+            </span>
+            {pagesQuery.isFetching && !pagesQuery.isFetchingNextPage && (
+              <Loader2 className="pointer-events-none absolute right-3 top-3 z-10 size-4 animate-spin text-muted-foreground" />
+            )}
+            <div className="h-full min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+              <div key={`${spaceId}/${collectionId}`} ref={tableScrollRef} className="scroll-fade-x max-h-full min-w-0 overflow-auto overscroll-x-contain">
+                <table className="border-separate border-spacing-0 caption-bottom text-sm" style={{ width: table.getTotalSize(), minWidth: "100%" }}>
+                <TableHeader className="sticky top-0 z-10 bg-card [&_th]:border-b [&_th]:border-border/60">
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id} className="border-0 hover:bg-transparent">
+                      {headerGroup.headers.map((header) => {
+                        const sortDir = header.column.getIsSorted()
+                        // See RECORD_TOP_LEVEL_KEYS: the server would sort
+                        // record metadata, not the displayed data field.
+                        const sortable = !RECORD_TOP_LEVEL_KEYS.has(header.column.id)
+                        if (!sortable) {
+                          return (
+                            <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
+                              <span
+                                className="flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                                title="This field name matches record metadata, so it cannot be sorted by its value"
+                              >
+                                {flexRender(header.column.columnDef.header, header.getContext())}
+                              </span>
+                            </TableHead>
+                          )
+                        }
+                        return (
+                          <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
+                            <button
+                              type="button"
+                              className="group flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                              onClick={header.column.getToggleSortingHandler()}
+                              title="Sort (shift-click to add)"
+                            >
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                              {sortDir === "asc" ? (
+                                <ArrowUp className="size-3" />
+                              ) : sortDir === "desc" ? (
+                                <ArrowDown className="size-3" />
+                              ) : (
+                                <ArrowUpDown className="size-3 opacity-0 transition-opacity group-hover:opacity-40" />
+                              )}
+                            </button>
+                            <ResizeHandle
+                              role="separator"
+                              aria-orientation="vertical"
+                              aria-label={`Resize ${header.column.id} column`}
+                              onMouseDown={header.getResizeHandler()}
+                              onTouchStart={header.getResizeHandler()}
+                              onDoubleClick={() => header.column.resetSize()}
+                              data-resizing={header.column.getIsResizing() ? "" : undefined}
+                              className="inset-y-1 -right-1"
+                            />
+                          </TableHead>
+                        )
+                      })}
+                      <TableHead className="w-9 px-1" aria-label="Row actions" />
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody className="[&_tr:not([data-state=selected])_td]:border-b [&_tr:not([data-state=selected])_td]:border-border/60 [&_tr:last-child_td]:border-b-0">
+                  {(pagesQuery.isLoading || collectionsLoading) && rows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={columns.length + 1}>
+                        <div className="space-y-2 py-2">
+                          {Array.from({ length: 6 }).map((_, i) => (
+                            <div key={i} className="h-9 animate-pulse rounded-lg bg-muted/20" />
+                          ))}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {(() => {
+                    const groupColumn = groupBy ? fieldColumns.find((column) => column.key === groupBy) : undefined
+                    const renderedRows = groupedRows
+                      ? groupedRows.flatMap(([, group]) => group.rows)
+                      : table.getRowModel().rows
+                    const renderRow = (row: Row<RecordFile>) => (
+                      <TableRow
+                        key={row.original.id}
+                        onClick={() => openPeek(row.original.id)}
+                        tabIndex={0}
+                        data-record-id={row.original.id}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            openPeek(row.original.id)
+                            return
+                          }
+                          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+                          event.preventDefault()
+                          const index = renderedRows.findIndex((entry) => entry.original.id === row.original.id)
+                          const next = renderedRows[index + (event.key === "ArrowDown" ? 1 : -1)]
+                          if (!next) return
+                          openPeek(next.original.id)
+                          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${next.original.id}"]`)?.focus())
+                        }}
+                        data-state={peekRecordId === row.original.id ? "selected" : undefined}
+                        className={`group/row cursor-pointer border-0 outline-none data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
+                      >
+                        {row.getVisibleCells().map((cell) => {
+                          const column = visibleColumns.find((column) => column.key === cell.column.id)
+                          // Render the stable editor type directly: a column callback
+                          // recreated on query updates would remount it and lose drafts.
+                          return (
+                            <TableCell
+                              key={cell.id}
+                              className="overflow-hidden px-3 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55"
+                              style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
+                            >
+                              {column ? <EditableCell
+                                column={column}
+                                record={row.original}
+                                spaceId={spaceId}
+                                expanded={expanded}
+                                danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
+                                onCommitField={peekActions.onCommitField}
+                                editingEnabled={editCells}
+                              /> : <span className="font-mono text-xs">{row.original.id}</span>}
+                            </TableCell>
+                          )
+                        })}
+                        <TableCell className="w-9 px-1 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55">
+                          <RecordRowMenu
+                            record={row.original}
+                            onOpen={() => openPeek(row.original.id)}
+                            onDuplicate={() => void duplicateRecord(row.original)}
+                            onArchive={() => mutations.archive.mutate(row.original.id)}
+                            onRestore={() => mutations.restore.mutate(row.original.id)}
+                            onDelete={() => setDeleteTarget(row.original)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )
+                    if (!groupedRows) return renderedRows.map(renderRow)
+                    return groupedRows.map(([key, group]) => {
+                      const totals = groupTotals.get(key)
+                      return (
+                        <GroupSection
+                          key={key}
+                          colSpan={columns.length + 1}
+                          column={groupColumn}
+                          label={group.label}
+                          totals={totals}
+                          numberColumns={numberColumns}
+                          labelFor={(field) => columnLabel(fieldColumns.find((entry) => entry.key === field) ?? { key: field, field: null })}
+                          spaceId={spaceId}
+                          expanded={expanded}
+                        >
+                          {group.rows.map(renderRow)}
+                        </GroupSection>
+                      )
+                    })
+                  })()}
+                </TableBody>
+                </table>
+              </div>
             </div>
-          ) : rows.length === 0 ? (
+          </div>
+          {pagesQuery.isError && (
+            <div role="alert" className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm">
+              <span className="flex-1">Couldn’t update records. Try again.</span>
+              <Button size="sm" variant="outline" onClick={() => void pagesQuery.refetch()} disabled={pagesQuery.isFetching}>
+                Retry
+              </Button>
+            </div>
+          )}
+          {!pagesQuery.isPending && !pagesQuery.isError && !collectionsLoading && rows.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 px-6 py-16 text-center">
               <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-muted/40">
                 <Database className="size-6 text-muted-foreground" />
@@ -855,176 +1029,28 @@ function RecordsPage() {
                 </Button>
               )}
             </div>
-          ) : (
-            <>
-              <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
-                <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-                  <table className="border-separate border-spacing-0 caption-bottom text-sm" style={{ width: table.getTotalSize(), minWidth: "100%" }}>
-                  <TableHeader className="[&_th]:border-b [&_th]:border-border/60">
-                    {table.getHeaderGroups().map((headerGroup) => (
-                      <TableRow key={headerGroup.id} className="border-0 hover:bg-transparent">
-                        {headerGroup.headers.map((header) => {
-                          const sortDir = header.column.getIsSorted()
-                          // See RECORD_TOP_LEVEL_KEYS: the server would sort
-                          // record metadata, not the displayed data field.
-                          const sortable = !RECORD_TOP_LEVEL_KEYS.has(header.column.id)
-                          if (!sortable) {
-                            return (
-                              <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
-                                <span
-                                  className="flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                                  title="This field name matches record metadata, so it cannot be sorted by its value"
-                                >
-                                  {flexRender(header.column.columnDef.header, header.getContext())}
-                                </span>
-                              </TableHead>
-                            )
-                          }
-                          return (
-                            <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
-                              <button
-                                type="button"
-                                className="group flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-                                onClick={header.column.getToggleSortingHandler()}
-                                title="Sort (shift-click to add)"
-                              >
-                                {flexRender(header.column.columnDef.header, header.getContext())}
-                                {sortDir === "asc" ? (
-                                  <ArrowUp className="size-3" />
-                                ) : sortDir === "desc" ? (
-                                  <ArrowDown className="size-3" />
-                                ) : (
-                                  <ArrowUpDown className="size-3 opacity-0 transition-opacity group-hover:opacity-40" />
-                                )}
-                              </button>
-                              <ResizeHandle
-                                role="separator"
-                                aria-orientation="vertical"
-                                aria-label={`Resize ${header.column.id} column`}
-                                onMouseDown={header.getResizeHandler()}
-                                onTouchStart={header.getResizeHandler()}
-                                onDoubleClick={() => header.column.resetSize()}
-                                data-resizing={header.column.getIsResizing() ? "" : undefined}
-                                className="inset-y-1 -right-1"
-                              />
-                            </TableHead>
-                          )
-                        })}
-                        <TableHead className="w-9 px-1" aria-label="Row actions" />
-                      </TableRow>
-                    ))}
-                  </TableHeader>
-                  <TableBody className="[&_tr:not([data-state=selected])_td]:border-b [&_tr:not([data-state=selected])_td]:border-border/60 [&_tr:last-child_td]:border-b-0">
-                    {(() => {
-                      const groupColumn = groupBy ? fieldColumns.find((column) => column.key === groupBy) : undefined
-                      const renderedRows = groupedRows
-                        ? groupedRows.flatMap(([, group]) => group.rows)
-                        : table.getRowModel().rows
-                      const renderRow = (row: Row<RecordFile>) => (
-                        <TableRow
-                          key={row.original.id}
-                          onClick={() => openPeek(row.original.id)}
-                          tabIndex={0}
-                          data-record-id={row.original.id}
-                          onKeyDown={(event) => {
-                            if (event.target !== event.currentTarget) return
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault()
-                              openPeek(row.original.id)
-                              return
-                            }
-                            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
-                            event.preventDefault()
-                            const index = renderedRows.findIndex((entry) => entry.original.id === row.original.id)
-                            const next = renderedRows[index + (event.key === "ArrowDown" ? 1 : -1)]
-                            if (!next) return
-                            openPeek(next.original.id)
-                            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${next.original.id}"]`)?.focus())
-                          }}
-                          data-state={peekRecordId === row.original.id ? "selected" : undefined}
-                          className={`group/row cursor-pointer border-0 outline-none data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
-                        >
-                          {row.getVisibleCells().map((cell) => {
-                            const column = visibleColumns.find((column) => column.key === cell.column.id)
-                            // Render the stable editor type directly: a column callback
-                            // recreated on query updates would remount it and lose drafts.
-                            return (
-                              <TableCell
-                                key={cell.id}
-                                className="overflow-hidden px-3 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55"
-                                style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
-                              >
-                                {column ? <EditableCell
-                                  column={column}
-                                  record={row.original}
-                                  spaceId={spaceId}
-                                  expanded={expanded}
-                                  danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
-                                  onCommitField={peekActions.onCommitField}
-                                  editingEnabled={editCells}
-                                /> : <span className="font-mono text-xs">{row.original.id}</span>}
-                              </TableCell>
-                            )
-                          })}
-                          <TableCell className="w-9 px-1 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55">
-                            <RecordRowMenu
-                              record={row.original}
-                              onOpen={() => openPeek(row.original.id)}
-                              onDuplicate={() => void duplicateRecord(row.original)}
-                              onArchive={() => mutations.archive.mutate(row.original.id)}
-                              onRestore={() => mutations.restore.mutate(row.original.id)}
-                              onDelete={() => setDeleteTarget(row.original)}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )
-                      if (!groupedRows) return renderedRows.map(renderRow)
-                      return groupedRows.map(([key, group]) => {
-                        const totals = groupTotals.get(key)
-                        return (
-                          <GroupSection
-                            key={key}
-                            colSpan={columns.length + 1}
-                            column={groupColumn}
-                            label={group.label}
-                            totals={totals}
-                            numberColumns={numberColumns}
-                            labelFor={(field) => columnLabel(fieldColumns.find((entry) => entry.key === field) ?? { key: field, field: null })}
-                            spaceId={spaceId}
-                            expanded={expanded}
-                          >
-                            {group.rows.map(renderRow)}
-                          </GroupSection>
-                        )
-                      })
-                    })()}
-                  </TableBody>
-                  </table>
-                </div>
-              </div>
-
-              {pagesQuery.hasNextPage && (
-                <div className="flex shrink-0 justify-center py-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void pagesQuery.fetchNextPage()}
-                    disabled={pagesQuery.isFetchingNextPage}
-                  >
-                    {pagesQuery.isFetchingNextPage ? (
-                      <>
-                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        Loading…
-                      </>
-                    ) : (
-                      `Load more (${rows.length} of ${totalLabel})`
-                    )}
-                  </Button>
-                </div>
-              )}
-              <div className="h-6 shrink-0" />
-            </>
           )}
+
+          {hasMoreRows && (
+            <div className="flex shrink-0 justify-center py-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void pagesQuery.fetchNextPage()}
+                disabled={pagesQuery.isFetching || pagesQuery.isPlaceholderData}
+              >
+                {pagesQuery.isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                    Loading…
+                  </>
+                ) : (
+                  `Load more (${rows.length} of ${totalLabel})`
+                )}
+              </Button>
+            </div>
+          )}
+          <div className="h-6 shrink-0" />
         </div>
 
         <RecordPeek

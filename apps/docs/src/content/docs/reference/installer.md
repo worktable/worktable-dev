@@ -1,5 +1,5 @@
 ---
-title: Installer reference
+title: Installer
 description: Every flag and environment override for the install script, and exactly what it touches.
 ---
 
@@ -9,7 +9,7 @@ Supported targets are macOS and Linux on arm64 or x64. Worktable Desktop is a
 separate signed macOS application; this installer is for the CLI and local or
 self-hosted service.
 
-## What it touches
+## Files and paths
 
 - **No sudo.** Everything installs into user-owned directories.
 - **No shell-profile edits.** The launcher goes into the install directory; shell completions are placed in your shell's drop-in completions directory (skip with `--no-completions`).
@@ -21,7 +21,7 @@ falls back to `~/.local/bin`. App-private data defaults to
 `${XDG_CONFIG_HOME:-~/.config}/worktable` on Linux. The default workspace from
 setup is `~/Worktable`.
 
-Not sure? `--dry-run` prints the resolved target, URLs, and paths without installing anything:
+`--dry-run` prints the resolved target, URLs, and paths without installing anything:
 
 ```sh
 curl -fsSL https://worktable.dev/install | sh -s -- --dry-run
@@ -64,3 +64,6 @@ curl -fsSL https://worktable.dev/install | sh -s -- --yes --mcp claude-code,code
 ## After the install
 
 `worktable doctor` verifies the result. `worktable uninstall` reverses it — your workspace folder survives unless you pass `--purge`.
+
+For workflow instructions without a local application, use the separate
+[skills installer](/agents/skills/#installation).

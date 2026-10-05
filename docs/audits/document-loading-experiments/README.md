@@ -1,6 +1,8 @@
-# Loading investigation experiments
+# Loading experiments
 
-These are diagnostic fixtures and prototypes, not production features. See [findings and limitations](../document-loading-critical-follow-up.md). Use Bun and the repository's installed dependencies. Commands below start from the repository root unless a working directory is specified.
+These are historical diagnostic fixtures and prototypes. They are not maintained
+acceptance tests. See the [archive index](../README.md) for source and status.
+The dependency-specific transforms below require their original source checkout. See [findings and limitations](../document-loading-critical-follow-up.md). Use Bun and the repository's installed dependencies. Commands below start from the repository root unless a working directory is specified.
 
 ## Current application fixtures
 
@@ -94,8 +96,7 @@ readiness, long tasks, and Event Timing entries. For rich documents it types a
 character and undoes it, so **use only an isolated fixture workspace**.
 
 ```sh
-AUDIT_ORIGIN=http://192.168.2.211:39083 \
-AUDIT_PASSWORD='your-review-password' \
+AUDIT_ORIGIN=http://127.0.0.1:39083 \
 node docs/audits/document-loading-experiments/measure-reading-and-input.mjs
 ```
 
@@ -119,26 +120,26 @@ production server or an internet-facing proxy.
 ## Final implementation measurements
 
 See [final results](../document-loading-results.md). Run from the repository root
-with Playwright installed and the visible CDP browser available. Set
-`AUDIT_PASSWORD` to the isolated fixture password without committing it.
+with Playwright installed and a dedicated CDP browser available. Supply the ports
+printed by the isolated fixture servers in place of these examples.
 
 ```sh
-AUDIT_BEFORE=http://192.168.2.211:45747 \
-AUDIT_AFTER=http://192.168.2.211:39090 \
+AUDIT_BEFORE=http://127.0.0.1:45747 \
+AUDIT_AFTER=http://127.0.0.1:39090 \
 node docs/audits/document-loading-experiments/measure-paired-openings.mjs
 
-AUDIT_ORIGIN=http://192.168.2.211:39090 \
+AUDIT_ORIGIN=http://127.0.0.1:39090 \
 AUDIT_TARGETS=rich-10,rich-2000,plain \
 node docs/audits/document-loading-experiments/measure-reading-and-input.mjs
 
-AUDIT_BEFORE=http://192.168.2.211:45747 \
-AUDIT_AFTER=http://192.168.2.211:39090 \
+AUDIT_BEFORE=http://127.0.0.1:45747 \
+AUDIT_AFTER=http://127.0.0.1:39090 \
 node docs/audits/document-loading-experiments/measure-proxy-html.mjs
 ```
 
 `AUDIT_OUTPUT` changes each script's JSON output path. `AUDIT_CDP` overrides
 `http://127.0.0.1:18800`; that address controls the browser locally, while the
-review URLs remain LAN-accessible. The input script types and undoes one character;
+fixture URLs point to the isolated servers you started. The input script types and undoes one character;
 never aim it at a real document. Run these sequentially with builds/tests idle.
 The paired script's CDP network emulation covers the parent page only; the proxy
 script also constrains the sandboxed HTML response and checks its latency.

@@ -1,5 +1,5 @@
 ---
-title: Install Worktable from the CLI
+title: CLI install
 description: Install local or self-hosted Worktable on macOS or Linux with one command.
 ---
 
@@ -20,10 +20,10 @@ When setup finishes, open the address it prints. The default is:
 http://localhost:7480
 ```
 
-## See it before you run it
+## Inspect the installer
 
-Piping a script to `sh` deserves skepticism. The installer is short, needs no
-sudo, and edits no shell profiles. See exactly what it would download and touch:
+The installer needs no sudo and does not edit shell profiles. Preview its
+downloads and filesystem changes:
 
 ```sh
 curl -fsSL https://worktable.dev/install | sh -s -- --dry-run
@@ -34,7 +34,7 @@ Every flag and default path is listed in the
 
 ## Choose the workspace folder
 
-Your workspace is a plain folder at `~/Worktable` by default. Docs, HTML docs,
+Your workspace is a plain folder at `~/Worktable` by default. Documents, drawings,
 records, annotations, threads, and history remain separate from app settings
 and credentials.
 
@@ -44,9 +44,9 @@ Pick another folder during setup, or steer it explicitly:
 worktable setup --workspace ~/work/notebook
 ```
 
-```sh
-WORKTABLE_WORKSPACE=~/work/notebook worktable
-```
+To select a workspace when launching, use `worktable launch --workspace
+~/work/notebook`. The CLI uses its saved settings and flags; setting
+`WORKTABLE_WORKSPACE` does not override that selection.
 
 Worktable can adopt an existing valid workspace. It refuses to initialize a
 non-empty unrelated folder or overwrite an unfamiliar workspace identity.
@@ -59,7 +59,7 @@ after the terminal closes. Foreground mode keeps lifecycle control in the
 current terminal.
 
 To make a server reachable from another machine, finish the local setup first,
-then follow [Reach Worktable from another machine](/guides/remote-access/).
+then follow [Remote access](/guides/remote-access/).
 
 ## Verify the install
 
@@ -87,4 +87,4 @@ and `--mcp <client-ids>` in the same pass. See the
 ## Next
 
 [Connect an agent](/start/connect-your-agent/) or
-[create your first space](/start/first-space/).
+[start your first project](/start/first-space/).

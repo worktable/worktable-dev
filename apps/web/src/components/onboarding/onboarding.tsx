@@ -95,18 +95,18 @@ const DEFAULT_DRAFT: OnboardingDraft = { step: "identity", setups: [] }
 const AGENT_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
 const STARTER_PROMPTS = [
   {
-    label: "Plan a first Space",
+    label: "Plan a project",
     value:
-      "Ask me what I’m working on and what I want to accomplish. Then create a Space for it with an Overview note and a useful starting structure.",
+      "Help me plan [project]. Find related work in Worktable, then save a short brief with the outcome, constraints, and open questions. Show me the result so we can revise it.",
   },
   {
     label: "Create a Space",
     value:
-      "Create a new Space called [Space name] for [what I’m working on]. Add an Overview note with the goal, useful context, and three next steps.",
+      "Find or create a Space for [what I’m working on]. Save [notes or source material] as a document, preserving decisions and open questions.",
   },
 ] as const
 const OPENCLAW_FIRST_MESSAGE =
-  "Help me decide what to set up first in Worktable. Ask me about what I’m working on, then suggest a useful first Space and the three notes it should contain."
+  "Help me choose a first task in Worktable. Ask what I want to accomplish, find any related work, and help me create or revise one useful result."
 
 const CONNECTION_METHODS = [
   {

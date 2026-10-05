@@ -142,7 +142,7 @@
         "notifyIdentityIds": [],
         "responseIdentityId": null
       },
-      "body": "The plan is measurable as written. Add one guardrail: invited teammates who open the Worktable but never return should not count as successful sharing. That keeps a stronger activation signal from being hidden by invite volume.",
+      "body": "The plan is measurable as written. Add one guardrail: invited teammates who open Cedarline but never return should not count as successful sharing. That keeps a stronger activation signal from being hidden by invite volume.",
       "inReplyTo": "msg_founder_launch003",
       "idempotencyKey": "founder-launch-4",
       "createdAt": "2026-08-15T15:18:00.000Z"

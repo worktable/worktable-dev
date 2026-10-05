@@ -1,9 +1,9 @@
 ---
-title: MCP capability migration
-description: Mapping from the pre-0.0.36 operation tools to the consolidated capability API.
+title: MCP migration
+description: Mapping from the pre-0.0.37 operation tools to the consolidated capability API.
 ---
 
-Worktable 0.0.36 replaced the operation-per-tool MCP API with an initial set of
+Worktable 0.0.37 replaced the operation-per-tool MCP API with an initial set of
 13 capability tools. The capability surface has grown since then, but the
 migration rule remains: calls wrap action-specific arguments in `request`.
 Reconnect the MCP client after upgrading so it refreshes `tools/list`.
@@ -62,7 +62,9 @@ Reconnect the MCP client after upgrading so it refreshes `tools/list`.
 | `worktable_preview_mermaid`            | `worktable_mermaid` action `preview`                     |
 | `worktable_docs_write` action `patch`  | `worktable_docs_write` action `edit`                     |
 
-Public HTML arguments use `htmlId`; the internal storage directory and application URL remain named `widgets`. Annotation authorship always comes from the authenticated caller.
+Public HTML arguments use `htmlId`. Legacy API and application routes retain
+`widgets` names, but current workspace storage uses HTML files in the Space
+document tree. Annotation authorship comes from the authenticated caller.
 
 The HTML guide accepts only the `runtime` profile. Install the optional HTML
 Agent Skill for visual composition and authoring workflow.

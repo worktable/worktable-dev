@@ -145,6 +145,7 @@ test("the starter board renders Records and persists a status change", async ({
     .toBe("Ready")
 
   await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(boardFrame).toBeVisible({ timeout: 30_000 })
   const reloadedCard = page
     .frameLocator('iframe[title="Onboarding Board"]')
     .locator("article.card")
@@ -163,15 +164,15 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   const editor = page.locator(".bn-editor")
   const firstBlock = editor.getByText(
-    "Worktable is most useful when the shape of the work matches what you need to do. You do not need every feature for every project.",
+    "Use Worktable to create and revise work yourself or with a connected agent. Choose the format that fits the task.",
     { exact: true }
   )
   const secondBlock = editor.getByRole("heading", {
-    name: "Find what works",
+    name: "Useful combinations",
     exact: true,
   })
   const thirdBlock = editor.getByRole("heading", {
-    name: "How the pieces fit together",
+    name: "Plan a project",
     exact: true,
   })
 

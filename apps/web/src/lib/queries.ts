@@ -212,7 +212,15 @@ export function useRecordPages(
   collectionId: string,
   params: RecordPageParams
 ) {
-  return useInfiniteQuery(recordPagesQueryOptions(spaceId, collectionId, params))
+  return useInfiniteQuery({
+    ...recordPagesQueryOptions(spaceId, collectionId, params),
+    // Keep the current grid while a new view resolves, but never show rows
+    // from a different collection (or a same-named collection in another space).
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[1] === spaceId && previousQuery.queryKey[3] === collectionId
+        ? previousData
+        : undefined,
+  })
 }
 
 export function useSearchResults(opts: {

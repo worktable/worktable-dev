@@ -4,7 +4,7 @@ import { startWebHarness, type WebHarness } from "./harness"
 let harness: WebHarness
 
 const OPENCLAW_FIRST_MESSAGE =
-  "Help me decide what to set up first in Worktable. Ask me about what I’m working on, then suggest a useful first Space and the three notes it should contain."
+  "Help me choose a first task in Worktable. Ask what I want to accomplish, find any related work, and help me create or revise one useful result."
 
 function appUrl(path = "/"): string {
   return new URL(path, harness.webUrl).href

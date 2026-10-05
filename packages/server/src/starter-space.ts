@@ -5,81 +5,91 @@ export const STARTER_SPACE_ID = "welcome"
 
 export const EXAMPLE_PROMPTS_MARKDOWN = `# Example Prompts
 
-Use these as starting points. Replace the details with your own work and keep only the structure you need.
+Replace the brackets with your task. Ask the agent to check for existing work
+before creating more.
 
-## Start a useful space
+## Start a project
 
-> Create a space for us to work on **[goal]**. Start with one short Doc that explains the outcome, constraints, and open questions. Flesh out our existing thinking into a structure that makes sense for me to come back to.
+> Find existing work about **[goal]**. Reuse its Space or create one if needed.
+> Save a short document with the outcome, constraints, and open questions.
+> Show me where it is and revise it with my feedback.
 
-## Turn rough notes into durable context
+## Organize notes
 
-> Read **[document or notes]**. Organize the important reasoning into a clear Doc. Preserve decisions, uncertainties, and why they matter. Leave out repetition.
+> Read **[notes]** and organize them into a document. Preserve decisions, sources,
+> and uncertainties. Remove repetition and explain what still needs checking.
 
-## Create structured work
+## Track items
 
-> Create a Records collection for **[items]** in my Worktable. Use only the fields needed to sort, review, or update them independently. Help me organize them based on our conversation and your intuition.
+> Create a records collection for **[items]**. Use the fields needed to sort and
+> update them. Show me the table before proposing a custom view.
 
-## Review something in place
+## Draw a plan
 
-> Review **[Doc or HTML doc]** for **[clarity / accuracy / design / completeness]**. Leave Annotations on the exact places that need attention. Resolve only the items you actually address.
+> Create a drawing of **[layout or process]**. Label the important parts, inspect
+> the result, and leave room for us to revise it.
 
-## Create an interactive doc
+## Review work
 
-> Save this plan in an easy to read html presentation in my worktable. Focus on the most important things to call out, avoid any text or info that doesn't earn it's place, and make sure I can scan through it to get the context quickly.
+> Review **[document]** for **[accuracy or clarity]**. Attach annotations to the
+> passages that need attention. Make the requested revisions, then resolve only
+> the feedback you addressed.
 
-## Give an agent four things
+## Build a tool
 
-The strongest prompts usually name:
+> Use **[supplied data]** to build an HTML doc that helps me **[task]**. Show the
+> assumptions, test its controls, and inspect the result before calling it done.
 
-1. **Outcome:** what should be true when the work is finished.
-2. **Source:** where the agent should read or write.
-3. **Form:** Doc, Records, HTML doc, Annotation, or Thread.
-4. **Boundary:** what should stay out of scope.
-
-See [Ways to Work](/ways-to-work) when you are unsure which form fits.
+Name the outcome, source material, and constraints. See [Ways to work](/ways-to-work)
+for the available formats.
 `
 
 const WAYS_TO_WORK_MARKDOWN = `# Ways to Work
 
-Worktable is most useful when the shape of the work matches what you need to do. You do not need every feature for every project.
+Use Worktable to create and revise work yourself or with a connected agent.
+Choose the format that fits the task.
 
-## Find what works
-
-| When you want to…                                     | Use               | Because…                                                               |
-| ----------------------------------------------------- | ----------------- | ---------------------------------------------------------------------- |
-| Develop an idea, brief, decision, or body of research | **Doc, HTML doc** | The meaning lives in the whole piece of context.                       |
-| Track structured items that change independently      | **Records**       | Each item can be updated, sorted, filtered, and reused.                |
-| Turn information into a focused tool or visual view   | **HTML doc**      | The work benefits from an interface designed for the task.             |
-| Leave feedback on a specific artifact                 | **Annotation**    | The conversation stays attached to what it is about.                   |
-| Continue a broader conversation over time             | **Thread**        | The exchange can pause and resume without becoming the final artifact. |
+| Task | Format |
+| --- | --- |
+| Develop an idea, brief, decision, or research summary | Document |
+| Sketch a layout or explain a process visually | Drawing |
+| Track items that change independently | Records |
+| Build an interactive explanation, calculator, or custom view | HTML doc |
+| Leave feedback attached to a document | Annotation |
+| Continue a conversation with people or agents | Thread |
 
 ## Useful combinations
 
-### Plan and run a launch
+### Plan a project
 
-Keep the brief and decisions in a Doc. Maintain a HTML map of the high level details. Track deliverables as Records. Ask an agent to turn those Records into a board or review view.
+Keep the brief and decisions in a document. Add a drawing when a layout or diagram
+helps. Track separate deliverables as records when you need to update them individually.
 
-### Research a decision
+### Compare options
 
-Use a Doc for the argument, Records for sources or options, and Annotations for questions that need resolution.
+Save the sources and comparison in a document. Use annotations for questions and
+record the decision after reviewing the evidence.
 
-### Run a recurring workflow
+### Explore data
 
-Keep the repeatable items in Records. Ask an agent to build an HTML doc that makes the common actions faster and easier to understand.
+Ask an agent to build an HTML tool from supplied data. Connect it to records if
+those items need ongoing updates; an HTML doc can also stand on its own.
 
-## A simple way to begin
+## First task
 
-1. Start with one Doc that explains what you are trying to accomplish.
-2. Turn repeated or independently changing items into Records.
-3. Ask an agent for a custom view only when it improves the work.
-4. Leave feedback as Annotations so the context stays intact.
+1. Choose something you need to make or revise.
+2. Create it yourself, or connect an agent in **Settings → Agents** and ask for help.
+3. Open the result, review it, and make one useful revision.
+4. Set its lifetime to durable if you want to keep it without automatic archiving.
 
-Next: open [Example Prompts](/example-prompts) and adapt one to something you actually want to make.
+Try an [example prompt](/example-prompts), or read the
+[guides](https://docs.worktable.dev/) and [agent setup](https://docs.worktable.dev/agents/connections/).
 `
 
 const WAYS_TO_WORK_MERMAID = `flowchart LR
   A["What do you want?"] --> B{"What does it need?"}
   B --> C["Context and decisions<br/>Doc"]
+  B --> H["Visual plans<br/>Drawing"]
   B --> D["Changing items<br/>Records"]
   B --> E["A focused interface<br/>HTML doc"]
   B --> F["Feedback in place<br/>Annotation"]
@@ -125,7 +135,7 @@ export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
       content: [
         {
           type: "text",
-          text: "How the pieces fit together",
+          text: "Choose a format",
           styles: {},
         },
       ],
@@ -136,7 +146,7 @@ export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
       type: "mermaid",
       props: {
         data: WAYS_TO_WORK_MERMAID,
-        title: "Choose the form that fits the work",
+        title: "Choose a format",
         collapsed: "false",
         locked: "false",
       },
@@ -163,7 +173,7 @@ export const STARTER_RECORDS = [
     id: "purpose-in-one-minute",
     data: {
       outcome:
-        "A new user can tell when Docs, Records, HTML docs, Annotations, and Threads fit.",
+        "A new user can choose documents, drawings, records, HTML docs, annotations, or threads.",
       sequence: 1,
       status: "Next",
       title: "Explain the building blocks",
@@ -226,7 +236,7 @@ export const START_HERE_HTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Welcome to your Worktable</title>
+<title>Welcome to Worktable</title>
 <style>
 :root{
   color-scheme:light dark;
@@ -287,31 +297,31 @@ h1{margin:0;font-family:var(--display);font-size:clamp(56px,7.4vw,86px);font-wei
 <body>
 <main class="page">
   <section class="opening">
-    <h1>Welcome to your Worktable</h1>
+    <h1>Welcome to Worktable</h1>
     <p>Explore this space for a quick look at what you and your agents can create.</p>
   </section>
   <ol class="journey">
     <li class="step">
       <span class="number">01</span>
       <div>
-        <h2>Work gets stored in different shapes.</h2>
-        <p>See when a Doc, Record, HTML doc, Annotation, or Thread fits.</p>
+        <h2>Choose a format</h2>
+        <p>Choose documents, drawings, records, HTML docs, annotations, or threads.</p>
       </div>
       <div class="where"><span>Ways to Work</span>Documents</div>
     </li>
     <li class="step">
       <span class="number">02</span>
       <div>
-        <h2>Start with a useful prompt.</h2>
-        <p>View example scenarios, then adapt to your own work.</p>
+        <h2>Try a task</h2>
+        <p>Adapt a prompt to something you need to create or revise.</p>
       </div>
       <div class="where"><span>Example Prompts</span>Documents</div>
     </li>
     <li class="step">
       <span class="number">03</span>
       <div>
-        <h2>See a custom view in action.</h2>
-        <p>This board is built from the same Records you can open in the table.</p>
+        <h2>Explore the board</h2>
+        <p>Update a sample record here, then open the same item in the table.</p>
       </div>
       <div class="where"><span>Onboarding Board</span>HTML docs</div>
     </li>
@@ -424,7 +434,7 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
     </section>
   </div>
   <footer class="agent-note">
-    <p><span>This board was made by an agent.</span> Ask yours to shape a view around your Records.</p>
+    <p><span>A custom view of sample records.</span> Ask an agent to build a view for your task.</p>
   </footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -555,7 +565,7 @@ export const STARTER_WIDGETS: readonly StarterWidgetDefinition[] = [
     id: "welcome",
     name: "Start Here",
     description:
-      "A first-use guide to what people can create in Worktable and build with agents.",
+      "Choose a format, try a prompt, and explore a sample board.",
     html: START_HERE_HTML,
     metadata: {
       journeyOrder: 1,

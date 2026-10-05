@@ -371,27 +371,36 @@ describe("widget REST routes", () => {
     ).toBe(404);
   });
 
-  it("widens widget CSP connect-src only when the network permission is granted", async () => {
-    await req(app, "POST", "/api/spaces/meta/widgets", {
-      id: "offline-widget",
-      name: "Offline",
-      html: "<!doctype html><html><head></head><body></body></html>",
+  it("gates data requests on network permission while keeping external code blocked", async () => {
+    const html = '<!doctype html><html><head></head><body><script>fetch("https://example.com/data.json").catch(() => {})</script></body></html>';
+    const created = await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "network-data", name: "Network data", html, permissions: { network: true },
     });
-    await req(app, "POST", "/api/spaces/meta/widgets", {
-      id: "online-widget",
-      name: "Online",
-      html: "<!doctype html><html><head></head><body></body></html>",
-      permissions: { network: true },
+    expect(created.status).toBe(201);
+    const enabled = await req(app, "GET", "/api/spaces/meta/widgets/network-data/content");
+    expect(enabled.headers.get("content-security-policy")).toContain("connect-src 'self' ws: wss: https:");
+
+    const revoked = await req(app, "PUT", "/api/spaces/meta/widgets/network-data", {
+      name: "Network data", html, permissions: { network: false },
     });
+    expect(revoked.status).toBe(200);
+    const disabled = await req(app, "GET", "/api/spaces/meta/widgets/network-data/content");
+    expect(disabled.headers.get("content-security-policy")).toContain("connect-src 'self';");
 
-    const offline = await req(app, "GET", "/api/spaces/meta/widgets/offline-widget/content");
-    const online = await req(app, "GET", "/api/spaces/meta/widgets/online-widget/content");
-    const offlineCsp = offline.headers.get("content-security-policy") ?? "";
-    const onlineCsp = online.headers.get("content-security-policy") ?? "";
-
-    expect(offlineCsp).toContain("connect-src 'self';");
-    expect(offlineCsp).not.toContain("https:");
-    expect(onlineCsp).toContain("connect-src 'self' ws: wss: https:");
+    for (const external of [
+      '<script>import("https://example.com/code.js")</script>',
+      '<script src="https://example.com/code.js"></script>',
+      '<link rel="stylesheet" href="https://example.com/style.css">',
+      '<img src="https://example.com/image.png">',
+    ]) {
+      const rejected = await req(app, "PUT", "/api/spaces/meta/widgets/network-data", {
+        name: "Network data", html: `<!doctype html><html><head></head><body>${external}</body></html>`,
+        permissions: { network: true },
+      });
+      expect(rejected.status).toBe(400);
+      expect(rejected.json.warnings.some((issue: { severity: string; code: string }) => issue.severity === "error" && issue.code.startsWith("external_"))).toBe(true);
+    }
+    expect(await readFile(join(testDir, "spaces", "meta", "docs", "network-data.html"), "utf8")).toBe(html);
   });
 
   it("strips legacy workspace permissions sent by older clients instead of failing", async () => {

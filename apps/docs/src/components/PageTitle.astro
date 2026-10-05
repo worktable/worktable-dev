@@ -1,0 +1,9 @@
+---
+import DefaultPageTitle from "@astrojs/starlight/components/PageTitle.astro"
+import SkillActions from "./SkillActions.astro"
+
+const { skill } = Astro.locals.starlightRoute.entry.data
+---
+
+<DefaultPageTitle />
+{skill && <SkillActions {...skill} />}

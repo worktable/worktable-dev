@@ -58,7 +58,7 @@ function makeStarterSpace(): SpaceFile {
     id: STARTER_SPACE_ID,
     name: "Welcome to Worktable",
     description:
-      "A first-use guide to creation in Worktable and building with agents with practical prompts and a live record-backed board.",
+      "Formats, example prompts, and a board connected to sample records.",
     icon: "hand",
     group: "meta",
     createdAt: now,

@@ -489,7 +489,7 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
   expect(response.ok).toBe(true);
   await page.goto(appUrl("/spaces/link-regression/documents/id-regression"));
   const editor = page.locator('.bn-editor[contenteditable="true"]');
-  await expect(editor).toBeVisible();
+  await expect(editor).toBeVisible({ timeout: 30_000 });
   const parent = editor.locator('.bn-block-outer[data-id="original-parent"]');
   const html = await parent.evaluate((node) => node.outerHTML);
   const target = editor.locator('.bn-block-outer[data-id="paste-target"] .bn-inline-content');
@@ -505,6 +505,16 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
       window.getSelection()!.removeAllRanges();
       window.getSelection()!.addRange(range);
     });
+    // DOM selection changes reach ProseMirror asynchronously. Typing before
+    // it observes the range can split the paragraph at the preceding click.
+    await expect.poll(() => last.evaluate((node) => {
+      const element = node.closest(".bn-editor") as HTMLElement & {
+        editor: import("@tiptap/core").Editor
+      };
+      const view = element.editor.view;
+      const end = view.posAtDOM(node, node.childNodes.length);
+      return view.state.selection.empty && view.state.selection.from === end;
+    })).toBe(true);
     await page.keyboard.press("Enter");
     await editor.evaluate((node, html) => {
       const clipboardData = new DataTransfer();

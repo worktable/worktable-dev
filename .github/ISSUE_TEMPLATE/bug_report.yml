@@ -6,15 +6,15 @@ body:
     id: version
     attributes:
       label: Worktable version
-      description: Run `worktable --version`
-      placeholder: 0.1.5
+      description: Use the Desktop version, `worktable --version`, or say that you use Cloud.
+      placeholder: Desktop 0.1.18, CLI 0.1.18, or Cloud
     validations:
       required: true
   - type: input
     id: platform
     attributes:
-      label: Platform
-      placeholder: macOS 15 (Apple Silicon), Ubuntu 24.04, ...
+      label: Platform and setup
+      placeholder: macOS 15 (Apple Silicon), local workspace; Chrome on Ubuntu 24.04, Cloud
     validations:
       required: true
   - type: textarea

@@ -7,7 +7,7 @@
  * put) and carries the app's scroll-fade masks.
  */
 import MobileMenuFooter from "@astrojs/starlight/components/MobileMenuFooter.astro"
-import Search from "@astrojs/starlight/components/Search.astro"
+import Search from "./Search.astro"
 import SidebarItems from "./SidebarItems.astro"
 import SiteTitle from "./SiteTitle.astro"
 import { TABS, tabForPath } from "./tabs"
@@ -24,7 +24,7 @@ const visible = sidebar.filter((entry) =>
   <SiteTitle />
 </div>
 
-<div class="wt-sidebar-search print:hidden">
+<div class="wt-sidebar-search print:hidden" transition:persist="docs-search">
   <Search />
 </div>
 
@@ -38,7 +38,7 @@ const visible = sidebar.filter((entry) =>
   }
 </nav>
 
-<div class="wt-sidebar-groups scroll-fade">
+<div class="wt-sidebar-groups scroll-fade" data-section={currentTab.id} data-astro-transition-persist={`sidebar-${currentTab.id}`}>
   {
     visible.map((entry) =>
       entry.type === "group" ? (
@@ -59,66 +59,7 @@ const visible = sidebar.filter((entry) =>
   <MobileMenuFooter />
 </div>
 
-<script>
-  // Scroll-fade contract from the app: data-scroll-top/bottom drive the
-  // mask gradients defined in custom.css. Only the groups list scrolls on
-  // desktop; on mobile it doesn't overflow, so no attributes ever get set.
-  const region = document.querySelector(".wt-sidebar-groups")
-  if (region instanceof HTMLElement) {
-    const update = () => {
-      region.toggleAttribute("data-scroll-top", region.scrollTop > 4)
-      region.toggleAttribute(
-        "data-scroll-bottom",
-        region.scrollTop + region.clientHeight < region.scrollHeight - 4,
-      )
-    }
-    region.addEventListener("scroll", update, { passive: true })
-    if (window.ResizeObserver) new ResizeObserver(update).observe(region)
-    update()
-  }
 
-  // Right-rail TOC: clicking a link marks it current immediately. Without
-  // this, links near the end of a page never highlight — the section can't
-  // reach the scroll-spy band at the top of the viewport. The observer's
-  // own updates are suppressed briefly so the post-jump intersection burst
-  // doesn't snap the highlight back; any real scroll input re-enables it.
-  // Must wait for the element upgrade — before it, the prototype is a bare
-  // HTMLElement with no `current` setter to hook.
-  customElements.whenDefined("starlight-toc").then(() => {
-    for (const toc of document.querySelectorAll("starlight-toc")) {
-      hookTocClicks(toc)
-    }
-  })
-
-  function hookTocClicks(toc: Element) {
-    const proto = Object.getPrototypeOf(toc)
-    const setCurrent = Object.getOwnPropertyDescriptor(proto, "current")?.set
-    if (!setCurrent) return
-    let suppressUntil = 0
-    Object.defineProperty(toc, "current", {
-      configurable: true,
-      set(link) {
-        if (Date.now() < suppressUntil) return
-        setCurrent.call(this, link)
-      },
-    })
-    toc.addEventListener("click", (event) => {
-      const link = event.target instanceof Element && event.target.closest("a")
-      if (!link) return
-      suppressUntil = Date.now() + 1500
-      setCurrent.call(toc, link)
-    })
-    for (const ev of ["wheel", "touchmove", "keydown"]) {
-      window.addEventListener(
-        ev,
-        () => {
-          suppressUntil = 0
-        },
-        { passive: true },
-      )
-    }
-  }
-</script>
 
 <style>
   /* Vertically center the lockup within the header's height so the

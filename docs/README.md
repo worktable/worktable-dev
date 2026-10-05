@@ -6,3 +6,4 @@
 - [Contribute](../CONTRIBUTING.md): proposals, review, sign-off, and privacy before uploading.
 - [Report a vulnerability](../SECURITY.md): private reporting and supported scope.
 - [Package the OpenClaw plugin](openclaw-release.md): plugin release instructions.
+- [Engineering archive](audits/README.md): dated investigations and evidence, with their limits and current status.

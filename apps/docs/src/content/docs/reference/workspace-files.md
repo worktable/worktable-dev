@@ -9,11 +9,13 @@ direct server filesystem.
 
 ## The shape
 
-The layout below applies to workspace manifest version 2. Existing and newly
-created V1 workspaces remain supported and are not automatically migrated.
-In V1, HTML docs use `widgets/<path>/` bundles containing `widget.yaml`,
-`index.html`, and optional `state.yaml`; annotations and history also retain
-their legacy paths. Do not change the manifest version by hand.
+Current workspaces use manifest version 2. A legacy V1 workspace is upgraded
+before the server admits edits. Worktable preserves a rollback copy and blocks
+access if the upgrade fails; repair the reported issue and retry. Do not change
+the manifest version by hand.
+
+V1 used `widgets/<path>/` bundles for HTML and different annotation/history
+paths. Those are legacy layouts, not instructions for creating current content.
 
 ```txt
 <workspace>/                      default ~/Worktable
@@ -27,6 +29,7 @@ their legacy paths. Do not change the manifest version by hand.
         <doc-path>.md             markdown docs
         <doc-path>.json           rich (BlockNote) docs
         <doc-path>.html           HTML docs
+        <doc-path>.quickdraw      drawings
       docs.meta.json              doc archive state, lifetime, and provenance
       documents.meta.json         durable document IDs and current paths
       doc-aliases.json            rename aliases for old doc paths and folders
@@ -46,22 +49,21 @@ their legacy paths. Do not change the manifest version by hand.
       documents/<document-id>/    version history for every document format
 ```
 
-## What this buys you
+## Portable content
 
 Copy the folder or move it in a `.wtb` package and its portable meaning remains.
-Grep it, back it up, put it in git, or read it without Worktable running. Docs
-are Markdown, JSON, or self-contained HTML; records are YAML; thread and
-annotation envelopes are JSON.
+Documents use Markdown, JSON, HTML, or Quickdraw source; records use YAML;
+threads and annotation envelopes use JSON. Worktable also maintains rebuildable
+indexes, including SQLite projections, outside the portable content.
 
 ## Editing by hand
 
 Safe and supported: document `.md` and `.html` files and record `.yaml` files.
 Worktable watches the folder, so external edits show up live in the app and to
 agents. In V2, an HTML file added under a Space's `docs/` tree becomes an HTML
-doc with network and Records access off until you explicitly grant them. In
-V1, use the app or agent tools to create HTML docs in the supported bundle layout.
+doc with network and Records access off until permissions are set through the app or supported tools.
 
-Treat as Worktable's bookkeeping (editable, but easy to get wrong):
+Manage these files through Worktable rather than editing them directly:
 `worktable.workspace.json`, `space.json`, `docs.meta.json`,
 `documents.meta.json`, `document-data/`, `doc-aliases.json`, thread JSON, and
 `versions/`. Prefer doing those operations through the app or the MCP tools.
@@ -71,7 +73,7 @@ archives itself, and `lifetimeSetAt`, when that date was chosen. A document
 without `archiveOn` is durable. `createdAt` records when a document was created
 through Worktable; documents added another way have none.
 
-## What is deliberately not here
+## Local state
 
 Machine-local state, including install data, CLI config, Worktable-managed token
 and password hashes, participant bindings, thread delivery state, service logs,

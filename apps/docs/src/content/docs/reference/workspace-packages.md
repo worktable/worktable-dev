@@ -11,8 +11,8 @@ or merge protocol.
 ## Package contents
 
 The archive contains a versioned manifest and the portable workspace tree:
-Spaces, docs, HTML docs, records, annotations, threads, and any version history
-selected for export. Current exports also include a read-only offline browser
+Spaces, prose documents, HTML docs, drawings, records, annotations, threads, and
+any version history selected for export. Current exports also include a read-only offline browser
 for inspecting the snapshot without a running Worktable server.
 
 Machine-local credentials, owner sessions, participant registrations, thread
@@ -21,13 +21,14 @@ are excluded. Importing a conversation therefore does not reconnect its agent.
 
 ## Import behavior
 
-Import validates the archive before replacing the destination workspace. A
-replacement preserves the destination deployment's identity and account or
+Import validates the archive before changing the destination. CLI import creates
+a workspace in a missing or empty directory; owner-facing import can replace an
+existing workspace. A replacement preserves the destination deployment's identity and account or
 server attachment. Treat import as a deliberate snapshot handoff: changes made
 independently on both sides are not merged.
 
 Keep the source package until the destination has opened successfully. See
-[Import and export a workspace](/guides/import-export/) for the user flow.
+[Workspace backups](/guides/import-export/) for the user flow.
 
 ## Limits
 

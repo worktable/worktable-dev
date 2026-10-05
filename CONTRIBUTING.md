@@ -1,4 +1,4 @@
-# Contributing to Worktable
+# Contributing
 
 Fixes and documentation improvements are welcome. Before implementing a substantial
 feature, open an [issue](https://github.com/worktable/worktable-dev/issues/new?template=feature_request.yml)
@@ -15,7 +15,7 @@ For questions, use [Q&A](https://github.com/worktable/worktable-dev/discussions/
 For a bug, include the version, platform, and a minimal reproduction in the
 [bug report form](https://github.com/worktable/worktable-dev/issues/new?template=bug_report.yml).
 
-## Licenses and contribution rights
+## Contribution rights
 
 Contributions use the license that applies to the file being changed. The
 application default is AGPL-3.0-only. Exact shared MIT exceptions are identified
@@ -29,7 +29,7 @@ make public; a GitHub-provided noreply address is acceptable. A sign-off certifi
 contribution rights. It does not transfer copyright or grant additional rights
 to relicense community contributions under a proprietary license.
 
-## Review before uploading
+## Before uploading
 
 Commits, branches, pull requests, issues and attachments may be public as soon as
 you upload them. Check your diff and files first. Do not include credentials,

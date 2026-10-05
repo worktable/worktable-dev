@@ -1,5 +1,7 @@
 # Weekly leadership review
 
+> Synthetic example for Cedarline, a fictional company. People, figures, capabilities, and business claims are invented.
+
 ## Snapshot
 
 - **Revenue:** 31 paying teams, with 6 in contracting.
@@ -9,7 +11,7 @@
 
 ## What changed
 
-The guided first-space experiment improved initial setup completion, but the largest drop now happens after a person creates their first document and before they invite a collaborator. Two enterprise design partners independently prioritized audit-log export over additional SSO providers.
+The guided first-project experiment improved initial setup completion, but the largest drop now happens after a person creates their first document and before they invite a collaborator. Two enterprise design partners independently prioritized audit-log export over additional SSO providers.
 
 ## Decisions
 

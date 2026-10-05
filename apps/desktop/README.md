@@ -62,9 +62,9 @@ Run the browser contracts through the shared harness:
 bun run test:full --suite desktop-browser
 ```
 
-The [user guide](https://docs.worktable.dev/reference/desktop/) covers installation,
-connection types and updates. The [root README](../../README.md) describes the
-standalone build and verification commands. Font rights are recorded beside
+The [user guide](https://docs.worktable.dev/start/desktop/) covers installation,
+connection types and updates. The [build guide](../../docs/building.md) describes release assembly and
+verification. Font rights are recorded beside
 the [bundled fonts](ui/fonts/README.md).
 
 ### Staging builds

@@ -123,8 +123,12 @@ for (const mobile of [true, false]) {
           target: { type: "block", blockId: "selected-block", quote },
         },
       ])
+      await expect(composer).not.toBeVisible()
       await expect(
-        page.getByText("Please clarify the wording.", { exact: true })
+        page
+          .getByRole("complementary")
+          .filter({ has: page.getByRole("heading", { name: "Annotations", exact: true }) })
+          .getByText("Please clarify the wording.", { exact: true })
       ).toBeVisible()
       await expect(paragraph).toHaveText(`${quote} before publishing.`)
       expect(await savedAnnotations()).toHaveLength(1)

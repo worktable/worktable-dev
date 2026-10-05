@@ -358,6 +358,15 @@ test("table view changes retain the scrolled columns while new rows resolve", as
   expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
   await page.unroute(`**${browsingBase}/query`)
 
+  // Reordering an already-scrolled table must not follow the browser's row anchor.
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await expect(table.locator("tbody tr").first()).toContainText("Browse 36")
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await table.getByRole("button", { name: "Score", exact: true }).click()
+  await expect(table.locator("tbody tr").first()).toContainText("Browse 01")
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(300)
+
   // Background edits and the record inspector must leave the view in place too.
   await request(`${browsingBase}/browse-15`, "PATCH", { data: { status: "Done" } })
   await expect(table.locator('[data-record-id="browse-15"]')).toContainText("Done")

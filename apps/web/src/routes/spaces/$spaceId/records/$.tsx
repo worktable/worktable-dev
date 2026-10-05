@@ -842,7 +842,8 @@ function RecordsPage() {
               <Loader2 className="pointer-events-none absolute right-3 top-3 z-10 size-4 animate-spin text-muted-foreground" />
             )}
             <div className="h-full min-w-0 overflow-hidden rounded-xl border border-border bg-card">
-              <div key={`${spaceId}/${collectionId}`} ref={tableScrollRef} className="scroll-fade-x max-h-full min-w-0 overflow-auto overscroll-x-contain">
+              {/* Reordered rows must not pull the viewport along with the browser's scroll anchor. */}
+              <div key={`${spaceId}/${collectionId}`} ref={tableScrollRef} className="scroll-fade-x max-h-full min-w-0 overflow-auto overscroll-x-contain [overflow-anchor:none]">
                 <table className="border-separate border-spacing-0 caption-bottom text-sm" style={{ width: table.getTotalSize(), minWidth: "100%" }}>
                 <TableHeader className="sticky top-0 z-10 bg-card [&_th]:border-b [&_th]:border-border/60">
                   {table.getHeaderGroups().map((headerGroup) => (

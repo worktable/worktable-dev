@@ -12,10 +12,16 @@ No internal infrastructure, repository names, PR numbers, or commit SHAs.
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-10-05
+
 ### Added
 
 - **Breadcrumb navigation:** Breadcrumbs open the space, record collection, or thread list they name, and folders open a menu of their contents. Breadcrumbs now use the same names as the sidebar.
 - **Page menu on phones:** On narrow screens, tap the page title to see where the page lives, browse its folders, and reach its actions. The header keeps only the page's main action.
+
+### Fixed
+
+- **Record tables:** Sorting, filtering, and opening or closing record details keep your place in the table, with column headings available while results load or a search is empty.
 
 ## [0.1.18] - 2026-10-03
 

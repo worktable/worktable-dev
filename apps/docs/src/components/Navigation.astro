@@ -2,7 +2,7 @@
 import { ClientRouter } from "astro:transitions"
 ---
 
-<ClientRouter fallback="swap" />
+{Astro.locals.starlightRoute.hasSidebar && <ClientRouter fallback="swap" />}
 
 <script>
   import { tabForPath } from "./tabs"

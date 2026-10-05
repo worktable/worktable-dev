@@ -13,7 +13,9 @@ class WorktableTOC extends HTMLElement {
       this.frame = 0
       if (!this.isConnected) return
       this.links = [...this.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')].flatMap((link) => {
-        const heading = document.getElementById(decodeURIComponent(link.hash.slice(1)))
+        let anchor = link.hash.slice(1)
+        try { anchor = decodeURIComponent(anchor) } catch { /* Keep malformed fragments literal. */ }
+        const heading = document.getElementById(anchor)
         return heading ? [{ link, heading }] : []
       })
       this.selectHash()

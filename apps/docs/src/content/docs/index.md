@@ -1,50 +1,68 @@
 ---
-title: Worktable Docs
-description: Choose how to run Worktable, connect your agents, and keep durable work in a portable, file-backed workspace.
+title: Overview
+description: Set up Worktable and use documents, drawings, interactive tools, and records with your agents.
 prev: false
 next: false
 tableOfContents: false
 ---
 
-Worktable gives the work you do with agents somewhere durable to live. Docs,
-interactive HTML, records, annotations, and conversations share one file-backed
-workspace that you can review, continue, and move between deployments.
+Worktable is an open-source workspace for work you create yourself or with
+agents. Write documents, draw plans, build interactive tools, and track records.
+Keep the results together so you can inspect, revise, and continue them later.
 
-## Choose how to use Worktable
+## Get started
 
-| Path                                            | Best for                                                               | Where the workspace runs                                    |
-| ----------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **<a href="/start/install/" data-public-analytics-cta="install_guide_open" data-public-analytics-placement="docs_start">CLI install</a>**              | Terminal-based installation on macOS or Linux                    | On a machine or server you control                          |
-| **[Worktable Cloud](/guides/worktable-cloud/)** | A managed workspace for your browser and supported agent clients       | Hosted for you                                              |
-| **[Worktable Desktop](/start/desktop/)**        | Native app for Apple Silicon Macs | On your Mac, on a self-hosted server, or in Worktable Cloud |
+Choose where your workspace runs: on your computer, on a server you operate, or
+in Worktable Cloud. Desktop and the browser are ways to open it.
 
-All three use the same content model and agent tools. Local and self-hosted
-workspaces expose their files directly; Cloud keeps the live workspace hosted
-and lets you export the same portable content as a standard `.wtb` package.
+| Setup | Use it for |
+| --- | --- |
+| **[Desktop](/start/desktop/)** | A native app for Apple Silicon Macs. Open a local workspace or connect to self-hosted Worktable or Cloud. |
+| **[CLI install](/start/install/)** | Run Worktable on macOS or Linux and open it in a browser. |
+| **[Cloud setup](/guides/worktable-cloud/)** | Use a hosted workspace without maintaining a server. |
 
-## Start working
+Then [connect an agent](/start/connect-your-agent/) and complete your
+[first project](/start/first-space/). An agent can also follow the
+[setup guide](/agents/setup/) on your behalf.
 
-- **[Connect your agent](/start/connect-your-agent/)** — choose the right setup
-  for coding agents, always-on agents, and desktop or web AI apps.
-- **[Your first space](/start/first-space/)** — put a real project in the
-  workspace and complete the human-agent review loop.
-- **[What to use it for](/guides/what-to-use-it-for/)** — workloads where a
-  durable workspace beats chat scrollback.
+## Choose content
 
-## Understand it
+A **workspace** contains your work. A **Space** groups a project or area of
+interest. Within a Space, choose the format that fits:
 
-- **[File-backed foundation](/concepts/file-based-foundation/)** — what stays
-  portable across local, self-hosted, Desktop, and Cloud Worktable.
-- **[The content model](/concepts/content-model/)** — spaces, docs, HTML docs,
-  records, annotations, and the conversation layer around them.
-- **[How agents fit](/concepts/how-agents-fit/)** — tools, permissions,
-  participants, review, and trust signals.
+| Content | Use it for |
+| --- | --- |
+| [Documents](/guides/docs-and-versions/) | Notes, research, plans, and decisions. |
+| [Drawings](/guides/drawings/) | Sketches, layouts, and diagrams you can edit visually. |
+| [HTML docs](/guides/widgets/) | Interactive explanations, calculators, and custom interfaces. |
+| [Records](/guides/records/) | Items with shared fields that change independently. |
 
-## Look things up
+Use [annotations](/guides/annotations/) for feedback attached to content and
+[threads](/guides/threads/) for conversations with connected participants.
+[Spaces](/guides/organize-and-find/) explains organization, search, and document
+lifetimes.
 
-- **[CLI overview](/reference/cli/)** and the
-  [command reference](/reference/cli-commands/).
-- **[MCP reference](/reference/mcp/)** and the
-  [tool catalog](/reference/mcp-tools/).
-- **[Desktop reference](/reference/desktop/)** — requirements, connection
-  behavior, lifecycle, credentials, and updates.
+## Work with agents
+
+Connected agents can find and change work within their granted access. You can
+edit it directly, leave feedback, or ask another agent to continue. Optional
+[skills](/agents/skills/) provide workflows for clients that support them.
+A connection alone does not make an agent check messages or maintain documents
+automatically.
+
+For examples, try [research decisions](/workflows/research-decisions/),
+[project handoffs](/workflows/project-handoffs/),
+[tracking requests](/workflows/track-requests/), or
+[interactive tools](/workflows/interactive-tools/).
+
+## Keep your work
+
+Local and self-hosted workspaces store content in a folder you control. Cloud
+hosts the same portable content format. [Export a workspace](/guides/import-export/)
+to keep a copy or move it between installations. Exports contain content and
+history, not installation credentials or live agent connections.
+
+Worktable's application source is available on
+[GitHub](https://github.com/worktable/worktable-dev). See
+[Contributing](/contributing/) to help develop it, or use the
+[reference](/reference/cli/) for exact commands and formats.

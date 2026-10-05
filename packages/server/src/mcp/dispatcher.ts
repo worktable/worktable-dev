@@ -215,7 +215,6 @@ import {
 } from "../annotation-store.ts"
 import {
   DEFAULT_ICON,
-  VALID_GROUPS,
   SpaceIndexInput,
   ListAnnotationsInput,
   ReadAnnotationInput,
@@ -959,11 +958,7 @@ async function _dispatchOperationInner(
         icon = DEFAULT_ICON // reject emoji, use default
       }
 
-      // Validate group
-      const group =
-        rawGroup && (VALID_GROUPS as readonly string[]).includes(rawGroup)
-          ? rawGroup
-          : undefined
+      const group = rawGroup || undefined
 
       const existing = await listSpaces()
       const spaceId = await deduplicateSlug(
@@ -1010,8 +1005,7 @@ async function _dispatchOperationInner(
           : {}),
         ...(rawGroup === ""
           ? { group: undefined }
-          : rawGroup !== undefined &&
-              (VALID_GROUPS as readonly string[]).includes(rawGroup)
+          : rawGroup !== undefined
             ? { group: rawGroup }
             : {}),
         updatedAt: new Date().toISOString(),

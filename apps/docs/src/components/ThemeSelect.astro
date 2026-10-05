@@ -24,13 +24,12 @@ import { Icon } from "@astrojs/starlight/components"
   const storageKey = "starlight-theme"
 
   class StarlightThemeToggle extends HTMLElement {
-    constructor() {
-      super()
-      this.querySelector("button")?.addEventListener("click", () => {
+    connectedCallback() {
+      this.onclick = () => {
         const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark"
         document.documentElement.dataset.theme = next
         if (typeof localStorage !== "undefined") localStorage.setItem(storageKey, next)
-      })
+      }
     }
   }
   customElements.define("starlight-theme-toggle", StarlightThemeToggle)

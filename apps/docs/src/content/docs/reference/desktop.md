@@ -1,12 +1,12 @@
 ---
-title: Desktop reference
+title: Desktop
 description: Supported platform, connection providers, lifecycle, updates, and local data boundaries.
 ---
 
 Worktable Desktop is the native macOS shell for local, self-hosted, and Cloud
 Worktable connections. It does not introduce a separate workspace format.
 
-## Requirements and distribution
+## Requirements
 
 - Apple silicon Mac running macOS 13 or later.
 - Distributed as a signed and notarized DMG.
@@ -36,7 +36,7 @@ same saved origin.
 **Forget this server** removes that profile and its Worktable session cookie; it
 does not change or delete anything on the server.
 
-## Window and process lifecycle
+## Process lifecycle
 
 Closing the window leaves Desktop running so its local host and agent endpoint
 remain available. Choosing **Quit Worktable** stops the Desktop-owned host. A

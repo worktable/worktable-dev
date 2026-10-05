@@ -1,27 +1,19 @@
 # Vision
 
-Build the place where a team and its agents can do serious work together without giving up ownership of their knowledge.
+> Synthetic example for Cedarline, a fictional company. People, figures, capabilities, and business claims are invented.
 
-## The change we believe in
+Cedarline helps delivery teams track project commitments and hand work between people.
 
-Agents are becoming collaborators, but most teams still hand them context one prompt at a time. Decisions disappear into chats, generated work lands outside the operating system, and people cannot tell what is current or trustworthy.
+## The problem
 
-Worktable gives both sides durable shared context: documents for thinking, records for operating data, HTML views for purpose-built tools, annotations for precise direction, and threads for the work around all of it. Everything remains legible as files.
+Requests, decisions, and delivery status live in separate tools. Teams spend time reconstructing what was agreed and who should act next.
 
-## Who we serve first
+## Product direction
 
-Small, high-agency teams already using agents in product, operations, and engineering. They value speed, but they need provenance and control more than another blank chat box.
+- Connect project briefs to the commitments they create.
+- Make changes and ownership visible to the delivery team.
+- Let teams export their work and decisions.
 
-## Three-year picture
+## First customers
 
-- A team opens Worktable to understand what matters now.
-- Agents can find the same source material, act on it, and leave inspectable results.
-- Decisions stay connected to the documents and records they changed.
-- Moving or backing up the work never requires permission from us.
-
-## What we will not compromise
-
-1. People can inspect and own their data.
-2. Agent work is attributable and reviewable.
-3. The product stays calm as the amount of work grows.
-4. Powerful workflows do not require a platform team.
+Small project-delivery teams that need a shared plan and a clear record of decisions.

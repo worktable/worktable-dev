@@ -14,7 +14,7 @@
       "ready": 8154,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": null,
       "longtasks": [
@@ -552,7 +552,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3365.300000011921,
@@ -628,7 +628,7 @@
       "ready": 6138,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": null,
       "longtasks": [
@@ -920,7 +920,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3353.199999988079,
@@ -996,7 +996,7 @@
       "ready": 6103,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": null,
       "longtasks": [
@@ -1284,7 +1284,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3395.100000023842,
@@ -1360,7 +1360,7 @@
       "ready": 8030,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": null,
       "longtasks": [
@@ -1894,7 +1894,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/html-audit",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/html-audit",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3357.5,
@@ -1970,7 +1970,7 @@
       "ready": 10259,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2457.2999999523163,
       "previewAvailableMs": 2308.199999988079,
@@ -2613,7 +2613,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3472.599999964237,
@@ -2689,7 +2689,7 @@
       "ready": 8311,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2384,
       "previewAvailableMs": 2183,
@@ -3058,7 +3058,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3245.300000011921,
@@ -3134,7 +3134,7 @@
       "ready": 7601,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2293.5,
       "previewAvailableMs": 2193.699999988079,
@@ -3511,7 +3511,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3274.199999988079,
@@ -3587,7 +3587,7 @@
       "ready": 10884,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2433,
       "previewAvailableMs": 2333.5,
@@ -4230,7 +4230,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-10",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/rich-10",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3382.599999964237,
@@ -4306,7 +4306,7 @@
       "ready": 16125,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2455.699999988079,
       "previewAvailableMs": 2317.399999976158,
@@ -4969,7 +4969,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3389.699999988079,
@@ -5045,7 +5045,7 @@
       "ready": 13555,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2295.399999976158,
       "previewAvailableMs": 2188.899999976158,
@@ -5442,7 +5442,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3350.599999964237,
@@ -5518,7 +5518,7 @@
       "ready": 13222,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39084/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39084/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2324.300000011921,
       "previewAvailableMs": 2186.5,
@@ -5907,7 +5907,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39084/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39084/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3276.399999976158,
@@ -5983,7 +5983,7 @@
       "ready": 16434,
       "errors": [],
       "stylesheets": [
-        "http://192.168.2.211:39083/assets/app-DADxpsXa.css"
+        "http://audit-host.example.test:39083/assets/app-DADxpsXa.css"
       ],
       "previewMs": 2479.100000023842,
       "previewAvailableMs": 2336.400000035763,
@@ -6646,7 +6646,7 @@
         }
       ],
       "navigation": {
-        "name": "http://192.168.2.211:39083/spaces/loading-audit/documents/rich-2000",
+        "name": "http://audit-host.example.test:39083/spaces/loading-audit/documents/rich-2000",
         "entryType": "navigation",
         "startTime": 0,
         "duration": 3392.100000023842,

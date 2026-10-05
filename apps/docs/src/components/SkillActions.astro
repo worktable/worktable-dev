@@ -1,0 +1,41 @@
+---
+import CopyButton from "./CopyButton.astro"
+
+interface Props {
+  name: string
+  revision: string
+  source: string
+}
+const { name, revision, source } = Astro.props
+const raw = `/.well-known/skills/${name}/SKILL.md`
+const shortRevision = revision.replace(/^([a-f0-9]{8})[a-f0-9]{32}/, "$1")
+---
+
+<worktable-skill-actions>
+  <nav aria-label="Skill actions">
+    <a href="/agents/skills/#installation">Install</a>
+    <CopyButton label="Copy skill" source={raw} />
+    <a href={`/downloads/skills/${name}.tar`} download>Download</a>
+    <a href={raw}>Markdown</a>
+    <a href={source}>View source</a>
+  </nav>
+  <p class="revision">Source: {shortRevision}</p>
+</worktable-skill-actions>
+
+<style>
+  worktable-skill-actions { display: block; margin-top: 1rem; }
+  nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1rem; }
+  nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    color: var(--sl-color-text-accent);
+    font: inherit;
+    font-size: var(--sl-text-sm);
+  }
+  a:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 3px;
+  }
+  .revision { margin: 0.25rem 0 0; font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); }
+</style>

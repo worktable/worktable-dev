@@ -1,18 +1,16 @@
-# Document loading: what the first fixes missed
+# Remaining bottlenecks
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 The changes in `4eb2adf` fix real delivery and loading-state defects, but **they do not make cold document opening fast enough**. The largest mistake was putting the readable preview behind the same application startup waterfall we needed to escape. This follow-up profiles the remaining work and tests three alternative approaches. The experiments are separate from the application implementation.
 
-## Open and inspect it
+## Historical fixtures
 
-For review from another computer on the LAN, use the network listeners: [current application](http://192.168.2.211:45747/spaces/loading-audit/documents/rich-10), [reading prototype](http://192.168.2.211:45551/rich-10), and [editor prototype](http://192.168.2.211:43009/spaces/loading-audit/documents/rich-2000). The application listeners use password-protected copies of the fixture workspaces; the temporary review password was provided in the conversation, not committed here. Login and document rendering were checked through these LAN URLs. The original loopback URLs below remain for same-machine access.
-
-These local servers were left running for review. They contain disposable fixture documents, not the user's workspace:
-
-- [Current saved application](http://127.0.0.1:45747/spaces/loading-audit/documents/rich-10), including sidebar links to Markdown, HTML, and 500/2,000-paragraph rich documents.
-- [Initial-HTML reading prototype](http://127.0.0.1:45551/rich-10). This deliberately has no editor or application chrome. [Large-document version](http://127.0.0.1:45551/rich-2000) shows only the first 80 blocks.
-- [Experimental editor optimization](http://127.0.0.1:43009/spaces/loading-audit/documents/rich-2000). This has two isolated editor changes described below; it is not the regression-tested production implementation.
-
-The current app was verified in visible Chrome over CDP. The integrated preview panel opened, but its automation navigation/snapshot calls failed; that panel is not the basis for the browser verification. Local URLs last only while their server processes run. [Saved scripts](document-loading-experiments/README.md) allow the fixtures and experiments to be recreated.
+The investigation used isolated application, initial-HTML reader, and editor
+prototype servers. Those temporary servers are no longer review destinations.
+The reader exposed only the first 80 blocks and omitted app chrome and editing.
+See the [saved harnesses](document-loading-experiments/README.md) for the original
+setup and compatibility limits.
 
 ## What was missed
 

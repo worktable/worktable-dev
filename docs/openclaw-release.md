@@ -1,4 +1,4 @@
-# OpenClaw adapter releases
+# OpenClaw releases
 
 The adapter source lives in `packages/openclaw-plugin` in this repository.
 Canonical Worktable skills live in `plugins/worktable/skills` and are copied into

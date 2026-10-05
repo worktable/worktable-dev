@@ -2,7 +2,7 @@
 
 This directory holds Worktable's shared SVG artwork.
 
-## Sources and generated files
+## Generated assets
 
 The human-edited geometry sources are:
 

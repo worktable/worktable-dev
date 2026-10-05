@@ -1,4 +1,6 @@
-# Document loading fixes and verification
+# Initial fixes
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 Implementation follow-up to [the second-pass investigation](document-loading-second-pass.md). Measurements below concern isolated fixture documents served by the **real Bun production server**, not Vite preview, and are not measurements of a deployed tenant or native desktop WebView.
 

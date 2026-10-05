@@ -1,0 +1,88 @@
+---
+import TableOfContentsList from "./TableOfContentsList.astro"
+
+const { toc } = Astro.locals.starlightRoute
+---
+
+{
+  toc && (
+    <mobile-starlight-toc>
+      <nav aria-labelledby="starlight__on-this-page--mobile">
+        <details id="starlight__mobile-toc">
+          <summary id="starlight__on-this-page--mobile" class="sl-flex">
+            <span class="toggle sl-flex">
+              {Astro.locals.t("tableOfContents.onThisPage")}
+              <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </span>
+            <span class="display-current" />
+          </summary>
+          <div class="dropdown scroll-fade">
+            <TableOfContentsList toc={toc.items} isMobile />
+          </div>
+        </details>
+      </nav>
+    </mobile-starlight-toc>
+  )
+}
+
+<script>
+  import "./table-of-contents"
+</script>
+
+<style>
+  @layer starlight.core {
+    nav {
+      position: fixed;
+      z-index: var(--sl-z-index-toc);
+      top: calc(var(--sl-nav-height) - 1px);
+      inset-inline: 0;
+      border-top: 1px solid var(--sl-color-gray-5);
+      background-color: var(--sl-color-bg-nav);
+    }
+    @media (min-width: 50rem) {
+      nav { inset-inline-start: var(--sl-content-inline-start, 0); }
+    }
+    summary {
+      gap: 0.5rem;
+      align-items: center;
+      height: var(--sl-mobile-toc-height);
+      border-bottom: 1px solid var(--sl-color-hairline-shade);
+      padding: 0.5rem 1rem;
+      font-size: var(--sl-text-xs);
+      outline-offset: var(--sl-outline-offset-inside);
+    }
+    summary::marker, summary::-webkit-details-marker { display: none; }
+    .toggle {
+      flex-shrink: 0;
+      gap: 1rem;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding-block: 0.5rem;
+      padding-inline: 0.75rem 0.5rem;
+      line-height: 1;
+      background-color: var(--background);
+      user-select: none;
+      cursor: pointer;
+    }
+    details[open] .toggle { color: var(--foreground); border-color: var(--primary); }
+    details .toggle:hover { color: var(--foreground); border-color: var(--muted-foreground); }
+    :global([dir="rtl"]) .caret { transform: rotateZ(180deg); }
+    details[open] .caret { transform: rotateZ(90deg); }
+    .display-current {
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      color: var(--foreground);
+    }
+    .dropdown {
+      border: 1px solid var(--overlay-border);
+      max-height: calc(85vh - var(--sl-nav-height) - var(--sl-mobile-toc-height));
+      overflow-y: auto;
+      background-color: var(--popover);
+      box-shadow: var(--overlay-floating-shadow);
+      overscroll-behavior: contain;
+    }
+  }
+</style>

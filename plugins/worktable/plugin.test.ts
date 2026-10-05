@@ -154,7 +154,7 @@ describe("Worktable plugin bundle", () => {
     expect(license).toStartWith("MIT License\n")
   })
 
-  test("ships the six canonical skills and their OpenAI overlays", async () => {
+  test("ships the canonical skills and their OpenAI overlays", async () => {
     const actual = (await readdir(join(pluginRoot, "skills"))).sort()
     expect(actual).toEqual(
       WORKTABLE_PLUGIN_SKILLS.map(({ name }) => name).sort()

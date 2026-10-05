@@ -1,60 +1,127 @@
 ---
-title: Records reference
-description: Collection schemas, field types, query operators, aggregates, and limits.
+title: Record schemas
+description: Record envelopes, field types, query shapes, and validation.
 ---
 
-Records are YAML files grouped into collections. A collection may have a schema;
-each field key is its stable identity even when the display name changes.
+Records are YAML files grouped into collections. A collection may have a schema.
+Field keys identify stored values; display names can change without renaming keys.
+Worktable keeps the files authoritative and maintains a rebuildable query index.
+
+## File envelopes
+
+A collection's `schema.yaml` includes its schema and provenance:
+
+```yaml
+version: 2
+kind: worktable.recordSchema
+id: requests
+name: Requests
+createdAt: "2026-10-01T09:00:00.000Z"
+updatedAt: "2026-10-01T09:00:00.000Z"
+createdBy: user
+fields:
+  title:
+    type: text
+    required: true
+  status:
+    type: select
+    values: [open, done]
+metadata: {}
+```
+
+An item such as `requests/repair-lamp.yaml` has a separate envelope:
+
+```yaml
+version: 1
+kind: worktable.record
+id: repair-lamp
+collectionId: requests
+createdAt: "2026-10-01T09:00:00.000Z"
+updatedAt: "2026-10-01T09:00:00.000Z"
+createdBy: user
+archive: null
+metadata: {}
+data:
+  title: Repair lamp
+  status: open
+```
+
+The schema, record, and workspace versions are separate. Worktable assigns
+provenance when writing through its tools; record values belong under `data`.
+External YAML edits must preserve valid envelopes and quoted timestamp strings.
 
 ## Field types
 
-New schemas can use these field types:
+| Type | Value |
+| --- | --- |
+| `text` | Text string |
+| `url` | URL string |
+| `email` | Email string |
+| `number` | Number; optional `unit` metadata |
+| `boolean` | `true` or `false` |
+| `date` | Calendar-date string |
+| `datetime` | Date-time string |
+| `person` | Person string |
+| `select` | One string from `values` |
+| `multi_select` | Array of strings from `values` |
+| `relation` | Record ID in the collection named by `references` |
+| `document` | Space-relative document path |
+| `json` | JSON-compatible value |
 
-| Type           | Value                                  |
-| -------------- | -------------------------------------- |
-| `text`         | Plain text                             |
-| `url`          | URL text                               |
-| `email`        | Email address text                     |
-| `number`       | Number                                 |
-| `boolean`      | Boolean                                |
-| `date`         | Calendar date                          |
-| `datetime`     | Date and time                          |
-| `person`       | Person value                           |
-| `select`       | One configured option                  |
-| `multi_select` | Multiple configured options            |
-| `relation`     | Reference to another record collection |
-| `document`     | Reference to a Worktable doc           |
-| `json`         | Arbitrary JSON-compatible value        |
+`many: true` permits arrays for `relation` and `document` fields. Relation metadata includes `inverse` and `onDelete`
+(`restrict`, `setNull`, or `none`).
 
-Legacy `string`, `enum`, and `reference` fields remain supported. Worktable
-treats `enum` as `select` and `reference` as `relation`; `string` remains
-unchanged.
+Legacy `string`, `enum`, and `reference` remain readable. `enum` uses select
+semantics. Legacy references retain their looser string validation; they are not
+silently rewritten as strict relation IDs. Writers stamp the lowest schema
+version required by the fields and do not downgrade newer versions.
 
-## Query operations
+## Queries
 
-`worktable_records_read` action `query` supports full-text search, field
-projection, ordering, pagination, relations, and filters. Filter operators are:
+`worktable_records_read` action `query` accepts search, filters, ordering,
+projection, pagination, relation expansion, and aggregates. This request finds
+open items and returns a bounded page:
 
-| Operator                 | Meaning                             |
-| ------------------------ | ----------------------------------- |
-| `eq`, `neq`              | Equal or not equal                  |
-| `in`                     | Value is in a supplied set          |
-| `contains`               | Text or collection contains a value |
-| `has`                    | Multi-value field has a value       |
-| `gt`, `gte`, `lt`, `lte` | Ordered comparison                  |
-| `isEmpty`                | Field is or is not empty            |
+```json
+{
+  "request": {
+    "action": "query",
+    "spaceId": "repair-event",
+    "collectionId": "requests",
+    "where": { "field": "status", "op": "eq", "value": "open" },
+    "orderBy": [{ "field": "title", "dir": "asc" }],
+    "limit": 50
+  }
+}
+```
 
-Queries can calculate `count`, `sum`, `avg`, `min`, `max`, and `unique`
-aggregates. The maximum requested page size is 1,000 records; use the returned
-pagination state for larger collections.
+Compose predicates with `and`, `or`, or `not`. A leaf contains `field`, `op`,
+and `value` where needed. Legacy flat filters remain supported; do not mix
+flat keys into a predicate tree.
+
+| Operator | Meaning |
+| --- | --- |
+| `eq`, `neq` | Equal or unequal |
+| `in` | Matches a value in the supplied array |
+| `contains` | Substring match |
+| `has` | Exact array membership, or equality for a scalar |
+| `gt`, `gte`, `lt`, `lte` | Ordered comparison |
+| `isEmpty` | Empty when `value` is omitted or true; nonempty when false |
+
+Queries support `count`, `sum`, `avg`, `min`, `max`, and `unique` aggregates.
+Use the returned `nextCursor` for the next page with the same query. The maximum
+page size is 1,000. Check returned warnings for invalid files or incomplete
+results. HTML callers also need permission for collections reached through
+relations or expansion.
 
 ## Schema changes
 
-Schemas are optional. When a populated collection has one, Worktable validates
-schema changes against its existing records and reports the record ids that
-would become invalid. Removing a schema field does not silently erase that key
-from record files. Record deletion is permanent, so a domain status is often a
-better lifecycle mechanism.
+Worktable validates a proposed schema against existing records and identifies
+rows that would become invalid. Carry forward fields you intend to retain when
+upserting a schema. Removing a schema field does not erase its stored values.
+Record updates preserve unspecified data fields; permanent deletion uses the
+separate destructive tool.
 
-The generated [MCP tool catalog](/reference/mcp-tools/) is the normative request
-shape for collection, query, create, and update actions.
+The generated [MCP tools](/reference/mcp-tools/) catalog defines exact request
+shapes. See [Manage records](/agents/records-and-schemas/) for the authoring
+workflow and [Records](/guides/records/) for the built-in interface.

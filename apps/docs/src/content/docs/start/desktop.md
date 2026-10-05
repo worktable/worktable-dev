@@ -1,10 +1,10 @@
 ---
-title: Worktable Desktop
-description: Check Desktop availability and learn how the native macOS app connects to local, self-hosted, or Worktable Cloud workspaces.
+title: Desktop
+description: Install the macOS app and open a local, self-hosted, or Cloud workspace.
 ---
 
-Worktable Desktop is the native macOS home for Worktable. The signed and
-notarized app supports Apple Silicon Macs running macOS 13 or newer.
+Worktable Desktop runs on Apple Silicon Macs with macOS 13 or newer. The app is
+signed and notarized.
 
 <a href="https://www.worktable.dev/releases/latest/worktable-desktop-darwin-arm64.dmg" data-public-analytics-cta="macos_download" data-public-analytics-placement="docs_start">Download for macOS</a>, open the DMG, and move Worktable to Applications.
 For Linux or a terminal-based installation, use the
@@ -12,7 +12,6 @@ For Linux or a terminal-based installation, use the
 
 Desktop source is available in the
 [public repository](https://github.com/worktable/worktable-dev/tree/main/apps/desktop).
-The following sections describe the native app's connection and lifecycle behavior.
 
 ## Choose a connection
 
@@ -20,7 +19,7 @@ Desktop asks where your Worktable runs on first launch.
 
 - **This Mac:** create a workspace, open an existing workspace folder, or use a
   valid local CLI installation. Desktop and the CLI share the same local
-  workspace authority rather than starting competing servers.
+  workspace and service.
 - **Self-hosted server:** enter the server origin, such as
   `https://worktable.example.com`, then sign in on its owner-password page.
   HTTPS is strongly recommended. Plain HTTP requires an explicit warning
@@ -32,12 +31,10 @@ Desktop remembers saved workspaces and servers. It does not store a
 self-hosted password. Cloud credentials remain in macOS Keychain rather than
 being exposed to the workspace view.
 
-For an open local workspace, use **Settings → Agents** to manage the official
-Worktable skills in either the Claude skills folder or the standard Agent
-Skills folder. Desktop previews each filesystem change before applying it, and
-this consent remains separate from connecting an agent to Worktable over MCP.
-Worktable reports missing, outdated, locally changed, and conflicting skills
-without overwriting files it cannot prove it owns.
+For a local workspace, **Settings → Agents** also manages the official skills
+in the Claude or standard Agent Skills folder. It previews changes and reports
+missing, outdated, locally changed, or conflicting files. Installing skills and
+connecting the agent are separate steps; see [Skills](/agents/skills/).
 
 ## Switch or remove a connection
 
@@ -55,7 +52,7 @@ was connected directly to the previous one.
 - Removing a Cloud connection clears its Keychain credential and remembered
   profile without deleting the hosted workspace.
 
-## Close versus quit
+## Close or quit
 
 Closing the window with the red control or **File → Close Window** hides it.
 Desktop and a local host it owns keep running, so agent connections stay
@@ -70,7 +67,7 @@ continues running.
 
 Open **Settings → Agents** in the workspace. The same page supports coding
 agents, OpenClaw, Claude, ChatGPT, and manual MCP configuration. See
-[Connect your agent](/start/connect-your-agent/) for the setup choices.
+[Connections](/start/connect-your-agent/) for the setup choices.
 
 For system requirements, credential boundaries, connection persistence, and
 recovery behavior, see the [Desktop reference](/reference/desktop/).

@@ -1,4 +1,6 @@
-# Shared visual previews for agents
+# Preview proposal
+
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
 
 Status: historical implementation proposal, prepared 2026-10-01. The implementation that followed is recorded in [Visual preview implementation](visual-previews-implementation.md). The measurements below belong to the earlier disposable investigation and must not be treated as production performance measurements.
 

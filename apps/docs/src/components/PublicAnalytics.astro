@@ -9,6 +9,7 @@ const allowedPathnames = (
   await getCollection("docs", ({ data }) => data.draft === false)
 )
   .map(({ id }) => (id === "index" ? "/" : `/${id}`))
+  .concat("/start/connect-your-agent")
   .sort()
 const config = {
   projectToken: import.meta.env.PUBLIC_POSTHOG_PROJECT_TOKEN,
@@ -40,8 +41,8 @@ const earlyCtaScript = createPublicAnalyticsEarlyCtaScript(config)
     }
   }
 
-  const config = window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__
-  if (config && initializePublicAnalytics(config)) {
-    capturePublicPageview()
-  }
+  document.addEventListener("astro:page-load", () => {
+    const config = window.__WORKTABLE_PUBLIC_ANALYTICS_CONFIG__
+    if (config && initializePublicAnalytics(config)) capturePublicPageview()
+  })
 </script>

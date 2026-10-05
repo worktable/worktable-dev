@@ -1,16 +1,23 @@
 import { defineConfig } from "astro/config"
 import starlight from "@astrojs/starlight"
 import starlightLlmsTxt from "starlight-llms-txt"
+import { copyButtons } from "./src/lib/copy-buttons.ts"
 
 export default defineConfig({
   site: "https://docs.worktable.dev",
   redirects: {
-    "/concepts/files-are-the-protocol": "/concepts/file-based-foundation",
-    "/start/first-workspace": "/start/first-space",
-    "/guides/desktop": "/start/desktop",
-    "/agents/orientation": "/agents/overview",
-    "/workflows/for-product-teams": "/guides/what-to-use-it-for",
-    "/workflows/agent-handoffs": "/guides/agent-handoffs",
+    "/concepts/files-are-the-protocol": "/reference/workspace-files/",
+    "/concepts/file-based-foundation": "/reference/workspace-files/",
+    "/concepts/content-model": "/#choose-content",
+    "/concepts/how-agents-fit": "/agents/overview/",
+    "/start/first-workspace": "/start/first-space/",
+    "/guides/desktop": "/start/desktop/",
+    "/agents/orientation": "/agents/overview/",
+    "/workflows/for-product-teams": "/workflows/",
+    "/workflows/agent-handoffs": "/workflows/project-handoffs/",
+    "/guides/what-to-use-it-for": "/workflows/",
+    "/guides/agent-handoffs": "/workflows/project-handoffs/",
+    "/reference/troubleshooting": "/guides/troubleshooting/",
   },
   integrations: [
     starlight({
@@ -21,6 +28,7 @@ export default defineConfig({
       customCss: ["./src/styles/custom.css"],
       components: {
         // Dark default for first-time visitors (worktable.dev handoff)
+        PageTitle: "./src/components/PageTitle.astro",
         ThemeProvider: "./src/components/ThemeProvider.astro",
         // Brand lockup (app icon + wordmark)
         SiteTitle: "./src/components/SiteTitle.astro",
@@ -28,14 +36,18 @@ export default defineConfig({
         Header: "./src/components/Header.astro",
         // Static expanded groups filtered by the active header tab
         Sidebar: "./src/components/Sidebar.astro",
+        TableOfContents: "./src/components/TableOfContents.astro",
+        MobileTableOfContents: "./src/components/MobileTableOfContents.astro",
         // Icon toggle instead of the stock three-option select
         ThemeSelect: "./src/components/ThemeSelect.astro",
         // Quiet prev/next text links, scoped to the active tab
         Pagination: "./src/components/Pagination.astro",
-        // Keep the privacy choice available from every documentation page.
+        // Keep the privacy policy available from every documentation page.
         Footer: "./src/components/Footer.astro",
       },
       expressiveCode: {
+        frames: { showCopyToClipboardButton: false },
+        plugins: [copyButtons],
         styleOverrides: {
           borderRadius: "0.625rem",
           borderColor: "var(--border-chrome)",
@@ -75,38 +87,7 @@ export default defineConfig({
             crossorigin: true,
           },
         },
-        {
-          // Shell chrome wiring: html[data-scrolled] drives the glass
-          // header's scroll shadow; the sidebar pane gets the app's
-          // scroll-fade masks (data-scroll-top/bottom contract).
-          tag: "script",
-          content: [
-            "(function () {",
-            "  function init() {",
-            "    var html = document.documentElement;",
-            "    function onScroll() {",
-            "      html.toggleAttribute('data-scrolled', window.scrollY > 8);",
-            "      html.toggleAttribute('data-scroll-end', window.scrollY + window.innerHeight >= html.scrollHeight - 8);",
-            "    }",
-            "    addEventListener('scroll', onScroll, { passive: true });",
-            "    addEventListener('resize', onScroll, { passive: true });",
-            "    onScroll();",
-            "    var pane = document.getElementById('starlight__sidebar');",
-            "    if (!pane) return;",
-            "    pane.classList.add('scroll-fade');",
-            "    function update() {",
-            "      pane.toggleAttribute('data-scroll-top', pane.scrollTop > 4);",
-            "      pane.toggleAttribute('data-scroll-bottom', pane.scrollTop + pane.clientHeight < pane.scrollHeight - 4);",
-            "    }",
-            "    pane.addEventListener('scroll', update, { passive: true });",
-            "    if (window.ResizeObserver) new ResizeObserver(update).observe(pane);",
-            "    update();",
-            "  }",
-            "  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);",
-            "  else init();",
-            "})();",
-          ].join("\n"),
-        },
+
       ],
       social: [
         {
@@ -117,44 +98,64 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: "Start",
+          label: "Get started",
           items: [
+            { slug: "index" },
             { slug: "start/desktop" },
-            { slug: "guides/worktable-cloud" },
             { slug: "start/install" },
-            { slug: "start/connect-your-agent" },
+            { slug: "guides/worktable-cloud" },
+            { label: "Connections", link: "/start/connect-your-agent/" },
             { slug: "start/first-space" },
           ],
         },
         {
-          label: "Concepts",
+          label: "Workflows",
           items: [
-            { slug: "concepts/file-based-foundation" },
-            { slug: "concepts/content-model" },
-            { slug: "concepts/how-agents-fit" },
+            { slug: "workflows" },
+            { slug: "workflows/research-decisions" },
+            { slug: "workflows/project-handoffs" },
+            { slug: "workflows/track-requests" },
+            { slug: "workflows/interactive-tools" },
           ],
         },
         {
-          label: "Guides",
+          label: "Use Worktable",
           items: [
-            { slug: "guides/what-to-use-it-for" },
             { slug: "guides/organize-and-find" },
             { slug: "guides/docs-and-versions" },
-            { slug: "guides/import-export" },
-            { slug: "guides/annotations" },
+            { slug: "guides/drawings" },
             { slug: "guides/widgets" },
             { slug: "guides/records" },
-            { slug: "guides/agent-handoffs" },
+            { slug: "guides/annotations" },
             { slug: "guides/threads" },
-            { slug: "guides/remote-access" },
-            { slug: "guides/update-and-uninstall" },
           ],
         },
         {
-          label: "Agents",
+          label: "Manage Worktable",
+          items: [
+            { slug: "guides/sharing" },
+            { slug: "guides/import-export" },
+            { slug: "guides/remote-access" },
+            { slug: "guides/update-and-uninstall" },
+            { slug: "guides/cloud-account" },
+            { slug: "guides/troubleshooting" },
+          ],
+        },
+        {
+          label: "Agent setup",
           items: [
             { slug: "agents/overview" },
+            { slug: "agents/setup" },
+            { slug: "agents/connections" },
+            { slug: "agents/skills" },
+          ],
+        },
+        {
+          label: "Agent workflows",
+          items: [
+            { slug: "agents/find-context" },
             { slug: "agents/writing-docs" },
+            { slug: "agents/drawings" },
             { slug: "agents/building-widgets" },
             { slug: "agents/records-and-schemas" },
             { slug: "agents/annotations-protocol" },
@@ -162,32 +163,45 @@ export default defineConfig({
           ],
         },
         {
-          label: "Reference",
+          label: "Installation",
           items: [
             { slug: "reference/desktop" },
             { slug: "reference/cli" },
             { slug: "reference/cli-commands" },
             { slug: "reference/installer" },
             { slug: "reference/configuration" },
+          ],
+        },
+        {
+          label: "Agent tools",
+          items: [
             { slug: "reference/mcp" },
             { slug: "reference/mcp-tools" },
-            { slug: "reference/mcp-migration" },
             { slug: "reference/records" },
             { slug: "reference/html-doc-runtime" },
+            { slug: "reference/drawing-operations" },
+          ],
+        },
+        {
+          label: "Data and access",
+          items: [
             { slug: "reference/workspace-files" },
             { slug: "reference/workspace-packages" },
             { slug: "reference/security" },
-            { slug: "reference/troubleshooting" },
+            { slug: "reference/mcp-migration" },
           ],
+        },
+        {
+          label: "Contributing",
+          items: [{ slug: "contributing" }],
         },
         {
           label: "Project",
           items: [
             { slug: "whats-new" },
             {
-              label: "Releases on GitHub",
+              label: "GitHub releases",
               link: "https://github.com/worktable/worktable-dev/releases",
-              attrs: { target: "_blank" },
             },
           ],
         },
@@ -196,11 +210,11 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: "Worktable",
           description:
-            "File-backed workspace shared by humans and AI agents — docs, HTML docs, records, annotations, and durable conversations across Desktop, Cloud, and self-hosted deployments.",
+            "Open-source workspace for documents, drawings, interactive HTML, records, and conversations shared by people and their agents.",
           details: [
-            "Choose Worktable Desktop, Worktable Cloud, or the CLI for a local or self-hosted deployment.",
+            "Run a workspace locally, on your own server, or in Cloud. Open it in Desktop or a browser.",
             "Connect agents from Settings → Agents; authentication and bootstrap depend on the deployment and client.",
-            "Agents should start at the bootstrap manifest below, then read the agents guide set.",
+            "Agents should start at the bootstrap below for setup, connections, and optional skills.",
           ].join(" "),
           optionalLinks: [
             {

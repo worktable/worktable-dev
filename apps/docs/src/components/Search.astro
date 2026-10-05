@@ -1,0 +1,41 @@
+---
+import { Icon } from "@astrojs/starlight/components"
+---
+
+<site-search>
+  <template data-search-page-icon><Icon name="document" size="1rem" /></template>
+  <button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K">
+    <Icon name="magnifier" size="1rem" />
+    <span aria-hidden="true">Search</span>
+    <kbd aria-hidden="true"><kbd data-shortcut-key>Ctrl</kbd><kbd>K</kbd></kbd>
+  </button>
+  <dialog aria-labelledby="docs-search-title">
+    <div class="dialog-frame">
+      <div class="wt-search-heading">
+        <h2 id="docs-search-title">Search docs</h2>
+        <button data-close-modal aria-label="Close search"><Icon name="close" size="1rem" /></button>
+      </div>
+      {import.meta.env.DEV ? <p>Search is available in the built preview.</p> : (
+        <div id="starlight__search">
+          <form role="search" class="pagefind-ui__form">
+            <Icon name="magnifier" size="1rem" />
+            <input class="pagefind-ui__search-input" type="text" placeholder="Search docs" aria-label="Search docs" autocomplete="off" autocapitalize="off" spellcheck="false" />
+            <button type="button" class="pagefind-ui__search-clear" aria-label="Clear" hidden><Icon name="close" size="0.875rem" /></button>
+          </form>
+          <div class="pagefind-ui__drawer scroll-fade" hidden>
+            <p class="pagefind-ui__message" role="status" aria-live="polite" aria-atomic="true"></p>
+            <ol class="pagefind-ui__results" aria-label="Search results"></ol>
+            <button class="pagefind-ui__button" data-search-retry hidden>Try again</button>
+            <button class="pagefind-ui__button" data-search-more hidden>Load more results</button>
+          </div>
+        </div>
+      )}
+    </div>
+  </dialog>
+</site-search>
+
+<script>
+  import { setupSearch } from "./search"
+  const search = document.querySelector<HTMLElement>("site-search")
+  if (search) setupSearch(search)
+</script>

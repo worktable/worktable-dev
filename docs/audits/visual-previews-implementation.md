@@ -1,6 +1,8 @@
-# Visual preview implementation
+# Preview implementation
 
-Implemented in the drawing worktree on 2026-10-01; not yet released. This supersedes the open implementation choices in the [planning investigation](visual-previews-plan.md).
+> Historical report. See the [archive index](README.md) for dates, source revisions, current status, and reproduction limits.
+
+Implemented on 2026-10-01, merged in `56dc83f`, and released with Worktable 0.1.14. This supersedes the open implementation choices in the [planning investigation](visual-previews-plan.md).
 
 ## Implemented behavior
 

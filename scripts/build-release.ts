@@ -13,7 +13,7 @@ import { dirname, join } from "node:path"
 import { jsdomBundlePlugin } from "./jsdom-bundle.ts"
 import rootPackage from "../package.json" with { type: "json" }
 import { resolveSourceMetadata } from "./release-source.ts"
-import skillInventory from "../plugins/worktable/skill-inventory.json" with { type: "json" }
+import { WORKTABLE_SKILLS, skillSourcePath } from "./skill-inventory.ts"
 import { copyReleaseLicenses } from "./release-licenses.ts"
 import { writeCompiledJsNotices } from "./compiled-js-notices.ts"
 import {
@@ -91,11 +91,11 @@ function sha256(path: string): string {
 }
 
 function copySkillPackage(destination: string): void {
-  for (const skill of skillInventory.skills) {
+  for (const skill of WORKTABLE_SKILLS) {
     for (const file of skill.files) {
       const target = join(destination, skill.name, file)
       mkdirSync(dirname(target), { recursive: true })
-      copyFileSync(join(worktableSkills, skill.name, file), target)
+      copyFileSync(skillSourcePath(root, skill, file), target)
     }
   }
 }
@@ -219,7 +219,6 @@ const claudeDesktopBundle = join(
   "dist",
   "worktable-claude-desktop.mcpb"
 )
-const worktableSkills = join(root, "plugins", "worktable", "skills")
 
 const checksums: string[] = []
 const publicConnectorName = "worktable-connect.mjs"

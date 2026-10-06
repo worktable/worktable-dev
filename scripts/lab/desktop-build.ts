@@ -63,6 +63,7 @@ export const DESKTOP_BUNDLE_INPUTS = [
   "scripts/licenses",
   "plugins/worktable/LICENSE",
   "plugins/worktable/skills",
+  "skills",
   "plugins/worktable/skill-inventory.json",
   "scripts/install.sh",
   "LICENSE",

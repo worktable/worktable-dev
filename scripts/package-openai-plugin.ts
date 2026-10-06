@@ -1,9 +1,8 @@
 #!/usr/bin/env bun
 
-// Build the ZIP uploaded to OpenAI's plugin directory. OpenAI's skill scan
-// rejects skills that download or run code outside the package, so the
-// submission omits the setup skill along with the README and skill inventory
-// that describe it. Other hosts install the full package from this repository.
+// Build the ZIP uploaded to OpenAI's plugin directory from the public plugin
+// files. The skill inventory describes standalone skills too, so it stays out
+// of the upload.
 
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -15,14 +14,9 @@ import {
   readPublicPluginFiles,
 } from "./export-worktable-plugin.ts"
 
-export const OPENAI_EXCLUDED_SKILLS = ["worktable-setup"] as const
-
 export const WORKTABLE_OPENAI_SUBMISSION_FILES =
   WORKTABLE_PLUGIN_PUBLIC_FILES.filter(
-    (path) =>
-      path !== "README.md" &&
-      path !== "skill-inventory.json" &&
-      !OPENAI_EXCLUDED_SKILLS.some((name) => path.startsWith(`skills/${name}/`))
+    (path) => path !== "skill-inventory.json"
   )
 
 async function main(): Promise<void> {

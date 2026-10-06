@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import { WORKTABLE_PLUGIN_SKILLS } from "./export-worktable-plugin.ts"
+import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
 
 // Navigation metadata only. Instructions and discovery descriptions live in SKILL.md.
 export const SKILL_PAGES: Record<string, { slug: string; title: string }> = {
@@ -70,6 +70,7 @@ export function sourceRevision(rootDir: string): string {
         "--",
         "plugins/worktable/skills",
         "plugins/worktable/skill-inventory.json",
+        "skills",
       ],
       options
     ).trim()
@@ -84,15 +85,15 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
   const sourceRef = /^[a-f0-9]{40}$/.test(revision) ? revision : "main"
   const agentsDir = join(rootDir, "apps/docs/src/content/docs/agents")
   const currentPages = new Set(
-    WORKTABLE_PLUGIN_SKILLS.map(({ name }) => `${SKILL_PAGES[name]?.slug}.md`)
+    WORKTABLE_SKILLS.map(({ name }) => `${SKILL_PAGES[name]?.slug}.md`)
   )
   if (existsSync(agentsDir)) {
     for (const file of readdirSync(agentsDir)) {
       if (!file.endsWith(".md") || currentPages.has(file)) continue
       const path = join(agentsDir, file)
       if (
-        readFileSync(path, "utf8").includes(
-          "<!-- Generated at build time from plugins/worktable/skills/"
+        /<!-- Generated at build time from (?:plugins\/worktable\/)?skills\//.test(
+          readFileSync(path, "utf8")
         )
       ) {
         rmSync(path)
@@ -107,10 +108,10 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
   rmSync(downloadsDir, { recursive: true, force: true })
   const catalog = []
   const pages: string[] = []
-  for (const skill of WORKTABLE_PLUGIN_SKILLS) {
+  for (const skill of WORKTABLE_SKILLS) {
     const page = SKILL_PAGES[skill.name]
     if (!page) throw new Error(`Missing documentation route for ${skill.name}`)
-    const skillDir = join(rootDir, "plugins/worktable/skills", skill.name)
+    const skillDir = join(rootDir, skill.sourceDirectory)
     const source = readFileSync(join(skillDir, "SKILL.md"), "utf8")
     const { name, description, body } = parseSkill(source)
     if (name !== skill.name)
@@ -128,7 +129,7 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
       join(publicDir, download.slice(1)),
       await new Bun.Archive(files).blob()
     )
-    const sourcePath = `plugins/worktable/skills/${name}/SKILL.md`
+    const sourcePath = `${skill.sourceDirectory}/SKILL.md`
     const sourceUrl = `https://github.com/worktable/worktable-dev/blob/${sourceRef}/${sourcePath}`
     const relPath = `apps/docs/src/content/docs/agents/${page.slug}.md`
     const frontmatter = [
@@ -145,7 +146,7 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
     // The workflow is the canonical skill body, with no separate edited copy.
     await Bun.write(
       join(rootDir, relPath),
-      `${frontmatter}\n\n<!-- Generated at build time from plugins/worktable/skills/${name}/SKILL.md. -->\n\n${body}\n`
+      `${frontmatter}\n\n<!-- Generated at build time from ${sourcePath}. -->\n\n${body}\n`
     )
     pages.push(relPath)
     catalog.push({

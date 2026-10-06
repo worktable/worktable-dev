@@ -38,7 +38,8 @@
         "$TURBO_ROOT$/packages/mcp-connect/src/**",
         "$TURBO_ROOT$/packages/types/src/**",
         "$TURBO_ROOT$/packages/hosted-contract/src/**",
-        "$TURBO_ROOT$/plugins/worktable/**"
+        "$TURBO_ROOT$/plugins/worktable/**",
+        "$TURBO_ROOT$/skills/**"
       ],
       "outputs": [
         "dist/**",

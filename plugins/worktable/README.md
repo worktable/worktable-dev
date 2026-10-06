@@ -13,12 +13,13 @@ your other connected agents can open it, edit it, and continue it later.
 ## What's included
 
 - One remote MCP connection to `https://app.worktable.cloud/api/mcp`.
-- Seven skills: find and synthesize context, create or update Docs, create or
+- Six skills: find and synthesize context, create or update Docs, create or
   manage interactive HTML Docs, create or manage Records, review with
-  annotations, collaborate in threads, and set up Worktable.
+  annotations, and collaborate in threads.
 
 The plugin contains no hooks, background listeners, executables, or
-credentials. Thread checks happen only when a workflow runs.
+credentials, and its skills never run local commands. Thread checks happen only
+when a workflow runs.
 
 ## Requirements
 
@@ -70,12 +71,6 @@ Records, review with annotations, or reply in a thread. For example:
 Tool calls go only to Worktable Cloud at `app.worktable.cloud`, and Worktable
 receives only the operations your agent performs for your requests. Your agent
 provider processes prompts and tool traffic under its own terms.
-
-The setup skill helps when you ask to install Worktable on your own computer.
-In that case it may run the official installer from
-`https://worktable.dev/install` or `https://worktable.dev/install-skills`, and
-it explains the choice before doing so. The other skills never run local
-commands.
 
 - [Privacy](https://www.worktable.cloud/privacy)
 - [Terms](https://www.worktable.cloud/terms)

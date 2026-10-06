@@ -12,48 +12,13 @@ import {
 } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import skillInventory from "../plugins/worktable/skill-inventory.json" with { type: "json" }
+import { WORKTABLE_BUNDLED_SKILLS } from "./skill-inventory.ts"
 
 const repositoryRoot = resolve(import.meta.dir, "..")
 const pluginSource = join(repositoryRoot, "plugins/worktable")
 
-function validatedSkillInventory(): Array<{ name: string; files: string[] }> {
-  if (
-    skillInventory.schemaVersion !== 1 ||
-    !Array.isArray(skillInventory.skills)
-  ) {
-    throw new Error("Invalid Worktable skill inventory")
-  }
-  const names = new Set<string>()
-  for (const skill of skillInventory.skills) {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(skill.name) || names.has(skill.name)) {
-      throw new Error(
-        `Invalid or duplicate Worktable skill name: ${skill.name}`
-      )
-    }
-    names.add(skill.name)
-    const files = new Set<string>()
-    for (const path of skill.files) {
-      const segments = path.split("/")
-      if (
-        segments.some(
-          (segment) =>
-            !segment ||
-            segment === "." ||
-            segment === ".." ||
-            !/^[A-Za-z0-9._-]+$/.test(segment)
-        ) ||
-        files.has(path)
-      ) {
-        throw new Error(`Invalid or duplicate skill file path: ${path}`)
-      }
-      files.add(path)
-    }
-  }
-  return skillInventory.skills
-}
-
-export const WORKTABLE_PLUGIN_SKILLS = validatedSkillInventory()
+/** Skills packaged inside the plugin; the rest ship as standalone skills. */
+export const WORKTABLE_PLUGIN_SKILLS = WORKTABLE_BUNDLED_SKILLS
 
 const WORKTABLE_PLUGIN_SKILL_FILES = WORKTABLE_PLUGIN_SKILLS.flatMap(
   ({ name, files }) => files.map((path) => `skills/${name}/${path}`)
@@ -428,6 +393,7 @@ export function assertPluginSourceCommitted(): void {
     relative(repositoryRoot, fileURLToPath(import.meta.url)),
     "scripts/export-worktable-plugin.test.ts",
     "scripts/package-openai-plugin.ts",
+    "scripts/skill-inventory.ts",
     ".publication-policy.json",
   ])
   if (dirty) {

@@ -9,14 +9,14 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { publishSkills, parseSkill, SKILL_PAGES } from "./docs-skills.ts"
-import { WORKTABLE_PLUGIN_SKILLS } from "./export-worktable-plugin.ts"
+import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
 
 test("publishes complete canonical skill packages and matching readable workflows", async () => {
   const root = mkdtempSync(join(tmpdir(), "worktable-doc-skills-"))
   try {
-    for (const skill of WORKTABLE_PLUGIN_SKILLS) {
+    for (const skill of WORKTABLE_SKILLS) {
       for (const file of skill.files) {
-        const path = `plugins/worktable/skills/${skill.name}/${file}`
+        const path = `${skill.sourceDirectory}/${file}`
         mkdirSync(dirname(join(root, path)), { recursive: true })
         writeFileSync(
           join(root, path),
@@ -39,7 +39,7 @@ test("publishes complete canonical skill packages and matching readable workflow
       join(output, ".well-known/skills/index.json")
     ).json()
     expect(catalog.skills.map((skill: { name: string }) => skill.name)).toEqual(
-      WORKTABLE_PLUGIN_SKILLS.map((skill) => skill.name)
+      WORKTABLE_SKILLS.map((skill) => skill.name)
     )
     expect(
       await Bun.file(
@@ -50,7 +50,7 @@ test("publishes complete canonical skill packages and matching readable workflow
     expect(readFileSync(join(agentsDir, "overview.md"), "utf8")).toBe(
       "Hand-authored overview"
     )
-    for (const skill of WORKTABLE_PLUGIN_SKILLS) {
+    for (const skill of WORKTABLE_SKILLS) {
       const archive = new Bun.Archive(
         await Bun.file(
           join(output, `downloads/skills/${skill.name}.tar`)
@@ -61,9 +61,7 @@ test("publishes complete canonical skill packages and matching readable workflow
         skill.files.map((file) => `${skill.name}/${file}`).sort()
       )
       for (const file of skill.files) {
-        const source = readFileSync(
-          join(root, `plugins/worktable/skills/${skill.name}/${file}`)
-        )
+        const source = readFileSync(join(root, skill.sourceDirectory, file))
         expect(
           new Uint8Array(
             await entries.get(`${skill.name}/${file}`)!.arrayBuffer()
@@ -74,7 +72,7 @@ test("publishes complete canonical skill packages and matching readable workflow
         ).toEqual(source)
       }
       const source = readFileSync(
-        join(root, `plugins/worktable/skills/${skill.name}/SKILL.md`),
+        join(root, skill.sourceDirectory, "SKILL.md"),
         "utf8"
       )
       const page = readFileSync(

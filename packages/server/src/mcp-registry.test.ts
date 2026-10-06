@@ -196,6 +196,8 @@ describe("consolidated MCP registry", () => {
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
     for (const tool of tools) {
       expect(tool.title).toBeTruthy()
+      // Directory listings read the display name from the annotations.
+      expect(tool.annotations?.title).toBe(tool.title)
       expect(tool._meta?.securitySchemes).toEqual([
         {
           type: "oauth2",
@@ -204,12 +206,14 @@ describe("consolidated MCP registry", () => {
       ])
     }
     expect(byName.search?.annotations).toEqual({
+      title: "Search Worktable",
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
     })
     expect(byName.worktable_spaces?.annotations).toEqual({
+      title: "Manage Worktable spaces",
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,

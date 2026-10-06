@@ -53,6 +53,7 @@
       "additionalProperties": false
     },
     "annotations": {
+      "title": "Search Worktable",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -126,6 +127,7 @@
       "additionalProperties": false
     },
     "annotations": {
+      "title": "Fetch Worktable item",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -903,6 +905,7 @@
       }
     },
     "annotations": {
+      "title": "Discover Worktable context",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -925,7 +928,7 @@
   },
   {
     "name": "worktable_spaces",
-    "title": "Create a Worktable space",
+    "title": "Manage Worktable spaces",
     "description": "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
     "inputSchema": {
       "type": "object",
@@ -1214,6 +1217,7 @@
       }
     },
     "annotations": {
+      "title": "Manage Worktable spaces",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -2413,6 +2417,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable documents",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -3019,6 +3024,7 @@
       "description": "Structured result from worktable_documents_write. Fields vary by request.action."
     },
     "annotations": {
+      "title": "Write Worktable documents",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -3577,6 +3583,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable Docs",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -3967,6 +3974,7 @@
       "description": "Structured result from worktable_docs_write. Fields vary by request.action."
     },
     "annotations": {
+      "title": "Write Worktable Docs",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -5257,6 +5265,7 @@
       "additionalProperties": {}
     },
     "annotations": {
+      "title": "Read Worktable drawings",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -7826,6 +7835,7 @@
       "additionalProperties": {}
     },
     "annotations": {
+      "title": "Edit Worktable drawings",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": true,
@@ -8455,6 +8465,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable HTML Docs",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -9361,6 +9372,7 @@
       }
     },
     "annotations": {
+      "title": "Write Worktable HTML Docs",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -9806,6 +9818,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable Records",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -10220,6 +10233,7 @@
       }
     },
     "annotations": {
+      "title": "Write Worktable Records",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -10531,6 +10545,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable annotations",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -10955,6 +10970,7 @@
       }
     },
     "annotations": {
+      "title": "Write Worktable annotations",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -11732,6 +11748,7 @@
       }
     },
     "annotations": {
+      "title": "Read Worktable threads",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -12255,6 +12272,7 @@
       }
     },
     "annotations": {
+      "title": "Write Worktable threads",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -12962,6 +12980,7 @@
       }
     },
     "annotations": {
+      "title": "Manage Worktable thread delivery",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -13173,6 +13192,7 @@
       }
     },
     "annotations": {
+      "title": "Delete Worktable content",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": false,
@@ -13254,6 +13274,7 @@
       "description": "Structured result from worktable_guidance. Fields vary by request.action."
     },
     "annotations": {
+      "title": "Read Worktable format specification",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -13404,6 +13425,7 @@
       "description": "Structured result from worktable_mermaid. Fields vary by request.action."
     },
     "annotations": {
+      "title": "Validate Worktable diagrams",
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,

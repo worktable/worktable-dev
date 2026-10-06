@@ -188,6 +188,7 @@ export function registerCompanyKnowledgeTools(
       inputSchema: SearchInput,
       outputSchema: SearchOutput,
       annotations: {
+        title: "Search Worktable",
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
@@ -289,6 +290,7 @@ export function registerCompanyKnowledgeTools(
       inputSchema: FetchInput,
       outputSchema: FetchOutput,
       annotations: {
+        title: "Fetch Worktable item",
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,

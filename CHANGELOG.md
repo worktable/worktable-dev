@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Agent plugin:** Updating the Worktable plugin in Claude Code or Codex adds the setup skill and the latest guidance for the other skills.
+- **Agent tool names:** Agent directories show each Worktable tool by name, and the Space tool is now called Manage Worktable spaces to match everything it does.
 
 ## [0.1.19] - 2026-10-05
 

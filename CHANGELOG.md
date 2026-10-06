@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent plugin:** Updating the Worktable plugin in Claude Code or Codex adds the setup skill and the latest guidance for the other skills.
+
 ## [0.1.19] - 2026-10-05
 
 ### Added

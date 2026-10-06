@@ -264,6 +264,27 @@ async function readRegularSourceFile(
   return readFile(current)
 }
 
+/**
+ * Read allowlisted plugin files through the same regular-file and public
+ * content checks the public export applies.
+ */
+export async function readPublicPluginFiles(
+  paths: readonly string[],
+  options: { sourceDirectory?: string; publicationPolicyPath?: string } = {}
+): Promise<Map<string, Uint8Array>> {
+  const privateTerms = await readPrivatePublicationTerms(
+    options.publicationPolicyPath
+  )
+  const sourceDirectory = resolve(options.sourceDirectory ?? pluginSource)
+  const files = new Map<string, Uint8Array>()
+  for (const path of paths) {
+    const contents = await readRegularSourceFile(sourceDirectory, path)
+    assertPublicText(path, contents, privateTerms)
+    files.set(path, contents)
+  }
+  return files
+}
+
 async function assertSafePublicDestination(
   publicRepositoryRoot: string,
   publicPath: string
@@ -397,6 +418,26 @@ function git(args: string[], cwd = repositoryRoot): string {
   }).trim()
 }
 
+/** Published plugin artifacts must come from committed source. */
+export function assertPluginSourceCommitted(): void {
+  const dirty = git([
+    "status",
+    "--porcelain",
+    "--",
+    "plugins/worktable",
+    relative(repositoryRoot, fileURLToPath(import.meta.url)),
+    "scripts/export-worktable-plugin.test.ts",
+    "scripts/package-openai-plugin.ts",
+    ".publication-policy.json",
+  ])
+  if (dirty) {
+    throw new Error(
+      "Commit the Worktable plugin and exporter before generating public source:\n" +
+        dirty
+    )
+  }
+}
+
 export function assertCleanPublicCheckout(outputDirectory: string): void {
   const publicRepositoryRoot = dirname(dirname(resolve(outputDirectory)))
   let gitRoot: string
@@ -440,21 +481,7 @@ async function main(): Promise<void> {
     )
   }
 
-  const dirty = git([
-    "status",
-    "--porcelain",
-    "--",
-    "plugins/worktable",
-    relative(repositoryRoot, fileURLToPath(import.meta.url)),
-    "scripts/export-worktable-plugin.test.ts",
-    ".publication-policy.json",
-  ])
-  if (dirty) {
-    throw new Error(
-      "Commit the Worktable plugin and exporter before generating public source:\n" +
-        dirty
-    )
-  }
+  assertPluginSourceCommitted()
 
   assertCleanPublicCheckout(output)
 

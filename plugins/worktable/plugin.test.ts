@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import sharp from "sharp"
 import { WORKTABLE_PLUGIN_SKILLS } from "../../scripts/export-worktable-plugin.ts"
+import { WORKTABLE_OPENAI_SUBMISSION_FILES } from "../../scripts/package-openai-plugin.ts"
 
 const pluginRoot = import.meta.dir
 const agentPluginSchema =
@@ -94,15 +95,37 @@ describe("Worktable plugin bundle", () => {
       },
     })
 
+    // OpenAI's directory reads listing and review metadata from this block
+    // and rejects MCP plugins without all four listing links or without
+    // exactly five positive and three negative review cases.
+    const openai = (portableManifest.extensions as JsonObject)[
+      "com.openai"
+    ] as JsonObject
+    const listingLink = expect.stringMatching(/^https:\/\//)
+    expect(openai.interface).toEqual(
+      expect.objectContaining({
+        websiteURL: listingLink,
+        supportURL: listingLink,
+        privacyPolicyURL: listingLink,
+        termsOfServiceURL: listingLink,
+      })
+    )
+    const review = openai.review as {
+      test_cases: { positive: JsonObject[]; negative: JsonObject[] }
+    }
+    expect(review.test_cases.positive).toHaveLength(5)
+    expect(review.test_cases.negative).toHaveLength(3)
+
     const codexManifest = await jsonFile(
       join(pluginRoot, ".codex-plugin", "plugin.json")
     )
+    // Codex falls back to this overlay, so it must match the OpenAI listing.
     expect(codexManifest).toEqual(
       expect.objectContaining({
         name: portableManifest.name,
         version: portableManifest.version,
         mcpServers: "./.mcp.json",
-        interface: expect.any(Object),
+        interface: openai.interface,
       })
     )
 
@@ -114,6 +137,12 @@ describe("Worktable plugin bundle", () => {
         name: portableManifest.name,
         version: portableManifest.version,
         mcpServers: "./.mcp.json",
+        // Anthropic's directory listing reads these fields.
+        icon: "./assets/logo.png",
+        documentationUrl: listingLink,
+        supportUrl: listingLink,
+        privacyPolicyUrl: listingLink,
+        termsOfServiceUrl: listingLink,
       })
     )
     const claudeMcp = await jsonFile(join(pluginRoot, ".mcp.json"))
@@ -186,6 +215,21 @@ describe("Worktable plugin bundle", () => {
         expect.stringContaining(`$${name}`)
       )
     }
+  })
+
+  test("keeps installer-running skills out of the OpenAI submission", async () => {
+    // OpenAI's skill scan rejects skills that download or run code outside
+    // the package.
+    const skills = WORKTABLE_OPENAI_SUBMISSION_FILES.filter((path) =>
+      path.endsWith("/SKILL.md")
+    )
+    expect(skills.length).toBeGreaterThan(0)
+    for (const path of skills) {
+      const skill = await readFile(join(pluginRoot, path), "utf8")
+      expect(skill).not.toMatch(/curl[^\n]*\|\s*(?:ba|z)?sh/)
+    }
+    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("plugin.json")
+    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("mcp.json")
   })
 
   test("ships provider-sized PNG brand assets", async () => {

@@ -152,7 +152,7 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
 
 export const TOOL_TITLES: Record<WorktableToolName, string> = {
   worktable_discover: "Discover Worktable context",
-  worktable_spaces: "Create a Worktable space",
+  worktable_spaces: "Manage Worktable spaces",
   worktable_documents_read: "Read Worktable documents",
   worktable_documents_write: "Write Worktable documents",
   worktable_docs_read: "Read Worktable Docs",
@@ -206,7 +206,9 @@ function toolMetadata(
   return {
     title: TOOL_TITLES[toolName],
     description: TOOL_DESCRIPTIONS[toolName],
-    annotations,
+    // Directory checks such as Anthropic's read the display name from
+    // annotations.title, so it repeats the top-level title.
+    annotations: { title: TOOL_TITLES[toolName], ...annotations },
     ...oauthToolMetadata(),
   }
 }

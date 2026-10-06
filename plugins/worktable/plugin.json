@@ -93,7 +93,7 @@
         "commerce": false
       },
       "publication": {
-        "release_notes": "Adds seven bundled Worktable skills for finding context, writing Docs, building interactive HTML Docs, organizing Records, reviewing with annotations, collaborating in threads, and setting up Worktable. Completes the listing metadata, including the support page."
+        "release_notes": "Adds bundled Worktable skills for finding context, writing Docs, building interactive HTML Docs, organizing Records, reviewing with annotations, and collaborating in threads. Completes the listing metadata, including the support page."
       }
     }
   }

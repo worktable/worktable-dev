@@ -28,6 +28,7 @@ export const CHECKOUT_ARTIFACT_INPUTS = [
   "plugins/worktable/skills",
   "skills",
   "plugins/worktable/skill-inventory.json",
+  "scripts/skill-inventory.ts",
   "scripts/install.sh",
   "LICENSE",
   "NOTICE",

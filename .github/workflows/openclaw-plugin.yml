@@ -10,6 +10,8 @@ on:
       - ".github/workflows/openclaw-plugin.yml"
       - "packages/openclaw-plugin/**"
       - "plugins/worktable/**"
+      - "skills/**"
+      - "scripts/skill-inventory.ts"
       - "bun.lock"
       - "package.json"
   workflow_dispatch:

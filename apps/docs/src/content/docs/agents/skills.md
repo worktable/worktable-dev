@@ -29,8 +29,10 @@ the documentation's source revision.
 
 The general Worktable plugin bundles every skill except Set up Worktable with
 its **Cloud** MCP connection. The OpenClaw plugin bundles the full suite. If your
-client already loads either bundle, avoid installing another copy, and install
-Set up Worktable on its own when you want an agent to install Worktable.
+client already loads either bundle, avoid installing another copy. To add only
+Set up Worktable, download its package from the
+[Set up Worktable](/agents/setup/) page and place it in your client's skills
+folder.
 
 For a client with Agent Skills support, the CLI manages two locations:
 

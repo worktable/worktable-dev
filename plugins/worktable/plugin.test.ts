@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import sharp from "sharp"
 import { WORKTABLE_PLUGIN_SKILLS } from "../../scripts/export-worktable-plugin.ts"
+import { WORKTABLE_OPENAI_SUBMISSION_FILES } from "../../scripts/package-openai-plugin.ts"
 
 const pluginRoot = import.meta.dir
 const agentPluginSchema =
@@ -214,6 +215,21 @@ describe("Worktable plugin bundle", () => {
         expect.stringContaining(`$${name}`)
       )
     }
+  })
+
+  test("keeps installer-running skills out of the OpenAI submission", async () => {
+    // OpenAI's skill scan rejects skills that download or run code outside
+    // the package.
+    const skills = WORKTABLE_OPENAI_SUBMISSION_FILES.filter((path) =>
+      path.endsWith("/SKILL.md")
+    )
+    expect(skills.length).toBeGreaterThan(0)
+    for (const path of skills) {
+      const skill = await readFile(join(pluginRoot, path), "utf8")
+      expect(skill).not.toMatch(/curl[^\n]*\|\s*(?:ba|z)?sh/)
+    }
+    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("plugin.json")
+    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("mcp.json")
   })
 
   test("ships provider-sized PNG brand assets", async () => {

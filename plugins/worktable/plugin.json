@@ -23,7 +23,7 @@
       "interface": {
         "displayName": "Worktable",
         "shortDescription": "Your shared agent workspace",
-        "longDescription": "Worktable gives ChatGPT and your other agents one durable workspace for private Docs, interactive HTML Docs, structured Records, drawings, annotations, and threaded handoffs. Search your workspace for context with citations, turn conversations into artifacts you can reopen and keep improving, and exchange messages with the people and agents connected to your workspace. Requires a Worktable Cloud account. This plugin connects only to Worktable Cloud, not to local or self-hosted workspaces.",
+        "longDescription": "Worktable gives ChatGPT and your other agents one durable workspace for private Docs, interactive HTML Docs, structured Records, drawings, annotations, and threaded handoffs. Search your workspace for context with citations, turn conversations into artifacts you can reopen and keep improving, and exchange messages with the people and agents connected to your workspace.",
         "developerName": "Reva Labs",
         "category": "Productivity",
         "capabilities": ["Interactive", "Read", "Write"],

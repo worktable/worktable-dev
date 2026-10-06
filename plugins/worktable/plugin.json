@@ -23,7 +23,7 @@
       "interface": {
         "displayName": "Worktable",
         "shortDescription": "Your shared agent workspace",
-        "longDescription": "Worktable gives ChatGPT and your other agents one durable workspace for private Docs, interactive HTML Docs, structured Records, drawings, annotations, and threaded handoffs. Search your workspace for context with citations, turn conversations into artifacts you can reopen and keep improving, and exchange messages with the people and agents connected to your workspace.",
+        "longDescription": "Worktable gives ChatGPT and your other agents one durable workspace for private Docs, interactive HTML Docs, structured Records, drawings, annotations, and threaded handoffs. Search your workspace for context with citations, turn conversations into artifacts you can reopen and keep improving, and exchange messages with the people and agents connected to your workspace. Requires a Worktable Cloud account. This plugin connects only to Worktable Cloud, not to local or self-hosted workspaces.",
         "developerName": "Reva Labs",
         "category": "Productivity",
         "capabilities": ["Interactive", "Read", "Write"],
@@ -65,27 +65,27 @@
             {
               "description": "Leave a review instruction without editing the document",
               "prompt": "Add a Worktable instruction to the Atlas launch brief asking the team to verify the pricing assumptions. Do not edit the brief itself.",
-              "tools_triggered": "worktable_docs_read, worktable_annotations_write",
-              "expected_behavior": "Reads the Atlas launch brief and adds one open instruction annotation attached to its Pricing assumptions section. The brief's text is unchanged. Replies with confirmation and a link to the brief."
+              "tools_triggered": "worktable_docs_read, worktable_annotations_read, worktable_annotations_write",
+              "expected_behavior": "Reads the Atlas launch brief, checks its open annotations to avoid duplicating feedback, and adds one open instruction annotation attached to its Pricing assumptions section. The brief's text is unchanged. Replies with confirmation and a link to the brief."
             },
             {
               "description": "Make a precise edit to an existing Doc",
               "prompt": "In the Atlas launch brief, add a Risks section that says the billing rehearsal is still in progress and could delay the October 15 launch. Keep everything else in the brief unchanged.",
-              "tools_triggered": "worktable_docs_read, worktable_docs_write",
-              "expected_behavior": "Reads the Atlas launch brief, then adds a Risks section describing the in-progress billing rehearsal and its possible effect on the October 15 launch. All existing content is preserved. Replies with a link to the updated brief."
+              "tools_triggered": "worktable_docs_read, worktable_annotations_read, worktable_docs_write",
+              "expected_behavior": "Reads the Atlas launch brief and checks its open annotations, then adds a Risks section describing the in-progress billing rehearsal and its possible effect on the October 15 launch. All existing content is preserved. Replies with a link to the updated brief."
             }
           ],
           "negative": [
             {
-              "description": "Unrelated public information",
+              "description": "Unrelated public information. Worktable stores the user's own workspace content and has no weather data, so ChatGPT should answer from a general source or ask for missing details without calling any Worktable tool.",
               "prompt": "What is the weather in Paris tomorrow?"
             },
             {
-              "description": "Self-contained calculation with nothing to save",
+              "description": "Self-contained calculation with nothing to save. The user asked only for an answer, so ChatGPT should reply 391 directly and not create a Worktable artifact or call any Worktable tool.",
               "prompt": "What is 17 times 23?"
             },
             {
-              "description": "Summary that the user did not ask to save",
+              "description": "Summary that the user did not ask to save. ChatGPT should return a one-sentence summary in the conversation without reading, creating, changing, or sending anything in Worktable, because the user did not ask to persist or share it.",
               "prompt": "Summarize this paragraph in one sentence: Atlas is a fictional product launch used only to test a plugin review flow."
             }
           ]

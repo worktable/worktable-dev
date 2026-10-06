@@ -1,8 +1,33 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
+
+// The block handle follows the pointer, and a closing dialog returns focus to
+// the control that opened it, scrolling the editor. Wait for dialogs to finish
+// closing, center the block so the handle click cannot scroll the page, and
+// click the handle only once it sits beside the hovered block.
+async function openBlockMenu(page: Page, block: Locator): Promise<void> {
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await block.evaluate((element) => element.scrollIntoView({ block: "center" }))
+  await block.hover()
+  const handle = page.getByRole("button", { name: "Open block menu" })
+  // The handle aligns with the whole block, including its padding.
+  const container = block.locator("xpath=ancestor::*[@data-id][1]")
+  await expect
+    .poll(async () => {
+      const [handleBox, blockBox] = await Promise.all([
+        handle.boundingBox(),
+        container.boundingBox(),
+      ])
+      if (!handleBox || !blockBox) return false
+      const center = handleBox.y + handleBox.height / 2
+      return center >= blockBox.y && center <= blockBox.y + blockBox.height
+    })
+    .toBe(true)
+  await handle.click()
+}
 
 test.beforeAll(async () => {
   harness = await startWebHarness("starter-space-browser")
@@ -186,13 +211,11 @@ test("rich-doc block handles remain usable after annotation composer closes", as
   expect(secondBlockId).toBeTruthy()
   expect(thirdBlockId).toBeTruthy()
 
-  await firstBlock.hover()
-  await page.getByRole("button", { name: "Open block menu" }).click()
+  await openBlockMenu(page, firstBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
   await page.getByRole("button", { name: "Cancel" }).click()
 
-  await secondBlock.hover()
-  await page.getByRole("button", { name: "Open block menu" }).click()
+  await openBlockMenu(page, secondBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
   await page.getByPlaceholder("Write a comment...").fill("Second block note")
   const secondCreate = page.waitForResponse(
@@ -210,8 +233,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
   })
   await page.getByRole("button", { name: "Close annotations" }).click()
 
-  await thirdBlock.hover()
-  await page.getByRole("button", { name: "Open block menu" }).click()
+  await openBlockMenu(page, thirdBlock)
   await page.getByRole("menuitem", { name: "Annotate" }).click()
   await page.getByPlaceholder("Write a comment...").fill("Third block note")
   const thirdCreate = page.waitForResponse(

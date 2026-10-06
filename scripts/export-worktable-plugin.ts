@@ -427,6 +427,7 @@ export function assertPluginSourceCommitted(): void {
     "plugins/worktable",
     relative(repositoryRoot, fileURLToPath(import.meta.url)),
     "scripts/export-worktable-plugin.test.ts",
+    "scripts/package-openai-plugin.ts",
     ".publication-policy.json",
   ])
   if (dirty) {

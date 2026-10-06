@@ -52,6 +52,8 @@ function sourceTreeIsDirty(): boolean {
       "plugins/worktable/skills",
       "plugins/worktable/skill-inventory.json",
       "plugins/worktable/LICENSE",
+      "skills",
+      "scripts/skill-inventory.ts",
       "scripts/build-release.ts",
       "scripts/preview-runtime.ts",
       "scripts/product-fonts.ts",

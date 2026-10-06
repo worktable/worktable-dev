@@ -71,6 +71,7 @@ export function sourceRevision(rootDir: string): string {
         "plugins/worktable/skills",
         "plugins/worktable/skill-inventory.json",
         "skills",
+        "scripts/skill-inventory.ts",
       ],
       options
     ).trim()

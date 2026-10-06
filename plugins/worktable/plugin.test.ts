@@ -94,15 +94,37 @@ describe("Worktable plugin bundle", () => {
       },
     })
 
+    // OpenAI's directory reads listing and review metadata from this block
+    // and rejects MCP plugins without all four listing links or without
+    // exactly five positive and three negative review cases.
+    const openai = (portableManifest.extensions as JsonObject)[
+      "com.openai"
+    ] as JsonObject
+    const listingLink = expect.stringMatching(/^https:\/\//)
+    expect(openai.interface).toEqual(
+      expect.objectContaining({
+        websiteURL: listingLink,
+        supportURL: listingLink,
+        privacyPolicyURL: listingLink,
+        termsOfServiceURL: listingLink,
+      })
+    )
+    const review = openai.review as {
+      test_cases: { positive: JsonObject[]; negative: JsonObject[] }
+    }
+    expect(review.test_cases.positive).toHaveLength(5)
+    expect(review.test_cases.negative).toHaveLength(3)
+
     const codexManifest = await jsonFile(
       join(pluginRoot, ".codex-plugin", "plugin.json")
     )
+    // Codex falls back to this overlay, so it must match the OpenAI listing.
     expect(codexManifest).toEqual(
       expect.objectContaining({
         name: portableManifest.name,
         version: portableManifest.version,
         mcpServers: "./.mcp.json",
-        interface: expect.any(Object),
+        interface: openai.interface,
       })
     )
 
@@ -114,6 +136,12 @@ describe("Worktable plugin bundle", () => {
         name: portableManifest.name,
         version: portableManifest.version,
         mcpServers: "./.mcp.json",
+        // Anthropic's directory listing reads these fields.
+        icon: "./assets/logo.png",
+        documentationUrl: listingLink,
+        supportUrl: listingLink,
+        privacyPolicyUrl: listingLink,
+        termsOfServiceUrl: listingLink,
       })
     )
     const claudeMcp = await jsonFile(join(pluginRoot, ".mcp.json"))

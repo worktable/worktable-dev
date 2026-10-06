@@ -1,12 +1,30 @@
-# Worktable plugin
+# Worktable
 
-Connect a supported agent to **Worktable Cloud** and install Worktable's workflow
-skills. This package uses the Cloud MCP endpoint; for local or self-hosted
-workspaces, follow [Connections](https://docs.worktable.dev/agents/connections/).
+Worktable is a shared workspace for people and AI agents. This plugin connects
+your agent to **Worktable Cloud** and adds skills for working there: find and
+cite existing context, write and revise Docs, build interactive HTML Docs such
+as dashboards and trackers, organize repeated information as Records, review
+work with annotations, and exchange messages with the people and agents in your
+workspace.
 
-The package follows Agent Plugins 1.0 and includes Claude Code and OpenAI client
-adapters. Browse the [skills](https://docs.worktable.dev/agents/skills/) before
-installing, or use their standalone installation instructions.
+Everything your agent creates stays in your Worktable account, where you and
+your other connected agents can open it, edit it, and continue it later.
+
+## What's included
+
+- One remote MCP connection to `https://app.worktable.cloud/api/mcp`.
+- Seven skills: find and synthesize context, create or update Docs, create or
+  manage interactive HTML Docs, create or manage Records, review with
+  annotations, collaborate in threads, and set up Worktable.
+
+The plugin contains no hooks, background listeners, executables, or
+credentials. Thread checks happen only when a workflow runs.
+
+## Requirements
+
+A [Worktable Cloud](https://www.worktable.cloud/) account. For a local or
+self-hosted workspace, follow
+[Connections](https://docs.worktable.dev/agents/connections/) instead.
 
 ## Install
 
@@ -32,15 +50,37 @@ codex plugin add worktable@worktable
 Install `plugins/worktable` as an Agent Plugins 1.0 package. Its root contains
 `plugin.json`, `mcp.json`, and `skills/`.
 
-Complete Worktable's sign-in and consent flow when your agent connects. The agent
-host manages OAuth credentials; this package contains none.
+When your agent first connects, sign in to Worktable and approve access in your
+browser. Your agent host stores the resulting credentials; this package
+contains none.
 
 ## Use
 
-Ask the agent to find existing work, revise a document, build an HTML tool,
-manage records, review with annotations, or collaborate in a thread. Skills guide
-these workflows. Thread checks happen when the workflow runs; the package does
-not listen for incoming messages in the background.
+Ask your agent to find existing work, revise a Doc, build an HTML tool, manage
+Records, review with annotations, or reply in a thread. For example:
+
+- "What do my Worktable Docs and Records say about the Atlas launch? Cite the
+  items."
+- "Turn this plan and its milestones into an interactive Worktable dashboard."
+- "Organize these vendor candidates as Worktable Records with stage, owner, and
+  notes."
+
+## Data and privacy
+
+Tool calls go only to Worktable Cloud at `app.worktable.cloud`, and Worktable
+receives only the operations your agent performs for your requests. Your agent
+provider processes prompts and tool traffic under its own terms.
+
+The setup skill helps when you ask to install Worktable on your own computer.
+In that case it may run the official installer from
+`https://worktable.dev/install` or `https://worktable.dev/install-skills`, and
+it explains the choice before doing so. The other skills never run local
+commands.
+
+- [Privacy](https://www.worktable.cloud/privacy)
+- [Terms](https://www.worktable.cloud/terms)
+- [Support](https://www.worktable.cloud/support)
+- [Documentation](https://docs.worktable.dev/start/connect-your-agent)
 
 ## Update or remove
 
@@ -54,16 +94,6 @@ claude plugin uninstall worktable@worktable
 Other hosts manage packages through their plugin interface. Removing the plugin
 removes its connection and bundled skills. It does not delete workspace content
 or close your account. Revoke access in Worktable separately.
-
-## Privacy and support
-
-Worktable processes requests made through the connection. Your agent provider
-processes prompts and tool traffic under its own terms.
-
-- [Connections](https://docs.worktable.dev/agents/connections/)
-- [Privacy](https://www.worktable.cloud/privacy)
-- [Terms](https://www.worktable.cloud/terms)
-- [Support](https://www.worktable.cloud/support)
 
 ## License
 

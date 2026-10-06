@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2] - 2026-10-06
+
+### Added
+
+- A setup skill that helps install Worktable, connect an agent to an existing workspace, and add skills.
+- Directory listing metadata for Anthropic's plugin directory and OpenAI's plugin directory, including the support page.
+
+### Changed
+
+- Updated skill guidance for exact text edits, document search and ranged reads, drawings, Start here pins, and content lifetimes.
+- Rewrote the package README to describe what the plugin does, where its data goes, and when the setup skill runs the official installer.
+
 ## [0.1.1] - 2026-09-13
 
 ### Changed

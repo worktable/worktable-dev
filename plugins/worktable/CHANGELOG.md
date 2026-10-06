@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-10-06
+
+### Changed
+
+- The setup skill now ships separately from the plugin, so the plugin bundles six skills that never run local commands. Download Set up Worktable from its page in the documentation when you want an agent to set up Worktable on your computer.
+
 ## [0.1.2] - 2026-10-06
 
 ### Added

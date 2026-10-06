@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process"
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import skillInventory from "../plugins/worktable/skill-inventory.json" with { type: "json" }
+import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
 
 const repositoryRoot = resolve(import.meta.dir, "..")
 const pluginSource = join(repositoryRoot, "packages/openclaw-plugin")
@@ -51,14 +51,22 @@ export const OPENCLAW_PUBLIC_FILES = [
   "tsconfig.json",
 ] as const
 
-export const OPENCLAW_SKILL_FILES = skillInventory.skills.flatMap((skill) =>
-  skill.files.map((file) => `skills/${skill.name}/${file}`)
+const OPENCLAW_SKILL_SOURCES = WORKTABLE_SKILLS.flatMap((skill) =>
+  skill.files.map((file) => ({
+    path: `skills/${skill.name}/${file}`,
+    source: `${skill.sourceDirectory}/${file}`,
+  }))
+)
+
+export const OPENCLAW_SKILL_FILES = OPENCLAW_SKILL_SOURCES.map(
+  ({ path }) => path
 )
 
 interface ExportOptions {
   outputDirectory: string
   sourceDirectory?: string
-  skillSourceDirectory?: string
+  /** Repository root that the skill inventory paths resolve against. */
+  skillRepositoryRoot?: string
 }
 
 interface SourceManifest {
@@ -91,9 +99,8 @@ export async function exportOpenClawPlugin(
   options: ExportOptions
 ): Promise<SourceManifest> {
   const sourceDirectory = resolve(options.sourceDirectory ?? pluginSource)
-  const skillSourceDirectory = resolve(
-    options.skillSourceDirectory ??
-      join(repositoryRoot, "plugins", "worktable", "skills")
+  const skillRepositoryRoot = resolve(
+    options.skillRepositoryRoot ?? repositoryRoot
   )
   const outputDirectory = assertSafeOutputDirectory(options.outputDirectory)
   const files: Record<string, string> = {}
@@ -109,8 +116,8 @@ export async function exportOpenClawPlugin(
     rendered.set(path, contents)
     files[path] = sha256(contents)
   }
-  for (const path of OPENCLAW_SKILL_FILES) {
-    const sourcePath = join(skillSourceDirectory, path.slice("skills/".length))
+  for (const { path, source } of OPENCLAW_SKILL_SOURCES) {
+    const sourcePath = join(skillRepositoryRoot, source)
     const metadata = await lstat(sourcePath)
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
       throw new Error(`Canonical skill source must be a regular file: ${path}`)
@@ -165,6 +172,8 @@ async function main(): Promise<void> {
     "packages/openclaw-plugin",
     "plugins/worktable/skill-inventory.json",
     "plugins/worktable/skills",
+    "skills",
+    "scripts/skill-inventory.ts",
     relative(repositoryRoot, fileURLToPath(import.meta.url)),
   ])
   if (dirty) {

@@ -10,7 +10,7 @@ const canonicalSkills = join(canonicalRoot, "skills")
 
 interface SkillInventory {
   schemaVersion: 1
-  skills: Array<{ name: string; files: string[] }>
+  skills: Array<{ name: string; files: string[]; bundled?: boolean }>
 }
 
 export interface SkillPackageFile {
@@ -70,6 +70,9 @@ function validateInventory(value: unknown): SkillInventory {
       !Array.isArray(skill.files) ||
       skill.files.length === 0
     ) {
+      throw new Error("The canonical Worktable skill inventory is invalid")
+    }
+    if ("bundled" in skill && typeof skill.bundled !== "boolean") {
       throw new Error("The canonical Worktable skill inventory is invalid")
     }
     assertPortableRelativePath(skill.name, "Skill name")
@@ -176,7 +179,11 @@ export async function prepareSkillPackage(): Promise<PreparedSkillPackage> {
     await mkdir(destination, { recursive: true })
     for (const skill of inventory.skills) {
       for (const file of skill.files) {
-        const source = join(canonicalSkills, skill.name, file)
+        // Skills kept out of the agent plugin live under skills/ at the root.
+        const source =
+          skill.bundled === false
+            ? join(repositoryRoot, "skills", skill.name, file)
+            : join(canonicalSkills, skill.name, file)
         const sourceInfo = await lstat(source)
         if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) {
           throw new Error(`Canonical skill file must be regular: ${source}`)

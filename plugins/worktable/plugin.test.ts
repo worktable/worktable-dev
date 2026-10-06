@@ -217,19 +217,20 @@ describe("Worktable plugin bundle", () => {
     }
   })
 
-  test("keeps installer-running skills out of the OpenAI submission", async () => {
-    // OpenAI's skill scan rejects skills that download or run code outside
-    // the package.
-    const skills = WORKTABLE_OPENAI_SUBMISSION_FILES.filter((path) =>
-      path.endsWith("/SKILL.md")
-    )
-    expect(skills.length).toBeGreaterThan(0)
-    for (const path of skills) {
-      const skill = await readFile(join(pluginRoot, path), "utf8")
+  test("bundles no skill that runs downloaded code", async () => {
+    // Anthropic's and OpenAI's directory scans reject plugin skills that
+    // download or run code outside the package. Such skills ship standalone.
+    for (const { name } of WORKTABLE_PLUGIN_SKILLS) {
+      const skill = await readFile(
+        join(pluginRoot, "skills", name, "SKILL.md"),
+        "utf8"
+      )
       expect(skill).not.toMatch(/curl[^\n]*\|\s*(?:ba|z)?sh/)
     }
     expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("plugin.json")
-    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).toContain("mcp.json")
+    expect(WORKTABLE_OPENAI_SUBMISSION_FILES).not.toContain(
+      "skill-inventory.json"
+    )
   })
 
   test("ships provider-sized PNG brand assets", async () => {

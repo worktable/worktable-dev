@@ -1,9 +1,11 @@
 # OpenClaw releases
 
 The adapter source lives in `packages/openclaw-plugin` in this repository.
-Canonical Worktable skills live in `plugins/worktable/skills` and are copied into
-the package during its build. Edit those sources rather than generated package
-outputs.
+Canonical Worktable skills live in `plugins/worktable/skills` (skills bundled with
+the agent plugin) and `skills/` (skills installed separately, such as
+`worktable-setup`). `plugins/worktable/skill-inventory.json` lists both, and the
+package build copies every skill from its source. Edit those sources rather than
+generated package outputs.
 
 ## Prepare a release
 

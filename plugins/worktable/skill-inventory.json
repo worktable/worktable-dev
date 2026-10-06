@@ -55,7 +55,8 @@
         "SKILL.md",
         "agents/openai.yaml",
         "LICENSE"
-      ]
+      ],
+      "bundled": false
     }
   ]
 }

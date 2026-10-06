@@ -26,15 +26,38 @@ export const WORKTABLE_OPENAI_SUBMISSION_FILES =
   )
 
 async function main(): Promise<void> {
-  const outputFlag = process.argv.indexOf("--output")
-  const output = outputFlag >= 0 ? process.argv[outputFlag + 1] : undefined
+  const flag = (name: string) => {
+    const index = process.argv.indexOf(name)
+    return index >= 0 ? process.argv[index + 1] : undefined
+  }
+  const output = flag("--output")
+  const demoRecordingUrl = flag("--demo-recording-url")
   if (!output?.endsWith(".zip")) {
     throw new Error(
-      "Usage: bun scripts/package-openai-plugin.ts --output /path/to/worktable-openai.zip"
+      "Usage: bun scripts/package-openai-plugin.ts --output /path/to/worktable-openai.zip [--demo-recording-url https://...]"
     )
+  }
+  if (
+    demoRecordingUrl !== undefined &&
+    !/^https:\/\/\S+$/.test(demoRecordingUrl)
+  ) {
+    throw new Error("--demo-recording-url must be an https URL")
   }
   assertPluginSourceCommitted()
   const files = await readPublicPluginFiles(WORKTABLE_OPENAI_SUBMISSION_FILES)
+  // The review recording is submission-only metadata, so it stays out of the
+  // public repository and is added to the uploaded manifest here.
+  if (demoRecordingUrl) {
+    const manifest = JSON.parse(
+      new TextDecoder().decode(files.get("plugin.json"))
+    ) as { extensions: { "com.openai": { review: Record<string, unknown> } } }
+    manifest.extensions["com.openai"].review.demo_recording_url =
+      demoRecordingUrl
+    files.set(
+      "plugin.json",
+      new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`)
+    )
+  }
   const zipPath = resolve(output)
   const staging = await mkdtemp(join(tmpdir(), "worktable-openai-"))
   try {

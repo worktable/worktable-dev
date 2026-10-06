@@ -60,19 +60,19 @@
               "description": "Organize information as structured Records",
               "prompt": "Create a reusable Vendor Research collection in the Atlas Launch space from these candidates: Northstar, evaluation, Maya, SSO and audit logs; Acme, contacted, Omar, strong API but no SCIM; Juniper, shortlisted, Priya, best security review. Use fields for stage, owner, and notes, then verify the saved records.",
               "tools_triggered": "worktable_discover, worktable_records_read, worktable_records_write",
-              "expected_behavior": "Creates a Vendor Research collection with stage, owner, and notes fields, saves exactly three Records that keep every supplied detail, queries the collection to verify them, and reports the collection and the verified record count."
+              "expected_behavior": "Creates or reuses a Vendor Research collection with stage, owner, and notes fields, saves exactly three Records that keep every supplied detail, reads the collection back to verify them, and reports the three saved vendors."
             },
             {
               "description": "Leave a review instruction without editing the document",
               "prompt": "Add a Worktable instruction to the Atlas launch brief asking the team to verify the pricing assumptions. Do not edit the brief itself.",
               "tools_triggered": "worktable_docs_read, worktable_annotations_read, worktable_annotations_write",
-              "expected_behavior": "Reads the Atlas launch brief, checks its open annotations to avoid duplicating feedback, and adds one open instruction annotation attached to its Pricing assumptions section. The brief's text is unchanged. Replies with confirmation and a link to the brief."
+              "expected_behavior": "Reads the Atlas launch brief, checks its open annotations to avoid duplicating feedback, and adds one open instruction annotation on the brief asking the team to verify the pricing assumptions. The brief's text is unchanged. Confirms that the instruction was added."
             },
             {
               "description": "Make a precise edit to an existing Doc",
               "prompt": "In the Atlas launch brief, add a Risks section that says the billing rehearsal is still in progress and could delay the October 15 launch. Keep everything else in the brief unchanged.",
               "tools_triggered": "worktable_discover, worktable_docs_read, worktable_annotations_read, worktable_docs_write",
-              "expected_behavior": "Reads the Atlas launch brief and checks its open annotations, then adds a Risks section describing the in-progress billing rehearsal and its possible effect on the October 15 launch. All existing content is preserved. Replies with a link to the updated brief."
+              "expected_behavior": "Reads the Atlas launch brief and checks its open annotations, then adds a Risks section describing the in-progress billing rehearsal and its possible effect on the October 15 launch. All existing content is preserved. Confirms the update."
             }
           ],
           "negative": [

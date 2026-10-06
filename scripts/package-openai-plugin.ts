@@ -6,12 +6,14 @@
 // that describe it. Other hosts install the full package from this repository.
 
 import { execFileSync } from "node:child_process"
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import { WORKTABLE_PLUGIN_PUBLIC_FILES } from "./export-worktable-plugin.ts"
-
-const pluginSource = resolve(import.meta.dir, "../plugins/worktable")
+import {
+  WORKTABLE_PLUGIN_PUBLIC_FILES,
+  assertPluginSourceCommitted,
+  readPublicPluginFiles,
+} from "./export-worktable-plugin.ts"
 
 export const OPENAI_EXCLUDED_SKILLS = ["worktable-setup"] as const
 
@@ -31,12 +33,14 @@ async function main(): Promise<void> {
       "Usage: bun scripts/package-openai-plugin.ts --output /path/to/worktable-openai.zip"
     )
   }
+  assertPluginSourceCommitted()
+  const files = await readPublicPluginFiles(WORKTABLE_OPENAI_SUBMISSION_FILES)
   const zipPath = resolve(output)
   const staging = await mkdtemp(join(tmpdir(), "worktable-openai-"))
   try {
-    for (const path of WORKTABLE_OPENAI_SUBMISSION_FILES) {
+    for (const [path, contents] of files) {
       await mkdir(dirname(join(staging, path)), { recursive: true })
-      await copyFile(join(pluginSource, path), join(staging, path))
+      await writeFile(join(staging, path), contents)
     }
     await rm(zipPath, { force: true })
     execFileSync(

@@ -4,7 +4,7 @@
 
 ### Changed
 
-- The setup skill now installs separately from the plugin, so the plugin bundles six skills that never run local commands. Install it with the standalone skills installer when you want an agent to set up Worktable on your computer.
+- The setup skill now ships separately from the plugin, so the plugin bundles six skills that never run local commands. Download Set up Worktable from its page in the documentation when you want an agent to set up Worktable on your computer.
 
 ## [0.1.2] - 2026-10-06
 

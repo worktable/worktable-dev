@@ -9,6 +9,12 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-10-06
+
+### Added
+
+- **Mobile annotations:** On phones, select text and choose Annotate to leave a comment or instruction on that passage, with the note field ready to type.
+
 ### Changed
 
 - **Agent plugin:** Updating the Worktable plugin in Claude Code or Codex brings the latest skill guidance. Set up Worktable is now a separate download from its page in the documentation.

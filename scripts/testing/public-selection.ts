@@ -31,7 +31,7 @@ export function selectPublicSuiteIds(paths: string[]): string[] {
       selected.add("web-browser")
       selected.add("desktop-browser")
     } else if (
-      /^(?:apps\/(?:cli|skill-installer|docs)\/|packages\/openclaw-plugin\/|plugins\/worktable\/|scripts\/lab\/)/.test(
+      /^(?:apps\/(?:cli|skill-installer|docs)\/|packages\/(?:openclaw|hermes)-plugin\/|plugins\/worktable\/|scripts\/lab\/)/.test(
         path
       ) ||
       repositoryDocsOnly([path])
@@ -54,7 +54,7 @@ export function needsPluginPackaging(paths: string[]): boolean {
       return true
     if (repositoryDocsOnly([path])) return false
     if (
-      /^(?:apps\/|packages\/(?:server|mcp|mcp-connect|types|ui|public-analytics)\/|fixtures\/|docs\/)/.test(
+      /^(?:apps\/|packages\/(?:server|mcp|mcp-connect|types|ui|public-analytics|hermes-plugin)\/|fixtures\/|docs\/|\.github\/workflows\/hermes-plugin\.yml$)/.test(
         path
       )
     )
@@ -62,6 +62,16 @@ export function needsPluginPackaging(paths: string[]): boolean {
     // Workflow, lockfile, exporter, build and unfamiliar inputs are conservative.
     return true
   })
+}
+
+/** The Hermes plugin carries its own copy of the agent plugin's skills. */
+export function needsHermesPlugin(paths: string[]): boolean {
+  if (paths.length === 0) return true
+  return paths.some((path) =>
+    /^(?:packages\/hermes-plugin\/|plugins\/worktable\/|scripts\/(?:skill-inventory|generate-hermes-skills)\.ts$|\.github\/workflows\/hermes-plugin\.yml$)/.test(
+      path
+    )
+  )
 }
 
 export function publicChangePaths(base: string, head: string): string[] {
@@ -107,6 +117,7 @@ if (import.meta.main) {
     browser: !documentation && suites.some((id) => id.endsWith("-browser")),
     desktop: !documentation && suites.includes("desktop-contracts"),
     plugin: needsPluginPackaging(paths),
+    hermes: needsHermesPlugin(paths),
     required: !documentation && !productDocumentation,
     // Reuse this exact immutable diff for execution rather than discovering a
     // different base later from the merge checkout or local branch tracking.

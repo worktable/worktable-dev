@@ -49,17 +49,17 @@ font files are not included in this repository. See the
 
 ## Repository map
 
-| Directory                                       | Purpose                                                        |
-| ----------------------------------------------- | -------------------------------------------------------------- |
-| `apps/web`                                      | Browser interface                                              |
-| `apps/cli`                                      | Installed CLI, setup, service lifecycle, and agent connections |
-| `apps/desktop`                                  | Native macOS application                                       |
-| `apps/docs`                                     | Product documentation site                                     |
-| `packages/server`                               | File storage, HTTP routes, authentication, and MCP tools       |
-| `packages/mcp`, `packages/mcp-connect`          | MCP transport and remote-agent connector                       |
-| `packages/openclaw-plugin`, `plugins/worktable` | Agent integrations and skills                                  |
-| `packages/types`, `packages/ui`                 | Shared contracts and UI components                             |
-| `scripts`, `fixtures`                           | Build tools, verification, and synthetic workspaces            |
+| Directory                                                                 | Purpose                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `apps/web`                                                                | Browser interface                                              |
+| `apps/cli`                                                                | Installed CLI, setup, service lifecycle, and agent connections |
+| `apps/desktop`                                                            | Native macOS application                                       |
+| `apps/docs`                                                               | Product documentation site                                     |
+| `packages/server`                                                         | File storage, HTTP routes, authentication, and MCP tools       |
+| `packages/mcp`, `packages/mcp-connect`                                    | MCP transport and remote-agent connector                       |
+| `packages/openclaw-plugin`, `packages/hermes-plugin`, `plugins/worktable` | Agent integrations and skills                                  |
+| `packages/types`, `packages/ui`                                           | Shared contracts and UI components                             |
+| `scripts`, `fixtures`                                                     | Build tools, verification, and synthetic workspaces            |
 
 Read [DESIGN_SYSTEM.md](../DESIGN_SYSTEM.md) before changing UI styling.
 Hosted service operations and the marketing sites are not included here.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -13,6 +14,9 @@ from typing import Any, Optional
 from . import pairing
 from .settings import DEFAULT_PARTICIPANT_NAME, MCP_SERVER, PLATFORM, TOKEN_ENV, Settings
 from .store import DeliveryStore
+
+# `hermes config unset` and `mcp remove` on an entry that is already gone.
+_ALREADY_ABSENT = re.compile(r"not set|not found", re.IGNORECASE)
 
 # The agent uses Worktable's other tools through this server. The plugin claims
 # messages itself, so the agent must not take deliveries meant for the gateway.
@@ -65,9 +69,9 @@ def _mcp_server(url: str, auth: str) -> dict:
 def _enable(url: str, auth: str) -> None:
     _config_set(f"mcp_servers.{MCP_SERVER}", _mcp_server(url, auth))
     _config_set(f"plugins.entries.{PLATFORM}.mcp_allowlist", [MCP_SERVER])
-    _config_set(f"gateway.platforms.{PLATFORM}.enabled", "true")
+    _config_set(f"platforms.{PLATFORM}.enabled", "true")
     # Restart notices would otherwise be posted into every Worktable thread.
-    _config_set(f"gateway.platforms.{PLATFORM}.gateway_restart_notification", "false")
+    _config_set(f"platforms.{PLATFORM}.gateway_restart_notification", "false")
 
 
 def connect(ctx: Any, args: Any) -> int:
@@ -81,6 +85,11 @@ def connect(ctx: Any, args: Any) -> int:
         redeemed = pairing.redeem(origin, code, socket.gethostname()[:64], store.installation_id())
         try:
             _save_token(redeemed["token"])
+        except Exception:
+            # Nothing holds the new credential, so Worktable may revoke it.
+            pairing.report(origin, code, "failed_no_config", "Hermes could not save the Worktable connection.")
+            raise
+        try:
             _enable(redeemed["mcpUrl"], "token")
             settings.save(
                 server=origin,
@@ -89,7 +98,8 @@ def connect(ctx: Any, args: Any) -> int:
                 pending_pairing_code=code,
             )
         except Exception:
-            pairing.report(origin, code, "failed_no_config", "Hermes could not save the Worktable connection.")
+            # The token is saved; running connect again finishes the setup.
+            pairing.report(origin, code, "failed", "Hermes saved the token but not the rest of the connection.")
             raise
         pairing.report(origin, code, "config_written", "Worktable connection saved in Hermes.")
         pairing.report(origin, code, "verifying", "Waiting for the Hermes gateway to connect.")
@@ -124,6 +134,9 @@ def status(ctx: Any, _args: Any) -> int:
     print(f"Worktable: {settings.server}")
     print(f"Participant: {settings.participant_name}")
     print(f"Credential: {sign_in}")
+    if settings.pairing_error:
+        print(f"Pairing did not finish ({settings.pairing_error}). Run `hermes worktable connect` with a new code.")
+        return 1
     if settings.pending_pairing_code:
         print("Waiting for the gateway to finish pairing. Restart it with: hermes gateway restart")
     return 0
@@ -136,11 +149,13 @@ def disconnect(ctx: Any, _args: Any) -> int:
         ("mcp", "remove", MCP_SERVER),
         ("config", "unset", TOKEN_ENV),
         ("config", "unset", f"plugins.entries.{PLATFORM}.mcp_allowlist"),
-        ("config", "set", f"gateway.platforms.{PLATFORM}.enabled", "false"),
+        ("config", "set", f"platforms.{PLATFORM}.enabled", "false"),
     ):
         try:
             _hermes_run(*args)
         except RuntimeError as error:
+            if _ALREADY_ABSENT.search(str(error)):
+                continue
             skipped += 1
             print(f"Skipped: {error}", file=sys.stderr)
     settings.clear()

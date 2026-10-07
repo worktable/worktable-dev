@@ -42,6 +42,11 @@ class Settings:
         return value if isinstance(value, str) and value else None
 
     @property
+    def pairing_error(self) -> Optional[str]:
+        value = self._get("pairing_error")
+        return value if isinstance(value, str) and value else None
+
+    @property
     def participant_registered(self) -> bool:
         return self._get("participant_registered") is True
 
@@ -50,15 +55,21 @@ class Settings:
         self._ctx.set_config("auth", auth)
         self._ctx.set_config("participant_name", participant_name)
         self._ctx.set_config("pending_pairing_code", pending_pairing_code or "")
+        self._ctx.set_config("pairing_error", "")
         self._ctx.set_config("participant_registered", False)
 
     def clear(self) -> None:
-        for key in ("server", "auth", "participant_name", "pending_pairing_code"):
+        for key in ("server", "auth", "participant_name", "pending_pairing_code", "pairing_error"):
             self._ctx.set_config(key, "")
         self._ctx.set_config("participant_registered", False)
 
     def clear_pending_pairing_code(self) -> None:
         self._ctx.set_config("pending_pairing_code", "")
+
+    def record_pairing_error(self, code: str) -> None:
+        """Worktable refused to finish pairing; the profile needs a new code."""
+        self._ctx.set_config("pending_pairing_code", "")
+        self._ctx.set_config("pairing_error", code)
 
     def mark_participant_registered(self) -> None:
         self._ctx.set_config("participant_registered", True)

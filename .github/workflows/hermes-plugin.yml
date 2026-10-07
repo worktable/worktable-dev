@@ -12,6 +12,7 @@ on:
       - "plugins/worktable/**"
       - "scripts/skill-inventory.ts"
       - "scripts/generate-hermes-skills.ts"
+      - "package.json"
   workflow_dispatch:
 
 permissions:

@@ -116,7 +116,7 @@ class WorktableAdapter(BasePlatformAdapter):
                     raise  # Worktable is unreachable; the connector retries.
                 # Worktable refused this pairing, so it never becomes a
                 # connection. Stop rather than answer on an unfinished pairing.
-                self._settings.clear_pending_pairing_code()
+                self._settings.record_pairing_error(error.code)
                 self._stop.set()
                 logger.error(
                     "Worktable could not finish pairing (%s). Run `hermes worktable connect` with a new code.",
@@ -224,7 +224,8 @@ class WorktableAdapter(BasePlatformAdapter):
         thread = deliveries.thread_for_conversation(chat_id)
         if not thread or not self._tools or not content.strip():
             return SendResult(success=False, error="Not a Worktable thread")
-        key = hashlib.sha256(f"{chat_id}\0{content}".encode()).hexdigest()[:32]
+        # Each send is its own message, even when a recurring task repeats its text.
+        key = hashlib.sha256(f"{chat_id}\0{message_id}\0{content}".encode()).hexdigest()[:32]
         try:
             await self._tools.post({**thread, "body": content, "idempotencyKey": f"hermes-out:{key}"})
         except Exception as error:

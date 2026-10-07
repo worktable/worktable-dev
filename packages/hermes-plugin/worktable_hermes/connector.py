@@ -151,6 +151,10 @@ class Connector:
                 return
             lock = self._thread_locks.setdefault(conversation, asyncio.Lock())
             async with lock:
+                if stop is not None and stop.is_set():
+                    # Dispatching now would replace the pending turn Hermes
+                    # resumes after the restart.
+                    return
                 reply = self._store.retained(event) or await self._produce(claimed, conversation, event)
                 if stop is not None and stop.is_set():
                     return

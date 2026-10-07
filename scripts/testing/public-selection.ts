@@ -68,7 +68,7 @@ export function needsPluginPackaging(paths: string[]): boolean {
 export function needsHermesPlugin(paths: string[]): boolean {
   if (paths.length === 0) return true
   return paths.some((path) =>
-    /^(?:packages\/hermes-plugin\/|plugins\/worktable\/|scripts\/(?:skill-inventory|generate-hermes-skills)\.ts$|\.github\/workflows\/hermes-plugin\.yml$)/.test(
+    /^(?:packages\/hermes-plugin\/|plugins\/worktable\/|scripts\/(?:skill-inventory|generate-hermes-skills)\.ts$|package\.json$|\.github\/workflows\/hermes-plugin\.yml$)/.test(
       path
     )
   )

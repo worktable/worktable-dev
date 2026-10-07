@@ -158,4 +158,5 @@ async def test_a_refused_pairing_stops_instead_of_retrying(subject, monkeypatch)
     with pytest.raises(pairing.PairingError):
         await adapter._on_connected()
     assert adapter._ctx.settings["pending_pairing_code"] == ""
+    assert adapter._ctx.settings["pairing_error"] == "PAIRING_EXPIRED"
     assert adapter._stop.is_set()

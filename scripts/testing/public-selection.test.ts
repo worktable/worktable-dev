@@ -91,6 +91,7 @@ describe("public evidence ownership", () => {
       ["packages/hermes-plugin/worktable_hermes/adapter.py"],
       ["plugins/worktable/skills/worktable-create-or-update-docs/SKILL.md"],
       ["scripts/skill-inventory.ts"],
+      ["package.json"],
     ])
       expect(needsHermesPlugin(paths)).toBe(true)
     for (const path of ["apps/web/a.ts", "packages/openclaw-plugin/a.ts"])

@@ -220,3 +220,24 @@ async def test_a_lost_lease_keeps_the_reply_for_the_next_delivery():
     assert again.turns == []
     assert tools.replies[0]["body"] == "Here is the summary."
     assert tools.replies[0]["deliveryLeaseId"] == "lease_2"
+
+
+async def test_a_turn_waiting_behind_another_does_not_start_once_hermes_stops():
+    tools = FakeTools()
+    store = DeliveryStore(MemoryState())
+    stop = asyncio.Event()
+    first = FakeDispatcher(error=TurnError("CHANNEL_STOPPED", "stopping"))
+    first.gate = asyncio.Event()
+    subject = connector(tools, first, store)
+
+    running = asyncio.create_task(subject.handle(claimed(), stop))
+    await asyncio.sleep(0)
+    queued = asyncio.create_task(subject.handle(claimed("msg_2", "lease_2"), stop))
+    await asyncio.sleep(0)
+    stop.set()
+    first.gate.set()
+    await asyncio.gather(running, queued)
+
+    # Only the first turn ran, so Hermes' resumed reply still belongs to it.
+    assert [turn.message_id for turn in first.turns] == ["msg_1"]
+    assert store.pending("atlas/thr_1")["event"] == "atlas/thr_1/msg_1"

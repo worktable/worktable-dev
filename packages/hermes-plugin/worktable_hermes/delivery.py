@@ -72,9 +72,14 @@ def thread_for_conversation(conversation: str) -> Optional[dict]:
     if len(parts) not in (2, 3) or not all(parts):
         return None
     scope, thread_id = parts[0], parts[1]
-    if scope == "worktable":
-        return {"location": {"kind": "worktable"}, "threadId": thread_id}
-    return {"location": {"kind": "space", "spaceId": scope}, "threadId": thread_id, "spaceId": scope}
+    thread: dict = (
+        {"location": {"kind": "worktable"}, "threadId": thread_id}
+        if scope == "worktable"
+        else {"location": {"kind": "space", "spaceId": scope}, "threadId": thread_id, "spaceId": scope}
+    )
+    if len(parts) == 3:
+        thread["authorIdentityId"] = parts[2]
+    return thread
 
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")

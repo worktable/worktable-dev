@@ -111,6 +111,8 @@ SERVER_PID=
 cleanup() {
   if [ -n "$SERVER_PID" ]; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
+    # The server writes to the sandbox until it exits; removing it first races.
+    wait "$SERVER_PID" 2>/dev/null || true
   fi
   if [ "$KEEP" != "1" ]; then
     rm -rf "$SMOKE_ROOT"
@@ -216,7 +218,13 @@ if grep -q "Degraded:" "$SMOKE_ROOT/doctor.out"; then
 fi
 
 # Launch the server and prove the bundled web assets actually serve.
-run_wt launch --foreground --no-browser --port "$PORT" > "$SMOKE_ROOT/server.log" 2>&1 &
+# Start the launcher directly, not through run_wt: a backgrounded shell function
+# runs in a subshell, so $! would name the subshell and cleanup could not stop
+# or wait for the server itself.
+HOME="$HOME_DIR" \
+WORKTABLE_WORKSPACE="$WORKSPACE_DIR" \
+WORKTABLE_APP_DIR="$APP_DIR" \
+  "$WORKTABLE" launch --foreground --no-browser --port "$PORT" > "$SMOKE_ROOT/server.log" 2>&1 &
 SERVER_PID=$!
 
 healthy=0

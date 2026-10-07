@@ -11,6 +11,7 @@ from gateway.platform_registry import PlatformEntry, platform_registry  # noqa: 
 from gateway.platforms.event import ProcessingOutcome  # noqa: E402
 
 from worktable_hermes import adapter as adapter_module  # noqa: E402
+from worktable_hermes import pairing  # noqa: E402
 from worktable_hermes.adapter import WorktableAdapter  # noqa: E402
 from worktable_hermes.connector import Connector, Turn, TurnError  # noqa: E402
 from worktable_hermes.store import DeliveryStore, MemoryState  # noqa: E402
@@ -134,4 +135,27 @@ async def test_a_restart_notice_is_not_a_reply(subject):
     with pytest.raises(TurnError) as raised:
         await running
     assert raised.value.code == "CHANNEL_STOPPED"
+    assert adapter._stop.is_set()
+
+
+async def test_a_refused_pairing_stops_instead_of_retrying(subject, monkeypatch):
+    adapter, _events = subject
+    adapter._ctx.settings["pending_pairing_code"] = "ABCDE-12345"
+    adapter._tools = object()
+    outages = [pairing.PairingError("Worktable is restarting", "HTTP_503", 503)]
+
+    def complete(server, code, token):
+        raise outages.pop() if outages else pairing.PairingError("Pairing expired", "PAIRING_EXPIRED", 410)
+
+    monkeypatch.setattr(pairing, "complete", complete)
+
+    # An outage keeps the pairing for the next attempt.
+    with pytest.raises(pairing.PairingError):
+        await adapter._on_connected()
+    assert adapter._ctx.settings["pending_pairing_code"] == "ABCDE-12345"
+    assert not adapter._stop.is_set()
+
+    with pytest.raises(pairing.PairingError):
+        await adapter._on_connected()
+    assert adapter._ctx.settings["pending_pairing_code"] == ""
     assert adapter._stop.is_set()

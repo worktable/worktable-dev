@@ -44,6 +44,15 @@ def _config_set(key: str, value: Any) -> None:
     _hermes_run("config", "set", key, value if isinstance(value, str) else json.dumps(value))
 
 
+def _save_token(token: str) -> None:
+    """Store the token in the profile's .env without exposing it in process arguments."""
+    from hermes_cli.config import get_env_value, save_env_value
+
+    save_env_value(TOKEN_ENV, token)
+    if get_env_value(TOKEN_ENV) != token:
+        raise RuntimeError(f"Hermes did not save {TOKEN_ENV} to the profile's .env")
+
+
 def _mcp_server(url: str, auth: str) -> dict:
     server: dict[str, Any] = {"url": url, "tools": {"exclude": [DELIVERY_TOOL]}}
     if auth == "oauth":
@@ -71,7 +80,7 @@ def connect(ctx: Any, args: Any) -> int:
         store = DeliveryStore(ctx.state)
         redeemed = pairing.redeem(origin, code, socket.gethostname()[:64], store.installation_id())
         try:
-            _config_set(TOKEN_ENV, redeemed["token"])
+            _save_token(redeemed["token"])
             _enable(redeemed["mcpUrl"], "token")
             settings.save(
                 server=origin,
@@ -122,6 +131,7 @@ def status(ctx: Any, _args: Any) -> int:
 
 def disconnect(ctx: Any, _args: Any) -> int:
     settings = Settings(ctx)
+    skipped = 0
     for args in (
         ("mcp", "remove", MCP_SERVER),
         ("config", "unset", TOKEN_ENV),
@@ -131,11 +141,15 @@ def disconnect(ctx: Any, _args: Any) -> int:
         try:
             _hermes_run(*args)
         except RuntimeError as error:
+            skipped += 1
             print(f"Skipped: {error}", file=sys.stderr)
     settings.clear()
-    print("Disconnected Hermes from Worktable. Restart the gateway to stop answering messages.")
+    if skipped:
+        print("Disconnected Hermes from Worktable, but some settings could not be removed (see above).")
+    else:
+        print("Disconnected Hermes from Worktable. Restart the gateway to stop answering messages.")
     print("To remove its access in Worktable, disconnect it in Settings → Agents.")
-    return 0
+    return 1 if skipped else 0
 
 
 def register_cli(ctx: Any) -> None:

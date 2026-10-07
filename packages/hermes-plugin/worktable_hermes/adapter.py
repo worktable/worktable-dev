@@ -109,9 +109,20 @@ class WorktableAdapter(BasePlatformAdapter):
         assert self._tools is not None
         code = self._settings.pending_pairing_code
         if code:
-            token = self._settings.token()
-            if token:
-                await asyncio.to_thread(pairing.complete, self._settings.server, code, token)
+            try:
+                await asyncio.to_thread(pairing.complete, self._settings.server, code, self._settings.token() or "")
+            except pairing.PairingError as error:
+                if error.status is None or error.status >= 500:
+                    raise  # Worktable is unreachable; the connector retries.
+                # Worktable refused this pairing, so it never becomes a
+                # connection. Stop rather than answer on an unfinished pairing.
+                self._settings.clear_pending_pairing_code()
+                self._stop.set()
+                logger.error(
+                    "Worktable could not finish pairing (%s). Run `hermes worktable connect` with a new code.",
+                    error.code,
+                )
+                raise
             self._settings.clear_pending_pairing_code()
         if self._settings.auth == "oauth" and not self._settings.participant_registered:
             await self._tools.register_participant(self._settings.participant_name)

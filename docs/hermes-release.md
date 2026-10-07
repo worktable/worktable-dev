@@ -25,7 +25,7 @@ request to [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-ag
 that adds or updates `plugin-catalog/worktable.yaml` following its
 [submission guide](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins/catalog-submission):
 
-- `repo: worktable/worktable-dev`, `subdir: packages/hermes-plugin`, and the
+- `repo: https://github.com/worktable/worktable-dev`, `subdir: packages/hermes-plugin`, and the
   tagged commit's full 40-character `sha`;
 - `category: platform`, `requires_hermes` from `plugin.yaml`, and the version;
 - a description that discloses the network calls to the connected Worktable and

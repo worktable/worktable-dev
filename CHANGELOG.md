@@ -11,7 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
-- **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update` keeps it current.
+- **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update worktable` keeps it current.
 
 ## [0.1.21] - 2026-10-09
 

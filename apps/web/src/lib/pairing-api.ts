@@ -69,10 +69,8 @@ export type PairingTarget =
       adapter: string
       participantName: string
       defaultSpaceId?: string
+      workspaceAccess?: true
     }
-
-export const OPENCLAW_INSTALL_COMMAND =
-  "openclaw plugins install clawhub:@worktable/openclaw"
 
 /** A verified terminal outcome always wins over stale failure events. */
 export function latestPairingFailure(

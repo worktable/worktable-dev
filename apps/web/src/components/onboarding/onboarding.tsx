@@ -49,13 +49,13 @@ import {
   listAgentConnections,
   renameAgentConnection,
 } from "@/lib/agent-connections-api"
+import { OPENCLAW_INSTALL_COMMAND } from "@/lib/always-on-agents"
 import { createClientId } from "@/lib/client-id"
 import { desktopAgentConnectionDetails } from "@/lib/desktop-agent-connection"
 import {
   createPairing,
   getPairing,
   latestPairingFailure,
-  OPENCLAW_INSTALL_COMMAND,
   shouldPollPairing,
   type PairingCreated,
   type PairingSession,

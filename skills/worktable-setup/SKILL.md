@@ -42,8 +42,8 @@ sign-in or consent is pending. Never ask the user to paste browser credentials
 into a document or chat.
 
 The general Worktable plugin connects to Cloud. Local/self-hosted clients need
-their own endpoint. OpenClaw uses its dedicated plugin and pairing or Cloud
-registration flow. Follow [Connections](https://docs.worktable.dev/agents/connections/)
+their own endpoint. OpenClaw and Hermes use their dedicated plugins with pairing,
+or Cloud registration (OpenClaw) or sign-in (Hermes). Follow [Connections](https://docs.worktable.dev/agents/connections/)
 for these paths; do not overwrite unrelated client configuration.
 
 ## Add skills

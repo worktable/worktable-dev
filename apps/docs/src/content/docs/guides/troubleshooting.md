@@ -56,8 +56,9 @@ on the host or repeat the remote pairing flow. If Codex's Worktable table is
 invalid or duplicated, `worktable mcp repair` rewrites that entry. Recheck other
 clients after a token rotation.
 
-OpenClaw uses its plugin setup and pairing or registration flow, not
-`worktable mcp setup`. An offline participant can leave messages queued; it does
+OpenClaw and Hermes use their plugin setup and pairing or sign-in flow, not
+`worktable mcp setup`. `hermes worktable status` shows a Hermes profile's
+connection. An offline participant can leave messages queued; it does
 not imply that the thread was lost.
 
 For a client that requires stdio, distinguish `worktable mcp stdio` (a local

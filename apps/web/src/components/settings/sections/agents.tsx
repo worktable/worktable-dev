@@ -70,7 +70,6 @@ import {
   createPairing,
   getPairing,
   latestPairingFailure,
-  OPENCLAW_INSTALL_COMMAND,
   shouldPollPairing,
   type PairingCreated,
   type PairingSession,
@@ -85,6 +84,7 @@ import {
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
+import { ALWAYS_ON_AGENTS, type AlwaysOnAgent } from "@/lib/always-on-agents"
 import { timeAgo } from "@/lib/time"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { useSettingsSectionActive } from "../settings-dialog"
@@ -169,7 +169,11 @@ export function AgentsSection() {
   )
 }
 
-type CloudAgentSetupPanel = "quick" | "always-on" | "desktop" | "manual"
+type CloudAgentSetupPanel =
+  | "quick"
+  | AlwaysOnAgent["adapter"]
+  | "desktop"
+  | "manual"
 
 function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(
@@ -189,13 +193,16 @@ function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
         <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
           <CloudQuickConnectPanel connection={connection} />
         </AgentSetupDisclosure>
-        <AgentSetupDisclosure
-          title="OpenClaw"
-          className="border-t border-border/60"
-          {...panelProps("always-on")}
-        >
-          <CloudOpenClawPanel connection={connection} />
-        </AgentSetupDisclosure>
+        {ALWAYS_ON_AGENTS.map((agent) => (
+          <AgentSetupDisclosure
+            key={agent.adapter}
+            title={agent.name}
+            className="border-t border-border/60"
+            {...panelProps(agent.adapter)}
+          >
+            <CloudAlwaysOnPanel connection={connection} agent={agent} />
+          </AgentSetupDisclosure>
+        ))}
         <AgentSetupDisclosure
           title="Claude and ChatGPT"
           className="border-t border-border/60"
@@ -260,19 +267,27 @@ function CloudQuickConnectPanel({
   )
 }
 
-function CloudOpenClawPanel({ connection }: { connection: ConnectionInfo }) {
+function CloudAlwaysOnPanel({
+  connection,
+  agent,
+}: {
+  connection: ConnectionInfo
+  agent: AlwaysOnAgent
+}) {
   const origin = new URL(connection.remoteMcpUrl).origin
-  const install = OPENCLAW_INSTALL_COMMAND
-  const connect = `openclaw worktable connect --server ${origin} --agent-registration`
+  const connect = agent.cloudConnectCommand(origin)
   const installCopy = useCopy(() => toast.success("Copied"))
   const connectCopy = useCopy(() => toast.success("Copied"))
   return (
     <div className="flex flex-col gap-4">
-      <OpenClawSteps connectInstruction="Select Connect, then run the copied command." />
+      <AlwaysOnSteps
+        agent={agent}
+        connectInstruction="Select Connect, then run the copied command."
+      />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          onClick={() => void installCopy.copy(install)}
+          onClick={() => void installCopy.copy(agent.installCommand)}
         >
           <Copy className="size-4" aria-hidden />
           {installCopy.copied ? "Copied" : "Install"}
@@ -357,7 +372,7 @@ function CloudManualInstallPanel({
 
 // ── Local/self-hosted setup disclosures ─────────────────────────────────────
 
-type AgentSetupPanel = "quick" | "always-on" | "desktop" | "manual"
+type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>("quick")
@@ -376,13 +391,16 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           <QuickConnectPanel connection={connection} />
         </AgentSetupDisclosure>
 
-        <AgentSetupDisclosure
-          title="OpenClaw"
-          className="border-t border-border/60"
-          {...panelProps("always-on")}
-        >
-          <OpenClawSetupPanel connection={connection} />
-        </AgentSetupDisclosure>
+        {ALWAYS_ON_AGENTS.map((agent) => (
+          <AgentSetupDisclosure
+            key={agent.adapter}
+            title={agent.name}
+            className="border-t border-border/60"
+            {...panelProps(agent.adapter)}
+          >
+            <AlwaysOnSetupPanel connection={connection} agent={agent} />
+          </AgentSetupDisclosure>
+        ))}
 
         <AgentSetupDisclosure
           title="Claude and ChatGPT"
@@ -688,12 +706,17 @@ function PairingStatus({ session }: { session: PairingSession | undefined }) {
   )
 }
 
-function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
+function AlwaysOnSetupPanel({
+  connection,
+  agent,
+}: {
+  connection: ConnectionInfo
+  agent: AlwaysOnAgent
+}) {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
-  const [participantName, setParticipantName] = useState("OpenClaw")
+  const [participantName, setParticipantName] = useState(agent.name)
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
-  const install = OPENCLAW_INSTALL_COMMAND
   const installCopy = useCopy(() => toast.success("Copied"))
 
   const create = useMutation({
@@ -701,8 +724,9 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
       createPairing({
         target: {
           kind: "agent-adapter",
-          adapter: "openclaw",
+          adapter: agent.adapter,
           participantName: participantName.trim(),
+          ...(agent.workspaceAccess ? { workspaceAccess: true as const } : {}),
         },
       }),
     onSuccess: setPairing,
@@ -710,7 +734,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Couldn’t create an OpenClaw pairing."
+          : `Couldn’t create a ${agent.name} pairing.`
       ),
   })
 
@@ -729,12 +753,15 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
   }, [session?.tokenId, session?.status, queryClient])
 
   const command = pairing
-    ? `openclaw worktable connect --server ${pairing.serverOrigin} --pairing-code ${pairing.code}`
+    ? agent.localConnectCommand(pairing.serverOrigin, pairing.code)
     : null
 
   return (
     <div className="flex flex-col gap-4">
-      <OpenClawSteps connectInstruction="Select Connect, then run the generated command." />
+      <AlwaysOnSteps
+        agent={agent}
+        connectInstruction="Select Connect, then run the generated command."
+      />
 
       <div className="max-w-sm">
         <label className="flex flex-col gap-1.5">
@@ -748,7 +775,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
               setParticipantName(event.target.value)
               setPairing(null)
             }}
-            placeholder="OpenClaw"
+            placeholder={agent.name}
           />
         </label>
       </div>
@@ -758,7 +785,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          onClick={() => void installCopy.copy(install)}
+          onClick={() => void installCopy.copy(agent.installCommand)}
         >
           <Copy className="size-4" aria-hidden />
           {installCopy.copied ? "Copied" : "Install"}
@@ -781,7 +808,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
           <p className="text-sm leading-5 text-muted-foreground">
             One use. Expires in 15 minutes.
           </p>
-          <OpenClawPairingStatus session={session} />
+          <AlwaysOnPairingStatus agent={agent} session={session} />
           <div>
             <Button
               variant="outline"
@@ -798,39 +825,53 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
   )
 }
 
-function OpenClawSteps({ connectInstruction }: { connectInstruction: string }) {
+function AlwaysOnSteps({
+  agent,
+  connectInstruction,
+}: {
+  agent: AlwaysOnAgent
+  connectInstruction: string
+}) {
+  const restart = (
+    <li>
+      Restart the Gateway
+      {agent.restartBeforeConnect ? " if it doesn’t restart automatically" : ""}
+      :{" "}
+      <code className="inline-code-accent font-mono">
+        {agent.restartCommand}
+      </code>
+      .
+    </li>
+  )
   return (
     <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
       <li>Select Install, then run the copied command.</li>
-      <li>
-        Restart the Gateway if it doesn&rsquo;t restart automatically:{" "}
-        <code className="inline-code-accent font-mono">
-          openclaw gateway restart
-        </code>
-        .
-      </li>
+      {agent.restartBeforeConnect ? restart : null}
       <li>{connectInstruction}</li>
+      {agent.restartBeforeConnect ? null : restart}
     </ol>
   )
 }
 
-function OpenClawPairingStatus({
+function AlwaysOnPairingStatus({
+  agent,
   session,
 }: {
+  agent: AlwaysOnAgent
   session: PairingSession | undefined
 }) {
   if (!session || session.status === "pending") {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" aria-hidden />
-        Waiting for OpenClaw…
+        Waiting for {agent.name}…
       </div>
     )
   }
   if (session.status === "expired") {
     return (
       <Callout variant="warning">
-        This code expired before OpenClaw redeemed it.
+        This code expired before {agent.name} redeemed it.
       </Callout>
     )
   }
@@ -849,7 +890,7 @@ function OpenClawPairingStatus({
   if (failure) {
     return (
       <Callout variant="danger">
-        OpenClaw setup failed
+        {agent.name} setup failed
         {failure.detail ? `: ${failure.detail}` : "."}
       </Callout>
     )

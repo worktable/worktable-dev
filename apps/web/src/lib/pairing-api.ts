@@ -71,6 +71,9 @@ export type PairingTarget =
       defaultSpaceId?: string
     }
 
+export const OPENCLAW_INSTALL_COMMAND =
+  "openclaw plugins install clawhub:@worktable/openclaw"
+
 /** A verified terminal outcome always wins over stale failure events. */
 export function latestPairingFailure(
   session: Pick<PairingSession, "status" | "events">

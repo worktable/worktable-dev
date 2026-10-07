@@ -70,6 +70,7 @@ import {
   createPairing,
   getPairing,
   latestPairingFailure,
+  OPENCLAW_INSTALL_COMMAND,
   shouldPollPairing,
   type PairingCreated,
   type PairingSession,
@@ -261,8 +262,7 @@ function CloudQuickConnectPanel({
 
 function CloudOpenClawPanel({ connection }: { connection: ConnectionInfo }) {
   const origin = new URL(connection.remoteMcpUrl).origin
-  const install =
-    "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
+  const install = OPENCLAW_INSTALL_COMMAND
   const connect = `openclaw worktable connect --server ${origin} --agent-registration`
   const installCopy = useCopy(() => toast.success("Copied"))
   const connectCopy = useCopy(() => toast.success("Copied"))
@@ -693,8 +693,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
   const queryClient = useQueryClient()
   const [participantName, setParticipantName] = useState("OpenClaw")
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
-  const install =
-    "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
+  const install = OPENCLAW_INSTALL_COMMAND
   const installCopy = useCopy(() => toast.success("Copied"))
 
   const create = useMutation({

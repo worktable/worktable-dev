@@ -741,8 +741,8 @@ function renderUpdater(status) {
 
   const titles = {
     checking: "Checking for updates",
-    available: "Update Worktable",
     downloading: "Update Worktable",
+    ready: "Update ready",
     installing: "Update Worktable",
     current: "You’re up to date!",
     error: "Update incomplete",
@@ -801,7 +801,7 @@ function renderUpdater(status) {
   elements.dismissUpdate.hidden = !status.canDismiss
   elements.dismissUpdate.disabled = updateBusy
   elements.dismissUpdate.textContent =
-    status.state === "available" ? "Later" : "Return to Worktable"
+    status.state === "ready" ? "Later" : "Return to Worktable"
   // Confirming "you're up to date" is the only action, so it leads.
   elements.dismissUpdate.className = buttonClass(
     status.state === "current" ? "primary" : "secondary"

@@ -345,7 +345,7 @@ function renderSavedConnections(connections = []) {
     const actions = document.createElement("div")
     actions.className = "saved-connection-actions"
     const open = document.createElement("button")
-    open.className = "button secondary"
+    open.className = buttonClass("secondary")
     open.type = "button"
     open.textContent = connection.verified ? "Open" : "Finish setup"
     open.addEventListener("click", () => {
@@ -360,7 +360,7 @@ function renderSavedConnections(connections = []) {
       )
     })
     const forget = document.createElement("button")
-    forget.className = "button quiet"
+    forget.className = buttonClass("quiet")
     forget.type = "button"
     forget.textContent = "Forget"
     forget.addEventListener("click", () => {
@@ -381,9 +381,16 @@ function setRecoveryFeedback(message) {
   elements.recoveryMessage.textContent = message
 }
 
+// Primary and secondary shell buttons wear the app's shared control finishes.
+const buttonFinishes = { primary: "btn-key", secondary: "btn-key-outline" }
+
+function buttonClass(kind) {
+  return ["button", kind, buttonFinishes[kind]].filter(Boolean).join(" ")
+}
+
 function placeRecoveryAction(element, group, label, kind = "secondary") {
   element.textContent = label
-  element.className = `button ${kind}`
+  element.className = buttonClass(kind)
   element.hidden = false
   group.append(element)
 }
@@ -796,7 +803,9 @@ function renderUpdater(status) {
   elements.dismissUpdate.textContent =
     status.state === "available" ? "Later" : "Return to Worktable"
   // Confirming "you're up to date" is the only action, so it leads.
-  elements.dismissUpdate.className = `button ${status.state === "current" ? "primary" : "secondary"}`
+  elements.dismissUpdate.className = buttonClass(
+    status.state === "current" ? "primary" : "secondary"
+  )
   // Reinstalling only helps after an install attempt, which native recovery
   // records along with the release that was running before it.
   const previousVersion = status.recovery?.fromVersion

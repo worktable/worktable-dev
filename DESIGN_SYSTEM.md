@@ -70,7 +70,7 @@ outputs without rewriting them.
 
 ## Control finishes
 
-Primary keys remain physical objects. Secondary actions and fields are flat neutral surfaces. Utilities live in `globals.css` outside `@layer`:
+Primary keys remain physical objects. Secondary actions and fields are flat neutral surfaces. Utilities live outside `@layer`. The button and field finishes (`.btn-key`, `.btn-key-outline`, `.well`, `.well-interactive`) are in `packages/ui/src/styles/control-finishes.css`, which `globals.css` imports and Desktop's trusted shell loads directly; the rest are in `globals.css`:
 
 | Class                 | What it does                                                                                                             |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------ |

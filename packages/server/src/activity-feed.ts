@@ -49,6 +49,7 @@ export async function readActivityFeed(
     visibleSpaces,
     includeThreads,
     includeRecords: hasScope(options.scopes, "records:read"),
+    includeComments: hasScope(options.scopes, "annotations:read"),
     ...(options.actorKind ? { actorKind: options.actorKind } : {}),
     before: options.before ?? null,
     limit: options.limit,

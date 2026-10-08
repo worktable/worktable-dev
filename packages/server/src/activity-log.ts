@@ -12,7 +12,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks"
 import { randomBytes } from "node:crypto"
-import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises"
+import { appendFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
   ActivityEventSchema,
@@ -158,6 +158,7 @@ export function recordActivity(input: ActivityInput): void {
     const key = `${input.spaceId}|${actor.id}|${targetKey(input)}`
     const previous = lastEditAt.get(key)
     lastEditAt.set(key, now)
+    if (lastEditAt.size > 10_000) forgetEndedSessions(now)
     if (previous !== undefined && now - previous < EDIT_SESSION_MS) return
   }
   const parsed = ActivityEventSchema.safeParse({
@@ -224,6 +225,12 @@ export function noteCommentActivity(options: {
   })
 }
 
+function forgetEndedSessions(now: number): void {
+  for (const [key, at] of lastEditAt) {
+    if (now - at >= EDIT_SESSION_MS) lastEditAt.delete(key)
+  }
+}
+
 function clip(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim()
   return flat.length <= 280 ? flat : `${flat.slice(0, 279).trimEnd()}…`
@@ -234,9 +241,8 @@ async function appendEvent(event: ActivityEvent): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   await withLogLock(path, async () => {
     await appendFile(path, `${JSON.stringify(event)}\n`, { mode: 0o600 })
-    const text = await readFile(path, "utf8")
-    if (Buffer.byteLength(text) < COMPACT_AT_BYTES) return
-    const lines = text.split("\n").filter(Boolean)
+    if ((await stat(path)).size < COMPACT_AT_BYTES) return
+    const lines = (await readFile(path, "utf8")).split("\n").filter(Boolean)
     await atomicWriteText(
       path,
       `${lines.slice(-KEEP_AFTER_COMPACT).join("\n")}\n`
@@ -301,6 +307,7 @@ export interface ListActivityOptions {
   visibleSpaces: ReadonlySet<string>
   includeThreads: boolean
   includeRecords: boolean
+  includeComments: boolean
   actorKind?: ActivityActor["kind"]
   before?: string | null
   limit: number
@@ -379,6 +386,7 @@ export async function listActivity(
           : options.visibleSpaces.has(event.spaceId)) &&
         (options.includeThreads || event.target.kind !== "thread") &&
         (options.includeRecords || event.target.kind !== "collection") &&
+        (options.includeComments || !event.action.startsWith("comment.")) &&
         (!options.actorKind || event.actor.kind === options.actorKind) &&
         (!cursor || isBefore(event, cursor))
     )

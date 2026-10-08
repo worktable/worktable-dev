@@ -13,7 +13,7 @@ records, and conversations. People and agents work on the same saved content.
 - **Worktable exists:** use [Connections](/agents/connections/). Connect to that
   workspace rather than creating a second one.
 - **Already connected:** call `worktable_discover` with action `state` to find
-  the relevant Space and its Start here pins. Then find the work the user named.
+  the relevant Space and its pinned docs. Then find the work the user named.
 
 ## Choose a workflow
 

@@ -62,8 +62,7 @@ folder deletion can contain up to 128 documents, and it revokes their share
 links.
 
 `worktable_spaces` creates, updates, archives, and restores Spaces with
-`docs:write`. Setting a Space's Start here pins also requires
-`documents:write`.
+`docs:write`. Setting a Space's pins also requires `documents:write`.
 
 With `documents:read`, the `search` action in `worktable_discover` searches
 Docs, HTML Docs, and other registered document formats, returning safe text

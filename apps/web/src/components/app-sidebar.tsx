@@ -668,7 +668,7 @@ function PinnedSidebarSection({
   onNavigate: () => void
 }) {
   const { data } = useSpace(spaceId)
-  const pins = (data?.startHere ?? []).filter((pin) => pin.status === "active")
+  const pins = (data?.pins ?? []).filter((pin) => pin.status === "active")
   if (pins.length === 0) return null
   return (
     <div className="mb-2">

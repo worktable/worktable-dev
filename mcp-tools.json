@@ -151,7 +151,7 @@
   {
     "name": "worktable_discover",
     "title": "Discover Worktable context",
-    "description": "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its Start here pins: read those first.",
+    "description": "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its pinned docs: read those first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -275,8 +275,8 @@
             }
           ]
         },
-        "startHere": {
-          "description": "Returned by action \"state\" with a Space; pinned starting points to read first.",
+        "pins": {
+          "description": "Returned by action \"state\" with a Space; pinned docs to read first.",
           "type": "array",
           "items": {
             "type": "object",
@@ -929,7 +929,7 @@
   {
     "name": "worktable_spaces",
     "title": "Manage Worktable spaces",
-    "description": "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
+    "description": "Create, update, archive, or restore a Worktable Space, including its pinned docs.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -993,8 +993,8 @@
                   "description": "Workspace group name; \"\" clears it",
                   "type": "string"
                 },
-                "startHere": {
-                  "description": "Replace the Space's pinned starting points (at most 7), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role. Requires documents:write.",
+                "pins": {
+                  "description": "Replace the Space's pinned docs (at most 7), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.",
                   "maxItems": 7,
                   "type": "array",
                   "items": {
@@ -1095,7 +1095,7 @@
             }
           ]
         },
-        "startHere": {
+        "pins": {
           "description": "Returned by action \"update\".",
           "type": "array",
           "items": {

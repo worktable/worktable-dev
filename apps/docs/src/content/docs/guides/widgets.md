@@ -55,8 +55,8 @@ into a folder, choose **Rename** and enter a path such as `plans/budget`. Its
 history, comments, saved state, and existing bookmarks follow it.
 
 Links and buttons can open supported documents in the same Space by path. This
-can make an HTML doc a useful project entry point; pin it to **Start here** if
-people should open it first.
+can make an HTML doc a useful project entry point; **Pin** it if people should
+open it first.
 
 For a public version, see [Sharing](/guides/sharing/). Shared HTML does not run
 the tool's scripts or provide access to private records.

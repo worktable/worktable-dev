@@ -28,7 +28,7 @@ import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
 import { activityQueryKeys } from "@/lib/activity"
 import { restoreSpace } from "@/lib/api"
 import { useDocuments } from "@/lib/documents-queries"
-import { setStartHere, useRecentDocuments } from "@/lib/lifetime"
+import { setPins, useRecentDocuments } from "@/lib/lifetime"
 import { spaceQueryOptions, useRecordCollections, useSpace } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
@@ -102,7 +102,7 @@ function PinnedSection({
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
     try {
-      await setStartHere(
+      await setPins(
         spaceId,
         pins
           .filter((pin) => pin.path !== path)
@@ -496,7 +496,7 @@ function SpaceDetailPage() {
         spaceId={spaceId}
         spaceName={space.name}
         spaceDescription={space.description}
-        pins={data.startHere ?? []}
+        pins={data.pins ?? []}
       />
     </>
   )

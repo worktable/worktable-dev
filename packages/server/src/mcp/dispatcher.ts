@@ -989,8 +989,8 @@ async function _dispatchOperationInner(
       const rawGroup = args["group"] as string | undefined
       // Pins validate against current documents; apply them first so an
       // invalid pin fails the whole update before anything is saved.
-      if (args["startHere"]) {
-        await setStartHere(spaceId, args["startHere"] as StartHerePin[])
+      if (args["pins"]) {
+        await setStartHere(spaceId, args["pins"] as StartHerePin[])
       }
       const { data: updated, error } = await mutateSpace(spaceId, (space) => ({
         ...space,
@@ -1013,7 +1013,7 @@ async function _dispatchOperationInner(
       }))
       if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)
       wsManager.broadcastAll({ type: "spaces_changed" })
-      return { space: updated, startHere: await resolveStartHere(spaceId, updated) }
+      return { space: updated, pins: await resolveStartHere(spaceId, updated) }
     }
     case "spaces.archive":
     case "spaces.restore": {
@@ -1854,12 +1854,12 @@ async function _dispatchOperationInner(
         spaceId,
         await listDocsDetailed(spaceId, { includeArchived })
       )
-      const startHere = hasScope(identity.scopes, "documents:read")
+      const pins = hasScope(identity.scopes, "documents:read")
         ? await resolveStartHere(spaceId, space)
         : []
       return {
         space,
-        ...(startHere.length > 0 ? { startHere } : {}),
+        ...(pins.length > 0 ? { pins } : {}),
         docs,
         ...(hasScope(identity.scopes, "documents:read")
           ? { documents: await listDocuments({ spaceId, includeArchived }) }

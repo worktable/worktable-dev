@@ -9,7 +9,7 @@ import { mutateDocument } from "@/lib/documents-api"
 import {
   formatArchiveDate,
   setDocumentLifetime,
-  setStartHere,
+  setPins,
   useDocumentSummary,
   useRefreshDocumentLists,
 } from "@/lib/lifetime"
@@ -68,13 +68,13 @@ export function useDocumentOrganizeActions(
   const actions = useLifetimeActions(spaceId, path)
   const { data: space } = useSpace(spaceId)
   const queryClient = useQueryClient()
-  const pins = space?.startHere ?? []
+  const pins = space?.pins ?? []
   const pinned = pins.some((pin) => pin.path === path)
   if (!summary || summary.archived || !summary.lifetime) return []
 
   const updatePins = async (next: Array<{ path: string; note?: string }>) => {
     try {
-      await setStartHere(spaceId, next)
+      await setPins(spaceId, next)
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: spaceQueryOptions(spaceId).queryKey,

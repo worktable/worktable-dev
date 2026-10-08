@@ -35,8 +35,8 @@ We need to confirm room dimensions and accessible routes before choosing
 a final layout. Make that the next action and leave the date unresolved.
 ```
 
-Ask the agent to update the brief and reply to the annotation. Pin the brief to
-**Start here**. A small project can keep handoff details in the brief; create a
+Ask the agent to update the brief and reply to the annotation. **Pin** the
+brief. A small project can keep handoff details in the brief; create a
 separate handoff document only when it has a distinct purpose.
 
 ## Continue elsewhere

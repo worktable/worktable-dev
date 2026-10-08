@@ -9,7 +9,7 @@ Use a Doc when meaning lives in the whole narrative. Use Records for independent
 
 ## Choose create or update deliberately
 
-1. Resolve the intended Space and read its Start here pins from `worktable_discover` action `state`, then search for the subject and inspect related Docs before writing. Reuse the artifact that already owns the job; do not create a near-duplicate because its title differs slightly.
+1. Resolve the intended Space and read its pinned docs from `worktable_discover` action `state`, then search for the subject and inspect related Docs before writing. Reuse the artifact that already owns the job; do not create a near-duplicate because its title differs slightly.
 2. Before updating an existing Doc, read it with `worktable_docs_read`. List open annotations with `worktable_annotations_read` filtered by its `docPath`, inspect the context of relevant instructions, and preserve its format, user-owned content, and established structure. Read a long Doc in line ranges with `offset` and `limit`. To change a name or phrase wherever it appears, first find every occurrence with action `grep`, which returns exact lines and line numbers across Docs; discovery search ranks text matches instead.
 3. Read the doc, then call `worktable_docs_write` action `edit` with `oldText` copied exactly from the read content. Include enough surrounding text to match once. On `ambiguous` or `no_match`, read again; never guess. Use `write` with `expectedRevision` only to restructure a whole document.
 4. Use action `write` without a revision only for a genuinely new Doc. Never set `force` to drop formatting unless the user explicitly accepts the loss.
@@ -32,8 +32,8 @@ content only when that follows from the requested task. Do not clean up unrelate
 work as a side effect of an edit. Archived documents remain searchable with
 `includeArchived` and can be restored.
 
-Use Start here pins for a Space's entry points when the task includes organizing
-that Space. Preserve existing useful pins. A linked narrative overview can still
+Use pins for a Space's entry points when the task includes organizing that
+Space. Preserve existing useful pins. A linked narrative overview can still
 be useful; avoid duplicating the automatically generated document listing.
 
 ## Verify and report

@@ -21,12 +21,13 @@ deleting a folder.
 Before creating a second document about the same subject, search for an existing
 one to update. This keeps its context and history together.
 
-## Start here
+## Pinned docs
 
-Click a Space name to open Space Home. It shows pinned documents, recent work,
-temporary documents and their archive dates, and open instructions.
+Click a Space name to open Space Home. It shows pinned docs, recent docs,
+temporary docs and their archive dates, and the Space's activity.
 
-Choose **Pin to Start here** from a document's menu to make it an entry point.
+Choose **Pin** from a document's menu to make it an entry point. Pinned docs
+also appear at the top of the Space in the sidebar.
 Use this for the project brief, current plan, or another document people should
 read first. You do not need a separate index document just to list a Space's
 contents.
@@ -57,8 +58,10 @@ automatically; permanent deletion is a separate action.
 Use search to find documents and records across Spaces. Drawings are searchable
 by typed text; freehand marks require visual inspection.
 
-Home shows recent durable documents across Spaces. Turn on **Include temporary**
-to include supporting work. Space Home narrows the view to one Space.
+Home shows what is pending for you, recent durable docs across Spaces, and the
+temporary docs that archive soonest, each with **Keep**. Space Home narrows the
+view to one Space. **Activity** lists what people and agents did, newest first;
+filter it by Space or by who acted. Sidebar search can include archived results.
 
 Open the top-level **Threads** page for conversations across Worktable, or a
 Space's **Threads** page for its conversations. Threads have their own location

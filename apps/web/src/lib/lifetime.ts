@@ -162,11 +162,11 @@ export function useRecentDocuments(options: RecentOptions, enabled = true) {
 
 // ── Pins ───────────────────────────────────────────────────
 
-export function setStartHere(
+export function setPins(
   spaceId: string,
   pins: StartHerePin[]
-): Promise<{ startHere: ResolvedStartHerePin[] }> {
-  return fetchJSON(`/api/spaces/${encodeURIComponent(spaceId)}/start-here`, {
+): Promise<{ pins: ResolvedStartHerePin[] }> {
+  return fetchJSON(`/api/spaces/${encodeURIComponent(spaceId)}/pins`, {
     method: "PUT",
     body: JSON.stringify({ pins }),
   })

@@ -11,9 +11,9 @@ test.afterAll(async () => {
 })
 
 // Owns the organization journey a person relies on: new documents start
-// temporary and stay out of everyday browsing, Keep brings one back, Home
-// lists recent durable work, and a pinned document becomes a Space's start.
-test("temporary documents stay aside until kept, and pinned documents start the Space", async ({
+// temporary and stay out of everyday browsing, Home shows them aside until
+// kept, Activity records what happened, and a pinned document leads its Space.
+test("temporary documents stay aside until kept, and pinned documents lead the Space", async ({
   page,
 }) => {
   const space = await page.request.post(`${harness.apiUrl}/api/spaces`, {
@@ -40,8 +40,9 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   await page.getByRole("menuitem", { name: "New doc", exact: true }).click()
   await expect(page).toHaveURL(/documents\/untitled$/)
 
-  const chip = page.getByRole("button", { name: /^Temporary\. Archives / })
-  await expect(chip).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: /^Temporary\. Archives / })
+  ).toBeVisible()
   await expect(
     page
       .getByRole("navigation", { name: "Temporary documents" })
@@ -49,18 +50,23 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   ).toBeVisible()
 
   await page.goto(`${harness.webUrl}/`)
-  const recent = page.locator("section").filter({ hasText: "Recent" }).first()
-  const untitled = recent.getByRole("link", { name: /^Untitled / })
+  const recent = page.getByRole("region", { name: "Recent" })
+  const temporary = page.getByRole("region", { name: "Temporary" })
   await expect(
-    recent.getByRole("link", { name: /^Product brief /i })
+    recent.getByRole("link", { name: /^Product brief/i })
   ).toBeVisible()
-  await expect(untitled).toHaveCount(0)
-  await recent.getByRole("button", { name: "Include temporary" }).click()
-  await expect(untitled).toBeVisible()
+  await expect(recent.getByRole("link", { name: /^Untitled/ })).toHaveCount(0)
+  await expect(temporary.getByRole("link", { name: "Untitled" })).toBeVisible()
 
-  await untitled.click()
-  await page.getByRole("button", { name: /^Temporary\. Archives / }).click()
-  await page.getByRole("button", { name: "Keep", exact: true }).click()
+  await temporary.getByRole("link", { name: "Untitled" }).hover()
+  await temporary.getByRole("button", { name: "Keep", exact: true }).click()
+  await expect(recent.getByRole("link", { name: /^Untitled/ })).toBeVisible()
+  await expect(temporary).toHaveCount(0)
+  await expect(page.getByRole("region", { name: "Activity" })).toContainText(
+    "You kept Untitled"
+  )
+
+  await recent.getByRole("link", { name: /^Untitled/ }).click()
   await expect(
     page.getByRole("button", { name: /^Temporary\. Archives / })
   ).toHaveCount(0)
@@ -71,7 +77,12 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   ).toBeVisible()
 
   await page.getByRole("button", { name: "More actions" }).click()
-  await page.getByRole("menuitem", { name: "Pin to Start here" }).click()
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click()
+  await expect(
+    page
+      .getByRole("navigation", { name: "Pinned" })
+      .getByRole("link", { name: "Untitled" })
+  ).toBeVisible()
   await page
     .getByRole("navigation", { name: "Breadcrumb" })
     .getByRole("link", { name: "Organize", exact: true })
@@ -79,7 +90,7 @@ test("temporary documents stay aside until kept, and pinned documents start the 
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   await expect(
     page
-      .getByRole("region", { name: "Start here" })
+      .getByRole("region", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
 })

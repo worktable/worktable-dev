@@ -1,3 +1,4 @@
+import { activityQueryKeys } from "./activity.ts"
 import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useSyncExternalStore } from "react"
 import type {
@@ -51,10 +52,11 @@ export function useRefreshDocumentLists(spaceId: string): () => Promise<void> {
   return useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: documentQueryKeys.list(spaceId) }),
-      // Start here pins report their document's status.
+      // Pins report their document's status.
       queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
       queryClient.invalidateQueries({ queryKey: recentQueryKeys.all }),
       queryClient.invalidateQueries({ queryKey: ["search"] }),
+      queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
     ])
   }, [queryClient, spaceId])
 }
@@ -158,7 +160,7 @@ export function useRecentDocuments(options: RecentOptions, enabled = true) {
   })
 }
 
-// ── Start here ─────────────────────────────────────────────
+// ── Pins ───────────────────────────────────────────────────
 
 export function setStartHere(
   spaceId: string,

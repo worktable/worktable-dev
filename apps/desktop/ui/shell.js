@@ -559,21 +559,24 @@ function renderRecoveryActions(status) {
     placeRecoveryAction(
       elements.restartLocalHost,
       elements.recoveryUtilityActions,
-      "Restart local service"
+      "Restart local service",
+      "quiet"
     )
   }
   if (status.canOpenLogs) {
     placeRecoveryAction(
       elements.openLocalLogs,
       elements.recoveryUtilityActions,
-      "Open logs"
+      "Open logs",
+      "quiet"
     )
   }
   if (status.canLocateWorkspace) {
     placeRecoveryAction(
       elements.locateWorkspace,
       elements.recoveryUtilityActions,
-      "Find moved Worktable…"
+      "Find moved Worktable…",
+      "quiet"
     )
   }
   if (
@@ -1128,6 +1131,51 @@ elements.openUpdateDownload.addEventListener("click", () =>
   })
 )
 
+// A native <details> snaps open and shut. Animate its panel like the app's
+// collapsibles while keeping the element's keyboard and accessibility behavior.
+function animateDisclosure(details, panel) {
+  let running = null
+  const sync = () => {
+    details.dataset.expanded = String(details.open)
+  }
+  details.addEventListener("toggle", () => {
+    if (!details.open) {
+      running?.cancel()
+      running = null
+      panel.style.removeProperty("overflow")
+    }
+    if (!running) sync()
+  })
+  details.querySelector("summary").addEventListener("click", (event) => {
+    if (prefersReducedMotion.matches) return
+    event.preventDefault()
+    const expanding = details.dataset.expanded !== "true"
+    // Some engines keep laying out closed content, so only trust its measured
+    // height while the panel is showing (including mid-animation).
+    const from = details.open ? panel.getBoundingClientRect().height : 0
+    running?.cancel()
+    details.dataset.expanded = String(expanding)
+    details.open = true
+    const to = expanding ? panel.scrollHeight : 0
+    panel.style.overflow = "hidden"
+    const animation = panel.animate(
+      [{ height: `${from}px` }, { height: `${to}px` }],
+      { duration: 250, easing: "cubic-bezier(0.33, 1, 0.68, 1)" }
+    )
+    running = animation
+    animation.onfinish = () => {
+      running = null
+      panel.style.removeProperty("overflow")
+      if (!expanding) details.open = false
+    }
+  })
+  sync()
+}
+
+animateDisclosure(
+  elements.recoveryTroubleshooting,
+  elements.recoveryUtilityActions
+)
 void checkTrustBoundary()
 syncPageAccessibility(viewPages[document.body.dataset.view])
 setupBootstrapScrollFade()

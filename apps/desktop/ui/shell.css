@@ -1227,10 +1227,40 @@ h1 {
 
 .recovery-troubleshooting summary {
   width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 550;
+  list-style: none;
   cursor: pointer;
+  transition: color 140ms var(--ease-out-expo);
+}
+
+.recovery-troubleshooting summary::-webkit-details-marker {
+  display: none;
+}
+
+.recovery-troubleshooting summary:hover {
+  color: var(--foreground);
+}
+
+/* Matches the app's disclosure: a chevron that turns as the panel opens. */
+.disclosure-chevron {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 200ms var(--ease-out-expo);
+}
+
+.recovery-troubleshooting[data-expanded="true"] .disclosure-chevron {
+  transform: rotate(90deg);
 }
 
 .recovery-troubleshooting summary:focus-visible {
@@ -1238,16 +1268,25 @@ h1 {
   outline-offset: 3px;
 }
 
-.recovery-troubleshooting[open] summary {
+.recovery-troubleshooting[data-expanded="true"] summary {
   color: var(--foreground);
 }
 
-.recovery-utility-actions {
-  margin-top: 14px;
+/* Utilities are a quiet list rather than a row of competing buttons. Spacing
+   lives inside the panel so the height animation includes it. */
+.recovery-troubleshooting .recovery-utility-actions {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 0 0 20px;
 }
 
 .recovery-utility-actions .button.quiet {
+  min-height: 32px;
+  margin-left: -8px;
   padding-inline: 8px;
+  font-size: 13px;
 }
 
 .recovery-panel [hidden] {

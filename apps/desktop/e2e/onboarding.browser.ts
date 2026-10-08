@@ -394,6 +394,33 @@ test("offers native reauthentication after a rejected Cloud session", async ({
   })
 })
 
+test("keeps local recovery utilities behind More options", async ({ page }) => {
+  await installTauriBoundary(page, {
+    state: "error",
+    provider: "local",
+    message: "The local Worktable service stopped unexpectedly.",
+    errorCode: "HOST_START_FAILED",
+    canRetry: true,
+    canOpenLogs: true,
+  })
+  await page.goto("/")
+
+  const logs = page.getByRole("button", { name: "Open logs" })
+  await expect(logs).toBeHidden()
+  await page.getByText("More options").click()
+  await logs.click()
+  await expect
+    .poll(async () =>
+      (await desktopCalls(page)).some(
+        ({ command }) => command === "desktop_open_local_logs"
+      )
+    )
+    .toBe(true)
+
+  await page.getByText("More options").click()
+  await expect(logs).toBeHidden()
+})
+
 test("offers upgrade-only recovery for a newer local-authority schema", async ({
   page,
 }) => {

@@ -30,6 +30,7 @@ interface UpdaterStatus {
   canCheck?: boolean
   canInstall?: boolean
   canDismiss?: boolean
+  recovery?: { fromVersion: string; toVersion: string } | null
 }
 
 async function installTauriBoundary(
@@ -235,9 +236,7 @@ test("starts native Cloud sign-in only through the trusted Tauri boundary", asyn
 
   await page.getByRole("button", { name: /Worktable Cloud/ }).click()
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
-  await expect(
-    page.getByText("Continue in your browser to sign in.")
-  ).toBeVisible()
+  await expect(page.getByText("Continue in your browser.")).toBeVisible()
   await page.getByRole("button", { name: "Sign in", exact: true }).click()
 
   expect(await desktopCalls(page)).toContainEqual({
@@ -421,6 +420,48 @@ test("offers upgrade-only recovery for a newer local-authority schema", async ({
   await expect(
     page.getByRole("button", { name: /Repair|Try again|Choose another/ })
   ).toHaveCount(0)
+
+  await page.getByRole("button", { name: "Check for updates" }).click()
+  await expect
+    .poll(async () =>
+      (await desktopCalls(page)).some(
+        ({ command }) => command === "desktop_check_for_updates"
+      )
+    )
+    .toBe(true)
+})
+
+test("retries an interrupted update and offers the release it started from", async ({
+  page,
+}) => {
+  await installTauriBoundary(
+    page,
+    { state: "ready", provider: "local" },
+    {
+      state: "recovery",
+      currentVersion: "0.0.44",
+      message: "Could not finish updating from 0.0.45 to 0.0.46.",
+      canCheck: true,
+      canDismiss: true,
+      recovery: { fromVersion: "0.0.45", toVersion: "0.0.46" },
+    }
+  )
+  await page.goto("/")
+
+  await expect(
+    page.getByRole("heading", { name: "Recover Worktable" })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Download Worktable 0.0.45" })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Try again" }).click()
+  await expect
+    .poll(async () =>
+      (await desktopCalls(page)).some(
+        ({ command }) => command === "desktop_check_for_updates"
+      )
+    )
+    .toBe(true)
 })
 
 test("prompts before downloading a newer signed Desktop release", async ({
@@ -452,7 +493,7 @@ test("prompts before downloading a newer signed Desktop release", async ({
   ).toBeVisible()
   await expect(page.getByText("0.0.45 → 0.0.46")).toBeVisible()
   await expect(page.getByText("Native Worktable Cloud.")).toBeVisible()
-  await expect(page.getByRole("button", { name: "Check again" })).toBeHidden()
+  await expect(page.getByRole("button", { name: "Try again" })).toBeHidden()
   await expect(
     page.getByRole("button", { name: "Download Worktable" })
   ).toBeHidden()

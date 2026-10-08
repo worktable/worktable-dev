@@ -439,6 +439,28 @@ h1 {
   display: none !important;
 }
 
+/* A failed or interrupted update shares the recovery panel's layout. */
+.update-page[data-tone="recovery"] .update-panel {
+  width: min(100%, 540px);
+  align-items: flex-start;
+  text-align: left;
+}
+
+.update-page[data-tone="recovery"] .update-message {
+  margin-top: 14px;
+  text-align: left;
+  text-wrap: pretty;
+}
+
+.update-page[data-tone="recovery"] .update-actions {
+  justify-content: flex-start;
+  margin-top: 26px;
+}
+
+.update-page[data-tone="recovery"] .manual-download-action {
+  margin-left: -4px;
+}
+
 .manual-download-action {
   margin-top: 20px;
   padding: 4px;
@@ -1137,10 +1159,16 @@ h1 {
   font-weight: 650;
 }
 
-.recovery-panel h1 {
+/* Operational state titles use the body face; display type stays with
+   major page headings and the transition screen. */
+.recovery-panel h1,
+.update-page[data-tone="recovery"] h1 {
   max-width: 500px;
-  font-size: clamp(32px, 4vw, 42px);
-  line-height: 1.08;
+  font-family: var(--font-sans);
+  font-size: clamp(26px, 3vw, 32px);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .recovery-panel .lede {

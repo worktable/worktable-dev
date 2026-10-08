@@ -2,6 +2,9 @@ const elements = {
   bootstrap: document.querySelector("#bootstrap"),
   progressMessage: document.querySelector("#progress-message"),
   cancelCloudConnection: document.querySelector("#cancel-cloud-connection"),
+  updatePage: document.querySelector("#update-page"),
+  updateIcon: document.querySelector(".update-icon"),
+  updateSymbol: document.querySelector(".update-symbol"),
   updateTitle: document.querySelector("#update-title"),
   updateMessage: document.querySelector("#update-message"),
   updateVersion: document.querySelector("#update-version"),
@@ -56,6 +59,7 @@ const elements = {
   ),
   recoveryTroubleshooting: document.querySelector("#recovery-troubleshooting"),
   recoveryUtilityActions: document.querySelector("#recovery-utility-actions"),
+  checkDesktopUpdates: document.querySelector("#check-desktop-updates"),
   retryConnection: document.querySelector("#retry-connection"),
   restartLocalHost: document.querySelector("#restart-local-host"),
   repairLocalAuthority: document.querySelector("#repair-local-authority"),
@@ -390,6 +394,7 @@ function groupHasVisibleActions(group) {
 
 function renderRecoveryActions(status) {
   const actions = [
+    elements.checkDesktopUpdates,
     elements.retryConnection,
     elements.restartLocalHost,
     elements.repairLocalAuthority,
@@ -490,7 +495,15 @@ function renderRecoveryActions(status) {
   ].includes(status.errorCode)
   const corruptLocalConfig = status.errorCode === "CONFIG_CORRUPT"
   let primaryAction = null
-  if (corruptConnections && status.canRemoveConnection) {
+  if (unsupportedAuthoritySchema) {
+    primaryAction = elements.checkDesktopUpdates
+    placeRecoveryAction(
+      primaryAction,
+      elements.recoveryPrimaryActions,
+      "Check for updates",
+      "primary"
+    )
+  } else if (corruptConnections && status.canRemoveConnection) {
     primaryAction = elements.removeConnection
     placeRecoveryAction(
       primaryAction,
@@ -646,7 +659,7 @@ function render(status) {
     )
     if (status.provider === "cloud") {
       elements.cloudStatusMessage.textContent =
-        status.message || "Continue in your browser to sign in."
+        status.message || "Continue in your browser."
       elements.connectCloud.textContent = status.connectionProfileId
         ? "Sign in again"
         : "Sign in"
@@ -727,6 +740,10 @@ function renderUpdater(status) {
   }
   elements.updateTitle.textContent = titles[status.state] ?? "Worktable update"
   elements.updateMessage.textContent = status.message ?? ""
+  const needsIntervention = ["error", "recovery"].includes(status.state)
+  elements.updatePage.dataset.tone = needsIntervention ? "recovery" : "default"
+  elements.updateIcon.hidden = needsIntervention
+  elements.updateSymbol.hidden = !needsIntervention
 
   const version =
     status.availableVersion &&
@@ -769,16 +786,20 @@ function renderUpdater(status) {
 
   elements.installUpdate.hidden = !status.canInstall
   elements.installUpdate.disabled = updateBusy || !status.canInstall
-  elements.retryUpdate.hidden = !["error", "recovery"].includes(status.state)
+  elements.retryUpdate.hidden = !needsIntervention
   elements.retryUpdate.disabled = updateBusy
   elements.dismissUpdate.hidden = !status.canDismiss
   elements.dismissUpdate.disabled = updateBusy
   elements.dismissUpdate.textContent =
     status.state === "available" ? "Later" : "Return to Worktable"
-  elements.openUpdateDownload.hidden = !["error", "recovery"].includes(
-    status.state
-  )
+  // Confirming "you're up to date" is the only action, so it leads.
+  elements.dismissUpdate.className = `button ${status.state === "current" ? "primary" : "secondary"}`
+  // Reinstalling only helps after an install attempt, which native recovery
+  // records along with the release that was running before it.
+  const previousVersion = status.recovery?.fromVersion
+  elements.openUpdateDownload.hidden = !needsIntervention || !previousVersion
   elements.openUpdateDownload.disabled = updateBusy
+  elements.openUpdateDownload.textContent = `Download Worktable ${previousVersion ?? ""}`
 }
 
 async function checkTrustBoundary() {
@@ -1045,6 +1066,10 @@ elements.locateWorkspace.addEventListener("click", () =>
     setRecoveryFeedback("")
     await invoke("desktop_start_local_connection", { intent: "open", path })
   })
+)
+
+elements.checkDesktopUpdates.addEventListener("click", () =>
+  runAction(() => invoke("desktop_check_for_updates"))
 )
 
 elements.recoveryChangeWorkspace.addEventListener("click", () =>

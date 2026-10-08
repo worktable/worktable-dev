@@ -208,11 +208,11 @@ function TemporaryRow({ item }: { item: RecentItem }) {
         className={cn(
           "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs font-medium",
           soon
-            ? "bg-warning/10 text-warning"
+            ? "bg-warning/12 text-foreground"
             : "bg-surface-tint text-muted-foreground"
         )}
       >
-        <Clock3 className="size-3" />
+        <Clock3 className={cn("size-3", soon && "text-warning")} />
         <span className="hidden sm:inline">{archiveLabel(archiveOn, now)}</span>
         <span className="sm:hidden">
           {archiveLabel(archiveOn, now).replace(/^Archives (.)/, (_, first: string) =>

@@ -7,6 +7,7 @@
 // lifetime-rules.ts for how content changes push that date out). Archived
 // documents are never deleted automatically; restoring one makes it durable.
 
+import { recordActivity } from "./activity-log.ts"
 import { isArchiveOnValue, type DocumentLifetime } from "@worktable/types"
 import { z } from "zod"
 import { withDocPathLock } from "./doc-path-lock.ts"
@@ -149,6 +150,12 @@ export async function setDocumentLifetime(options: {
     )
   })
   await publishLifetimeChange(options.spaceId)
+  recordActivity({
+    spaceId: options.spaceId,
+    action:
+      options.change.lifetime === "durable" ? "doc.kept" : "doc.madeTemporary",
+    target: { kind: "doc", path },
+  })
   return {
     path,
     lifetime: options.change.lifetime,

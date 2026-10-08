@@ -235,6 +235,27 @@ function publicConnection(
   }
 }
 
+/**
+ * Current agent names keyed by the principal ID their writes carry. Revoked
+ * credentials stay in the map so earlier activity keeps a readable name.
+ */
+export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
+  const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+  const workspace = getWorkspaceRoot()
+  const tokensById = new Map(tokens.map((token) => [token.id, token]))
+  const names = new Map<string, string>()
+  for (const connection of file.connections) {
+    if (connection.workspace !== workspace) continue
+    const token = tokensById.get(connection.credentialId)
+    if (!token) continue
+    names.set(
+      `local-token:${token.id}`,
+      publicConnection(connection, token).displayName
+    )
+  }
+  return names
+}
+
 export async function listAgentConnections(): Promise<AgentConnection[]> {
   const [file, tokens] = await Promise.all([loadFile(), listTokens()])
   const workspace = getWorkspaceRoot()

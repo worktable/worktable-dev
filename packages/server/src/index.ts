@@ -27,6 +27,7 @@ import { annotationsRouter } from "./routes/annotations.ts";
 import { threadsRouter } from "./routes/threads.ts";
 import { searchRouter } from "./routes/search.ts";
 import { recentRouter } from "./routes/recent.ts";
+import { activityRouter, pendingRouter } from "./routes/activity.ts";
 import { tokensRouter } from "./routes/tokens.ts";
 import { wellKnownRouter } from "./routes/well-known.ts";
 import { mcpRouter } from "./routes/mcp.ts";
@@ -158,6 +159,7 @@ import {
   initializeLocalOperatorToken,
   isAuthorizedLocalOperatorRequest,
 } from "./operator-export.ts";
+import { runAsActivityActor } from "./activity-log.ts";
 
 // ============================================================
 // App setup
@@ -370,6 +372,9 @@ app.get("/worktable-preview/fonts/*", async (c) => {
 });
 
 app.use("/api/*", trustedLocalIdentity());
+app.use("/api/*", (c, next) =>
+  runAsActivityActor(c.get("identity")?.principal, next)
+);
 app.use("/api/*", requireWorkspaceContentEpoch);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
@@ -397,6 +402,8 @@ app.route("/api/spaces/:spaceId/threads", threadsRouter);
 app.route("/api/threads", threadsRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/recent", recentRouter);
+app.route("/api/activity", activityRouter);
+app.route("/api/pending", pendingRouter);
 app.route("/.well-known", wellKnownRouter);
 app.route("/mcp", mcpRouter);
 // Version-matched, secret-free provider integration packages. Mounted before

@@ -1,5 +1,7 @@
+import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   ParticipantRef,
+  Thread,
   ThreadActivity,
   ThreadDeliveryState,
   ThreadLocation,
@@ -349,6 +351,7 @@ export async function postThreadMessage(
     (input.spaceId ? { kind: "space", spaceId: input.spaceId } : undefined)
   let recipient: ParticipantRef | undefined
   let result: Awaited<ReturnType<typeof createThread>>
+  let replayed = false
 
   if (input.threadId) {
     let existing = await findThread(input.threadId, location)
@@ -368,6 +371,7 @@ export async function postThreadMessage(
     if (replay) {
       recipient = replay.recipient
       result = replay
+      replayed = true
     } else {
       const explicitRecipient = input.to
         ? await requireParticipant(input.to)
@@ -460,6 +464,7 @@ export async function postThreadMessage(
     if (replay) {
       recipient = replay.recipient
       result = replay
+      replayed = true
     } else {
       recipient = await requireParticipant(input.to)
       result = await createThread(location, {
@@ -490,6 +495,26 @@ export async function postThreadMessage(
     })
   }
   const resultLocation = threadLocation(result.thread)
+  if (!replayed) {
+    recordActivity({
+      spaceId:
+        resultLocation.kind === "space" ? resultLocation.spaceId : null,
+      action: input.threadId ? "thread.replied" : "thread.started",
+      actor: currentActivityActor() ?? {
+        kind: actor.kind === "human" ? "person" : actor.kind,
+        id: actor.id,
+        name: actor.name,
+      },
+      target: {
+        kind: "thread",
+        threadId: result.thread.id,
+        title: result.thread.title,
+      },
+      ...(!input.threadId || result.message.responseRequest
+        ? { quote: result.message.body }
+        : {}),
+    })
+  }
   const activity = result.message.responseRequest
     ? await (async (request) => {
         const target = result.thread.identities.find(
@@ -642,6 +667,63 @@ export async function listThreadSummaries(
   return deliveryState
     ? summaries.filter((summary) => summary.activity?.state === deliveryState)
     : summaries
+}
+
+/** Reply requests addressed to the reader that are still open. */
+export async function listOpenRequestsForViewer(
+  identity: ThreadIdentity
+): Promise<
+  {
+    location: ThreadLocation
+    threadId: string
+    threadTitle: string
+    message: Thread["messages"][number]
+    author: { kind: ParticipantRef["kind"]; id: string; name: string }
+  }[]
+> {
+  const viewer = (await participantForIdentity(identity)).participant
+  const activeSpaceIds = new Set(
+    (await listSpaces())
+      .filter((space) => !getSpaceArchiveInfo(space))
+      .map((space) => space.id)
+  )
+  const { threads } = await scanAllThreads()
+  return threads.flatMap((thread) => {
+    const location = threadLocation(thread)
+    if (location.kind === "space" && !activeSpaceIds.has(location.spaceId)) {
+      return []
+    }
+    const mine = new Set(
+      thread.identities
+        .filter((candidate) => candidate.memberId === viewer.id)
+        .map((candidate) => candidate.id)
+    )
+    return thread.messages.flatMap((message) => {
+      const request = message.responseRequest
+      if (request?.status !== "open" || !mine.has(request.identityId)) {
+        return []
+      }
+      const member = thread.members.find(
+        (candidate) => candidate.id === message.authorMemberId
+      )
+      const authorIdentity = thread.identities.find(
+        (candidate) => candidate.id === message.authorIdentityId
+      )
+      return [
+        {
+          location,
+          threadId: thread.id,
+          threadTitle: thread.title,
+          message,
+          author: {
+            kind: member?.kind ?? "agent",
+            id: message.authorMemberId,
+            name: authorIdentity?.name ?? member?.name ?? "Someone",
+          },
+        },
+      ]
+    })
+  })
 }
 
 export async function readThreadMessages(

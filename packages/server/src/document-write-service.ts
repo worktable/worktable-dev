@@ -1,4 +1,5 @@
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { noteDocumentEdited, recordActivity } from "./activity-log.ts"
 import { noteDocumentActivity, noteDocumentCreated } from "./document-activity.ts"
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { createHash } from "node:crypto"
@@ -1377,6 +1378,14 @@ export async function replaceRegisteredDocument(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
+  if (!result.mutation?.replayed) {
+    noteDocumentEdited(
+      options.spaceId,
+      result.path,
+      options.updatedBy,
+      options.source
+    )
+  }
   return result
 }
 
@@ -1867,6 +1876,11 @@ export async function setRegisteredDocumentArchived(options: {
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
+  })
+  recordActivity({
+    spaceId: options.spaceId,
+    action: options.archived ? "doc.archived" : "doc.restored",
+    target: { kind: "doc", path: result.path },
   })
   return result
 }

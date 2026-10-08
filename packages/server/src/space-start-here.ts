@@ -8,6 +8,7 @@
 // document. A pin whose target was archived or deleted is reported as such;
 // nothing substitutes another document.
 
+import { recordActivity } from "./activity-log.ts"
 import {
   START_HERE_LIMIT,
   StartHerePinSchema,
@@ -117,5 +118,15 @@ export async function setStartHere(
   }))
   if (!result.data) throw new StartHereError(result.error ?? `Space not found: ${spaceId}`)
   await notifyWorkspaceChangeAndWait({ type: "space", spaceId })
+  for (const path of seen) {
+    if (!existing.has(path)) {
+      recordActivity({ spaceId, action: "doc.pinned", target: { kind: "doc", path } })
+    }
+  }
+  for (const path of existing) {
+    if (!seen.has(path)) {
+      recordActivity({ spaceId, action: "doc.unpinned", target: { kind: "doc", path } })
+    }
+  }
   return resolveStartHere(spaceId, result.data)
 }

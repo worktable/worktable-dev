@@ -1,3 +1,4 @@
+import { runAsActivityActor } from "../activity-log.ts"
 import {
   renderDocumentPreview,
   renderFrozenHtmlPreview,
@@ -780,10 +781,10 @@ export async function dispatchOperation(
   args: Record<string, unknown>,
   context: ToolDispatchContext = {}
 ): Promise<unknown> {
-  const result = await _dispatchOperationInner(operationId, args, {
-    ...context,
-    principal: context.principal ?? DEFAULT_AGENT_PRINCIPAL,
-  })
+  const principal = context.principal ?? DEFAULT_AGENT_PRINCIPAL
+  const result = await runAsActivityActor(principal, () =>
+    _dispatchOperationInner(operationId, args, { ...context, principal })
+  )
   const operation = OPERATION_DEFINITIONS[operationId]
   if (operation?.mutation === "records") {
     noteRecordMutated()

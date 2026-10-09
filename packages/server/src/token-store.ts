@@ -461,6 +461,24 @@ export async function revokeToken(id: string): Promise<boolean> {
   return true
 }
 
+/**
+ * Change what an active token may do. The next request it makes is checked
+ * against the new scopes. Returns false for an unknown or revoked token.
+ */
+export async function setTokenScopes(
+  id: string,
+  scopes: string[]
+): Promise<boolean> {
+  return serialized(async () => {
+    const tokens = await loadTokens()
+    const token = tokens.find((t) => t.id === id)
+    if (!token || token.revokedAt) return false
+    token.scopes = [...scopes]
+    await saveTokens(tokens)
+    return true
+  })
+}
+
 /** True if any unrevoked token exists (auth is "configured"). */
 export async function hasActiveTokens(): Promise<boolean> {
   return (await loadTokens()).some((t) => !t.revokedAt)

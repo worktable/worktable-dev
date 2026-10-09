@@ -683,9 +683,6 @@ function ConnectStep({
             kind: "agent-adapter",
             adapter: alwaysOnAgent.adapter,
             participantName: agentName.trim(),
-            ...(alwaysOnAgent.workspaceAccess
-              ? { workspaceAccess: true as const }
-              : {}),
           },
         })
       }

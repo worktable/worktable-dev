@@ -269,12 +269,15 @@ test("new owner can name, connect multiple real agent identities, leave an alway
       expect.objectContaining({ displayName: "My Codex" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "openclaw" }),
-        participant: expect.objectContaining({ name: "Atlas" }),
+        displayName: "Atlas",
+        platform: "openclaw",
+        access: { threads: true, read: true, edit: true },
       }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
-        participant: expect.objectContaining({ name: "Ada" }),
-        scopes: expect.arrayContaining(["threads:*", "docs:*"]),
+        displayName: "Ada",
+        platform: "hermes",
+        access: { threads: true, read: true, edit: true },
       }),
     ]),
   })

@@ -1,8 +1,14 @@
 import { basename } from "node:path";
 import { Hono } from "hono";
 import {
+  type AgentAccess,
+  AGENT_PLATFORMS,
+  type AgentPlatformId,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
+  DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
+  platformForClient,
+  scopesForAccess,
 } from "@worktable/types";
 import {
   requireMintAuth,
@@ -32,7 +38,10 @@ import {
   tokenIdFromToken,
   verifyToken,
 } from "../token-store.ts";
-import { resolveParticipant } from "../participant-store.ts";
+import {
+  listParticipantBindings,
+  resolveParticipant,
+} from "../participant-store.ts";
 import { upsertAgentConnection } from "../agent-connection-store.ts";
 import { readSpace } from "../store.ts";
 import { getWorkspaceRoot } from "../workspace.ts";
@@ -150,12 +159,6 @@ function parseAgentAdapterTarget(value: unknown):
   ) {
     return { ok: false, error: "defaultSpaceId must be a non-empty string" };
   }
-  if (
-    target.workspaceAccess !== undefined &&
-    typeof target.workspaceAccess !== "boolean"
-  ) {
-    return { ok: false, error: "workspaceAccess must be a boolean" };
-  }
   return {
     ok: true,
     target: {
@@ -165,24 +168,44 @@ function parseAgentAdapterTarget(value: unknown):
       ...(typeof target.defaultSpaceId === "string"
         ? { defaultSpaceId: target.defaultSpaceId.trim() }
         : {}),
-      ...(target.workspaceAccess === true ? { workspaceAccess: true } : {}),
     },
   };
 }
 
 /**
- * An always-on adapter receives addressed messages through threads. One whose
- * agent also reaches the workspace through the same credential gets the
- * ordinary agent content scopes as well.
+ * A platform's name, or with the machine added when another participant
+ * already has it, so a message addressed by name still finds one agent.
  */
-function agentAdapterScopes(
-  target: Extract<PairingTarget, { kind: "agent-adapter" }>
-): string[] {
-  if (!target.workspaceAccess) return ["threads:*"];
-  return [
-    ...DEFAULT_AGENT_TOKEN_SCOPES.filter((scope) => !scope.startsWith("threads:")),
-    "threads:*",
-  ];
+async function defaultAgentName(
+  platform: AgentPlatformId,
+  machine: string | null
+): Promise<string> {
+  const name = AGENT_PLATFORMS[platform].name;
+  const taken = new Set(
+    (await listParticipantBindings()).map(({ participant }) =>
+      participant.name.toLocaleLowerCase()
+    )
+  );
+  if (!taken.has(name.toLocaleLowerCase())) return name;
+  const withMachine = machine ? `${name} (${machine})` : undefined;
+  if (withMachine && !taken.has(withMachine.toLocaleLowerCase())) {
+    return withMachine;
+  }
+  for (let n = 2; ; n += 1) {
+    const numbered = `${name} ${n}`;
+    if (!taken.has(numbered.toLocaleLowerCase())) return numbered;
+  }
+}
+
+function parseAccess(value: unknown): AgentAccess | undefined | false {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const access = value as Record<string, unknown>;
+  return typeof access.threads === "boolean" &&
+    typeof access.read === "boolean" &&
+    typeof access.edit === "boolean"
+    ? { threads: access.threads, read: access.read, edit: access.edit }
+    : false;
 }
 
 // ---- Owner surface -------------------------------------------------------
@@ -200,7 +223,25 @@ ownerSurface.post("/", async (c) => {
     displayName?: unknown;
     scopes?: unknown;
     target?: unknown;
+    access?: unknown;
   } | null;
+
+  const access = parseAccess(body?.access);
+  if (access === false) {
+    return c.json(
+      {
+        error: "access must have boolean threads, read, and edit",
+        code: "BAD_REQUEST",
+      },
+      400
+    );
+  }
+  if (access && body?.scopes !== undefined) {
+    return c.json(
+      { error: "access and scopes cannot both be supplied", code: "BAD_REQUEST" },
+      400
+    );
+  }
 
   if (body?.client !== undefined && body?.target !== undefined) {
     return c.json(
@@ -234,7 +275,16 @@ ownerSurface.post("/", async (c) => {
     if (body.scopes !== undefined) {
       return c.json(
         {
-          error: "agent adapter scopes are fixed by Worktable",
+          error: "choose an always-on agent's access with access, not scopes",
+          code: "BAD_REQUEST",
+        },
+        400
+      );
+    }
+    if (access && !access.threads) {
+      return c.json(
+        {
+          error: "an always-on agent needs threads: that is how it receives messages",
           code: "BAD_REQUEST",
         },
         400
@@ -272,8 +322,16 @@ ownerSurface.post("/", async (c) => {
   }
 
   let scopes = target
-    ? agentAdapterScopes(target)
-    : [...DEFAULT_AGENT_TOKEN_SCOPES];
+    ? scopesForAccess(access || DEFAULT_AGENT_ACCESS)
+    : access
+      ? scopesForAccess(access)
+      : [...DEFAULT_AGENT_TOKEN_SCOPES];
+  if (scopes.length === 0) {
+    return c.json(
+      { error: "choose at least one kind of access", code: "BAD_REQUEST" },
+      400
+    );
+  }
   if (body?.scopes !== undefined) {
     if (
       !Array.isArray(body.scopes) ||
@@ -664,16 +722,29 @@ pairingRouter.post("/complete", async (c) => {
           credentialId: tokenId,
         });
       } else {
+        const clientId = session.redeemedBy?.all
+          ? null
+          : (session.redeemedBy?.client ?? session.requestedClient ?? null);
+        const machine = session.redeemedBy?.hostname ?? null;
+        // The agent's name is its thread name from the start.
+        const participant = (
+          await resolveParticipant(
+            { agent: metadata.agent, principal: metadata.principal },
+            target.displayName
+              ? { name: target.displayName }
+              : {
+                  initialName: await defaultAgentName(
+                    platformForClient(clientId),
+                    machine
+                  ),
+                }
+          )
+        ).participant;
         connectionStored = await upsertAgentConnection({
-          target: {
-            kind: "mcp-client",
-            clientId: session.redeemedBy?.all
-              ? null
-              : (session.redeemedBy?.client ?? session.requestedClient ?? null),
-          },
+          target: { kind: "mcp-client", clientId },
           mode: "on-demand",
-          participant: null,
-          machine: session.redeemedBy?.hostname ?? null,
+          participant,
+          machine,
           credentialId: tokenId,
           displayName: target.displayName,
         });

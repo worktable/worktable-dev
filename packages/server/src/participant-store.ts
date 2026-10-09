@@ -6,7 +6,7 @@ import { ParticipantRefSchema } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
-import { scanAllThreads } from "./thread-store.ts"
+import { renameThreadMember, scanAllThreads } from "./thread-store.ts"
 import {
   listTokens,
   type RequestPrincipal,
@@ -32,7 +32,10 @@ interface ParticipantBindingsFile {
 }
 
 export interface ResolveParticipantOptions {
+  /** Renames the participant if it already exists. */
   name?: string
+  /** Names the participant only if it does not exist yet. */
+  initialName?: string
   /** Pass null when a connection explicitly removes its saved default Space. */
   defaultSpaceId?: string | null
   threadLocationVersion?: 2
@@ -205,7 +208,8 @@ export async function resolveParticipant(
   defaultSpaceId?: string
   threadLocationVersion?: 2
 }> {
-  return serialized(async () => {
+  let renamed: ParticipantRef | undefined
+  const resolved = await serialized(async () => {
     const file = await loadBindings()
     const key = participantKey(identity)
     const exact = file.bindings.find((binding) => binding.key === key)
@@ -231,6 +235,9 @@ export async function resolveParticipant(
         nextDefault !== existing.defaultSpaceId ||
         nextThreadLocationVersion !== existing.threadLocationVersion
       ) {
+        if (nextName && nextName !== existing.participant.name) {
+          renamed = { ...existing.participant, name: nextName }
+        }
         existing.key = key
         existing.participant = {
           ...existing.participant,
@@ -250,9 +257,11 @@ export async function resolveParticipant(
       }
     }
 
+    const recovered = await recoverPortableParticipant(identity, options)
     const participant =
-      (await recoverPortableParticipant(identity, options)) ??
-      createParticipant(identity, options.name)
+      recovered ??
+      createParticipant(identity, options.name ?? options.initialName)
+    if (recovered && options.name?.trim()) renamed = recovered
     file.bindings.push({
       key,
       participant,
@@ -273,6 +282,9 @@ export async function resolveParticipant(
       threadLocationVersion: options.threadLocationVersion,
     }
   })
+  // Outside the binding lock: threads take their own locks.
+  if (renamed) await renameThreadMember(renamed.id, renamed.name)
+  return resolved
 }
 
 export async function listParticipantBindings(): Promise<

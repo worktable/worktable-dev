@@ -1,4 +1,5 @@
 import type {
+  AgentPlatformId,
   ParticipantRef,
   ThreadLocation,
   ThreadMessage,
@@ -13,6 +14,9 @@ export type ThreadListScope = { kind: "all" } | ThreadLocation
 export type ThreadParticipant = ParticipantRef & {
   defaultIdentityId: string
   alwaysOn: boolean
+  /** For a connected agent: where it comes from and the icon its owner chose. */
+  platform?: AgentPlatformId
+  icon?: string | null
 }
 type ThreadManagementResult = { threadId: string; revision: number }
 

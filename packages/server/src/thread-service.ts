@@ -1,5 +1,6 @@
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
+  AgentPlatformId,
   ParticipantRef,
   Thread,
   ThreadActivity,
@@ -616,6 +617,39 @@ export async function listThreadParticipants(
       defaultIdentityId: defaultConversationIdentityId(participant.id),
       alwaysOn: alwaysOnParticipantIds.has(participant.id),
     }))
+}
+
+/**
+ * Participants as the web app shows them: an agent also carries its platform
+ * and the icon its owner chose, for its avatar.
+ */
+export async function listThreadParticipantsForDisplay(
+  identity?: ThreadIdentity
+): Promise<
+  Array<
+    ParticipantRef & {
+      defaultIdentityId: string
+      alwaysOn: boolean
+      platform?: AgentPlatformId
+      icon?: string | null
+    }
+  >
+> {
+  const [participants, connections] = await Promise.all([
+    listThreadParticipants(identity),
+    listAgentConnections(),
+  ])
+  const byParticipant = new Map(
+    connections.flatMap((connection) =>
+      connection.participant ? [[connection.participant.id, connection]] : []
+    )
+  )
+  return participants.map((participant) => {
+    const connection = byParticipant.get(participant.id)
+    return connection
+      ? { ...participant, platform: connection.platform, icon: connection.icon }
+      : participant
+  })
 }
 
 export async function listThreadSummaries(

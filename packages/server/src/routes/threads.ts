@@ -9,7 +9,7 @@ import {
 import { hasScope } from "../token-store.ts"
 import {
   assignResponseRequest,
-  listThreadParticipants,
+  listThreadParticipantsForDisplay,
   listThreadSummaries,
   postThreadMessage,
   readThreadMessage,
@@ -120,7 +120,7 @@ threadsRouter.get("/participants", async (c) => {
   const denied = requireThreadScope(c, "threads:read")
   if (denied) return denied
   return c.json({
-    participants: await listThreadParticipants(c.get("identity")),
+    participants: await listThreadParticipantsForDisplay(c.get("identity")),
   })
 })
 

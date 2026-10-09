@@ -149,7 +149,8 @@ describe("semantic agent connections", () => {
     const rotated = (await listAgentConnections())[0]!
     expect(rotated.id).toBe(initial.id)
     expect(rotated.connectedAt).toBe(initial.connectedAt)
-    expect(rotated.displayName).toBe("Studio Claw")
+    // An agent has one name: its thread participant's.
+    expect(rotated.displayName).toBe("Atlas")
     expect(await verifyToken(first.token)).toBeNull()
     expect(await verifyToken(second.token)).not.toBeNull()
 
@@ -166,7 +167,8 @@ describe("semantic agent connections", () => {
       displayName: "OpenClaw",
     })
     const rotatedAgain = (await listAgentConnections())[0]!
-    expect(rotatedAgain.displayName).toBe("Studio Claw")
+    // Rotating the credential again is not a rename.
+    expect(rotatedAgain.displayName).toBe("Atlas")
     expect(await verifyToken(second.token)).toBeNull()
     expect(await verifyToken(third.token)).not.toBeNull()
 

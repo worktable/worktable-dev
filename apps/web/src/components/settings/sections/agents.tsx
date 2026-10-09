@@ -13,12 +13,18 @@ import {
   Trash2,
 } from "lucide-react"
 import {
+  AGENT_PLATFORMS,
+  DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
   mcpClientSnippet,
+  platformForAdapter,
+  platformForClient,
+  type AgentAccess,
   type AgentConnection,
+  type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
   type McpSnippetClientId,
 } from "@worktable/types"
@@ -86,6 +92,9 @@ import {
 } from "@/lib/agent-connections-api"
 import { ALWAYS_ON_AGENTS, type AlwaysOnAgent } from "@/lib/always-on-agents"
 import { timeAgo } from "@/lib/time"
+import { AgentAccessFields } from "@/components/agents/agent-access-fields"
+import { AgentAvatar } from "@/components/agents/agent-avatar"
+import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -515,11 +524,13 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
   // can't outlive the dialog. Codes are single-use and expire server-side
   // anyway (15 minutes).
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
 
   const create = useMutation({
     mutationFn: () =>
       createPairing({
         client: clientChoice === "auto" ? null : clientChoice,
+        access,
       }),
     onSuccess: (res) => setPairing(res),
     onError: (err) =>
@@ -587,11 +598,26 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
         </Select>
       </div>
 
+      <AgentAccessFields
+        value={access}
+        onChange={(next) => {
+          setAccess(next)
+          setPairing(null)
+          create.reset()
+        }}
+      />
+
       <RemoteAgentOriginWarning connection={connection} />
 
       {!pairing ? (
         <div>
-          <Button onClick={() => create.mutate()} disabled={create.isPending}>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={
+              create.isPending ||
+              !(access.threads || access.read || access.edit)
+            }
+          >
             {create.isPending ? "Connecting…" : "Connect"}
           </Button>
         </div>
@@ -716,6 +742,7 @@ function AlwaysOnSetupPanel({
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const [participantName, setParticipantName] = useState(agent.name)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
   const installCopy = useCopy(() => toast.success("Copied"))
 
@@ -726,8 +753,8 @@ function AlwaysOnSetupPanel({
           kind: "agent-adapter",
           adapter: agent.adapter,
           participantName: participantName.trim(),
-          ...(agent.workspaceAccess ? { workspaceAccess: true as const } : {}),
         },
+        access,
       }),
     onSuccess: setPairing,
     onError: (error) =>
@@ -779,6 +806,15 @@ function AlwaysOnSetupPanel({
           />
         </label>
       </div>
+
+      <AgentAccessFields
+        value={access}
+        onChange={(next) => {
+          setAccess(next)
+          setPairing(null)
+        }}
+        alwaysOn
+      />
 
       <RemoteAgentOriginWarning connection={connection} />
 
@@ -1231,8 +1267,22 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
 
 // ── Connected agents ---------------------------------------------------------
 
+/** The agent's one name; Cloud's inventory still reports it beside a platform label. */
 function agentConnectionName(connection: AgentConnection): string {
-  return clientDisplayName(connection.displayName)
+  return (
+    connection.participant?.name ??
+    (connection.target.kind === "agent-adapter"
+      ? connection.target.participantName
+      : undefined) ??
+    clientDisplayName(connection.displayName)
+  )
+}
+
+function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
+  if (connection.platform) return connection.platform
+  return connection.target.kind === "agent-adapter"
+    ? platformForAdapter(connection.target.adapter)
+    : platformForClient(connection.target.clientId)
 }
 
 export function ConnectedAgentsGroup() {
@@ -1257,6 +1307,7 @@ export function ConnectedAgentsGroup() {
       ),
   })
 
+  const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
   const oauthInventoryUnavailable =
     connectionsQuery.data?.unavailableAuthKinds?.includes("oauth") ?? false
@@ -1287,46 +1338,71 @@ export function ConnectedAgentsGroup() {
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {connections.map((connection) => (
-                <li
-                  key={connection.id}
-                  className="flex min-h-14 items-center gap-3 rounded-xl bg-muted/35 px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {agentConnectionName(connection)}
-                      </span>
-                      <Badge variant="secondary">
-                        {connection.mode === "always-on"
-                          ? "Always-on"
-                          : "On-demand"}
-                      </Badge>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {connection.participant?.name
-                        ? `${connection.participant.name} · `
-                        : ""}
-                      {connection.machine ? `${connection.machine} · ` : ""}
-                      {connection.lastSeenAt
-                        ? `Last seen ${timeAgo(connection.lastSeenAt)}`
-                        : "Not used yet"}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={disconnect.isPending}
-                    onClick={() => disconnect.mutate(connection.id)}
+              {connections.map((connection) => {
+                const name = agentConnectionName(connection)
+                const platform = agentConnectionPlatform(connection)
+                const platformName = AGENT_PLATFORMS[platform].name
+                return (
+                  <li
+                    key={connection.id}
+                    className="flex min-h-14 items-center gap-3 rounded-xl bg-muted/35 px-3 py-2"
                   >
-                    Disconnect
-                  </Button>
-                </li>
-              ))}
+                    <AgentAvatar
+                      name={name}
+                      platform={platform}
+                      icon={connection.icon}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">
+                          {name}
+                        </span>
+                        <Badge variant="secondary">
+                          {connection.mode === "always-on"
+                            ? "Always-on"
+                            : "On-demand"}
+                        </Badge>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {platform !== "other" && platformName !== name
+                          ? `${platformName} · `
+                          : ""}
+                        {connection.machine ? `${connection.machine} · ` : ""}
+                        {connection.lastSeenAt
+                          ? `Last seen ${timeAgo(connection.lastSeenAt)}`
+                          : "Not used yet"}
+                      </p>
+                    </div>
+                    {connection.authKind === "local-token" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(connection)}
+                      >
+                        Edit
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={disconnect.isPending}
+                      onClick={() => disconnect.mutate(connection.id)}
+                    >
+                      Disconnect
+                    </Button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </CardContent>
       </Card>
+      <AgentEditDialog
+        connection={editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null)
+        }}
+      />
     </section>
   )
 }

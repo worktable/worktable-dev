@@ -2,13 +2,28 @@ import { createHash } from "node:crypto"
 import { chmod, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type {
+  AgentAccess,
   AgentConnection,
   AgentConnectionTarget,
+  AgentPlatformId,
   ParticipantRef,
+} from "@worktable/types"
+import {
+  accessFromScopes,
+  AGENT_PLATFORMS,
+  platformForAdapter,
+  platformForClient,
+  scopesForAccess,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { listTokens, revokeToken, type TokenMetadata } from "./token-store.ts"
+import { resolveParticipant } from "./participant-store.ts"
+import {
+  listTokens,
+  revokeToken,
+  setTokenScopes,
+  type TokenMetadata,
+} from "./token-store.ts"
 import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
@@ -23,6 +38,10 @@ interface StoredAgentConnection {
   credentialId: string
   connectedAt: string
   displayName?: string
+  /** Recorded when the agent first connects; never taken from later requests. */
+  platform?: AgentPlatformId
+  /** A Lucide icon name the owner chose instead of the platform's logo. */
+  icon?: string
 }
 
 interface AgentConnectionFile {
@@ -200,6 +219,7 @@ export async function upsertAgentConnection(input: {
         id,
         workspace,
         ...input,
+        platform: platformForTarget(input.target),
         connectedAt: new Date().toISOString(),
       })
     }
@@ -209,24 +229,30 @@ export async function upsertAgentConnection(input: {
   })
 }
 
-const AGENT_ADAPTER_NAMES: Record<string, string> = {
-  hermes: "Hermes",
-  openclaw: "OpenClaw",
+function platformForTarget(target: AgentConnectionTarget): AgentPlatformId {
+  return target.kind === "agent-adapter"
+    ? platformForAdapter(target.adapter)
+    : platformForClient(target.clientId)
 }
 
 function publicConnection(
   stored: StoredAgentConnection,
   token: TokenMetadata
 ): AgentConnection {
-  const displayName =
-    stored.displayName ??
-    (stored.target.kind === "agent-adapter"
-      ? (AGENT_ADAPTER_NAMES[stored.target.adapter] ?? stored.target.adapter)
-      : (stored.target.clientId ?? token.agent ?? "Agent"))
+  const platform = stored.platform ?? platformForTarget(stored.target)
   return {
     id: stored.id,
     authKind: "local-token",
-    displayName,
+    // One name: the agent's thread participant carries it once it has one.
+    displayName:
+      stored.participant?.name ??
+      stored.displayName ??
+      (platform === "other"
+        ? (token.agent ?? AGENT_PLATFORMS.other.name)
+        : AGENT_PLATFORMS[platform].name),
+    platform,
+    icon: stored.icon ?? null,
+    access: accessFromScopes(token.scopes),
     target: stored.target,
     mode: stored.mode,
     participant: stored.participant,
@@ -295,29 +321,62 @@ export async function disconnectAgentConnection(id: string): Promise<boolean> {
   })
 }
 
-export async function renameAgentConnection(
+export class AgentConnectionUpdateError extends Error {}
+
+/**
+ * The owner's changes to an agent: its name (also its name in threads), its
+ * icon, and its access. Returns the updated agent, or null if it is gone.
+ */
+export async function updateAgentConnection(
   id: string,
-  displayName: string
-): Promise<boolean> {
+  changes: {
+    displayName?: string
+    icon?: string | null
+    access?: AgentAccess
+  }
+): Promise<AgentConnection | null> {
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
-    const activeTokenIds = new Set(
-      tokens
-        .filter(
-          (token) => token.workspace === workspace && token.revokedAt === null
-        )
-        .map((token) => token.id)
-    )
     const connection = file.connections.find(
-      (candidate) =>
-        candidate.id === id &&
-        candidate.workspace === workspace &&
-        activeTokenIds.has(candidate.credentialId)
+      (candidate) => candidate.id === id && candidate.workspace === workspace
     )
-    if (!connection) return false
-    connection.displayName = displayName
+    const token = tokens.find(
+      (candidate) =>
+        candidate.id === connection?.credentialId &&
+        candidate.workspace === workspace &&
+        candidate.revokedAt === null
+    )
+    if (!connection || !token) return null
+    if (changes.access) {
+      if (connection.mode === "always-on" && !changes.access.threads) {
+        throw new AgentConnectionUpdateError(
+          "An always-on agent needs threads: that is how it receives messages"
+        )
+      }
+      const scopes = scopesForAccess(changes.access)
+      if (scopes.length === 0) {
+        throw new AgentConnectionUpdateError(
+          "Choose at least one kind of access"
+        )
+      }
+      await setTokenScopes(token.id, scopes)
+      token.scopes = scopes
+    }
+    if (changes.icon !== undefined) {
+      if (changes.icon === null) delete connection.icon
+      else connection.icon = changes.icon
+    }
+    if (changes.displayName !== undefined) {
+      connection.displayName = changes.displayName
+      const { participant } = await resolveParticipant(
+        { agent: token.agent, principal: token.principal },
+        { name: changes.displayName }
+      )
+      connection.participant = participant
+    }
     await saveFile(file)
-    return true
+    await notifyThreadParticipantsChanged()
+    return publicConnection(connection, token)
   })
 }

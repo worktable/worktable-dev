@@ -258,8 +258,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await page.goto(new URL("/spaces/welcome", harness.webUrl).href, {
     waitUntil: "domcontentloaded",
   })
+  // Space Home also links docs from Recent and Activity; use the sidebar tree.
+  const tree = page.getByRole("navigation", { name: "Active documents" })
   await expect(
-    page.getByRole("link", { name: "Ways to Work", exact: true })
+    tree.getByRole("link", { name: "Ways to Work", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
   const created = await page.request.post(
@@ -290,12 +292,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   expect(nestedDoc.status()).toBe(200)
 
-  const plans = page
-    .getByRole("navigation", { name: "Active documents" })
-    .getByRole("button", { name: "Plans", exact: true })
+  const plans = tree.getByRole("button", { name: "Plans", exact: true })
   await expect(plans).toBeVisible({ timeout: 10_000 })
   await plans.click()
-  const treeLink = page.getByRole("link", {
+  const treeLink = tree.getByRole("link", {
     name: "Live Status",
     exact: true,
   })

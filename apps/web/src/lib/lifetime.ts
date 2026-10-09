@@ -131,6 +131,8 @@ export interface RecentOptions {
   spaceId?: string
   sort: "updated" | "created"
   includeTemporary: boolean
+  /** Only temporary docs, soonest to archive first. */
+  onlyTemporary?: boolean
   limit?: number
 }
 
@@ -142,6 +144,7 @@ export function recentQueryOptions(options: RecentOptions) {
         sort: options.sort,
         includeTemporary: options.includeTemporary ? "true" : "false",
         limit: String(options.limit ?? 30),
+        ...(options.onlyTemporary ? { lifetime: "temporary" } : {}),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)

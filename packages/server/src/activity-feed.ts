@@ -40,6 +40,15 @@ async function visibleSpacesFor(spaceId?: string): Promise<Set<string>> {
   )
 }
 
+/** Event kinds the reader's scopes let them open. */
+function scopeFilters(scopes: string[]) {
+  return {
+    includeThreads: hasScope(scopes, "threads:read"),
+    includeRecords: hasScope(scopes, "records:read"),
+    includeComments: hasScope(scopes, "annotations:read"),
+  }
+}
+
 export async function readActivityFeed(
   options: ActivityFeedOptions
 ): Promise<ActivityPage> {
@@ -50,9 +59,7 @@ export async function readActivityFeed(
   const page = await listActivity({
     ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
     visibleSpaces,
-    includeThreads: hasScope(options.scopes, "threads:read"),
-    includeRecords: hasScope(options.scopes, "records:read"),
-    includeComments: hasScope(options.scopes, "annotations:read"),
+    ...scopeFilters(options.scopes),
     ...(options.actorKind ? { actorKind: options.actorKind } : {}),
     ...(options.actorId ? { actorId: options.actorId } : {}),
     before: options.before ?? null,
@@ -75,7 +82,7 @@ export async function readActivityAgents(options: {
     listActivityAgents({
       ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
       visibleSpaces,
-      includeThreads: hasScope(options.scopes, "threads:read"),
+      ...scopeFilters(options.scopes),
     }),
     agentNamesByPrincipal().catch(() => new Map<string, string>()),
   ])

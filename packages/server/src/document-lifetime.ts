@@ -137,11 +137,13 @@ export async function setDocumentLifetime(options: {
   const path = sanitizeDocPath(options.path)
   // Validate and write under the doc-path lock so a concurrent move or
   // archive cannot leave the date on a path the document no longer has.
+  let previous: DocumentLifetime | undefined
   await withDocPathLock(options.spaceId, async () => {
     const target = (
       await listDocumentLifetimeTargetsLocked(options.spaceId)
     ).find((candidate) => candidate.path === path)
     requireChangeable(target, path)
+    previous = target.view.lifetime ?? "durable"
     await setDocsArchiveOn(
       options.spaceId,
       [path],
@@ -150,12 +152,16 @@ export async function setDocumentLifetime(options: {
     )
   })
   await publishLifetimeChange(options.spaceId)
-  recordActivity({
-    spaceId: options.spaceId,
-    action:
-      options.change.lifetime === "durable" ? "doc.kept" : "doc.madeTemporary",
-    target: { kind: "doc", path },
-  })
+  // Repeating the current lifetime (an agent restating it on each write, or a
+  // new archive date) is not a change anyone needs to read about.
+  if (previous !== options.change.lifetime) {
+    recordActivity({
+      spaceId: options.spaceId,
+      action:
+        options.change.lifetime === "durable" ? "doc.kept" : "doc.madeTemporary",
+      target: { kind: "doc", path },
+    })
+  }
   return {
     path,
     lifetime: options.change.lifetime,

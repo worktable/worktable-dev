@@ -726,6 +726,73 @@ export async function listOpenRequestsForViewer(
   })
 }
 
+/**
+ * The viewer's messages whose delivery failed while their reply request is
+ * still open. Every failed request counts, not only each thread's latest.
+ */
+export async function listFailedDeliveriesForViewer(
+  identity: ThreadIdentity
+): Promise<
+  {
+    location: ThreadLocation
+    threadId: string
+    threadTitle: string
+    activity: ThreadActivity
+    recipientName?: string
+  }[]
+> {
+  const viewer = (await participantForIdentity(identity)).participant
+  const activeSpaceIds = new Set(
+    (await listSpaces())
+      .filter((space) => !getSpaceArchiveInfo(space))
+      .map((space) => space.id)
+  )
+  const { threads } = await scanAllThreads()
+  const perThread = await Promise.all(
+    threads.map(async (thread) => {
+      const location = threadLocation(thread)
+      if (location.kind === "space" && !activeSpaceIds.has(location.spaceId)) {
+        return []
+      }
+      const open = new Map(
+        thread.messages.flatMap((message) =>
+          message.authorMemberId === viewer.id &&
+          message.responseRequest?.status === "open"
+            ? [[message.id, message.responseRequest.identityId] as const]
+            : []
+        )
+      )
+      if (open.size === 0) return []
+      const activities = await getThreadActivities(location, thread.id)
+      return activities.flatMap((activity) => {
+        if (
+          activity.state !== "failed" ||
+          open.get(activity.messageId) !== activity.identityId
+        ) {
+          return []
+        }
+        const recipientName =
+          thread.identities.find(
+            (candidate) => candidate.id === activity.identityId
+          )?.name ??
+          thread.members.find(
+            (member) => member.id === activity.participantId
+          )?.name
+        return [
+          {
+            location,
+            threadId: thread.id,
+            threadTitle: thread.title,
+            activity,
+            ...(recipientName ? { recipientName } : {}),
+          },
+        ]
+      })
+    })
+  )
+  return perThread.flat()
+}
+
 export async function readThreadMessages(
   identity: ThreadIdentity,
   threadId: string,

@@ -44,5 +44,9 @@ export const pendingRouter = new Hono()
 
 pendingRouter.use("*", requireScope("documents:read"))
 
-// GET /api/pending — what is waiting on the reader.
-pendingRouter.get("/", async (c) => c.json(await listPending(c.get("identity"))))
+// GET /api/pending — what is waiting on the reader, optionally in one Space.
+pendingRouter.get("/", async (c) =>
+  c.json(
+    await listPending(c.get("identity"), c.req.query("spaceId") || undefined)
+  )
+)

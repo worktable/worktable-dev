@@ -28,7 +28,7 @@ import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
 import { activityQueryKeys } from "@/lib/activity"
 import { restoreSpace } from "@/lib/api"
 import { useDocuments } from "@/lib/documents-queries"
-import { setPins, useRecentDocuments } from "@/lib/lifetime"
+import { setPins } from "@/lib/lifetime"
 import { spaceQueryOptions, useRecordCollections, useSpace } from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
@@ -252,11 +252,6 @@ function SpaceOverview({
   const [showAll, setShowAll] = useState(false)
   const { data: documentItems, isPending: documentsPending } = useDocuments(spaceId)
   const { data: collections } = useRecordCollections(spaceId)
-  const recent = useRecentDocuments({
-    sort: "updated",
-    includeTemporary: false,
-    spaceId,
-  })
 
   const documents = (documentItems ?? []).filter(
     (item): item is DocumentSummary => item.kind === "document" && !item.archived
@@ -274,16 +269,15 @@ function SpaceOverview({
 
   const byUpdated = (a: DocumentSummary, b: DocumentSummary) =>
     (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-  const listed: RecentItem[] = folder
-    ? documents
-        .filter(
-          (document) =>
-            document.path.startsWith(`${folder}/`) &&
-            document.lifetime !== "temporary"
-        )
-        .sort(byUpdated)
-        .map((document) => ({ spaceId, document }))
-    : (recent.data?.items ?? []).map((item) => ({ spaceId, document: item.document }))
+  // Built from the Space's own listing, so an archived Space still shows its docs.
+  const listed: RecentItem[] = documents
+    .filter(
+      (document) =>
+        document.lifetime !== "temporary" &&
+        (!folder || document.path.startsWith(`${folder}/`))
+    )
+    .sort(byUpdated)
+    .map((document) => ({ spaceId, document }))
   const temporary: RecentItem[] = documents
     .filter(
       (document) =>
@@ -292,7 +286,7 @@ function SpaceOverview({
     )
     .map((document) => ({ spaceId, document }))
   const visible = showAll ? listed : listed.slice(0, RECENT_ROWS)
-  const loading = documentsPending || recent.isPending
+  const loading = documentsPending
 
   return (
     <PageWithActivity spaceId={spaceId} className="xl:h-auto xl:min-h-0 xl:flex-1">

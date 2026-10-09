@@ -30,10 +30,15 @@ import type { RequestPrincipal } from "./token-store.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 
-const WORKTABLE_KEY = "worktable"
-/** Compact a log once it passes this size, keeping the newest events. */
+/** Log name for Worktable-level threads; Space IDs cannot start with "_". */
+const WORKTABLE_KEY = "_worktable"
+/**
+ * Compact a log once it passes this size, keeping the newest events within
+ * both limits so the result always lands well under the threshold.
+ */
 const COMPACT_AT_BYTES = 2 * 1024 * 1024
 const KEEP_AFTER_COMPACT = 5000
+const KEEP_BYTES_AFTER_COMPACT = COMPACT_AT_BYTES / 2
 /** Repeated saves of one doc by one actor within this window are one edit. */
 const EDIT_SESSION_MS = 15 * 60 * 1000
 
@@ -245,10 +250,17 @@ async function appendEvent(event: ActivityEvent): Promise<void> {
     await appendFile(path, `${JSON.stringify(event)}\n`, { mode: 0o600 })
     if ((await stat(path)).size < COMPACT_AT_BYTES) return
     const lines = (await readFile(path, "utf8")).split("\n").filter(Boolean)
-    await atomicWriteText(
-      path,
-      `${lines.slice(-KEEP_AFTER_COMPACT).join("\n")}\n`
-    )
+    const kept: string[] = []
+    let bytes = 0
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index]!
+      bytes += Buffer.byteLength(line) + 1
+      if (kept.length === KEEP_AFTER_COMPACT || bytes > KEEP_BYTES_AFTER_COMPACT) {
+        break
+      }
+      kept.push(line)
+    }
+    await atomicWriteText(path, `${kept.reverse().join("\n")}\n`)
   })
 }
 
@@ -374,6 +386,23 @@ function createdKey(event: ActivityEvent, offset: number): string {
   ].join("|")
 }
 
+type VisibilityOptions = Pick<
+  ListActivityOptions,
+  "visibleSpaces" | "includeThreads" | "includeRecords" | "includeComments"
+>
+
+/** Whether the reader's Spaces and scopes let them see this event. */
+function isVisible(event: ActivityEvent, options: VisibilityOptions): boolean {
+  return (
+    (event.spaceId === null
+      ? options.includeThreads
+      : options.visibleSpaces.has(event.spaceId)) &&
+    (options.includeThreads || event.target.kind !== "thread") &&
+    (options.includeRecords || event.target.kind !== "collection") &&
+    (options.includeComments || !event.action.startsWith("comment."))
+  )
+}
+
 export async function listActivity(
   options: ListActivityOptions
 ): Promise<ActivityPage> {
@@ -385,12 +414,7 @@ export async function listActivity(
     .flat()
     .filter(
       (event) =>
-        (event.spaceId === null
-          ? options.includeThreads
-          : options.visibleSpaces.has(event.spaceId)) &&
-        (options.includeThreads || event.target.kind !== "thread") &&
-        (options.includeRecords || event.target.kind !== "collection") &&
-        (options.includeComments || !event.action.startsWith("comment.")) &&
+        isVisible(event, options) &&
         (!options.actorKind || event.actor.kind === options.actorKind) &&
         (!options.actorId || event.actor.id === options.actorId) &&
         (!cursor || isBefore(event, cursor))
@@ -441,21 +465,14 @@ export async function listActivity(
 
 /** Agents with visible activity, most recently active first. */
 export async function listActivityAgents(
-  options: Pick<
-    ListActivityOptions,
-    "spaces" | "visibleSpaces" | "includeThreads"
-  >
+  options: VisibilityOptions & Pick<ListActivityOptions, "spaces">
 ): Promise<ActivityActor[]> {
   await drainActivity()
   const sources = options.spaces ?? (await loggedSpaces())
   const events = (await Promise.all(sources.map(readLog)))
     .flat()
     .filter(
-      (event) =>
-        event.actor.kind === "agent" &&
-        (event.spaceId === null
-          ? options.includeThreads
-          : options.visibleSpaces.has(event.spaceId))
+      (event) => event.actor.kind === "agent" && isVisible(event, options)
     )
     .sort(newestFirst)
   const agents = new Map<string, ActivityActor>()

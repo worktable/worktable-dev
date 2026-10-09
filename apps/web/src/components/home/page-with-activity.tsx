@@ -4,19 +4,17 @@ import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import { ActivityPanel } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 
-const WIDE_QUERY = "(min-width: 1600px)"
-
-/** The same width as other side panels, with more room on wide screens. */
-function usePanelWidth(): number {
-  const [wide, setWide] = useState(false)
+/** Whether the window matches a media query; null until mounted. */
+function useMediaQuery(media: string): boolean | null {
+  const [matches, setMatches] = useState<boolean | null>(null)
   useEffect(() => {
-    const query = window.matchMedia(WIDE_QUERY)
-    const update = () => setWide(query.matches)
+    const query = window.matchMedia(media)
+    const update = () => setMatches(query.matches)
     update()
     query.addEventListener("change", update)
     return () => query.removeEventListener("change", update)
-  }, [])
-  return wide ? 448 : 384
+  }, [media])
+  return matches
 }
 
 /**
@@ -33,7 +31,10 @@ export function PageWithActivity({
   children: ReactNode
 }) {
   const scrollRef = useScrollFade<HTMLDivElement>(8, { top: false })
-  const panelWidth = usePanelWidth()
+  // The panel matches other side panels, with more room on wide screens.
+  const panelWidth = useMediaQuery("(min-width: 1600px)") ? 448 : 384
+  // Both placements stay in the layout; only the visible one loads.
+  const wide = useMediaQuery("(min-width: 1280px)")
   return (
     <div className={cn("xl:flex xl:h-full", className)}>
       <div
@@ -45,12 +46,18 @@ export function PageWithActivity({
           <ActivityPanel
             spaceId={spaceId}
             limit={8}
+            enabled={wide === false}
             className="border-t border-border pt-8 xl:hidden"
           />
         </div>
       </div>
       <DesktopContextPanel open width={panelWidth}>
-        <ActivityPanel spaceId={spaceId} limit={40} className="h-full p-5 pr-4" />
+        <ActivityPanel
+          spaceId={spaceId}
+          limit={40}
+          enabled={wide === true}
+          className="h-full p-5 pr-4"
+        />
       </DesktopContextPanel>
     </div>
   )

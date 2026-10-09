@@ -157,6 +157,8 @@ describe("workspace activity", () => {
       docPath: "pulse",
       content: "# Pulse\n\nQ3 is on track.\n",
       expectedRevision: written["revision"],
+      // Restating the lifetime is not a change worth an Activity line.
+      lifetime: "durable",
     })
     // The person asks for a change; the agent does it and resolves the request.
     const { annotation } = await request<{ annotation: { id: string } }>(
@@ -248,7 +250,7 @@ describe("workspace activity", () => {
       waitSeconds: 0,
     })
 
-    const pending = await request<PendingResult>("/api/pending")
+    const pending = await request<PendingResult>("/api/pending?spaceId=company")
     expect(pending.items).toMatchObject([
       {
         kind: "threadRequest",

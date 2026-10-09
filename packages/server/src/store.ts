@@ -1631,7 +1631,7 @@ async function recordDocVersion(
     context,
     opts
   );
-  if (provenance && opts?.operation !== "create" && before?.data) {
+  if (provenance && opts?.operation !== "create" && before?.data != null) {
     noteDocumentEdited(spaceId, docPath, context?.updatedBy, context?.source);
   }
   return provenance;

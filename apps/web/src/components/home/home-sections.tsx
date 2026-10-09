@@ -101,12 +101,10 @@ function PendingRow({
 
 /** Shown only when something is waiting on the reader. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
-  const { data } = usePending()
+  const { data } = usePending(spaceId)
   const { data: spaces } = useSpaces()
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
-  const items = (data?.items ?? []).filter(
-    (item) => !spaceId || item.spaceId === spaceId
-  )
+  const items = data?.items ?? []
   if (items.length === 0) return null
   return (
     <section aria-labelledby="pending-heading">
@@ -169,13 +167,16 @@ export function RecentRows({ items }: { items: RecentItem[] }) {
 
 // ── Temporary ──────────────────────────────────────────────
 
-const SOON_MS = 2 * 86_400_000
+/** Calendar days from today to the archive date, in the reader's time zone. */
+function daysUntil(archiveOn: string, now: number): number {
+  const day = (time: number) => {
+    const date = new Date(time)
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+  }
+  return day(Date.parse(archiveOn)) - day(now)
+}
 
-function archiveLabel(archiveOn: string, now: number): string {
-  const days = Math.round(
-    (new Date(archiveOn).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) /
-      86_400_000
-  )
+function archiveLabel(archiveOn: string, days: number): string {
   if (days <= 0) return "Archives today"
   if (days === 1) return "Archives tomorrow"
   if (days < 7) {
@@ -190,7 +191,8 @@ function TemporaryRow({ item }: { item: RecentItem }) {
   const [keeping, setKeeping] = useState(false)
   const [now] = useState(() => Date.now())
   const archiveOn = document.archiveOn!
-  const soon = Date.parse(archiveOn) - now < SOON_MS
+  const days = daysUntil(archiveOn, now)
+  const soon = days <= 1
   return (
     <div className={cn(rowClass, "relative")}>
       <Link
@@ -233,9 +235,9 @@ function TemporaryRow({ item }: { item: RecentItem }) {
         )}
       >
         <Clock3 className={cn("size-3", soon && "text-warning")} />
-        <span className="hidden sm:inline">{archiveLabel(archiveOn, now)}</span>
+        <span className="hidden sm:inline">{archiveLabel(archiveOn, days)}</span>
         <span className="sm:hidden">
-          {archiveLabel(archiveOn, now).replace(/^Archives (.)/, (_, first: string) =>
+          {archiveLabel(archiveOn, days).replace(/^Archives (.)/, (_, first: string) =>
             first.toUpperCase()
           )}
         </span>

@@ -11,8 +11,8 @@ import { listAnnotations } from "./annotation-store.ts"
 import { listDocuments } from "./document-query.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import {
+  listFailedDeliveriesForViewer,
   listOpenRequestsForViewer,
-  listThreadSummaries,
 } from "./thread-service.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 
@@ -23,17 +23,20 @@ function excerpt(text: string): string {
   return flat.length <= 160 ? flat : `${flat.slice(0, 159).trimEnd()}…`
 }
 
+/** Everything waiting on the reader, or only what belongs to one Space. */
 export async function listPending(
-  identity: TokenIdentity
+  identity: TokenIdentity,
+  spaceId?: string
 ): Promise<PendingResult> {
   const canReadThreads = hasScope(identity.scopes, "threads:read")
   const canReadAnnotations = hasScope(identity.scopes, "annotations:read")
   const [requests, failures, replies] = await Promise.all([
     canReadThreads ? threadRequests(identity) : [],
     canReadThreads ? failedDeliveries(identity) : [],
-    canReadAnnotations ? commentReplies() : [],
+    canReadAnnotations ? commentReplies(spaceId) : [],
   ])
   const items = [...requests, ...failures, ...replies]
+    .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, PENDING_LIMIT)
   return { items }
@@ -61,40 +64,22 @@ async function threadRequests(identity: TokenIdentity): Promise<PendingItem[]> {
 async function failedDeliveries(
   identity: TokenIdentity
 ): Promise<PendingItem[]> {
-  const summaries = await listThreadSummaries(
-    identity,
-    undefined,
-    undefined,
-    "failed"
-  )
-  return summaries.flatMap((summary) => {
-    const activity = summary.activity
-    if (!activity) return []
-    const location = summary.location
-    const agentName =
-      summary.identities.find((candidate) => candidate.id === activity.identityId)
-        ?.name ??
-      summary.members.find((member) => member.id === activity.participantId)
-        ?.name ??
-      "the agent"
-    return [
-      {
-        kind: "deliveryFailed",
-        id: `delivery:${summary.id}:${activity.messageId}`,
-        at: activity.updatedAt,
-        spaceId: location.kind === "space" ? location.spaceId : null,
-        threadId: summary.id,
-        threadTitle: summary.title,
-        agentName,
-      },
-    ]
-  })
+  return (await listFailedDeliveriesForViewer(identity)).map((failure) => ({
+    kind: "deliveryFailed",
+    id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
+    at: failure.activity.updatedAt,
+    spaceId:
+      failure.location.kind === "space" ? failure.location.spaceId : null,
+    threadId: failure.threadId,
+    threadTitle: failure.threadTitle,
+    agentName: failure.recipientName ?? "the agent",
+  }))
 }
 
 /** An agent answered a comment you left, and the comment is still open. */
-async function commentReplies(): Promise<PendingItem[]> {
-  const spaces = (await listSpaces()).filter(
-    (space) => !getSpaceArchiveInfo(space)
+async function commentReplies(spaceId?: string): Promise<PendingItem[]> {
+  const spaces = (await listSpaces()).filter((space) =>
+    spaceId ? space.id === spaceId : !getSpaceArchiveInfo(space)
   )
   const perSpace = await Promise.all(
     spaces.map(async (space) => {

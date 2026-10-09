@@ -43,7 +43,7 @@ a notification.
 
 Simultaneous drawing edits are not merged. If the saved drawing changed while
 you were drawing, choose **Save a copy** to preserve your work before choosing
-**Reload Drawing**.
+**Reload drawing**.
 
 ## Export and recover
 

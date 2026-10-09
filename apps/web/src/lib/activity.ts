@@ -16,6 +16,7 @@ export const activityQueryKeys = {
   list: (options: ActivityOptions) => ["activity", options] as const,
   agents: (spaceId?: string) => ["activity", "agents", spaceId ?? null] as const,
   pending: ["pending"] as const,
+  pendingIn: (spaceId?: string) => ["pending", spaceId ?? null] as const,
 }
 
 export interface ActivityOptions {
@@ -47,8 +48,12 @@ export function activityQueryOptions(options: ActivityOptions) {
 }
 
 /** The newest entries, refreshed while on screen like Recent. */
-export function useActivity(options: ActivityOptions) {
-  return useQuery({ ...activityQueryOptions(options), refetchInterval: 30_000 })
+export function useActivity(options: ActivityOptions, enabled = true) {
+  return useQuery({
+    ...activityQueryOptions(options),
+    enabled,
+    refetchInterval: 30_000,
+  })
 }
 
 /** Every entry, a page at a time, for the Activity page. */
@@ -78,10 +83,14 @@ export function useActivityAgents(spaceId?: string) {
   })
 }
 
-export function usePending() {
+/** What is waiting on the reader, across Spaces or in one. */
+export function usePending(spaceId?: string) {
   return useQuery({
-    queryKey: activityQueryKeys.pending,
-    queryFn: () => fetchJSON<PendingResult>("/api/pending"),
+    queryKey: activityQueryKeys.pendingIn(spaceId),
+    queryFn: () =>
+      fetchJSON<PendingResult>(
+        `/api/pending${spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : ""}`
+      ),
     staleTime: 10_000,
     refetchInterval: 30_000,
   })

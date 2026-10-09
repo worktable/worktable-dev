@@ -318,13 +318,16 @@ function LiveReply({ thread, last }: { thread: ThreadSummary; last: boolean }) {
 export function ActivityPanel({
   spaceId,
   limit,
+  enabled = true,
   className,
 }: {
   spaceId?: string
   limit: number
+  /** Whether this placement is on screen and should load. */
+  enabled?: boolean
   className?: string
 }) {
-  const { data, isPending } = useActivity({ spaceId, limit })
+  const { data, isPending } = useActivity({ spaceId, limit }, enabled)
   const { data: spaces } = useSpaces()
   const live = useLiveReplies(spaceId)
   const scrollRef = useScrollFade<HTMLDivElement>()

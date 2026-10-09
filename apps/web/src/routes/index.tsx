@@ -71,10 +71,10 @@ function HomePage() {
     includeTemporary: false,
     ...(spaceFilter ? { spaceId: spaceFilter } : {}),
   })
-  // Temporary docs come from the same feed with lifetimes included.
-  const withTemporary = useRecentDocuments({
+  const temporary = useRecentDocuments({
     sort: "updated",
     includeTemporary: true,
+    onlyTemporary: true,
     limit: 100,
     ...(spaceFilter ? { spaceId: spaceFilter } : {}),
   })
@@ -97,13 +97,13 @@ function HomePage() {
     spaceName: spaceFilter ? undefined : item.spaceName,
     document: item.document,
   }))
-  const temporaryItems: RecentItem[] = (withTemporary.data?.items ?? [])
-    .filter((item) => item.document.lifetime === "temporary")
-    .map((item) => ({
+  const temporaryItems: RecentItem[] = (temporary.data?.items ?? []).map(
+    (item) => ({
       spaceId: item.spaceId,
       spaceName: spaceFilter ? undefined : item.spaceName,
       document: item.document,
-    }))
+    })
+  )
 
   if (isLoading) {
     return (

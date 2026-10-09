@@ -29,8 +29,9 @@ hermes plugins install worktable/worktable-dev#packages/hermes-plugin --enable
 hermes worktable connect https://app.worktable.cloud
 ```
 
-Hermes prints a link and a code. Open the link on any device, sign in, and
-confirm the code. This works the same on a server without a browser.
+Sign in when Hermes opens the Worktable sign-in page. On a computer without a
+browser, open the printed link on another device and paste the final address
+back into Hermes.
 
 **Local or self-hosted Worktable:** in Worktable, open **Settings → Agents →
 Hermes**, select **Connect**, and run the command it shows:

@@ -50,38 +50,42 @@ async function threadRequests(
   identity: TokenIdentity,
   spaceId?: string
 ): Promise<PendingItem[]> {
-  return (await listOpenRequestsForViewer(identity, spaceId)).map((request) => ({
-    kind: "threadRequest",
-    id: `thread:${request.threadId}:${request.message.id}`,
-    at: request.message.createdAt,
-    spaceId:
-      request.location.kind === "space" ? request.location.spaceId : null,
-    threadId: request.threadId,
-    threadTitle: request.threadTitle,
-    messageId: request.message.id,
-    from: {
-      kind: request.author.kind === "human" ? "person" : request.author.kind,
-      id: request.author.id,
-      name: request.author.name,
-    },
-    excerpt: excerpt(request.message.body),
-  }))
+  return (await listOpenRequestsForViewer(identity, spaceId)).map(
+    (request) => ({
+      kind: "threadRequest",
+      id: `thread:${request.threadId}:${request.message.id}`,
+      at: request.message.createdAt,
+      spaceId:
+        request.location.kind === "space" ? request.location.spaceId : null,
+      threadId: request.threadId,
+      threadTitle: request.threadTitle,
+      messageId: request.message.id,
+      from: {
+        kind: request.author.kind === "human" ? "person" : request.author.kind,
+        id: request.author.id,
+        name: request.author.name,
+      },
+      excerpt: excerpt(request.message.body),
+    })
+  )
 }
 
 async function failedDeliveries(
   identity: TokenIdentity,
   spaceId?: string
 ): Promise<PendingItem[]> {
-  return (await listFailedDeliveriesForViewer(identity, spaceId)).map((failure) => ({
-    kind: "deliveryFailed",
-    id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
-    at: failure.activity.updatedAt,
-    spaceId:
-      failure.location.kind === "space" ? failure.location.spaceId : null,
-    threadId: failure.threadId,
-    threadTitle: failure.threadTitle,
-    agentName: failure.recipientName ?? "the agent",
-  }))
+  return (await listFailedDeliveriesForViewer(identity, spaceId)).map(
+    (failure) => ({
+      kind: "deliveryFailed",
+      id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
+      at: failure.activity.updatedAt,
+      spaceId:
+        failure.location.kind === "space" ? failure.location.spaceId : null,
+      threadId: failure.threadId,
+      threadTitle: failure.threadTitle,
+      agentName: failure.recipientName ?? "the agent",
+    })
+  )
 }
 
 /** Every open annotation in a Space, a page at a time. */

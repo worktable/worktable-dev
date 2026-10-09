@@ -17,7 +17,11 @@ import {
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { resolveParticipant } from "./participant-store.ts"
+import {
+  participantKey,
+  participantsByKey,
+  resolveParticipant,
+} from "./participant-store.ts"
 import {
   listTokens,
   revokeToken,
@@ -237,15 +241,22 @@ function platformForTarget(target: AgentConnectionTarget): AgentPlatformId {
 
 function publicConnection(
   stored: StoredAgentConnection,
-  token: TokenMetadata
+  token: TokenMetadata,
+  participants: Map<string, ParticipantRef>
 ): AgentConnection {
   const platform = stored.platform ?? platformForTarget(stored.target)
+  // The participant's current record, not the copy saved when it connected:
+  // the agent itself may have renamed it since.
+  const participant =
+    participants.get(
+      participantKey({ agent: token.agent, principal: token.principal })
+    ) ?? stored.participant
   return {
     id: stored.id,
     authKind: "local-token",
     // One name: the agent's thread participant carries it once it has one.
     displayName:
-      stored.participant?.name ??
+      participant?.name ??
       stored.displayName ??
       (platform === "other"
         ? (token.agent ?? AGENT_PLATFORMS.other.name)
@@ -255,7 +266,7 @@ function publicConnection(
     access: accessFromScopes(token.scopes),
     target: stored.target,
     mode: stored.mode,
-    participant: stored.participant,
+    participant,
     machine: stored.machine,
     connectedAt: stored.connectedAt,
     scopes: token.scopes,
@@ -269,7 +280,11 @@ function publicConnection(
  * credentials stay in the map so earlier activity keeps a readable name.
  */
 export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
-  const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+  const [file, tokens, participants] = await Promise.all([
+    loadFile(),
+    listTokens(),
+    participantsByKey(),
+  ])
   const workspace = getWorkspaceRoot()
   const tokensById = new Map(tokens.map((token) => [token.id, token]))
   const names = new Map<string, string>()
@@ -279,14 +294,18 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
     if (!token) continue
     names.set(
       `local-token:${token.id}`,
-      publicConnection(connection, token).displayName
+      publicConnection(connection, token, participants).displayName
     )
   }
   return names
 }
 
 export async function listAgentConnections(): Promise<AgentConnection[]> {
-  const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+  const [file, tokens, participants] = await Promise.all([
+    loadFile(),
+    listTokens(),
+    participantsByKey(),
+  ])
   const workspace = getWorkspaceRoot()
   const activeById = new Map(
     tokens
@@ -299,7 +318,7 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
     .flatMap((connection) => {
       if (connection.workspace !== workspace) return []
       const token = activeById.get(connection.credentialId)
-      return token ? [publicConnection(connection, token)] : []
+      return token ? [publicConnection(connection, token, participants)] : []
     })
     .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
@@ -335,7 +354,7 @@ export async function updateAgentConnection(
     access?: AgentAccess
   }
 ): Promise<AgentConnection | null> {
-  return serialized(async () => {
+  const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
     const connection = file.connections.find(
@@ -361,7 +380,6 @@ export async function updateAgentConnection(
         )
       }
       await setTokenScopes(token.id, scopes)
-      token.scopes = scopes
     }
     if (changes.icon !== undefined) {
       if (changes.icon === null) delete connection.icon
@@ -369,14 +387,22 @@ export async function updateAgentConnection(
     }
     if (changes.displayName !== undefined) {
       connection.displayName = changes.displayName
-      const { participant } = await resolveParticipant(
-        { agent: token.agent, principal: token.principal },
-        { name: changes.displayName }
-      )
-      connection.participant = participant
     }
     await saveFile(file)
-    await notifyThreadParticipantsChanged()
-    return publicConnection(connection, token)
+    return token
   })
+  if (!token) return null
+  if (changes.displayName !== undefined) {
+    // Outside the connection lock: the rename rewrites every thread the
+    // agent is in, and other processes should not wait on that.
+    await resolveParticipant(
+      { agent: token.agent, principal: token.principal },
+      { name: changes.displayName }
+    )
+  }
+  await notifyThreadParticipantsChanged()
+  return (
+    (await listAgentConnections()).find((connection) => connection.id === id) ??
+    null
+  )
 }

@@ -18,6 +18,7 @@ import {
 import { setAppDirOverride } from "./app-storage.ts";
 import {
   listAgentConnections,
+  updateAgentConnection,
   upsertAgentConnection,
 } from "./agent-connection-store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
@@ -218,6 +219,44 @@ describe("create (owner surface)", () => {
         machine: "worktable-host",
         lastSeenAt: expect.any(String),
       },
+    ]);
+
+    // The owner renames it; reconnecting the same installation with the
+    // setup form's default name keeps the owner's name and tells the adapter.
+    const [connection] = await listAgentConnections();
+    await updateAgentConnection(connection!.id, {
+      displayName: "Atlas Studio",
+    });
+    const again = await createPairing(app, {
+      target: {
+        kind: "agent-adapter",
+        adapter: "openclaw",
+        participantName: "OpenClaw",
+      },
+    });
+    const reconnected = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: again.code,
+          hostname: "worktable-host",
+          installationId: "oci_worktable_install",
+        },
+      })
+    );
+    const reconnectedPayload = (await reconnected.json()) as {
+      token: string;
+      participantName: string;
+    };
+    expect(reconnectedPayload.participantName).toBe("Atlas Studio");
+    const recompleted = await app.fetch(
+      jsonReq("POST", "/api/pairing/complete", {
+        bearer: reconnectedPayload.token,
+        body: { code: again.code },
+      })
+    );
+    expect(recompleted.status).toBe(200);
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "Atlas Studio", participant: { name: "Atlas Studio" } },
     ]);
   });
 

@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { upsertAgentConnection } from "./agent-connection-store.ts"
+import { resolveParticipant } from "./participant-store.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { authSessionRouter } from "./routes/auth-session.ts"
 import { SESSION_COOKIE_NAME, setOwnerPassword } from "./session-store.ts"
@@ -166,6 +167,17 @@ describe("agent connection routes", () => {
     )
     expect(withoutThreads.status).toBe(400)
     expect((await verifyToken(credential.token))?.scopes).toEqual(scopes)
+
+    // An agent may rename its own participant; Settings shows that name.
+    const identity = (await verifyToken(credential.token))!
+    await resolveParticipant(identity, { name: "Self Named Claw" })
+    expect(
+      (
+        (await (
+          await app.fetch(request("GET", "/api/agent-connections", cookie))
+        ).json()) as { connections: Array<{ displayName: string }> }
+      ).connections[0]?.displayName
+    ).toBe("Self Named Claw")
 
     const platformLogo = await app.fetch(
       request("PATCH", path, cookie, { icon: null })

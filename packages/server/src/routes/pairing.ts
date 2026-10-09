@@ -609,16 +609,21 @@ pairingRouter.post("/redeem", async (c) => {
     agent: agentLabel,
     scopes: session.scopes,
   });
+  // The pairing's name only names a new agent. Reconnecting an installation
+  // keeps the name its owner gave it, and the adapter learns that name here.
+  let participantName = adapterTarget?.participantName;
   try {
     await attachPairingToken(session.id, metadata.id);
     if (adapterTarget) {
-      await resolveParticipant(
-        { agent: metadata.agent, principal: metadata.principal },
-        {
-          name: adapterTarget.participantName,
-          defaultSpaceId: adapterTarget.defaultSpaceId ?? null,
-        }
-      );
+      participantName = (
+        await resolveParticipant(
+          { agent: metadata.agent, principal: metadata.principal },
+          {
+            initialName: adapterTarget.participantName,
+            defaultSpaceId: adapterTarget.defaultSpaceId ?? null,
+          }
+        )
+      ).participant.name;
     }
   } catch {
     const setupTarget = adapterTarget
@@ -647,7 +652,7 @@ pairingRouter.post("/redeem", async (c) => {
     workspaceName: basename(getWorkspaceRoot()),
     ...(adapterTarget
       ? {
-          participantName: adapterTarget.participantName,
+          participantName,
           ...(adapterTarget.defaultSpaceId
             ? { defaultSpaceId: adapterTarget.defaultSpaceId }
             : {}),
@@ -705,7 +710,7 @@ pairingRouter.post("/complete", async (c) => {
           await resolveParticipant(
             { agent: metadata.agent, principal: metadata.principal },
             {
-              name: target.participantName,
+              initialName: target.participantName,
               defaultSpaceId: target.defaultSpaceId ?? null,
             }
           )

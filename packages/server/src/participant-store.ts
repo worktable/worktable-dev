@@ -111,7 +111,7 @@ async function notifyParticipantsChanged(): Promise<void> {
   }
 }
 
-function participantKey(
+export function participantKey(
   identity: Pick<TokenIdentity, "agent" | "principal">
 ): string {
   return identity.agent
@@ -285,6 +285,16 @@ export async function resolveParticipant(
   // Outside the binding lock: threads take their own locks.
   if (renamed) await renameThreadMember(renamed.id, renamed.name)
   return resolved
+}
+
+/** Each identity's current participant, keyed like `participantKey`. */
+export async function participantsByKey(): Promise<
+  Map<string, ParticipantRef>
+> {
+  const file = await loadBindings()
+  return new Map(
+    file.bindings.map((binding) => [binding.key, binding.participant])
+  )
 }
 
 export async function listParticipantBindings(): Promise<

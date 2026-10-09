@@ -17,6 +17,7 @@ import {
   DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
+  isAgentPlatformId,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
   mcpClientSnippet,
@@ -1279,7 +1280,7 @@ function agentConnectionName(connection: AgentConnection): string {
 }
 
 function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
-  if (connection.platform) return connection.platform
+  if (isAgentPlatformId(connection.platform)) return connection.platform
   return connection.target.kind === "agent-adapter"
     ? platformForAdapter(connection.target.adapter)
     : platformForClient(connection.target.clientId)

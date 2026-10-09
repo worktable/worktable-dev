@@ -54,8 +54,8 @@ New workspaces already use the current format.
 If you open Worktable while the upgrade is running, you will see **Upgrading your
 workspace**. Editing and agent access wait until preparation finishes, then the
 page opens automatically. Allow several minutes for a large workspace; later
-starts do not repeat the migration. **New drawing** becomes available after the
-upgrade.
+starts do not repeat the migration. **Drawing** appears in a Space's **+** menu
+after the upgrade.
 
 Existing documents, history, and share links are preserved. Worktable retains the
 original workspace as a rollback copy beside the workspace folder. Keep that copy

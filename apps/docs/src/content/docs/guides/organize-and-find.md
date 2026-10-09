@@ -41,13 +41,13 @@ Documents can be **durable** or **temporary**:
   they archive seven days after their last edit, rename, or comment. You can
   choose an archive date; later edits, renames, or comments can extend it.
 
-New documents created in the app start temporary. Clear **New documents are
-temporary** in the Space's **+** menu to change that default. When asking an
+New documents created in the app start temporary. Clear **Start as Temporary**
+in the Space's **+** menu to change that default. When asking an
 agent to create work, specify whether you want to keep it or archive it later.
 
 On a temporary document, open the **Archives** chip to choose **Keep**, change
 the archive date, or select **Archive now**. A durable document's menu offers
-**Make temporary**.
+**Make Temporary**.
 
 Archiving removes a document from active views without deleting it. Restoring
 an archived document makes it durable. Archived documents are never deleted
@@ -61,7 +61,7 @@ by typed text; freehand marks require visual inspection.
 Home shows what is pending for you, recent durable docs across Spaces, and the
 temporary docs that archive soonest, each with **Keep**. Space Home narrows the
 view to one Space. **Activity** lists what people and agents did, newest first;
-filter it by Space or by who acted. Sidebar search can include archived results.
+filter it by Space, by you, or by a single agent. Sidebar search can include archived results.
 
 Open the top-level **Threads** page for conversations across Worktable, or a
 Space's **Threads** page for its conversations. Threads have their own location

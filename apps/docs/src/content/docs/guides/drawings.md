@@ -8,15 +8,15 @@ with the rest of a Space and can be inspected or edited by connected agents.
 
 ## Create a drawing
 
-Choose **New drawing** from the **+** menu beside a Space. Drawings open with the
+Choose **Drawing** from the **+** menu beside a Space. Drawings open with the
 selection arrow active. Use the drawing tools for shapes, text, and freehand
 marks; changes save automatically after you stop drawing.
 
 Choose a background under **Board menu → Grid**. It saves with the drawing.
 Use **Archives → Keep** to make a temporary drawing durable.
 
-If **New drawing** is unavailable on an older installation, complete the
-[workspace upgrade](/guides/update-and-uninstall/#workspace-upgrades).
+If **Drawing** is missing from that menu on an older installation, complete
+the [workspace upgrade](/guides/update-and-uninstall/#workspace-upgrades).
 
 ## Work with agents
 
@@ -43,12 +43,12 @@ a notification.
 
 Simultaneous drawing edits are not merged. If the saved drawing changed while
 you were drawing, choose **Save a copy** to preserve your work before choosing
-**Reload drawing**.
+**Reload Drawing**.
 
 ## Export and recover
 
-The document menu offers **Download PNG**, **Download drawing**, and **Save a
-copy**. Drawing versions are retained through the document API, but the browser
+The document menu offers **Download PNG**, **Download Drawing**, and **Save a
+Copy**. Drawing versions are retained through the document API, but the browser
 does not yet have a drawing history panel. An agent can use retained versions
 for recovery.
 

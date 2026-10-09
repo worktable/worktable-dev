@@ -35,9 +35,9 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await row.hover()
   await row.getByRole("button", { name: "New", exact: true }).click()
   await expect(
-    page.getByRole("menuitemcheckbox", { name: "New documents are temporary" })
+    page.getByRole("menuitemcheckbox", { name: "Start as Temporary" })
   ).toHaveAttribute("aria-checked", "true")
-  await page.getByRole("menuitem", { name: "New doc", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Doc", exact: true }).click()
   await expect(page).toHaveURL(/documents\/untitled$/)
 
   await expect(

@@ -25,7 +25,7 @@ complete fictional example.
 ## View and inspect
 
 Open the HTML doc from the sidebar. Use the fullscreen control for more room,
-or **Open in new tab** from its menu. **Copy HTML** copies the source for use in
+or **Open in New Tab** from its menu. **Copy HTML** copies the source for use in
 another tool or conversation.
 
 HTML docs run in a sandbox. Network access is disabled by default, and access

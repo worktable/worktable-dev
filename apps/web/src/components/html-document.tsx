@@ -725,7 +725,7 @@ function WidgetDetailPage({
     actions.push(
       {
         id: "open-new-tab",
-        label: "Open in new tab",
+        label: "Open in New Tab",
         icon: ExternalLink,
         onSelect: () => window.open(newTabUrl, "_blank", "noopener,noreferrer"),
         separatorBefore: true,
@@ -738,7 +738,7 @@ function WidgetDetailPage({
       },
       {
         id: "edit-details",
-        label: "Edit details",
+        label: "Edit Details",
         icon: Pencil,
         onSelect: () => setRenameOpen(true),
         separatorBefore: true,

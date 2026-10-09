@@ -64,7 +64,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
     .locator("../..")
     .getByRole("button", { name: "New", exact: true })
     .click()
-  await page.getByRole("menuitem", { name: "New drawing", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Drawing", exact: true }).click()
   await page.getByLabel("Name", { exact: true }).fill("Scratchpad")
   await page.getByRole("button", { name: "Create drawing" }).click()
   await expect(page).toHaveURL(/documents\/drawings\/scratchpad$/)
@@ -226,7 +226,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   await page.clock.runFor(100)
   const reading = page.waitForRequest(sourceUrl)
   await page
-    .getByRole("menuitem", { name: "Reload drawing", exact: true })
+    .getByRole("menuitem", { name: "Reload Drawing", exact: true })
     .click()
   await reading
   await page.clock.fastForward(2000)

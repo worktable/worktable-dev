@@ -163,21 +163,21 @@ export function SpaceNewMenu({
         <DropdownMenuContent align={align} sideOffset={4} className="min-w-60">
           <DropdownMenuItem onClick={() => newDoc()}>
             <FileText className="mr-2 h-4 w-4" />
-            New doc
+            Doc
           </DropdownMenuItem>
           {workspace?.storageVersion === 2 && (
             <DropdownMenuItem onClick={() => setDrawingOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" />
-              New drawing
+              Drawing
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => setWidgetOpen(true)}>
             <AppWindow className="mr-2 h-4 w-4" />
-            New HTML doc
+            HTML Doc
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
             <Database className="mr-2 h-4 w-4" />
-            New record collection
+            Record Collection
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
@@ -187,8 +187,8 @@ export function SpaceNewMenu({
               setLifetime(checked ? "temporary" : "durable")
             }}
           >
-            <Clock3 className="h-4 w-4" />
-            New documents are temporary
+            <Clock3 className="mr-2 h-4 w-4" />
+            Start as Temporary
           </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>

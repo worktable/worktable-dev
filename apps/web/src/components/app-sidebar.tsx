@@ -1129,7 +1129,7 @@ function WidgetContextMenuButton({
         {onRenameFolder && (
           <DropdownMenuItem onClick={onRenameFolder}>
             <Pencil className="mr-2 h-4 w-4" />
-            Rename folder
+            Rename Folder
           </DropdownMenuItem>
         )}
         {(folderArchived ? onRestoreFolder : onArchiveFolder) && (
@@ -1141,13 +1141,13 @@ function WidgetContextMenuButton({
             ) : (
               <Archive className="mr-2 h-4 w-4" />
             )}
-            {folderArchived ? "Restore folder" : "Archive folder"}
+            {folderArchived ? "Restore Folder" : "Archive Folder"}
           </DropdownMenuItem>
         )}
         {onDeleteFolder && (
           <DropdownMenuItem variant="destructive" onClick={onDeleteFolder}>
             <Trash className="mr-2 h-4 w-4" />
-            Delete folder
+            Delete Folder
           </DropdownMenuItem>
         )}
         {hasFolderActions && <DropdownMenuSeparator />}
@@ -1157,7 +1157,7 @@ function WidgetContextMenuButton({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onRename}>
           <Pencil className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Rename HTML doc" : "Rename"}
+          {isHybridPath ? "Rename HTML Doc" : "Rename"}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
           {archived ? (
@@ -1167,16 +1167,16 @@ function WidgetContextMenuButton({
           )}
           {archived
             ? isHybridPath
-              ? "Restore HTML doc"
+              ? "Restore HTML Doc"
               : "Restore"
             : isHybridPath
-              ? "Archive HTML doc"
+              ? "Archive HTML Doc"
               : "Archive"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Delete HTML doc" : "Delete"}
+          {isHybridPath ? "Delete HTML Doc" : "Delete"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

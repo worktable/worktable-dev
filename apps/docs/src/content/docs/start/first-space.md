@@ -9,7 +9,7 @@ prompts below, [connect an agent](/start/connect-your-agent/) first.
 ## Create a brief
 
 Use an existing Space for the project, or create one from the sidebar. From the
-Space's **+** menu, choose **New doc**. Write the objective, constraints, and next
+Space's **+** menu, choose **Doc**. Write the objective, constraints, and next
 question you need to answer.
 
 You can instead give your agent the source material and ask:

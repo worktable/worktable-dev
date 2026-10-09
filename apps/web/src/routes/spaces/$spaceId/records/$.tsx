@@ -730,17 +730,17 @@ function RecordsPage() {
                 <DropdownMenuContent align="end" className="min-w-48">
                   <DropdownMenuItem onClick={() => setSchemaOpen(true)}>
                     <Settings2 className="mr-2 size-4" />
-                    Edit schema
+                    Edit Schema
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem checked={includeArchived} onCheckedChange={setIncludeArchived}>
                     <Archive className="mr-2 size-4" />
-                    Include archived
+                    Include Archived
                   </DropdownMenuCheckboxItem>
                   {unmodeledCount > 0 && (
                     <DropdownMenuCheckboxItem checked={showUnmodeled} onCheckedChange={setShowUnmodeled}>
                       <PanelRight className="mr-2 size-4" />
-                      Show unmodeled fields
+                      Show Unmodeled Fields
                     </DropdownMenuCheckboxItem>
                   )}
                 </DropdownMenuContent>
@@ -1125,7 +1125,7 @@ function ColumnHeaderLabel({ column }: { column: RecordFieldColumn }) {
 }
 
 /** Hover-revealed row actions. With every scalar cell owning its click for
- *  inline editing, "Open details" here is the explicit path to the peek
+ *  inline editing, "Open Details" here is the explicit path to the peek
  *  (row clicks on non-editable areas still open it too). */
 function RecordRowMenu({
   record,
@@ -1157,7 +1157,7 @@ function RecordRowMenu({
         <DropdownMenuContent align="end" className="min-w-44">
           <DropdownMenuItem onClick={onOpen}>
             <PanelRight className="mr-2 size-4" />
-            Open details
+            Open Details
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onDuplicate}>
             <Copy className="mr-2 size-4" />

@@ -102,7 +102,7 @@ export function useDocumentOrganizeActions(
         }
       : {
           id: "make-temporary",
-          label: "Make temporary",
+          label: "Make Temporary",
           icon: Clock3,
           onSelect: () => void actions.makeTemporary(),
         },

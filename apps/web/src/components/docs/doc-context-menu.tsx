@@ -78,7 +78,7 @@ export function DocContextMenuButton({
         {onRename && (
           <DropdownMenuItem onClick={onRename}>
             <Pencil className="mr-2 h-4 w-4" />
-            {isFolder ? "Rename folder" : "Rename"}
+            {isFolder ? "Rename Folder" : "Rename"}
           </DropdownMenuItem>
         )}
         {(archived ? onRestore : onArchive) && (
@@ -90,17 +90,17 @@ export function DocContextMenuButton({
             )}
             {archived
               ? isFolder
-                ? "Restore folder"
+                ? "Restore Folder"
                 : "Restore"
               : isFolder
-                ? "Archive folder"
+                ? "Archive Folder"
                 : "Archive"}
           </DropdownMenuItem>
         )}
         {onDelete && (
           <DropdownMenuItem variant="destructive" onClick={onDelete}>
             <Trash className="mr-2 h-4 w-4" />
-            {isFolder ? "Delete folder" : "Delete"}
+            {isFolder ? "Delete Folder" : "Delete"}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

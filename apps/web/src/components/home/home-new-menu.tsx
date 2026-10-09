@@ -96,7 +96,7 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <FileText className="mr-2 size-4" />
-                New doc
+                Doc
               </DropdownMenuSubTrigger>
               <SpaceChoices
                 spaces={spaces}
@@ -108,7 +108,7 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Pencil className="mr-2 size-4" />
-                New drawing
+                Drawing
               </DropdownMenuSubTrigger>
               <SpaceChoices spaces={spaces} onChoose={setDrawingSpaceId} />
             </DropdownMenuSub>
@@ -123,12 +123,12 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
             }
           >
             <MessageCircle className="mr-2 size-4" />
-            New thread
+            Thread
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setSpaceOpen(true)}>
             <FolderPlus className="mr-2 size-4" />
-            New space
+            Space
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

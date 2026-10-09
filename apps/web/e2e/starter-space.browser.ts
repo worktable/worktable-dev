@@ -596,7 +596,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await racePage
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await racePage.getByRole("menuitem", { name: "Rename folder" }).click()
+  await racePage.getByRole("menuitem", { name: "Rename Folder" }).click()
   const folderDialog = racePage.getByRole("dialog", {
     name: "Rename Folder",
   })
@@ -639,7 +639,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     name: "Actions for Live Status",
   })
   await liveStatusMenu
-    .getByRole("menuitem", { name: "Archive HTML doc" })
+    .getByRole("menuitem", { name: "Archive HTML Doc" })
     .click()
   const archivedHtmlNotice = racePage.getByText(/This HTML doc is archived/)
   await expect(archivedHtmlNotice).toBeVisible()
@@ -664,7 +664,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
   await liveStatusMenu
-    .getByRole("menuitem", { name: "Restore HTML doc" })
+    .getByRole("menuitem", { name: "Restore HTML Doc" })
     .click()
   await expect(archivedHtmlNotice).toBeHidden()
   await expect(
@@ -680,7 +680,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await activeDocuments
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await liveStatusMenu.getByRole("menuitem", { name: "Archive folder" }).click()
+  await liveStatusMenu.getByRole("menuitem", { name: "Archive Folder" }).click()
   await expect(archivedHtmlNotice).toBeVisible()
   await expect(
     archivedDocuments.getByRole("link", {
@@ -701,7 +701,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await archivedDocuments
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await liveStatusMenu.getByRole("menuitem", { name: "Restore folder" }).click()
+  await liveStatusMenu.getByRole("menuitem", { name: "Restore Folder" }).click()
   await expect(archivedHtmlNotice).toBeHidden()
   await expect(
     activeDocuments.getByRole("link", { name: "Live Status", exact: true })
@@ -736,7 +736,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   ).toBeVisible()
   const popupPromise = page.waitForEvent("popup")
   await page.getByRole("button", { name: "More actions" }).click()
-  await page.getByRole("menuitem", { name: "Open in new tab" }).click()
+  await page.getByRole("menuitem", { name: "Open in New Tab" }).click()
   const popup = await popupPromise
   await expect(popup).toHaveURL(/\/spaces\/welcome\/documents\/roadmaps$/)
   const popupFrame = popup.frameLocator('iframe[title="Live Status"]')

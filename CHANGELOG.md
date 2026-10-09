@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-10-09
+
 ### Added
 
 - **Activity:** Home and Space Home show what people and agents did as a timeline in a side panel, newest first, including agents replying right now. The Activity page in the sidebar lists everything, filtered by Space, by you, or by a single agent.

@@ -132,9 +132,11 @@ function withLogLock<T>(path: string, work: () => Promise<T>): Promise<T> {
       withCrossProcessLock(lockPath, { label: "Activity history" }, work)
     )
   queues.set(path, next)
-  void next.finally(() => {
+  // Settle on both outcomes; the caller handles the write's own failure.
+  const forget = () => {
     if (queues.get(path) === next) queues.delete(path)
-  })
+  }
+  next.then(forget, forget)
   return next
 }
 

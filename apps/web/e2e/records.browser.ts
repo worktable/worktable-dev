@@ -399,7 +399,7 @@ test("empty and failed table searches preserve columns and recover without stale
   const scroller = table.locator("..")
   await expect(table.locator("tbody tr")).toHaveCount(2, { timeout: 60_000 })
   await page.getByRole("button", { name: "Collection actions", exact: true }).click()
-  await page.getByRole("menuitemcheckbox", { name: "Show unmodeled fields" }).click()
+  await page.getByRole("menuitemcheckbox", { name: "Show Unmodeled Fields" }).click()
   await page.keyboard.press("Escape")
   await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(1)
   const headings = await table.getByRole("columnheader").allTextContents()

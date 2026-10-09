@@ -1,10 +1,8 @@
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
-import { useNewDocumentLifetime } from "@/lib/lifetime"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
   lazy,
-  Suspense,
   useState,
   useEffect,
   useRef,
@@ -15,7 +13,7 @@ import {
   ChevronDown,
   File,
   FilePlus,
-  FileText,
+  History,
   Folder,
   AlertTriangle,
   LayoutDashboard,
@@ -31,7 +29,6 @@ import {
   AppWindow,
   Copy,
   Database,
-  Monitor,
   MessageCircle,
   MoreVertical,
   Pencil,
@@ -50,24 +47,12 @@ import { ProvenanceChip } from "@/components/provenance-chip"
 import { resolveIcon } from "@/lib/icons"
 import {
   useSpaces,
-  useWorkspace,
   useRecordCollections,
-  recordCollectionsQueryOptions,
+  useSpace,
   queryKeys,
 } from "@/lib/queries"
-import { createRecordCollection } from "@/lib/records-api"
-const NewCollectionDialog = lazy(() =>
-  import("@/components/records/new-collection-dialog").then((module) => ({
-    default: module.NewCollectionDialog,
-  }))
-)
-const NewDrawingDialog = lazy(() =>
-  import("@/components/new-drawing-dialog").then((module) => ({
-    default: module.NewDrawingDialog,
-  }))
-)
 import type { WidgetListEntry } from "@/lib/widgets-api"
-import { docQueryKeys, useSpaceDocs } from "@/lib/docs-queries"
+import { useSpaceDocs } from "@/lib/docs-queries"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -96,6 +81,9 @@ import { openSettings } from "@/lib/settings-open"
 import { useUpdateAvailability } from "@/hooks/use-update-availability"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { SpaceContextMenuButton } from "@/components/spaces/space-context-menu"
+import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { useNewDoc } from "@/hooks/use-new-doc"
 import { DocContextMenuButton } from "@/components/docs/doc-context-menu"
 import {
   ResponsiveDialog,
@@ -107,19 +95,16 @@ import {
   ResponsiveDialogFooter,
 } from "@worktable/ui/components/responsive-dialog"
 import { Button } from "@worktable/ui/components/button"
-import { Input } from "@worktable/ui/components/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { DeleteDialog } from "@/components/docs/delete-dialog"
 import {
-  createDoc,
   renameDoc,
   deleteDoc,
   archiveDoc,
@@ -130,7 +115,6 @@ import {
 import { copyText } from "@/lib/clipboard"
 import {
   archiveWidget,
-  createWidget,
   deleteWidget,
   exportWidgetHtml,
   moveWidget,
@@ -372,7 +356,6 @@ function SpaceSection({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const archived = isSpaceArchived(space)
-  const { data: workspace } = useWorkspace()
 
   const isInSpace = currentPath.startsWith(`/spaces/${space.id}`)
   const [expanded, setExpanded] = useState(isInSpace)
@@ -468,131 +451,11 @@ function SpaceSection({
 
   // Creation lives on the space row (hover-revealed +) so the tree below starts
   // immediately — no toolbar row between the space header and its content.
-  const [newDrawingOpen, setNewDrawingOpen] = useState(false)
-  // New documents start temporary unless the person chooses durable; the
-  // choice is remembered for the next creation.
-  const [newLifetime, setNewLifetime] = useNewDocumentLifetime()
-  const [newWidgetOpen, setNewWidgetOpen] = useState(false)
-  const [newCollectionOpen, setNewCollectionOpen] = useState(false)
-  const createPendingRef = useRef(false)
-
-  const handleCreateDoc = async (path: string) => {
-    try {
-      // `path` is the human-typed title (optionally "folder/Title"); the server
-      // slugifies it per-segment and returns the canonical path to navigate to.
-      const { path: created } = await createDoc(space.id, path, undefined, newLifetime)
-      await queryClient.invalidateQueries({
-        queryKey: docQueryKeys.docs(space.id),
-      })
-      await queryClient.invalidateQueries({
-        queryKey: documentQueryKeys.list(space.id),
-      })
-      setExpanded(true)
-      void navigate({
-        to: "/spaces/$spaceId/documents/$",
-        params: { spaceId: space.id, _splat: created },
-      })
-      if (isMobile) setOpen(false)
-      toast.success("Doc created")
-    } catch (err) {
-      toast.error("Failed to create doc")
-      console.error("Failed to create doc:", err)
-    }
+  const afterCreate = () => {
+    setExpanded(true)
+    if (isMobile) setOpen(false)
   }
-
-  // No dialog: creating a doc should be instant. The server names it
-  // untitled / untitled-2 / … and the sidebar label follows the doc's H1
-  // once there is one. The ref guards double-clicks on the + button.
-  const handleNewDoc = (folder?: string) => {
-    if (createPendingRef.current) return
-    createPendingRef.current = true
-    void handleCreateDoc(folder ? `${folder}/Untitled` : "Untitled").finally(
-      () => {
-        createPendingRef.current = false
-      }
-    )
-  }
-
-  // Rethrows on failure: the dialog stays open so the entered name and
-  // description survive a rejected create.
-  const handleCreateCollection = async (name: string, description?: string) => {
-    // The server route upserts by slug, so a colliding name would silently
-    // edit the existing collection's schema — refuse it here instead.
-    const slug =
-      name
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") || "collection"
-    try {
-      // staleTime 0 forces a network read: a 30s-stale cached list could miss
-      // a collection another client just created and fall into the upsert.
-      const existing = await queryClient.fetchQuery({
-        ...recordCollectionsQueryOptions(space.id),
-        staleTime: 0,
-      })
-      if (existing.some((collection) => collection.id === slug)) {
-        toast.error(`A collection with id "${slug}" already exists`)
-        throw new Error("duplicate collection id")
-      }
-      const collection = await createRecordCollection(space.id, {
-        name,
-        ...(description ? { description } : {}),
-      })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.recordCollections(space.id),
-      })
-      setExpanded(true)
-      void navigate({
-        to: "/spaces/$spaceId/records/$",
-        params: { spaceId: space.id, _splat: collection.id },
-      })
-      if (isMobile) setOpen(false)
-      toast.success("Collection created")
-    } catch (err) {
-      if (
-        !(err instanceof Error && err.message === "duplicate collection id")
-      ) {
-        // The strict-create 409 carries a specific message; surface it.
-        const message =
-          err instanceof Error && err.message.includes("already exists")
-            ? err.message
-            : "Failed to create collection"
-        toast.error(message)
-        console.error("Failed to create record collection:", err)
-      }
-      throw err
-    }
-  }
-
-  const handleCreateWidgetShell = async (
-    name: string,
-    description?: string
-  ) => {
-    try {
-      const result = await createWidget(space.id, {
-        name,
-        description,
-        html: buildWidgetShellHtml(name),
-        metadata: { source: "manual-shell" },
-        lifetime: newLifetime,
-      })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.space(space.id),
-      })
-      setExpanded(true)
-      void navigate({
-        to: "/spaces/$spaceId/documents/$",
-        params: { spaceId: space.id, _splat: result.widgetId },
-      })
-      if (isMobile) setOpen(false)
-      toast.success("HTML doc shell created")
-    } catch (err) {
-      toast.error("Failed to create HTML doc shell")
-      console.error("Failed to create HTML doc shell:", err)
-    }
-  }
+  const handleNewDoc = useNewDoc(space.id, afterCreate)
 
   return (
     <>
@@ -631,49 +494,19 @@ function SpaceSection({
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
           <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/space:opacity-100">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground has-[[data-popup-open]]:bg-sidebar-accent sm:size-6"
-                render={<button type="button" title="New" />}
-              >
-                <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                sideOffset={4}
-                className="min-w-60"
-              >
-                <DropdownMenuItem onClick={() => handleNewDoc()}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  New doc
-                </DropdownMenuItem>
-                {workspace?.storageVersion === 2 && (
-                  <DropdownMenuItem onClick={() => setNewDrawingOpen(true)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    New drawing
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => setNewWidgetOpen(true)}>
-                  <AppWindow className="mr-2 h-4 w-4" />
-                  New HTML doc
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setNewCollectionOpen(true)}>
-                  <Database className="mr-2 h-4 w-4" />
-                  New record collection
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuCheckboxItem
-                  checked={newLifetime === "temporary"}
-                  closeOnClick={false}
-                  onCheckedChange={(checked) => {
-                    setNewLifetime(checked ? "temporary" : "durable")
-                  }}
+            <SpaceNewMenu
+              spaceId={space.id}
+              onCreated={afterCreate}
+              trigger={
+                <button
+                  type="button"
+                  title="New"
+                  className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground has-[[data-popup-open]]:bg-sidebar-accent sm:size-6"
                 >
-                  <Clock3 className="h-4 w-4" />
-                  New documents are temporary
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
+                </button>
+              }
+            />
             <SpaceContextMenuButton
               spaceName={space.name}
               spaceIcon={space.icon}
@@ -714,31 +547,6 @@ function SpaceSection({
           </div>
         </CollapsibleContent>
       </Collapsible>
-      {newDrawingOpen && (
-        <Suspense fallback={null}>
-          <NewDrawingDialog
-            spaceId={space.id}
-            lifetime={newLifetime}
-            onClose={() => setNewDrawingOpen(false)}
-            onCreated={() => {
-              setExpanded(true)
-              if (isMobile) setOpen(false)
-            }}
-          />
-        </Suspense>
-      )}
-      <NewWidgetDialog
-        open={newWidgetOpen}
-        onClose={() => setNewWidgetOpen(false)}
-        onCreate={handleCreateWidgetShell}
-      />
-      <DeferredMount active={newCollectionOpen}>
-        <NewCollectionDialog
-          open={newCollectionOpen}
-          onClose={() => setNewCollectionOpen(false)}
-          onCreate={handleCreateCollection}
-        />
-      </DeferredMount>
     </>
   )
 }
@@ -810,6 +618,11 @@ function SpaceContent({
 
   return (
     <div className="mt-1 animate-in duration-200 fade-in">
+      <PinnedSidebarSection
+        spaceId={spaceId}
+        currentPath={currentPath}
+        onNavigate={onNavigate}
+      />
       <SpaceTreeSection
         spaceId={spaceId}
         currentPath={currentPath}
@@ -840,6 +653,56 @@ function SpaceContent({
         currentPath={currentPath}
         onNavigate={onNavigate}
       />
+    </div>
+  )
+}
+
+/** A Space's pinned docs, above its tree, with a label separating the two. */
+function PinnedSidebarSection({
+  spaceId,
+  currentPath,
+  onNavigate,
+}: {
+  spaceId: string
+  currentPath: string
+  onNavigate: () => void
+}) {
+  const { data } = useSpace(spaceId)
+  const pins = (data?.pins ?? []).filter((pin) => pin.status === "active")
+  if (pins.length === 0) return null
+  return (
+    <div className="mb-2">
+      <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
+        Pinned
+      </p>
+      <nav aria-label="Pinned" className="space-y-0.5">
+        {pins.map((pin) => {
+          const isActive =
+            currentPath === `/spaces/${spaceId}/documents/${pin.path}`
+          return (
+            <Link
+              key={pin.path}
+              to="/spaces/$spaceId/documents/$"
+              params={{ spaceId, _splat: pin.path }}
+              onClick={onNavigate}
+              className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+                isActive
+                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+              }`}
+            >
+              <DocumentFormatIcon
+                formatId={pin.format?.id}
+                className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+              />
+              <span className="min-w-0 truncate">{pin.title ?? pin.path}</span>
+            </Link>
+          )
+        })}
+      </nav>
+      <p className="mt-2 px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
+        Docs
+      </p>
     </div>
   )
 }
@@ -934,134 +797,6 @@ function RecordsSidebarSection({
   )
 }
 
-const INVALID_WIDGET_CHARS = /[<>:"|?*\\]/
-const MAX_WIDGET_NAME_LENGTH = 80
-const MAX_WIDGET_DESCRIPTION_LENGTH = 180
-
-function sanitizeWidgetName(raw: string): string {
-  return raw
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\.{2,}/g, ".")
-}
-
-function validateWidgetName(name: string): string | null {
-  if (!name) return null
-  if (INVALID_WIDGET_CHARS.test(name)) return "Name contains invalid characters"
-  if (name.length > MAX_WIDGET_NAME_LENGTH)
-    return `Name must be under ${MAX_WIDGET_NAME_LENGTH} characters`
-  if (name === "." || name === "..") return "Invalid name"
-  return null
-}
-
-function NewWidgetDialog({
-  open,
-  onClose,
-  onCreate,
-}: {
-  open: boolean
-  onClose: () => void
-  onCreate: (name: string, description?: string) => Promise<void>
-}) {
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const [pending, setPending] = useState(false)
-  const isMobile = useIsMobile()
-
-  useEffect(() => {
-    if (open) {
-      setName("")
-      setDescription("")
-      setPending(false)
-    }
-  }, [open])
-
-  const sanitizedName = sanitizeWidgetName(name)
-  const trimmedDescription = description.trim()
-  const validationError = validateWidgetName(sanitizedName)
-  const canCreate = sanitizedName.length > 0 && !validationError && !pending
-
-  const handleCreate = async () => {
-    if (!canCreate) return
-    setPending(true)
-    try {
-      await onCreate(sanitizedName, trimmedDescription || undefined)
-      onClose()
-    } finally {
-      setPending(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && canCreate) {
-      void handleCreate()
-    }
-  }
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-tint">
-            <Monitor className="h-5 w-5 text-primary" />
-          </div>
-          <ResponsiveDialogTitle>New HTML doc</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Create an empty HTML doc shell an agent can fill in later.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
-
-        <ResponsiveDialogBody>
-          <div className="space-y-2">
-            <label htmlFor="widget-name" className="text-sm font-medium">
-              HTML doc name
-            </label>
-            <Input
-              id="widget-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Open Items"
-              className="h-9"
-              maxLength={MAX_WIDGET_NAME_LENGTH}
-              autoFocus={!isMobile}
-            />
-            {validationError && name.trim() && (
-              <p className="text-xs text-destructive">{validationError}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="widget-description" className="text-sm font-medium">
-              Description{" "}
-              <span className="font-normal text-muted-foreground">
-                optional
-              </span>
-            </label>
-            <Input
-              id="widget-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What should this HTML doc help with?"
-              className="h-9"
-              maxLength={MAX_WIDGET_DESCRIPTION_LENGTH}
-            />
-          </div>
-        </ResponsiveDialogBody>
-
-        <ResponsiveDialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={!canCreate}>
-            {pending ? "Creating…" : "Create HTML doc"}
-          </Button>
-        </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  )
-}
-
 function WidgetDeleteDialog({
   open,
   onClose,
@@ -1124,70 +859,6 @@ function WidgetDeleteDialog({
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   )
-}
-
-function buildWidgetShellHtml(name: string): string {
-  const escapedName = escapeHtml(name)
-  return `<!doctype html>
-<html data-theme="dark">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapedName}</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      --ad-bg: #f7f4ee;
-      --ad-surface: rgba(255, 255, 255, 0.86);
-      --ad-text: #20252d;
-      --ad-muted: #667085;
-      --ad-border: rgba(32, 37, 45, 0.13);
-    }
-    html[data-theme="dark"] {
-      --ad-bg: #0d1117;
-      --ad-surface: rgba(255, 255, 255, 0.035);
-      --ad-text: #f4f7fb;
-      --ad-muted: #9aa7b2;
-      --ad-border: rgba(255, 255, 255, 0.12);
-    }
-    body {
-      min-height: 100vh;
-      margin: 0;
-      display: grid;
-      place-items: center;
-      background: var(--ad-bg);
-      color: var(--ad-text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    main {
-      max-width: 520px;
-      margin: 24px;
-      padding: 20px;
-      border: 1px dashed var(--ad-border);
-      border-radius: 14px;
-      background: var(--ad-surface);
-      text-align: center;
-    }
-    h1 { margin: 0 0 6px; font-size: 16px; font-weight: 500; line-height: 1.3; }
-    p { margin: 0; color: var(--ad-muted); font-size: 13px; line-height: 1.5; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>${escapedName}</h1>
-    <p>Empty HTML doc. Ask an agent to build it out.</p>
-  </main>
-</body>
-</html>`
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
 }
 
 // ── Widget Tree Item ────────────────────────────────────────
@@ -1458,7 +1129,7 @@ function WidgetContextMenuButton({
         {onRenameFolder && (
           <DropdownMenuItem onClick={onRenameFolder}>
             <Pencil className="mr-2 h-4 w-4" />
-            Rename folder
+            Rename Folder
           </DropdownMenuItem>
         )}
         {(folderArchived ? onRestoreFolder : onArchiveFolder) && (
@@ -1470,13 +1141,13 @@ function WidgetContextMenuButton({
             ) : (
               <Archive className="mr-2 h-4 w-4" />
             )}
-            {folderArchived ? "Restore folder" : "Archive folder"}
+            {folderArchived ? "Restore Folder" : "Archive Folder"}
           </DropdownMenuItem>
         )}
         {onDeleteFolder && (
           <DropdownMenuItem variant="destructive" onClick={onDeleteFolder}>
             <Trash className="mr-2 h-4 w-4" />
-            Delete folder
+            Delete Folder
           </DropdownMenuItem>
         )}
         {hasFolderActions && <DropdownMenuSeparator />}
@@ -1486,7 +1157,7 @@ function WidgetContextMenuButton({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onRename}>
           <Pencil className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Rename HTML doc" : "Rename"}
+          {isHybridPath ? "Rename HTML Doc" : "Rename"}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
           {archived ? (
@@ -1496,16 +1167,16 @@ function WidgetContextMenuButton({
           )}
           {archived
             ? isHybridPath
-              ? "Restore HTML doc"
+              ? "Restore HTML Doc"
               : "Restore"
             : isHybridPath
-              ? "Archive HTML doc"
+              ? "Archive HTML Doc"
               : "Archive"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Delete HTML doc" : "Delete"}
+          {isHybridPath ? "Delete HTML Doc" : "Delete"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -2786,7 +2457,7 @@ export function AppSidebar() {
               onClick={() => {
                 if (isMobile) setOpen(false)
               }}
-              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
+              className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
                 currentPath.startsWith("/threads")
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -2794,6 +2465,21 @@ export function AppSidebar() {
             >
               <MessageCircle className="size-4 shrink-0" />
               <span>Threads</span>
+            </Link>
+
+            <Link
+              to="/activity"
+              onClick={() => {
+                if (isMobile) setOpen(false)
+              }}
+              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
+                currentPath === "/activity"
+                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+              }`}
+            >
+              <History className="size-4 shrink-0" />
+              <span>Activity</span>
             </Link>
 
             {/* Section label */}

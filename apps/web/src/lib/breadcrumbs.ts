@@ -14,6 +14,7 @@ export type BreadcrumbTarget =
 /** What a crumb names, for icons and narrow-screen presentation. */
 export type BreadcrumbRole =
   | "home"
+  | "activity"
   | "space"
   | "threads"
   | "thread"
@@ -111,6 +112,9 @@ export function buildBreadcrumbs({
   })
 
   if (pathname === "/") return [{ kind: "text", role: "home", label: "Home" }]
+  if (pathname === "/activity") {
+    return [{ kind: "text", role: "activity", label: "Activity" }]
+  }
 
   const threadsMatch = pathname.match(/^\/threads(?:\/(.*))?$/)
   if (threadsMatch) {

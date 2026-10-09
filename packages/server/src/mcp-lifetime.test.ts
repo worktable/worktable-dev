@@ -372,7 +372,7 @@ describe("agent document lifetimes over MCP", () => {
     )
   })
 
-  it("pins Start here documents that follow renames and report archiving", async () => {
+  it("pins docs that follow renames and report archiving", async () => {
     await writeDoc("guide", { lifetime: "durable" })
     await writeDoc("plan", { lifetime: "durable" })
 
@@ -380,10 +380,10 @@ describe("agent document lifetimes over MCP", () => {
       action: "update",
       spaceId,
       description: "Agent work",
-      startHere: [{ path: "guide", note: "Read first" }, { path: "plan" }],
+      pins: [{ path: "guide", note: "Read first" }, { path: "plan" }],
     })
     expect(pinned.ok).toBe(true)
-    expect(pinned.data["startHere"]).toMatchObject([
+    expect(pinned.data["pins"]).toMatchObject([
       { path: "guide", note: "Read first", status: "active" },
       { path: "plan", status: "active" },
     ])
@@ -392,7 +392,7 @@ describe("agent document lifetimes over MCP", () => {
       action: "update",
       spaceId,
       name: "Renamed",
-      startHere: [{ path: "missing" }],
+      pins: [{ path: "missing" }],
     })
     expect(unknown.ok).toBe(false)
     const unchanged = await tool("worktable_discover", {
@@ -414,7 +414,7 @@ describe("agent document lifetimes over MCP", () => {
     })
 
     const state = await tool("worktable_discover", { action: "state", spaceId })
-    expect(state.data["startHere"]).toMatchObject([
+    expect(state.data["pins"]).toMatchObject([
       { path: "handbook", status: "active" },
       { path: "plan", status: "archived" },
     ])
@@ -423,7 +423,7 @@ describe("agent document lifetimes over MCP", () => {
     const reordered = await tool("worktable_spaces", {
       action: "update",
       spaceId,
-      startHere: [{ path: "plan" }, { path: "handbook" }],
+      pins: [{ path: "plan" }, { path: "handbook" }],
     })
     expect(reordered.ok).toBe(true)
     await writeDoc("draft", { lifetime: "durable" })
@@ -435,7 +435,7 @@ describe("agent document lifetimes over MCP", () => {
     const archivedPin = await tool("worktable_spaces", {
       action: "update",
       spaceId,
-      startHere: [{ path: "plan" }, { path: "draft" }],
+      pins: [{ path: "plan" }, { path: "draft" }],
     })
     expect(archivedPin.ok).toBe(false)
 
@@ -467,7 +467,7 @@ describe("agent document lifetimes over MCP", () => {
     const pins = await tool("worktable_spaces", {
       action: "update",
       spaceId,
-      startHere: [],
+      pins: [],
     })
     expect(pins.ok).toBe(false)
     expect(pins.text).toContain('requires "documents:write"')

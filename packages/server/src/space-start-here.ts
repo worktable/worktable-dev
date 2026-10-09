@@ -1,13 +1,14 @@
 // ============================================================
-// Space starting points ("Start here")
+// Space pins
 // ============================================================
 //
 // A Space keeps a short, ordered list of pinned documents in space.json
-// settings.startHere. Pins are stored by path and resolved through document
+// settings.startHere (the stored key predates the name "pins"). Pins are stored by path and resolved through document
 // aliases at read time, so renames and moves keep them pointing at the same
 // document. A pin whose target was archived or deleted is reported as such;
 // nothing substitutes another document.
 
+import { recordActivity } from "./activity-log.ts"
 import {
   START_HERE_LIMIT,
   StartHerePinSchema,
@@ -90,7 +91,7 @@ export async function setStartHere(
   )
   if (pins.length > START_HERE_LIMIT) {
     throw new StartHereError(
-      `A Space can pin at most ${START_HERE_LIMIT} documents to Start here`
+      `A Space can pin at most ${START_HERE_LIMIT} documents`
     )
   }
   const active = new Set(
@@ -117,5 +118,15 @@ export async function setStartHere(
   }))
   if (!result.data) throw new StartHereError(result.error ?? `Space not found: ${spaceId}`)
   await notifyWorkspaceChangeAndWait({ type: "space", spaceId })
+  for (const path of seen) {
+    if (!existing.has(path)) {
+      recordActivity({ spaceId, action: "doc.pinned", target: { kind: "doc", path } })
+    }
+  }
+  for (const path of existing) {
+    if (!seen.has(path)) {
+      recordActivity({ spaceId, action: "doc.unpinned", target: { kind: "doc", path } })
+    }
+  }
   return resolveStartHere(spaceId, result.data)
 }

@@ -46,7 +46,7 @@ export const OPERATION_DEFINITIONS = {
   "workspace.search": tool("search:read", "none"),
   "workspace.space_index": tool("docs:read", "none"),
   "spaces.create": tool("docs:write", "workspace"),
-  // Setting Start here pins also requires documents:write (see tools.ts).
+  // Setting a Space's pins also requires documents:write (see tools.ts).
   "spaces.update": tool("docs:write", "workspace"),
   "spaces.archive": tool("docs:write", "workspace"),
   "spaces.restore": tool("docs:write", "workspace"),

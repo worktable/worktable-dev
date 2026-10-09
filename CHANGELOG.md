@@ -9,6 +9,19 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Activity:** Home and Space Home show what people and agents did as a timeline in a side panel, newest first, including agents replying right now. The Activity page in the sidebar lists everything, filtered by Space, by you, or by a single agent.
+- **Pending:** Home and Space Home show thread messages assigned to you, agent replies to your open comments, and messages that could not be delivered.
+- **Pinned in the sidebar:** A Space's pinned docs appear at the top of its sidebar tree.
+
+### Changed
+
+- **Home:** Opens with today's date and a New menu, then Pending, Recent docs with a Space filter, and the temporary docs that archive soonest, each with Keep.
+- **Space Home:** Leads with the Space's description and pinned docs and their notes, then Recent and Temporary docs, its folders and record collections, and its Activity.
+- **Pins:** "Start here" is now **Pinned**, and the document menu says Pin and Unpin. Agents read and set a Space's pins through the `pins` field of `worktable_spaces` and `worktable_discover`, which replaces `startHere`; existing pins are unchanged.
+- **Search:** Sidebar search can include archived results. Home no longer has its own search panel.
+
 ## [0.1.20] - 2026-10-06
 
 ### Added

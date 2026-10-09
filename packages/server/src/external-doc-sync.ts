@@ -1,3 +1,4 @@
+import { noteDocumentEdited } from "./activity-log.ts"
 import { getDocProvenance, recordExternalDocChange } from "./store.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { yjsManager } from "./yjs-manager.ts"
@@ -45,10 +46,15 @@ async function syncExternalDocChangeLocked(
   spaceId: string,
   docPath: string
 ): Promise<boolean> {
+  const known = (await getDocProvenance(spaceId, docPath)) !== undefined
   const provenance = await recordExternalDocChange(spaceId, docPath, {
     updatedBy: "external",
     source: "filesystem",
   })
+  // A file edited in the workspace folder; a new file is not an edit.
+  if (provenance && known) {
+    noteDocumentEdited(spaceId, docPath, "external", "filesystem")
+  }
   let pending = pendingDiskSyncs.get(key)
   if (provenance) {
     const contentGeneration = yjsManager.contentGeneration(spaceId, docPath)

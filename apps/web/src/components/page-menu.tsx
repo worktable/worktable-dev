@@ -8,6 +8,7 @@ import {
   Database,
   FileText,
   Folder,
+  History,
   House,
   MessageCircle,
   MessageSquareText,
@@ -497,7 +498,9 @@ function CrumbIcon({
   const RoleIcon: LucideIcon =
     crumb.role === "home"
       ? House
-      : crumb.role === "collection"
+      : crumb.role === "activity"
+        ? History
+        : crumb.role === "collection"
         ? Database
         : crumb.role === "threads" || crumb.role === "thread"
           ? MessageCircle

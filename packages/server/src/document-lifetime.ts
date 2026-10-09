@@ -7,6 +7,7 @@
 // lifetime-rules.ts for how content changes push that date out). Archived
 // documents are never deleted automatically; restoring one makes it durable.
 
+import { recordActivity } from "./activity-log.ts"
 import { isArchiveOnValue, type DocumentLifetime } from "@worktable/types"
 import { z } from "zod"
 import { withDocPathLock } from "./doc-path-lock.ts"
@@ -136,11 +137,13 @@ export async function setDocumentLifetime(options: {
   const path = sanitizeDocPath(options.path)
   // Validate and write under the doc-path lock so a concurrent move or
   // archive cannot leave the date on a path the document no longer has.
+  let previous: DocumentLifetime | undefined
   await withDocPathLock(options.spaceId, async () => {
     const target = (
       await listDocumentLifetimeTargetsLocked(options.spaceId)
     ).find((candidate) => candidate.path === path)
     requireChangeable(target, path)
+    previous = target.view.lifetime ?? "durable"
     await setDocsArchiveOn(
       options.spaceId,
       [path],
@@ -149,6 +152,16 @@ export async function setDocumentLifetime(options: {
     )
   })
   await publishLifetimeChange(options.spaceId)
+  // Repeating the current lifetime (an agent restating it on each write, or a
+  // new archive date) is not a change anyone needs to read about.
+  if (previous !== options.change.lifetime) {
+    recordActivity({
+      spaceId: options.spaceId,
+      action:
+        options.change.lifetime === "durable" ? "doc.kept" : "doc.madeTemporary",
+      target: { kind: "doc", path },
+    })
+  }
   return {
     path,
     lifetime: options.change.lifetime,

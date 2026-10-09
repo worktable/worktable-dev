@@ -47,7 +47,7 @@ export interface PageMeta {
   /** Optional artifact details shown from the breadcrumb accessory. */
   updatedAtLabel?: string
   provenanceLabel?: string
-  /** The document this page shows, for its lifetime and Start here controls. */
+  /** The document this page shows, for its lifetime and pin controls. */
   document?: { spaceId: string; path: string }
   /** Cloud-only owner control for a read-only public link. */
   shareTarget?: PageShareTarget

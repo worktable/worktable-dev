@@ -158,10 +158,10 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:r
   }
 
   const widgets = await listWidgets(spaceId, { includeArchived: true });
-  const startHere = hasScope(c.get("identity").scopes, "documents:read")
+  const pins = hasScope(c.get("identity").scopes, "documents:read")
     ? await resolveStartHere(spaceId, space)
     : [];
-  return c.json({ space, widgets, startHere });
+  return c.json({ space, widgets, pins });
 });
 
 // PUT /api/spaces/:spaceId/doc-order — persist common document-tree ordering.
@@ -217,19 +217,19 @@ spacesRouter.put("/:spaceId/doc-order", requireWorkspaceOwner(), async (c) => {
   return c.json({ space: updated });
 });
 
-// PUT /api/spaces/:spaceId/start-here — replace the pinned starting points
-const StartHereBodySchema = z.object({
+// PUT /api/spaces/:spaceId/pins — replace the Space's pinned docs
+const PinsBodySchema = z.object({
   pins: z.array(StartHerePinSchema).max(START_HERE_LIMIT),
 });
 
-spacesRouter.put("/:spaceId/start-here", requireScope("docs:write"), requireScope("documents:write"), async (c) => {
+spacesRouter.put("/:spaceId/pins", requireScope("docs:write"), requireScope("documents:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
-  const parsed = StartHereBodySchema.safeParse(await c.req.json().catch(() => null));
+  const parsed = PinsBodySchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
     return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   }
   try {
-    return c.json({ startHere: await setStartHere(spaceId, parsed.data.pins) });
+    return c.json({ pins: await setStartHere(spaceId, parsed.data.pins) });
   } catch (error) {
     if (error instanceof StartHereError) {
       return error.reason === "not-found"

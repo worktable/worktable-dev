@@ -43,7 +43,7 @@ Content access does not imply owner or token-management access. Credentials
 delegated by an agent remain agent principals and cannot become the human owner.
 
 Agents with `docs:write` can create, update, archive, and restore Spaces.
-Changing Start here pins also requires `documents:write`. Space deletion and
+Changing a Space's pins also requires `documents:write`. Space deletion and
 owner document-tree operations remain owner-only. The realtime collaborative
 editor is reserved for human principals; agents edit through MCP or scoped APIs.
 

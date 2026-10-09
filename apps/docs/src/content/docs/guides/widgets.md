@@ -25,7 +25,7 @@ complete fictional example.
 ## View and inspect
 
 Open the HTML doc from the sidebar. Use the fullscreen control for more room,
-or **Open in new tab** from its menu. **Copy HTML** copies the source for use in
+or **Open in New Tab** from its menu. **Copy HTML** copies the source for use in
 another tool or conversation.
 
 HTML docs run in a sandbox. Network access is disabled by default, and access
@@ -55,8 +55,8 @@ into a folder, choose **Rename** and enter a path such as `plans/budget`. Its
 history, comments, saved state, and existing bookmarks follow it.
 
 Links and buttons can open supported documents in the same Space by path. This
-can make an HTML doc a useful project entry point; pin it to **Start here** if
-people should open it first.
+can make an HTML doc a useful project entry point; **Pin** it if people should
+open it first.
 
 For a public version, see [Sharing](/guides/sharing/). Shared HTML does not run
 the tool's scripts or provide access to private records.

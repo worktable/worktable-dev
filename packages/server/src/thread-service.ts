@@ -1,5 +1,7 @@
+import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   ParticipantRef,
+  Thread,
   ThreadActivity,
   ThreadDeliveryState,
   ThreadLocation,
@@ -490,6 +492,28 @@ export async function postThreadMessage(
     })
   }
   const resultLocation = threadLocation(result.thread)
+  // Replays, including one that lost a race for the thread lock, created
+  // nothing new.
+  if (result.created) {
+    recordActivity({
+      spaceId:
+        resultLocation.kind === "space" ? resultLocation.spaceId : null,
+      action: input.threadId ? "thread.replied" : "thread.started",
+      actor: currentActivityActor() ?? {
+        kind: actor.kind === "human" ? "person" : actor.kind,
+        id: actor.id,
+        name: actor.name,
+      },
+      target: {
+        kind: "thread",
+        threadId: result.thread.id,
+        title: result.thread.title,
+      },
+      ...(!input.threadId || result.message.responseRequest
+        ? { quote: result.message.body }
+        : {}),
+    })
+  }
   const activity = result.message.responseRequest
     ? await (async (request) => {
         const target = result.thread.identities.find(
@@ -642,6 +666,140 @@ export async function listThreadSummaries(
   return deliveryState
     ? summaries.filter((summary) => summary.activity?.state === deliveryState)
     : summaries
+}
+
+/**
+ * Which threads a reader-wide listing covers: everything outside archived
+ * Spaces, or exactly the named Space, archived or not.
+ */
+async function threadScope(
+  spaceId?: string
+): Promise<(location: ThreadLocation) => boolean> {
+  if (spaceId) {
+    return (location) =>
+      location.kind === "space" && location.spaceId === spaceId
+  }
+  const activeSpaceIds = new Set(
+    (await listSpaces())
+      .filter((space) => !getSpaceArchiveInfo(space))
+      .map((space) => space.id)
+  )
+  return (location) =>
+    location.kind !== "space" || activeSpaceIds.has(location.spaceId)
+}
+
+/** Reply requests addressed to the reader that are still open. */
+export async function listOpenRequestsForViewer(
+  identity: ThreadIdentity,
+  spaceId?: string
+): Promise<
+  {
+    location: ThreadLocation
+    threadId: string
+    threadTitle: string
+    message: Thread["messages"][number]
+    author: { kind: ParticipantRef["kind"]; id: string; name: string }
+  }[]
+> {
+  const viewer = (await participantForIdentity(identity)).participant
+  const inScope = await threadScope(spaceId)
+  const { threads } = await scanAllThreads()
+  return threads.flatMap((thread) => {
+    const location = threadLocation(thread)
+    if (!inScope(location)) return []
+    const mine = new Set(
+      thread.identities
+        .filter((candidate) => candidate.memberId === viewer.id)
+        .map((candidate) => candidate.id)
+    )
+    return thread.messages.flatMap((message) => {
+      const request = message.responseRequest
+      if (request?.status !== "open" || !mine.has(request.identityId)) {
+        return []
+      }
+      const member = thread.members.find(
+        (candidate) => candidate.id === message.authorMemberId
+      )
+      const authorIdentity = thread.identities.find(
+        (candidate) => candidate.id === message.authorIdentityId
+      )
+      return [
+        {
+          location,
+          threadId: thread.id,
+          threadTitle: thread.title,
+          message,
+          author: {
+            kind: member?.kind ?? "agent",
+            id: message.authorMemberId,
+            name: authorIdentity?.name ?? member?.name ?? "Someone",
+          },
+        },
+      ]
+    })
+  })
+}
+
+/**
+ * The viewer's messages whose delivery failed while their reply request is
+ * still open. Every failed request counts, not only each thread's latest.
+ */
+export async function listFailedDeliveriesForViewer(
+  identity: ThreadIdentity,
+  spaceId?: string
+): Promise<
+  {
+    location: ThreadLocation
+    threadId: string
+    threadTitle: string
+    activity: ThreadActivity
+    recipientName?: string
+  }[]
+> {
+  const viewer = (await participantForIdentity(identity)).participant
+  const inScope = await threadScope(spaceId)
+  const { threads } = await scanAllThreads()
+  const perThread = await Promise.all(
+    threads.map(async (thread) => {
+      const location = threadLocation(thread)
+      if (!inScope(location)) return []
+      const open = new Map(
+        thread.messages.flatMap((message) =>
+          message.authorMemberId === viewer.id &&
+          message.responseRequest?.status === "open"
+            ? [[message.id, message.responseRequest.identityId] as const]
+            : []
+        )
+      )
+      if (open.size === 0) return []
+      const activities = await getThreadActivities(location, thread.id)
+      return activities.flatMap((activity) => {
+        if (
+          activity.state !== "failed" ||
+          open.get(activity.messageId) !== activity.identityId
+        ) {
+          return []
+        }
+        const recipientName =
+          thread.identities.find(
+            (candidate) => candidate.id === activity.identityId
+          )?.name ??
+          thread.members.find(
+            (member) => member.id === activity.participantId
+          )?.name
+        return [
+          {
+            location,
+            threadId: thread.id,
+            threadTitle: thread.title,
+            activity,
+            ...(recipientName ? { recipientName } : {}),
+          },
+        ]
+      })
+    })
+  )
+  return perThread.flat()
 }
 
 export async function readThreadMessages(

@@ -244,7 +244,7 @@ export function DocumentLifetimeControls({
   )
 }
 
-/** Lifetime and Start here items appended to a document's More menu. */
+/** Lifetime and pin items appended to a document's More menu. */
 export function DocumentOrganizeMenuItems({
   spaceId,
   path,

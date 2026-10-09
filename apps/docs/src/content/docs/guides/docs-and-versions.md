@@ -9,7 +9,7 @@ the same work.
 
 ## Create and edit
 
-Choose **New doc** from a Space's **+** menu. Without a name, Worktable uses
+Choose **Doc** from a Space's **+** menu. Without a name, Worktable uses
 `untitled`, then `untitled-2`, and so on. The sidebar uses the first heading as
 the label when one exists.
 

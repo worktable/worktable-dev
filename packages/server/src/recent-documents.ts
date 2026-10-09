@@ -4,7 +4,8 @@
 //
 // Home and Space overviews list real documents by when they changed or were
 // created. Temporary documents are supporting work, so they are left out
-// unless asked for. Archived Spaces and documents never appear.
+// unless asked for; asking for only temporary documents lists them by when
+// they archive. Archived Spaces and documents never appear.
 
 import type { DocumentSummary } from "@worktable/types"
 import { listDocuments } from "./document-query.ts"
@@ -28,6 +29,8 @@ export async function listRecentDocuments(options: {
   spaceId?: string
   sort?: RecentSort
   includeTemporary?: boolean
+  /** Only temporary documents, soonest to archive first. */
+  onlyTemporary?: boolean
   limit?: number
 }): Promise<{ items: RecentDocument[]; spaces: SpaceActivity[] }> {
   const sort = options.sort ?? "updated"
@@ -49,7 +52,10 @@ export async function listRecentDocuments(options: {
           if (item.updatedAt && (!newest || item.updatedAt > newest)) {
             newest = item.updatedAt
           }
-          if (!options.includeTemporary && item.lifetime === "temporary") continue
+          const temporary = item.lifetime === "temporary"
+          if (options.onlyTemporary ? !temporary : !options.includeTemporary && temporary) {
+            continue
+          }
           spaceItems.push({ spaceId: space.id, spaceName: space.name, document: item })
         }
         return {
@@ -64,6 +70,11 @@ export async function listRecentDocuments(options: {
   )
   const items = perSpace.flatMap((entry) => entry.items)
   const activity: SpaceActivity[] = perSpace.map((entry) => entry.activity)
+  if (options.onlyTemporary) {
+    const archiveOn = (item: RecentDocument) => item.document.archiveOn ?? "\uffff"
+    const soonest = items.sort((a, b) => archiveOn(a).localeCompare(archiveOn(b)))
+    return { items: soonest.slice(0, limit), spaces: activity }
+  }
   const key = (item: RecentDocument) =>
     sort === "created" ? item.document.createdAt : item.document.updatedAt
   // Unknown creation times are excluded from the Created view rather than

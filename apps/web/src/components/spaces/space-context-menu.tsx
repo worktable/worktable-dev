@@ -159,7 +159,7 @@ export function SpaceContextMenuButton({
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <ArrowUpDown className="mr-2 h-4 w-4" />
-              Sort Docs
+              Sort
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {DOC_SORT_OPTIONS.map(({ mode, label, icon: Icon }) => (

@@ -1,3 +1,4 @@
+import { noteCommentActivity } from "./activity-log.ts"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { existsSync } from "node:fs";
@@ -446,6 +447,17 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
   const result = await createAnnotationRecord(spaceId, input)
   if (result.created && (input.author ?? DEFAULT_AUTHOR).type !== "system") {
     await noteAnnotationActivity(spaceId, result.annotation)
+    const path = annotatedDocumentPath(result.annotation)
+    if (path) {
+      noteCommentActivity({
+        spaceId,
+        action: "comment.created",
+        path,
+        author: result.annotation.author,
+        body: result.annotation.body,
+        category: result.annotation.category,
+      })
+    }
   }
   return result
 }
@@ -454,6 +466,17 @@ export async function replyAnnotation(spaceId: string, annotationId: string, bod
   const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
   if (author.type !== "system" && !(await usesDocumentDataV2())) {
     await noteAnnotationActivity(spaceId, result.annotation)
+    const path = annotatedDocumentPath(result.annotation)
+    if (path) {
+      noteCommentActivity({
+        spaceId,
+        action: "comment.replied",
+        path,
+        author,
+        body,
+        category: result.annotation.category,
+      })
+    }
   }
   return result
 }
@@ -462,6 +485,20 @@ export async function resolveAnnotation(spaceId: string, annotationId: string, r
   const annotation = await resolveAnnotationRecord(spaceId, annotationId, reason, resolvedBy)
   if (!NON_ENGAGING_ACTORS.has(resolvedBy) && !(await usesDocumentDataV2())) {
     await noteAnnotationActivity(spaceId, annotation)
+    const path = annotatedDocumentPath(annotation)
+    if (path && resolvedBy !== "worktable") {
+      noteCommentActivity({
+        spaceId,
+        action: "comment.resolved",
+        path,
+        author: {
+          type: resolvedBy === "user" || resolvedBy === "local:owner" ? "user" : "agent",
+          id: resolvedBy,
+        },
+        body: annotation.body,
+        category: annotation.category,
+      })
+    }
   }
   return annotation
 }

@@ -576,19 +576,19 @@ function DrawingEditor({
         },
         {
           id: "drawing-source",
-          label: "Download drawing",
+          label: "Download Drawing",
           icon: Download,
           onSelect: () => actions.current?.source(),
         },
         {
           id: "drawing-copy",
-          label: "Save a copy",
+          label: "Save a Copy",
           icon: Copy,
           onSelect: () => actions.current?.copy(),
         },
         {
           id: "drawing-reload",
-          label: "Reload drawing",
+          label: "Reload Drawing",
           icon: RotateCw,
           onSelect: () => actions.current?.reload(),
         },

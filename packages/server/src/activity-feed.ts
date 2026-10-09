@@ -10,7 +10,7 @@ import type {
   ActivityEntry,
   ActivityPage,
 } from "@worktable/types"
-import { listActivity } from "./activity-log.ts"
+import { listActivity, listActivityAgents } from "./activity-log.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
 import { resolveDocAlias } from "./doc-aliases.ts"
 import { listDocuments } from "./document-query.ts"
@@ -22,35 +22,39 @@ export interface ActivityFeedOptions {
   spaceId?: string
   scopes: string[]
   actorKind?: ActivityActor["kind"]
+  actorId?: string
   before?: string | null
   limit: number
   timezoneOffset?: number
 }
 
-export async function readActivityFeed(
-  options: ActivityFeedOptions
-): Promise<ActivityPage> {
+/** Active Spaces, or the one asked for even when it is archived. */
+async function visibleSpacesFor(spaceId?: string): Promise<Set<string>> {
   const spaces = await listSpaces()
-  const visibleSpaces = new Set(
-    options.spaceId
-      ? spaces.filter((space) => space.id === options.spaceId).map((s) => s.id)
+  return new Set(
+    spaceId
+      ? spaces.filter((space) => space.id === spaceId).map((s) => s.id)
       : spaces
           .filter((space) => !getSpaceArchiveInfo(space))
           .map((space) => space.id)
   )
+}
+
+export async function readActivityFeed(
+  options: ActivityFeedOptions
+): Promise<ActivityPage> {
+  const visibleSpaces = await visibleSpacesFor(options.spaceId)
   if (options.spaceId && visibleSpaces.size === 0) {
     return { entries: [], nextCursor: null }
   }
-  const includeThreads = hasScope(options.scopes, "threads:read")
   const page = await listActivity({
-    ...(options.spaceId
-      ? { spaces: [options.spaceId] }
-      : {}),
+    ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
     visibleSpaces,
-    includeThreads,
+    includeThreads: hasScope(options.scopes, "threads:read"),
     includeRecords: hasScope(options.scopes, "records:read"),
     includeComments: hasScope(options.scopes, "annotations:read"),
     ...(options.actorKind ? { actorKind: options.actorKind } : {}),
+    ...(options.actorId ? { actorId: options.actorId } : {}),
     before: options.before ?? null,
     limit: options.limit,
     ...(options.timezoneOffset !== undefined
@@ -58,6 +62,27 @@ export async function readActivityFeed(
       : {}),
   })
   return { ...page, entries: await withCurrentNames(page.entries) }
+}
+
+/** The agents a reader can filter Activity by, under their current names. */
+export async function readActivityAgents(options: {
+  spaceId?: string
+  scopes: string[]
+}): Promise<ActivityActor[]> {
+  const visibleSpaces = await visibleSpacesFor(options.spaceId)
+  if (visibleSpaces.size === 0) return []
+  const [agents, names] = await Promise.all([
+    listActivityAgents({
+      ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
+      visibleSpaces,
+      includeThreads: hasScope(options.scopes, "threads:read"),
+    }),
+    agentNamesByPrincipal().catch(() => new Map<string, string>()),
+  ])
+  return agents.map((agent) => ({
+    ...agent,
+    name: names.get(agent.id) ?? agent.name,
+  }))
 }
 
 async function withCurrentNames(

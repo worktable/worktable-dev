@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { readActivityFeed } from "../activity-feed.ts"
+import { readActivityAgents, readActivityFeed } from "../activity-feed.ts"
 import { requireScope } from "../auth.ts"
 import { listPending } from "../pending.ts"
 
@@ -20,6 +20,7 @@ activityRouter.get("/", async (c) => {
       spaceId: c.req.query("spaceId") || undefined,
       scopes: c.get("identity").scopes,
       ...(actor === "person" || actor === "agent" ? { actorKind: actor } : {}),
+      ...(c.req.query("actorId") ? { actorId: c.req.query("actorId") } : {}),
       before: c.req.query("before") || null,
       limit,
       ...(Number.isInteger(offsetRaw) && Math.abs(offsetRaw) <= 14 * 60
@@ -28,6 +29,16 @@ activityRouter.get("/", async (c) => {
     })
   )
 })
+
+// GET /api/activity/agents — agents to filter by, most recently active first.
+activityRouter.get("/agents", async (c) =>
+  c.json({
+    agents: await readActivityAgents({
+      spaceId: c.req.query("spaceId") || undefined,
+      scopes: c.get("identity").scopes,
+    }),
+  })
+)
 
 export const pendingRouter = new Hono()
 

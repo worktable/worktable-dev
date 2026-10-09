@@ -11,14 +11,38 @@ import { usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
-import { humanizeSegment } from "@/lib/tree"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
 
-function folderOf(path: string): string | null {
-  const parts = path.split("/")
-  return parts.length > 1 ? parts.slice(0, -1).map(humanizeSegment).join(" / ") : null
+/** Where a doc lives, set like a file path: Space, then its folders. */
+function DocLocation({
+  spaceName,
+  path,
+  className,
+}: {
+  spaceName?: string
+  path: string
+  className?: string
+}) {
+  const parts = [spaceName, ...path.split("/").slice(0, -1)].filter(
+    (part): part is string => Boolean(part)
+  )
+  return (
+    <span
+      className={cn(
+        "min-w-0 flex-1 truncate font-mono text-[0.7rem] text-muted-foreground/80",
+        className
+      )}
+    >
+      {parts.map((part, index) => (
+        <span key={index}>
+          {index > 0 && <span className="px-0.5 text-muted-foreground/40">/</span>}
+          {part}
+        </span>
+      ))}
+    </span>
+  )
 }
 
 // ── Pending ────────────────────────────────────────────────
@@ -116,8 +140,6 @@ export function RecentRows({ items }: { items: RecentItem[] }) {
   return (
     <div className="-mx-2.5">
       {items.map(({ spaceId, spaceName, document }) => {
-        const folder = folderOf(document.path)
-        const where = [spaceName, folder].filter(Boolean).join(" / ")
         return (
           <Link
             key={`${spaceId}/${document.path}`}
@@ -132,9 +154,7 @@ export function RecentRows({ items }: { items: RecentItem[] }) {
             <span className="min-w-0 truncate font-medium text-foreground">
               {document.title}
             </span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground/70">
-              {where}
-            </span>
+            <DocLocation spaceName={spaceName} path={document.path} />
             {document.updatedAt && (
               <span className="shrink-0 text-xs text-muted-foreground">
                 {shortWhen(document.updatedAt)}
@@ -171,8 +191,6 @@ function TemporaryRow({ item }: { item: RecentItem }) {
   const [now] = useState(() => Date.now())
   const archiveOn = document.archiveOn!
   const soon = Date.parse(archiveOn) - now < SOON_MS
-  const folder = folderOf(document.path)
-  const where = [spaceName, folder].filter(Boolean).join(" / ")
   return (
     <div className={cn(rowClass, "relative")}>
       <Link
@@ -188,9 +206,11 @@ function TemporaryRow({ item }: { item: RecentItem }) {
       <span className="min-w-0 truncate font-medium text-foreground">
         {document.title}
       </span>
-      <span className="hidden min-w-0 flex-1 truncate text-muted-foreground/70 sm:inline">
-        {where}
-      </span>
+      <DocLocation
+        spaceName={spaceName}
+        path={document.path}
+        className="hidden sm:inline"
+      />
       <span className="flex-1 sm:hidden" />
       <Button
         size="xs"
@@ -235,27 +255,23 @@ export function TemporaryGroup({ items }: { items: RecentItem[] }) {
   const more = sorted.length - shown.length
   return (
     <section id="temporary" aria-labelledby="temporary-heading">
-      <h2
-        id="temporary-heading"
-        className="mb-1 flex items-center gap-2 text-[0.8rem] font-semibold text-foreground"
-      >
-        <Clock3 className="size-3.5 text-muted-foreground" />
+      <h2 id="temporary-heading" className="mb-2 text-sm font-semibold text-foreground">
         Temporary
       </h2>
-      <div className="-mx-2.5">
+      <div className="rounded-xl border border-border bg-card p-1">
         {shown.map((item) => (
           <TemporaryRow key={`${item.spaceId}/${item.document.path}`} item={item} />
         ))}
+        {more > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className={cn(rowClass, "w-full text-muted-foreground hover:text-foreground")}
+          >
+            Show {more} more
+          </button>
+        )}
       </div>
-      {more > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="mt-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          +{more} more
-        </button>
-      )}
     </section>
   )
 }

@@ -309,6 +309,8 @@ export interface ListActivityOptions {
   includeRecords: boolean
   includeComments: boolean
   actorKind?: ActivityActor["kind"]
+  /** One actor, such as a single agent connection. */
+  actorId?: string
   before?: string | null
   limit: number
   /** Reader's UTC offset in minutes (Date#getTimezoneOffset), for day grouping. */
@@ -388,6 +390,7 @@ export async function listActivity(
         (options.includeRecords || event.target.kind !== "collection") &&
         (options.includeComments || !event.action.startsWith("comment.")) &&
         (!options.actorKind || event.actor.kind === options.actorKind) &&
+        (!options.actorId || event.actor.id === options.actorId) &&
         (!cursor || isBefore(event, cursor))
     )
     .sort(newestFirst)
@@ -432,4 +435,30 @@ export async function listActivity(
     entries,
     nextCursor: exhausted || !consumed ? null : encodeCursor(consumed),
   }
+}
+
+/** Agents with visible activity, most recently active first. */
+export async function listActivityAgents(
+  options: Pick<
+    ListActivityOptions,
+    "spaces" | "visibleSpaces" | "includeThreads"
+  >
+): Promise<ActivityActor[]> {
+  await drainActivity()
+  const sources = options.spaces ?? (await loggedSpaces())
+  const events = (await Promise.all(sources.map(readLog)))
+    .flat()
+    .filter(
+      (event) =>
+        event.actor.kind === "agent" &&
+        (event.spaceId === null
+          ? options.includeThreads
+          : options.visibleSpaces.has(event.spaceId))
+    )
+    .sort(newestFirst)
+  const agents = new Map<string, ActivityActor>()
+  for (const event of events) {
+    if (!agents.has(event.actor.id)) agents.set(event.actor.id, event.actor)
+  }
+  return [...agents.values()]
 }

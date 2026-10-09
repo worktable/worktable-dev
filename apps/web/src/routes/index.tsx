@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
-import { ActivityColumn } from "@/components/home/activity-feed"
 import { HomeNewMenu } from "@/components/home/home-new-menu"
 import {
   PendingSection,
@@ -9,6 +8,7 @@ import {
   TemporaryGroup,
   type RecentItem,
 } from "@/components/home/home-sections"
+import { PageWithActivity } from "@/components/home/page-with-activity"
 import { useSpaces } from "@/lib/queries"
 import { useRecentDocuments } from "@/lib/lifetime"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
@@ -107,7 +107,7 @@ function HomePage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
         <div className="mb-8 h-9 w-72 animate-pulse rounded-lg bg-muted/30" />
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -129,8 +129,7 @@ function HomePage() {
   const visibleRecent = showAll ? recentItems : recentItems.slice(0, RECENT_ROWS)
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-x-12 gap-y-10 px-4 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:py-10">
-      <div className="min-w-0 space-y-9">
+    <PageWithActivity>
         <header className="flex items-start justify-between gap-4">
           <h1 className="min-h-9 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:min-h-10 sm:text-[2rem]">
             {today}
@@ -140,7 +139,6 @@ function HomePage() {
 
         <PendingSection />
 
-        <div className="space-y-5">
         <section aria-labelledby="recent-heading">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h2
@@ -214,12 +212,6 @@ function HomePage() {
           )}
         </section>
         <TemporaryGroup items={temporaryItems} />
-        </div>
-      </div>
-
-      <aside className="min-w-0 lg:border-l lg:border-border lg:pl-8">
-        <ActivityColumn />
-      </aside>
-    </div>
+    </PageWithActivity>
   )
 }

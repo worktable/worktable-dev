@@ -4,18 +4,25 @@ import {
   useInfiniteQuery,
   useQuery,
 } from "@tanstack/react-query"
-import type { ActivityPage, PendingResult } from "@worktable/types"
+import type {
+  ActivityActor,
+  ActivityPage,
+  PendingResult,
+} from "@worktable/types"
 import { fetchJSON } from "./http.ts"
 
 export const activityQueryKeys = {
   all: ["activity"] as const,
   list: (options: ActivityOptions) => ["activity", options] as const,
+  agents: (spaceId?: string) => ["activity", "agents", spaceId ?? null] as const,
   pending: ["pending"] as const,
 }
 
 export interface ActivityOptions {
   spaceId?: string
   actor?: "person" | "agent"
+  /** One actor, such as a single agent. */
+  actorId?: string
   limit?: number
 }
 
@@ -25,6 +32,7 @@ function activityUrl(options: ActivityOptions, before?: string | null): string {
     timezoneOffset: String(new Date().getTimezoneOffset()),
     ...(options.spaceId ? { spaceId: options.spaceId } : {}),
     ...(options.actor ? { actor: options.actor } : {}),
+    ...(options.actorId ? { actorId: options.actorId } : {}),
     ...(before ? { before } : {}),
   })
   return `/api/activity?${query}`
@@ -56,6 +64,18 @@ export function useActivityPages(options: ActivityOptions) {
       refetchInterval: 30_000,
     })
   )
+}
+
+/** Agents that appear in Activity, most recently active first. */
+export function useActivityAgents(spaceId?: string) {
+  return useQuery({
+    queryKey: activityQueryKeys.agents(spaceId),
+    queryFn: () =>
+      fetchJSON<{ agents: ActivityActor[] }>(
+        `/api/activity/agents${spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : ""}`
+      ),
+    staleTime: 60_000,
+  })
 }
 
 export function usePending() {

@@ -5,19 +5,22 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
 import { Button } from "@worktable/ui/components/button"
-import { ActivityItem } from "@/components/home/activity-feed"
+import { ActivityItem, ActorBadge } from "@/components/home/activity-feed"
 import { clockTime, groupByDay } from "@/lib/activity-format"
-import { useActivityPages } from "@/lib/activity"
+import { useActivityAgents, useActivityPages } from "@/lib/activity"
 import { useSpaces } from "@/lib/queries"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 
 interface ActivitySearch {
   spaceId?: string
   actor?: "person" | "agent"
+  /** One agent, by its activity actor id. */
+  agent?: string
 }
 
 export const Route = createFileRoute("/activity")({
@@ -28,11 +31,18 @@ export const Route = createFileRoute("/activity")({
     ...(search["actor"] === "person" || search["actor"] === "agent"
       ? { actor: search["actor"] }
       : {}),
+    ...(typeof search["agent"] === "string" && search["agent"]
+      ? { agent: search["agent"] }
+      : {}),
   }),
   component: ActivityPage,
 })
 
-const ACTORS = { all: "Everyone", person: "You", agent: "Agents" } as const
+const ACTORS: Record<string, string> = {
+  all: "Everyone",
+  person: "You",
+  agent: "All agents",
+}
 
 function ActivityPage() {
   const search = Route.useSearch()
@@ -40,9 +50,16 @@ function ActivityPage() {
   const { data: spaces } = useSpaces()
   const pages = useActivityPages({
     ...(search.spaceId ? { spaceId: search.spaceId } : {}),
-    ...(search.actor ? { actor: search.actor } : {}),
+    ...(search.agent
+      ? { actorId: search.agent }
+      : search.actor
+        ? { actor: search.actor }
+        : {}),
     limit: 50,
   })
+  const { data: agentData } = useActivityAgents(search.spaceId)
+  const agents = agentData?.agents ?? []
+  const who = search.agent ? `agent:${search.agent}` : (search.actor ?? "all")
   const names = useMemo(
     () => new Map((spaces ?? []).map((space) => [space.id, space.name])),
     [spaces]
@@ -88,25 +105,40 @@ function ActivityPage() {
           </SelectContent>
         </Select>
         <Select
-          value={search.actor ?? "all"}
-          onValueChange={(value) =>
+          value={who}
+          onValueChange={(value) => {
+            const next = String(value ?? "all")
             setSearch({
-              ...search,
-              actor:
-                value === "person" || value === "agent" ? value : undefined,
+              ...(search.spaceId ? { spaceId: search.spaceId } : {}),
+              ...(next === "person" || next === "agent" ? { actor: next } : {}),
+              ...(next.startsWith("agent:") ? { agent: next.slice(6) } : {}),
             })
-          }
+          }}
         >
           <SelectTrigger aria-label="Filter by who" className="h-8 w-auto">
             <Users className="size-3.5 text-muted-foreground" />
             <SelectValue>
-              {(value: keyof typeof ACTORS) => ACTORS[value] ?? ACTORS.all}
+              {(value: string) =>
+                value.startsWith("agent:")
+                  ? (agents.find((agent) => `agent:${agent.id}` === value)
+                      ?.name ?? "Agent")
+                  : (ACTORS[value] ?? ACTORS["all"])
+              }
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {Object.entries(ACTORS).map(([value, label]) => (
               <SelectItem key={value} value={value}>
                 {label}
+              </SelectItem>
+            ))}
+            {agents.length > 0 && <SelectSeparator />}
+            {agents.map((agent) => (
+              <SelectItem key={agent.id} value={`agent:${agent.id}`}>
+                <span className="flex items-center gap-2">
+                  <ActorBadge actor={agent} />
+                  {agent.name ?? "Agent"}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -125,14 +157,15 @@ function ActivityPage() {
         <div className="mt-4">
           {groupByDay(entries).map((group) => (
             <section key={group.label} aria-label={group.label}>
-              <h2 className="mt-6 mb-1 flex items-center gap-3 text-xs font-semibold text-foreground after:h-px after:flex-1 after:bg-border">
+              <h2 className="mt-6 mb-3 flex items-center gap-3 text-xs font-semibold text-foreground after:h-px after:flex-1 after:bg-border">
                 {group.label}
               </h2>
               <ul>
-                {group.items.map((entry) => (
+                {group.items.map((entry, index) => (
                   <ActivityItem
                     key={entry.id}
                     entry={entry}
+                    last={index === group.items.length - 1}
                     hideTime
                     leading={
                       <span className="w-16 shrink-0 pr-1 text-right text-xs leading-5 text-muted-foreground/70 tabular-nums">

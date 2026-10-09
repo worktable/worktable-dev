@@ -4,6 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import {
   DEFAULT_AGENT_TOKEN_SCOPES,
   defaultConversationIdentityId,
+  type ActivityActor,
   type ActivityPage,
   type PendingResult,
   type SpaceFile,
@@ -199,6 +200,19 @@ describe("workspace activity", () => {
       ["doc.created", "agent", "Codex", "Pulse", null],
     ])
     expect(page.entries[1]?.category).toBe("instruction")
+
+    // Each agent can be followed on its own.
+    const { agents } = await request<{ agents: ActivityActor[] }>(
+      "/api/activity/agents"
+    )
+    expect(agents.map((agent) => agent.name)).toEqual(["Codex"])
+    const codex = await request<ActivityPage>(
+      `/api/activity?actorId=${encodeURIComponent(agents[0]!.id)}`
+    )
+    expect(codex.entries.map((entry) => entry.action)).toEqual([
+      "comment.resolved",
+      "doc.created",
+    ])
 
     // A Space Home reads its own history, archived or not.
     const archived = await request<ActivityPage>("/api/activity?spaceId=old")

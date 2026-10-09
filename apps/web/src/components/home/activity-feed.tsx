@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router"
-import type { ReactNode } from "react"
+import { useId, type ReactNode } from "react"
 import type {
   ActivityActor,
   ActivityEntry,
   ThreadSummary,
 } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
+import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import {
   actorName,
@@ -36,7 +37,7 @@ export function ActorBadge({
     <span
       aria-hidden="true"
       className={cn(
-        "relative mt-px flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold",
+        "relative flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold",
         actor.kind === "agent"
           ? "rounded-md bg-primary/12 text-primary-text ring-1 ring-primary/25 ring-inset"
           : actor.kind === "person"
@@ -191,19 +192,32 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
   }
 }
 
-// ── Grouping ───────────────────────────────────────────────
-
 // ── Entry ──────────────────────────────────────────────────
+
+/** The badge on the timeline, joined to the next entry by a line. */
+function Rail({ children, last }: { children: ReactNode; last: boolean }) {
+  return (
+    <div className="flex shrink-0 flex-col items-center">
+      {children}
+      {!last && (
+        <span aria-hidden="true" className="my-1.5 w-px flex-1 bg-border" />
+      )}
+    </div>
+  )
+}
 
 export function ActivityItem({
   entry,
   spaceName,
   hideTime = false,
+  last = false,
   leading,
 }: {
   entry: ActivityEntry
   spaceName?: string
   hideTime?: boolean
+  /** The final entry in a run; its badge ends the line. */
+  last?: boolean
   /** Content before the badge, such as the Activity page's time column. */
   leading?: ReactNode
 }) {
@@ -211,19 +225,37 @@ export function ActivityItem({
     .filter(Boolean)
     .join(" · ")
   return (
-    <li className="flex gap-2.5 py-1.5">
+    <li className="flex gap-3">
       {leading}
-      <ActorBadge actor={entry.actor} />
-      <div className="min-w-0 flex-1 text-[0.8rem] leading-5 text-muted-foreground">
+      <Rail last={last}>
+        <ActorBadge actor={entry.actor} />
+      </Rail>
+      <div
+        className={cn(
+          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
+          last ? "pb-1" : "pb-5"
+        )}
+      >
         <p className="break-words">
           <Sentence entry={entry} />
         </p>
         {entry.quote && entry.action.startsWith("comment.") && (
-          <p className="mt-1 line-clamp-2 border-l-2 border-border pl-2 text-muted-foreground">
+          <p className="mt-1.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[0.8125rem] leading-[1.125rem]">
             {entry.quote}
           </p>
         )}
-        {meta && <p className="text-xs text-muted-foreground/70">{meta}</p>}
+        {meta && (
+          <p
+            className={cn(
+              "text-xs leading-4 text-muted-foreground/70",
+              entry.quote && entry.action.startsWith("comment.")
+                ? "mt-1.5"
+                : "mt-0.5"
+            )}
+          >
+            {meta}
+          </p>
+        )}
       </div>
     </li>
   )
@@ -243,7 +275,7 @@ function useLiveReplies(spaceId?: string): ThreadSummary[] {
   )
 }
 
-function LiveReply({ thread }: { thread: ThreadSummary }) {
+function LiveReply({ thread, last }: { thread: ThreadSummary; last: boolean }) {
   const activity = thread.activity!
   const name =
     thread.identities.find((identity) => identity.id === activity.identityId)
@@ -253,9 +285,16 @@ function LiveReply({ thread }: { thread: ThreadSummary }) {
     "An agent"
   const spaceId = thread.location.kind === "space" ? thread.location.spaceId : null
   return (
-    <li className="flex gap-2.5 py-1.5">
-      <ActorBadge actor={{ kind: "agent", name }} live />
-      <p className="min-w-0 flex-1 text-[0.8rem] leading-5 text-muted-foreground">
+    <li className="flex gap-3">
+      <Rail last={last}>
+        <ActorBadge actor={{ kind: "agent", name }} live />
+      </Rail>
+      <p
+        className={cn(
+          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
+          last ? "pb-1" : "pb-5"
+        )}
+      >
         <span className="font-medium text-foreground">{name}</span> is replying
         in{" "}
         <ThreadLink
@@ -270,77 +309,106 @@ function LiveReply({ thread }: { thread: ThreadSummary }) {
   )
 }
 
-// ── Column ─────────────────────────────────────────────────
+// ── Panel ──────────────────────────────────────────────────
 
-/** The side column on Home and Space Home. */
-export function ActivityColumn({ spaceId }: { spaceId?: string }) {
-  const { data, isPending } = useActivity({ spaceId, limit: 12 })
+/**
+ * Activity beside Home and Space Home: a full-height panel on wide screens,
+ * a short section under the page on narrow ones.
+ */
+export function ActivityPanel({
+  spaceId,
+  limit,
+  className,
+}: {
+  spaceId?: string
+  limit: number
+  className?: string
+}) {
+  const { data, isPending } = useActivity({ spaceId, limit })
   const { data: spaces } = useSpaces()
   const live = useLiveReplies(spaceId)
+  const scrollRef = useScrollFade<HTMLDivElement>()
+  const headingId = useId()
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
   const entries = data?.entries ?? []
+  const groups = groupByDay(entries)
 
   return (
-    <section aria-labelledby="activity-heading" className="min-w-0">
-      <h2 id="activity-heading" className="mb-2 text-sm font-semibold text-foreground">
-        Activity
-      </h2>
-      {isPending ? (
-        <div className="space-y-3 pt-1">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex gap-2.5">
-              <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted/30" />
-              <div className="h-9 flex-1 animate-pulse rounded-md bg-muted/20" />
-            </div>
-          ))}
-        </div>
-      ) : entries.length === 0 && live.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing yet.</p>
-      ) : (
-        <>
-          {live.length > 0 && (
-            <ul className="mb-1">
-              {live.map((thread) => (
-                <LiveReply key={thread.id} thread={thread} />
-              ))}
-            </ul>
-          )}
-          {groupByDay(entries).map((group, index) => (
-            <div key={group.label}>
-              <h3
-                className={cn(
-                  "mb-0.5 text-xs font-medium text-muted-foreground/70",
-                  index === 0 && live.length === 0 ? "mt-1" : "mt-3"
-                )}
-              >
-                {group.label}
-              </h3>
+    <section
+      aria-labelledby={headingId}
+      className={cn("flex min-h-0 min-w-0 flex-col", className)}
+    >
+      <div className="flex items-baseline justify-between gap-3 pb-4">
+        <h2
+          id={headingId}
+          className="text-sm font-semibold text-foreground"
+        >
+          Activity
+        </h2>
+        {entries.length > 0 && (
+          <Link
+            to="/activity"
+            search={spaceId ? { spaceId } : {}}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Show all
+          </Link>
+        )}
+      </div>
+      <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-y-auto">
+        {isPending ? (
+          <div className="space-y-4 pt-1">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="flex gap-3">
+                <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted/30" />
+                <div className="h-9 flex-1 animate-pulse rounded-md bg-muted/20" />
+              </div>
+            ))}
+          </div>
+        ) : entries.length === 0 && live.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing yet.</p>
+        ) : (
+          <>
+            {live.length > 0 && (
               <ul>
-                {group.items.map((entry) => (
-                  <ActivityItem
-                    key={entry.id}
-                    entry={entry}
-                    spaceName={
-                      spaceId || !entry.spaceId
-                        ? undefined
-                        : names.get(entry.spaceId)
-                    }
+                {live.map((thread, index) => (
+                  <LiveReply
+                    key={thread.id}
+                    thread={thread}
+                    last={index === live.length - 1 && entries.length === 0}
                   />
                 ))}
               </ul>
-            </div>
-          ))}
-          {entries.length > 0 && (
-            <Link
-              to="/activity"
-              search={spaceId ? { spaceId } : {}}
-              className="mt-3 inline-block text-sm text-muted-foreground hover:text-foreground"
-            >
-              Show all
-            </Link>
-          )}
-        </>
-      )}
+            )}
+            {groups.map((group, index) => (
+              <div key={group.label}>
+                <h3
+                  className={cn(
+                    "mb-3 text-xs leading-4 font-medium text-muted-foreground/70",
+                    index > 0 && "mt-5"
+                  )}
+                >
+                  {group.label}
+                </h3>
+                <ul>
+                  {group.items.map((entry, itemIndex) => (
+                    <ActivityItem
+                      key={entry.id}
+                      entry={entry}
+                      last={itemIndex === group.items.length - 1}
+                      spaceName={
+                        spaceId || !entry.spaceId
+                          ? undefined
+                          : names.get(entry.spaceId)
+                      }
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
     </section>
   )
 }

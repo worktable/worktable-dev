@@ -11,7 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
-- **Activity:** Home and Space Home show what people and agents did beside their content, newest first, including agents replying right now. The Activity page in the sidebar lists everything, filtered by Space or by who acted.
+- **Activity:** Home and Space Home show what people and agents did as a timeline in a side panel, newest first, including agents replying right now. The Activity page in the sidebar lists everything, filtered by Space, by you, or by a single agent.
 - **Pending:** Home and Space Home show thread messages assigned to you, agent replies to your open comments, and messages that could not be delivered.
 - **Pinned in the sidebar:** A Space's pinned docs appear at the top of its sidebar tree.
 

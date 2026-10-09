@@ -17,7 +17,7 @@ import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { ActivityColumn } from "@/components/home/activity-feed"
+import { PageWithActivity } from "@/components/home/page-with-activity"
 import {
   PendingSection,
   RecentRows,
@@ -295,8 +295,7 @@ function SpaceOverview({
   const loading = documentsPending || recent.isPending
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-x-12 gap-y-10 px-4 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:py-10">
-      <div className="min-w-0 space-y-9">
+    <PageWithActivity spaceId={spaceId} className="xl:h-auto xl:min-h-0 xl:flex-1">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
@@ -323,7 +322,6 @@ function SpaceOverview({
 
         <PinnedSection spaceId={spaceId} pins={pins} />
 
-        <div className="space-y-5">
         <section aria-labelledby="recent-heading">
           <div className="mb-2 flex items-center gap-2">
             <h2 id="recent-heading" className="text-sm font-semibold text-foreground">
@@ -365,7 +363,6 @@ function SpaceOverview({
           )}
         </section>
         <TemporaryGroup items={temporary} />
-        </div>
 
         <ContentChips
           spaceId={spaceId}
@@ -377,12 +374,7 @@ function SpaceOverview({
             setShowAll(false)
           }}
         />
-      </div>
-
-      <aside className="min-w-0 lg:border-l lg:border-border lg:pl-8">
-        <ActivityColumn spaceId={spaceId} />
-      </aside>
-    </div>
+    </PageWithActivity>
   )
 }
 
@@ -470,7 +462,7 @@ function SpaceDetailPage() {
 
   if (!mounted || isLoading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8 lg:py-10">
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 lg:py-10">
         <div className="space-y-3">
           <div className="h-9 w-56 animate-pulse rounded-lg bg-muted/30" />
           <div className="h-4 w-80 animate-pulse rounded bg-muted/20" />
@@ -484,7 +476,7 @@ function SpaceDetailPage() {
   const { space } = data
 
   return (
-    <>
+    <div className="xl:flex xl:h-full xl:flex-col">
       {archiveInfo && (
         <ArchivedSpaceBanner
           archivedAt={archiveInfo.archivedAt}
@@ -498,6 +490,6 @@ function SpaceDetailPage() {
         spaceDescription={space.description}
         pins={data.pins ?? []}
       />
-    </>
+    </div>
   )
 }

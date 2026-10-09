@@ -126,7 +126,7 @@ function validatePublicUrl(raw: string): string | null {
     return "URL must start with http:// or https://"
   }
   if ((url.pathname && url.pathname !== "/") || url.search || url.hash) {
-    return "Use the origin only, with no path — e.g. https://worktable.example.com"
+    return "Use the origin only, with no path, such as https://worktable.example.com"
   }
   return null
 }

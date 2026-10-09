@@ -433,8 +433,8 @@ pairingRouter.post("/target", async (c) => {
           result.reason === "not_found"
             ? "Unknown or invalid code"
             : result.reason === "expired"
-              ? "Pairing code expired — create a new one in Settings"
-              : "Pairing code already used — create a new one in Settings",
+              ? "Pairing code expired. Create a new one in Settings."
+              : "Pairing code already used. Create a new one in Settings.",
         code:
           result.reason === "not_found"
             ? "INVALID_CODE"
@@ -558,8 +558,8 @@ pairingRouter.post("/redeem", async (c) => {
       {
         error:
           result.reason === "expired"
-            ? "Pairing code expired — create a new one in Settings"
-            : "Pairing code already used — create a new one in Settings",
+            ? "Pairing code expired. Create a new one in Settings."
+            : "Pairing code already used. Create a new one in Settings.",
         code: result.reason === "expired" ? "EXPIRED" : "ALREADY_REDEEMED",
       },
       410

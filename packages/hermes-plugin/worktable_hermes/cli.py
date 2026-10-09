@@ -125,8 +125,15 @@ def connect(ctx: Any, args: Any) -> int:
         try:
             _hermes_run("mcp", "test", MCP_SERVER)
         except RuntimeError:
-            print("Sign in to Worktable to let Hermes use your workspace.")
+            print("Sign in to Worktable to let Hermes use your workspace.", flush=True)
             _hermes_run("mcp", "login", MCP_SERVER, interactive=True)
+            # `hermes mcp login` reports a failed or expired sign-in without failing.
+            try:
+                _hermes_run("mcp", "test", MCP_SERVER)
+            except RuntimeError:
+                raise RuntimeError(
+                    "Hermes is not signed in to Worktable. Run this command again to get a new code."
+                ) from None
         print(f"Connected Hermes to {origin} as {name}.")
     print("Restart the gateway so Hermes starts answering Worktable messages: hermes gateway restart")
     return 0

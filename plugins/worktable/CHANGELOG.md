@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.4] - 2026-10-09
+
+### Changed
+
+- Skill guidance calls a Space's lead documents pinned docs, matching the app and the `pins` field agents read and set.
+
 ## [0.1.3] - 2026-10-06
 
 ### Changed

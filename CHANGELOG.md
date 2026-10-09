@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update worktable` keeps it current.
+- **OpenClaw on Worktable Cloud:** Connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
 
 ## [0.1.21] - 2026-10-09
 

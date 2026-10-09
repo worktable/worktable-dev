@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.15
+
+- Show the complete sign-in link when connecting to Worktable Cloud. OpenClaw masked part of it, so the link could not be opened.
+- Accept the claim code exactly as Worktable Cloud shows it, including the hyphen.
+
 ## 0.0.14
 
 - Keep an agent's reply when Worktable is briefly unavailable or restarts during a turn, and post it once Worktable is back.

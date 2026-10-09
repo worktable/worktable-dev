@@ -64,8 +64,10 @@ export default defineChannelPluginEntry({
                     email,
                     participantName,
                     async readUserCode(verificationUri) {
-                      console.log(
-                        `Open this URL, sign in, and view the claim code:\n${verificationUri}`
+                      // OpenClaw masks token-like text in console output, which
+                      // would make the claim link unusable.
+                      process.stdout.write(
+                        `Open this URL, sign in, and view the claim code:\n${verificationUri}\n`
                       )
                       return prompt.question("Claim code: ")
                     },

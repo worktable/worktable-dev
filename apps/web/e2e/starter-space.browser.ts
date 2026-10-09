@@ -56,10 +56,10 @@ test("every discovered document opens through the common page", async ({
   await page.goto(new URL("/spaces/welcome", harness.webUrl).href, {
     waitUntil: "domcontentloaded",
   })
-  const diagrams = page.getByRole("button", {
-    name: "Diagrams",
-    exact: true,
-  })
+  // The sidebar tree; Space Home also has a "Diagrams" folder filter.
+  const diagrams = page
+    .getByRole("navigation", { name: "Active documents" })
+    .getByRole("button", { name: "Diagrams", exact: true })
   await expect(diagrams).toBeVisible({ timeout: 30_000 })
   await diagrams.click()
 
@@ -290,7 +290,9 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   expect(nestedDoc.status()).toBe(200)
 
-  const plans = page.getByRole("button", { name: "Plans", exact: true })
+  const plans = page
+    .getByRole("navigation", { name: "Active documents" })
+    .getByRole("button", { name: "Plans", exact: true })
   await expect(plans).toBeVisible({ timeout: 10_000 })
   await plans.click()
   const treeLink = page.getByRole("link", {
@@ -439,7 +441,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     racePage.getByRole("link", { name: "Ways to Work", exact: true })
   ).toBeVisible({ timeout: 30_000 })
-  await racePage.getByRole("button", { name: "Plans", exact: true }).click()
+  await racePage
+    .getByRole("navigation", { name: "Active documents" })
+    .getByRole("button", { name: "Plans", exact: true })
+    .click()
   await expect(
     racePage.getByRole("link", { name: "Live Status", exact: true })
   ).toBeVisible()

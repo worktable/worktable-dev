@@ -744,8 +744,17 @@ export async function writeRecord(spaceId: string, record: RecordFile): Promise<
 }
 
 export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+  // An explicit ID that already exists overwrites that record.
+  const existed =
+    input.id !== undefined &&
+    isCanonicalId(spaceId) &&
+    isCanonicalId(collectionId) &&
+    isCanonicalId(input.id) &&
+    existsSync(recordPath(spaceId, collectionId, input.id));
   const result = await createRecordInner(spaceId, collectionId, input);
-  if (result.data) noteRecordActivity(spaceId, collectionId, "records.added");
+  if (result.data) {
+    noteRecordActivity(spaceId, collectionId, existed ? "records.updated" : "records.added");
+  }
   return result;
 }
 

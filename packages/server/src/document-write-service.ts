@@ -1796,6 +1796,7 @@ export async function setRegisteredDocumentArchived(options: {
 }> {
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
+  let stateChanged = false
   const result = await withDocPathLock(options.spaceId, async () => {
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
@@ -1829,10 +1830,11 @@ export async function setRegisteredDocumentArchived(options: {
         }
       }
     }
-    if (
-      !options.archived &&
-      (await getDocArchiveInfo(options.spaceId, current.path))
-    ) {
+    const wasArchived = Boolean(
+      await getDocArchiveInfo(options.spaceId, current.path)
+    )
+    stateChanged = wasArchived !== options.archived
+    if (!options.archived && wasArchived) {
       // Restored documents come back durable. Clear the date first: a failure
       // between the two steps leaves an archived durable document, never a
       // restored one that is already overdue.
@@ -1877,11 +1879,14 @@ export async function setRegisteredDocumentArchived(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
-  recordActivity({
-    spaceId: options.spaceId,
-    action: options.archived ? "doc.archived" : "doc.restored",
-    target: { kind: "doc", path: result.path },
-  })
+  // A retried archive or restore changes nothing worth reporting.
+  if (stateChanged) {
+    recordActivity({
+      spaceId: options.spaceId,
+      action: options.archived ? "doc.archived" : "doc.restored",
+      target: { kind: "doc", path: result.path },
+    })
+  }
   return result
 }
 

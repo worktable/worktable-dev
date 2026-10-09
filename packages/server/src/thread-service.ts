@@ -351,7 +351,6 @@ export async function postThreadMessage(
     (input.spaceId ? { kind: "space", spaceId: input.spaceId } : undefined)
   let recipient: ParticipantRef | undefined
   let result: Awaited<ReturnType<typeof createThread>>
-  let replayed = false
 
   if (input.threadId) {
     let existing = await findThread(input.threadId, location)
@@ -371,7 +370,6 @@ export async function postThreadMessage(
     if (replay) {
       recipient = replay.recipient
       result = replay
-      replayed = true
     } else {
       const explicitRecipient = input.to
         ? await requireParticipant(input.to)
@@ -464,7 +462,6 @@ export async function postThreadMessage(
     if (replay) {
       recipient = replay.recipient
       result = replay
-      replayed = true
     } else {
       recipient = await requireParticipant(input.to)
       result = await createThread(location, {
@@ -495,7 +492,9 @@ export async function postThreadMessage(
     })
   }
   const resultLocation = threadLocation(result.thread)
-  if (!replayed) {
+  // Replays, including one that lost a race for the thread lock, created
+  // nothing new.
+  if (result.created) {
     recordActivity({
       spaceId:
         resultLocation.kind === "space" ? resultLocation.spaceId : null,
@@ -669,9 +668,30 @@ export async function listThreadSummaries(
     : summaries
 }
 
+/**
+ * Which threads a reader-wide listing covers: everything outside archived
+ * Spaces, or exactly the named Space, archived or not.
+ */
+async function threadScope(
+  spaceId?: string
+): Promise<(location: ThreadLocation) => boolean> {
+  if (spaceId) {
+    return (location) =>
+      location.kind === "space" && location.spaceId === spaceId
+  }
+  const activeSpaceIds = new Set(
+    (await listSpaces())
+      .filter((space) => !getSpaceArchiveInfo(space))
+      .map((space) => space.id)
+  )
+  return (location) =>
+    location.kind !== "space" || activeSpaceIds.has(location.spaceId)
+}
+
 /** Reply requests addressed to the reader that are still open. */
 export async function listOpenRequestsForViewer(
-  identity: ThreadIdentity
+  identity: ThreadIdentity,
+  spaceId?: string
 ): Promise<
   {
     location: ThreadLocation
@@ -682,17 +702,11 @@ export async function listOpenRequestsForViewer(
   }[]
 > {
   const viewer = (await participantForIdentity(identity)).participant
-  const activeSpaceIds = new Set(
-    (await listSpaces())
-      .filter((space) => !getSpaceArchiveInfo(space))
-      .map((space) => space.id)
-  )
+  const inScope = await threadScope(spaceId)
   const { threads } = await scanAllThreads()
   return threads.flatMap((thread) => {
     const location = threadLocation(thread)
-    if (location.kind === "space" && !activeSpaceIds.has(location.spaceId)) {
-      return []
-    }
+    if (!inScope(location)) return []
     const mine = new Set(
       thread.identities
         .filter((candidate) => candidate.memberId === viewer.id)
@@ -731,7 +745,8 @@ export async function listOpenRequestsForViewer(
  * still open. Every failed request counts, not only each thread's latest.
  */
 export async function listFailedDeliveriesForViewer(
-  identity: ThreadIdentity
+  identity: ThreadIdentity,
+  spaceId?: string
 ): Promise<
   {
     location: ThreadLocation
@@ -742,18 +757,12 @@ export async function listFailedDeliveriesForViewer(
   }[]
 > {
   const viewer = (await participantForIdentity(identity)).participant
-  const activeSpaceIds = new Set(
-    (await listSpaces())
-      .filter((space) => !getSpaceArchiveInfo(space))
-      .map((space) => space.id)
-  )
+  const inScope = await threadScope(spaceId)
   const { threads } = await scanAllThreads()
   const perThread = await Promise.all(
     threads.map(async (thread) => {
       const location = threadLocation(thread)
-      if (location.kind === "space" && !activeSpaceIds.has(location.spaceId)) {
-        return []
-      }
+      if (!inScope(location)) return []
       const open = new Map(
         thread.messages.flatMap((message) =>
           message.authorMemberId === viewer.id &&

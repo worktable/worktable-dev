@@ -154,6 +154,17 @@ function ActivityPage() {
             />
           ))}
         </div>
+      ) : pages.isError && !pages.data ? (
+        <p className="mt-8 text-sm text-muted-foreground">
+          Couldn’t load activity.{" "}
+          <button
+            type="button"
+            className="text-primary-text hover:underline"
+            onClick={() => void pages.refetch()}
+          >
+            Try again
+          </button>
+        </p>
       ) : entries.length === 0 ? (
         <p className="mt-8 text-sm text-muted-foreground">Nothing yet.</p>
       ) : (

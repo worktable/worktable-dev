@@ -6,7 +6,7 @@
 // their messages that could not be delivered. Each source is read only when
 // the reader has the scope that would let them open it.
 
-import type { PendingItem, PendingResult } from "@worktable/types"
+import type { Annotation, PendingItem, PendingResult } from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
 import { listDocuments } from "./document-query.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
@@ -35,8 +35,8 @@ export async function listPending(
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
   const [requests, failures, replies] = await Promise.all([
-    canReadThreads ? threadRequests(identity) : [],
-    canReadThreads ? failedDeliveries(identity) : [],
+    canReadThreads ? threadRequests(identity, spaceId) : [],
+    canReadThreads ? failedDeliveries(identity, spaceId) : [],
     canReadAnnotations ? commentReplies(spaceId) : [],
   ])
   const items = [...requests, ...failures, ...replies]
@@ -46,8 +46,11 @@ export async function listPending(
   return { items }
 }
 
-async function threadRequests(identity: TokenIdentity): Promise<PendingItem[]> {
-  return (await listOpenRequestsForViewer(identity)).map((request) => ({
+async function threadRequests(
+  identity: TokenIdentity,
+  spaceId?: string
+): Promise<PendingItem[]> {
+  return (await listOpenRequestsForViewer(identity, spaceId)).map((request) => ({
     kind: "threadRequest",
     id: `thread:${request.threadId}:${request.message.id}`,
     at: request.message.createdAt,
@@ -66,9 +69,10 @@ async function threadRequests(identity: TokenIdentity): Promise<PendingItem[]> {
 }
 
 async function failedDeliveries(
-  identity: TokenIdentity
+  identity: TokenIdentity,
+  spaceId?: string
 ): Promise<PendingItem[]> {
-  return (await listFailedDeliveriesForViewer(identity)).map((failure) => ({
+  return (await listFailedDeliveriesForViewer(identity, spaceId)).map((failure) => ({
     kind: "deliveryFailed",
     id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
     at: failure.activity.updatedAt,
@@ -80,6 +84,22 @@ async function failedDeliveries(
   }))
 }
 
+/** Every open annotation in a Space, a page at a time. */
+async function openAnnotations(spaceId: string): Promise<Annotation[]> {
+  const all: Annotation[] = []
+  let offset: number | undefined = 0
+  while (offset !== undefined) {
+    const page = await listAnnotations(spaceId, {
+      status: ["open"],
+      limit: 500,
+      offset,
+    })
+    all.push(...page.annotations)
+    offset = page.nextOffset
+  }
+  return all
+}
+
 /** An agent answered a comment you left, and the comment is still open. */
 async function commentReplies(spaceId?: string): Promise<PendingItem[]> {
   const spaces = (await listSpaces()).filter((space) =>
@@ -87,10 +107,7 @@ async function commentReplies(spaceId?: string): Promise<PendingItem[]> {
   )
   const perSpace = await Promise.all(
     spaces.map(async (space) => {
-      const { annotations } = await listAnnotations(space.id, {
-        status: ["open"],
-        limit: 500,
-      }).catch(() => ({ annotations: [] }))
+      const annotations = await openAnnotations(space.id).catch(() => [])
       const answered = annotations.flatMap((annotation) => {
         const last = annotation.thread.at(-1)
         const target = annotation.target

@@ -168,10 +168,12 @@ function targetKey(event: Pick<ActivityEvent, "target">): string {
 export function recordActivity(input: ActivityInput): void {
   const actor = input.actor ?? currentActivityActor() ?? SYSTEM_ACTOR
   const now = input.at ? Date.parse(input.at) : Date.now()
+  let sessionKey: string | undefined
   if (input.action === "doc.edited") {
     const key = `${input.spaceId}|${actor.id}|${targetKey(input)}`
     const previous = lastEditAt.get(key)
     lastEditAt.set(key, now)
+    sessionKey = key
     if (lastEditAt.size > 10_000) forgetEndedSessions(now)
     if (previous !== undefined && now - previous < EDIT_SESSION_MS) return
   }
@@ -188,6 +190,10 @@ export function recordActivity(input: ActivityInput): void {
   }
   const write = appendEvent(parsed.data).catch((error) => {
     console.error("[activity] could not record event:", error)
+    // The session never got its first line; let the next edit try again.
+    if (sessionKey && lastEditAt.get(sessionKey) === now) {
+      lastEditAt.delete(sessionKey)
+    }
   })
   pending.add(write)
   void write.finally(() => pending.delete(write))

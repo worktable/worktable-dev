@@ -392,7 +392,10 @@ export function ActivityPanel({
   enabled?: boolean
   className?: string
 }) {
-  const { data, isPending } = useActivity({ spaceId, limit }, enabled)
+  const { data, isPending, isError, refetch } = useActivity(
+    { spaceId, limit },
+    enabled
+  )
   const { data: spaces } = useSpaces()
   const live = useLiveReplies(spaceId)
   const scrollRef = useScrollFade<HTMLDivElement>()
@@ -433,6 +436,17 @@ export function ActivityPanel({
               </div>
             ))}
           </div>
+        ) : isError && !data ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn’t load activity.{" "}
+            <button
+              type="button"
+              className="text-primary-text hover:underline"
+              onClick={() => void refetch()}
+            >
+              Try again
+            </button>
+          </p>
         ) : entries.length === 0 && live.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing yet.</p>
         ) : (

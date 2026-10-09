@@ -37,7 +37,9 @@ function DocLocation({
     >
       {parts.map((part, index) => (
         <span key={index}>
-          {index > 0 && <span className="px-0.5 text-muted-foreground/40">/</span>}
+          {index > 0 && (
+            <span className="px-0.5 text-muted-foreground/40">/</span>
+          )}
           {part}
         </span>
       ))}
@@ -61,13 +63,19 @@ function PendingRow({
   switch (item.kind) {
     case "threadRequest":
       return (
-        <ThreadLink spaceId={item.spaceId} threadId={item.threadId} className={rowClass}>
+        <ThreadLink
+          spaceId={item.spaceId}
+          threadId={item.threadId}
+          className={rowClass}
+        >
           <AtSign className="size-4 shrink-0 text-muted-foreground" />
           <span className={label}>
             {item.from.name ?? "Someone"} asked you in {item.threadTitle}
           </span>
           {where}
-          <span className="shrink-0 text-xs text-muted-foreground">{shortWhen(item.at)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {shortWhen(item.at)}
+          </span>
         </ThreadLink>
       )
     case "commentReply":
@@ -82,46 +90,71 @@ function PendingRow({
             Reply to your comment on {item.docTitle ?? item.docPath}
           </span>
           {where}
-          <span className="shrink-0 text-xs text-muted-foreground">{shortWhen(item.at)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {shortWhen(item.at)}
+          </span>
         </Link>
       )
     case "deliveryFailed":
       return (
-        <ThreadLink spaceId={item.spaceId} threadId={item.threadId} className={rowClass}>
+        <ThreadLink
+          spaceId={item.spaceId}
+          threadId={item.threadId}
+          className={rowClass}
+        >
           <CircleAlert className="size-4 shrink-0 text-destructive" />
           <span className={label}>
             Message to {item.agentName} wasn’t delivered
           </span>
           {where}
-          <span className="shrink-0 text-xs text-muted-foreground">{shortWhen(item.at)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {shortWhen(item.at)}
+          </span>
         </ThreadLink>
       )
   }
 }
 
-/** Shown only when something is waiting on the reader. */
+/** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
-  const { data } = usePending(spaceId)
+  const pending = usePending(spaceId)
   const { data: spaces } = useSpaces()
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
-  const items = data?.items ?? []
-  if (items.length === 0) return null
+  const items = pending.data?.items ?? []
+  const failed = pending.isError && !pending.data
+  if (items.length === 0 && !failed) return null
   return (
     <section aria-labelledby="pending-heading">
-      <h2 id="pending-heading" className="mb-2 text-sm font-semibold text-foreground">
+      <h2
+        id="pending-heading"
+        className="mb-2 text-sm font-semibold text-foreground"
+      >
         Pending
       </h2>
-      <div className="rounded-xl border border-border bg-card p-1">
-        {items.map((item) => (
-          <PendingRow
-            key={item.id}
-            item={item}
-            spaceName={
-              spaceId || !item.spaceId ? undefined : names.get(item.spaceId)
-            }
-          />
-        ))}
-      </div>
+      {failed ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn’t load what’s pending.{" "}
+          <button
+            type="button"
+            className="text-primary-text hover:underline"
+            onClick={() => void pending.refetch()}
+          >
+            Try again
+          </button>
+        </p>
+      ) : (
+        <div className="rounded-xl border border-border bg-card p-1">
+          {items.map((item) => (
+            <PendingRow
+              key={item.id}
+              item={item}
+              spaceName={
+                spaceId || !item.spaceId ? undefined : names.get(item.spaceId)
+              }
+            />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -171,7 +204,9 @@ export function RecentRows({ items }: { items: RecentItem[] }) {
 function daysUntil(archiveOn: string, now: number): number {
   const day = (time: number) => {
     const date = new Date(time)
-    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+    return (
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+    )
   }
   return day(Date.parse(archiveOn)) - day(now)
 }
@@ -235,10 +270,13 @@ function TemporaryRow({ item }: { item: RecentItem }) {
         )}
       >
         <Clock3 className={cn("size-3", soon && "text-warning")} />
-        <span className="hidden sm:inline">{archiveLabel(archiveOn, days)}</span>
+        <span className="hidden sm:inline">
+          {archiveLabel(archiveOn, days)}
+        </span>
         <span className="sm:hidden">
-          {archiveLabel(archiveOn, days).replace(/^Archives (.)/, (_, first: string) =>
-            first.toUpperCase()
+          {archiveLabel(archiveOn, days).replace(
+            /^Archives (.)/,
+            (_, first: string) => first.toUpperCase()
           )}
         </span>
       </span>
@@ -257,18 +295,27 @@ export function TemporaryGroup({ items }: { items: RecentItem[] }) {
   const more = sorted.length - shown.length
   return (
     <section id="temporary" aria-labelledby="temporary-heading">
-      <h2 id="temporary-heading" className="mb-2 text-sm font-semibold text-foreground">
+      <h2
+        id="temporary-heading"
+        className="mb-2 text-sm font-semibold text-foreground"
+      >
         Temporary
       </h2>
       <div className="rounded-xl border border-border bg-card p-1">
         {shown.map((item) => (
-          <TemporaryRow key={`${item.spaceId}/${item.document.path}`} item={item} />
+          <TemporaryRow
+            key={`${item.spaceId}/${item.document.path}`}
+            item={item}
+          />
         ))}
         {more > 0 && (
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className={cn(rowClass, "w-full text-muted-foreground hover:text-foreground")}
+            className={cn(
+              rowClass,
+              "w-full text-muted-foreground hover:text-foreground"
+            )}
           >
             Show {more} more
           </button>

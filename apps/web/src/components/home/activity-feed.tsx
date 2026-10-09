@@ -8,11 +8,7 @@ import type {
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
-import {
-  actorName,
-  clockTime,
-  groupByDay,
-} from "@/lib/activity-format"
+import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
 import { useSpaces } from "@/lib/queries"
 import { useThreads } from "@/lib/threads-queries"
 
@@ -29,7 +25,7 @@ export function ActorBadge({
   actor: Pick<ActivityActor, "kind" | "name">
   live?: boolean
 }) {
-  const initial = (actor.kind === "person" ? "You" : actor.name ?? "?")
+  const initial = (actor.kind === "person" ? "You" : (actor.name ?? "?"))
     .trim()
     .charAt(0)
     .toUpperCase()
@@ -132,7 +128,9 @@ function records(count: number | undefined): string {
 /** One plain sentence: who did what to which thing. */
 function Sentence({ entry }: { entry: ActivityEntry }) {
   const who = (
-    <span className="font-medium text-foreground">{actorName(entry.actor)}</span>
+    <span className="font-medium text-foreground">
+      {actorName(entry.actor)}
+    </span>
   )
   const what = <TargetLink entry={entry} />
   const times = entry.repeats > 1 ? ` ${entry.repeats} times` : ""
@@ -150,45 +148,111 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
   }
   switch (entry.action) {
     case "doc.created":
-      return <>{who} created {what}</>
+      return (
+        <>
+          {who} created {what}
+        </>
+      )
     case "doc.edited":
-      return <>{who} edited {what}{times}</>
+      return (
+        <>
+          {who} edited {what}
+          {times}
+        </>
+      )
     case "doc.archived":
-      return <>{who} archived {what}</>
+      return (
+        <>
+          {who} archived {what}
+        </>
+      )
     case "doc.restored":
-      return <>{who} restored {what}</>
+      return (
+        <>
+          {who} restored {what}
+        </>
+      )
     case "doc.kept":
-      return <>{who} kept {what}</>
+      return (
+        <>
+          {who} kept {what}
+        </>
+      )
     case "doc.madeTemporary":
-      return <>{who} made {what} temporary</>
+      return (
+        <>
+          {who} made {what} temporary
+        </>
+      )
     case "doc.pinned":
-      return <>{who} pinned {what}</>
+      return (
+        <>
+          {who} pinned {what}
+        </>
+      )
     case "doc.unpinned":
-      return <>{who} unpinned {what}</>
+      return (
+        <>
+          {who} unpinned {what}
+        </>
+      )
     case "comment.created":
       return entry.category === "instruction" ? (
-        <>{who} left an instruction on {what}</>
+        <>
+          {who} left an instruction on {what}
+        </>
       ) : (
-        <>{who} commented on {what}</>
+        <>
+          {who} commented on {what}
+        </>
       )
     case "comment.replied":
-      return <>{who} replied to a comment on {what}</>
+      return (
+        <>
+          {who} replied to a comment on {what}
+        </>
+      )
     case "comment.resolved":
       return entry.category === "instruction" ? (
-        <>{who} resolved an instruction on {what}</>
+        <>
+          {who} resolved an instruction on {what}
+        </>
       ) : (
-        <>{who} resolved a comment on {what}</>
+        <>
+          {who} resolved a comment on {what}
+        </>
       )
     case "thread.started":
-      return <>{who} started {what}</>
+      return (
+        <>
+          {who} started {what}
+        </>
+      )
     case "thread.replied":
-      return <>{who} replied in {what}{times}</>
+      return (
+        <>
+          {who} replied in {what}
+          {times}
+        </>
+      )
     case "records.added":
-      return <>{who} added {records(entry.count)} to {what}</>
+      return (
+        <>
+          {who} added {records(entry.count)} to {what}
+        </>
+      )
     case "records.updated":
-      return <>{who} updated {records(entry.count)} in {what}</>
+      return (
+        <>
+          {who} updated {records(entry.count)} in {what}
+        </>
+      )
     case "records.removed":
-      return <>{who} removed {records(entry.count)} from {what}</>
+      return (
+        <>
+          {who} removed {records(entry.count)} from {what}
+        </>
+      )
   }
 }
 
@@ -283,7 +347,8 @@ function LiveReply({ thread, last }: { thread: ThreadSummary; last: boolean }) {
     thread.members.find((member) => member.id === activity.participantId)
       ?.name ??
     "An agent"
-  const spaceId = thread.location.kind === "space" ? thread.location.spaceId : null
+  const spaceId =
+    thread.location.kind === "space" ? thread.location.spaceId : null
   return (
     <li className="flex gap-3">
       <Rail last={last}>
@@ -342,10 +407,7 @@ export function ActivityPanel({
       className={cn("flex min-h-0 min-w-0 flex-col", className)}
     >
       <div className="flex items-baseline justify-between gap-3 pb-4">
-        <h2
-          id={headingId}
-          className="text-sm font-semibold text-foreground"
-        >
+        <h2 id={headingId} className="text-sm font-semibold text-foreground">
           Activity
         </h2>
         {entries.length > 0 && (
@@ -358,7 +420,10 @@ export function ActivityPanel({
           </Link>
         )}
       </div>
-      <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="scroll-fade min-h-0 flex-1 overflow-y-auto"
+      >
         {isPending ? (
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (

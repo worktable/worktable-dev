@@ -12,7 +12,14 @@
 
 import { AsyncLocalStorage } from "node:async_hooks"
 import { randomBytes } from "node:crypto"
-import { appendFile, mkdir, readFile, readdir, rm, stat } from "node:fs/promises"
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+} from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
   ActivityEventSchema,
@@ -215,7 +222,10 @@ export function noteCommentActivity(options: {
   body?: string
   category?: "comment" | "instruction"
 }): void {
-  if (options.author.type === "system" || options.author.id === "worktable-lint") {
+  if (
+    options.author.type === "system" ||
+    options.author.id === "worktable-lint"
+  ) {
     return
   }
   recordActivity({
@@ -255,7 +265,10 @@ async function appendEvent(event: ActivityEvent): Promise<void> {
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const line = lines[index]!
       bytes += Buffer.byteLength(line) + 1
-      if (kept.length === KEEP_AFTER_COMPACT || bytes > KEEP_BYTES_AFTER_COMPACT) {
+      if (
+        kept.length === KEEP_AFTER_COMPACT ||
+        bytes > KEEP_BYTES_AFTER_COMPACT
+      ) {
         break
       }
       kept.push(line)

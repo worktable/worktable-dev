@@ -148,7 +148,10 @@ function ActivityPage() {
       {pages.isPending ? (
         <div className="mt-8 space-y-3">
           {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="h-10 animate-pulse rounded-lg bg-muted/20" />
+            <div
+              key={index}
+              className="h-10 animate-pulse rounded-lg bg-muted/20"
+            />
           ))}
         </div>
       ) : entries.length === 0 ? (

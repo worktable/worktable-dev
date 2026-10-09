@@ -54,4 +54,3 @@ export function useNewDoc(spaceId: string, onCreated?: () => void) {
   const newDocIn = useNewDocIn(onCreated)
   return (folder?: string) => newDocIn(spaceId, folder)
 }
-

@@ -29,7 +29,11 @@ export async function listPending(
   spaceId?: string
 ): Promise<PendingResult> {
   const canReadThreads = hasScope(identity.scopes, "threads:read")
-  const canReadAnnotations = hasScope(identity.scopes, "annotations:read")
+  // People write comments as the "user" author; agents never do, so replies
+  // to "your" comments are only meaningful for a person.
+  const canReadAnnotations =
+    identity.principal.type === "human" &&
+    hasScope(identity.scopes, "annotations:read")
   const [requests, failures, replies] = await Promise.all([
     canReadThreads ? threadRequests(identity) : [],
     canReadThreads ? failedDeliveries(identity) : [],

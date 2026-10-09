@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod"
 
 // ============================================================
 // Workspace activity
@@ -15,7 +15,7 @@ export const ActivityActorSchema = z.object({
   id: z.string().min(1),
   /** Name when the event was recorded; readers may substitute a current one. */
   name: z.string().optional(),
-});
+})
 
 export const ActivityActionSchema = z.enum([
   "doc.created",
@@ -34,7 +34,7 @@ export const ActivityActionSchema = z.enum([
   "records.added",
   "records.updated",
   "records.removed",
-]);
+])
 
 export const ActivityTargetSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -53,7 +53,7 @@ export const ActivityTargetSchema = z.discriminatedUnion("kind", [
     collectionId: z.string().min(1),
     name: z.string().optional(),
   }),
-]);
+])
 
 export const ActivityEventSchema = z.object({
   id: z.string().min(1),
@@ -69,22 +69,22 @@ export const ActivityEventSchema = z.object({
   category: z.enum(["comment", "instruction"]).optional(),
   /** Number of items the event covers, such as records added. */
   count: z.number().int().positive().optional(),
-});
+})
 
-export type ActivityActor = z.infer<typeof ActivityActorSchema>;
-export type ActivityAction = z.infer<typeof ActivityActionSchema>;
-export type ActivityTarget = z.infer<typeof ActivityTargetSchema>;
-export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
+export type ActivityActor = z.infer<typeof ActivityActorSchema>
+export type ActivityAction = z.infer<typeof ActivityActionSchema>
+export type ActivityTarget = z.infer<typeof ActivityTargetSchema>
+export type ActivityEvent = z.infer<typeof ActivityEventSchema>
 
 /** One row as shown to people: consecutive repeats on a day are combined. */
 export interface ActivityEntry extends ActivityEvent {
   /** How many recorded events this entry combines. */
-  repeats: number;
+  repeats: number
 }
 
 export interface ActivityPage {
-  entries: ActivityEntry[];
-  nextCursor: string | null;
+  entries: ActivityEntry[]
+  nextCursor: string | null
 }
 
 // ============================================================
@@ -93,37 +93,37 @@ export interface ActivityPage {
 
 export type PendingItem =
   | {
-      kind: "threadRequest";
-      id: string;
-      at: string;
-      spaceId: string | null;
-      threadId: string;
-      threadTitle: string;
-      messageId: string;
-      from: ActivityActor;
-      excerpt: string;
+      kind: "threadRequest"
+      id: string
+      at: string
+      spaceId: string | null
+      threadId: string
+      threadTitle: string
+      messageId: string
+      from: ActivityActor
+      excerpt: string
     }
   | {
-      kind: "commentReply";
-      id: string;
-      at: string;
-      spaceId: string;
-      annotationId: string;
-      docPath: string;
-      docTitle?: string;
-      from: ActivityActor;
-      excerpt: string;
+      kind: "commentReply"
+      id: string
+      at: string
+      spaceId: string
+      annotationId: string
+      docPath: string
+      docTitle?: string
+      from: ActivityActor
+      excerpt: string
     }
   | {
-      kind: "deliveryFailed";
-      id: string;
-      at: string;
-      spaceId: string | null;
-      threadId: string;
-      threadTitle: string;
-      agentName: string;
-    };
+      kind: "deliveryFailed"
+      id: string
+      at: string
+      spaceId: string | null
+      threadId: string
+      threadTitle: string
+      agentName: string
+    }
 
 export interface PendingResult {
-  items: PendingItem[];
+  items: PendingItem[]
 }

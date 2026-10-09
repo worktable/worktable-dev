@@ -48,9 +48,7 @@ export function groupByDay<T extends { at: string }>(
 /** "9:42" today, "Yesterday", a weekday this week, then a date. */
 export function shortWhen(iso: string, now = new Date()): string {
   const date = new Date(iso)
-  const days = Math.round(
-    (startOfDay(now) - startOfDay(date)) / 86_400_000
-  )
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000)
   if (days <= 0) return clockTime(iso)
   if (days === 1) return "Yesterday"
   if (days < 7) return date.toLocaleDateString(undefined, { weekday: "short" })

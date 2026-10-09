@@ -14,7 +14,8 @@ import { fetchJSON } from "./http.ts"
 export const activityQueryKeys = {
   all: ["activity"] as const,
   list: (options: ActivityOptions) => ["activity", options] as const,
-  agents: (spaceId?: string) => ["activity", "agents", spaceId ?? null] as const,
+  agents: (spaceId?: string) =>
+    ["activity", "agents", spaceId ?? null] as const,
   pending: ["pending"] as const,
   pendingIn: (spaceId?: string) => ["pending", spaceId ?? null] as const,
 }

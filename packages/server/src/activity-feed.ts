@@ -77,7 +77,7 @@ export async function readActivityAgents(options: {
   scopes: string[]
 }): Promise<ActivityActor[]> {
   const visibleSpaces = await visibleSpacesFor(options.spaceId)
-  if (visibleSpaces.size === 0) return []
+  if (options.spaceId && visibleSpaces.size === 0) return []
   const [agents, names] = await Promise.all([
     listActivityAgents({
       ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
@@ -156,9 +156,10 @@ async function namedDocuments(
 ): Promise<Map<string, Map<string, { title: string; formatId: string }>>> {
   const pairs = await Promise.all(
     spaceIds.map(async (spaceId) => {
-      const items = await listDocuments({ spaceId, includeArchived: true }).catch(
-        () => []
-      )
+      const items = await listDocuments({
+        spaceId,
+        includeArchived: true,
+      }).catch(() => [])
       const byPath = new Map<string, { title: string; formatId: string }>()
       for (const item of items) {
         if (item.kind === "document") {
@@ -179,7 +180,9 @@ async function namedCollections(
       const collections = await listRecordCollections(spaceId).catch(() => [])
       return [
         spaceId,
-        new Map(collections.map((collection) => [collection.id, collection.name])),
+        new Map(
+          collections.map((collection) => [collection.id, collection.name])
+        ),
       ] as const
     })
   )

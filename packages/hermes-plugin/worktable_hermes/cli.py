@@ -22,6 +22,11 @@ _ALREADY_ABSENT = re.compile(r"not set|not found", re.IGNORECASE)
 # messages itself, so the agent must not take deliveries meant for the gateway.
 DELIVERY_TOOL = "worktable_thread_delivery"
 
+# Worktable Cloud's sign-in client for Hermes. It signs in with a code entered
+# on any device, so a gateway without a browser connects like a desktop does.
+CLOUD_SIGN_IN_CLIENTS = {"https://app.worktable.cloud": "client_01M4GPPF7CBN9KB2GQGJY16942"}
+SIGN_IN_SCOPE = "openid profile email offline_access"
+
 
 def _hermes() -> list[str]:
     found = shutil.which("hermes")
@@ -57,17 +62,19 @@ def _save_token(token: str) -> None:
         raise RuntimeError(f"Hermes did not save {TOKEN_ENV} to the profile's .env")
 
 
-def _mcp_server(url: str, auth: str) -> dict:
+def _mcp_server(url: str, auth: str, client_id: Optional[str] = None) -> dict:
     server: dict[str, Any] = {"url": url, "tools": {"exclude": [DELIVERY_TOOL]}}
     if auth == "oauth":
         server["auth"] = "oauth"
+        if client_id:
+            server["oauth"] = {"client_id": client_id, "flow": "device", "scope": SIGN_IN_SCOPE}
     else:
         server["headers"] = {"Authorization": "Bearer ${%s}" % TOKEN_ENV}
     return server
 
 
-def _enable(url: str, auth: str) -> None:
-    _config_set(f"mcp_servers.{MCP_SERVER}", _mcp_server(url, auth))
+def _enable(url: str, auth: str, client_id: Optional[str] = None) -> None:
+    _config_set(f"mcp_servers.{MCP_SERVER}", _mcp_server(url, auth, client_id))
     _config_set(f"plugins.entries.{PLATFORM}.mcp_allowlist", [MCP_SERVER])
     _config_set(f"platforms.{PLATFORM}.enabled", "true")
     # Restart notices would otherwise be posted into every Worktable thread.
@@ -113,7 +120,7 @@ def connect(ctx: Any, args: Any) -> int:
                 file=sys.stderr,
             )
             return 2
-        _enable(resource, "oauth")
+        _enable(resource, "oauth", CLOUD_SIGN_IN_CLIENTS.get(origin))
         settings.save(server=origin, auth="oauth", participant_name=name, pending_pairing_code=None)
         try:
             _hermes_run("mcp", "test", MCP_SERVER)

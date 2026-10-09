@@ -3,7 +3,7 @@ import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
 
-const OPENCLAW_FIRST_MESSAGE =
+const ALWAYS_ON_FIRST_MESSAGE =
   "Help me choose a first task in Worktable. Ask what I want to accomplish, find any related work, and help me create or revise one useful result."
 
 function appUrl(path = "/"): string {
@@ -73,7 +73,7 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("new owner can name, connect multiple real agent identities, leave an OpenClaw reply pending, and resume", async ({
+test("new owner can name, connect multiple real agent identities, leave an always-on reply pending, and resume", async ({
   page,
 }) => {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
@@ -176,13 +176,16 @@ test("new owner can name, connect multiple real agent identities, leave an OpenC
   await page.getByRole("button", { name: "Add another agent" }).click()
 
   await page.getByRole("button", { name: /^OpenClaw/ }).click()
+  await page.getByRole("combobox", { name: "Agent" }).click()
+  await page.getByRole("option", { name: "Hermes" }).click()
   await page.getByLabel("Agent name").fill("Ada")
-  const secondOpenClawPairing = await waitForPairingCreate(page, () =>
+  const hermesPairing = await waitForPairingCreate(page, () =>
     page.getByRole("button", { name: "Create connection command" }).click()
   )
-  await completePairing(secondOpenClawPairing, {
-    hostname: "browser-openclaw-2",
-    installationId: "oci_browser_test_0987654321",
+  await expect(page.getByText(/^hermes worktable connect /)).toBeVisible()
+  await completePairing(hermesPairing, {
+    hostname: "browser-hermes",
+    installationId: "hci_browser_test_0987654321",
   })
   await expect(page.getByText("Connected.", { exact: true })).toBeVisible({
     timeout: 10_000,
@@ -230,7 +233,7 @@ test("new owner can name, connect multiple real agent identities, leave an OpenC
         threads: Array<{ lastMessage: { body: string } }>
       }
       return payload.threads.filter(
-        (thread) => thread.lastMessage.body === OPENCLAW_FIRST_MESSAGE
+        (thread) => thread.lastMessage.body === ALWAYS_ON_FIRST_MESSAGE
       ).length
     })
     .toBe(2)
@@ -269,8 +272,9 @@ test("new owner can name, connect multiple real agent identities, leave an OpenC
         participant: expect.objectContaining({ name: "Atlas" }),
       }),
       expect.objectContaining({
-        target: expect.objectContaining({ adapter: "openclaw" }),
+        target: expect.objectContaining({ adapter: "hermes" }),
         participant: expect.objectContaining({ name: "Ada" }),
+        scopes: expect.arrayContaining(["threads:*", "docs:*"]),
       }),
     ]),
   })

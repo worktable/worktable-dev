@@ -11,7 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
-- **Hermes:** Connect Hermes Agent from **Settings → Agents → Hermes**. Hermes answers thread messages addressed to it and uses Worktable's tools and skills, with a pairing code on local or self-hosted Worktable or a sign-in on Cloud.
+- **Hermes:** Connect Hermes Agent during onboarding or from **Settings → Agents → Hermes**. Hermes answers thread messages addressed to it and uses Worktable's tools and skills, with a pairing code on local or self-hosted Worktable or a sign-in code on Cloud that works without a browser.
 
 ### Fixed
 

@@ -58,8 +58,10 @@ clients after a token rotation.
 
 OpenClaw and Hermes use their plugin setup and pairing or sign-in flow, not
 `worktable mcp setup`. `hermes worktable status` shows a Hermes profile's
-connection. An offline participant can leave messages queued; it does
-not imply that the thread was lost.
+connection. If Hermes stops reaching Worktable Cloud because its sign-in
+expired, run the same `hermes worktable connect` command again and restart the
+gateway. An offline participant can leave messages queued; it does not imply
+that the thread was lost.
 
 For a client that requires stdio, distinguish `worktable mcp stdio` (a local
 workspace process) from an [HTTP bridge](/reference/mcp/#http-to-stdio-bridge)

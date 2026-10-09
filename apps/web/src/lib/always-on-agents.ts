@@ -8,8 +8,14 @@ export interface AlwaysOnAgent {
   workspaceAccess: boolean
   /** Whether the gateway restarts before connecting (OpenClaw) or after (Hermes). */
   restartBeforeConnect: boolean
+  /** How the agent appears in Worktable Cloud's connections once it connects. */
+  cloudAuth: "agent-registration" | "oauth"
   localConnectCommand(serverOrigin: string, code: string): string
-  cloudConnectCommand(serverOrigin: string): string
+  cloudConnectCommand(serverOrigin: string, participantName?: string): string
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
 }
 
 export const OPENCLAW_INSTALL_COMMAND =
@@ -22,10 +28,11 @@ export const OPENCLAW: AlwaysOnAgent = {
   restartCommand: "openclaw gateway restart",
   workspaceAccess: false,
   restartBeforeConnect: true,
+  cloudAuth: "agent-registration",
   localConnectCommand: (serverOrigin, code) =>
     `openclaw worktable connect --server ${serverOrigin} --pairing-code ${code}`,
-  cloudConnectCommand: (serverOrigin) =>
-    `openclaw worktable connect --server ${serverOrigin} --agent-registration`,
+  cloudConnectCommand: (serverOrigin, participantName) =>
+    `openclaw worktable connect --server ${serverOrigin} --agent-registration${participantName ? ` --participant-name ${shellQuote(participantName)}` : ""}`,
 }
 
 export const HERMES: AlwaysOnAgent = {
@@ -36,10 +43,11 @@ export const HERMES: AlwaysOnAgent = {
   restartCommand: "hermes gateway restart",
   workspaceAccess: true,
   restartBeforeConnect: false,
+  cloudAuth: "oauth",
   localConnectCommand: (serverOrigin, code) =>
     `hermes worktable connect ${serverOrigin} --pairing-code ${code}`,
-  cloudConnectCommand: (serverOrigin) =>
-    `hermes worktable connect ${serverOrigin}`,
+  cloudConnectCommand: (serverOrigin, participantName) =>
+    `hermes worktable connect ${serverOrigin}${participantName ? ` --name ${shellQuote(participantName)}` : ""}`,
 }
 
 export const ALWAYS_ON_AGENTS = [OPENCLAW, HERMES] as const

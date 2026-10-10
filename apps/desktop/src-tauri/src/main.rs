@@ -36,7 +36,7 @@ use std::{
     process,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -83,6 +83,10 @@ const CLOUD_SIGN_OUT_MENU_ID: &str = "workspace.cloud-sign-out";
 const CLOUD_END_SESSION_MENU_ID: &str = "workspace.cloud-end-session";
 const CHECK_UPDATES_MENU_ID: &str = "app.check-updates";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(25);
+// The bundled server prints this line on stdout once it is listening. Desktop
+// verifies the instance as soon as it arrives and polls only as a fallback.
+const LOCAL_HOST_READY_PREFIX: &str = "WORKTABLE_READY ";
+const LOCAL_HOST_POLL_INTERVAL: Duration = Duration::from_millis(150);
 const SEED_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_READ_TIMEOUT: Duration = Duration::from_millis(700);
 const SEED_HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
@@ -4019,6 +4023,30 @@ struct WorktableHealth {
 }
 
 #[derive(Debug, Deserialize)]
+struct LocalHostReady {
+    port: u16,
+    instance: String,
+}
+
+fn local_host_ready_line(line: &str, expected_instance_token: &str, expected_port: u16) -> bool {
+    line.trim_end()
+        .strip_prefix(LOCAL_HOST_READY_PREFIX)
+        .and_then(|ready| serde_json::from_str::<LocalHostReady>(ready).ok())
+        .is_some_and(|ready| {
+            ready.port == expected_port && ready.instance == expected_instance_token
+        })
+}
+
+/// Wait until the next verification attempt: at once when the host announced
+/// readiness, otherwise after the poll interval.
+fn wait_for_local_host_ready(ready: &mpsc::Receiver<()>) {
+    if let Err(mpsc::RecvTimeoutError::Disconnected) = ready.recv_timeout(LOCAL_HOST_POLL_INTERVAL)
+    {
+        thread::sleep(LOCAL_HOST_POLL_INTERVAL);
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct WorkspaceResponse {
     id: String,
     name: String,
@@ -4887,12 +4915,16 @@ fn start_local_host(
     let event_summary = summary.clone();
     let event_token = instance_token.clone();
     let event_logs_path = logs_path.clone();
+    let (ready_sender, ready_receiver) = mpsc::channel();
     append_desktop_host_log(&logs_path, "Desktop started its owned Worktable host.");
     tauri::async_runtime::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
                 CommandEvent::Stdout(bytes) => {
                     let message = String::from_utf8_lossy(&bytes);
+                    if local_host_ready_line(&message, &event_token, port) {
+                        let _ = ready_sender.send(());
+                    }
                     println!("[worktable-sidecar] {message}");
                     append_desktop_host_log(&event_logs_path, message.trim_end());
                 }
@@ -5058,7 +5090,7 @@ fn start_local_host(
                 });
                 return;
             }
-            thread::sleep(Duration::from_millis(150));
+            wait_for_local_host_ready(&ready_receiver);
         }
         if !local_instance_is_active(&health_app, &instance_token) {
             return;
@@ -7432,6 +7464,33 @@ mod tests {
             r#"{"ok":true,"service":"worktable"}"#,
             "desktop-test-instance"
         ));
+    }
+
+    #[test]
+    fn ready_line_must_name_the_supervised_instance_and_port() {
+        let line = "WORKTABLE_READY {\"port\":17480,\"instance\":\"desktop-test-instance\"}\n";
+        assert!(local_host_ready_line(line, "desktop-test-instance", 17480));
+        assert!(!local_host_ready_line(line, "another-instance", 17480));
+        assert!(!local_host_ready_line(line, "desktop-test-instance", 17481));
+        assert!(!local_host_ready_line(
+            "[Worktable server] running on http://127.0.0.1:17480\n",
+            "desktop-test-instance",
+            17480
+        ));
+    }
+
+    #[test]
+    fn readiness_wait_ends_on_the_ready_line_and_keeps_polling_without_it() {
+        let (sender, receiver) = mpsc::channel();
+        sender.send(()).unwrap();
+        let started = Instant::now();
+        wait_for_local_host_ready(&receiver);
+        assert!(started.elapsed() < LOCAL_HOST_POLL_INTERVAL);
+        // A host whose output closed must not turn the fallback into a busy loop.
+        drop(sender);
+        let started = Instant::now();
+        wait_for_local_host_ready(&receiver);
+        assert!(started.elapsed() >= LOCAL_HOST_POLL_INTERVAL);
     }
 
     #[test]

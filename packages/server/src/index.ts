@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
+import { markBootMilestone, startBootPhase, timeBootTask } from "./boot-timing.ts";
 import { cors } from "hono/cors";
 import { compressApiResponse } from "./http-compression.ts";
 import { serverTiming, timedMiddleware } from "./request-timing.ts";
@@ -950,7 +951,9 @@ function startStorageUpgradeServer(
     running = (async () => {
       await recovery;
       if (stopped) return;
-      await upgradeWorkspaceBeforeStartup();
+      const upgrade = upgradeWorkspaceBeforeStartup();
+      timeBootTask("storage upgrade", upgrade);
+      await upgrade;
       if (stopped) return;
       const selectedPort = server.port!;
       if (activeServer === server) activeServer = null;
@@ -995,6 +998,8 @@ export function startServer(
       "A Worktable server is already running or stopping in this process. Await server.stop() before starting its replacement.",
     );
   }
+  markBootMilestone("server start");
+  const endConfigPhase = startBootPhase("config");
   initializeLocalOperatorToken();
   // Importing the server also powers deployment-neutral maintenance commands.
   // Keep startup diagnostics inside the actual startup path so command stdout
@@ -1070,7 +1075,9 @@ export function startServer(
   } catch (err) {
     console.error("[Worktable] update reconcile error:", err);
   }
+  endConfigPhase();
   try {
+    const endRecoveryPhase = startBootPhase("journal recovery");
     if (!replacementRestartInProgress) {
       workspaceReplacementRecoveryHookForTests?.();
       const recovered = recoverInterruptedWorkspaceReplacements({ details: true })
@@ -1113,7 +1120,11 @@ export function startServer(
     } else {
       clearWorkspaceRecoveryRequirement()
     }
-    if (ensureWorkspaceManifest().version === 1) {
+    endRecoveryPhase();
+    const endAdoptionPhase = startBootPhase("workspace adoption");
+    const manifest = ensureWorkspaceManifest();
+    endAdoptionPhase();
+    if (manifest.version === 1) {
       return startStorageUpgradeServer(port, hostname, options, recoveredWorkspaceReset);
     }
     setWorkspaceStorageUpgradeState("ready");
@@ -1193,10 +1204,8 @@ export function startServer(
   // kill switch. Replace, never stack, same as the retention timers. The stop is
   // unconditional: a boot with the kill switch on (or a rejected workspace)
   // must also tear down an index left by a caller that skipped graceful stop.
+  // It starts after the listener binds (below).
   recordIndex.stop();
-  if (!workspaceRejected && recordIndexEnabled()) {
-    recordIndex.start();
-  }
   if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
   recordReconcileSweepTimer = null;
   sweptSpaces = null;
@@ -1269,6 +1278,7 @@ export function startServer(
       console.error("[Worktable] starter seed error:", err)
     );
     starterSeedTask = task;
+    timeBootTask("starter seed", task);
     trackServerTask(task);
     void task.finally(() => {
       if (starterSeedTask === task) starterSeedTask = null;
@@ -1429,7 +1439,9 @@ export function startServer(
       ));
     });
     try {
+      const endWatcherPhase = startBootPhase("watcher start");
       watcher.start();
+      endWatcherPhase();
     } catch (err) {
       discardFailedStart();
       throw err;
@@ -1800,7 +1812,9 @@ export function startServer(
 
   let server: ReturnType<typeof Bun.serve<WsData>>;
   try {
+    const endListenPhase = startBootPhase("listener bind");
     server = startListener();
+    endListenPhase();
   } catch (err) {
     stopWorkspaceSafetyHandler()
     // Bun can reject the bind after workspace services were initialized. Undo
@@ -1813,6 +1827,17 @@ export function startServer(
   const credentialTimer = setInterval(() => { void checkRealtimeCredentials(); }, 1000);
   credentialTimer.unref?.();
   activeServer = server;
+  markBootMilestone("listening");
+  // Open the record index after the bind so its SQLite setup, the slowest
+  // synchronous startup step, does not hold the listener back. Record reads
+  // fall back to the files until its first build finishes.
+  if (!workspaceRejected && recordIndexEnabled()) {
+    const endRecordIndexOpen = startBootPhase("record index open");
+    recordIndex.start();
+    endRecordIndexOpen();
+    timeBootTask("record index build", recordIndex.whenReady());
+  }
+  const endServicesPhase = startBootPhase("background services start");
   const stopLinked = startLinkedRuntime();
   const stopBackupNotifier = startWorkspaceBackupNotifier();
   if (options.resumeWorkspaceRequests !== false) {
@@ -1846,6 +1871,7 @@ export function startServer(
   const stopSearchWarmup = workspaceRejected
     ? () => Promise.resolve()
     : startSearchWarmup();
+  endServicesPhase();
 
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";
   // Print the actual bound port (server.port), not the requested `port` arg:
@@ -1862,6 +1888,13 @@ export function startServer(
     process.env["WORKTABLE_REQUIRE_AUTH"] === "1";
   if (exposed && !tlsTerminatedUpstream()) {
     console.warn(`[Worktable server] ${REACHABLE_NETWORK_NOTICE}`);
+  }
+
+  // Desktop reads its bundled server's stdout and verifies the instance as
+  // soon as this line arrives, instead of waiting for its next poll.
+  const hostInstance = process.env["WORKTABLE_HOST_INSTANCE_TOKEN"]?.trim();
+  if (hostInstance) {
+    console.log(`WORKTABLE_READY ${JSON.stringify({ port: server.port, instance: hostInstance })}`);
   }
 
   // Bun owns the listening socket, but Worktable also starts filesystem and

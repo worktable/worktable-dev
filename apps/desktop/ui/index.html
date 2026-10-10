@@ -6,6 +6,8 @@
     <meta name="color-scheme" content="light dark" />
     <title>Worktable</title>
     <link rel="stylesheet" href="theme.generated.css" />
+    <link rel="stylesheet" href="backdrop.css" />
+    <link rel="stylesheet" href="control-finishes.css" />
     <link rel="stylesheet" href="shell.css" />
     <script src="shell.js" defer></script>
   </head>
@@ -90,7 +92,7 @@
           </div>
           <div class="update-actions">
             <button
-              class="button primary"
+              class="button primary btn-key"
               id="install-update"
               type="button"
               hidden
@@ -98,7 +100,7 @@
               Download and Restart
             </button>
             <button
-              class="button primary"
+              class="button primary btn-key"
               id="retry-update"
               type="button"
               hidden
@@ -106,7 +108,7 @@
               Try again
             </button>
             <button
-              class="button secondary"
+              class="button secondary btn-key-outline"
               id="dismiss-update"
               type="button"
               hidden
@@ -142,17 +144,34 @@
         </div>
         <div class="provider-grid">
           <button class="provider-card" id="choose-local" type="button">
-            <span class="card-icon" aria-hidden="true">⌘</span>
+            <span class="card-icon" aria-hidden="true"
+              ><svg class="stroke-icon" viewBox="0 0 24 24">
+                <path
+                  d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"
+                />
+                <path d="M20.054 15.987H3.946" /></svg
+            ></span>
             <strong>On this Mac</strong>
             <span>Keep your files on this Mac.</span>
           </button>
           <button class="provider-card" id="choose-self-hosted" type="button">
-            <span class="card-icon" aria-hidden="true">↗</span>
+            <span class="card-icon" aria-hidden="true"
+              ><svg class="stroke-icon" viewBox="0 0 24 24">
+                <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
+                <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
+                <line x1="6" x2="6.01" y1="6" y2="6" />
+                <line x1="6" x2="6.01" y1="18" y2="18" /></svg
+            ></span>
             <strong>Self-hosted</strong>
             <span>Connect to a server you run.</span>
           </button>
           <button class="provider-card" id="choose-cloud" type="button">
-            <span class="card-icon" aria-hidden="true">☁</span>
+            <span class="card-icon" aria-hidden="true"
+              ><svg class="stroke-icon" viewBox="0 0 24 24">
+                <path
+                  d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"
+                /></svg
+            ></span>
             <strong>Worktable Cloud</strong>
             <span>Sign in to your hosted Worktable.</span>
           </button>
@@ -197,7 +216,11 @@
           >
             Remove connection
           </button>
-          <button class="button primary" id="connect-cloud" type="button">
+          <button
+            class="button primary btn-key"
+            id="connect-cloud"
+            type="button"
+          >
             Sign in
           </button>
         </div>
@@ -239,7 +262,7 @@
           >
           <p class="field-help">Enter the address you use to open Worktable.</p>
           <input
-            class="origin-input"
+            class="origin-input well well-interactive"
             id="remote-origin"
             name="origin"
             type="url"
@@ -271,7 +294,11 @@
             </label>
           </div>
           <div class="choice-actions remote-form-actions">
-            <button class="button primary" id="connect-remote" type="submit">
+            <button
+              class="button primary btn-key"
+              id="connect-remote"
+              type="submit"
+            >
               Connect
             </button>
           </div>
@@ -312,7 +339,7 @@
             <code id="existing-installation-path"></code>
           </div>
           <button
-            class="button primary"
+            class="button primary btn-key"
             id="use-existing-installation"
             type="button"
           >
@@ -331,7 +358,7 @@
                 <p>Your content will be stored in the selected folder.</p>
               </div>
             </div>
-            <div class="path-well">
+            <div class="path-well well">
               <span>Location</span>
               <code id="create-path"></code>
             </div>
@@ -344,14 +371,14 @@
             ></p>
             <div class="choice-actions">
               <button
-                class="button secondary"
+                class="button secondary btn-key-outline"
                 id="change-create-location"
                 type="button"
               >
                 Change location…
               </button>
               <button
-                class="button primary"
+                class="button primary btn-key"
                 id="create-workspace"
                 type="button"
               >
@@ -371,7 +398,11 @@
               </div>
             </div>
             <div class="choice-actions">
-              <button class="button secondary" id="open-existing" type="button">
+              <button
+                class="button secondary btn-key-outline"
+                id="open-existing"
+                type="button"
+              >
                 Choose folder…
               </button>
             </div>
@@ -395,42 +426,42 @@
           <span class="recovery-symbol" aria-hidden="true">!</span>
           <h1 id="recovery-title">Could not open Worktable</h1>
           <p class="lede" id="recovery-message" role="alert"></p>
-          <div class="recovery-workspace" id="recovery-workspace">
+          <div class="recovery-workspace well" id="recovery-workspace">
             <span>Location</span>
             <code class="recovery-path" id="recovery-path"></code>
           </div>
           <div class="recovery-action-row">
             <div class="recovery-primary-actions" id="recovery-primary-actions">
               <button
-                class="button primary"
+                class="button primary btn-key"
                 id="check-desktop-updates"
                 type="button"
               >
                 Check for updates
               </button>
               <button
-                class="button primary"
+                class="button primary btn-key"
                 id="retry-connection"
                 type="button"
               >
                 Try again
               </button>
               <button
-                class="button secondary"
+                class="button secondary btn-key-outline"
                 id="restart-local-host"
                 type="button"
               >
                 Restart local service
               </button>
               <button
-                class="button primary"
+                class="button primary btn-key"
                 id="repair-local-authority"
                 type="button"
               >
                 Repair Worktable
               </button>
               <button
-                class="button secondary"
+                class="button secondary btn-key-outline"
                 id="recovery-change-workspace"
                 type="button"
               >
@@ -451,7 +482,7 @@
           >
             <summary>
               <svg
-                class="disclosure-chevron"
+                class="stroke-icon disclosure-chevron"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
               >
@@ -461,14 +492,14 @@
             </summary>
             <div class="recovery-utility-actions" id="recovery-utility-actions">
               <button
-                class="button secondary"
+                class="button secondary btn-key-outline"
                 id="open-local-logs"
                 type="button"
               >
                 Open logs
               </button>
               <button
-                class="button secondary"
+                class="button secondary btn-key-outline"
                 id="locate-workspace"
                 type="button"
               >

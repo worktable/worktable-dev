@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { resolveRustHostTuple } from "./rust-toolchain"
+import { SHARED_SHELL_STYLESHEETS } from "./shell-stylesheets"
 import { copyReleaseLicenses } from "../../../scripts/release-licenses.ts"
 import { writeNativeNotices } from "../../../scripts/native-notices.ts"
 
@@ -215,10 +216,14 @@ writeNativeNotices(
   }
 )
 
-copyFileSync(
-  join(repoRoot, "packages", "ui", "src", "styles", "theme.generated.css"),
-  join(appRoot, "ui", "theme.generated.css")
-)
+// The trusted shell paints with the same theme, backdrop, and control finishes
+// as the web app; copy them rather than maintaining shell-specific versions.
+for (const stylesheet of SHARED_SHELL_STYLESHEETS) {
+  copyFileSync(
+    join(repoRoot, "packages", "ui", "src", "styles", stylesheet),
+    join(appRoot, "ui", stylesheet)
+  )
+}
 copyFileSync(
   join(repoRoot, "apps", "web", "public", "pwa-512x512.png"),
   join(generatedRoot, "icon.png")

@@ -1,4 +1,5 @@
 import { extname, join, normalize } from "node:path"
+import { SHARED_SHELL_STYLESHEETS } from "./shell-stylesheets"
 
 const uiRoot = join(import.meta.dir, "../ui")
 const repositoryRoot = join(import.meta.dir, "../../..")
@@ -42,9 +43,12 @@ Bun.serve({
         { headers: { "Content-Type": contentTypes[".css"]! } }
       )
     }
+    const shared = (SHARED_SHELL_STYLESHEETS as readonly string[]).includes(
+      relative
+    )
     const file = Bun.file(
-      relative === "theme.generated.css"
-        ? join(repositoryRoot, "packages/ui/src/styles/theme.generated.css")
+      shared
+        ? join(repositoryRoot, "packages/ui/src/styles", relative)
         : join(uiRoot, relative)
     )
     if (!(await file.exists()))

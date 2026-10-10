@@ -21,7 +21,7 @@
 // the count-mode post-write check), mirroring version-store.ts's boundary.
 // ============================================================
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { lstat, readdir, realpath, rm, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { DocumentIdSchema, type DocumentId } from "@worktable/types";
@@ -43,6 +43,39 @@ import {
 } from "./version-store.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a workspace folder already holds any doc version history. Used once
+ * to tell an install that predates retention limits (it kept everything) from
+ * a new one. Errs toward true: any entry counts (space ids may start with a
+ * dot), and an unreadable versions directory counts as history, so the longer
+ * policy applies.
+ */
+export function workspaceHasVersionHistory(workspaceRoot = getWorkspaceRoot()): boolean {
+  try {
+    return readdirSync(join(workspaceRoot, "versions")).some(
+      (name) => name !== ".DS_Store",
+    );
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+/**
+ * Whether a legacy snapshot is a meaningful checkpoint. Those are kept forever,
+ * as the legacy store's own pruning and the current store both do; only a
+ * positively identified checkpoint is spared.
+ */
+async function isMeaningfulCheckpoint(file: VersionFile): Promise<boolean> {
+  try {
+    const parsed = JSON.parse(await readFile(file.path, "utf8")) as {
+      checkpoint?: { meaningful?: unknown };
+    } | null;
+    return parsed?.checkpoint?.meaningful === true;
+  } catch {
+    return false;
+  }
+}
 
 export interface RetentionSweepResult {
   policy: RetentionPolicy;
@@ -308,6 +341,7 @@ async function pruneKeyDir(
     const files = await collectVersionFiles(dir);
     const toDelete = selectDeletions(files, ctx.policy, ctx.protect);
     for (const file of toDelete) {
+      if (await isMeaningfulCheckpoint(file)) continue;
       try {
         const result = await deleteVersionFileSafely(file, versionsRootResolved, realRoot);
         if (result.deleted) {

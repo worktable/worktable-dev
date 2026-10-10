@@ -1302,10 +1302,18 @@ function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
 export function ConnectedAgentsGroup() {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
-  const connectionsQuery = useQuery({
-    queryKey: ["agent-connections"],
-    queryFn: listAgentConnections,
+  const systemConnection = useQuery({
+    queryKey: ["system", "connection"],
+    queryFn: getConnection,
     enabled: sectionActive,
+  })
+  const workspaceAgentsOnCloud =
+    systemConnection.data?.mcpAuthMode === "oauth" &&
+    systemConnection.data.agentPairing === true
+  const connectionsQuery = useQuery({
+    queryKey: ["agent-connections", workspaceAgentsOnCloud],
+    queryFn: () => listAgentConnections({ workspaceAgentsOnCloud }),
+    enabled: sectionActive && systemConnection.isFetched,
   })
   const disconnect = useMutation({
     mutationFn: disconnectAgentConnection,
@@ -1324,7 +1332,7 @@ export function ConnectedAgentsGroup() {
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
   const oauthInventoryUnavailable =
-    connectionsQuery.data?.unavailableAuthKinds?.includes("oauth") ?? false
+    (connectionsQuery.data?.unavailableAuthKinds?.length ?? 0) > 0
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connected-agents">
       <h3 id="connected-agents" className="text-sm font-medium text-foreground">

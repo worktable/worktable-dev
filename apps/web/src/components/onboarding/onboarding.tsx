@@ -656,7 +656,7 @@ function ConnectStep({
   })
   const connections = useQuery({
     queryKey: ["agent-connections"],
-    queryFn: listAgentConnections,
+    queryFn: () => listAgentConnections(),
     refetchInterval:
       method && connection.data?.mcpAuthMode === "oauth" ? 3_000 : false,
   })

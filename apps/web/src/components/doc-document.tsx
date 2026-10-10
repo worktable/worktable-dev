@@ -32,6 +32,7 @@ import {
   documentOpenStartedAt,
 } from "@/lib/docs-queries"
 import { documentPageQueryOptions } from "@/lib/documents-queries"
+import { refreshLive } from "@/lib/live-refresh"
 import {
   firstHeadingText,
   isCollaborativeSave,
@@ -509,10 +510,10 @@ function DocEditorPage({
           (msg.docPath === docPath || (!msg.docPath && !synced))) ||
         (msg.type === "doc_deleted" && msg.docPath === docPath)
       ) {
-        void queryClient.invalidateQueries(
+        // A read already running may predate this change: follow it once.
+        refreshLive(queryClient, [
           { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
-          { cancelRefetch: false }
-        )
+        ])
       }
     })
   }, [spaceEvents, queryClient, spaceId, docPath])
@@ -535,10 +536,9 @@ function DocEditorPage({
       !!summary.archived !== !!docData.archived ||
       (docData.format === "markdown" && contentMoved)
     ) {
-      void queryClient.invalidateQueries(
+      refreshLive(queryClient, [
         { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
-        { cancelRefetch: false }
-      )
+      ])
     } else if (contentMoved && page.provenance) {
       const provenance = page.provenance
       queryClient.setQueryData<DocMeta>(docQueryKeys.doc(spaceId, docPath), (current) =>

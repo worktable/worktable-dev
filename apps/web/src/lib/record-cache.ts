@@ -160,7 +160,7 @@ export function applyRecordChange(
       record &&
       lastPage?.nextCursor &&
       oldestLoaded &&
-      record.createdAt < oldestLoaded
+      Date.parse(record.createdAt) < Date.parse(oldestLoaded)
     )
     if (scoped || relationChanged || (!held && visible && !beyondLoaded)) {
       refresh.push({ queryKey: query.queryKey, exact: true })

@@ -147,8 +147,10 @@ export function useThreadMutations(location: ThreadLocation) {
       void queryClient.invalidateQueries({ queryKey, exact: true })
     }
   }
-  const showPosted = (posted: ThreadPostResponse) => {
+  const showPosted = async (posted: ThreadPostResponse) => {
     const queryKey = threadQueryKeys.detail(posted.location, posted.threadId)
+    // A read that began before the post would land without the message.
+    await queryClient.cancelQueries({ queryKey, exact: true })
     const { thread, complete } = applyPostedThreadMessage(
       queryClient.getQueryData<ThreadReadResult>(queryKey),
       posted
@@ -157,7 +159,9 @@ export function useThreadMutations(location: ThreadLocation) {
     if (!complete) {
       void queryClient.invalidateQueries({ queryKey, exact: true })
     }
-    refresh(posted.location)
+    // The thread's own update also carries what the post changed elsewhere,
+    // such as the request it answered; without the stream, read the thread.
+    refresh(posted.location, posted.threadId)
   }
 
   return {

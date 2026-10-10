@@ -58,6 +58,7 @@ export function AgentEditDialog({
       const trimmed = name.trim()
       const renamed = trimmed !== connection.displayName
       const iconChanged = icon !== (connection.icon ?? null)
+      const shownPlatform = agentConnectionPlatform(connection)
       // A sign-in agent on Cloud also appears in this workspace's threads.
       // Its whole presentation goes there first: if Cloud then fails, the
       // form still differs and saving again completes both.
@@ -69,7 +70,8 @@ export function AgentEditDialog({
         await updateSignInAgent(connection.target.clientId, {
           displayName: trimmed,
           icon,
-          platform: agentConnectionPlatform(connection),
+          // Never record "other" over a platform the workspace already knows.
+          platform: shownPlatform === "other" ? undefined : shownPlatform,
           threads: (access ?? connection.access)?.threads ?? true,
         })
       }

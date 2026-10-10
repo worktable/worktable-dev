@@ -372,6 +372,11 @@ describe("document storage V2 migration", () => {
       ),
       annotationFile()
     )
+    // Without a Space manifest its documents are never inventoried, so a
+    // missing owner proves nothing.
+    const unlisted = "spaces/drafts/annotations/docs/plan.annotations.json"
+    await mkdir(dirname(join(copiedWorkspace, unlisted)), { recursive: true })
+    await writeFile(join(copiedWorkspace, unlisted), annotationFile())
     await mkdir(join(copiedWorkspace, "spaces", "Team Notes"), {
       recursive: true,
     })
@@ -398,6 +403,10 @@ describe("document storage V2 migration", () => {
     expect(plan.diagnostics.map((diagnostic) => diagnostic.path)).not.toContain(
       "spaces/notes/annotations/docs/missing.annotations.json"
     )
+    expect(plan.diagnostics).toContainEqual({
+      path: unlisted,
+      message: "legacy annotation has no inventoried document owner",
+    })
     expect(plan.diagnostics).toContainEqual({
       path: "spaces/Team Notes",
       message: "legacy Space ID cannot be represented by Storage V2",

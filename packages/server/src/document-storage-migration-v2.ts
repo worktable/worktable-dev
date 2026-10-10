@@ -254,13 +254,15 @@ async function reservedV2NamespaceDiagnostics(
 
 async function legacyAnnotationCensus(
   workspaceRoot: string,
-  documents: readonly PreflightDocumentSource[]
+  documents: readonly PreflightDocumentSource[],
+  inventoriedSpaceIds: readonly string[]
 ): Promise<{
   diagnostics: Array<{ path: string; message: string }>
   orphans: string[]
 }> {
   const diagnostics: Array<{ path: string; message: string }> = []
   const orphans: string[] = []
+  const inventoried = new Set(inventoriedSpaceIds)
   const expected = new Set(
     documents.map(
       (document) =>
@@ -340,11 +342,20 @@ async function legacyAnnotationCensus(
             .split(sep)
             .join("/")
             .slice(0, -".annotations.json".length)
+          if (expected.has(`${space.name}\0${root}\0${key}`)) continue
+          const path = relative(workspaceRoot, entryPath).split(sep).join("/")
           // A document removed or renamed outside Worktable can leave its
           // annotation file behind. Nothing is left to annotate, so the file
           // must not block the upgrade or attach to a future document here.
-          if (!expected.has(`${space.name}\0${root}\0${key}`)) {
-            orphans.push(relative(workspaceRoot, entryPath).split(sep).join("/"))
+          // Outside an inventoried Space, the documents were never counted,
+          // so a missing owner proves nothing.
+          if (inventoried.has(space.name)) {
+            orphans.push(path)
+          } else {
+            diagnostics.push({
+              path,
+              message: "legacy annotation has no inventoried document owner",
+            })
           }
         }
       }
@@ -874,7 +885,8 @@ export async function planDocumentStorageV2Migration(
     await reservedV2NamespaceDiagnostics(workspaceRoot)
   const annotationCensus = await legacyAnnotationCensus(
     workspaceRoot,
-    identityPlan.preflight.documents
+    identityPlan.preflight.documents,
+    identityPlan.preflight.spaceIds
   )
   const spaceDiagnostics = identityPlan.preflight.spaceIds
     .filter((spaceId) => !CanonicalIdSchema.safeParse(spaceId).success)

@@ -265,8 +265,9 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     await fetch(`${harness.apiUrl}/api/tokens`).then((res) => res.json())
   ).toMatchObject({
     tokens: expect.arrayContaining([
+      // Labeled by its app, so it shows its platform; named as its owner chose.
       expect.objectContaining({
-        agent: "Writing ChatGPT",
+        agent: "chatgpt-desktop",
         lastUsedAt: expect.any(String),
       }),
     ]),
@@ -278,6 +279,11 @@ test("new owner can name, connect multiple real agent identities, leave an alway
   ).toMatchObject({
     connections: expect.arrayContaining([
       expect.objectContaining({ displayName: "My Codex" }),
+      expect.objectContaining({
+        displayName: "Writing ChatGPT",
+        platform: "chatgpt",
+        access: { threads: true, read: true, edit: false },
+      }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "openclaw" }),
         displayName: "Atlas",

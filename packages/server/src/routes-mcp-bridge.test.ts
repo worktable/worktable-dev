@@ -49,7 +49,8 @@ async function inMemoryAgent(
   })
   const client = new Client({ name: agent, version: "1" })
   clients.push(client)
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair()
   await Promise.all([
     server.connect(serverTransport),
     client.connect(clientTransport),
@@ -69,12 +70,12 @@ async function call(
 
 /**
  * A bridge-shaped client: loopback URL, bridge id header, in-process fetch.
- * `onStream` sees each streamed (SSE) response as soon as the server opens it,
- * which happens once the tool handler is running.
+ * `onCallStream` sees each tool call's streamed (SSE) response as soon as the
+ * server opens it, which happens once the tool handler is running.
  */
 async function bridgeClient(
   responses: Response[],
-  onStream: (response: Response) => void = () => {}
+  onCallStream: (response: Response) => void = () => {}
 ): Promise<Client> {
   const app = new Hono()
   app.route("/mcp", mcpRouter)
@@ -87,8 +88,13 @@ async function bridgeClient(
       fetch: async (input, init) => {
         const response = await app.fetch(new Request(input, init))
         responses.push(response.clone())
-        if (response.headers.get("content-type")?.includes("text/event-stream")) {
-          onStream(response)
+        const toolCall =
+          typeof init?.body === "string" && init.body.includes('"tools/call"')
+        if (
+          toolCall &&
+          response.headers.get("content-type")?.includes("text/event-stream")
+        ) {
+          onCallStream(response.clone())
         }
         return response
       },
@@ -208,12 +214,13 @@ describe("MCP bridge over HTTP", () => {
 
   it("ends a cancelled call instead of letting it run on", async () => {
     const { threadId, cursor } = await postToAtlas()
-    const responses: Response[] = []
-    let streamOpened!: () => void
-    const opened = new Promise<void>((resolve) => {
-      streamOpened = resolve
+    let callStreamOpened!: (response: Response) => void
+    const callStream = new Promise<Response>((resolve) => {
+      callStreamOpened = resolve
     })
-    const bridge = await bridgeClient(responses, () => streamOpened())
+    const bridge = await bridgeClient([], (response) =>
+      callStreamOpened(response)
+    )
     const abort = new AbortController()
     const startedAt = Date.now()
     const waiting = bridge.callTool(
@@ -226,17 +233,12 @@ describe("MCP bridge over HTTP", () => {
       CallToolResultSchema,
       { signal: abort.signal }
     )
-    await opened
+    const callResponse = await callStream
     abort.abort()
     await expect(waiting).rejects.toThrow()
 
-    // The response to the tool call is the one still streaming; it must end
-    // well before the 20 s wait would have.
-    const callResponse = responses.find((response) =>
-      response.headers.get("content-type")?.includes("text/event-stream")
-    )
-    expect(callResponse).toBeDefined()
-    await callResponse!.text()
+    // The wait's own stream must end well before its 20 s would have.
+    await callResponse.text()
     expect(Date.now() - startedAt).toBeLessThan(5_000)
   })
 })

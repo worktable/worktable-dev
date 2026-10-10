@@ -20,7 +20,12 @@ import { formatPairingCode, normalizePairingCode } from "./pairing-store.ts"
 
 const REQUEST_TTL_MS = 15 * 60 * 1000
 const PURGE_AFTER_MS = 24 * 60 * 60 * 1000
-const MAX_PENDING = 20
+/** Waiting requests from one sender: enough for a few computers behind it. */
+const MAX_PENDING_PER_SOURCE = 3
+/** Waiting requests whose senders cannot be told apart, between them. */
+const MAX_PENDING_UNIDENTIFIED = 20
+/** All waiting requests, a bound on storage only. */
+const MAX_PENDING = 100
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ" // no vowels: no words
 const USER_CODE_LENGTH = 8
 
@@ -54,6 +59,8 @@ interface StoredConnectionRequest {
   expiresAt: string
   status: "pending" | "approved" | "denied" | "delivered"
   approval?: ConnectionApproval
+  /** Who asked, hashed: one sender cannot crowd out everyone else. */
+  sourceHash?: string
 }
 
 export type ConnectionRequestPoll =
@@ -146,6 +153,8 @@ export async function createConnectionRequest(input: {
   target: ConnectionRequestTarget
   hostname: string | null
   suggestedName: string | null
+  /** The sender, as requestSource reports it; null when it cannot tell. */
+  source: string | null
 }): Promise<{ userCode: string; pollToken: string; expiresAt: string }> {
   return serialized(async () => {
     const now = Date.now()
@@ -153,6 +162,19 @@ export async function createConnectionRequest(input: {
     const pending = requests.filter(
       (request) => request.status === "pending" && isLive(request, now)
     )
+    const sourceHash =
+      input.source === null ? undefined : hash(`source:${input.source}`)
+    const fromSame = pending.filter(
+      (request) => request.sourceHash === sourceHash
+    ).length
+    if (
+      fromSame >=
+      (sourceHash ? MAX_PENDING_PER_SOURCE : MAX_PENDING_UNIDENTIFIED)
+    ) {
+      throw new ConnectionRequestLimitError(
+        "Agents from this address are already waiting for approval. Approve them, or try again once they expire."
+      )
+    }
     if (pending.length >= MAX_PENDING) {
       throw new ConnectionRequestLimitError(
         "Too many agents are waiting for approval. Try again later."
@@ -170,6 +192,7 @@ export async function createConnectionRequest(input: {
       createdAt: new Date(now).toISOString(),
       expiresAt,
       status: "pending",
+      ...(sourceHash ? { sourceHash } : {}),
     })
     await saveRequests(requests)
     return { userCode: formatPairingCode(userCode), pollToken, expiresAt }
@@ -228,6 +251,14 @@ export async function settleConnectionRequest(
  * The asking agent checks on its request. Once approved, `createPairing`
  * makes the pairing with the owner's choices, and its code goes to this agent.
  */
+/**
+ * Codes already handed to an asking agent, by poll token, until its request
+ * expires. If the answer is lost on the way, the agent's next poll gets the
+ * same code again. Kept in memory only: a code is never written to disk, and
+ * after a restart the owner approves again.
+ */
+const deliveredCodes = new Map<string, { code: string; until: number }>()
+
 export async function pollConnectionRequest(
   pollToken: string,
   createPairing: (
@@ -243,15 +274,27 @@ export async function pollConnectionRequest(
     )
     if (!request) return null
     if (request.status === "denied") return { status: "denied" }
-    if (request.status === "delivered" || !isLive(request, Date.now())) {
-      return { status: "expired" }
+    const now = Date.now()
+    for (const [key, delivered] of deliveredCodes) {
+      if (delivered.until <= now) deliveredCodes.delete(key)
     }
+    if (request.status === "delivered") {
+      const delivered = deliveredCodes.get(request.pollTokenHash)
+      return delivered
+        ? { status: "approved", code: delivered.code }
+        : { status: "expired" }
+    }
+    if (!isLive(request, now)) return { status: "expired" }
     if (request.status === "pending" || !request.approval) {
       return { status: "pending" }
     }
     const code = await createPairing(request.target, request.approval)
     request.status = "delivered"
     await saveRequests(requests)
+    deliveredCodes.set(request.pollTokenHash, {
+      code,
+      until: Date.parse(request.expiresAt),
+    })
     return { status: "approved", code }
   })
 }

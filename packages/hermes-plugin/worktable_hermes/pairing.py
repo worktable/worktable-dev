@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 from datetime import datetime
@@ -30,6 +31,14 @@ def worktable_origin(server: str) -> str:
     return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
 
 
+# Consecutive failed checks tolerated when a request has no expiry.
+MAX_WAIT_FAILURES = 30
+
+
+def _retryable_wait_error(error: PairingError) -> bool:
+    return error.status is None or error.status == 429 or error.status >= 500
+
+
 def _timestamp(value: object) -> Optional[float]:
     """Seconds since the epoch for an ISO 8601 time, or None."""
     if not isinstance(value, str):
@@ -56,14 +65,18 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
     except urllib.error.HTTPError as error:
         try:
             payload = json.loads(error.read() or b"{}")
-        except ValueError:
+        except (ValueError, http.client.HTTPException, OSError):
+            # An unreadable or cut-off body still has its status.
+            payload = {}
+        if not isinstance(payload, dict):
             payload = {}
         raise PairingError(
             payload.get("error") or f"Worktable returned HTTP {error.code}",
             payload.get("code") or f"HTTP_{error.code}",
             error.code,
         ) from None
-    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+    except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, OSError) as error:
+        # Includes a connection cut partway through the answer.
         raise PairingError(f"Could not reach Worktable at {url}: {error}", "UNREACHABLE") from None
 
 
@@ -132,9 +145,22 @@ def request_approval(
     interval = max(1.0, float(request.get("interval") or 2))
     # Whatever it answers, a request is over when it expires.
     deadline = _timestamp(request.get("expiresAt"))
+    failures = 0
     while True:
         sleep(interval)
-        result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
+        try:
+            result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
+            failures = 0
+        except PairingError as error:
+            # A dropped connection, a restarting Worktable, or a busy one does
+            # not end the wait for approval; anything else does.
+            failures += 1
+            expired = time.time() >= deadline if deadline is not None else failures > MAX_WAIT_FAILURES
+            if not _retryable_wait_error(error) or expired:
+                raise
+            if error.status == 429:
+                sleep(max(interval, 10.0))
+            continue
         status = result.get("status")
         if status == "approved" and isinstance(result.get("code"), str):
             server = result.get("server")

@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { Hono, type Context } from "hono";
+import { requestSource } from "../request-source.ts";
 import {
   type AgentAccess,
   AGENT_PLATFORMS,
@@ -974,6 +975,7 @@ pairingRouter.post("/requests", async (c) => {
   const name = typeof body?.name === "string" ? body.name.trim().slice(0, 100) : "";
   try {
     const request = await createConnectionRequest({
+      source: requestSource(c.req.raw),
       target,
       hostname: sanitizeHostname(body?.hostname),
       suggestedName: name || null,

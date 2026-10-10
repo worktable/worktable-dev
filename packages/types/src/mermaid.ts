@@ -129,7 +129,8 @@ export function toCanonicalMermaidBlock(block: unknown): unknown {
     typeof existingProps.locked === "string" &&
     !("code" in existingProps) &&
     !("language" in existingProps) &&
-    !("content" in candidate)
+    // The editor exports content-less blocks with `content: undefined`.
+    candidate.content === undefined
   ) {
     return block
   }
@@ -166,6 +167,14 @@ export function toCanonicalMermaidBlock(block: unknown): unknown {
     },
   }
 }
+
+/**
+ * Version of `normalizeMermaidBlocks` output. Bump it whenever the function
+ * would normalize content it previously left unchanged: the server stores
+ * this version with collaborative state it has already checked, and checks
+ * that state again only when the version differs.
+ */
+export const MERMAID_BLOCK_NORMALIZER_VERSION = 1
 
 export function normalizeMermaidBlocks(blocks: unknown[]): {
   blocks: unknown[]

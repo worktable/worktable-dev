@@ -424,7 +424,9 @@ impl DesktopUpdaterState {
         checked_at: u64,
         manual: bool,
     ) -> Result<bool, String> {
-        self.record_check_success(checked_at)?;
+        // The feed answered, but a failed download run continues until the
+        // archive is verified, so repeated failures keep backing off.
+        self.record_check_time(checked_at);
         let prepared = self
             .prepared
             .lock()
@@ -528,6 +530,7 @@ impl DesktopUpdaterState {
     ) -> Result<PreparedUpdate, String> {
         Version::parse(version)
             .map_err(|_| "the prepared Desktop update version is not valid".to_string())?;
+        self.reset_automatic_failures()?;
         let download_root = self
             .download_root
             .lock()
@@ -704,12 +707,23 @@ impl DesktopUpdaterState {
         Ok(())
     }
 
+    /// A check that found no update, or a verified download, ends a failure run.
     fn record_check_success(&self, checked_at: u64) -> Result<(), String> {
+        self.reset_automatic_failures()?;
+        self.record_check_time(checked_at);
+        Ok(())
+    }
+
+    fn reset_automatic_failures(&self) -> Result<(), String> {
         *self
             .automatic_failures
             .lock()
             .map_err(|_| "desktop updater failure lock is poisoned".to_string())? =
             AutomaticFailures::default();
+        Ok(())
+    }
+
+    fn record_check_time(&self, checked_at: u64) {
         if let Err(error) = self.update_persisted(|persisted| {
             persisted.last_checked_at = Some(checked_at);
         }) {
@@ -717,7 +731,6 @@ impl DesktopUpdaterState {
                 "[Worktable Desktop] completed the update check in memory but could not persist its timestamp: {error}"
             );
         }
-        Ok(())
     }
 
     fn record_automatic_failure(&self, failed_at: u64) -> Result<(), String> {
@@ -1229,6 +1242,12 @@ mod tests {
         let visible = state.snapshot().unwrap();
         assert_eq!(visible.state, "error");
         assert!(visible.can_check);
+
+        // A second failed download backs off further instead of restarting
+        // the 15-minute delay.
+        assert!(!state.should_automatically_check(102_000).unwrap());
+        assert!(!state.should_automatically_check(104_699).unwrap());
+        assert!(state.should_automatically_check(104_700).unwrap());
         let _ = fs::remove_dir_all(root);
     }
 

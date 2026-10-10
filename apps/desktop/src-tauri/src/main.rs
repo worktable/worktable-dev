@@ -5410,10 +5410,13 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
                 return Ok(());
             }
         };
-        if updater_state
-            .begin_install(&prepared.version, attempted_at)
-            .is_err()
-        {
+        if let Err(error) = updater_state.begin_install(&prepared.version, attempted_at) {
+            // The prepared update is already taken, so the state must not
+            // keep offering it.
+            eprintln!("[Worktable Desktop] could not start the update install: {error}");
+            updater_state.record_install_failure(
+                "Could not finish preparing the update. Try again.".into(),
+            )?;
             sync_update_menu(&app);
             return Ok(());
         }

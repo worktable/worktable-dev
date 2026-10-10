@@ -37,17 +37,24 @@ activity. Spaces, records and threads use the canonical fixture builders in
 `packages/server/src/fixtures`. The same seed gives the same content; ids and
 save times come from the store, as in production.
 
-A fixture is written once to `.local-dev/perf/fixtures/<profile>-seed<seed>/`
-and reused until `fixtures.ts` changes. Each run works on a fresh copy. On a
-loaded laptop, `1k` takes a few minutes to generate and `5k` considerably
-longer; `--force` regenerates.
+A fixture is kept in `.local-dev/perf/fixtures/<profile>-seed<seed>/` and
+reused until `fixtures.ts` changes; `--force` regenerates it. It is built in
+`.local-dev/perf/runs/<profile>-seed<seed>/`, and every run restores a fresh
+copy to that same path: the server keys machine-local state such as activity
+history and the records index by workspace path, so a run starts like a
+restart of an existing workspace. The generator builds the records index for
+the same reason. Generation is slow because every write goes through the
+store: on a busy 6-core machine `100` took 20 seconds and `1k` 20 minutes
+(310 MB), most of it in the HTML documents. Generate `5k` on an idle machine.
 
 ## Server timings
 
 `server.ts` boots `packages/server` from a checkout (`--checkout`, default this
 one) on a copy of the fixture and records:
 
-- **Boot:** time to the listening line, and to the first `/api/spaces` response.
+- **Boot:** time to the listening line, to the first `/api/spaces` response,
+  and until the server goes idle after its boot work (Linux only; it rescans
+  every record file on start). Steady-state timings start once it is idle.
 - **First response** of each endpoint after boot, before anything is warm.
 - **p50 and p95** at concurrency 1 and 4 for the spaces list, a space's
   documents, Recent, Activity, Pending, threads, search, and opening a Markdown, a
@@ -64,9 +71,12 @@ one) on a copy of the fixture and records:
   keystroke to the save, whether the saved file contains the typed text, and
   the server's CPU time and bytes written (Linux only, from `/proc`).
 
-When the server exposes `GET /api/diagnostics/perf`, its response is stored in
-`result.json` too. Each run writes `result.json` and `summary.md` to
-`.local-dev/perf/results/<time>-server-<profile>/`.
+A request that fails or takes longer than two minutes fails the run, so errors
+never pass for fast responses. When the server sends `Server-Timing` headers,
+the first and a warm header of each endpoint are kept; when it exposes
+`GET /api/diagnostics/perf`, that response is kept too. Each run writes
+`result.json` and `summary.md` to
+`.local-dev/perf/results/<time>-server-<profile>/` (or `--out`).
 
 ## Base against candidate
 
@@ -74,13 +84,12 @@ When the server exposes `GET /api/diagnostics/perf`, its response is stored in
 into `.local-dev/perf/checkouts/`, installs dependencies once per commit,
 generates the fixture once, then alternates the two for `--rounds` (default 5)
 on the same machine: base first in even rounds, candidate first in odd ones.
-`compare.md` lists each metric's median per side, the change and how many
-rounds the candidate was faster. Defaults: `--profile 1k --samples 10
---typing-minutes 2`.
+`compare.md` lists each metric's median per side with its lowest and highest
+round, the change and how many rounds the candidate was faster. Defaults:
+`--profile 1k --samples 10 --typing-minutes 2`.
 
 Timings are advisory. Plan 15 keeps timing budgets advisory until 20
-comparable runs exist; a change smaller than the round-to-round spread is
-noise. Use the same machine for both sides and keep it otherwise idle. A
+comparable runs exist; a change inside the round-to-round ranges is noise. Use the same machine for both sides and keep it otherwise idle. A
 shared or busy machine is fine for checking that the scripts work, not for
 numbers.
 

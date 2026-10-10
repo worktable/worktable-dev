@@ -10,7 +10,13 @@ import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { WebsocketProvider } from "y-websocket"
 import * as Y from "yjs"
-import { get, healthSampler, percentile, round } from "./lib.ts"
+import {
+  get,
+  healthSampler,
+  percentile,
+  processCounters,
+  round,
+} from "./lib.ts"
 
 const MESSAGE_PING = 42
 const MESSAGE_INTENT = 43
@@ -41,35 +47,6 @@ export interface TypingResult {
   serverWriteBytes: number | null
   serverDiskBytes: number | null
   serverCpuMs: number | null
-}
-
-interface ProcessCounters {
-  writeBytes: number
-  diskBytes: number
-  cpuMs: number
-}
-
-function processCounters(pid: number): ProcessCounters | null {
-  try {
-    const io = Object.fromEntries(
-      readFileSync(`/proc/${pid}/io`, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => line.split(": ") as [string, string])
-    )
-    // Fields after the command name, which is parenthesized and may contain spaces.
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
-      .split(") ")[1]!
-      .split(" ")
-    const ticksPerSecond = 100
-    return {
-      writeBytes: Number(io["wchar"]),
-      diskBytes: Number(io["write_bytes"]),
-      cpuMs: ((Number(stat[11]) + Number(stat[12])) * 1000) / ticksPerSecond,
-    }
-  } catch {
-    return null
-  }
 }
 
 function lastText(node: Y.XmlFragment | Y.XmlElement): Y.XmlText | null {

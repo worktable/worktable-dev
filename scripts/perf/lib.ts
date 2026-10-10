@@ -3,10 +3,9 @@
  * fixture copies and a server process. No product code depends on this file.
  */
 import { spawn, type ChildProcess } from "node:child_process"
-import { createHash } from "node:crypto"
-import { cpSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs"
+import { cpSync, readFileSync, rmSync } from "node:fs"
 import { createServer } from "node:net"
-import { join, resolve } from "node:path"
+import { basename, join, resolve } from "node:path"
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..")
 export const PERF_ROOT = join(REPO_ROOT, ".local-dev", "perf")
@@ -84,59 +83,37 @@ export function markdownTable(
 }
 
 /**
- * Machine-local caches in the app directory are keyed by a hash of the
- * workspace path (`workspaceCacheKey` in packages/server/src/workspace.ts).
+ * Where a fixture is generated and where every run restores it. The server
+ * keys machine-local state by workspace path (activity history, the records
+ * index, Yjs state), so runs must use the path the fixture was built at to
+ * start like a restart rather than a first boot.
  */
-export function workspaceKey(workspacePath: string): string {
-  return createHash("sha256")
-    .update(resolve(workspacePath))
-    .digest("hex")
-    .slice(0, 16)
+export function runDirFor(fixtureDir: string): string {
+  return join(PERF_ROOT, "runs", basename(fixtureDir))
 }
 
-/**
- * Copy a generated fixture to a fresh run directory. Activity history and other
- * machine-local state follow the copy by renaming the old workspace key, so a
- * run starts like a restart of the same workspace, not a newly moved one.
- */
-export function copyFixture(
+/** Replace `runDir` with a fresh copy of a fixture's workspace and app data. */
+export function restoreFixture(
   fixtureDir: string,
-  runDir: string
+  runDir = runDirFor(fixtureDir)
 ): { workspace: string; app: string } {
   rmSync(runDir, { recursive: true, force: true })
-  mkdirSync(runDir, { recursive: true })
+  const copy = (from: string, to: string) =>
+    cpSync(from, to, { recursive: true, preserveTimestamps: true })
   const workspace = join(runDir, "workspace")
   const app = join(runDir, "app")
-  cpSync(join(fixtureDir, "workspace"), workspace, {
-    recursive: true,
-    preserveTimestamps: true,
-  })
-  cpSync(join(fixtureDir, "app"), app, {
-    recursive: true,
-    preserveTimestamps: true,
-  })
-  const from = workspaceKey(join(fixtureDir, "workspace"))
-  const to = workspaceKey(workspace)
-  const rekey = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      let path = join(dir, entry.name)
-      if (entry.name.includes(from)) {
-        const renamed = join(dir, entry.name.replaceAll(from, to))
-        renameSync(path, renamed)
-        path = renamed
-      }
-      if (entry.isDirectory()) rekey(path)
-    }
-  }
-  rekey(app)
+  copy(join(fixtureDir, "workspace"), workspace)
+  copy(join(fixtureDir, "app"), app)
   return { workspace, app }
 }
 
 /**
  * GET with a timeout. A failure or an error status throws, naming the URL, so
  * a broken server fails the run instead of producing fast-looking numbers.
+ * The default stays under the server's 120-second idle timeout, after which
+ * it drops the connection anyway.
  */
-export async function get(url: string, timeoutMs = 120_000): Promise<Response> {
+export async function get(url: string, timeoutMs = 110_000): Promise<Response> {
   let response: Response
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
@@ -174,6 +151,58 @@ export function healthSampler(
       return latencies
     },
   }
+}
+
+export interface ProcessCounters {
+  writeBytes: number
+  diskBytes: number
+  cpuMs: number
+}
+
+/** Linux only: bytes written and CPU time of a process, from /proc. */
+export function processCounters(pid: number): ProcessCounters | null {
+  try {
+    const io = Object.fromEntries(
+      readFileSync(`/proc/${pid}/io`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => line.split(": ") as [string, string])
+    )
+    // Fields after the command name, which is parenthesized and may contain spaces.
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
+      .split(") ")[1]!
+      .split(" ")
+    const ticksPerSecond = 100
+    return {
+      writeBytes: Number(io["wchar"]),
+      diskBytes: Number(io["write_bytes"]),
+      cpuMs: ((Number(stat[11]) + Number(stat[12])) * 1000) / ticksPerSecond,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Wait until a process stays under 5% CPU for two seconds, so steady-state
+ * timings are not mixed with boot work such as index rebuilds. Returns false
+ * when it is still busy after `limitMs`, or when /proc is unavailable.
+ */
+export async function waitForIdle(
+  pid: number,
+  limitMs: number
+): Promise<boolean> {
+  const deadline = performance.now() + limitMs
+  let last = processCounters(pid)?.cpuMs
+  if (last === undefined) return false
+  while (performance.now() < deadline) {
+    await Bun.sleep(2_000)
+    const now = processCounters(pid)?.cpuMs
+    if (now === undefined) return false
+    if (now - last < 100) return true
+    last = now
+  }
+  return false
 }
 
 export async function freePort(): Promise<number> {
@@ -257,7 +286,11 @@ export async function startServer(options: {
       180_000
     ).unref()
   })
+  // Never leave a server behind if this process exits without stop().
+  const kill = () => child.kill("SIGKILL")
+  process.once("exit", kill)
   const stop = async () => {
+    process.off("exit", kill)
     if (child.exitCode !== null || child.signalCode !== null) return
     const exited = new Promise((resolveExit) => child.once("exit", resolveExit))
     child.kill("SIGTERM")

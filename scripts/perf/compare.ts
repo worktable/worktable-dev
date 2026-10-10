@@ -167,7 +167,7 @@ if (import.meta.main) {
         seed,
         samples,
         typingMinutes,
-        runDir: join(PERF_ROOT, "runs", side.label),
+        logFile: join(out, `server-${index + 1}-${side.label}.log`),
       })
       results[side.label].push(result)
       writeFileSync(

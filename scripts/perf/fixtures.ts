@@ -2,17 +2,18 @@
 /**
  * Seeded perf fixtures (Plan 15, W0-03).
  *
- *   bun scripts/perf/fixtures.ts --profile 1k [--seed 1] [--out <dir>] [--force]
+ *   bun scripts/perf/fixtures.ts --profile 1k [--seed 1] [--force]
  *
- * Writes <out>/<profile>-seed<seed>/{workspace,app,fixture.json}. Documents go
+ * Writes .local-dev/perf/fixtures/<profile>-seed<seed>/{workspace,app,
+ * fixture.json}, built at the run directory that runs restore it to. Documents go
  * through the managed write paths that REST and MCP use, so identity,
  * provenance, version history and activity are real. Spaces, records and
  * threads use the canonical fixture builders. Content is deterministic for a
  * seed; ids and save times assigned by the store are not.
  */
 import { createHash } from "node:crypto"
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import type {
   ActivityAction,
   ActivityActor,
@@ -23,6 +24,7 @@ import {
   drainActivity,
 } from "../../packages/server/src/activity-log.ts"
 import { setAppDirOverride } from "../../packages/server/src/app-storage.ts"
+import { recordIndex } from "../../packages/server/src/record-index.ts"
 import {
   blockDoc,
   type BlockItem,
@@ -39,7 +41,13 @@ import {
   setWorkspaceRootOverride,
   writeWorkspaceManifest,
 } from "../../packages/server/src/workspace.ts"
-import { PERF_ROOT, numberArg, parseArgs, seededRandom } from "./lib.ts"
+import {
+  PERF_ROOT,
+  numberArg,
+  parseArgs,
+  runDirFor,
+  seededRandom,
+} from "./lib.ts"
 
 export const PROFILES = {
   "100": {
@@ -97,12 +105,8 @@ export const GENERATOR_VERSION = createHash("sha256")
   .digest("hex")
   .slice(0, 12)
 
-export function fixtureDir(
-  profile: ProfileName,
-  seed: number,
-  out = join(PERF_ROOT, "fixtures")
-): string {
-  return join(out, `${profile}-seed${seed}`)
+export function fixtureDir(profile: ProfileName, seed: number): string {
+  return join(PERF_ROOT, "fixtures", `${profile}-seed${seed}`)
 }
 
 /** The manifest of a complete fixture built by this generator, or null. */
@@ -618,9 +622,11 @@ async function generate(
 ): Promise<FixtureManifest> {
   const shape = PROFILES[profile]
   const text = new Text(seededRandom(seed))
-  rmSync(dir, { recursive: true, force: true })
-  const workspace = join(dir, "workspace")
-  const app = join(dir, "app")
+  // Build where runs will restore it (see runDirFor), then keep a copy.
+  const work = runDirFor(dir)
+  rmSync(work, { recursive: true, force: true })
+  const workspace = join(work, "workspace")
+  const app = join(work, "app")
   mkdirSync(app, { recursive: true })
   setAppDirOverride(app)
   const builder = new FixtureBuilder(workspace)
@@ -695,8 +701,16 @@ async function generate(
   phase("threads")
   await writeActivity(text, shape.activity, docs, threads, collections)
   phase("activity")
+  // The server keeps records in a SQLite projection in the app directory.
+  // Build it now, as a running server would have, so boots are restarts.
+  recordIndex.start()
+  await recordIndex.whenIdle()
+  recordIndex.stop()
+  phase("recordsIndex")
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
+  rmSync(dir, { recursive: true, force: true })
+  cpSync(work, dir, { recursive: true, preserveTimestamps: true })
 
   const count = (kind: Kind) => docs.filter((doc) => doc.kind === kind).length
   const probe = (path: string) => ({ spaceId: spaces[0]!, path })
@@ -745,8 +759,7 @@ if (import.meta.main) {
       `--profile must be one of ${Object.keys(PROFILES).join(", ")}`
     )
   const seed = numberArg(args, "seed", 1)
-  const out = args.get("out")
-  const dir = fixtureDir(profile, seed, out ? resolve(out) : undefined)
+  const dir = fixtureDir(profile, seed)
   if (!args.has("force") && readFixture(dir)) {
     console.log(`[perf-fixtures] ${dir} is current`)
   } else {

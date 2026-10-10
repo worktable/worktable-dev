@@ -24,15 +24,16 @@ import {
 import {
   PERF_ROOT,
   REPO_ROOT,
-  copyFixture,
   get,
   healthSampler,
   markdownTable,
   numberArg,
   parseArgs,
   percentile,
+  restoreFixture,
   round,
   startServer,
+  waitForIdle,
 } from "./lib.ts"
 import { runTyping, type TypingResult } from "./typing.ts"
 
@@ -70,7 +71,11 @@ export interface ServerResult {
     platform: string
     bun: string
   }
-  boot: { listenMs: number; firstListMs: number }
+  /**
+   * Spawn to listening, to the first spaces list, and to the server going
+   * idle after its boot work (null: still busy after 5 minutes, or no /proc).
+   */
+  boot: { listenMs: number; firstListMs: number; idleMs: number | null }
   firstResponseMs: Record<string, number>
   requests: RequestStats[]
   /** Server-Timing headers of the first and a warm response, per endpoint. */
@@ -249,12 +254,13 @@ export async function runServerScenario(options: {
   seed: number
   samples: number
   typingMinutes: number
-  runDir: string
+  /** Where to keep the server's output. */
+  logFile: string
 }): Promise<ServerResult> {
   const { dir, fixture } = ensureFixture(options.profile, options.seed)
   const startedAt = new Date().toISOString()
   const load1 = round(loadavg()[0]!, 2)!
-  const run = copyFixture(dir, options.runDir)
+  const run = restoreFixture(dir)
   const server = await startServer({ checkout: options.checkout, ...run })
   try {
     const all = endpoints(fixture)
@@ -262,10 +268,14 @@ export async function runServerScenario(options: {
     for (const endpoint of all) {
       firsts.set(endpoint.name, await sample(server.url, endpoint.paths(0)))
     }
+    // Steady-state timings start once boot work (such as rebuilding the
+    // records index) has finished.
+    const idle = await waitForIdle(server.pid, 300_000)
     // The first request is the spaces list, so this is boot to first list.
     const boot = {
       listenMs: round(server.listenMs, 0)!,
       firstListMs: round(server.listenMs + firsts.get(all[0]!.name)!.ms, 0)!,
+      idleMs: idle ? round(performance.now() - server.startedAt, 0) : null,
     }
     const firstResponseMs = Object.fromEntries(
       all
@@ -335,7 +345,7 @@ export async function runServerScenario(options: {
     }
   } finally {
     await server.stop()
-    writeFileSync(join(options.runDir, "server.log"), server.output())
+    writeFileSync(options.logFile, server.output())
   }
 }
 
@@ -344,6 +354,7 @@ export function metrics(result: ServerResult): Record<string, number | null> {
   const flat: Record<string, number | null> = {
     "boot to listening (ms)": result.boot.listenMs,
     "boot to first spaces list (ms)": result.boot.firstListMs,
+    "boot to idle (ms)": result.boot.idleMs,
   }
   for (const [name, ms] of Object.entries(result.firstResponseMs))
     flat[`first ${name} (ms)`] = ms
@@ -386,7 +397,7 @@ export function summary(result: ServerResult): string {
     "",
     `Fixture ${result.profile}, seed ${result.seed}. ${result.machine.cpus} CPUs (${result.machine.model}), ${result.machine.memoryGb} GB, load ${result.machine.load1}, Bun ${result.machine.bun}.`,
     "",
-    `Boot: listening after ${result.boot.listenMs} ms, first spaces list after ${result.boot.firstListMs} ms.`,
+    `Boot: listening after ${result.boot.listenMs} ms, first spaces list after ${result.boot.firstListMs} ms, idle after ${result.boot.idleMs ?? "n/a"} ms. Steady-state timings start once idle.`,
     "",
     markdownTable(
       ["First response after boot", "ms"],
@@ -482,7 +493,7 @@ if (import.meta.main) {
     typingMinutes: args.has("typing-minutes")
       ? Number(args.get("typing-minutes"))
       : 2,
-    runDir: join(PERF_ROOT, "runs", "server"),
+    logFile: join(out, "server.log"),
   })
   writeFileSync(
     join(out, "result.json"),

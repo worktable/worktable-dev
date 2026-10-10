@@ -22,6 +22,8 @@ const REQUEST_TTL_MS = 15 * 60 * 1000
 const PURGE_AFTER_MS = 24 * 60 * 60 * 1000
 /** Waiting requests from one sender: enough for a few computers behind it. */
 const MAX_PENDING_PER_SOURCE = 3
+/** Waiting requests whose senders cannot be told apart, between them. */
+const MAX_PENDING_UNIDENTIFIED = 20
 /** All waiting requests, a bound on storage only. */
 const MAX_PENDING = 100
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ" // no vowels: no words
@@ -162,10 +164,12 @@ export async function createConnectionRequest(input: {
     )
     const sourceHash =
       input.source === null ? undefined : hash(`source:${input.source}`)
+    const fromSame = pending.filter(
+      (request) => request.sourceHash === sourceHash
+    ).length
     if (
-      sourceHash &&
-      pending.filter((request) => request.sourceHash === sourceHash).length >=
-        MAX_PENDING_PER_SOURCE
+      fromSame >=
+      (sourceHash ? MAX_PENDING_PER_SOURCE : MAX_PENDING_UNIDENTIFIED)
     ) {
       throw new ConnectionRequestLimitError(
         "Agents from this address are already waiting for approval. Approve them, or try again once they expire."

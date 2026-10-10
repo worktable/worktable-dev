@@ -59,14 +59,15 @@ describe("waiting connection requests", () => {
     await rm(appDir, { recursive: true, force: true })
   })
 
+  const ask = (source: string | null) =>
+    createConnectionRequest({
+      target: { kind: "mcp-client", client: null },
+      hostname: null,
+      suggestedName: null,
+      source,
+    })
+
   it("lets one sender hold only a few, so it cannot crowd out others", async () => {
-    const ask = (source: string | null) =>
-      createConnectionRequest({
-        target: { kind: "mcp-client", client: null },
-        hostname: null,
-        suggestedName: null,
-        source,
-      })
     for (let i = 0; i < 3; i++) await ask("203.0.113.7")
     await expect(ask("203.0.113.7")).rejects.toBeInstanceOf(
       ConnectionRequestLimitError
@@ -77,14 +78,12 @@ describe("waiting connection requests", () => {
     })
   })
 
-  it("keeps only the overall limit when senders cannot be told apart", async () => {
-    for (let i = 0; i < 4; i++) {
-      await createConnectionRequest({
-        target: { kind: "mcp-client", client: null },
-        hostname: null,
-        suggestedName: null,
-        source: null,
-      })
-    }
+  it("shares the earlier limit among senders that cannot be told apart", async () => {
+    for (let i = 0; i < 20; i++) await ask(null)
+    await expect(ask(null)).rejects.toBeInstanceOf(ConnectionRequestLimitError)
+    // Identified senders are counted on their own.
+    await expect(ask("198.51.100.1")).resolves.toMatchObject({
+      userCode: expect.any(String),
+    })
   })
 })

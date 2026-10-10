@@ -5,12 +5,17 @@
  * and restores it on page load if the page was discarded by the browser.
  *
  * This makes mobile page-discard/reload seamless: the user returns
- * to the same page they were on, with a brief "Reconnecting..." state
- * instead of the full loading screen.
+ * to the same page they were on, with a "Reconnecting..." state while its
+ * live connection comes back, instead of the full loading screen.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { AnyRouter } from "@tanstack/react-router";
+import {
+  connectionSummary,
+  subscribeConnectionSummary,
+  type ConnectionSummary,
+} from "@/lib/connection-status";
 
 const LIFECYCLE_KEY = "worktable-page-lifecycle";
 
@@ -59,16 +64,17 @@ export function usePageLifecyclePersistence(router: AnyRouter) {
   }, [router]);
 }
 
+const NO_CONNECTIONS = (): ConnectionSummary => "idle";
+
 /**
  * On page load, check if the page was discarded and restore the route.
- * Returns { wasDiscarded, restoredRoute } so the UI can show appropriate state.
+ * A discarded page is reconnecting while its first live connection is coming
+ * up; once one is live, or the attempt fails, it is not.
  */
 export function useDiscardRecovery(): {
   wasDiscarded: boolean;
   reconnecting: boolean;
 } {
-  const [reconnecting, setReconnecting] = useState(false);
-
   // Check once on mount
   const [wasDiscarded] = useState(() => {
     // SSR guard — document doesn't exist on the server
@@ -96,16 +102,20 @@ export function useDiscardRecovery(): {
     return discarded;
   });
 
-  useEffect(() => {
-    if (wasDiscarded) {
-      setReconnecting(true);
-      // Auto-clear reconnecting state after connections are likely restored
-      const timer = setTimeout(() => setReconnecting(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [wasDiscarded]);
+  const connection = useSyncExternalStore(
+    subscribeConnectionSummary,
+    connectionSummary,
+    NO_CONNECTIONS
+  );
+  const [recovered, setRecovered] = useState(!wasDiscarded);
+  if (!recovered && (connection === "live" || connection === "offline")) {
+    setRecovered(true);
+  }
 
-  return { wasDiscarded, reconnecting };
+  return {
+    wasDiscarded,
+    reconnecting: !recovered && connection === "connecting",
+  };
 }
 
 /**

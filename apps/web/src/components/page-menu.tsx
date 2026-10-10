@@ -56,7 +56,7 @@ type PageMenuAction = PageOverflowAction & { detail?: string }
  */
 export function PageMenu() {
   const crumbs = useBreadcrumbs()
-  const { pageMeta } = usePageMeta()
+  const pageMeta = usePageMeta()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const [open, setOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)

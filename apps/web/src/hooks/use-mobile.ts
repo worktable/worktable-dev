@@ -1,22 +1,32 @@
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react"
 
-const MOBILE_BREAKPOINT = 768;
+const MOBILE_BREAKPOINT = 768
 
-export function useIsMobile() {
-  // Always start false to match SSR output and avoid hydration mismatch.
-  // The useEffect below corrects it on the client after hydration.
-  const [isMobile, setIsMobile] = useState<boolean>(false);
+/**
+ * A media query as an external store. The first render already reads the
+ * real match, so a phone never paints the desktop layout first.
+ */
+export function mediaQueryStore(query: string) {
+  let list: MediaQueryList | undefined
+  const media = () => (list ??= window.matchMedia(query))
+  return {
+    subscribe(onChange: () => void): () => void {
+      const current = media()
+      current.addEventListener("change", onChange)
+      return () => current.removeEventListener("change", onChange)
+    },
+    getSnapshot: (): boolean => media().matches,
+  }
+}
 
-  useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-    mql.addEventListener("change", onChange);
-    // Set the real value now that we're on the client
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
+const mobile = mediaQueryStore(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+// The app renders only after hydration, so the server value is never shown.
+const serverSnapshot = () => false
 
-  return isMobile;
+export function useIsMobile(): boolean {
+  return useSyncExternalStore(
+    mobile.subscribe,
+    mobile.getSnapshot,
+    serverSnapshot
+  )
 }

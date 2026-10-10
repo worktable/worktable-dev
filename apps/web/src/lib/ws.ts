@@ -1,5 +1,5 @@
 import { activityQueryKeys } from "./activity.ts"
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import {
   useQueryClient,
   type InvalidateQueryFilters,
@@ -13,6 +13,8 @@ import { recentQueryKeys } from "./lifetime"
 import { threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
 import { applyRecordChange } from "./record-cache"
+import { noteSocketStatus, type SocketStatus } from "./connection-status"
+import { traceTrigger } from "./trace"
 import {
   isOwnCollaborativeSave,
   takeLiveDocumentLabelChange,
@@ -56,7 +58,7 @@ export interface WsMessage {
   data?: unknown
 }
 
-export type WsStatus = "connecting" | "connected" | "disconnected"
+export type WsStatus = SocketStatus
 
 type MessageListener = (message: WsMessage) => void
 type StatusListener = (status: WsStatus, reconnected: boolean) => void
@@ -616,6 +618,7 @@ function publishStatus(
   reconnected = false
 ): void {
   connection.status = status
+  noteSocketStatus(connection.url, status)
   for (const listener of connection.statusListeners) {
     listener(status, reconnected)
   }
@@ -645,6 +648,7 @@ function applyMessage(
 function revalidateAfterReconnect(connection: SharedSpaceConnection): void {
   const queryClient = connection.queryClient
   if (!queryClient) return
+  traceTrigger("reconnect")
   // A reconnect can follow a workspace replaced from another tab, or a
   // network change that moved linked sharing: check both, unless returning
   // to the tab just did.
@@ -811,6 +815,7 @@ function subscribeShared(
       if (connection.messageListeners.size > 0) return
       closeShared(connection)
       sharedConnections.delete(key)
+      noteSocketStatus(connection.url, null)
       // Nothing keeps this Space's cache current any more: whatever is
       // cached reads again when it is next shown.
       if (connection.queryClient && stream !== THREAD_STREAM) {
@@ -879,30 +884,26 @@ export function useWorktableThreadSubscription() {
  * Subscribe to real-time updates for a space via WebSocket. The shared socket
  * keeps the query cache current; `reconcileRoute` runs after a reconnect so
  * the route can check its own path again.
- * Returns { status, lastActivityAt } for live indicator use.
  */
 export function useSpaceSubscription(
   spaceId: string | undefined,
   reconnectOwner?: {
     reconcileRoute?: () => void | Promise<void>
   }
-) {
+): void {
   const queryClient = useQueryClient()
   // Keep the latest callback in a ref so changing it doesn't re-open the socket.
   const reconnectOwnerRef = useRef(reconnectOwner)
   useLayoutEffect(() => {
     reconnectOwnerRef.current = reconnectOwner
   }, [reconnectOwner])
-  const [status, setStatus] = useState<WsStatus>("connecting")
-  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
 
   useEffect(() => {
     if (!spaceId) return
     return subscribeToSpaceEvents(
       spaceId,
-      () => setLastActivityAt(Date.now()),
+      () => undefined,
       (next, reconnected) => {
-        setStatus(next)
         if (next === "connected" && reconnected) {
           void reconnectOwnerRef.current?.reconcileRoute?.()
         }
@@ -910,29 +911,4 @@ export function useSpaceSubscription(
       queryClient
     )
   }, [spaceId, queryClient])
-
-  return { status, lastActivityAt }
-}
-
-/**
- * Returns true if there was WS activity within the last `windowMs` ms.
- */
-export function useIsLive(
-  lastActivityAt: number | null,
-  windowMs = 3000
-): boolean {
-  const [isLive, setIsLive] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (!lastActivityAt) return
-    setIsLive(true)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setIsLive(false), windowMs)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [lastActivityAt, windowMs])
-
-  return isLive
 }

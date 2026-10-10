@@ -69,7 +69,7 @@ import { RelativeTime } from "@/lib/time"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import {
-  usePageMeta,
+  useSetPageMeta,
   type PageAnnotationsAction,
   type PageOverflowAction,
   type PageSecondaryAction,
@@ -216,9 +216,14 @@ function SyncStatusPill({
 
 // ── Main Page ────────────────────────────────────────────────
 
+/**
+ * Publishes the document's header meta. Takes primitives so a re-read of the
+ * same document, or a save that only moves its metadata, does not set it again.
+ */
 function DocPageMeta({
   spaceId,
-  doc,
+  docPath,
+  archived,
   onVersionHistory,
   onConvertToMarkdown,
   onCopyMarkdown,
@@ -228,7 +233,8 @@ function DocPageMeta({
   annotations,
 }: {
   spaceId: string
-  doc: DocMeta
+  docPath: string
+  archived: boolean
   onVersionHistory?: () => void
   onConvertToMarkdown?: () => void
   onCopyMarkdown?: () => void
@@ -237,10 +243,10 @@ function DocPageMeta({
   secondaryAction?: PageSecondaryAction
   annotations?: PageAnnotationsAction
 }) {
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
   const { data: spaceDetail } = useSpace(spaceId)
   const shareable = Boolean(
-    spaceDetail && !spaceDetail.space.settings["archive"] && !doc.archived
+    spaceDetail && !spaceDetail.space.settings["archive"] && !archived
   )
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
@@ -308,18 +314,18 @@ function DocPageMeta({
 
   useEffect(() => {
     setPageMeta({
-      document: { spaceId, path: doc.path },
+      document: { spaceId, path: docPath },
       overflowActions,
       secondaryAction,
       annotations,
       shareTarget: shareable
-        ? { kind: "doc", spaceId, artifactKey: doc.path }
+        ? { kind: "doc", spaceId, artifactKey: docPath }
         : undefined,
     })
 
     return () => setPageMeta(null)
   }, [
-    doc,
+    docPath,
     overflowActions,
     secondaryAction,
     annotations,
@@ -471,6 +477,14 @@ function DocEditorPage({
     recoveringOfflineEdits,
     spaceId,
   ])
+
+  const recoverOfflineEditsAction = useMemo(
+    () =>
+      offlineRecoveryCacheKey && !recoveringOfflineEdits
+        ? () => void recoverOfflineEdits()
+        : undefined,
+    [offlineRecoveryCacheKey, recoveringOfflineEdits, recoverOfflineEdits]
+  )
 
   useEffect(() => {
     if (!offlineRecoveryCacheKey) return
@@ -676,11 +690,7 @@ function DocEditorPage({
         converting={converting}
         onCopyMarkdown={handleCopyMarkdown}
         onDownload={handleDownload}
-        onRecoverOfflineEdits={
-          offlineRecoveryCacheKey && !recoveringOfflineEdits
-            ? () => void recoverOfflineEdits()
-            : undefined
-        }
+        onRecoverOfflineEdits={recoverOfflineEditsAction}
       />
     )
   }
@@ -701,11 +711,7 @@ function DocEditorPage({
       convertingToMarkdown={convertingToMarkdown}
       onCopyMarkdown={handleCopyMarkdown}
       onDownload={handleDownload}
-      onRecoverOfflineEdits={
-        offlineRecoveryCacheKey && !recoveringOfflineEdits
-          ? () => void recoverOfflineEdits()
-          : undefined
-      }
+      onRecoverOfflineEdits={recoverOfflineEditsAction}
     />
   )
 }
@@ -859,7 +865,8 @@ function MarkdownDocPage({
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
-        doc={doc}
+        docPath={doc.path}
+        archived={archived}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
         onRecoverOfflineEdits={onRecoverOfflineEdits}
@@ -1325,7 +1332,8 @@ function BlockNoteDocPage({
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
-        doc={doc}
+        docPath={doc.path}
+        archived={archived}
         onVersionHistory={openVersions}
         onConvertToMarkdown={
           convertingToMarkdown ? undefined : onConvertToMarkdown

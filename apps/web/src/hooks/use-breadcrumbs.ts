@@ -1,4 +1,3 @@
-import { useMemo } from "react"
 import { useRouterState } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { usePageMeta } from "@/hooks/use-page-meta"
@@ -13,15 +12,17 @@ import { documentsQueryOptions } from "@/lib/documents-queries"
 import { spaceDocsQueryOptions } from "@/lib/docs-queries"
 import { useSpaces } from "@/lib/queries"
 import {
-  buildSpaceDocumentTrees,
   getDocOrder,
   getDocSort,
+  spaceDocumentTrees,
 } from "@/lib/space-document-tree"
+
+const NO_WIDGETS: never[] = []
 
 /** Route context for the shell header, labelled from the sidebar's catalog. */
 export function useBreadcrumbs(): Breadcrumb[] {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { pageMeta } = usePageMeta()
+  const pageMeta = usePageMeta()
   const spaceId = breadcrumbSpaceId(pathname)
   const { data: spaces } = useSpaces()
   const space = spaces?.find((candidate) => candidate.id === spaceId)
@@ -36,18 +37,17 @@ export function useBreadcrumbs(): Breadcrumb[] {
     ...spaceDocsQueryOptions(spaceId ?? ""),
     enabled: documentsEnabled,
   })
-  const trees = useMemo(
-    () =>
-      documentsEnabled && space && documents && docs
-        ? buildSpaceDocumentTrees({
-            documents,
-            docs,
-            sort: getDocSort(space),
-            order: getDocOrder(space),
-          })
-        : undefined,
-    [documentsEnabled, space, documents, docs]
-  )
+  // The same cached build the sidebar's tree comes from.
+  const trees =
+    documentsEnabled && space && documents && docs
+      ? spaceDocumentTrees({
+          documents,
+          docs,
+          widgets: space.widgets ?? NO_WIDGETS,
+          sort: getDocSort(space),
+          order: getDocOrder(space),
+        })
+      : undefined
 
   return buildBreadcrumbs({
     pathname,

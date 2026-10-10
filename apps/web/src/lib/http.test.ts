@@ -4,6 +4,7 @@ import {
   authenticatedFetch,
   fetchJSON,
   getFreshBrowserCsrfToken,
+  prefetchBrowserCsrfToken,
 } from "./http.ts"
 
 const realFetch = globalThis.fetch
@@ -61,6 +62,52 @@ describe("authenticatedFetch", () => {
     expect(requests[2]?.headers.get("X-Worktable-CSRF")).toBe(
       "csrf-from-session"
     )
+  })
+
+  it("sends the first change on Cloud with the token read at boot", async () => {
+    const requests: Request[] = []
+    let releaseSession!: () => void
+    const sessionReleased = new Promise<void>((resolve) => {
+      releaseSession = resolve
+    })
+    globalThis.fetch = (async (input, init) => {
+      const request = new Request(
+        input instanceof Request
+          ? input
+          : new URL(String(input), "https://app.worktable.cloud"),
+        init
+      )
+      requests.push(request)
+      if (new URL(request.url).pathname === "/gateway/session") {
+        await sessionReleased
+        return Response.json({ authenticated: true, csrfToken: "csrf-boot" })
+      }
+      return request.headers.get("X-Worktable-CSRF") === "csrf-boot"
+        ? Response.json({ ok: true })
+        : Response.json({ code: "CSRF_REQUIRED" }, { status: 403 })
+    }) as typeof fetch
+
+    prefetchBrowserCsrfToken()
+    // A change made while the session read is still in flight waits for it.
+    const change = authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}" }
+    )
+    releaseSession()
+    expect((await change).status).toBe(200)
+    expect(
+      (
+        await authenticatedFetch("https://app.worktable.cloud/api/spaces", {
+          method: "POST",
+          body: "{}",
+        })
+      ).status
+    ).toBe(200)
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/gateway/session",
+      "/api/spaces",
+      "/api/spaces",
+    ])
   })
 
   it("does not involve Cloud CSRF for safe requests", async () => {

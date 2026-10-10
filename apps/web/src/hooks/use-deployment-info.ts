@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { prefetchBrowserCsrfToken } from "@/lib/http"
 import { getDeploymentInfo } from "@/lib/system-api"
 
 export const DEPLOYMENT_QUERY_KEY = ["system", "deployment"] as const
@@ -11,7 +12,11 @@ export const DEPLOYMENT_QUERY_KEY = ["system", "deployment"] as const
 export function useDeploymentInfo() {
   return useQuery({
     queryKey: DEPLOYMENT_QUERY_KEY,
-    queryFn: () => getDeploymentInfo(),
+    queryFn: async () => {
+      const deployment = await getDeploymentInfo()
+      if (deployment.mode === "cloud") prefetchBrowserCsrfToken()
+      return deployment
+    },
     staleTime: 60_000,
     refetchOnWindowFocus: "always",
   })

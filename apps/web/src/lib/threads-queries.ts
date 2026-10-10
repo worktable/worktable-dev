@@ -1,5 +1,6 @@
 import {
   queryOptions,
+  type QueryClient,
   useMutation,
   useQuery,
   useQueryClient,
@@ -53,6 +54,22 @@ export const threadQueryOptions = (
       abandonableRead(context, (read) => readThread(location, threadId, read)),
     enabled: Boolean(threadId),
   })
+
+/**
+ * Read a thread whose link is hovered or focused, so opening it shows it at
+ * once; the opened view still checks it again. Hover and focus on the same
+ * link read it once.
+ */
+export function preloadThread(
+  queryClient: QueryClient,
+  location: ThreadLocation,
+  threadId: string
+): void {
+  void queryClient.prefetchQuery({
+    ...threadQueryOptions(location, threadId),
+    staleTime: 10_000,
+  })
+}
 
 export function useThreads(scope: ThreadListScope) {
   return useQuery(threadsQueryOptions(scope))

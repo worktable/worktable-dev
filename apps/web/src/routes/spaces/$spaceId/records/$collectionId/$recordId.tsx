@@ -15,7 +15,7 @@ import {
 } from "@/components/records/record-peek"
 import { DocumentReferenceScope } from "@/components/records/field-value"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { queryKeys, useRecordCollectionHealth } from "@/lib/queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
@@ -175,7 +175,7 @@ function FullRecordPageMeta({
   collectionName: string
   schema?: RecordCollectionSchema
 }) {
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
 
   useEffect(() => {
     const updated = new Date(record.updatedAt)

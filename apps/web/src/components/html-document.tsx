@@ -40,7 +40,7 @@ import { subscribeToSpaceEvents, type WsStatus } from "@/lib/ws"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
 import {
-  usePageMeta,
+  useSetPageMeta,
   type PageAnnotationsAction,
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
@@ -1130,7 +1130,7 @@ function WidgetPageMeta({
   annotations?: PageAnnotationsAction
   overflowActions?: PageOverflowAction[]
 }) {
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
 
   useEffect(() => {
     setPageMeta({

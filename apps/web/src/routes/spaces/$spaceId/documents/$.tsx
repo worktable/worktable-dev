@@ -12,7 +12,7 @@ import type {
   DocumentPageResult,
 } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta } from "@/hooks/use-page-meta"
 import {
   docQueryOptions,
   docReadCurrent,
@@ -286,7 +286,7 @@ function UnavailableDocumentPage({
   spaceId: string
   page: DocumentPage
 }) {
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
   const [downloading, setDownloading] = useState(false)
   const download = useCallback(async () => {
     if (downloading) return

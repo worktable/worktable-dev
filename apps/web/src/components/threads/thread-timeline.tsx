@@ -2,6 +2,7 @@ import {
   Children,
   cloneElement,
   isValidElement,
+  memo,
   useMemo,
   useState,
   type ReactNode,
@@ -67,6 +68,7 @@ import {
 import { cn } from "@worktable/ui/lib/utils"
 
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
+import { useStableCallback } from "@/hooks/use-stable-callback"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
 import { renderThreadLinkHref } from "@/lib/thread-links"
@@ -77,12 +79,13 @@ import {
   deliveryPresentation,
   isCurrentAssignmentActivity,
   resolveMessageAuthor,
-  resolveReplyTarget,
   threadExcerpt,
   visibleNonterminalActivityKeys,
   type ConversationIdentityOption,
 } from "@/lib/thread-presentation"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
+
+const NO_ACTIVITIES: ThreadActivity[] = []
 
 interface ThreadTimelineProps {
   location: ThreadLocation
@@ -136,6 +139,30 @@ export function ThreadTimeline({
   const visibleNonterminalKeys = useMemo(
     () => visibleNonterminalActivityKeys(activities),
     [activities]
+  )
+  // Rows are memoized: the view re-renders on every keystroke in the
+  // composer, and each row parses its Markdown. Give them stable props.
+  const spaceId = location.kind === "space" ? location.spaceId : undefined
+  const rowLocation = useMemo<ThreadLocation>(
+    () =>
+      spaceId === undefined
+        ? { kind: "worktable" }
+        : { kind: "space", spaceId },
+    [spaceId]
+  )
+  const messagesById = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages]
+  )
+  const mentionNames = useMemo(
+    () => [...new Set(identities.map((identity) => identity.name))],
+    [identities]
+  )
+  const reply = useStableCallback(onReply)
+  const respond = useStableCallback(onRespond)
+  const assign = useStableCallback(onAssign)
+  const loadReplyTarget = useStableCallback((messageId: string) =>
+    onLoadReplyTarget ? onLoadReplyTarget(messageId) : Promise.resolve()
   )
 
   return (
@@ -231,22 +258,33 @@ export function ThreadTimeline({
                     }
                   >
                     <ThreadMessageRow
-                      location={location}
+                      location={rowLocation}
                       message={message}
-                      messages={messages}
+                      replyTarget={
+                        message.inReplyTo
+                          ? messagesById.get(message.inReplyTo)
+                          : undefined
+                      }
                       members={members}
                       identities={identities}
+                      mentionNames={mentionNames}
                       targetMembers={targetMembers}
                       targetIdentities={targetIdentities}
                       viewerMemberId={viewerMemberId}
                       viewerIdentityId={viewerIdentityId}
                       implicitResponseIdentityId={implicitResponseIdentityId}
-                      activities={visibleActivities}
+                      activities={
+                        visibleActivities.length > 0
+                          ? visibleActivities
+                          : NO_ACTIVITIES
+                      }
                       groupedWithPrevious={groupedWithPrevious}
-                      onReply={onReply}
-                      onRespond={onRespond}
-                      onAssign={onAssign}
-                      onLoadReplyTarget={onLoadReplyTarget}
+                      onReply={reply}
+                      onRespond={respond}
+                      onAssign={assign}
+                      onLoadReplyTarget={
+                        onLoadReplyTarget ? loadReplyTarget : undefined
+                      }
                     />
                   </MessageScrollerItem>
                 )
@@ -276,12 +314,13 @@ export function ThreadTimeline({
   )
 }
 
-function ThreadMessageRow({
+const ThreadMessageRow = memo(function ThreadMessageRow({
   location,
   message,
-  messages,
+  replyTarget,
   members,
   identities,
+  mentionNames,
   targetMembers,
   targetIdentities,
   viewerMemberId,
@@ -296,9 +335,10 @@ function ThreadMessageRow({
 }: {
   location: ThreadLocation
   message: ThreadMessage
-  messages: ThreadMessage[]
+  replyTarget: ThreadMessage | undefined
   members: ThreadMember[]
   identities: ConversationIdentity[]
+  mentionNames: string[]
   targetMembers: ParticipantRef[]
   targetIdentities: ConversationIdentityOption[]
   viewerMemberId: string
@@ -321,7 +361,6 @@ function ThreadMessageRow({
       ? "You"
       : (author?.name ?? "Unknown participant")
   const hideOwnDefaultAuthorLabel = own && authorIdentity?.default === true
-  const replyTarget = resolveReplyTarget(messages, message.inReplyTo)
   const replyAuthor = replyTarget
     ? identities.find(
         (identity) => identity.id === replyTarget.authorIdentityId
@@ -368,7 +407,6 @@ function ThreadMessageRow({
   const assignableIdentities = targetIdentities.filter(
     (identity) => identity.id !== message.authorIdentityId
   )
-  const mentionNames = [...new Set(identities.map((identity) => identity.name))]
   const hasOpenAssignment = message.responseRequest?.status === "open"
 
   return (
@@ -512,7 +550,7 @@ function ThreadMessageRow({
       </MessageContent>
     </Message>
   )
-}
+})
 
 function ThreadMessageAssignment({
   messageId,
@@ -877,7 +915,7 @@ function ThreadActivityMarker({
   )
 }
 
-function ThreadMarkdown({
+const ThreadMarkdown = memo(function ThreadMarkdown({
   location,
   body,
   mentionNames,
@@ -935,7 +973,7 @@ function ThreadMarkdown({
       </Markdown>
     </div>
   )
-}
+})
 
 function highlightThreadMentionChildren(
   children: ReactNode,

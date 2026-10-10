@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import {
   Select,
@@ -11,7 +11,7 @@ import {
 import { ThreadsView } from "@/components/threads/threads-view"
 import { useSpaces } from "@/lib/queries"
 import { threadScopeContains, type ThreadListScope } from "@/lib/threads-api"
-import { threadsQueryOptions } from "@/lib/threads-queries"
+import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 import { useWorktableThreadSubscription } from "@/lib/ws"
 
 interface ThreadsSearch {
@@ -35,9 +35,13 @@ export const Route = createFileRoute("/threads/$")({
       spaceId,
     }
   },
-  beforeLoad: ({ context, search }) => {
+  beforeLoad: ({ context, search, params, preload }) => {
     const scope = searchToScope(search)
     void context.queryClient.prefetchQuery(threadsQueryOptions(scope))
+    const selected = parseSelectedThread(params._splat)
+    if (preload && selected.threadId) {
+      preloadThread(context.queryClient, selected.location, selected.threadId)
+    }
   },
   component: GlobalThreadsPage,
 })
@@ -104,6 +108,14 @@ function GlobalThreadsPage() {
   const setCreateLocation = (location: ThreadLocation) =>
     setCreateLocationOverride({ scopeKey, location })
   useWorktableThreadSubscription()
+  const threadLink = useCallback(
+    (location: ThreadLocation, threadId: string) => ({
+      to: "/threads/$" as const,
+      params: { _splat: threadSplat(location, threadId) },
+      search,
+    }),
+    [search]
+  )
 
   const spaceNames = new Map(spaces.map((space) => [space.id, space.name]))
   const locationLabel = (location: ThreadLocation) =>
@@ -181,13 +193,7 @@ function GlobalThreadsPage() {
           onChange={setCreateLocation}
         />
       }
-      onNavigateThread={(location, threadId) => {
-        void navigate({
-          to: "/threads/$",
-          params: { _splat: threadSplat(location, threadId) },
-          search,
-        })
-      }}
+      threadLink={threadLink}
       onNavigateNew={() => {
         void navigate({
           to: "/threads/$",

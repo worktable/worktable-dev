@@ -117,7 +117,10 @@ The in-process stdio server opens the selected local workspace:
 ```
 
 `worktable --mcp` is an equivalent hidden spawn form retained for compatibility.
-This is a local workspace process, not a proxy to a remote HTTP endpoint.
+When Worktable is already running for the same workspace and accepts local MCP
+without a token, stdio forwards to that server, so the app shows the agent's
+changes live. Otherwise it serves the workspace in its own process. It never
+forwards to a remote HTTP endpoint.
 
 Claude Desktop uses a different stdio shape: its MCPB launches a bundled bridge
 that proxies the configured Worktable HTTP endpoint. This keeps one server tool

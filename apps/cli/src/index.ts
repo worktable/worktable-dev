@@ -5,6 +5,7 @@ import {
   linkSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -107,6 +108,7 @@ import {
   inspectLocalRuntime,
   inspectLocalRuntimeDetailed,
   localHostsSharePortSpace,
+  localHttpOrigin,
   localProcessAlive,
   localProcessIdentity,
   PAIRING_TTL_MS,
@@ -624,6 +626,58 @@ async function agentInvite(opts: { client?: string }): Promise<void> {
   console.log()
 }
 
+function samePath(left: string, right: string): boolean {
+  const canonical = (path: string) => {
+    try {
+      return realpathSync(path)
+    } catch {
+      return resolve(path)
+    }
+  }
+  return canonical(left) === canonical(right)
+}
+
+/**
+ * Where a stdio MCP session should forward, if anywhere: the running local
+ * server for this same workspace, proven by its runtime lease and local proof
+ * (not just a port answering), and only while that server accepts tokenless
+ * loopback MCP. Forwarding keeps one writer per workspace, so the app sees an
+ * agent's changes live and shares the server's locks and caches. Loopback
+ * requests keep the same agent attribution as the in-process server.
+ */
+export function stdioForwardEndpoint(input: {
+  workspacePath: string
+  runtime: Pick<
+    LocalRuntimeInspection,
+    "endpointVerified" | "workspacePath" | "host" | "port"
+  > | null
+  mcpTokenRequired: boolean | null
+}): string | null {
+  const { runtime } = input
+  if (!runtime?.endpointVerified) return null
+  if (!samePath(runtime.workspacePath, input.workspacePath)) return null
+  if (input.mcpTokenRequired !== false) return null
+  return `${localHttpOrigin(runtime.host, runtime.port)}/mcp`
+}
+
+async function localServerMcpTokenRequired(
+  runtime: Pick<LocalRuntimeInspection, "host" | "port">
+): Promise<boolean | null> {
+  try {
+    const response = await fetch(
+      `${localHttpOrigin(runtime.host, runtime.port)}/api/system/connection`,
+      { signal: AbortSignal.timeout(750) }
+    )
+    if (!response.ok) return null
+    const body = (await response.json()) as { mcpTokenRequired?: unknown }
+    return typeof body.mcpTokenRequired === "boolean"
+      ? body.mcpTokenRequired
+      : null
+  } catch {
+    return null
+  }
+}
+
 async function runStdioMcp(): Promise<void> {
   // Stdio is an installed CLI surface, so it must use the same workspace and
   // service endpoint as `launch` and the connection UI. Read without writing:
@@ -631,6 +685,30 @@ async function runStdioMcp(): Promise<void> {
   const config = readConfigOrFail()
   if (!config) return
   applyRuntimeConfig(config)
+
+  // Prefer the running server for this workspace. Without one (or when it
+  // requires a token), serve in-process as before.
+  const runtime = await inspectLocalRuntimeDetailed(500).catch(() => null)
+  const endpoint = stdioForwardEndpoint({
+    workspacePath: config.workspace,
+    runtime,
+    mcpTokenRequired:
+      runtime?.endpointVerified === true
+        ? await localServerMcpTokenRequired(runtime)
+        : null,
+  })
+  if (endpoint) {
+    try {
+      await runMcpBridge({
+        endpoint,
+        clientName: "worktable-cli-stdio",
+        clientVersion: VERSION,
+      })
+    } catch (error) {
+      throw new UsageError(formatMcpBridgeError(error))
+    }
+    return
+  }
 
   const [{ createWorktableMcpServer }, { StdioServerTransport }] =
     await Promise.all([

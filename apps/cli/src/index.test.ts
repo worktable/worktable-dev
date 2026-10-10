@@ -26,6 +26,7 @@ import {
   preprocessArgv,
   sameVersion,
   shouldShowUpdateNudge,
+  stdioForwardEndpoint,
   updateTargetForInstall,
   waitForExactLocalRuntime,
 } from "./index.ts"
@@ -750,6 +751,54 @@ describe("read-only commands never rewrite config", () => {
       expect(existsSync(`${path}.corrupt`)).toBe(true)
     } finally {
       cleanup()
+    }
+  })
+})
+
+describe("stdio MCP forwarding", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "wt-stdio-forward-"))
+  const other = mkdtempSync(join(tmpdir(), "wt-stdio-other-"))
+  const link = join(tmpdir(), `wt-stdio-link-${process.pid}`)
+  symlinkSync(workspace, link)
+  afterAll(() => {
+    rmSync(link, { force: true })
+    rmSync(workspace, { recursive: true, force: true })
+    rmSync(other, { recursive: true, force: true })
+  })
+  const runtime = {
+    endpointVerified: true,
+    workspacePath: workspace,
+    host: "127.0.0.1",
+    port: 7481,
+  }
+
+  it("forwards to the verified server for the same workspace", () => {
+    expect(
+      stdioForwardEndpoint({
+        workspacePath: link,
+        runtime,
+        mcpTokenRequired: false,
+      })
+    ).toBe("http://127.0.0.1:7481/mcp")
+  })
+
+  it("serves in-process without a proven server for this workspace", () => {
+    for (const input of [
+      { runtime: null, mcpTokenRequired: false },
+      {
+        runtime: { ...runtime, endpointVerified: false },
+        mcpTokenRequired: false,
+      },
+      {
+        runtime: { ...runtime, workspacePath: other },
+        mcpTokenRequired: false,
+      },
+      { runtime, mcpTokenRequired: true },
+      { runtime, mcpTokenRequired: null },
+    ]) {
+      expect(
+        stdioForwardEndpoint({ workspacePath: workspace, ...input })
+      ).toBeNull()
     }
   })
 })

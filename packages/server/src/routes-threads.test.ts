@@ -248,6 +248,8 @@ describe("thread REST routes", () => {
       "Start a durable conversation.",
       "A second message in the same thread.",
     ])
+    // The browser shows its reply from the response, without reading again.
+    expect(followed.json.message).toEqual(thread.messages[1])
     expect(
       thread.messages.every(
         (message) => message.authorMemberId === finnMember?.id

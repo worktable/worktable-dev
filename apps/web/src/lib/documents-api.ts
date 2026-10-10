@@ -11,14 +11,17 @@ import {
   authenticatedFetch,
   fetchJSON,
   redirectToLogin,
+  type ReadOptions,
 } from "./http.ts"
 
 export function listDocuments(
   spaceId: string,
-  includeArchived = false
+  includeArchived = false,
+  options?: ReadOptions
 ): Promise<DocumentListItem[]> {
   return fetchJSON<{ documents: DocumentListItem[] }>(
-    `/api/spaces/${spaceId}/documents?includeArchived=${includeArchived ? "true" : "false"}`
+    `/api/spaces/${spaceId}/documents?includeArchived=${includeArchived ? "true" : "false"}`,
+    options
   ).then((result) => result.documents)
 }
 
@@ -38,10 +41,12 @@ function exactDocumentQuery(path: string): string {
 
 export function readDocumentPage(
   spaceId: string,
-  path: string
+  path: string,
+  options?: ReadOptions
 ): Promise<DocumentPageResult> {
   return fetchJSON<{ page: DocumentPageResult }>(
-    `/api/spaces/${encodeURIComponent(spaceId)}/documents/page?${exactDocumentQuery(path)}`
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/page?${exactDocumentQuery(path)}`,
+    options
   ).then((result) => result.page)
 }
 

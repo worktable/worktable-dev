@@ -109,7 +109,10 @@ function PinnedSection({
           .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
       )
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
+        queryClient.invalidateQueries({
+          queryKey: spaceQueryOptions(spaceId).queryKey,
+          exact: true,
+        }),
         queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
       ])
     } catch (error) {
@@ -385,7 +388,7 @@ function SpaceDetailPage() {
   )
 
   useEffect(() => setMounted(true), [])
-  useSpaceSubscription(spaceId, undefined, undefined, {
+  useSpaceSubscription(spaceId, {
     reconcileRoute: reconcileRouteAfterReconnect,
   })
 

@@ -1,5 +1,5 @@
 import type { ArchiveInfo, DocListEntry, ResolvedDocumentReference } from "@worktable/types";
-import { fetchJSON } from "./http.ts";
+import { fetchJSON, type ReadOptions } from "./http.ts";
 
 /**
  * Docs REST API client.
@@ -66,15 +66,24 @@ function encodeDocPath(docPath: string): string {
 
 // ── List all doc paths in a space ───────────────────────────
 
-export function listDocs(spaceId: string, includeArchived = true): Promise<DocListEntry[]> {
+export function listDocs(
+  spaceId: string,
+  includeArchived = true,
+  options?: ReadOptions
+): Promise<DocListEntry[]> {
   return fetchJSON<{ docs: DocListEntry[] }>(
-    `/api/spaces/${spaceId}/docs?includeArchived=${includeArchived ? "true" : "false"}`
+    `/api/spaces/${spaceId}/docs?includeArchived=${includeArchived ? "true" : "false"}`,
+    options
   ).then((r) => r.docs);
 }
 
 const DOCUMENT_REFERENCE_BATCH_LIMIT = 500
 
-export async function resolveDocumentReferences(spaceId: string, paths: unknown[]): Promise<ResolvedDocumentReference[]> {
+export async function resolveDocumentReferences(
+  spaceId: string,
+  paths: unknown[],
+  options?: ReadOptions
+): Promise<ResolvedDocumentReference[]> {
   const chunks: unknown[][] = []
   for (let index = 0; index < paths.length; index += DOCUMENT_REFERENCE_BATCH_LIMIT) {
     chunks.push(paths.slice(index, index + DOCUMENT_REFERENCE_BATCH_LIMIT))
@@ -85,7 +94,7 @@ export async function resolveDocumentReferences(spaceId: string, paths: unknown[
     chunks.map((chunk) =>
       fetchJSON<{ references: ResolvedDocumentReference[] }>(
         `/api/spaces/${spaceId}/docs/resolve-references`,
-        { method: "POST", body: JSON.stringify({ paths: chunk }) }
+        { method: "POST", body: JSON.stringify({ paths: chunk }), ...options }
       ).then((result) => result.references)
     )
   )
@@ -94,9 +103,14 @@ export async function resolveDocumentReferences(spaceId: string, paths: unknown[
 
 // ── Read a single doc ───────────────────────────────────────
 
-export function readDoc(spaceId: string, docPath: string): Promise<DocMeta> {
+export function readDoc(
+  spaceId: string,
+  docPath: string,
+  options?: ReadOptions
+): Promise<DocMeta> {
   return fetchJSON<DocMeta>(
-    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`
+    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`,
+    options
   );
 }
 

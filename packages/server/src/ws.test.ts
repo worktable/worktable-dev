@@ -184,7 +184,12 @@ describe("WsManager", () => {
         threadId: created.thread.id,
         data: { messages: [{ body: "Private." }] },
       })
-      expect(messages[1]).toEqual({ type: "thread_update" })
+      expect(messages[1]).toEqual({
+        type: "thread_update",
+        location: { kind: "space", spaceId: "private-space" },
+        spaceId: "private-space",
+        threadId: created.thread.id,
+      })
     } finally {
       setWorkspaceRootOverride(null)
       await rm(workspaceDir, { recursive: true, force: true })
@@ -326,6 +331,9 @@ describe("WsManager", () => {
       })
       expect(received.member[1]).toEqual({
         type: "thread_update",
+        location: { kind: "space", spaceId: "space" },
+        spaceId: "space",
+        threadId: created.thread.id,
       })
       expect(received.member).toHaveLength(2)
       expect(received.owner).toHaveLength(2)
@@ -354,6 +362,9 @@ describe("WsManager", () => {
         },
         {
           type: "thread_update",
+          location: { kind: "space", spaceId: "space" },
+          spaceId: "space",
+          threadId: created.thread.id,
         },
       ]
       expect(received.member).toEqual(deleted)

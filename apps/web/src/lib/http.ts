@@ -143,20 +143,58 @@ export async function authenticatedFetch(
   return response;
 }
 
+/** Request options a query function forwards, so abandoned reads stop. */
+export interface ReadOptions {
+  signal?: AbortSignal;
+}
+
+/**
+ * Run a view's read with an abort signal that follows the query's own once
+ * the read has run for `graceMs`. TanStack Query cancels a read whose last
+ * observer unmounts if it has taken the signal, and views unmount and mount
+ * again during route changes and Suspense: taking it at once would cancel
+ * and repeat those reads. A read abandoned after the grace period, such as a
+ * slow document the person navigated away from, still frees its connection.
+ * Lists the app shell keeps mounted do not use this.
+ */
+export async function abandonableRead<T>(
+  context: { signal: AbortSignal },
+  read: (options: ReadOptions) => Promise<T>,
+  graceMs = 1_000
+): Promise<T> {
+  const controller = new AbortController();
+  let settled = false;
+  const timer = setTimeout(() => {
+    if (settled) return;
+    const signal = context.signal;
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }, graceMs);
+  try {
+    return await read({ signal: controller.signal });
+  } finally {
+    settled = true;
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Fetch JSON from the REST API. Sends the session cookie, and on a 401 redirects
  * to /login then throws (so callers/queries don't proceed with empty data).
+ * Pass a query's `signal` so a cancelled read aborts its request. Reads send
+ * no Content-Type, which they have no body to describe.
  */
 export async function fetchJSON<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const read = (method === "GET" || method === "HEAD") && init?.body == null;
   const res = await authenticatedFetch(`${BASE_URL}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers: read
+      ? init?.headers
+      : { "Content-Type": "application/json", ...init?.headers },
   });
   if (res.status === 401) {
     redirectToLogin();

@@ -747,3 +747,8 @@ export interface ThreadPostResult {
   replies: ThreadMessage[]
   timedOut: boolean
 }
+
+/** The browser's post response: the result plus the posted message as stored. */
+export interface ThreadPostResponse extends ThreadPostResult {
+  message: ThreadMessage
+}

@@ -61,21 +61,16 @@ function useToday(): string | null {
 }
 
 function HomePage() {
-  const { data: spaces, isLoading } = useSpaces()
+  const { data: spaces } = useSpaces()
   const today = useToday()
   const [spaceFilter, setSpaceFilter] = useState<string | undefined>()
   const [showAll, setShowAll] = useState(false)
 
+  // One request carries both Recent and the temporary documents.
   const recent = useRecentDocuments({
     sort: "updated",
     includeTemporary: false,
-    ...(spaceFilter ? { spaceId: spaceFilter } : {}),
-  })
-  const temporary = useRecentDocuments({
-    sort: "updated",
-    includeTemporary: true,
-    onlyTemporary: true,
-    limit: 100,
+    temporaryLimit: 100,
     ...(spaceFilter ? { spaceId: spaceFilter } : {}),
   })
 
@@ -97,7 +92,7 @@ function HomePage() {
     spaceName: spaceFilter ? undefined : item.spaceName,
     document: item.document,
   }))
-  const temporaryItems: RecentItem[] = (temporary.data?.items ?? []).map(
+  const temporaryItems: RecentItem[] = (recent.data?.temporary ?? []).map(
     (item) => ({
       spaceId: item.spaceId,
       spaceName: spaceFilter ? undefined : item.spaceName,
@@ -105,20 +100,9 @@ function HomePage() {
     })
   )
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-        <div className="mb-8 h-9 w-72 animate-pulse rounded-lg bg-muted/30" />
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-10 animate-pulse rounded-lg bg-muted/20" />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  if (!spaces || spaces.length === 0) {
+  // Home does not wait for the Spaces list: Recent, Pending and Activity
+  // load on their own, and only a workspace known to be empty shows welcome.
+  if (spaces?.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         <EmptyState />

@@ -7,6 +7,7 @@ import type {
   ThreadActivity,
   ThreadDeliveryState,
   ThreadLocation,
+  ThreadMessage,
   ThreadPostResult,
   ThreadReadResult,
   ThreadSummary,
@@ -342,6 +343,18 @@ export async function postThreadMessage(
   input: PostThreadInput,
   onProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 ): Promise<ThreadPostResult> {
+  return (await postThreadMessageWithStored(identity, input, onProgress)).result
+}
+
+/**
+ * Post a message and also return it as stored, so the browser can show its own
+ * message without reading the thread again. Agents keep the result shape above.
+ */
+export async function postThreadMessageWithStored(
+  identity: ThreadIdentity,
+  input: PostThreadInput,
+  onProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
+): Promise<{ result: ThreadPostResult; message: ThreadMessage }> {
   const actorBinding = await participantForIdentity(identity)
   const actor = actorBinding.participant
   const responseTo = input.responseTo ?? undefined
@@ -559,17 +572,20 @@ export async function postThreadMessage(
   const waitSeconds = boundedWaitSeconds(input.waitSeconds)
   if (!result.message.responseRequest || waitSeconds === 0) {
     return {
-      threadId: result.thread.id,
-      location: resultLocation,
-      ...(resultLocation.kind === "space"
-        ? { spaceId: resultLocation.spaceId }
-        : {}),
-      messageId: result.message.id,
-      cursor: result.message.sequence,
-      createdThread: input.threadId === undefined && result.created,
-      activity,
-      replies: [],
-      timedOut: false,
+      result: {
+        threadId: result.thread.id,
+        location: resultLocation,
+        ...(resultLocation.kind === "space"
+          ? { spaceId: resultLocation.spaceId }
+          : {}),
+        messageId: result.message.id,
+        cursor: result.message.sequence,
+        createdThread: input.threadId === undefined && result.created,
+        activity,
+        replies: [],
+        timedOut: false,
+      },
+      message: result.message,
     }
   }
 
@@ -586,17 +602,20 @@ export async function postThreadMessage(
     onProgress,
   })
   return {
-    threadId: result.thread.id,
-    location: resultLocation,
-    ...(resultLocation.kind === "space"
-      ? { spaceId: resultLocation.spaceId }
-      : {}),
-    messageId: result.message.id,
-    cursor: waited.cursor,
-    createdThread: input.threadId === undefined && result.created,
-    activity: waited.activity ?? activity,
-    replies: waited.messages,
-    timedOut: waited.timedOut,
+    result: {
+      threadId: result.thread.id,
+      location: resultLocation,
+      ...(resultLocation.kind === "space"
+        ? { spaceId: resultLocation.spaceId }
+        : {}),
+      messageId: result.message.id,
+      cursor: waited.cursor,
+      createdThread: input.threadId === undefined && result.created,
+      activity: waited.activity ?? activity,
+      replies: waited.messages,
+      timedOut: waited.timedOut,
+    },
+    message: result.message,
   }
 }
 

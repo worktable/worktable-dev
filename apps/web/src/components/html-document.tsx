@@ -36,7 +36,7 @@ import type {
   WidgetVersionEntry,
   WidgetVersionSnapshot,
 } from "@/lib/widgets-api"
-import { useSpaceSubscription } from "@/lib/ws"
+import { subscribeToSpaceEvents, type WsStatus } from "@/lib/ws"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
 import {
@@ -145,30 +145,18 @@ function WidgetDetailPage({
   const validatedMountedRouteRef = useRef<string | null>(null)
   // Collections the widget has subscribed to (via brokered worktable.records.subscribe).
   const subscribedCollections = useRef<Set<string>>(new Set())
-  // Relay the parent's (same-origin, working-when-exposed) space subscription to
-  // the widget iframe, which can't hold its own socket under exposed CORS.
-  const { status: spaceSubscriptionStatus } = useSpaceSubscription(
-    spaceId,
-    (collectionId) => {
-      const win = iframeRef.current?.contentWindow
-      if (!win) return
-      for (const collection of subscribedCollections.current) {
-        if (collectionId === undefined || collectionId === collection) {
-          win.postMessage(
-            { type: "worktable.records.changed", collection },
-            "*"
-          )
-        }
-      }
-    },
-    (previousWidgetId, nextWidgetId) => {
-      if (previousWidgetId !== widgetId) return
-      void navigate({
-        to: "/spaces/$spaceId/documents/$",
-        params: { spaceId, _splat: nextWidgetId },
-        replace: true,
-      })
-    }
+  // The Space page already keeps the query cache current from this Space's
+  // socket. Listen on the same socket only for what this page does itself:
+  // relay record changes to the widget iframe, which can't hold its own socket
+  // under exposed CORS, and follow a move or deletion of this document.
+  const [spaceSubscriptionStatus, setSpaceSubscriptionStatus] =
+    useState<WsStatus>("connecting")
+  useEffect(
+    () =>
+      subscribeToSpaceEvents(spaceId, () => undefined, (status) =>
+        setSpaceSubscriptionStatus(status)
+      ),
+    [spaceId]
   )
   useEffect(() => {
     return spaceEvents.subscribe((message) => {
@@ -178,6 +166,36 @@ function WidgetDetailPage({
           params: { spaceId },
           replace: true,
         })
+      }
+      if (
+        message.type === "widget_moved" &&
+        message.previousWidgetId === widgetId &&
+        message.widgetId
+      ) {
+        void navigate({
+          to: "/spaces/$spaceId/documents/$",
+          params: { spaceId, _splat: message.widgetId },
+          replace: true,
+        })
+      }
+      if (
+        message.type === "record_update" ||
+        message.type === "record_deleted" ||
+        message.type === "record_collection_update"
+      ) {
+        const win = iframeRef.current?.contentWindow
+        if (!win) return
+        for (const collection of subscribedCollections.current) {
+          if (
+            message.collectionId === undefined ||
+            message.collectionId === collection
+          ) {
+            win.postMessage(
+              { type: "worktable.records.changed", collection },
+              "*"
+            )
+          }
+        }
       }
     })
   }, [navigate, spaceEvents, spaceId, widgetId])
@@ -441,7 +459,7 @@ function WidgetDetailPage({
         return
       }
       // Track the widget's record subscriptions so the parent's space socket can
-      // relay change events back to it (see useSpaceSubscription above).
+      // relay change events back to it (see the space events above).
       if (
         data?.type === "worktable.subscribe" &&
         typeof data.collection === "string"

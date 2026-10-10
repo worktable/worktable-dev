@@ -72,7 +72,10 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
   }) => {
     try {
       const { spaceId } = await createSpace(data)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       void navigate({ to: "/spaces/$spaceId", params: { spaceId } })
     } catch (err) {
       toast.error("Failed to create space")

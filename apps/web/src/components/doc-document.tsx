@@ -25,12 +25,23 @@ import {
   ChevronsRight,
   ChevronsLeft,
 } from "lucide-react"
-import { docQueryKeys, docQueryOptions } from "@/lib/docs-queries"
+import {
+  docQueryKeys,
+  docQueryOptions,
+  docReadCurrent,
+  documentOpenStartedAt,
+} from "@/lib/docs-queries"
+import { documentPageQueryOptions } from "@/lib/documents-queries"
+import {
+  firstHeadingText,
+  isCollaborativeSave,
+  isLiveDocumentSynced,
+  registerLiveDocument,
+} from "@/lib/live-documents"
 import { useSpace } from "@/lib/queries"
 import {
   useAnnotationMutations,
   useDocAnnotations,
-  annotationQueryKeys,
 } from "@/lib/annotations-queries"
 import type { Annotation } from "@worktable/types"
 import type {
@@ -334,17 +345,35 @@ function DocEditorPage({
   const docOptions = docQueryOptions(spaceId, docPath)
   // A move can land after the common page resolves but before this legacy
   // renderer mounts. Do not let a fresh-looking cache entry authorize the
-  // editor or its Yjs room: require evidence produced after this mount.
+  // editor or its Yjs room: use only a read made for this open (the route
+  // starts it beside its page check) with no change reported since, or one
+  // the Space's live socket still proves current. Otherwise read again.
+  const [currentAtMount] = useState(
+    () =>
+      queryClient.getQueryState(docOptions.queryKey)?.status === "success" &&
+      docReadCurrent(
+        spaceId,
+        docPath,
+        documentOpenStartedAt(spaceId, docPath) ?? performance.now()
+      )
+  )
   const {
     isLoading,
     isFetchedAfterMount,
     error,
     data: docData,
+    dataUpdatedAt: docUpdatedAt,
   } = useQuery({
     ...docOptions,
     staleTime: 0,
-    refetchOnMount: "always",
+    refetchOnMount: currentAtMount ? false : "always",
     retry: false,
+  })
+  // The page check runs again on reconnect and when the Space catalog stops
+  // agreeing with it; watch it without reading it here.
+  const { data: page, dataUpdatedAt: pageUpdatedAt } = useQuery({
+    ...documentPageQueryOptions(spaceId, docPath),
+    enabled: false,
   })
 
   const [converting, setConverting] = useState(false)
@@ -356,15 +385,18 @@ function DocEditorPage({
   const [recoveringOfflineEdits, setRecoveringOfflineEdits] = useState(false)
   const [recoveryScanVersion, setRecoveryScanVersion] = useState(0)
 
+  // Keyed on the epochs alone: a save that moves only metadata rescans nothing.
+  const collaborationEpoch = docData?.collaborationEpoch
+  const epochHistory = docData?.collaborationCacheEpochHistory
   useEffect(() => {
     let cancelled = false
-    const epochs = docData?.collaborationCacheEpochHistory ?? []
+    const epochs = epochHistory ?? []
     const findRecovery = async () => {
       for (const epoch of epochs) {
         const cacheKey = workspaceCollaborationCacheKey(
           spaceId,
           docPath,
-          docData!.collaborationEpoch,
+          collaborationEpoch!,
           epoch
         )
         if (
@@ -383,7 +415,7 @@ function DocEditorPage({
     return () => {
       cancelled = true
     }
-  }, [docData, docPath, recoveryScanVersion, spaceId])
+  }, [collaborationEpoch, epochHistory, docPath, recoveryScanVersion, spaceId])
 
   const recoverOfflineEdits = useCallback(async () => {
     if (!offlineRecoveryCacheKey || recoveringOfflineEdits) return
@@ -451,40 +483,69 @@ function DocEditorPage({
     })
   }, [docPath, offlineRecoveryCacheKey, recoverOfflineEdits, spaceId])
 
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (!document.hidden) {
-        void queryClient.invalidateQueries({
-          queryKey: docQueryKeys.doc(spaceId, docPath),
-        })
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibility)
-    return () =>
-      document.removeEventListener("visibilitychange", handleVisibility)
-  }, [queryClient, spaceId, docPath])
-
+  // Changes to this document. A synced editing session already holds every
+  // collaborative save, including its own, so their echoes only move its
+  // metadata forward. A change without a path while synced reaches this page
+  // through the page check below instead of a full read. Anything else (an
+  // agent writing, a conversion, an archive, a move) reads the document again.
   useEffect(() => {
     return spaceEvents.subscribe((msg) => {
-      if (
-        (msg.type === "doc_update" &&
-          (!msg.docPath || msg.docPath === docPath)) ||
-        (msg.type === "doc_deleted" && msg.docPath === docPath)
-      ) {
-        void queryClient.invalidateQueries({
-          queryKey: docQueryKeys.doc(spaceId, docPath),
-        })
+      const synced = isLiveDocumentSynced(spaceId, docPath)
+      if (msg.type === "doc_update" && msg.docPath === docPath && synced && isCollaborativeSave(msg)) {
+        const saved = (msg.data ?? {}) as Pick<DocMeta, "updatedAt" | "provenance">
+        queryClient.setQueryData<DocMeta>(docQueryKeys.doc(spaceId, docPath), (current) =>
+          current
+            ? {
+                ...current,
+                ...(saved.updatedAt ? { updatedAt: saved.updatedAt } : {}),
+                ...(saved.provenance ? { provenance: saved.provenance } : {}),
+              }
+            : current
+        )
+        return
       }
       if (
-        msg.type === "annotation_update" ||
-        msg.type === "annotation_deleted"
+        (msg.type === "doc_update" &&
+          (msg.docPath === docPath || (!msg.docPath && !synced))) ||
+        (msg.type === "doc_deleted" && msg.docPath === docPath)
       ) {
-        void queryClient.invalidateQueries({
-          queryKey: annotationQueryKeys.doc(spaceId, docPath, true),
-        })
+        void queryClient.invalidateQueries(
+          { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
+          { cancelRefetch: false }
+        )
       }
     })
   }, [spaceEvents, queryClient, spaceId, docPath])
+
+  // A newer page check that disagrees with this document (moved, archived,
+  // converted, or Markdown edited while the tab was away) reads it again. For
+  // a rich document only the save marker can lag: Yjs brings the content.
+  useEffect(() => {
+    if (!docData || !page || page.kind === "conflict") return
+    if (pageUpdatedAt <= docUpdatedAt) return
+    const summary = page.document
+    const formatId =
+      docData.format === "markdown" ? "worktable.markdown" : "worktable.rich-text"
+    const contentHash = page.provenance?.contentHash
+    const contentMoved =
+      contentHash !== undefined && contentHash !== docData.provenance?.contentHash
+    if (
+      summary.path !== docData.path ||
+      summary.format.id !== formatId ||
+      !!summary.archived !== !!docData.archived ||
+      (docData.format === "markdown" && contentMoved)
+    ) {
+      void queryClient.invalidateQueries(
+        { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
+        { cancelRefetch: false }
+      )
+    } else if (contentMoved && page.provenance) {
+      const provenance = page.provenance
+      queryClient.setQueryData<DocMeta>(docQueryKeys.doc(spaceId, docPath), (current) =>
+        current ? { ...current, provenance } : current
+      )
+    }
+  }, [docData, docPath, docUpdatedAt, page, pageUpdatedAt, queryClient, spaceId])
 
   const handleConvert = useCallback(async () => {
     setConverting(true)
@@ -565,7 +626,7 @@ function DocEditorPage({
     })
   }, [spaceId, docPath])
 
-  if (!isFetchedAfterMount || isLoading) {
+  if (!(isFetchedAfterMount || currentAtMount) || isLoading) {
     return <EditorSkeleton />
   }
 
@@ -1248,6 +1309,16 @@ function BlockNoteDocPage({
     pendingIntentRef.current = true
     sendIntentFrame(wsProviderRef.current)
   }, [])
+
+  // While synced, this tab holds every save of this document; lists and the
+  // page above use that to skip reading back their own echoes.
+  useEffect(() => {
+    if (!provider || !collabDoc) return
+    return registerLiveDocument(spaceId, docPath, {
+      synced: () => provider.synced,
+      label: () => firstHeadingText(collabDoc.getXmlFragment("document-store")),
+    })
+  }, [collabDoc, docPath, provider, spaceId])
 
 
   return (

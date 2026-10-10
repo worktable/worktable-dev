@@ -25,40 +25,43 @@ export function WorkspaceOperationObserver() {
   const enabled = workspace.data?.canManage === true
   const seen = useRef(new Map<string, string>())
   const preparing = useRef(new Set<string>())
+  // Jobs are polled only while one runs. Starting a job in Settings writes
+  // these queries, which starts the polling; a job started in another tab is
+  // announced there, and content changes reach this tab through its epoch.
   const exported = useQuery({
     queryKey: exportJobKey,
     queryFn: getCurrentWorkspaceExportJob,
     enabled,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["queued", "running"].includes(q.state.data?.state ?? "")
-          ? 750
-          : 15_000,
+      ["queued", "running"].includes(q.state.data?.state ?? "")
+        ? q.state.error
+          ? 3000
+          : 750
+        : false,
   })
   const imported = useQuery({
     queryKey: importJobKey,
     queryFn: getCurrentWorkspaceImportJob,
     enabled,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["verifying", "uploaded", "preparing", "replacing"].includes(
-              q.state.data?.state ?? ""
-            )
-          ? 1000
-          : 15_000,
+      ["verifying", "uploaded", "preparing", "replacing"].includes(
+        q.state.data?.state ?? ""
+      )
+        ? q.state.error
+          ? 3000
+          : 1000
+        : false,
   })
   const cleared = useQuery({
     queryKey: clearJobKey,
     queryFn: getCurrentWorkspaceClearJob,
     enabled: enabled && deployment.data?.capabilities.workspaceClear === true,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["preparing", "replacing"].includes(q.state.data?.state ?? "")
-          ? 1000
-          : 15_000,
+      ["preparing", "replacing"].includes(q.state.data?.state ?? "")
+        ? q.state.error
+          ? 3000
+          : 1000
+        : false,
   })
 
   useEffect(() => {

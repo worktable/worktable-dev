@@ -9,7 +9,8 @@ import type {
   ActivityPage,
   PendingResult,
 } from "@worktable/types"
-import { fetchJSON } from "./http.ts"
+import { abandonableRead, fetchJSON } from "./http.ts"
+import { pollUnlessLive } from "./space-observation.ts"
 
 export const activityQueryKeys = {
   all: ["activity"] as const,
@@ -48,12 +49,12 @@ export function activityQueryOptions(options: ActivityOptions) {
   })
 }
 
-/** The newest entries, refreshed while on screen like Recent. */
+/** The newest entries, kept current by the Space's socket where there is one. */
 export function useActivity(options: ActivityOptions, enabled = true) {
   return useQuery({
     ...activityQueryOptions(options),
     enabled,
-    refetchInterval: 30_000,
+    refetchInterval: pollUnlessLive(options.spaceId),
   })
 }
 
@@ -62,12 +63,14 @@ export function useActivityPages(options: ActivityOptions) {
   return useInfiniteQuery(
     infiniteQueryOptions({
       queryKey: [...activityQueryKeys.list(options), "pages"] as const,
-      queryFn: ({ pageParam }) =>
-        fetchJSON<ActivityPage>(activityUrl(options, pageParam)),
+      queryFn: (context) =>
+        abandonableRead(context, (read) =>
+          fetchJSON<ActivityPage>(activityUrl(options, context.pageParam), read)
+        ),
       initialPageParam: null as string | null,
       getNextPageParam: (page) => page.nextCursor,
       staleTime: 10_000,
-      refetchInterval: 30_000,
+      refetchInterval: pollUnlessLive(options.spaceId),
     })
   )
 }
@@ -93,6 +96,6 @@ export function usePending(spaceId?: string) {
         `/api/pending${spaceId ? `?spaceId=${encodeURIComponent(spaceId)}` : ""}`
       ),
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: pollUnlessLive(spaceId),
   })
 }

@@ -14,7 +14,7 @@ import {
   assignResponseRequest,
   listThreadParticipantsForDisplay,
   listThreadSummaries,
-  postThreadMessage,
+  postThreadMessageWithStored,
   readThreadMessage,
   readThreadMessages,
   waitForThreadReply,
@@ -199,13 +199,11 @@ threadsRouter.post("/", async (c) => {
     )
   }
   try {
-    return c.json(
-      await postThreadMessage(c.get("identity"), {
-        ...parsed.data,
-        location: routeLocation(c),
-      }),
-      201
-    )
+    const posted = await postThreadMessageWithStored(c.get("identity"), {
+      ...parsed.data,
+      location: routeLocation(c),
+    })
+    return c.json({ ...posted.result, message: posted.message }, 201)
   } catch (error) {
     return errorResponse(c, error)
   }
@@ -303,13 +301,12 @@ threadsRouter.post("/:threadId/messages", async (c) => {
     )
   }
   try {
-    return c.json(
-      await postThreadMessage(c.get("identity"), {
-        ...parsed.data,
-        location: routeLocation(c),
-        threadId: c.req.param("threadId"),
-      })
-    )
+    const posted = await postThreadMessageWithStored(c.get("identity"), {
+      ...parsed.data,
+      location: routeLocation(c),
+      threadId: c.req.param("threadId"),
+    })
+    return c.json({ ...posted.result, message: posted.message })
   } catch (error) {
     return errorResponse(c, error)
   }

@@ -2,14 +2,32 @@ import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   useQueryClient,
+  type InvalidateQueryFilters,
   type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query"
 import { queryKeys } from "./queries"
 import { docQueryKeys } from "./docs-queries"
 import { documentQueryKeys } from "./documents-queries"
+import { recentQueryKeys } from "./lifetime"
 import { threadQueryKeys } from "./threads-queries"
+import { refreshLive } from "./live-refresh"
+import { applyRecordChange } from "./record-cache"
+import {
+  isOwnCollaborativeSave,
+  takeLiveDocumentLabelChange,
+} from "./live-documents"
+import {
+  isSpaceLive,
+  noteSpaceChange,
+  noteSpaceLive,
+  THREAD_STREAM,
+} from "./space-observation"
 import type {
+  DocListEntry,
+  DocumentListItem,
+  RecordFile,
+  Thread,
   ThreadActivity,
   ThreadLocation,
   ThreadReadResult,
@@ -26,6 +44,9 @@ const WS_BASE =
 export interface WsMessage {
   type: string
   spaceId?: string
+  docPath?: string
+  /** What produced a change, such as "yjs" for a collaborative save. */
+  origin?: string
   location?: ThreadLocation
   widgetId?: string
   previousWidgetId?: string
@@ -42,6 +63,8 @@ type StatusListener = (status: WsStatus, reconnected: boolean) => void
 
 interface SharedSpaceConnection {
   url: string
+  /** The Space this socket follows, or the workspace thread stream. */
+  stream: string
   ws: WebSocket | null
   messageListeners: Set<MessageListener>
   statusListeners: Set<StatusListener>
@@ -49,6 +72,8 @@ interface SharedSpaceConnection {
   reconnectTimer: ReturnType<typeof setTimeout> | null
   reconnectAttempts: number
   hasConnected: boolean
+  /** Cache updates run once per message here, not once per listener. */
+  queryClient: QueryClient | null
 }
 
 interface WorktableBrowserGlobal {
@@ -181,10 +206,10 @@ export function applyThreadActivityToQueries(
     threadQueryKeys.list(location),
   ]
   if (!activity?.messageId) {
-    void queryClient.invalidateQueries({ queryKey: detailKey, exact: true })
-    for (const queryKey of listKeys) {
-      void queryClient.invalidateQueries({ queryKey, exact: true })
-    }
+    refreshLive(queryClient, [
+      { queryKey: detailKey, exact: true },
+      ...listKeys.map((queryKey) => ({ queryKey, exact: true })),
+    ])
     return
   }
 
@@ -246,6 +271,338 @@ export function applyThreadActivityToQueries(
   }
 }
 
+/**
+ * Apply a thread the server sent with a change. The open window keeps its
+ * oldest message and gains everything newer, so no read is needed.
+ */
+export function applyThreadPayload(
+  queryClient: QueryClient,
+  location: ThreadLocation,
+  thread: Thread
+): void {
+  queryClient.setQueryData<ThreadReadResult>(
+    threadQueryKeys.detail(location, thread.id),
+    (current) => {
+      if (!current || thread.revision < current.thread.revision) return current
+      const messages = thread.messages.filter(
+        (message) => message.sequence >= current.oldestCursor
+      )
+      const firstSequence = thread.messages[0]?.sequence
+      return {
+        ...current,
+        thread: { ...thread, messages },
+        messages,
+        cursor: messages.at(-1)?.sequence ?? current.cursor,
+        hasOlder:
+          firstSequence !== undefined &&
+          firstSequence < (messages[0]?.sequence ?? Number.POSITIVE_INFINITY),
+        hasNewer: false,
+      }
+    }
+  )
+}
+
+function messageLocation(
+  message: WsMessage,
+  fallback: ThreadLocation
+): ThreadLocation {
+  return (
+    message.location ??
+    (message.spaceId ? { kind: "space", spaceId: message.spaceId } : fallback)
+  )
+}
+
+const THREAD_EVENTS = new Set([
+  "thread_update",
+  "thread_deleted",
+  "thread_activity",
+])
+
+/**
+ * Apply one thread event to cached threads. A named thread change patches the
+ * open thread from its payload and refreshes only the lists that show it; a
+ * change the server could not name reconciles the scope.
+ */
+export function applyThreadEvent(
+  queryClient: QueryClient,
+  message: WsMessage,
+  scope: ThreadLocation | null
+): void {
+  const location = messageLocation(message, scope ?? { kind: "worktable" })
+  const lists = [
+    { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
+    { queryKey: threadQueryKeys.list(location), exact: true },
+  ]
+  const pending = { queryKey: activityQueryKeys.pending }
+  const activity = { queryKey: activityQueryKeys.all }
+  if (message.type === "thread_activity") {
+    const update = message.data as ThreadActivity | undefined
+    if (message.threadId) {
+      applyThreadActivityToQueries(
+        queryClient,
+        location,
+        message.threadId,
+        update
+      )
+    }
+    // Progress while an agent works leaves Pending as it was; a delivery
+    // that ends, fails or starts over can change it.
+    if (update?.state !== "working" && update?.state !== "receiving") {
+      refreshLive(queryClient, [pending])
+    }
+    return
+  }
+  if (message.type === "thread_update" && message.threadId && message.data) {
+    applyThreadPayload(queryClient, location, message.data as Thread)
+    return
+  }
+  if (message.type === "thread_update" && message.threadId) {
+    refreshLive(queryClient, [...lists, activity, pending])
+    return
+  }
+  if (message.type === "thread_deleted" && message.threadId) {
+    refreshLive(queryClient, [
+      ...lists,
+      {
+        queryKey: threadQueryKeys.detail(location, message.threadId),
+        exact: true,
+      },
+      activity,
+      pending,
+    ])
+    return
+  }
+  if (message.type === "thread_update") {
+    if (scope?.kind === "space") {
+      void reconcileSpaceThreadQueries(queryClient, scope.spaceId)
+    } else {
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })
+    }
+    refreshLive(queryClient, [activity, pending])
+  }
+}
+
+/**
+ * Keep the open document's lists in step with its own save without reading
+ * them again: the save moves its date, and its label changes only when its
+ * first heading did.
+ */
+function applyOwnCollaborativeSave(
+  queryClient: QueryClient,
+  spaceId: string,
+  message: WsMessage
+): void {
+  const path = message.docPath!
+  const data = (message.data ?? {}) as {
+    updatedAt?: number
+    provenance?: DocListEntry["provenance"]
+  }
+  queryClient.setQueryData<DocListEntry[]>(docQueryKeys.docs(spaceId), (rows) =>
+    rows?.map((row) =>
+      row.path === path
+        ? {
+            ...row,
+            ...(data.updatedAt ? { updatedAt: data.updatedAt } : {}),
+            ...(data.provenance ? { provenance: data.provenance } : {}),
+          }
+        : row
+    )
+  )
+  const updatedAt =
+    data.provenance?.updatedAt ??
+    (data.updatedAt ? new Date(data.updatedAt).toISOString() : undefined)
+  if (updatedAt) {
+    queryClient.setQueryData<DocumentListItem[]>(
+      documentQueryKeys.list(spaceId),
+      (rows) =>
+        rows?.map((row) =>
+          row.kind === "document" && row.path === path
+            ? { ...row, updatedAt }
+            : row
+        )
+    )
+  }
+  // Lists on other pages read again when they next open.
+  for (const queryKey of [["search"], recentQueryKeys.all, activityQueryKeys.all]) {
+    void queryClient.invalidateQueries({ queryKey, refetchType: "none" })
+  }
+  const listed = queryClient
+    .getQueryData<DocListEntry[]>(docQueryKeys.docs(spaceId))
+    ?.find((row) => row.path === path)
+  if (takeLiveDocumentLabelChange(spaceId, path, listed?.headings?.[0])) {
+    refreshLive(queryClient, [
+      { queryKey: docQueryKeys.docs(spaceId), exact: true },
+    ])
+  }
+}
+
+/** Messages that can change a document's path, identity, or Space. */
+function changesDocuments(message: WsMessage): boolean {
+  return (
+    message.type.startsWith("doc_") ||
+    message.type.startsWith("widget_") ||
+    message.type === "space_update" ||
+    message.type === "spaces_changed"
+  )
+}
+
+/**
+ * Apply one Space event to the query cache: patch what the payload carries
+ * and refresh exactly the queries it can change.
+ */
+export function applySpaceEvent(
+  queryClient: QueryClient,
+  spaceId: string,
+  message: WsMessage
+): void {
+  const type = message.type
+  const space = { queryKey: queryKeys.space(spaceId), exact: true }
+  const spaces = { queryKey: queryKeys.spaces, exact: true }
+  const docs = { queryKey: docQueryKeys.docs(spaceId), exact: true }
+  const documents = { queryKey: documentQueryKeys.list(spaceId), exact: true }
+  const references = { queryKey: docQueryKeys.referencesIn(spaceId) }
+  const annotations = { queryKey: ["annotations", spaceId] }
+  const search = { queryKey: ["search"] }
+  const recent = { queryKey: recentQueryKeys.all }
+  const activity = { queryKey: activityQueryKeys.all }
+  const pending = { queryKey: activityQueryKeys.pending }
+  const refresh: InvalidateQueryFilters[] = []
+
+  if (type === "spaces_changed") refresh.push(spaces)
+  if (type === "space_update") refresh.push(space, spaces, activity)
+
+  if (type === "widget_update" && message.widgetId) {
+    refresh.push(
+      { queryKey: queryKeys.widget(spaceId, message.widgetId) },
+      space,
+      documents,
+      search,
+      recent,
+      activity
+    )
+  }
+  if (type === "widget_moved" && message.widgetId) {
+    // A move is not a deletion: refresh the new owner and the lists, and let
+    // an open old route follow the move.
+    refresh.push(
+      { queryKey: queryKeys.widget(spaceId, message.widgetId) },
+      space,
+      documents,
+      annotations,
+      search,
+      recent,
+      activity
+    )
+  }
+  if (type === "widget_deleted" && message.widgetId) {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.widget(spaceId, message.widgetId),
+      exact: true,
+      refetchType: "none",
+    })
+    // Deleting an HTML doc removes its annotations too.
+    refresh.push(space, documents, annotations, search, recent, activity)
+  }
+
+  if (
+    (type === "record_update" || type === "record_deleted") &&
+    message.collectionId &&
+    message.recordId
+  ) {
+    refresh.push(
+      ...applyRecordChange(
+        queryClient,
+        spaceId,
+        message.collectionId,
+        message.recordId,
+        type === "record_update" && message.data
+          ? (message.data as RecordFile)
+          : null
+      ),
+      activity
+    )
+  }
+  if (type === "record_collection_update") {
+    refresh.push(
+      { queryKey: queryKeys.recordCollections(spaceId), exact: true },
+      message.collectionId
+        ? { queryKey: queryKeys.records(spaceId, message.collectionId) }
+        : { queryKey: queryKeys.recordCollections(spaceId) },
+      activity
+    )
+  }
+
+  if (type === "annotation_update" || type === "annotation_deleted") {
+    refresh.push(annotations, activity, pending)
+  }
+
+  if (type === "doc_update" || type === "doc_deleted") {
+    if (isOwnCollaborativeSave({ ...message, spaceId })) {
+      applyOwnCollaborativeSave(queryClient, spaceId, message)
+    } else {
+      refresh.push(docs, documents, references, search, recent, activity)
+      if (message.docPath) {
+        refresh.push({
+          queryKey: documentQueryKeys.page(spaceId, message.docPath),
+          exact: true,
+        })
+      }
+    }
+  }
+
+  // The workspace thread stream carries every thread event when it is open.
+  if (THREAD_EVENTS.has(type) && !isSpaceLive(THREAD_STREAM)) {
+    applyThreadEvent(queryClient, message, { kind: "space", spaceId })
+  }
+  if (type === "participants_update") {
+    refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
+  }
+
+  refreshLive(queryClient, refresh)
+}
+
+/**
+ * After a reconnect the tab may have missed any change in the Space. Mark
+ * everything it holds for the Space stale and read again only the lists on
+ * screen; open documents check themselves.
+ */
+export function revalidateSpaceAfterReconnect(
+  queryClient: QueryClient,
+  spaceId: string
+): void {
+  void queryClient.invalidateQueries({
+    queryKey: ["spaces", spaceId],
+    refetchType: "none",
+  })
+  // Every live socket hears spaces_changed, so a Spaces list read another
+  // reconnect already started needs no read after it.
+  void queryClient.invalidateQueries(
+    { queryKey: queryKeys.spaces, exact: true },
+    { cancelRefetch: false }
+  )
+  refreshLive(queryClient, [
+    { queryKey: queryKeys.space(spaceId), exact: true },
+    { queryKey: docQueryKeys.docs(spaceId), exact: true },
+    { queryKey: documentQueryKeys.list(spaceId), exact: true },
+    { queryKey: docQueryKeys.referencesIn(spaceId) },
+    // Collection list, open grids and their totals.
+    { queryKey: queryKeys.recordCollections(spaceId) },
+    // An open HTML document reloads its frame only when its content changed.
+    { queryKey: ["spaces", spaceId, "widgets"] },
+    { queryKey: ["annotations", spaceId] },
+    { queryKey: recentQueryKeys.all },
+    { queryKey: activityQueryKeys.all },
+    { queryKey: activityQueryKeys.pending },
+  ])
+  if (!isSpaceLive(THREAD_STREAM)) {
+    // Activity's live replies read the workspace thread list.
+    refreshLive(queryClient, [
+      { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
+    ])
+    void reconcileSpaceThreadQueries(queryClient, spaceId)
+  }
+}
+
 function publishStatus(
   connection: SharedSpaceConnection,
   status: WsStatus,
@@ -257,16 +614,35 @@ function publishStatus(
   }
 }
 
-export async function invalidateWorkspaceQueriesAfterReconnect(
-  queryClient: QueryClient,
-  reconnected: boolean,
-  options?: {
-    reconcileRoute?: () => void | Promise<void>
+function applyMessage(
+  connection: SharedSpaceConnection,
+  message: WsMessage
+): void {
+  const queryClient = connection.queryClient
+  if (!queryClient) return
+  if (connection.stream === THREAD_STREAM) {
+    if (THREAD_EVENTS.has(message.type)) {
+      applyThreadEvent(queryClient, message, null)
+    } else if (message.type === "participants_update") {
+      refreshLive(queryClient, [
+        { queryKey: threadQueryKeys.participants, exact: true },
+      ])
+    } else if (message.type === "spaces_changed") {
+      refreshLive(queryClient, [{ queryKey: queryKeys.spaces, exact: true }])
+    }
+    return
   }
-): Promise<void> {
-  if (!reconnected) return
-  await options?.reconcileRoute?.()
-  await queryClient.invalidateQueries()
+  applySpaceEvent(queryClient, connection.stream, message)
+}
+
+function revalidateAfterReconnect(connection: SharedSpaceConnection): void {
+  const queryClient = connection.queryClient
+  if (!queryClient) return
+  if (connection.stream === THREAD_STREAM) {
+    void queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })
+    return
+  }
+  revalidateSpaceAfterReconnect(queryClient, connection.stream)
 }
 
 function connectShared(
@@ -298,24 +674,39 @@ function connectShared(
     if (connection.ws !== ws) return
     opened = true
     connection.reconnectAttempts = 0
-    const reconnected = connection.hasConnected
-    connection.hasConnected = true
-    publishStatus(connection, "connected", reconnected)
   }
 
   ws.onmessage = (event) => {
     if (connection.ws !== ws) return
+    let message: WsMessage
     try {
-      const message = JSON.parse(event.data as string) as WsMessage
-      for (const listener of connection.messageListeners) listener(message)
+      message = JSON.parse(event.data as string) as WsMessage
     } catch {
       // Ignore malformed messages without disrupting the live connection.
+      return
     }
+    if (message.type === "subscribed") {
+      // The server now delivers every change: the stream is caught up.
+      const reconnected = connection.hasConnected
+      connection.hasConnected = true
+      noteSpaceLive(connection.stream, true)
+      if (reconnected) revalidateAfterReconnect(connection)
+      publishStatus(connection, "connected", reconnected)
+    } else {
+      if (changesDocuments(message)) noteSpaceChange(connection.stream)
+      try {
+        applyMessage(connection, message)
+      } catch {
+        // A malformed payload must not stop the listeners below.
+      }
+    }
+    for (const listener of connection.messageListeners) listener(message)
   }
 
   ws.onclose = () => {
     if (connection.ws !== ws) return
     connection.ws = null
+    noteSpaceLive(connection.stream, false)
     publishStatus(connection, "disconnected")
     if (connection.messageListeners.size === 0 || document.hidden) return
     if (!opened) {
@@ -338,9 +729,12 @@ function closeShared(connection: SharedSpaceConnection): void {
   const ws = connection.ws
   connection.ws = null
   ws?.close()
+  noteSpaceLive(connection.stream, false)
   publishStatus(connection, "disconnected")
 }
 
+// Hidden tabs close their sockets. Returning reconnects each one, and each
+// revalidates only its own scope once the server confirms the subscription.
 function ensureVisibilityListener(): void {
   if (browserGlobal.__worktableSpaceVisibilityListenerInstalled) return
   browserGlobal.__worktableSpaceVisibilityListenerInstalled = true
@@ -352,17 +746,20 @@ function ensureVisibilityListener(): void {
   })
 }
 
-export function subscribeToSpaceEvents(
-  spaceId: string,
+function subscribeShared(
+  key: string,
+  url: string,
+  stream: string,
   onMessage: MessageListener,
-  onStatus: StatusListener = () => undefined
+  onStatus: StatusListener,
+  queryClient: QueryClient | undefined
 ): () => void {
   ensureVisibilityListener()
-  const key = `space:${spaceId}`
   let connection = sharedConnections.get(key)
   if (!connection) {
     connection = {
-      url: `${WS_BASE}/ws?spaceId=${encodeURIComponent(spaceId)}`,
+      url,
+      stream,
       ws: null,
       messageListeners: new Set(),
       statusListeners: new Set(),
@@ -370,9 +767,11 @@ export function subscribeToSpaceEvents(
       reconnectTimer: null,
       reconnectAttempts: 0,
       hasConnected: false,
+      queryClient: null,
     }
     sharedConnections.set(key, connection)
   }
+  if (queryClient) connection.queryClient = queryClient
   connection.messageListeners.add(onMessage)
   connection.statusListeners.add(onStatus)
   onStatus(connection.status, false)
@@ -385,314 +784,92 @@ export function subscribeToSpaceEvents(
     closeShared(connection)
     sharedConnections.delete(key)
   }
+}
+
+/**
+ * Follow a Space's change stream. Every subscriber shares one socket; with a
+ * query client, the socket keeps the cache current once per message.
+ */
+export function subscribeToSpaceEvents(
+  spaceId: string,
+  onMessage: MessageListener,
+  onStatus: StatusListener = () => undefined,
+  queryClient?: QueryClient
+): () => void {
+  return subscribeShared(
+    `space:${spaceId}`,
+    `${WS_BASE}/ws?spaceId=${encodeURIComponent(spaceId)}`,
+    spaceId,
+    onMessage,
+    onStatus,
+    queryClient
+  )
 }
 
 export function subscribeToWorktableThreadEvents(
   onMessage: MessageListener,
-  onStatus: StatusListener = () => undefined
+  onStatus: StatusListener = () => undefined,
+  queryClient?: QueryClient
 ): () => void {
-  ensureVisibilityListener()
-  const key = "__threads__"
-  let connection = sharedConnections.get(key)
-  if (!connection) {
-    connection = {
-      url: `${WS_BASE}/ws?scope=threads`,
-      ws: null,
-      messageListeners: new Set(),
-      statusListeners: new Set(),
-      status: "connecting",
-      reconnectTimer: null,
-      reconnectAttempts: 0,
-      hasConnected: false,
-    }
-    sharedConnections.set(key, connection)
-  }
-  connection.messageListeners.add(onMessage)
-  connection.statusListeners.add(onStatus)
-  onStatus(connection.status, false)
-  connectShared(connection, true)
-
-  return () => {
-    connection.messageListeners.delete(onMessage)
-    connection.statusListeners.delete(onStatus)
-    if (connection.messageListeners.size > 0) return
-    closeShared(connection)
-    sharedConnections.delete(key)
-  }
+  return subscribeShared(
+    "__threads__",
+    `${WS_BASE}/ws?scope=threads`,
+    THREAD_STREAM,
+    onMessage,
+    onStatus,
+    queryClient
+  )
 }
 
+/** Keep thread queries current from the workspace thread stream. */
 export function useWorktableThreadSubscription() {
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    const reconcile = () =>
-      queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })
-    return subscribeToWorktableThreadEvents(
-      (message) => {
-        if (message.type === "thread_activity" && message.threadId) {
-          const location =
-            message.location ??
-            (message.spaceId
-              ? { kind: "space", spaceId: message.spaceId }
-              : { kind: "worktable" })
-          applyThreadActivityToQueries(
-            queryClient,
-            location,
-            message.threadId,
-            message.data as ThreadActivity | undefined
-          )
-          return
-        }
-        if (
-          message.type === "thread_update" ||
-          message.type === "thread_deleted"
-        ) {
-          void reconcile()
-        }
-        if (message.type === "participants_update") {
-          void queryClient.invalidateQueries({
-            queryKey: threadQueryKeys.participants,
-            exact: true,
-          })
-        }
-      },
-      (status, reconnected) => {
-        if (status === "connected") {
-          void invalidateWorkspaceQueriesAfterReconnect(
-            queryClient,
-            reconnected
-          )
-          void reconcile()
-        }
-      }
-    )
-  }, [queryClient])
+  useEffect(
+    () =>
+      subscribeToWorktableThreadEvents(
+        () => undefined,
+        () => undefined,
+        queryClient
+      ),
+    [queryClient]
+  )
 }
 
 /**
- * Subscribe to real-time updates for a space via WebSocket.
- * Automatically invalidates TanStack Query caches on changes.
+ * Subscribe to real-time updates for a space via WebSocket. The shared socket
+ * keeps the query cache current; `reconcileRoute` runs after a reconnect so
+ * the route can check its own path again.
  * Returns { status, lastActivityAt } for live indicator use.
  */
 export function useSpaceSubscription(
   spaceId: string | undefined,
-  onRecordChange?: (collectionId: string | undefined) => void,
-  onWidgetMove?: (previousWidgetId: string, widgetId: string) => void,
   reconnectOwner?: {
     reconcileRoute?: () => void | Promise<void>
   }
 ) {
   const queryClient = useQueryClient()
   // Keep the latest callback in a ref so changing it doesn't re-open the socket.
-  const onRecordChangeRef = useRef(onRecordChange)
-  const onWidgetMoveRef = useRef(onWidgetMove)
   const reconnectOwnerRef = useRef(reconnectOwner)
   useLayoutEffect(() => {
-    onRecordChangeRef.current = onRecordChange
-    onWidgetMoveRef.current = onWidgetMove
     reconnectOwnerRef.current = reconnectOwner
-  }, [onRecordChange, onWidgetMove, reconnectOwner])
+  }, [reconnectOwner])
   const [status, setStatus] = useState<WsStatus>("connecting")
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
 
   useEffect(() => {
     if (!spaceId) return
-    const location = { kind: "space", spaceId } as const
-
-    const onStatus = (next: WsStatus, reconnected: boolean) => {
-      setStatus(next)
-      if (next === "connected") {
-        if (reconnectOwnerRef.current) {
-          void invalidateWorkspaceQueriesAfterReconnect(
-            queryClient,
-            reconnected,
-            reconnectOwnerRef.current
-          )
+    return subscribeToSpaceEvents(
+      spaceId,
+      () => setLastActivityAt(Date.now()),
+      (next, reconnected) => {
+        setStatus(next)
+        if (next === "connected" && reconnected) {
+          void reconnectOwnerRef.current?.reconcileRoute?.()
         }
-        void reconcileSpaceThreadQueries(queryClient, spaceId)
-      }
-    }
-
-    const onMessage = (msg: WsMessage) => {
-      try {
-        setLastActivityAt(Date.now())
-
-        if (msg.type === "space_update" && spaceId) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.spaces,
-            exact: true,
-          })
-        }
-
-        if (msg.type === "widget_update" && msg.widgetId && spaceId) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.widget(spaceId, msg.widgetId),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: documentQueryKeys.list(spaceId),
-          })
-        }
-
-        if (
-          msg.type === "widget_moved" &&
-          msg.previousWidgetId &&
-          msg.widgetId &&
-          spaceId
-        ) {
-          // A move is not a deletion. Refresh the exact list/detail owners
-          // without prefix-invalidating the still-mounted old widget query;
-          // then let an open old route follow the move.
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.widget(spaceId, msg.widgetId),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: documentQueryKeys.list(spaceId),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: ["annotations", spaceId],
-          })
-          onWidgetMoveRef.current?.(msg.previousWidgetId, msg.widgetId)
-        }
-
-        if (
-          (msg.type === "record_update" ||
-            msg.type === "record_deleted" ||
-            msg.type === "record_collection_update") &&
-          spaceId
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.recordCollections(spaceId),
-          })
-          if (msg.collectionId) {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.records(spaceId, msg.collectionId),
-            })
-          }
-          // Relay to any subscribed widget (its sandboxed iframe can't hold its
-          // own socket when exposed).
-          onRecordChangeRef.current?.(msg.collectionId)
-        }
-
-        if (msg.type === "widget_deleted" && msg.widgetId && spaceId) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.widget(spaceId, msg.widgetId),
-            exact: true,
-            refetchType: "none",
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: documentQueryKeys.list(spaceId),
-          })
-          // Deleting an HTML doc cascades its annotation file away, so refresh
-          // the annotation queries (per-doc panels + Space Home attention).
-          void queryClient.invalidateQueries({
-            queryKey: ["annotations", spaceId],
-          })
-        }
-
-        if (
-          (msg.type === "annotation_update" ||
-            msg.type === "annotation_deleted") &&
-          spaceId
-        ) {
-          // Prefix invalidation covers both per-doc annotation queries and
-          // the space-wide list behind Space Home's needs-attention strip —
-          // lint and agent annotations arrive over WS, not user mutations.
-          void queryClient.invalidateQueries({
-            queryKey: ["annotations", spaceId],
-          })
-        }
-
-        if (
-          (msg.type === "doc_update" || msg.type === "doc_deleted") &&
-          spaceId
-        ) {
-          // Doc content syncs through Yjs, but the docs LIST (titles and
-          // backlink counts on Space Home and the sidebar) only refreshes by
-          // refetch — without this, an open overview shows outdated rows
-          // until the query's stale window expires.
-          void queryClient.invalidateQueries({
-            queryKey: docQueryKeys.docs(spaceId),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: documentQueryKeys.list(spaceId),
-          })
-        }
-
-        if (
-          msg.type === "doc_update" ||
-          msg.type === "doc_deleted" ||
-          msg.type === "widget_update" ||
-          msg.type === "widget_moved" ||
-          msg.type === "widget_deleted"
-        ) {
-          void queryClient.invalidateQueries({ queryKey: ["search"] })
-          void queryClient.invalidateQueries({ queryKey: ["recent"] })
-        }
-
-        // Activity and Pending summarize every kind of change in the Space.
-        if (
-          msg.type.startsWith("doc_") ||
-          msg.type.startsWith("widget_") ||
-          msg.type.startsWith("record") ||
-          msg.type.startsWith("annotation_") ||
-          msg.type === "space_update" ||
-          msg.type === "thread_update"
-        ) {
-          void queryClient.invalidateQueries({ queryKey: activityQueryKeys.all })
-        }
-        if (
-          msg.type.startsWith("annotation_") ||
-          msg.type === "thread_update" ||
-          msg.type === "thread_activity"
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: activityQueryKeys.pending,
-          })
-        }
-
-        if (
-          (msg.type === "thread_update" || msg.type === "thread_deleted") &&
-          spaceId
-        ) {
-          void reconcileSpaceThreadQueries(queryClient, spaceId, msg.threadId)
-        }
-
-        if (msg.type === "participants_update" && spaceId) {
-          void queryClient.invalidateQueries({
-            queryKey: threadQueryKeys.participants,
-            exact: true,
-          })
-        }
-
-        if (msg.type === "thread_activity" && msg.threadId && spaceId) {
-          applyThreadActivityToQueries(
-            queryClient,
-            location,
-            msg.threadId,
-            msg.data as ThreadActivity | undefined
-          )
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    }
-    return subscribeToSpaceEvents(spaceId, onMessage, onStatus)
+      },
+      queryClient
+    )
   }, [spaceId, queryClient])
 
   return { status, lastActivityAt }

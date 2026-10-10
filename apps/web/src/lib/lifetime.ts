@@ -10,6 +10,7 @@ import type {
 import { useDocuments, documentQueryKeys } from "./documents-queries.ts"
 import { fetchJSON } from "./http.ts"
 import { spaceQueryOptions } from "./queries.ts"
+import { pollUnlessLive } from "./space-observation.ts"
 
 // ── Lifetime ────────────────────────────────────────────────
 
@@ -51,9 +52,15 @@ export function useRefreshDocumentLists(spaceId: string): () => Promise<void> {
   const queryClient = useQueryClient()
   return useCallback(async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: documentQueryKeys.list(spaceId) }),
+      queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.list(spaceId),
+        exact: true,
+      }),
       // Pins report their document's status.
-      queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
+      queryClient.invalidateQueries({
+        queryKey: spaceQueryOptions(spaceId).queryKey,
+        exact: true,
+      }),
       queryClient.invalidateQueries({ queryKey: recentQueryKeys.all }),
       queryClient.invalidateQueries({ queryKey: ["search"] }),
       queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
@@ -119,6 +126,8 @@ export interface RecentDocument {
 
 export interface RecentDocuments {
   items: RecentDocument[]
+  /** Temporary documents, soonest to archive first, when asked for. */
+  temporary?: RecentDocument[]
   spaces: Array<{ spaceId: string; lastActivityAt?: string }>
 }
 
@@ -134,6 +143,8 @@ export interface RecentOptions {
   /** Only temporary docs, soonest to archive first. */
   onlyTemporary?: boolean
   limit?: number
+  /** Also list this many temporary docs, soonest to archive first. */
+  temporaryLimit?: number
 }
 
 export function recentQueryOptions(options: RecentOptions) {
@@ -145,6 +156,9 @@ export function recentQueryOptions(options: RecentOptions) {
         includeTemporary: options.includeTemporary ? "true" : "false",
         limit: String(options.limit ?? 30),
         ...(options.onlyTemporary ? { lifetime: "temporary" } : {}),
+        ...(options.temporaryLimit
+          ? { temporaryLimit: String(options.temporaryLimit) }
+          : {}),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
@@ -158,8 +172,9 @@ export function useRecentDocuments(options: RecentOptions, enabled = true) {
     ...recentQueryOptions(options),
     enabled,
     placeholderData: keepPreviousData,
-    // Home has no workspace-wide change feed; refresh while it is on screen.
-    refetchInterval: 30_000,
+    // Space sockets keep a Space's list current; Home has no workspace-wide
+    // change feed yet, so it checks once a minute while on screen.
+    refetchInterval: pollUnlessLive(options.spaceId),
   })
 }
 

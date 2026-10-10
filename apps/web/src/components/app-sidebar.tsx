@@ -376,7 +376,10 @@ function SpaceSection({
   const handleRename = async (newName: string) => {
     try {
       await updateSpace(space.id, { name: newName })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       toast.success("Space renamed")
     } catch (err) {
       toast.error("Failed to rename space")
@@ -387,7 +390,10 @@ function SpaceSection({
   const handleChangeGroup = async (group: string | undefined) => {
     try {
       await updateSpace(space.id, { group: group ?? "" })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
     } catch (err) {
       toast.error("Failed to change group")
       console.error("Failed to change group:", err)
@@ -397,7 +403,10 @@ function SpaceSection({
   const handleDelete = async () => {
     try {
       await deleteSpace(space.id)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       if (currentPath.startsWith(`/spaces/${space.id}`)) {
         navigate({ to: "/" })
       }
@@ -411,7 +420,10 @@ function SpaceSection({
   const handleArchive = async () => {
     try {
       await archiveSpace(space.id)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       toast.success("Space archived")
     } catch (err) {
       toast.error("Failed to archive space")
@@ -422,7 +434,10 @@ function SpaceSection({
   const handleRestore = async () => {
     try {
       await restoreSpace(space.id)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       toast.success("Space restored")
     } catch (err) {
       toast.error("Failed to restore space")
@@ -433,7 +448,10 @@ function SpaceSection({
   const handleChangeDocSort = async (sort: DocSortMode) => {
     try {
       await updateDocOrder(space.id, { sort })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
     } catch (err) {
       toast.error("Failed to change sort order")
       console.error("Failed to change doc sort:", err)
@@ -513,6 +531,7 @@ function SpaceSection({
                   await updateSpace(space.id, { icon })
                   await queryClient.invalidateQueries({
                     queryKey: queryKeys.spaces,
+                    exact: true,
                   })
                 } catch {
                   toast.error("Failed to change icon")
@@ -588,6 +607,7 @@ function SpaceContent({
       queryClient.invalidateQueries({ queryKey: ["search"] }),
       queryClient.invalidateQueries({
         queryKey: documentQueryKeys.list(spaceId),
+        exact: true,
       }),
       ...(widgetId
         ? [
@@ -1408,7 +1428,10 @@ function SpaceTreeSection({
       pendingSaveRef.current = null
       try {
         await updateDocOrder(spaceId, { order, sort: "custom" })
-        await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.spaces,
+          exact: true,
+        })
       } catch (err) {
         console.error("Failed to save doc order:", err)
         toast.error("Failed to save order")
@@ -2296,20 +2319,10 @@ export function AppSidebar() {
     }
   }, [currentPath, spaces, activeGroup])
 
-  // Subscribe to space events on the first available space to detect new spaces
+  // Every Space socket hears spaces_changed; keeping the first Space's socket
+  // open lets the shared socket refresh the Spaces list when any Space changes.
   const firstSpaceId = spaces?.[0]?.id
-  const { subscribe: subscribeSpaceEvents } = useSpaceEvents(firstSpaceId)
-
-  useEffect(() => {
-    const unsub = subscribeSpaceEvents((msg) => {
-      // space_update covers settings changes (e.g. manual doc order) written
-      // by another client — the watcher emits it when space.json changes.
-      if (msg.type === "spaces_changed" || msg.type === "space_update") {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
-      }
-    })
-    return unsub
-  }, [subscribeSpaceEvents, queryClient])
+  useSpaceEvents(firstSpaceId)
 
   // Filter spaces by active group
   const filteredSpaces = spaces
@@ -2347,7 +2360,10 @@ export function AppSidebar() {
   }) => {
     try {
       const { spaceId } = await createSpace(data)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       navigate({ to: "/spaces/$spaceId", params: { spaceId } })
       if (isMobile) setOpen(false)
     } catch (err) {

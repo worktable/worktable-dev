@@ -3,7 +3,6 @@ import type {
   DocumentListItem,
   SpaceFile,
 } from "@worktable/types"
-import type { WidgetListEntry } from "./widgets-api"
 import { documentPathKey } from "./document-views"
 import { buildTree } from "./tree"
 import type { DocSortMode, TreeInput, TreeNode } from "./tree"
@@ -44,15 +43,13 @@ export function documentFolderPaths(items: DocumentListItem[]): Set<string> {
 
 /**
  * Project catalog entries into tree inputs with the labels people see: a
- * Markdown or rich-text doc's first heading, an HTML doc's name, otherwise the
- * catalog title.
+ * Markdown or rich-text doc's first heading, otherwise the catalog title,
+ * which for an HTML doc is its name.
  */
 export function documentTreeInputResolver(
-  docs: DocListEntry[],
-  widgets: WidgetListEntry[]
+  docs: DocListEntry[]
 ): (item: DocumentListItem) => TreeInput {
   const docDetails = new Map(docs.map((doc) => [doc.path, doc]))
-  const widgetDetails = new Map(widgets.map((widget) => [widget.id, widget]))
   const legacyDocFor = (
     item: Extract<DocumentListItem, { kind: "document" }>
   ) => {
@@ -74,18 +71,11 @@ export function documentTreeInputResolver(
         health: item.health,
       }
     }
-    const widgetCandidate = widgetDetails.get(item.path)
     const doc = legacyDocFor(item)
-    const widget =
-      widgetCandidate &&
-      item.format.id === "worktable.html" &&
-      !!widgetCandidate.archive === !!item.archived
-        ? widgetCandidate
-        : undefined
     return {
       path: item.path,
       kind: "document" as const,
-      title: doc?.headings?.[0]?.trim() || widget?.name || item.title,
+      title: doc?.headings?.[0]?.trim() || item.title,
       format: item.format,
       health: item.health,
       archived: item.archived,
@@ -93,7 +83,7 @@ export function documentTreeInputResolver(
         doc?.provenance?.updatedAt ??
         (typeof doc?.updatedAt === "number"
           ? new Date(doc.updatedAt).toISOString()
-          : (widget?.updatedAt ?? item.updatedAt)),
+          : item.updatedAt),
     }
   }
 }
@@ -115,19 +105,17 @@ export interface SpaceDocumentTrees {
 export function buildSpaceDocumentTrees({
   documents,
   docs,
-  widgets,
   sort,
   order,
   separateTemporary = false,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
   sort: DocSortMode
   order?: string[]
   separateTemporary?: boolean
 }): SpaceDocumentTrees {
-  const toTreeInput = documentTreeInputResolver(docs, widgets)
+  const toTreeInput = documentTreeInputResolver(docs)
   const options = { folderPaths: documentFolderPaths(documents) }
   const treeSort = { mode: sort, order }
   const build = (items: DocumentListItem[]) =>

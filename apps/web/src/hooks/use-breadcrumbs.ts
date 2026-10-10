@@ -42,7 +42,6 @@ export function useBreadcrumbs(): Breadcrumb[] {
         ? buildSpaceDocumentTrees({
             documents,
             docs,
-            widgets: space.widgets ?? [],
             sort: getDocSort(space),
             order: getDocOrder(space),
           })

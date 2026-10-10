@@ -67,6 +67,7 @@ import {
   tlsTerminatedUpstream,
 } from "./exposure-notice.ts";
 import { WorkspaceWatcher } from "./watcher.ts";
+import { startSearchWarmup } from "./search-index.ts";
 import { DocumentFilesystemCoordinator } from "./document-filesystem-coordinator.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
@@ -1837,6 +1838,9 @@ export function startServer(
   // Process-wide; samples while requests or socket frames arrive, idles otherwise.
   startEventLoopLagSampler();
 
+  // Build the search index while the server is quiet, not on the first search.
+  const stopSearchWarmup = workspaceRejected ? () => {} : startSearchWarmup();
+
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";
   // Print the actual bound port (server.port), not the requested `port` arg:
   // when called with port 0 the OS assigns an ephemeral port, and the old
@@ -1867,6 +1871,7 @@ export function startServer(
     // await stop(). The returned promise drains work that was already running.
     stopWorkspaceSafetyHandler()
     clearInterval(credentialTimer);
+    stopSearchWarmup();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator
       .stop()

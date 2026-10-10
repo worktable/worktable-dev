@@ -19,6 +19,7 @@ import {
   makeExcerpt,
   search,
   setSearchIndexRebuildHookForTests,
+  warmSearchIndex,
 } from "./search-index.ts";
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
 import { spacesRouter } from "./routes/spaces.ts";
@@ -563,6 +564,22 @@ describe("search excerpts", () => {
     expect(await searchResults(app, "tapir", common)).toContainEqual(
       expect.objectContaining({ path: "board" }),
     );
+  });
+
+  it("warms the index so the first search reads nothing", async () => {
+    let syncs = 0;
+    setSearchIndexRebuildHookForTests(async () => {
+      syncs += 1;
+    });
+    await warmSearchIndex();
+    expect(syncs).toBeGreaterThan(0);
+
+    syncs = 0;
+    expect(await searchResults(app, "observatory", {
+      scopes: ["search:read", "documents:read"],
+      documentMode: "common",
+    })).toContainEqual(expect.objectContaining({ path: "richdoc" }));
+    expect(syncs).toBe(0);
   });
 
   it("answers concurrent searches while a new Space is being listed", async () => {

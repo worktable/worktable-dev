@@ -886,6 +886,64 @@ async function freshVariant(
   }
 }
 
+// ── Warm-up after start ──────────────────────────────────────
+
+/** Quiet time before the warm-up starts, and the latest it waits. */
+const WARMUP_IDLE_MS = 3_000;
+const WARMUP_LATEST_MS = 30_000;
+/** The process counts as quiet below this share of one core. */
+const WARMUP_QUIET_CPU = 0.05;
+
+/**
+ * Build the index the app and agents search (common documents, archive
+ * hidden), one Space at a time with the same sliced, yielding syncs a search
+ * runs. A search that arrives meanwhile joins the Space being synced.
+ */
+export async function warmSearchIndex(stopped: () => boolean = () => false): Promise<void> {
+  const variant = variantFor("common", false, !recordSearchViaIndex());
+  if (!variant.spacesListed || variant.listing) await listVariantSpaces(variant);
+  for (const [id, segment] of [...variant.segments]) {
+    if (stopped()) return;
+    if (segmentNeedsSync(segment)) await syncSegment(variant, id, segment);
+  }
+}
+
+/**
+ * Warm the index in the background once the process has been quiet for a
+ * few seconds, or 30 s after start, so the first search after a start or a
+ * Cloud wake does not wait for the whole build. Returns a stop function.
+ */
+export function startSearchWarmup(): () => void {
+  const startedAt = Date.now();
+  let quietSince = startedAt;
+  let lastCheck = startedAt;
+  let lastCpu = process.cpuUsage();
+  let stopped = false;
+  const timer = setInterval(() => {
+    const now = Date.now();
+    const cpu = process.cpuUsage();
+    const usedMs = (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000;
+    if (usedMs > WARMUP_QUIET_CPU * (now - lastCheck)) quietSince = now;
+    lastCpu = cpu;
+    lastCheck = now;
+    if (now - quietSince < WARMUP_IDLE_MS && now - startedAt < WARMUP_LATEST_MS) {
+      return;
+    }
+    clearInterval(timer);
+    void warmSearchIndex(() => stopped).catch((error: unknown) => {
+      console.warn(
+        "[search] warm-up stopped:",
+        error instanceof Error ? error.message : error,
+      );
+    });
+  }, 1_000);
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 export async function search(
   query: string,
   opts?: {

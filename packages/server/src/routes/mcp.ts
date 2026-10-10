@@ -179,12 +179,18 @@ export async function handleRemoteMcpRequest(
   const reader = response.body.getReader()
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
-      const { done, value } = await reader.read()
-      if (done) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          release()
+          controller.close()
+        } else {
+          controller.enqueue(value)
+        }
+      } catch (error) {
         release()
-        controller.close()
-      } else {
-        controller.enqueue(value)
+        void server.close()
+        controller.error(error)
       }
     },
     cancel(reason) {

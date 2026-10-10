@@ -260,9 +260,9 @@ test("Desktop's own update controls replace the server's, even when its status f
   await expect(
     settings.getByText("Couldn’t get the update status.")
   ).toBeVisible()
-  await expect(
-    settings.getByText("You’re on the latest version.")
-  ).toHaveCount(0)
+  await expect(settings.getByText("You’re on the latest version.")).toHaveCount(
+    0
+  )
 })
 
 test("a manual API failure hides a previously confirmed update action", async ({

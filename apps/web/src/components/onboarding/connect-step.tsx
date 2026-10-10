@@ -238,6 +238,7 @@ function CloudCandidates({
   onUse,
   pending,
   disabled,
+  failed,
   onRefresh,
 }: {
   connections: AgentConnection[]
@@ -247,6 +248,8 @@ function CloudCandidates({
   onUse: (connection: AgentConnection) => void
   pending: boolean
   disabled: boolean
+  /** Cloud's list of signed-in agents could not be read. */
+  failed: boolean
   onRefresh: () => void
 }) {
   const candidates = connections.filter((connection) =>
@@ -261,7 +264,11 @@ function CloudCandidates({
   )
   return (
     <div className="space-y-3">
-      {ordered.length === 0 ? (
+      {failed ? (
+        <Callout variant="danger">
+          Couldn’t read the agents that signed in.
+        </Callout>
+      ) : ordered.length === 0 ? (
         <Waiting>Waiting for the agent to sign in…</Waiting>
       ) : (
         <ul className="divide-y divide-border/70 rounded-xl border border-border/70 bg-background">
@@ -525,7 +532,7 @@ export function ConnectStep({
   const current = connection.data
 
   if (!method) {
-    const loading = connection.isLoading
+    const loading = connection.isLoading || (isCloud && connections.isLoading)
     return (
       <>
         <StepHeading
@@ -537,9 +544,19 @@ export function ConnectStep({
           <div className="mt-7">
             <Waiting>Reading connection details…</Waiting>
           </div>
-        ) : connection.isError ? (
+        ) : connection.isError || (isCloud && connections.isError) ? (
           <Callout variant="danger" className="mt-7">
-            Couldn’t read the connection details.
+            Couldn’t read the connection details.{" "}
+            <button
+              type="button"
+              className="font-medium underline underline-offset-2"
+              onClick={() => {
+                void connection.refetch()
+                void connections.refetch()
+              }}
+            >
+              Try again
+            </button>
           </Callout>
         ) : (
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
@@ -782,6 +799,13 @@ export function ConnectStep({
           value={alwaysOnAgent.installCommand}
           copyLabel="Copy install command"
         />
+        {alwaysOnAgent.restartBeforeConnect ? (
+          <LabeledCopy
+            label="Restart its gateway if it doesn’t restart on its own"
+            value={alwaysOnAgent.restartCommand}
+            copyLabel="Copy restart command"
+          />
+        ) : null}
         {pairing || alwaysOnSignIn ? (
           <LabeledCopy
             label="Connect it"
@@ -891,6 +915,7 @@ export function ConnectStep({
       alwaysOn={method === "always-on" ? alwaysOnAgent : undefined}
       pending={useCloudConnection.isPending}
       disabled={!name.trim() || !anyAccess || cloudComplete}
+      failed={connections.isError}
       onUse={(item) => useCloudConnection.mutate(item)}
       onRefresh={() => void connections.refetch()}
     />

@@ -448,7 +448,7 @@ describe("runRetentionSweep — integration", () => {
     const tightened = await updateServerSettingsWithResult({
       history: { retention: { mode: "count", maxPerDoc: 1 } },
     })
-    await updateServerSettings({ history: { retention: { mode: "all" } } })
+    await updateServerSettings({ history: { retention: { mode: "count", maxPerDoc: 7 } } })
 
     const res = await runRetentionSweep(tightened.settings.history.retention, {
       expectedRetentionGeneration: tightened.retentionGeneration,
@@ -982,7 +982,7 @@ describe("round 5 hardening", () => {
     const held = withVersionKeyLock("swq", "docs", "note", () => gate)
     const prune = pruneDocKeyForCount("swq", "note") // queues behind the lock
     await whenVersionKeyLockDepthForTests("swq", "docs", "note", 2)
-    await updateServerSettings({ history: { retention: { mode: "all" } } })
+    await updateServerSettings({ history: { retention: { mode: "count", maxPerDoc: 7 } } })
     release()
     await held
     await prune

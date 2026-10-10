@@ -171,13 +171,20 @@ export interface ConnectionInfo {
 
 /**
  * Doc version-history retention policy. Mirrors the server's `RetentionPolicy`
- * (settings-store.ts): `all` keeps everything, `age` keeps versions newer than
- * N days, `count` keeps the newest N per doc.
+ * (settings-store.ts): `age` keeps versions newer than N days, `count` keeps
+ * the newest N per doc. `all` (keep everything) is no longer offered but can
+ * appear as the previous policy in a retention notice.
  */
 export type RetentionPolicy =
   | { mode: "all" }
   | { mode: "age"; maxAgeDays: number }
   | { mode: "count"; maxPerDoc: number }
+
+/** Set when the server moved the policy because the old one is no longer offered. */
+export interface RetentionNotice {
+  previous: RetentionPolicy
+  at: string
+}
 
 /**
  * Persisted server-side settings from GET /api/system/settings. `version` is a
@@ -189,7 +196,10 @@ export interface ServerSettings {
   editor: { spellcheck: boolean }
   /** Machine-local network config — the configured public origin for agent URLs. */
   network: { publicUrl: string | null }
-  history: { retention: RetentionPolicy }
+  history: {
+    retention: RetentionPolicy
+    retentionNotice: RetentionNotice | null
+  }
 }
 
 /**

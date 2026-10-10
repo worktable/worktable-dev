@@ -9,6 +9,7 @@ import {
   getServerSettings,
   invalidateServerSettingsCache,
   SETTINGS_DEFAULTS,
+  settleRetentionPolicy,
   updateServerSettings,
   updateServerSettingsWithResult,
 } from "./settings-store.ts";
@@ -359,14 +360,103 @@ describe("history.retention settings", () => {
     });
   }
 
-  it("defaults to keep-all", () => {
-    expect(getServerSettings().history.retention).toEqual({ mode: "all" });
+  function storeRetention(retention: unknown): void {
+    writeFileSync(settingsPath(), JSON.stringify({ version: 1, history: { retention } }));
+    invalidateServerSettingsCache();
+  }
+
+  const at = () => new Date("2026-10-10T12:00:00.000Z");
+
+  it("reads an unsettled policy as the longest one offered, so nothing is pruned early", () => {
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
   });
 
-  it("GET includes the history group", async () => {
-    const res = await app().fetch(new Request("http://localhost/api/system/settings"));
-    const body = (await res.json()) as { history: { retention: unknown } };
-    expect(body.history.retention).toEqual({ mode: "all" });
+  it("starts a new install at 30 days without a notice", async () => {
+    const settled = await settleRetentionPolicy({ hasVersionHistory: () => false, now: at });
+    expect(settled.history).toEqual({
+      retention: { mode: "age", maxAgeDays: 30 },
+      retentionNotice: null,
+    });
+    invalidateServerSettingsCache();
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 30 });
+  });
+
+  it("moves an install that already has history to 180 days with a notice", async () => {
+    const settled = await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    expect(settled.history).toEqual({
+      retention: { mode: "age", maxAgeDays: 180 },
+      retentionNotice: { previous: { mode: "all" }, at: "2026-10-10T12:00:00.000Z" },
+    });
+  });
+
+  it("moves a retired stored policy to 180 days and remembers it", async () => {
+    storeRetention({ mode: "all" });
+    let settled = await settleRetentionPolicy({ hasVersionHistory: () => false, now: at });
+    expect(settled.history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    expect(settled.history.retentionNotice?.previous).toEqual({ mode: "all" });
+
+    storeRetention({ mode: "count", maxPerDoc: 50 });
+    settled = await settleRetentionPolicy({ hasVersionHistory: () => false, now: at });
+    expect(settled.history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    expect(settled.history.retentionNotice?.previous).toEqual({ mode: "count", maxPerDoc: 50 });
+
+    storeRetention({ mode: "age", maxAgeDays: 365 });
+    settled = await settleRetentionPolicy({ hasVersionHistory: () => false, now: at });
+    expect(settled.history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    expect(settled.history.retentionNotice?.previous).toEqual({ mode: "age", maxAgeDays: 365 });
+  });
+
+  it("keeps an allowed stored policy as it is", async () => {
+    storeRetention({ mode: "count", maxPerDoc: 7 });
+    const settled = await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    expect(settled.history).toEqual({
+      retention: { mode: "count", maxPerDoc: 7 },
+      retentionNotice: null,
+    });
+  });
+
+  it("settles once: a second boot leaves the settled policy and notice alone", async () => {
+    await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    invalidateServerSettingsCache();
+    const again = await settleRetentionPolicy({
+      hasVersionHistory: () => false,
+      now: () => new Date("2026-11-01T00:00:00.000Z"),
+    });
+    expect(again.history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    expect(again.history.retentionNotice?.at).toBe("2026-10-10T12:00:00.000Z");
+  });
+
+  it("choosing a policy or dismissing clears the notice", async () => {
+    await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    const dismissed = await app().fetch(put({ history: { retentionNotice: null } }));
+    expect(dismissed.status).toBe(200);
+    expect(getServerSettings().history).toEqual({
+      retention: { mode: "age", maxAgeDays: 180 },
+      retentionNotice: null,
+    });
+
+    await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    storeRetention({ mode: "all" });
+    await settleRetentionPolicy({ hasVersionHistory: () => true, now: at });
+    const chosen = await app().fetch(put({ history: { retention: { mode: "age", maxAgeDays: 90 } } }));
+    expect(chosen.status).toBe(200);
+    expect(getServerSettings().history.retentionNotice).toBeNull();
+  });
+
+  it("never settles over a fail-closed settings file", async () => {
+    writeFileSync(settingsPath(), "{not json");
+    invalidateServerSettingsCache();
+    getServerSettings(); // quarantines the corrupt file and fails closed
+    const settled = await settleRetentionPolicy({ hasVersionHistory: () => false, now: at });
+    expect(settled.history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    expect(existsSync(join(appDir, "settings.fail-closed"))).toBe(true);
+  });
+
+  it("rejects setting a notice from outside", async () => {
+    expect(
+      (await app().fetch(put({ history: { retentionNotice: { previous: { mode: "all" }, at: "x" } } })))
+        .status,
+    ).toBe(400);
   });
 
   it("roundtrips an age policy and preserves sibling groups", async () => {
@@ -379,13 +469,14 @@ describe("history.retention settings", () => {
   });
 
   it("roundtrips a count policy", async () => {
-    const res = await app().fetch(put({ history: { retention: { mode: "count", maxPerDoc: 50 } } }));
+    const res = await app().fetch(put({ history: { retention: { mode: "count", maxPerDoc: 7 } } }));
     expect(res.status).toBe(200);
     invalidateServerSettingsCache();
-    expect(getServerSettings().history.retention).toEqual({ mode: "count", maxPerDoc: 50 });
+    expect(getServerSettings().history.retention).toEqual({ mode: "count", maxPerDoc: 7 });
   });
 
-  it("rejects an unknown mode with 400", async () => {
+  it("rejects keeping everything and unknown modes with 400", async () => {
+    expect((await app().fetch(put({ history: { retention: { mode: "all" } } }))).status).toBe(400);
     expect((await app().fetch(put({ history: { retention: { mode: "forever" } } }))).status).toBe(400);
   });
 
@@ -401,12 +492,12 @@ describe("history.retention settings", () => {
     ).toBe(400);
   });
 
-  it("rejects an over-cap numeric field with 400", async () => {
+  it("rejects more than 180 days or more than 7 per doc with 400", async () => {
     expect(
-      (await app().fetch(put({ history: { retention: { mode: "age", maxAgeDays: 4000 } } }))).status,
+      (await app().fetch(put({ history: { retention: { mode: "age", maxAgeDays: 181 } } }))).status,
     ).toBe(400);
     expect(
-      (await app().fetch(put({ history: { retention: { mode: "count", maxPerDoc: 20000 } } }))).status,
+      (await app().fetch(put({ history: { retention: { mode: "count", maxPerDoc: 8 } } }))).status,
     ).toBe(400);
   });
 
@@ -420,21 +511,17 @@ describe("history.retention settings", () => {
     expect((await app().fetch(put({ history: { nope: true } }))).status).toBe(400);
   });
 
-  it("tolerantly falls back to keep-all for a stored invalid policy", () => {
-    writeFileSync(
-      settingsPath(),
-      JSON.stringify({ version: 1, history: { retention: { mode: "age", maxAgeDays: -5 } } }),
-    );
-    invalidateServerSettingsCache();
-    expect(getServerSettings().history.retention).toEqual({ mode: "all" });
+  it("tolerantly reads a stored invalid or retired policy as 180 days", () => {
+    storeRetention({ mode: "age", maxAgeDays: -5 });
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    storeRetention({ mode: "all" });
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
+    storeRetention({ mode: "count", maxPerDoc: 50 });
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 180 });
   });
 
   it("tolerantly keeps a valid stored policy", () => {
-    writeFileSync(
-      settingsPath(),
-      JSON.stringify({ version: 1, history: { retention: { mode: "count", maxPerDoc: 10 } } }),
-    );
-    invalidateServerSettingsCache();
-    expect(getServerSettings().history.retention).toEqual({ mode: "count", maxPerDoc: 10 });
+    storeRetention({ mode: "count", maxPerDoc: 5 });
+    expect(getServerSettings().history.retention).toEqual({ mode: "count", maxPerDoc: 5 });
   });
 });

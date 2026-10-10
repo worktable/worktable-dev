@@ -43,11 +43,14 @@ can recover them into a separate document.
 ## Version history
 
 Open history from the document menu to read older versions, create a checkpoint,
-or restore one. History is retained indefinitely by default.
+or restore one. History keeps the last 30 days by default, and always each
+document's newest version.
 
-**Settings → History** can limit retention by age or versions per document.
-Applying a shorter limit deletes older versions immediately after confirmation.
-Choose a policy before relying on a particular version as your recovery path.
+**Settings → History** keeps 30, 90 or 180 days, or the last 7 versions of each
+document. Applying a shorter limit deletes older versions immediately after
+confirmation. Choose a policy before relying on a particular version as your
+recovery path. Workspaces that kept everything before these limits now keep 180
+days.
 
 HTML docs have their own history; restoring their source does not restore saved
 interface state or records they changed. [Drawings](/guides/drawings/) have

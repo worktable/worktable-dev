@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { createHash } from "node:crypto"
 import {
   cp,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -11,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
   readDocumentAnnotationsV2,
@@ -359,7 +360,7 @@ afterEach(async () => {
 })
 
 describe("document storage V2 migration", () => {
-  it("refuses to strand annotations without a document owner", async () => {
+  it("blocks unrepresentable spaces but not annotations for deleted documents", async () => {
     const copiedWorkspace = await freshCopy("orphan-annotation-copy")
     await writeFile(
       join(
@@ -372,6 +373,15 @@ describe("document storage V2 migration", () => {
       ),
       annotationFile()
     )
+    // A case-insensitive filesystem shows the owner's file under another
+    // spelling. A hard link presents the same file identity on any filesystem.
+    const annotationDocs = join(copiedWorkspace, "spaces", "notes", "annotations", "docs")
+    await link(join(annotationDocs, "kept.annotations.json"), join(annotationDocs, "Kept.annotations.json"))
+    // Without a Space manifest its documents are never inventoried, so a
+    // missing owner proves nothing.
+    const unlisted = "spaces/drafts/annotations/docs/plan.annotations.json"
+    await mkdir(dirname(join(copiedWorkspace, unlisted)), { recursive: true })
+    await writeFile(join(copiedWorkspace, unlisted), annotationFile())
     await mkdir(join(copiedWorkspace, "spaces", "Team Notes"), {
       recursive: true,
     })
@@ -392,8 +402,14 @@ describe("document storage V2 migration", () => {
     const plan = await planDocumentStorageV2Migration(copiedWorkspace)
 
     expect(plan.clean).toBe(false)
+    expect(plan.orphanedAnnotationFiles).toEqual([
+      "spaces/notes/annotations/docs/missing.annotations.json",
+    ])
+    expect(plan.diagnostics.map((diagnostic) => diagnostic.path)).not.toContain(
+      "spaces/notes/annotations/docs/missing.annotations.json"
+    )
     expect(plan.diagnostics).toContainEqual({
-      path: "spaces/notes/annotations/docs/missing.annotations.json",
+      path: unlisted,
       message: "legacy annotation has no inventoried document owner",
     })
     expect(plan.diagnostics).toContainEqual({
@@ -415,6 +431,10 @@ describe("document storage V2 migration", () => {
     const meta = JSON.parse(await readFile(metaPath, "utf8"))
     Object.assign(meta.widgets.dashboard.provenance, { versionId: reviewedId, updatedAt: reviewed.createdAt, contentHash: reviewed.after.contentHash })
     await writeFile(metaPath, JSON.stringify(meta))
+    // Older deletes could leave a document's annotation file behind.
+    const orphan = "spaces/notes/annotations/docs/deleted/doc.annotations.json"
+    await mkdir(dirname(join(source, orphan)), { recursive: true })
+    await writeFile(join(source, orphan), annotationFile())
     const copiedWorkspace = await freshCopy("copy")
     setWorkspaceRootOverride(copiedWorkspace)
     const [sourcePlan, copyPlan] = await Promise.all([
@@ -446,6 +466,11 @@ describe("document storage V2 migration", () => {
     expect(result.htmlDocumentsMigrated).toBe(1)
     expect(result.annotationFilesMigrated).toBe(2)
     expect(result.annotationsMigrated).toBe(2)
+    expect(result.orphanedAnnotationFiles).toEqual([orphan])
+    expect(await Bun.file(join(copiedWorkspace, orphan)).exists()).toBe(false)
+    expect(await readFile(join(result.backupPath, orphan), "utf8")).toBe(
+      annotationFile()
+    )
     expect(result.backupWorkspaceContentCheckpoint).toBe(
       copyPlan.workspaceContentCheckpoint
     )

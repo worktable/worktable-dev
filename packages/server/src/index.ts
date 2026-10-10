@@ -872,7 +872,8 @@ function startStorageUpgradeServer(
         url.pathname.startsWith("/auth/") ||
         url.pathname === "/api/workspace/storage-upgrade" ||
         url.pathname === "/api/workspace/storage-upgrade/retry" ||
-        (req.method === "GET" && url.pathname.startsWith("/assets/"))
+        (req.method === "GET" &&
+          (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico"))
       ) return app.fetch(req);
       if (req.method === "GET" && req.headers.get("accept")?.includes("text/html") &&
         !["/api/", "/internal/", "/mcp", "/yjs/", "/ws"].some(prefix => url.pathname.startsWith(prefix))) {

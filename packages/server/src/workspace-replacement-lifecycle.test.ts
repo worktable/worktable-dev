@@ -240,6 +240,8 @@ describe("live workspace replacement", () => {
       await waitFor("blocked")
       expect(ensureWorkspaceManifest().version).toBe(1)
       expect((await fetch(`${origin}/api/spaces`)).status).toBe(503)
+      // The blocked screen shows the app icon, so it must not be held back.
+      expect((await fetch(`${origin}/favicon.svg`)).status).not.toBe(503)
       expect((await fetch(`${origin}/api/workspace/storage-upgrade/retry`, {
         method: "POST", headers: { Origin: "https://untrusted.example" },
       })).status).toBe(401)

@@ -22,6 +22,7 @@ import {
   updateDocumentInventory,
 } from "./document-inventory.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
 
 let root = ""
 
@@ -103,6 +104,30 @@ describe("document inventory", () => {
       kind: "file",
       relativePath: "docs/converted.md",
     })
+
+    // Restating an unchanged claim, as every save does, is not a change.
+    const before = await lstat(inventoryPath)
+    const events: string[] = []
+    const off = onWorkspaceChange((event) => {
+      events.push(event.type)
+    })
+    try {
+      await updateDocumentInventory("meta", {
+        upsert: [
+          {
+            documentId: id,
+            path: "converted",
+            format: { id: "worktable.markdown", sourceVersion: 1 },
+            source: { kind: "file", relativePath: "docs/converted.md" },
+          },
+        ],
+      })
+    } finally {
+      off()
+    }
+    const after = await lstat(inventoryPath)
+    expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs])
+    expect(events).toEqual([])
   })
 
   it("fails closed before invalid inventory state can escape a write", async () => {

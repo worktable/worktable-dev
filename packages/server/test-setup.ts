@@ -20,6 +20,7 @@ import { resetRecordDiagnosticsForTests } from "./src/record-store.ts";
 import { recordIndex } from "./src/record-index.ts";
 import { invalidateServerSettingsCache } from "./src/settings-store.ts";
 import { drainWorkspaceChanges } from "./src/workspace-events.ts";
+import { noteAllSpacesChanged } from "./src/workspace-read-model.ts";
 
 // Disable the server's fire-and-forget starter seed for the whole test process:
 // it is un-awaited, so it races each test's afterEach dir cleanup (ENOENT noise
@@ -63,4 +64,6 @@ afterEach(async () => {
   // The record index holds an open SQLite handle under the (temp) app dir and
   // subscribes to record events; both must not leak into the next test.
   recordIndex.stop();
+  // Read-model snapshots are keyed by Space id, which repeats across tests.
+  noteAllSpacesChanged();
 });

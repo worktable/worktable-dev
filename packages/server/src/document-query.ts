@@ -13,6 +13,7 @@ import type {
   DocumentSummary,
   DocumentRenderDisposition,
 } from "@worktable/types"
+import { CanonicalIdSchema } from "@worktable/types"
 import {
   buildDocumentCatalog,
   type DocumentCatalog,
@@ -46,8 +47,7 @@ import {
 import { resolveDocAliasIn } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
-  getDocArchiveInfoMap,
-  getDocLifetimeFactsMap,
+  getDocMetaFactsMaps,
   readSpace,
   sanitizeDocPath,
   type DocLifetimeFacts,
@@ -55,6 +55,7 @@ import {
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { withWidgetWriteLock } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { readSpaceSnapshot } from "./workspace-read-model.ts"
 
 const DOCUMENT_READ_BUDGET: DocumentOperationBudget = {
   maxInputBytes: 512 * 1024,
@@ -355,11 +356,44 @@ async function documentQueryContext(
       ? [claim.path]
       : []
   )
-  const [docArchives, docLifetimes] = await Promise.all([
-    getDocArchiveInfoMap(spaceId, metadataPaths),
-    getDocLifetimeFactsMap(spaceId, metadataPaths),
-  ])
+  const { archives: docArchives, lifetimes: docLifetimes } =
+    await getDocMetaFactsMaps(spaceId, metadataPaths)
   return { catalog, registry, docArchives, docLifetimes }
+}
+
+/**
+ * The query context from the Space's read-model snapshot. Only for reads:
+ * writers build fresh under the document path lock.
+ */
+function snapshotDocumentQueryContext(
+  spaceId: string,
+  options: { lockHeld?: boolean } = {}
+): Promise<DocumentQueryContext> {
+  if (!CanonicalIdSchema.safeParse(spaceId).success) {
+    return Promise.reject(new DocumentSpaceNotFoundError(spaceId))
+  }
+  const workspaceRoot = getWorkspaceRoot()
+  const spaceRoot = resolve(workspaceRoot, "spaces", spaceId)
+  return readSpaceSnapshot({
+    workspaceRoot,
+    spaceId,
+    sources: [
+      "space.json",
+      "documents.meta.json",
+      "docs.meta.json",
+      "doc-aliases.json",
+    ].map((name) => resolve(spaceRoot, name)),
+    build: () => documentQueryContext(spaceId),
+    ...(options.lockHeld ? { lockHeld: true } : {}),
+  })
+}
+
+/** The Space's document catalog from its read-model snapshot, for reads. */
+export async function readDocumentCatalogSnapshot(
+  spaceId: string,
+  options: { lockHeld?: boolean } = {}
+): Promise<DocumentCatalog> {
+  return (await snapshotDocumentQueryContext(spaceId, options)).catalog
 }
 
 function entryKey(entry: DocumentCatalogEntry): string {
@@ -389,18 +423,17 @@ export async function listDocuments(options: {
   spaceId: string
   includeArchived?: boolean
 }): Promise<DocumentListItem[]> {
-  // Legacy Doc writes can replace one storage extension with another. Keep
-  // catalog discovery and its resulting view in the same namespace snapshot.
-  return withDocPathLock(options.spaceId, async () => {
-    const context = await documentQueryContext(options.spaceId)
-    return context.catalog.entries.flatMap((entry) => {
-      const classified = classifyEntry(
-        entry,
-        context,
-        options.includeArchived ?? false
-      )
-      return classified ? [classified.item] : []
-    })
+  // Legacy Doc writes can replace one storage extension with another. The
+  // snapshot is built under the namespace lock, so catalog discovery and its
+  // resulting view describe the same namespace state.
+  const context = await snapshotDocumentQueryContext(options.spaceId)
+  return context.catalog.entries.flatMap((entry) => {
+    const classified = classifyEntry(
+      entry,
+      context,
+      options.includeArchived ?? false
+    )
+    return classified ? [classified.item] : []
   })
 }
 
@@ -425,12 +458,18 @@ export async function listDocumentLifetimeTargets(
   )
 }
 
-/** As listDocumentLifetimeTargets, for callers already holding the doc-path lock. */
+/**
+ * As listDocumentLifetimeTargets, for callers already holding the doc-path
+ * lock. Only a read may ask for the read-model snapshot.
+ */
 export async function listDocumentLifetimeTargetsLocked(
-  spaceId: string
+  spaceId: string,
+  options: { snapshot?: boolean } = {}
 ): Promise<DocumentLifetimeTarget[]> {
   {
-    const context = await documentQueryContext(spaceId)
+    const context = options.snapshot
+      ? await snapshotDocumentQueryContext(spaceId, { lockHeld: true })
+      : await documentQueryContext(spaceId)
     return context.catalog.entries.flatMap((entry) => {
       const classified = classifyEntry(entry, context, true)
       if (!classified || classified.kind !== "document") return []

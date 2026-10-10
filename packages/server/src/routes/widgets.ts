@@ -9,6 +9,7 @@ import { z } from "zod";
 import { DocumentLifetimeSchema, WIDGET_RESERVED_SEGMENTS, WidgetIdSchema, type WidgetFile } from "@worktable/types";
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import { readSpace, slugifyDocPath } from "../store.ts";
+import { readDocumentCatalogSnapshot } from "../document-query.ts";
 import { getWidgetPath, listWidgets, readWidget, readWidgetDocument, setWidgetArchived, updateWidgetMetadata, withWidgetWriteLock, writeWidget } from "../widget-store.ts";
 import { createRecord, deleteRecord, queryRecords, readWidgetState, RecordQueryError, updateRecord, writeWidgetState } from "../record-store.ts";
 import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidgetHostStyles, injectWidgetRuntime, validateWidgetHtml } from "../widget-authoring.ts";
@@ -262,7 +263,12 @@ widgetsRouter.get("/", async (c) => {
   const includeArchived = c.req.query("includeArchived") === "true";
   const { data: space, error } = await readSpace(spaceId);
   if (error || !space) return c.json({ error: error ?? "Space not found", code: "NOT_FOUND" }, 404);
-  return c.json({ widgets: await listWidgets(spaceId, { includeArchived }) });
+  return c.json({
+    widgets: await listWidgets(spaceId, {
+      includeArchived,
+      catalog: () => readDocumentCatalogSnapshot(spaceId),
+    }),
+  });
 });
 
 widgetsRouter.post("/", async (c) => {

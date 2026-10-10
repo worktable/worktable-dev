@@ -86,12 +86,15 @@ export type PairingTarget =
       kind: "mcp-client";
       client: string | null;
       displayName?: string;
+      /** Icon the owner chose for the new agent. */
+      icon?: string;
     }
   | {
       kind: "agent-adapter";
       adapter: string;
       participantName: string;
       defaultSpaceId?: string;
+      icon?: string;
     };
 
 interface StoredPairingSession {

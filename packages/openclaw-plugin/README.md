@@ -16,8 +16,15 @@ The plugin requires OpenClaw 2026.7.1-2 or newer and a supported Node release:
 
 ## Connect
 
-For a local or self-hosted Worktable, open **Settings → Agents → OpenClaw** and
-run the generated connection command as the user who owns the OpenClaw Gateway.
+For a local or self-hosted Worktable, run this as the user who owns the
+OpenClaw Gateway, then approve the agent at the link it prints:
+
+```sh
+openclaw worktable connect --server https://worktable.example.com
+```
+
+Or open **Settings → Agents → OpenClaw** in Worktable and run the generated
+command, which includes a one-time pairing code.
 
 For Worktable Cloud, run:
 

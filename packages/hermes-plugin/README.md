@@ -33,12 +33,15 @@ Sign in when Hermes opens the Worktable sign-in page. On a computer without a
 browser, open the printed link on another device and paste the final address
 back into Hermes.
 
-**Local or self-hosted Worktable:** in Worktable, open **Settings → Agents →
-Hermes**, select **Connect**, and run the command it shows:
+**Local or self-hosted Worktable:** run connect with its address, then approve
+Hermes at the link it prints, choosing its name, icon, and access:
 
 ```sh
-hermes worktable connect https://worktable.example.com --pairing-code ABCDE-12345
+hermes worktable connect https://worktable.example.com
 ```
+
+Or open **Settings → Agents → Hermes** in Worktable, select **Connect**, and
+run the command it shows, which includes a one-time pairing code.
 
 Then restart the gateway:
 

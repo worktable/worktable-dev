@@ -1526,3 +1526,133 @@ describe("progress (code surface)", () => {
     expect(badCode.status).toBe(404);
   });
 });
+
+describe("connection requests (an agent asks, the owner approves)", () => {
+  async function ask(): Promise<{ code: string; pollToken: string; approvalUrl: string }> {
+    const res = await app.fetch(
+      jsonReq("POST", "/api/pairing/requests", {
+        body: {
+          target: {
+            kind: "agent-adapter",
+            adapter: "hermes",
+            installationId: "hci_request_install",
+          },
+          hostname: "studio",
+          name: "Hermes",
+        },
+      })
+    );
+    expect(res.status).toBe(201);
+    return (await res.json()) as {
+      code: string;
+      pollToken: string;
+      approvalUrl: string;
+    };
+  }
+
+  async function poll(pollToken: string) {
+    const res = await app.fetch(
+      jsonReq("POST", "/api/pairing/requests/poll", { body: { pollToken } })
+    );
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  it("pairs an agent with the name, icon, and access its owner approved", async () => {
+    const asked = await ask();
+    expect(new URL(asked.approvalUrl).pathname).toBe("/connect");
+    expect(new URL(asked.approvalUrl).searchParams.get("code")).toBe(asked.code);
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "pending" });
+
+    const seen = await app.fetch(
+      jsonReq("GET", `/api/pairing/requests/${asked.code}`)
+    );
+    expect(seen.status).toBe(200);
+    const seenText = await seen.text();
+    expect(seenText).not.toContain(asked.pollToken);
+    expect(JSON.parse(seenText)).toMatchObject({
+      request: {
+        userCode: asked.code,
+        target: { kind: "agent-adapter", adapter: "hermes" },
+        hostname: "studio",
+        suggestedName: "Hermes",
+      },
+    });
+
+    // An always-on agent cannot be approved without threads.
+    const withoutThreads = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          access: { threads: false, read: true, edit: true },
+        },
+      })
+    );
+    expect(withoutThreads.status).toBe(400);
+
+    const approved = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          icon: "brain",
+          access: { threads: true, read: true, edit: false },
+        },
+      })
+    );
+    expect(approved.status).toBe(200);
+
+    const delivered = await poll(asked.pollToken);
+    const pairingCode = delivered.body["code"];
+    expect(delivered.body["status"]).toBe("approved");
+    expect(typeof pairingCode).toBe("string");
+    // The code goes to the asking agent once.
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "expired" });
+
+    const redeemed = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: pairingCode,
+          hostname: "studio",
+          installationId: "hci_request_install",
+        },
+      })
+    );
+    expect(redeemed.status).toBe(200);
+    const payload = (await redeemed.json()) as { token: string; participantName: string };
+    expect(payload.participantName).toBe("Ada");
+    const completed = await app.fetch(
+      jsonReq("POST", "/api/pairing/complete", {
+        bearer: payload.token,
+        body: { code: pairingCode },
+      })
+    );
+    expect(completed.status).toBe(200);
+    expect(await listAgentConnections()).toMatchObject([
+      {
+        displayName: "Ada",
+        platform: "hermes",
+        icon: "brain",
+        mode: "always-on",
+        access: { threads: true, read: true, edit: false },
+      },
+    ]);
+  });
+
+  it("tells the agent when its owner declines, and keeps answered requests answered", async () => {
+    const asked = await ask();
+    const denied = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/deny`)
+    );
+    expect(denied.status).toBe(200);
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "denied" });
+    const late = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          access: { threads: true, read: true, edit: true },
+        },
+      })
+    );
+    expect(late.status).toBe(404);
+    expect((await poll("not-a-real-poll-token")).status).toBe(404);
+  });
+});

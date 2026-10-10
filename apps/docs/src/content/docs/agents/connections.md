@@ -72,8 +72,9 @@ Install its Worktable plugin:
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-For local or self-hosted Worktable, generate the participant's single-use
-pairing command in Settings. For Cloud, run the displayed Agent Registration
+For local or self-hosted Worktable, run `openclaw worktable connect --server
+<address>` and approve the agent at the link it prints, or generate a
+single-use pairing command in Settings. For Cloud, run the displayed Agent Registration
 command and complete the claim in the browser. The OpenClaw plugin includes
 Worktable skills; a separate skills installation is unnecessary.
 
@@ -97,8 +98,9 @@ Then connect the Hermes profile:
 - **Cloud:** `hermes worktable connect https://app.worktable.cloud`, then sign in
   when Hermes opens the Worktable sign-in page. On a computer without a browser,
   open the printed link elsewhere and paste the final address back into Hermes.
-- **Local or self-hosted:** generate the single-use command in **Settings →
-  Agents → Hermes** and run it where Hermes is installed.
+- **Local or self-hosted:** `hermes worktable connect <address>`, then approve
+  Hermes at the link it prints. Or generate the single-use command in
+  **Settings → Agents → Hermes** and run it where Hermes is installed.
 
 Restart the gateway with `hermes gateway restart`. Hermes then answers thread
 messages addressed to it and uses Worktable's tools and skills in any of its

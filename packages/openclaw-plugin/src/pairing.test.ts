@@ -14,6 +14,7 @@ import {
   ensureOpenClawInstallationId,
   pairWorktableChannel,
   registerWorktableAgent,
+  requestWorktablePairing,
   resumePendingPairingCompletion,
 } from "./pairing.js"
 
@@ -60,6 +61,81 @@ afterEach(async () => {
     process.env.OPENCLAW_STATE_DIR = originalStateDir
   }
   globalThis.fetch = originalFetch
+})
+
+describe("OpenClaw asking Worktable to connect", () => {
+  async function serveRequests(polls: Array<Record<string, unknown>>) {
+    const stateDir = await mkdtemp(join(tmpdir(), "worktable-request-"))
+    tempDirs.push(stateDir)
+    process.env.OPENCLAW_STATE_DIR = stateDir
+    const seen: Array<{ path: string; body: Record<string, unknown> }> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const path = new URL(request.url).pathname
+        const body = (await request.json()) as Record<string, unknown>
+        seen.push({ path, body })
+        if (path === "/api/pairing/requests") {
+          return Response.json(
+            {
+              code: "BCDF-GHJK",
+              pollToken: "poll-secret",
+              approvalUrl: `${new URL(request.url).origin}/connect?code=BCDF-GHJK`,
+              interval: 1,
+            },
+            { status: 201 }
+          )
+        }
+        if (path === "/api/pairing/requests/poll") {
+          return Response.json(polls.shift() ?? { status: "expired" })
+        }
+        // Stop at redeem: the request flow's job ends with the right code.
+        return Response.json({ error: "stop" }, { status: 400 })
+      },
+    })
+    servers.push(server)
+    return { server: `http://127.0.0.1:${server.port}`, seen }
+  }
+
+  it("waits for approval, then pairs with the code Worktable approved", async () => {
+    const { server, seen } = await serveRequests([
+      { status: "pending" },
+      { status: "approved", code: "T83PD-NSQDP" },
+    ])
+    const shown: string[] = []
+    await expect(
+      requestWorktablePairing({
+        server,
+        participantName: "Lobster",
+        onApprovalNeeded: ({ code }) => shown.push(code),
+        sleep: () => Promise.resolve(),
+      })
+    ).rejects.toThrow("stop")
+    expect(shown).toEqual(["BCDF-GHJK"])
+    expect(seen[0]?.body).toMatchObject({
+      target: { kind: "agent-adapter", adapter: "openclaw" },
+      name: "Lobster",
+    })
+    expect(seen.at(-1)).toMatchObject({
+      path: "/api/pairing/redeem",
+      body: { code: "T83PD-NSQDP" },
+    })
+  })
+
+  it("stops without pairing when the owner declines", async () => {
+    const { server, seen } = await serveRequests([
+      { status: "pending" },
+      { status: "denied" },
+    ])
+    await expect(
+      requestWorktablePairing({
+        server,
+        onApprovalNeeded: () => undefined,
+        sleep: () => Promise.resolve(),
+      })
+    ).rejects.toThrow("declined")
+    expect(seen.some(({ path }) => path === "/api/pairing/redeem")).toBe(false)
+  })
 })
 
 describe("OpenClaw Worktable pairing completion", () => {

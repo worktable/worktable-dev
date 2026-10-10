@@ -6,7 +6,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import urlsplit
 
 TIMEOUT_SECONDS = 15
@@ -93,3 +93,37 @@ def complete(origin: str, code: str, token: str, attempts: int = 3) -> None:
             if (error.status is not None and error.status < 500) or attempt == attempts:
                 raise
             time.sleep(0.25 * attempt)
+
+
+def request_approval(
+    origin: str,
+    installation_id: str,
+    hostname: str,
+    name: Optional[str],
+    on_approval_needed: Callable[[str, str], None],
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    """Ask Worktable to connect; return the pairing code once its owner approves."""
+    request = _request(
+        f"{origin}/api/pairing/requests",
+        {
+            "target": {"kind": "agent-adapter", "adapter": "hermes", "installationId": installation_id},
+            "hostname": hostname,
+            **({"name": name} if name else {}),
+        },
+    )
+    poll_token = request.get("pollToken")
+    if not isinstance(poll_token, str) or not isinstance(request.get("approvalUrl"), str):
+        raise PairingError("Worktable returned an incomplete connection request", "INVALID_REQUEST")
+    on_approval_needed(str(request.get("code")), request["approvalUrl"])
+    interval = max(1.0, float(request.get("interval") or 2))
+    while True:
+        sleep(interval)
+        result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
+        status = result.get("status")
+        if status == "approved" and isinstance(result.get("code"), str):
+            return result["code"]
+        if status == "denied":
+            raise PairingError("The Worktable owner declined this connection.", "DENIED")
+        if status == "expired":
+            raise PairingError("The connection request expired. Run the connect command again.", "EXPIRED")

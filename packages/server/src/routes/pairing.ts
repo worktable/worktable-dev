@@ -43,6 +43,14 @@ import {
   resolveParticipant,
 } from "../participant-store.ts";
 import { upsertAgentConnection } from "../agent-connection-store.ts";
+import {
+  ConnectionRequestLimitError,
+  createConnectionRequest,
+  getConnectionRequest,
+  pollConnectionRequest,
+  settleConnectionRequest,
+  type ConnectionRequestTarget,
+} from "../connection-request-store.ts";
 import { readSpace } from "../store.ts";
 import { getWorkspaceRoot } from "../workspace.ts";
 import { resolveOrigin } from "./system.ts";
@@ -725,6 +733,7 @@ pairingRouter.post("/complete", async (c) => {
           participant,
           machine: session.redeemedBy?.hostname ?? null,
           credentialId: tokenId,
+          ...(target.icon ? { icon: target.icon } : {}),
         });
       } else {
         const clientId = session.redeemedBy?.all
@@ -751,6 +760,7 @@ pairingRouter.post("/complete", async (c) => {
           machine,
           credentialId: tokenId,
           displayName: target.displayName,
+          ...(target.icon ? { icon: target.icon } : {}),
         });
       }
       if (!connectionStored) {
@@ -867,4 +877,197 @@ pairingRouter.post("/progress", async (c) => {
 
 // Owner routes mount last so code-surface POSTs match first; a GET to one of
 // those names falls through to the owner-gated :id lookup and 404s there.
+// ---- Connection requests: an agent asks, the owner approves --------------
+
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function parseRequestTarget(value: unknown): ConnectionRequestTarget | null {
+  if (!value || typeof value !== "object") return null;
+  const target = value as Record<string, unknown>;
+  if (
+    target.kind === "agent-adapter" &&
+    typeof target.adapter === "string" &&
+    AGENT_ADAPTER_ID.test(target.adapter) &&
+    typeof target.installationId === "string" &&
+    AGENT_ADAPTER_INSTALLATION_ID.test(target.installationId)
+  ) {
+    return {
+      kind: "agent-adapter",
+      adapter: target.adapter,
+      installationId: target.installationId,
+    };
+  }
+  if (target.kind === "mcp-client") {
+    const { ok, client } = parseClient(target.client);
+    return ok ? { kind: "mcp-client", client } : null;
+  }
+  return null;
+}
+
+// POST /api/pairing/requests — an agent that knows only this address asks to
+// connect. Its owner approves the returned code in Worktable.
+pairingRouter.post("/requests", async (c) => {
+  if (codeSurfaceLocked()) {
+    return c.json({ error: "Too many attempts. Try again later.", code: "RATE_LIMITED" }, 429);
+  }
+  const body = (await c.req.json().catch(() => null)) as {
+    target?: unknown;
+    hostname?: unknown;
+    name?: unknown;
+  } | null;
+  const target = parseRequestTarget(body?.target);
+  if (!target) {
+    return c.json(
+      { error: "target must name an agent adapter installation or an MCP client", code: "BAD_REQUEST" },
+      400
+    );
+  }
+  const name = typeof body?.name === "string" ? body.name.trim().slice(0, 100) : "";
+  try {
+    const request = await createConnectionRequest({
+      target,
+      hostname: sanitizeHostname(body?.hostname),
+      suggestedName: name || null,
+    });
+    const { origin } = resolveOrigin(c);
+    const approvalUrl = new URL("/connect", origin);
+    approvalUrl.searchParams.set("code", request.userCode);
+    return c.json(
+      {
+        code: request.userCode,
+        pollToken: request.pollToken,
+        approvalUrl: approvalUrl.href,
+        expiresAt: request.expiresAt,
+        interval: 2,
+      },
+      201
+    );
+  } catch (error) {
+    if (error instanceof ConnectionRequestLimitError) {
+      return c.json({ error: error.message, code: "RATE_LIMITED" }, 429);
+    }
+    throw error;
+  }
+});
+
+// POST /api/pairing/requests/poll — the asking agent waits for its owner.
+// Once approved it receives a one-time pairing code and pairs as usual.
+pairingRouter.post("/requests/poll", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    pollToken?: unknown;
+  } | null;
+  if (typeof body?.pollToken !== "string" || !body.pollToken) {
+    return c.json({ error: "pollToken is required", code: "BAD_REQUEST" }, 400);
+  }
+  const mcpUrl = remoteMcpUrl(resolveOrigin(c).origin);
+  const result = await pollConnectionRequest(
+    body.pollToken,
+    async (target, approval) => {
+      const icon = approval.icon ? { icon: approval.icon } : {};
+      const { code } = await createPairingSession({
+        client: target.kind === "mcp-client" ? target.client : null,
+        target:
+          target.kind === "agent-adapter"
+            ? {
+                kind: "agent-adapter",
+                adapter: target.adapter,
+                participantName: approval.displayName,
+                ...icon,
+              }
+            : {
+                kind: "mcp-client",
+                client: target.client,
+                displayName: approval.displayName,
+                ...icon,
+              },
+        scopes: scopesForAccess(approval.access),
+        mcpUrl,
+      });
+      return code;
+    }
+  );
+  if (!result) {
+    recordCodeFailure();
+    return c.json({ error: "Unknown connection request", code: "NOT_FOUND" }, 404);
+  }
+  return c.json(result);
+});
+
+// GET /api/pairing/requests/:code — the owner looks at a waiting agent.
+ownerSurface.get("/requests/:code", async (c) => {
+  const request = await getConnectionRequest(c.req.param("code"));
+  if (!request) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ request });
+});
+
+// POST /api/pairing/requests/:code/approve — with its name, icon, and access.
+ownerSurface.post("/requests/:code/approve", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    displayName?: unknown;
+    icon?: unknown;
+    access?: unknown;
+  } | null;
+  const displayName =
+    typeof body?.displayName === "string" ? body.displayName.trim() : "";
+  if (!displayName || displayName.length > 100) {
+    return c.json({ error: "displayName must be 1 to 100 characters", code: "BAD_REQUEST" }, 400);
+  }
+  if (
+    body?.icon !== undefined &&
+    body.icon !== null &&
+    (typeof body.icon !== "string" || body.icon.length > 64 || !ICON_NAME.test(body.icon))
+  ) {
+    return c.json({ error: "icon must be an icon name or null", code: "BAD_REQUEST" }, 400);
+  }
+  const access = parseAccess(body?.access);
+  if (!access) {
+    return c.json(
+      { error: "access must have boolean threads, read, and edit", code: "BAD_REQUEST" },
+      400
+    );
+  }
+  if (scopesForAccess(access).length === 0) {
+    return c.json({ error: "choose at least one kind of access", code: "BAD_REQUEST" }, 400);
+  }
+  const pending = await getConnectionRequest(c.req.param("code"));
+  if (pending?.target.kind === "agent-adapter" && !access.threads) {
+    return c.json(
+      {
+        error: "an always-on agent needs threads: that is how it receives messages",
+        code: "BAD_REQUEST",
+      },
+      400
+    );
+  }
+  const settled = await settleConnectionRequest(c.req.param("code"), {
+    displayName,
+    icon: typeof body?.icon === "string" ? body.icon : null,
+    access,
+  });
+  if (!settled) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ ok: true as const });
+});
+
+// POST /api/pairing/requests/:code/deny
+ownerSurface.post("/requests/:code/deny", async (c) => {
+  const settled = await settleConnectionRequest(c.req.param("code"), null);
+  if (!settled) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ ok: true as const });
+});
+
 pairingRouter.route("/", ownerSurface);

@@ -163,6 +163,8 @@ export async function upsertAgentConnection(input: {
   machine: string | null
   credentialId: string
   displayName?: string
+  /** Applied to a new agent only; the owner changes it afterwards. */
+  icon?: string
 }): Promise<boolean> {
   let carryName: { token: TokenMetadata; name: string } | undefined
   const stored = await serialized(async () => {

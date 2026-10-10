@@ -79,6 +79,24 @@ def connect(ctx: Any, args: Any) -> int:
     origin = pairing.worktable_origin(args.server)
     name = (args.name or DEFAULT_PARTICIPANT_NAME).strip()
     code: Optional[str] = (args.pairing_code or "").strip() or None
+    # A Worktable with sign-in (Cloud) advertises its MCP resource.
+    resource = None if code else pairing.mcp_resource(origin)
+    if not code and not resource:
+        # This Worktable pairs agents: ask it, and its owner approves us there.
+        def show(user_code: str, approval_url: str) -> None:
+            print(
+                f"Approve this Hermes in Worktable:\n{approval_url}\n"
+                f"Check that Worktable shows {user_code}. Waiting for approval…",
+                flush=True,
+            )
+
+        code = pairing.request_approval(
+            origin,
+            DeliveryStore(ctx.state).installation_id(),
+            socket.gethostname()[:64],
+            (args.name or "").strip() or None,
+            show,
+        )
 
     if code:
         store = DeliveryStore(ctx.state)
@@ -105,14 +123,7 @@ def connect(ctx: Any, args: Any) -> int:
         pairing.report(origin, code, "verifying", "Waiting for the Hermes gateway to connect.")
         print(f"Connected Hermes to {redeemed.get('workspaceName') or origin} as {redeemed.get('participantName') or name}.")
     else:
-        resource = pairing.mcp_resource(origin)
-        if not resource:
-            print(
-                "This Worktable needs a pairing code. In Worktable, open Settings → Agents → Hermes, "
-                "then run the command it shows.",
-                file=sys.stderr,
-            )
-            return 2
+        assert resource  # Without sign-in, Hermes asked for approval above.
         _enable(resource, "oauth")
         settings.save(server=origin, auth="oauth", participant_name=name, pending_pairing_code=None)
         try:
@@ -181,7 +192,10 @@ def register_cli(ctx: Any) -> None:
         actions = parser.add_subparsers(dest="worktable_command", required=True)
         connect_parser = actions.add_parser("connect", help="Connect this Hermes profile to Worktable")
         connect_parser.add_argument("server", help="Your Worktable address, such as https://app.worktable.cloud")
-        connect_parser.add_argument("--pairing-code", help="Code from Settings → Agents → Hermes on a self-hosted Worktable")
+        connect_parser.add_argument(
+            "--pairing-code",
+            help="Code from Settings → Agents → Hermes; without one, approve Hermes in Worktable",
+        )
         connect_parser.add_argument("--name", help="How this agent appears in Worktable threads")
         actions.add_parser("status", help="Show the Worktable connection")
         actions.add_parser("disconnect", help="Remove the Worktable connection from this profile")

@@ -6,7 +6,6 @@ import {
   type AgentConnection,
 } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
-import { Input } from "@worktable/ui/components/input"
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -18,13 +17,11 @@ import {
   useResponsiveDialog,
 } from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
-import { cn } from "@worktable/ui/lib/utils"
 
-import { IconSearchGrid } from "@/components/icon-search-grid"
 import { updateAgentConnection } from "@/lib/agent-connections-api"
 import { threadQueryKeys } from "@/lib/threads-queries"
-import { AgentAccessFields } from "./agent-access-fields"
-import { AgentAvatar, agentLogoUrl } from "./agent-avatar"
+import { AgentAvatar } from "./agent-avatar"
+import { AgentFields } from "./agent-fields"
 
 function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
   return a?.threads === b?.threads && a?.read === b?.read && a?.edit === b?.edit
@@ -82,7 +79,6 @@ export function AgentEditDialog({
     !sameAccess(access, connection.access)
   const canSave =
     trimmed.length > 0 && trimmed.length <= 100 && changed && !save.isPending
-  const hasLogo = agentLogoUrl(connection.platform) !== null
 
   return (
     <ResponsiveDialog open onOpenChange={onOpenChange}>
@@ -102,58 +98,17 @@ export function AgentEditDialog({
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         <ResponsiveDialogBody>
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="agent-name"
-                className="text-sm font-medium text-foreground"
-              >
-                Name
-              </label>
-              <Input
-                id="agent-name"
-                value={name}
-                maxLength={100}
-                onChange={(event) => setName(event.target.value)}
-                autoFocus={!isMobile}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">Icon</span>
-              <IconSearchGrid
-                selected={icon}
-                onSelect={setIcon}
-                columns={9}
-                className="max-h-40"
-                leading={
-                  <button
-                    type="button"
-                    onClick={() => setIcon(null)}
-                    title={hasLogo ? `${platform.name} logo` : "Initials"}
-                    aria-label={hasLogo ? `${platform.name} logo` : "Initials"}
-                    aria-pressed={icon === null}
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-md transition-colors duration-150",
-                      icon === null ? "bg-surface-selected" : "hover:bg-accent"
-                    )}
-                  >
-                    <AgentAvatar
-                      name={trimmed || connection.displayName}
-                      platform={connection.platform}
-                      className="size-6"
-                    />
-                  </button>
-                }
-              />
-            </div>
-            {access ? (
-              <AgentAccessFields
-                value={access}
-                onChange={setAccess}
-                alwaysOn={connection.mode === "always-on"}
-              />
-            ) : null}
-          </div>
+          <AgentFields
+            platform={connection.platform}
+            name={name}
+            onNameChange={setName}
+            icon={icon}
+            onIconChange={setIcon}
+            access={access}
+            onAccessChange={setAccess}
+            alwaysOn={connection.mode === "always-on"}
+            autoFocus={!isMobile}
+          />
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

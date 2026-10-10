@@ -114,3 +114,37 @@ export function createPairing(
 export function getPairing(id: string): Promise<PairingSession> {
   return fetchJSON<PairingSession>(`/api/pairing/${encodeURIComponent(id)}`)
 }
+
+/** An agent waiting for its owner to approve it. */
+export interface ConnectionRequest {
+  userCode: string
+  target:
+    | { kind: "agent-adapter"; adapter: string; installationId: string }
+    | { kind: "mcp-client"; client: string | null }
+  hostname: string | null
+  suggestedName: string | null
+  createdAt: string
+  expiresAt: string
+}
+
+export function getConnectionRequest(
+  code: string
+): Promise<{ request: ConnectionRequest }> {
+  return fetchJSON(`/api/pairing/requests/${encodeURIComponent(code)}`)
+}
+
+export function approveConnectionRequest(
+  code: string,
+  approval: { displayName: string; icon: string | null; access: AgentAccess }
+): Promise<{ ok: true }> {
+  return fetchJSON(
+    `/api/pairing/requests/${encodeURIComponent(code)}/approve`,
+    { method: "POST", body: JSON.stringify(approval) }
+  )
+}
+
+export function denyConnectionRequest(code: string): Promise<{ ok: true }> {
+  return fetchJSON(`/api/pairing/requests/${encodeURIComponent(code)}/deny`, {
+    method: "POST",
+  })
+}

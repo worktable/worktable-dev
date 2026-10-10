@@ -4,6 +4,7 @@
 
 - Show the complete sign-in link when connecting to Worktable Cloud. OpenClaw masked part of it, so the link could not be opened.
 - Accept the claim code exactly as Worktable Cloud shows it, including the hyphen.
+- Keep the path of a Worktable address, such as a Worktable Cloud workspace's agent address.
 - Connect to a local or self-hosted Worktable without a pairing code: `openclaw worktable connect --server <address>` prints a link, and the agent connects once you approve it in Worktable with its name, icon, and access.
 
 ## 0.0.14

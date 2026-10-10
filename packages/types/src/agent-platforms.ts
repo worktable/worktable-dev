@@ -97,7 +97,16 @@ export function platformForAdapter(adapter: string): AgentPlatformId {
 export function platformForClient(
   clientId: string | null | undefined
 ): AgentPlatformId {
-  return (clientId && CLIENT_PLATFORMS[clientId.toLowerCase()]) || "other"
+  return clientPlatform(clientId?.toLowerCase()) ?? "other"
+}
+
+/** Own entries only: a client named like `constructor` is no platform. */
+function clientPlatform(
+  client: string | null | undefined
+): AgentPlatformId | null {
+  return client && Object.hasOwn(CLIENT_PLATFORMS, client)
+    ? CLIENT_PLATFORMS[client]!
+    : null
 }
 
 /** The token label `worktable mcp setup` shares among one computer's agents. */
@@ -114,7 +123,7 @@ export function clientIdForAgentLabel(label: string | null): string | null {
     .replace(/^manual-/, "")
     .replace(/@.*$/, "")
     .toLowerCase()
-  return client in CLIENT_PLATFORMS ? client : null
+  return clientPlatform(client) ? client : null
 }
 
 /** A readable default name for an agent known only by its token label. */
@@ -123,4 +132,23 @@ export function defaultAgentNameForLabel(label: string | null): string | null {
   if (label === SHARED_LOCAL_AGENT_LABEL) return "Local agents"
   const client = clientIdForAgentLabel(label)
   return client ? AGENT_PLATFORMS[platformForClient(client)].name : null
+}
+
+/**
+ * The platform an app's name points to, for sign-ins that carry only a name
+ * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code").
+ */
+export function platformForName(
+  name: string | null | undefined
+): AgentPlatformId {
+  if (!name) return "other"
+  const slug = name.trim().toLowerCase().replace(/\s+/g, "-")
+  const client = clientPlatform(slug)
+  if (client) return client
+  // "Hermes Agent", "OpenClaw Studio": a platform's id followed by more words.
+  return (
+    AGENT_PLATFORM_IDS.find(
+      (id) => id !== "other" && (slug === id || slug.startsWith(`${id}-`))
+    ) ?? "other"
+  )
 }

@@ -656,7 +656,7 @@ function ConnectStep({
   })
   const connections = useQuery({
     queryKey: ["agent-connections"],
-    queryFn: listAgentConnections,
+    queryFn: () => listAgentConnections(),
     refetchInterval:
       method && connection.data?.mcpAuthMode === "oauth" ? 3_000 : false,
   })
@@ -674,6 +674,9 @@ function ConnectStep({
       shouldPollPairing(query.state.data) ? 2_000 : false,
   })
   const isCloud = connection.data?.mcpAuthMode === "oauth"
+  // Cloud pairs always-on agents like a local Worktable once its gateway can
+  // route them; until then they connect with a sign-in.
+  const alwaysOnSignIn = isCloud && !connection.data?.agentPairing
 
   const create = useMutation({
     mutationFn: () => {
@@ -826,7 +829,7 @@ function ConnectStep({
     : ""
   const alwaysOnCommand = pairing
     ? alwaysOnAgent.localConnectCommand(pairing.serverOrigin, pairing.code)
-    : isCloud && currentConnection
+    : alwaysOnSignIn && currentConnection
       ? alwaysOnAgent.cloudConnectCommand(origin, agentName.trim())
       : ""
 
@@ -1099,7 +1102,9 @@ function ConnectStep({
                 />
                 <ol className="list-decimal space-y-1.5 pl-5 text-sm leading-6 text-muted-foreground marker:text-foreground/60">
                   <li>Install the Worktable plugin.</li>
-                  {isCloud ? null : <li>Create the connection command.</li>}
+                  {alwaysOnSignIn ? null : (
+                    <li>Create the connection command.</li>
+                  )}
                   <li>
                     Run both commands where {alwaysOnAgent.name} is installed.
                   </li>
@@ -1116,7 +1121,7 @@ function ConnectStep({
                   value={alwaysOnAgent.installCommand}
                   label="Copy install command"
                 />
-                {!isCloud && !pairing ? (
+                {!alwaysOnSignIn && !pairing ? (
                   <Button
                     disabled={!agentName.trim() || create.isPending}
                     onClick={() => create.mutate()}
@@ -1132,7 +1137,7 @@ function ConnectStep({
                     label="Copy connection command"
                   />
                 ) : null}
-                {isCloud ? (
+                {alwaysOnSignIn ? (
                   <CloudCandidates
                     connections={connections.data?.connections ?? []}
                     baseline={baseline}

@@ -53,7 +53,7 @@ import {
   verifyRealtimeCredential,
   wsAuthRequired,
 } from "./auth.ts";
-import { gatewayAdmits, isHosted } from "./hosted.ts";
+import { gatewayAdmits, hostedAgentBase, isHosted } from "./hosted.ts";
 import { warmAuthServerCaches } from "./oauth-jwt.ts";
 import { verifyRawCookieHeader, hasOwnerPasswordSync } from "./session-store.ts";
 import { hasScope, listTokens, tokenIdFromToken, type TokenIdentity } from "./token-store.ts";
@@ -299,20 +299,16 @@ app.route("/api/mcp", mcpRouter);
 // progress routes are authenticated by the pairing code alone (the remote
 // agent machine has no cookie or bearer yet), while its owner routes mount
 // their own tokens-style gate stack internally.
-// Pairing and the connector script are the LOCAL / self-hosted agent-connect
-// path: a code is redeemed for an endpoint and a locally minted wt_ token.
-// Hosted deliberately has one credential model — AS-issued OAuth bearers (M1,
-// proven against real Claude and ChatGPT connectors) — because a wt_ token is
-// tenant-local: the control plane does not know it and structurally cannot
-// resolve it to a tenant, so the gateway could never route it. Rather than
-// leave these as silent dead ends behind app.worktable.cloud, they are closed
-// in hosted mode with the same HOSTED_DISABLED shape the owner-password
-// surface uses.
+// Pairing connects an agent with a credential this Worktable issues. On Cloud
+// the gateway routes that credential to this workspace through its agent
+// address (/w/<id>/…), and this workspace's agent list inventories and revokes
+// it. A gateway that does not send the agent address cannot route it, so
+// pairing stays closed behind such a gateway.
 app.use("/api/pairing/*", async (c, next) => {
-  if (isHosted()) {
+  if (isHosted() && !hostedAgentBase(c.req.raw)) {
     return c.json(
       {
-        error: "Pairing is not available on Worktable Cloud; connect your agent with OAuth.",
+        error: "Pairing is not available on this Worktable Cloud yet. Connect your agent with a sign-in.",
         code: "HOSTED_DISABLED",
       },
       403

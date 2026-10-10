@@ -3216,6 +3216,15 @@ async function writeDocUnlocked(
   let serialized: string | undefined;
   const fileText = (): string =>
     (serialized ??= docFileText(preparedBlocks.content));
+  // The caller compared canonical blocks before taking the lock; if the file
+  // already holds exactly these bytes, there is nothing to write.
+  if (
+    options?.canonical &&
+    sourceSnapshot?.bytes &&
+    Buffer.from(fileText(), "utf8").equals(sourceSnapshot.bytes)
+  ) {
+    preparedBlocks.skipped = true;
+  }
 
   if (resolved?.format === "md") {
     const after: DocReadResult = {
@@ -3600,7 +3609,10 @@ export async function docStat(
 ): Promise<{
   updatedAt: number;
   format: DocFileFormat;
-  /** Changes whenever the file is replaced or rewritten: inode, size and modification time. */
+  /**
+   * Changes whenever the file is replaced or rewritten. Includes the change
+   * time, which tools that restore modification times cannot set back.
+   */
   fingerprint: string;
 } | null> {
   const resolved = resolveDocFile(spaceId, docPath);
@@ -3610,7 +3622,7 @@ export async function docStat(
     return {
       updatedAt: s.mtimeMs,
       format: resolved.format,
-      fingerprint: `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`,
+      fingerprint: `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`,
     };
   } catch {
     return null;

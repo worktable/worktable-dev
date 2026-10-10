@@ -211,6 +211,36 @@ function readYjsStateHeader(docPath: string): Record<string, unknown> {
   );
 }
 
+/** Write a room state file for the document's current version. */
+async function writeStateFile(
+  docPath: string,
+  header: Record<string, unknown>,
+  blocks: unknown[]
+): Promise<void> {
+  const provenance = (await getDocProvenance("test-space", docPath))!;
+  const editor = await getServerEditor();
+  const room: Y.Doc = editor.blocksToYDoc(blocks, "document-store");
+  const headerBytes = Buffer.from(
+    JSON.stringify({
+      type: "worktable.yjs-state",
+      docContentHash: provenance.contentHash,
+      docVersionId: provenance.versionId,
+      storedAt: new Date().toISOString(),
+      ...header,
+    })
+  );
+  mkdirSync(dirname(yjsStatePath(docPath)), { recursive: true });
+  writeFileSync(
+    yjsStatePath(docPath),
+    Buffer.concat([
+      Buffer.from(`WTYJS1\n${headerBytes.length}\n`),
+      headerBytes,
+      Y.encodeStateAsUpdate(room),
+    ])
+  );
+  room.destroy();
+}
+
 describe("YjsDocManager sync persistence", () => {
   beforeEach(async () => {
     resetWorkspaceSafetyForTests();
@@ -1977,12 +2007,20 @@ describe("YjsDocManager sync persistence", () => {
     await yjsManager.flushPersist("test-space", "outside");
     const saved = (await readDoc("test-space", "outside")).data;
 
-    // An outside write the room misses: no watcher runs here, and the file
-    // keeps its old modification time.
+    // Give the file a whole-second modification time that an outside writer
+    // can restore exactly, and let the room see the file with it.
     const path = getDocPath("test-space", "outside");
-    const { atime, mtime } = statSync(path);
-    writeFileSync(path, JSON.stringify([para("written outside the room")]));
-    utimesSync(path, atime, mtime);
+    const second = Math.floor(statSync(path).mtimeMs / 1000);
+    utimesSync(path, second, second);
+    typeAndUndo(ydoc);
+    await yjsManager.flushPersist("test-space", "outside");
+
+    // An outside write the room misses: no watcher runs here, and the file
+    // is rewritten in place at the same size and modification time.
+    const stored = readFileSync(path, "utf8");
+    writeFileSync(path, stored.replace("room text", "ROOM TEXT"));
+    utimesSync(path, second, second);
+    expect(statSync(path).size).toBe(Buffer.byteLength(stored));
 
     // Typing that leaves the room exactly as it was last saved.
     typeAndUndo(ydoc);
@@ -1996,38 +2034,15 @@ describe("YjsDocManager sync persistence", () => {
       updatedBy: "user",
       source: "browser-yjs",
     });
-    const provenance = (await getDocProvenance("test-space", "state-v1"))!;
     const editor = await getServerEditor();
-    const legacyRoom: Y.Doc = editor.blocksToYDoc(
-      [
-        {
-          id: "legacy-diagram",
-          type: "codeBlock",
-          props: { language: "mermaid" },
-          content: [{ type: "text", text: "flowchart TD\nOld-->State", styles: {} }],
-        },
-      ],
-      "document-store"
-    );
-    const header = Buffer.from(
-      JSON.stringify({
-        type: "worktable.yjs-state",
-        version: 1,
-        docContentHash: provenance.contentHash,
-        docVersionId: provenance.versionId,
-        storedAt: new Date().toISOString(),
-      })
-    );
-    mkdirSync(dirname(yjsStatePath("state-v1")), { recursive: true });
-    writeFileSync(
-      yjsStatePath("state-v1"),
-      Buffer.concat([
-        Buffer.from(`WTYJS1\n${header.length}\n`),
-        header,
-        Y.encodeStateAsUpdate(legacyRoom),
-      ])
-    );
-    legacyRoom.destroy();
+    await writeStateFile("state-v1", { version: 1 }, [
+      {
+        id: "legacy-diagram",
+        type: "codeBlock",
+        props: { language: "mermaid" },
+        content: [{ type: "text", text: "flowchart TD\nOld-->State", styles: {} }],
+      },
+    ]);
 
     const manager = new YjsDocManager();
     try {
@@ -2038,6 +2053,31 @@ describe("YjsDocManager sync persistence", () => {
         type: "mermaid",
         props: { data: "flowchart TD\nOld-->State" },
       });
+    } finally {
+      await manager.shutdown();
+    }
+  });
+
+  it("saves restored state that is newer than the document file", async () => {
+    // An edit that arrived while the last save was writing is in the room's
+    // state file but not in the document file, and the process then stopped.
+    await writeDoc("test-space", "restored", [para("saved text")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    await writeStateFile(
+      "restored",
+      { version: 2, mermaidNormalizer: MERMAID_BLOCK_NORMALIZER_VERSION },
+      [para("typed during the last save")]
+    );
+
+    const manager = new YjsDocManager();
+    try {
+      await manager.getOrCreateDoc("test-space", "restored");
+      await manager.flushPersist("test-space", "restored");
+      expect(JSON.stringify((await readDoc("test-space", "restored")).data)).toContain(
+        "typed during the last save"
+      );
     } finally {
       await manager.shutdown();
     }

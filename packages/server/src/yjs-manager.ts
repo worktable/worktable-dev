@@ -583,9 +583,12 @@ export class YjsDocManager {
       contentGeneration,
       intentGeneration: 0,
       diskContentHash,
-      // A room opened from the file holds the file's content. A normalized
+      // A room imported from the file holds the file's content; a normalized
       // legacy shape is written by the next genuine edit, not by opening.
-      savedGeneration: contentGeneration,
+      // Restored state can be newer than the file (an edit that arrived
+      // while the last save was writing, then a crash), so the first save of
+      // a restored room compares it with the file.
+      savedGeneration: persisted ? 0 : contentGeneration,
       diskObservation: fileStat
         ? {
             fingerprint: fileStat.fingerprint,

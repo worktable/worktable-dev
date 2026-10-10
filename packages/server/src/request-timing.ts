@@ -9,7 +9,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import type { Context, MiddlewareHandler, Next } from "hono"
 import { routePath } from "hono/route"
 import { debugLogging } from "./debug-log.ts"
-import { recordRouteLatency } from "./perf-diagnostics.ts"
+import { noteServerActivity, recordRouteLatency } from "./perf-diagnostics.ts"
 
 /**
  * Spans in header order. `lock-wait` is time spent waiting for a space lock,
@@ -196,5 +196,6 @@ async function timeRequest(
  */
 export const serverTiming: MiddlewareHandler = (c, next) => {
   const current = new RequestTiming()
+  noteServerActivity(current.startedAt)
   return requestTiming.run(current, timeRequest, c, next, current)
 }

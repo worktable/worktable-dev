@@ -1,7 +1,10 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, jest } from "bun:test"
 import {
   LatencyHistogram,
+  noteServerActivity,
   RollingHistogram,
+  startEventLoopLagSampler,
+  stopEventLoopLagSampler,
   timerDrift,
 } from "./perf-diagnostics.ts"
 
@@ -33,6 +36,26 @@ describe("performance histograms", () => {
     expect(later.count).toBe(1)
     expect(later.max).toBe(1)
     expect(window.snapshot(10 * 60_000).count).toBe(0)
+  })
+
+  it("samples lag only while the server is active", () => {
+    stopEventLoopLagSampler()
+    jest.useFakeTimers()
+    try {
+      startEventLoopLagSampler()
+      expect(jest.getTimerCount()).toBe(1)
+      jest.advanceTimersByTime(9_000)
+      noteServerActivity()
+      jest.advanceTimersByTime(9_000)
+      expect(jest.getTimerCount()).toBe(1)
+      jest.advanceTimersByTime(2_000)
+      expect(jest.getTimerCount()).toBe(0)
+      noteServerActivity()
+      expect(jest.getTimerCount()).toBe(1)
+    } finally {
+      stopEventLoopLagSampler()
+      jest.useRealTimers()
+    }
   })
 
   it("measures lag as lateness beyond the timer interval", () => {

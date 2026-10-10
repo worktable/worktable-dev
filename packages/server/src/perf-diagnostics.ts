@@ -140,8 +140,13 @@ export class RollingHistogram {
 // ── Event-loop lag ──────────────────────────────────────────────────────────
 
 const LAG_INTERVAL_MS = 50
+// Lag only matters while work is happening. An idle server stops the timer so
+// Desktop on battery and Cloud tenants can sleep.
+const LAG_IDLE_AFTER_MS = 10_000
 const eventLoopLag = new RollingHistogram(10_000, 6, performance.now())
+let lagSamplerEnabled = false
 let lagTimer: ReturnType<typeof setInterval> | null = null
+let lastActivityAt = -Infinity
 
 /** How late a timer tick fired: time beyond the interval since the last tick. */
 export function timerDrift(
@@ -153,18 +158,42 @@ export function timerDrift(
 }
 
 /**
- * Measure event-loop lag as the drift of a 50 ms interval. Idempotent, and
- * unref'd so it never keeps the process alive.
+ * Measure event-loop lag as the drift of a 50 ms interval while the server is
+ * active. Idempotent; the timer is unref'd so it never keeps the process alive.
  */
 export function startEventLoopLagSampler(): void {
-  if (lagTimer) return
-  let previousTickAt = performance.now()
+  lagSamplerEnabled = true
+  noteServerActivity()
+}
+
+export function stopEventLoopLagSampler(): void {
+  lagSamplerEnabled = false
+  stopLagTimer()
+}
+
+/**
+ * A request or socket frame arrived. Sampling runs until 10 s pass without
+ * one, then stops completely until the next.
+ */
+export function noteServerActivity(now = performance.now()): void {
+  lastActivityAt = now
+  if (!lagSamplerEnabled || lagTimer) return
+  let previousTickAt = now
   lagTimer = setInterval(() => {
-    const now = performance.now()
-    eventLoopLag.record(timerDrift(previousTickAt, now, LAG_INTERVAL_MS), now)
-    previousTickAt = now
+    const tickAt = performance.now()
+    eventLoopLag.record(
+      timerDrift(previousTickAt, tickAt, LAG_INTERVAL_MS),
+      tickAt
+    )
+    previousTickAt = tickAt
+    if (tickAt - lastActivityAt > LAG_IDLE_AFTER_MS) stopLagTimer()
   }, LAG_INTERVAL_MS)
   lagTimer.unref?.()
+}
+
+function stopLagTimer(): void {
+  if (lagTimer) clearInterval(lagTimer)
+  lagTimer = null
 }
 
 // ── Route latency ───────────────────────────────────────────────────────────
@@ -269,8 +298,8 @@ export async function perfDiagnosticsSnapshot() {
   return {
     uptimeMs: Math.round(process.uptime() * 1000),
     eventLoopLag: {
-      sampling: lagTimer !== null,
       intervalMs: LAG_INTERVAL_MS,
+      idleAfterMs: LAG_IDLE_AFTER_MS,
       windowMs: eventLoopLag.windowMs,
       ...lag.summary(),
     },

@@ -2067,16 +2067,22 @@ describe("YjsDocManager sync persistence", () => {
     });
     await writeStateFile(
       "restored",
-      { version: 2, mermaidNormalizer: MERMAID_BLOCK_NORMALIZER_VERSION },
+      {
+        version: 2,
+        mermaidNormalizer: MERMAID_BLOCK_NORMALIZER_VERSION,
+        matchesDocument: false,
+      },
       [para("typed during the last save")]
     );
 
-    const manager = new YjsDocManager();
+    const manager = new YjsDocManager({ timing: { persistDebounceMs: 20 } });
     try {
+      // Opening the room is enough: no further edit arrives.
       await manager.getOrCreateDoc("test-space", "restored");
-      await manager.flushPersist("test-space", "restored");
-      expect(JSON.stringify((await readDoc("test-space", "restored")).data)).toContain(
-        "typed during the last save"
+      await waitFor(async () =>
+        JSON.stringify((await readDoc("test-space", "restored")).data).includes(
+          "typed during the last save"
+        )
       );
     } finally {
       await manager.shutdown();

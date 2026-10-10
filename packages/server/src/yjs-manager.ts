@@ -181,11 +181,22 @@ interface YjsStateHeader {
   // Version 2: the Mermaid normalizer version the stored blocks were checked
   // with and needed no change; null when they were not checked.
   mermaidNormalizer?: number | null;
+  // Version 2: the stored state holds exactly the content of the document
+  // version it names. False when it may hold edits the document lacks, such
+  // as one that arrived while that version was being saved.
+  matchesDocument?: boolean;
+}
+
+/** What a state file says about the room it stores. */
+interface StoredYjsStateFacts {
+  mermaidNormalized: boolean;
+  matchesDocument: boolean;
 }
 
 interface StoredYjsState {
   update: Uint8Array;
   mermaidNormalizer: number | null;
+  matchesDocument: boolean;
 }
 
 interface DocSnapshotIdentity {
@@ -299,7 +310,8 @@ function isYjsStateHeader(value: unknown): value is YjsStateHeader {
     candidate["type"] === YJS_STATE_FILE_TYPE &&
     (candidate["version"] === 1 ||
       (candidate["version"] === YJS_STATE_FILE_VERSION &&
-        (normalizer === null || typeof normalizer === "number"))) &&
+        (normalizer === null || typeof normalizer === "number") &&
+        typeof candidate["matchesDocument"] === "boolean")) &&
     typeof candidate["docContentHash"] === "string" &&
     typeof candidate["docVersionId"] === "string" &&
     typeof candidate["storedAt"] === "string"
@@ -309,7 +321,7 @@ function isYjsStateHeader(value: unknown): value is YjsStateHeader {
 function encodeYjsStateFile(
   update: Uint8Array,
   identity: DocSnapshotIdentity,
-  mermaidNormalized: boolean
+  facts: StoredYjsStateFacts
 ): Uint8Array {
   const header: YjsStateHeader = {
     type: YJS_STATE_FILE_TYPE,
@@ -317,7 +329,10 @@ function encodeYjsStateFile(
     docContentHash: identity.contentHash,
     docVersionId: identity.versionId,
     storedAt: new Date().toISOString(),
-    mermaidNormalizer: mermaidNormalized ? MERMAID_BLOCK_NORMALIZER_VERSION : null,
+    mermaidNormalizer: facts.mermaidNormalized
+      ? MERMAID_BLOCK_NORMALIZER_VERSION
+      : null,
+    matchesDocument: facts.matchesDocument,
   };
   const magic = textEncoder.encode(YJS_STATE_MAGIC);
   const headerBytes = textEncoder.encode(JSON.stringify(header));
@@ -385,6 +400,7 @@ async function readCurrentYjsState(
     return {
       update: decoded.update,
       mermaidNormalizer: decoded.header.mermaidNormalizer ?? null,
+      matchesDocument: decoded.header.matchesDocument ?? false,
     };
   } catch {
     return null;
@@ -392,18 +408,19 @@ async function readCurrentYjsState(
 }
 
 /**
- * Store the room's machine-local state for the portable version `identity`.
- * `mermaidNormalized` says the encoded blocks are known to need no Mermaid
- * normalization, so the next cold load can skip checking them.
+ * Store the room's machine-local state for the portable version `identity`,
+ * with what is known about it: blocks that need no Mermaid normalization let
+ * the next cold load skip checking them, and state that matches the document
+ * lets it start as saved.
  */
 async function writeYjsStateFile(
   path: string,
   update: Uint8Array,
   identity: DocSnapshotIdentity | undefined,
-  mermaidNormalized: boolean
+  facts: StoredYjsStateFacts
 ): Promise<void> {
   if (!identity) return;
-  await writeFileAtomic(path, encodeYjsStateFile(update, identity, mermaidNormalized));
+  await writeFileAtomic(path, encodeYjsStateFile(update, identity, facts));
 }
 
 // ── YjsDocManager ────────────────────────────────────────────
@@ -551,7 +568,7 @@ export class YjsDocManager {
             persistedYjsPath,
             Y.encodeStateAsUpdate(ydoc),
             portableProvenance,
-            true
+            { mermaidNormalized: true, matchesDocument: true }
           );
           if (!portableProvenance) {
             await removeFileIfExists(persistedYjsPath)
@@ -565,6 +582,7 @@ export class YjsDocManager {
       !isBrowserSource(portableProvenance.source) &&
       portableProvenance.source !== "rest-api";
     const contentGeneration = ++this.nextContentGeneration;
+    const restoredAhead = persisted !== null && !persisted.matchesDocument;
     const liveDoc: LiveDoc = {
       ydoc,
       spaceId,
@@ -586,9 +604,8 @@ export class YjsDocManager {
       // A room imported from the file holds the file's content; a normalized
       // legacy shape is written by the next genuine edit, not by opening.
       // Restored state can be newer than the file (an edit that arrived
-      // while the last save was writing, then a crash), so the first save of
-      // a restored room compares it with the file.
-      savedGeneration: persisted ? 0 : contentGeneration,
+      // while the last save was writing, then a crash) and is saved soon.
+      savedGeneration: restoredAhead ? 0 : contentGeneration,
       diskObservation: fileStat
         ? {
             fingerprint: fileStat.fingerprint,
@@ -631,6 +648,7 @@ export class YjsDocManager {
     });
 
     this.docs.set(key, liveDoc);
+    if (restoredAhead) this.schedulePersist(key, spaceId, docPath);
     return liveDoc;
   }
 
@@ -1201,7 +1219,7 @@ export class YjsDocManager {
         yjsStatePath(spaceId, docPath),
         Y.encodeStateAsUpdate(liveDoc.ydoc),
         provenance,
-        false
+        { mermaidNormalized: false, matchesDocument: false }
       );
     } catch (error) {
       console.warn(
@@ -1451,7 +1469,7 @@ export class YjsDocManager {
         yjsStatePath(spaceId, docPath),
         Y.encodeStateAsUpdate(ydoc),
         provenance,
-        true
+        { mermaidNormalized: true, matchesDocument: true }
       );
     } catch (error) {
       console.warn(
@@ -2349,12 +2367,18 @@ export class YjsDocManager {
       if (!unchanged) unchanged = observation.canonicalHash === exportedHash;
       liveDoc.diskObservation = observation;
       if (unchanged) {
+        // Edits that arrived since the export are in the state but not in
+        // the document.
+        const asExported = liveDoc.contentGeneration === exportedGeneration;
         await writeYjsStateFile(
           yjsStatePath(spaceId, docPath),
           Y.encodeStateAsUpdate(liveDoc.ydoc),
           provenance,
-          liveDoc.contentGeneration === exportedGeneration &&
-            !normalizeMermaidBlocks(blocks).changed
+          {
+            mermaidNormalized:
+              asExported && !normalizeMermaidBlocks(blocks).changed,
+            matchesDocument: asExported,
+          }
         );
         liveDoc.lastPersistMs = fileStat.updatedAt;
         liveDoc.diskContentHash = observation.contentHash;
@@ -2433,11 +2457,17 @@ export class YjsDocManager {
       const updatedStat = await docStat(spaceId, docPath);
       const updatedProvenance =
         writeResult.provenance ?? (await getDocProvenance(spaceId, docPath));
+      // Edits that arrived while the document was written are in the state
+      // but not in the document.
+      const asExported = liveDoc.contentGeneration === exportedGeneration;
       await writeYjsStateFile(
         yjsStatePath(spaceId, docPath),
         Y.encodeStateAsUpdate(liveDoc.ydoc),
         updatedProvenance,
-        mermaidNormalized && liveDoc.contentGeneration === exportedGeneration
+        {
+          mermaidNormalized: mermaidNormalized && asExported,
+          matchesDocument: asExported,
+        }
       );
       liveDoc.lastPersistMs = updatedStat?.updatedAt ?? Date.now();
       liveDoc.diskObservation = updatedStat

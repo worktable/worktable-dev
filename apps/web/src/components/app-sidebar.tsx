@@ -46,7 +46,6 @@ import {
   useSpace,
   queryKeys,
 } from "@/lib/queries"
-import type { WidgetListEntry } from "@/lib/widgets-api"
 import { useSpaceDocs } from "@/lib/docs-queries"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
@@ -121,7 +120,6 @@ import type {
   DocListEntry,
   DocumentListItem,
   SpaceFile,
-  WidgetFile,
 } from "@worktable/types"
 import type { TreeNode } from "@/lib/tree"
 import {
@@ -339,11 +337,9 @@ function GroupSwitcher({
 
 function SpaceSection({
   space,
-  widgets,
   currentPath,
 }: {
   space: SpaceFile
-  widgets: WidgetFile[]
   currentPath: string
 }) {
   const isMobile = useIsMobile()
@@ -534,7 +530,6 @@ function SpaceSection({
           <div className="ml-4 pl-2">
             <SpaceContent
               spaceId={space.id}
-              widgets={widgets}
               currentPath={currentPath}
               onNavigate={handleNavigate}
               onNewDoc={handleNewDoc}
@@ -552,7 +547,6 @@ function SpaceSection({
 
 function SpaceContent({
   spaceId,
-  widgets,
   currentPath,
   onNavigate,
   onNewDoc,
@@ -560,7 +554,6 @@ function SpaceContent({
   docSort,
 }: {
   spaceId: string
-  widgets: WidgetFile[]
   currentPath: string
   onNavigate: () => void
   onNewDoc: (folder?: string) => void
@@ -579,21 +572,15 @@ function SpaceContent({
 
   const activeDocs = (docs ?? []).filter((doc) => !doc.archived)
   const archivedDocs = (docs ?? []).filter((doc) => doc.archived)
-  const activeWidgets = widgets.filter((widget) => !widget.archive)
-  const archivedWidgets = widgets.filter((widget) => widget.archive)
   const activeDocuments = (documents ?? []).filter(
     (document) => !documentListItemArchived(document)
   )
   const archivedDocuments = (documents ?? []).filter(documentListItemArchived)
 
-  // Widget mutations surface through the spaces query (the widget list is
-  // embedded there); refresh both it and the per-space query.
+  // HTML Docs are listed with the Space's documents; pins come with the
+  // Space itself.
   const refreshWidgets = async (widgetId?: string) => {
     await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.spaces,
-        exact: true,
-      }),
       queryClient.invalidateQueries({
         queryKey: queryKeys.space(spaceId),
         exact: true,
@@ -627,8 +614,6 @@ function SpaceContent({
         archivedDocs={archivedDocs}
         activeDocuments={activeDocuments}
         archivedDocuments={archivedDocuments}
-        activeWidgets={activeWidgets}
-        archivedWidgets={archivedWidgets}
         isLoading={documentsLoading}
         loadFailed={documentsError}
         onNewDoc={onNewDoc}
@@ -1001,23 +986,21 @@ function WidgetTreeActions({
 function WidgetTreeItem({
   node,
   spaceId,
-  widget,
   currentPath,
   onRefresh,
   reorder,
 }: {
   node: TreeNode
   spaceId: string
-  widget: WidgetListEntry
   currentPath: string
   onRefresh: (widgetId?: string) => Promise<void>
   reorder?: DocReorder
 }) {
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
-  const widgetPath = `/spaces/${spaceId}/documents/${widget.id}`
+  const widgetPath = `/spaces/${spaceId}/documents/${node.path}`
   const isActive = currentPath === widgetPath
-  const archived = !!widget.archive
+  const archived = !!node.archived
   const { dragProps, dropIndicator, isDragging } = treeDragPresentation(
     node,
     reorder
@@ -1038,7 +1021,7 @@ function WidgetTreeItem({
         {dropIndicator}
         <Link
           to="/spaces/$spaceId/documents/$"
-          params={{ spaceId, _splat: widget.id }}
+          params={{ spaceId, _splat: node.path }}
           onClick={handleNavigate}
           draggable={false}
           className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
@@ -1050,14 +1033,14 @@ function WidgetTreeItem({
           <AppWindow
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
-          <span className="truncate">{widget.name}</span>
+          <span className="truncate">{node.label}</span>
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/widget:opacity-100 has-[[data-popup-open]]:opacity-100">
           <WidgetTreeActions
-            key={widget.id}
+            key={node.path}
             spaceId={spaceId}
-            widgetId={widget.id}
-            documentName={widget.name}
+            widgetId={node.path}
+            documentName={node.label}
             archived={archived}
             currentPath={currentPath}
             onRefresh={onRefresh}
@@ -1283,8 +1266,6 @@ function SpaceTreeSection({
   archivedDocs,
   activeDocuments,
   archivedDocuments,
-  activeWidgets,
-  archivedWidgets,
   isLoading,
   loadFailed,
   onNewDoc,
@@ -1300,8 +1281,6 @@ function SpaceTreeSection({
   archivedDocs: DocListEntry[]
   activeDocuments: DocumentListItem[]
   archivedDocuments: DocumentListItem[]
-  activeWidgets: WidgetListEntry[]
-  archivedWidgets: WidgetListEntry[]
   isLoading: boolean
   loadFailed: boolean
   onNewDoc: (folder?: string) => void
@@ -1345,7 +1324,6 @@ function SpaceTreeSection({
   } = buildSpaceDocumentTrees({
     documents: allDocuments,
     docs: [...activeDocs, ...archivedDocs],
-    widgets: [...activeWidgets, ...archivedWidgets],
     sort: effectiveSort,
     order: effectiveOrder,
     separateTemporary: true,
@@ -1363,7 +1341,13 @@ function SpaceTreeSection({
     if (item.kind === "conflict") return [item.pathKey]
     return supportsManagedFolderDelete(item) ? [] : [item.path]
   })
-  const allWidgets = [...activeWidgets, ...archivedWidgets]
+  const htmlDocumentPaths = new Set(
+    allDocuments.flatMap((item) =>
+      item.kind === "document" && specializedDocumentView(item) === "html"
+        ? [item.path]
+        : []
+    )
+  )
 
   const canDrop = (target: TreeNode) =>
     drag !== null &&
@@ -1510,7 +1494,7 @@ function SpaceTreeSection({
                   onRefresh={onRefresh}
                   onWidgetRefresh={onWidgetRefresh}
                   docs={activeDocs}
-                  widgets={allWidgets}
+                  htmlDocumentPaths={htmlDocumentPaths}
                   folderMoveUnavailablePaths={folderMoveUnavailablePaths}
                   folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
                   folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
@@ -1551,7 +1535,7 @@ function SpaceTreeSection({
                       onRefresh={onRefresh}
                       onWidgetRefresh={onWidgetRefresh}
                       docs={activeDocs}
-                      widgets={allWidgets}
+                      htmlDocumentPaths={htmlDocumentPaths}
                       folderMoveUnavailablePaths={folderMoveUnavailablePaths}
                       folderArchiveUnavailablePaths={
                         folderArchiveUnavailablePaths
@@ -1594,7 +1578,7 @@ function SpaceTreeSection({
                       onRefresh={onRefresh}
                       onWidgetRefresh={onWidgetRefresh}
                       docs={archivedDocs}
-                      widgets={allWidgets}
+                      htmlDocumentPaths={htmlDocumentPaths}
                       folderMoveUnavailablePaths={folderMoveUnavailablePaths}
                       folderArchiveUnavailablePaths={
                         folderArchiveUnavailablePaths
@@ -1631,7 +1615,7 @@ function TreeItem({
   onRefresh,
   onWidgetRefresh,
   docs,
-  widgets,
+  htmlDocumentPaths,
   folderMoveUnavailablePaths,
   folderArchiveUnavailablePaths,
   folderDeleteUnavailablePaths,
@@ -1647,7 +1631,7 @@ function TreeItem({
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
+  htmlDocumentPaths: ReadonlySet<string>
   folderMoveUnavailablePaths: string[]
   folderArchiveUnavailablePaths: string[]
   folderDeleteUnavailablePaths: string[]
@@ -1656,21 +1640,15 @@ function TreeItem({
 }) {
   const view = specializedDocumentView(node)
   if (view === "html" && !node.isFolder) {
-    const widget = widgets.find(
-      (entry) => entry.id === node.path && !!entry.archive === !!node.archived
+    return (
+      <WidgetTreeItem
+        node={node}
+        spaceId={spaceId}
+        currentPath={currentPath}
+        onRefresh={onWidgetRefresh}
+        reorder={reorder}
+      />
     )
-    if (widget) {
-      return (
-        <WidgetTreeItem
-          node={node}
-          spaceId={spaceId}
-          widget={widget}
-          currentPath={currentPath}
-          onRefresh={onWidgetRefresh}
-          reorder={reorder}
-        />
-      )
-    }
   }
   if (view === "doc" && !node.isFolder) {
     const doc = docs.find(
@@ -1689,7 +1667,7 @@ function TreeItem({
           onRefresh={onRefresh}
           onWidgetRefresh={onWidgetRefresh}
           docs={docs}
-          widgets={widgets}
+          htmlDocumentPaths={htmlDocumentPaths}
           folderMoveUnavailablePaths={folderMoveUnavailablePaths}
           folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
           folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
@@ -1724,7 +1702,7 @@ function TreeItem({
       onRefresh={onRefresh}
       onWidgetRefresh={onWidgetRefresh}
       docs={docs}
-      widgets={widgets}
+      htmlDocumentPaths={htmlDocumentPaths}
       folderMoveUnavailablePaths={folderMoveUnavailablePaths}
       folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
       folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
@@ -1794,7 +1772,7 @@ function DocTreeItem({
   onRefresh,
   onWidgetRefresh,
   docs,
-  widgets,
+  htmlDocumentPaths,
   folderMoveUnavailablePaths,
   folderArchiveUnavailablePaths,
   folderDeleteUnavailablePaths,
@@ -1810,7 +1788,7 @@ function DocTreeItem({
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
+  htmlDocumentPaths: ReadonlySet<string>
   folderMoveUnavailablePaths: string[]
   folderArchiveUnavailablePaths: string[]
   folderDeleteUnavailablePaths: string[]
@@ -1837,11 +1815,10 @@ function DocTreeItem({
   const currentDocumentPath = currentPath.startsWith(documentRoutePrefix)
     ? currentPath.slice(documentRoutePrefix.length)
     : undefined
-  const currentWidgetId = widgets.some(
-    (widget) => widget.id === currentDocumentPath
-  )
-    ? currentDocumentPath
-    : undefined
+  const currentWidgetId =
+    currentDocumentPath && htmlDocumentPaths.has(currentDocumentPath)
+      ? currentDocumentPath
+      : undefined
   const currentWidgetUnderNode =
     currentWidgetId && documentPathIsAtOrBelow(currentWidgetId, node.path)
       ? currentWidgetId
@@ -2165,7 +2142,7 @@ function DocTreeItem({
                   onRefresh={onRefresh}
                   onWidgetRefresh={onWidgetRefresh}
                   docs={docs}
-                  widgets={widgets}
+                  htmlDocumentPaths={htmlDocumentPaths}
                   folderMoveUnavailablePaths={folderMoveUnavailablePaths}
                   folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
                   folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
@@ -2525,7 +2502,7 @@ export function AppSidebar() {
                 {activeSpaces.length > 0 && (
                   <div className="space-y-0.5">
                     {activeSpaces.map((space) => (
-                      <SpaceSectionWithViews
+                      <SpaceSection
                         key={space.id}
                         space={space}
                         currentPath={currentPath}
@@ -2554,7 +2531,7 @@ export function AppSidebar() {
                     <CollapsibleContent>
                       <div className="space-y-0.5">
                         {archivedSpaces.map((space) => (
-                          <SpaceSectionWithViews
+                          <SpaceSection
                             key={space.id}
                             space={space}
                             currentPath={currentPath}
@@ -2597,23 +2574,5 @@ export function AppSidebar() {
         />
       </DeferredMount>
     </div>
-  )
-}
-
-// ── Space section adapter ─────────────────
-
-function SpaceSectionWithViews({
-  space,
-  currentPath,
-}: {
-  space: SpaceFile & { widgets?: WidgetFile[] }
-  currentPath: string
-}) {
-  return (
-    <SpaceSection
-      space={space}
-      widgets={space.widgets ?? []}
-      currentPath={currentPath}
-    />
   )
 }

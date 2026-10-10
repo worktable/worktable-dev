@@ -4248,6 +4248,8 @@ fn first_run_destination_from_spaces(body: &str) -> Option<FirstRunDestination> 
                 if !is_worktable_seed {
                     return Some(FirstRunDestination::Root);
                 }
+                // The seed publishes the whole Space at once, already marked
+                // complete, so the marker proves its documents are there.
                 let complete = settings
                     .and_then(|settings| settings.get("starterSeedVersion"))
                     .and_then(|version| version.as_u64())
@@ -4255,15 +4257,7 @@ fn first_run_destination_from_spaces(body: &str) -> Option<FirstRunDestination> 
                     && settings
                         .and_then(|settings| settings.get("starterSeedStatus"))
                         .and_then(|status| status.as_str())
-                        == Some("complete")
-                    && space
-                        .get("widgets")
-                        .and_then(|widgets| widgets.as_array())
-                        .is_some_and(|widgets| {
-                            widgets.iter().any(|widget| {
-                                widget.get("id").and_then(|id| id.as_str()) == Some("welcome")
-                            })
-                        });
+                        == Some("complete");
                 if complete {
                     return Some(FirstRunDestination::Welcome);
                 }
@@ -7491,7 +7485,7 @@ mod tests {
             let mut request = [0_u8; 1024];
             let read = stream.read(&mut request).unwrap();
             assert!(String::from_utf8_lossy(&request[..read]).contains("GET /api/spaces"));
-            let body = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"},"widgets":[{"id":"welcome"}]}]}"#;
+            let body = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"}}]}"#;
             write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
@@ -7522,7 +7516,7 @@ mod tests {
             assert!(request.contains("GET /api/spaces"));
             assert!(request.contains("X-Worktable-Host-Verification: seed-proof"));
             thread::sleep(Duration::from_millis(900));
-            let body = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"},"widgets":[{"id":"welcome"}]}]}"#;
+            let body = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"}}]}"#;
             write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
@@ -7543,26 +7537,26 @@ mod tests {
 
     #[test]
     fn welcome_readiness_uses_the_spaces_response_contract() {
-        let complete_welcome = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"},"widgets":[{"id":"welcome"}]}]}"#;
+        let complete_welcome = r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"}}]}"#;
         assert_eq!(
             first_run_destination_from_spaces(complete_welcome),
             Some(FirstRunDestination::Welcome)
         );
         assert!(welcome_seed_response_ready(complete_welcome));
         assert!(!welcome_seed_response_ready(
-            r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"complete"},"widgets":[]}]}"#
+            r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":2,"starterSeedStatus":"complete"}}]}"#
         ));
         assert!(welcome_seed_response_ready(
             r#"{"spaces":[{"id":"welcome"}]}"#
         ));
-        let synced_space = r#"{"spaces":[{"id":"synced-notes","settings":{},"widgets":[]}]}"#;
+        let synced_space = r#"{"spaces":[{"id":"synced-notes","settings":{}}]}"#;
         assert_eq!(
             first_run_destination_from_spaces(synced_space),
             Some(FirstRunDestination::Root)
         );
         assert!(welcome_seed_response_ready(synced_space));
         assert!(!welcome_seed_response_ready(
-            r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"provisioning"},"widgets":[{"id":"welcome"}]}]}"#
+            r#"{"spaces":[{"id":"welcome","settings":{"starterSeedVersion":1,"starterSeedStatus":"provisioning"}}]}"#
         ));
         assert!(!welcome_seed_response_ready(r#"[{"id":"welcome"}]"#));
         assert!(!welcome_seed_response_ready(r#"{"spaces":[]}"#));

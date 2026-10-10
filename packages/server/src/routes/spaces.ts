@@ -3,8 +3,6 @@ import { Hono } from "hono";
 import { z } from "zod";
 import {
   listSpaces,
-  listDocsDetailed,
-  getSpaceArchiveInfo,
   mutateSpace,
   readSpace,
   writeSpace,
@@ -13,7 +11,6 @@ import {
   slugify,
   deduplicateSlug,
 } from "../store.ts";
-import { listWidgets } from "../widget-store.ts";
 import { buildSpaceIndex } from "../space-index.ts";
 import {
   START_HERE_LIMIT,
@@ -31,26 +28,10 @@ const ArchiveSpaceSchema = z.object({
   reason: z.string().optional(),
 });
 
-// GET /api/spaces — list all spaces (with doc paths for sidebar)
+// GET /api/spaces — every Space, archived ones included. Each Space's
+// documents are listed by /api/spaces/:spaceId/documents.
 spacesRouter.get("/", requireScope("docs:read"), requireScope("widgets:read"), async (c) => {
-  const includeArchived = c.req.query("includeArchived") === "true";
-  const spaces = await listSpaces();
-  const filteredSpaces = includeArchived
-    ? spaces
-    : spaces.filter((space) => !getSpaceArchiveInfo(space));
-
-  // Bundle doc paths and widget metadata per space to avoid N+1 sidebar fetches.
-  const spacesWithDocs = await Promise.all(
-    filteredSpaces.map(async (space) => {
-      const [docs, widgets] = await Promise.all([
-        listDocsDetailed(space.id, { includeArchived }),
-        listWidgets(space.id, { includeArchived }),
-      ]);
-      return { ...space, docs, widgets };
-    })
-  );
-
-  return c.json({ spaces: spacesWithDocs });
+  return c.json({ spaces: await listSpaces() });
 });
 
 // POST /api/spaces — create a new space
@@ -148,7 +129,7 @@ spacesRouter.get("/:spaceId/index", requireScope("docs:read"), async (c) => {
   return c.json({ index });
 });
 
-// GET /api/spaces/:spaceId — space + widgets
+// GET /api/spaces/:spaceId — space + resolved pins
 spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const { data: space, error } = await readSpace(spaceId);
@@ -157,11 +138,10 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:r
     return c.json({ error: error ?? "Not found", code: "NOT_FOUND" }, 404);
   }
 
-  const widgets = await listWidgets(spaceId, { includeArchived: true });
   const pins = hasScope(c.get("identity").scopes, "documents:read")
     ? await resolveStartHere(spaceId, space)
     : [];
-  return c.json({ space, widgets, pins });
+  return c.json({ space, pins });
 });
 
 // PUT /api/spaces/:spaceId/doc-order — persist common document-tree ordering.

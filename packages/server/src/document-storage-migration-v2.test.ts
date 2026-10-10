@@ -11,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
   readDocumentAnnotationsV2,
@@ -359,7 +359,7 @@ afterEach(async () => {
 })
 
 describe("document storage V2 migration", () => {
-  it("refuses to strand annotations without a document owner", async () => {
+  it("blocks unrepresentable spaces but not annotations for deleted documents", async () => {
     const copiedWorkspace = await freshCopy("orphan-annotation-copy")
     await writeFile(
       join(
@@ -392,10 +392,12 @@ describe("document storage V2 migration", () => {
     const plan = await planDocumentStorageV2Migration(copiedWorkspace)
 
     expect(plan.clean).toBe(false)
-    expect(plan.diagnostics).toContainEqual({
-      path: "spaces/notes/annotations/docs/missing.annotations.json",
-      message: "legacy annotation has no inventoried document owner",
-    })
+    expect(plan.orphanedAnnotationFiles).toEqual([
+      "spaces/notes/annotations/docs/missing.annotations.json",
+    ])
+    expect(plan.diagnostics.map((diagnostic) => diagnostic.path)).not.toContain(
+      "spaces/notes/annotations/docs/missing.annotations.json"
+    )
     expect(plan.diagnostics).toContainEqual({
       path: "spaces/Team Notes",
       message: "legacy Space ID cannot be represented by Storage V2",
@@ -415,6 +417,10 @@ describe("document storage V2 migration", () => {
     const meta = JSON.parse(await readFile(metaPath, "utf8"))
     Object.assign(meta.widgets.dashboard.provenance, { versionId: reviewedId, updatedAt: reviewed.createdAt, contentHash: reviewed.after.contentHash })
     await writeFile(metaPath, JSON.stringify(meta))
+    // Older deletes could leave a document's annotation file behind.
+    const orphan = "spaces/notes/annotations/docs/deleted/doc.annotations.json"
+    await mkdir(dirname(join(source, orphan)), { recursive: true })
+    await writeFile(join(source, orphan), annotationFile())
     const copiedWorkspace = await freshCopy("copy")
     setWorkspaceRootOverride(copiedWorkspace)
     const [sourcePlan, copyPlan] = await Promise.all([
@@ -446,6 +452,11 @@ describe("document storage V2 migration", () => {
     expect(result.htmlDocumentsMigrated).toBe(1)
     expect(result.annotationFilesMigrated).toBe(2)
     expect(result.annotationsMigrated).toBe(2)
+    expect(result.orphanedAnnotationFiles).toEqual([orphan])
+    expect(await Bun.file(join(copiedWorkspace, orphan)).exists()).toBe(false)
+    expect(await readFile(join(result.backupPath, orphan), "utf8")).toBe(
+      annotationFile()
+    )
     expect(result.backupWorkspaceContentCheckpoint).toBe(
       copyPlan.workspaceContentCheckpoint
     )

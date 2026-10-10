@@ -24,6 +24,7 @@ infrastructure and personal context out of release notes.
 
 - **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update worktable` keeps it current.
 - **OpenClaw on Worktable Cloud:** Connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
+- **Workspace upgrade:** A workspace that still has annotations from deleted documents finishes upgrading instead of stopping at **Workspace upgrade needs attention**, and that screen now shows the Worktable icon.
 
 ## [0.1.21] - 2026-10-09
 

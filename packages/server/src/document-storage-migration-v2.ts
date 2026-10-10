@@ -98,6 +98,9 @@ export interface DocumentStorageV2MigrationPlan {
   dependencyBytes: number
   clean: boolean
   diagnostics: Array<{ path: string; message: string }>
+  /** Legacy annotation files whose document no longer exists. Conversion
+   * leaves them out of the V2 tree; the V1 source keeps the originals. */
+  orphanedAnnotationFiles: string[]
   identityPlan: DocumentIdMaterializationPlan
 }
 
@@ -117,6 +120,7 @@ export interface DocumentStorageV2MigrationResult {
   htmlDocumentsMigrated: number
   annotationFilesMigrated: number
   annotationsMigrated: number
+  orphanedAnnotationFiles: string[]
   backupPath: string
   backupWorkspaceContentCheckpoint: string
   copiedBytes: number
@@ -248,11 +252,15 @@ async function reservedV2NamespaceDiagnostics(
   return diagnostics
 }
 
-async function legacyAnnotationOwnershipDiagnostics(
+async function legacyAnnotationCensus(
   workspaceRoot: string,
   documents: readonly PreflightDocumentSource[]
-): Promise<Array<{ path: string; message: string }>> {
+): Promise<{
+  diagnostics: Array<{ path: string; message: string }>
+  orphans: string[]
+}> {
   const diagnostics: Array<{ path: string; message: string }> = []
+  const orphans: string[] = []
   const expected = new Set(
     documents.map(
       (document) =>
@@ -332,18 +340,35 @@ async function legacyAnnotationOwnershipDiagnostics(
             .split(sep)
             .join("/")
             .slice(0, -".annotations.json".length)
+          // A document removed or renamed outside Worktable can leave its
+          // annotation file behind. Nothing is left to annotate, so the file
+          // must not block the upgrade or attach to a future document here.
           if (!expected.has(`${space.name}\0${root}\0${key}`)) {
-            diagnostics.push({
-              path: relative(workspaceRoot, entryPath).split(sep).join("/"),
-              message: "legacy annotation has no inventoried document owner",
-            })
+            orphans.push(relative(workspaceRoot, entryPath).split(sep).join("/"))
           }
         }
       }
       await walk(annotationRoot)
     }
   }
-  return diagnostics
+  return { diagnostics, orphans }
+}
+
+async function omitOrphanedLegacyAnnotations(
+  workspaceRoot: string,
+  orphans: readonly string[]
+): Promise<void> {
+  for (const orphan of orphans) {
+    const path = resolve(workspaceRoot, orphan)
+    if (!isInside(join(workspaceRoot, "spaces"), path)) {
+      throw new Error("orphaned legacy annotation path escapes the workspace")
+    }
+    const info = await lstat(path)
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw new Error("orphaned legacy annotation is no longer a regular file")
+    }
+    await unlink(path)
+  }
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -847,7 +872,7 @@ export async function planDocumentStorageV2Migration(
   )
   const reservedDiagnostics =
     await reservedV2NamespaceDiagnostics(workspaceRoot)
-  const annotationDiagnostics = await legacyAnnotationOwnershipDiagnostics(
+  const annotationCensus = await legacyAnnotationCensus(
     workspaceRoot,
     identityPlan.preflight.documents
   )
@@ -873,7 +898,7 @@ export async function planDocumentStorageV2Migration(
       message: diagnostic.message,
     })),
     ...reservedDiagnostics,
-    ...annotationDiagnostics,
+    ...annotationCensus.diagnostics,
     ...spaceDiagnostics,
   ]
   const targetLayout = workspaceStorageLayoutFromManifest({
@@ -912,6 +937,7 @@ export async function planDocumentStorageV2Migration(
     ),
     clean: identityPlan.clean && diagnostics.length === 0,
     diagnostics,
+    orphanedAnnotationFiles: annotationCensus.orphans,
     identityPlan,
   }
 }
@@ -1009,6 +1035,7 @@ export async function convertStagedWorkspaceStorageV2(
     stagingPath,
     materializedPreflight.documents
   )
+  await omitOrphanedLegacyAnnotations(stagingPath, plan.orphanedAnnotationFiles)
   const htmlDocumentsMigrated = await migrateLegacyHtmlDocuments(
     stagingPath,
     materializedPreflight.documents
@@ -1184,6 +1211,7 @@ export async function migrateDocumentStorageV2(input: {
         htmlDocumentsMigrated,
         annotationFilesMigrated: migratedAnnotations.files,
         annotationsMigrated: migratedAnnotations.annotations,
+        orphanedAnnotationFiles: converted.plan.orphanedAnnotationFiles,
         backupPath,
         backupWorkspaceContentCheckpoint:
           backupCheckpoints.workspaceContentCheckpoint,

@@ -245,7 +245,8 @@ export async function completeServiceAuthRegistration(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           claim_token: registration.claimToken,
-          user_code: userCode,
+          // WorkOS shows the code as "ABCD-EFGH" but rejects the hyphen.
+          user_code: userCode.replace(/[^0-9a-z]/gi, "").toUpperCase(),
         }),
       })
     ),

@@ -55,6 +55,7 @@ import {
   createPairing,
   getPairing,
   latestPairingFailure,
+  OPENCLAW_INSTALL_COMMAND,
   shouldPollPairing,
   type PairingCreated,
   type PairingSession,
@@ -89,8 +90,6 @@ interface OnboardingDraft {
   threads?: Array<{ setupId: string; id: string; participantName: string }>
 }
 
-const OPENCLAW_INSTALL =
-  "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
 const DEFAULT_DRAFT: OnboardingDraft = { step: "identity", setups: [] }
 const AGENT_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
 const STARTER_PROMPTS = [
@@ -1074,7 +1073,7 @@ function ConnectStep({
                   <li>Run both commands where OpenClaw is installed.</li>
                 </ol>
                 <CopyValue
-                  value={OPENCLAW_INSTALL}
+                  value={OPENCLAW_INSTALL_COMMAND}
                   label="Copy install command"
                 />
                 {!isCloud && !pairing ? (

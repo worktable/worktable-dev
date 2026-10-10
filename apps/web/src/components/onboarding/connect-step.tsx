@@ -338,7 +338,12 @@ export function ConnectStep({
   const [typedName, setTypedName] = useState<string | null>(null)
   const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
-  const [token, setToken] = useState<{ value: string; id: string } | null>(null)
+  const [token, setToken] = useState<{
+    value: string
+    id: string
+    /** The agent it belongs to: one per app, however many tokens. */
+    agentId: string
+  } | null>(null)
   const [cloudComplete, setCloudComplete] = useState(false)
   const [baseline, setBaseline] = useState<Set<string>>(new Set())
 
@@ -408,6 +413,9 @@ export function ConnectStep({
   })
   const existingAgent = appLabel ? (appAgent.data?.connection ?? null) : null
   const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
+  // Until it is known whether the app is already an agent, its access is not:
+  // creating then could widen an agent its owner had limited.
+  const appKnown = !appLabel || isCloud || appAgent.isSuccess
   const defaultName = existingAgent
     ? existingAgent.displayName
     : method === "computer" && computerTarget === "auto"
@@ -444,7 +452,8 @@ export function ConnectStep({
       }),
     onSuccess: (result) => {
       const id = tokenId(result.token)
-      if (id) setToken({ value: result.token, id })
+      if (id)
+        setToken({ value: result.token, id, agentId: result.connection.id })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
@@ -510,7 +519,7 @@ export function ConnectStep({
   useEffect(() => {
     if (!tokenUsed || !token || !method) return
     addSetup({
-      id: `token:${token.id}`,
+      id: `agent:${token.agentId}`,
       name: name.trim(),
       harness: agentTitle,
       mode: "on-demand",
@@ -523,8 +532,15 @@ export function ConnectStep({
 
   function addSetup(setup: SetupRecord) {
     const durableSetup = ensureStarterThreadKey(setup)
-    if (setups.some((item) => item.id === durableSetup.id)) return
-    onSetupsChange([...setups, durableSetup])
+    const existing = setups.find((item) => item.id === durableSetup.id)
+    if (existing?.mode === "always-on") return
+    onSetupsChange(
+      existing
+        ? setups.map((item) =>
+            item.id === durableSetup.id ? durableSetup : item
+          )
+        : [...setups, durableSetup]
+    )
   }
 
   function reset() {
@@ -628,9 +644,14 @@ export function ConnectStep({
   const complete = pairingVerified || tokenUsed || cloudComplete
   const busy =
     create.isPending || mint.isPending || useCloudConnection.isPending
-  const locked = created || busy || complete
-  const anyAccess = access.threads || access.read || access.edit
-  const canCreate = name.trim().length > 0 && anyAccess && !busy
+  const locked = created || busy || complete || !appKnown
+  const anyAccess = accessFixed || access.threads || access.read || access.edit
+  const setupPending =
+    created &&
+    !complete &&
+    session?.status !== "expired" &&
+    session?.status !== "failed"
+  const canCreate = name.trim().length > 0 && anyAccess && !busy && appKnown
 
   const origin = current ? new URL(current.remoteMcpUrl).origin : ""
   const manualDetails = current ? desktopAgentConnectionDetails(current) : null
@@ -698,11 +719,12 @@ export function ConnectStep({
           value: item.adapter,
           label: item.name,
         }))}
-        onChange={(value) =>
+        onChange={(value) => {
+          setAccess(null)
           setAlwaysOnAgent(
             ALWAYS_ON_AGENTS.find((item) => item.adapter === value) ?? OPENCLAW
           )
-        }
+        }}
       />
     ) : (
       <LabeledSelect
@@ -755,6 +777,18 @@ export function ConnectStep({
           disabled={locked}
         />
       )}
+      {appLabel && !isCloud && appAgent.isError ? (
+        <Callout variant="danger">
+          Couldn’t check whether {agentTitle} is already connected.{" "}
+          <button
+            type="button"
+            className="font-medium underline underline-offset-2"
+            onClick={() => void appAgent.refetch()}
+          >
+            Try again
+          </button>
+        </Callout>
+      ) : null}
       {existingAgent ? (
         <p className="text-xs text-muted-foreground">
           Already connected as {existingAgent.displayName}. A new token joins
@@ -1053,7 +1087,9 @@ export function ConnectStep({
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="ghost"
-          disabled={busy}
+          // A created command or token is live until it connects; leaving would
+          // lose it without ending it.
+          disabled={busy || setupPending}
           onClick={() => {
             reset()
             setMethod(null)

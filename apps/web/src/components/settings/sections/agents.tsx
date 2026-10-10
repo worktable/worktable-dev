@@ -965,6 +965,9 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
     enabled: needsToken,
   })
   const existingAgent = existing.data?.connection ?? null
+  // Until it is known whether the app is already an agent, its access is not:
+  // generating then could widen an agent its owner had limited.
+  const appKnown = existing.isSuccess
   const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const afterMint = () => {
@@ -1062,8 +1065,20 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 <AgentAccessFields
                   value={access}
                   onChange={setAccess}
-                  disabled={mintClaude.isPending}
+                  disabled={mintClaude.isPending || !appKnown}
                 />
+                {existing.isError ? (
+                  <Callout variant="danger">
+                    Couldn’t check whether this app is already connected.{" "}
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2"
+                      onClick={() => void existing.refetch()}
+                    >
+                      Try again
+                    </button>
+                  </Callout>
+                ) : null}
                 {existingAgent ? (
                   <p className="text-xs text-muted-foreground">
                     Already connected as {existingAgent.displayName}. A new
@@ -1077,6 +1092,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                     onClick={() => mintClaude.mutate()}
                     disabled={
                       mintClaude.isPending ||
+                      !appKnown ||
                       !(access.threads || access.read || access.edit)
                     }
                   >
@@ -1117,8 +1133,20 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 <AgentAccessFields
                   value={access}
                   onChange={setAccess}
-                  disabled={mintChatGpt.isPending}
+                  disabled={mintChatGpt.isPending || !appKnown}
                 />
+                {existing.isError ? (
+                  <Callout variant="danger">
+                    Couldn’t check whether this app is already connected.{" "}
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2"
+                      onClick={() => void existing.refetch()}
+                    >
+                      Try again
+                    </button>
+                  </Callout>
+                ) : null}
                 {existingAgent ? (
                   <p className="text-xs text-muted-foreground">
                     Already connected as {existingAgent.displayName}. A new
@@ -1132,6 +1160,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                     onClick={() => mintChatGpt.mutate()}
                     disabled={
                       mintChatGpt.isPending ||
+                      !appKnown ||
                       !(access.threads || access.read || access.edit)
                     }
                   >
@@ -1181,6 +1210,9 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
     queryFn: () => getAppAgent(clientId),
   })
   const existingAgent = existing.data?.connection ?? null
+  // Until it is known whether the app is already an agent, its access is not:
+  // generating then could widen an agent its owner had limited.
+  const appKnown = existing.isSuccess
   const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const mint = useMutation({
@@ -1279,8 +1311,20 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
               <AgentAccessFields
                 value={access}
                 onChange={setAccess}
-                disabled={mint.isPending}
+                disabled={mint.isPending || !appKnown}
               />
+              {existing.isError ? (
+                <Callout variant="danger">
+                  Couldn’t check whether this client is already connected.{" "}
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2"
+                    onClick={() => void existing.refetch()}
+                  >
+                    Try again
+                  </button>
+                </Callout>
+              ) : null}
               {existingAgent ? (
                 <p className="text-xs text-muted-foreground">
                   Already connected as {existingAgent.displayName}. A new token
@@ -1294,6 +1338,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
                   onClick={() => mint.mutate()}
                   disabled={
                     mint.isPending ||
+                    !appKnown ||
                     !(access.threads || access.read || access.edit)
                   }
                 >

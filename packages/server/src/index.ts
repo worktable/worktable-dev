@@ -98,7 +98,8 @@ import { VERSION } from "./release-info.ts";
 import { createStaticFileResponse, getStaticAssetsInfo } from "./static-assets.ts";
 import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
-import { runRetentionSweep } from "./version-retention.ts";
+import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
+import { settleRetentionPolicy } from "./settings-store.ts";
 import {
   changeEventAffectsContentDerivedState,
   drainWorkspaceChanges,
@@ -1108,20 +1109,27 @@ export function startServer(
   }
 
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
-  // never delays startup) plus a 24h steady-state sweep. Both no-op instantly
-  // when the policy is "all" (the default). Replace-not-stack across reboots,
-  // and both timers are unref'd so they never keep a test process (or a briefly
-  // idle server) alive. WORKTABLE_SKIP_RETENTION_SWEEP=1 disables them for the
-  // test runner, mirroring the lint/seed guards.
+  // never delays startup) plus a 24h steady-state sweep. At boot, before any
+  // sweep, the install's policy is settled: new installs start at 30 days;
+  // installs whose stored policy is no longer offered move to 180.
+  // Replace-not-stack across reboots, and both timers are unref'd so they
+  // never keep a test process (or a briefly idle server) alive.
+  // WORKTABLE_SKIP_RETENTION_SWEEP=1 disables them for the test runner,
+  // mirroring the lint/seed guards.
   if (retentionBootTimer) clearTimeout(retentionBootTimer);
   if (retentionSweepTimer) clearInterval(retentionSweepTimer);
   retentionBootTimer = null;
   retentionSweepTimer = null;
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_RETENTION_SWEEP"] !== "1") {
+    const settled = settleRetentionPolicy({
+      hasVersionHistory: workspaceHasVersionHistory,
+    }).catch((err) =>
+      console.error("[version-retention] could not settle the policy:", err),
+    );
     const sweep = () =>
-      void runRetentionSweep().catch((err) =>
-        console.error("[version-retention] sweep error:", err),
-      );
+      void settled
+        .then(() => runRetentionSweep())
+        .catch((err) => console.error("[version-retention] sweep error:", err));
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
     retentionSweepTimer = setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS);

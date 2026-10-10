@@ -979,7 +979,7 @@ describe("Worktable Cloud human settings authority", () => {
     expect(settings.status).toBe(401)
     expect(ensureWorkspaceManifest().name).not.toBe("Agent Rename")
     expect(getServerSettings().editor.spellcheck).toBe(false)
-    expect(getServerSettings().history.retention).toEqual({ mode: "all" })
+    expect(getServerSettings().history.retention).toEqual({ mode: "age", maxAgeDays: 180 })
   })
 
   it("atomically rejects hosted update and network preferences", async () => {

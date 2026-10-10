@@ -1257,9 +1257,6 @@ function RecordRowMenu({
   )
 }
 
-/** Group header + its rows. The header shows the group value (rendered with
- *  the field's own display), the TRUE total from the aggregate query, and
- *  sums for number fields. */
 /** Group rows fold like the app's accordion panels: same duration and ease,
  *  with the cell's own overflow clipping the closing content. */
 const FOLD_TRANSITION = "transition-[padding,border-width,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
@@ -1273,6 +1270,8 @@ function Fold({ enabled, folded, children }: { enabled: boolean; folded: boolean
   )
 }
 
+/** Group heading + its rows. The heading shows the group value (rendered
+ *  with the field's own display) and the true count from the aggregate query. */
 function GroupSection({
   collapsed,
   onToggle,

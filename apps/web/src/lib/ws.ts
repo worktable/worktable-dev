@@ -646,12 +646,17 @@ function revalidateAfterReconnect(connection: SharedSpaceConnection): void {
   const queryClient = connection.queryClient
   if (!queryClient) return
   // A reconnect can follow a workspace replaced from another tab, or a
-  // network change that moved linked sharing: check both, once.
+  // network change that moved linked sharing: check both, unless returning
+  // to the tab just did.
   for (const queryKey of [queryKeys.workspace, ["system", "deployment"]]) {
-    void queryClient.invalidateQueries(
-      { queryKey, exact: true },
-      { cancelRefetch: false }
-    )
+    const state = queryClient.getQueryState(queryKey)
+    if (
+      state?.fetchStatus === "fetching" ||
+      (state?.dataUpdatedAt ?? 0) > Date.now() - 10_000
+    ) {
+      continue
+    }
+    void queryClient.invalidateQueries({ queryKey, exact: true })
   }
   if (connection.stream === THREAD_STREAM) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })

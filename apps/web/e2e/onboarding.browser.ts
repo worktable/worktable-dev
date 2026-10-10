@@ -129,7 +129,7 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     tokenRequestStarted = resolve
   })
   let holdTokenRequest = true
-  await page.route("**/api/tokens", async (route) => {
+  await page.route("**/api/agent-connections", async (route) => {
     if (route.request().method() === "POST" && holdTokenRequest) {
       holdTokenRequest = false
       tokenRequestStarted()
@@ -140,15 +140,25 @@ test("new owner can name, connect multiple real agent identities, leave an alway
   const mintedResponse = page.waitForResponse(
     (candidate) =>
       candidate.request().method() === "POST" &&
-      new URL(candidate.url()).pathname === "/api/tokens"
+      new URL(candidate.url()).pathname === "/api/agent-connections"
   )
+  // Its owner keeps it from changing the workspace.
+  await page.getByText("Edit workspace").click()
   await page.getByRole("button", { name: "Generate access token" }).click()
   await tokenRequestPending
   await expect(
     page.getByRole("button", { name: "Finish later" })
   ).toBeDisabled()
   releaseTokenRequest()
-  const minted = (await (await mintedResponse).json()) as { token: string }
+  const minted = (await (await mintedResponse).json()) as {
+    token: string
+    connection: { displayName: string; platform: string; access: unknown }
+  }
+  expect(minted.connection).toMatchObject({
+    displayName: "Writing ChatGPT",
+    platform: "chatgpt",
+    access: { threads: true, read: true, edit: false },
+  })
   const used = await fetch(`${harness.apiUrl}/api/spaces`, {
     headers: { Authorization: `Bearer ${minted.token}` },
   })

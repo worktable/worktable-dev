@@ -91,6 +91,58 @@ describe("agent connection routes", () => {
     expect(await response.json()).toMatchObject({ required: "owner" })
   })
 
+  it("connects an app with the name and access its owner chose", async () => {
+    const password = "correct-horse-battery"
+    await setOwnerPassword(password)
+    const cookie = await loginCookie(password)
+    process.env["WORKTABLE_REQUIRE_AUTH"] = "1"
+
+    const connect = (body: Record<string, unknown>) =>
+      app.fetch(request("POST", "/api/agent-connections", cookie, body))
+    expect(
+      (
+        await app.fetch(
+          request("POST", "/api/agent-connections", undefined, {
+            client: "chatgpt-desktop",
+          })
+        )
+      ).status
+    ).toBe(401)
+    expect((await connect({ client: "skynet" })).status).toBe(400)
+
+    const created = await connect({
+      client: "chatgpt-desktop",
+      displayName: "Research GPT",
+      access: { threads: true, read: true, edit: false },
+    })
+    expect(created.status).toBe(201)
+    const first = (await created.json()) as {
+      token: string
+      connection: Record<string, unknown> & { id: string }
+    }
+    expect(first.connection).toMatchObject({
+      displayName: "Research GPT",
+      platform: "chatgpt",
+      access: { threads: true, read: true, edit: false },
+    })
+    const scopes = (await verifyToken(first.token))?.scopes ?? []
+    expect(scopes).toContain("docs:read")
+    expect(scopes).not.toContain("docs:write")
+
+    // Connecting the same app again is the same agent, with the new access.
+    const again = (await (
+      await connect({
+        client: "chatgpt-desktop",
+        access: { threads: true, read: false, edit: false },
+      })
+    ).json()) as typeof first
+    expect(again.connection.id).toBe(first.connection.id)
+    expect(again.connection).toMatchObject({ displayName: "Research GPT" })
+    for (const token of [first.token, again.token]) {
+      expect((await verifyToken(token))?.scopes).not.toContain("docs:read")
+    }
+  })
+
   it("requires the owner and disconnects the verified credential", async () => {
     const password = "correct-horse-battery"
     await setOwnerPassword(password)

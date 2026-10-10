@@ -15,7 +15,6 @@ import {
 import {
   AGENT_PLATFORMS,
   DEFAULT_AGENT_ACCESS,
-  DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
@@ -85,6 +84,7 @@ import {
 } from "@/lib/tokens-api"
 import {
   agentConnectionPlatform,
+  connectAgentApp,
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
@@ -101,7 +101,6 @@ const DEFAULT_CLIENT: McpSnippetClientId = "claude-code"
 
 // The scopes a "Connect an agent" token grants — everything an interactive agent
 // needs, minus token management (the shared agent-token scope set).
-const CONNECT_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
 
 const CLIENT_OPTIONS = MCP_SNIPPET_CLIENT_IDS.map((id) => MCP_CLIENTS[id])
 
@@ -955,6 +954,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
   const [chatGptToken, setChatGptToken] = useState<string | null>(null)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
 
   const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
 
@@ -963,8 +963,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
     void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
   }
   const mintClaude = useMutation({
-    mutationFn: () =>
-      mintToken({ scopes: CONNECT_SCOPES, agent: "claude-desktop" }),
+    mutationFn: () => connectAgentApp({ client: "claude-desktop", access }),
     onSuccess: (result) => {
       setClaudeToken(result.token)
       afterMint()
@@ -977,7 +976,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
       ),
   })
   const mintChatGpt = useMutation({
-    mutationFn: () => mintToken({ scopes: CONNECT_SCOPES, agent: "codex" }),
+    mutationFn: () => connectAgentApp({ client: "chatgpt-desktop", access }),
     onSuccess: (result) => {
       setChatGptToken(result.token)
       afterMint()
@@ -1047,17 +1046,24 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 </Callout>
               </div>
             ) : (
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mintClaude.mutate()}
+              <div className="flex flex-col gap-4">
+                <AgentAccessFields
+                  value={access}
+                  onChange={setAccess}
                   disabled={mintClaude.isPending}
-                >
-                  {mintClaude.isPending
-                    ? "Generating…"
-                    : "Generate Claude access token"}
-                </Button>
+                />
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => mintClaude.mutate()}
+                    disabled={mintClaude.isPending}
+                  >
+                    {mintClaude.isPending
+                      ? "Generating…"
+                      : "Generate Claude access token"}
+                  </Button>
+                </div>
               </div>
             )
           ) : null}
@@ -1086,17 +1092,24 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 </Callout>
               </div>
             ) : (
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mintChatGpt.mutate()}
+              <div className="flex flex-col gap-4">
+                <AgentAccessFields
+                  value={access}
+                  onChange={setAccess}
                   disabled={mintChatGpt.isPending}
-                >
-                  {mintChatGpt.isPending
-                    ? "Generating…"
-                    : "Generate ChatGPT access token"}
-                </Button>
+                />
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => mintChatGpt.mutate()}
+                    disabled={mintChatGpt.isPending}
+                  >
+                    {mintChatGpt.isPending
+                      ? "Generating…"
+                      : "Generate ChatGPT access token"}
+                  </Button>
+                </div>
               </div>
             )
           ) : null}
@@ -1131,9 +1144,10 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   // everything on close, so the token can't survive a close. Switching client
   // also drops it (it was minted for the prior agent).
   const [token, setToken] = useState<string | null>(null)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
 
   const mint = useMutation({
-    mutationFn: () => mintToken({ scopes: CONNECT_SCOPES, agent: clientId }),
+    mutationFn: () => connectAgentApp({ client: clientId, access }),
     onSuccess: (res) => {
       setToken(res.token)
       // The new bearer must show up (and be revocable) in the table below.
@@ -1223,15 +1237,22 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
       ) : (
         <>
           {needsToken && !token ? (
-            <div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => mint.mutate()}
+            <div className="flex flex-col gap-4">
+              <AgentAccessFields
+                value={access}
+                onChange={setAccess}
                 disabled={mint.isPending}
-              >
-                {mint.isPending ? "Generating…" : "Generate connection token"}
-              </Button>
+              />
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => mint.mutate()}
+                  disabled={mint.isPending}
+                >
+                  {mint.isPending ? "Generating…" : "Generate connection token"}
+                </Button>
+              </div>
             </div>
           ) : null}
 

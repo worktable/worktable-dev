@@ -6,6 +6,7 @@ import type {
   AgentConnection,
   AgentConnectionTarget,
   AgentPlatformId,
+  DirectAgentLabel,
   ParticipantRef,
 } from "@worktable/types"
 import {
@@ -25,6 +26,7 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import {
+  createToken,
   listTokens,
   revokeToken,
   rotateAgentToken,
@@ -533,6 +535,35 @@ export async function currentAgentScopes(
       .get(agent)
       ?.at(-1)?.scopes ?? null
   )
+}
+
+/**
+ * Connect an app with a credential made here (the Claude and ChatGPT desktop
+ * apps, or an MCP client configured by hand), with the name and access its
+ * owner chose. Connecting the same app again is the same agent, so its
+ * other credentials take the same access. Returns the credential once.
+ */
+export async function createAgentCredential(input: {
+  label: DirectAgentLabel
+  displayName?: string
+  icon?: string | null
+  access: AgentAccess
+}): Promise<{ token: string; connection: AgentConnection }> {
+  const scopes = scopesForAccess(input.access)
+  if (scopes.length === 0) {
+    throw new AgentConnectionUpdateError("Choose at least one kind of access")
+  }
+  const { token } = await createToken({ agent: input.label, scopes })
+  const connection = await updateAgentConnection(
+    labeledConnectionId(getWorkspaceRoot(), input.label),
+    {
+      access: input.access,
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+      ...(input.icon !== undefined ? { icon: input.icon } : {}),
+    }
+  )
+  if (!connection) throw new Error("The new credential was revoked")
+  return { token, connection }
 }
 
 export class AgentConnectionUpdateError extends Error {}

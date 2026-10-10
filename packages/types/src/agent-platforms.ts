@@ -120,7 +120,7 @@ export function clientIdForAgentLabel(label: string | null): string | null {
 /** A readable default name for an agent known only by its token label. */
 export function defaultAgentNameForLabel(label: string | null): string | null {
   if (!label) return null
-  if (label === SHARED_LOCAL_AGENT_LABEL) return "Agents on this computer"
+  if (label === SHARED_LOCAL_AGENT_LABEL) return "Local agents"
   const client = clientIdForAgentLabel(label)
   return client ? AGENT_PLATFORMS[platformForClient(client)].name : null
 }

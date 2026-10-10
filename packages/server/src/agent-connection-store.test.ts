@@ -197,7 +197,7 @@ describe("semantic agent connections", () => {
           mode: "on-demand",
         }),
         expect.objectContaining({
-          displayName: "Agents on this computer",
+          displayName: "Local agents",
           platform: "other",
         }),
       ])

@@ -1,6 +1,7 @@
 import { toast } from "@worktable/ui/components/sonner"
 import type { RecordCollectionSchema, RecordField, RecordFile, RecordPredicateOp, RecordQueryResult } from "@worktable/types"
 import { normalizeRecordFieldType, parseDocumentReference } from "@worktable/types"
+import type { RecordFilter } from "./record-filters"
 
 /** A grid/peek column: schema fields in declared order, then any keys present
  *  in the loaded data that the schema doesn't know (schemaless collections,
@@ -203,12 +204,7 @@ export function toastRecordError(err: unknown, fallback: string) {
 
 // ── Filters (M3 table controls) ──────────────────────────────
 
-/** One filter chip: a predicate-AST leaf with compact keys for the URL. */
-export interface RecordFilter {
-  f: string
-  op: RecordPredicateOp
-  v?: unknown
-}
+export type { RecordFilter } from "./record-filters"
 
 /** Compile chips to the server's predicate tree. ALWAYS wrapped in `and`,
  *  even for one filter: a bare `{field, op, value}` object at the top level
@@ -217,8 +213,6 @@ export function compileFilters(filters: RecordFilter[]): Record<string, unknown>
   if (filters.length === 0) return undefined
   return { and: filters.map((filter) => ({ field: filter.f, op: filter.op, ...(filter.v !== undefined ? { value: filter.v } : {}) })) }
 }
-
-export const FILTER_OPS: RecordPredicateOp[] = ["eq", "neq", "in", "contains", "has", "gt", "gte", "lt", "lte", "isEmpty"]
 
 export const FILTER_OP_LABELS: Record<RecordPredicateOp, string> = {
   eq: "is",
@@ -259,31 +253,6 @@ export function filterOpsForType(type: string, field?: RecordField | null): Reco
     default:
       // string, text, url, email, person, unknown
       return ["contains", "eq", "neq", "isEmpty"]
-  }
-}
-
-/** Structural validation for one filter: does the value shape fit the
- *  operator? Malformed chips (shared URLs, stale localStorage) must be
- *  dropped BEFORE compiling, or the server 400s the whole grid query. */
-export function isValidFilter(filter: RecordFilter): boolean {
-  if (!filter.f || !FILTER_OPS.includes(filter.op)) return false
-  switch (filter.op) {
-    case "isEmpty":
-      return filter.v === undefined || typeof filter.v === "boolean"
-    case "contains":
-      return typeof filter.v === "string"
-    case "has":
-      return ["string", "number", "boolean"].includes(typeof filter.v)
-    case "in":
-      return Array.isArray(filter.v) && filter.v.every((entry) => ["string", "number", "boolean"].includes(typeof entry))
-    case "gt":
-    case "gte":
-    case "lt":
-    case "lte":
-      return typeof filter.v === "string" || typeof filter.v === "number"
-    default:
-      // eq / neq
-      return ["string", "number", "boolean"].includes(typeof filter.v)
   }
 }
 

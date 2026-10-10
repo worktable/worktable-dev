@@ -11,3 +11,24 @@ export function threadLocationKey(location: ThreadLocation): string {
     ? "worktable"
     : `space:${location.spaceId}`
 }
+
+/** Collection, record and widget ids: lowercase letters, digits and inner dashes. */
+export const CANONICAL_ID_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/
+
+export function isCanonicalId(value: unknown): value is string {
+  return typeof value === "string" && CANONICAL_ID_PATTERN.test(value)
+}
+
+/** Record query predicate operators. */
+export const RECORD_PREDICATE_OPS = [
+  "eq",
+  "neq",
+  "in",
+  "contains",
+  "has",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "isEmpty",
+] as const

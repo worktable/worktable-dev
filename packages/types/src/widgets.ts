@@ -1,9 +1,7 @@
 import { z } from "zod";
+import { CANONICAL_ID_PATTERN } from "./constants";
 
-export const CanonicalIdSchema = z
-  .string()
-  .min(1)
-  .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/);
+export const CanonicalIdSchema = z.string().min(1).regex(CANONICAL_ID_PATTERN);
 
 // Route suffixes under /widgets/<id>/... — forbidden as segments of NESTED ids
 // so a widget id can never contain a `/records/` or `/state` boundary. Without

@@ -55,7 +55,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@worktable/ui/component
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@worktable/ui/components/table"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@worktable/ui/components/tooltip"
-import { CanonicalIdSchema, RecordPredicateOpSchema, type RecordFile, type RecordQuery } from "@worktable/types"
+import type { RecordFile, RecordQuery } from "@worktable/types"
+import { isCanonicalId } from "@worktable/types/constants"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useRecordFieldColumns } from "@/hooks/use-record-field-columns"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
@@ -63,7 +64,8 @@ import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGr
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
-import { applyColumnOrder, collectRecordQueryWarnings, compareGroupLabels, optionColorClass, columnLabel, compileFilters, indexDanglingRelations, isValidFilter, recordTitle, resolveDocumentGroupValue, ROW_HEIGHTS, type ColumnPrefs, type RecordFieldColumn, type RecordFilter, type RowHeight } from "@/lib/records"
+import { applyColumnOrder, collectRecordQueryWarnings, compareGroupLabels, optionColorClass, columnLabel, compileFilters, indexDanglingRelations, recordTitle, resolveDocumentGroupValue, ROW_HEIGHTS, type ColumnPrefs, type RecordFieldColumn, type RowHeight } from "@/lib/records"
+import { isValidFilter, type RecordFilter } from "@/lib/record-filters"
 import { ColumnConfig } from "@/components/records/column-config"
 import { EditableCell } from "@/components/records/editable-cell"
 import { DocumentReferenceScope, FieldValue, type ExpandedRecords } from "@/components/records/field-value"
@@ -90,7 +92,6 @@ function sanitizeFilters(input: unknown): RecordFilter[] | undefined {
       typeof entry === "object" &&
       entry !== null &&
       typeof (entry as RecordFilter).f === "string" &&
-      RecordPredicateOpSchema.safeParse((entry as RecordFilter).op).success &&
       isValidFilter(entry as RecordFilter)
   )
   return filters.length > 0 ? filters : undefined
@@ -135,7 +136,7 @@ export const Route = createFileRoute("/spaces/$spaceId/records/$")({
     const filters = sanitizeFilters(search["filters"])
     const sort = sanitizeSort(search["sort"])
     return {
-      ...(typeof search["record"] === "string" && CanonicalIdSchema.safeParse(search["record"]).success
+      ...(typeof search["record"] === "string" && isCanonicalId(search["record"])
         ? { record: search["record"] }
         : {}),
       ...(filters ? { filters } : {}),
@@ -185,7 +186,7 @@ function RecordsPage() {
   // anything non-canonical is treated as absent no matter how it arrived.
   const routeSearch = Route.useSearch()
   const rawPeekId = routeSearch.record
-  const peekRecordId = rawPeekId && CanonicalIdSchema.safeParse(rawPeekId).success ? rawPeekId : undefined
+  const peekRecordId = rawPeekId && isCanonicalId(rawPeekId) ? rawPeekId : undefined
   // Use-site sanitation, same as the record id above: validateSearch does not
   // reliably strip malformed params at runtime, and a bad chip compiled into
   // /query would 400 the whole grid.

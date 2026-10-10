@@ -64,8 +64,6 @@ import {
 } from "./exposure-notice.ts";
 import { WorkspaceWatcher } from "./watcher.ts";
 import { DocumentFilesystemCoordinator } from "./document-filesystem-coordinator.ts";
-import { invalidateSearchIndex, noteRecordMutated } from "./search-index.ts";
-import { invalidateLinkGraph } from "./link-graph.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
 import { retireLintAnnotations } from "./lint-retirement.ts";
@@ -100,7 +98,6 @@ import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } fro
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep } from "./version-retention.ts";
 import {
-  changeEventAffectsContentDerivedState,
   drainWorkspaceChanges,
   notifyWorkspaceChangeAndWait,
   notifyWorkspaceChangeAndWaitOrThrow,
@@ -1264,15 +1261,6 @@ export function startServer(
           event.docPath
         );
         if (aliasError) return;
-      }
-      // Invalidate derived state on any content change. External edits do not
-      // flow through store.writeDoc, so this is their only notification path.
-      // Record events route through noteRecordMutated: while the record index
-      // serves record search, a record change must not rebuild MiniSearch.
-      if (changeEventAffectsContentDerivedState(event)) {
-        if (event.type === "record" || event.type === "recordCollection" || event.type === "recordCollectionReconcile") noteRecordMutated();
-        else invalidateSearchIndex();
-        invalidateLinkGraph();
       }
 
       // Keep the record index fresh on external edits (internal writes reach

@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { setAppDirOverride } from "./app-storage.ts";
 import { recordIndex } from "./record-index.ts";
 import {
-  COMMON_SEARCH_PROJECTION_BUDGET,
   invalidateSearchIndex,
   makeExcerpt,
   search,
@@ -82,6 +90,15 @@ async function searchResults(
   );
   expect(res.status).toBe(200);
   return res.json.results as SearchResult[];
+}
+
+function ageDocuments(dir: string): void {
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) ageDocuments(path);
+    else if (entry.isFile()) utimesSync(path, hourAgo, hourAgo);
+  }
 }
 
 let workspaceDir: string;
@@ -461,41 +478,76 @@ describe("search excerpts", () => {
     expect(await searchResults(app, "future/live-canvas", common)).toEqual([]);
   });
 
-  it("bounds aggregate text projection while retaining metadata discovery", async () => {
+  it("indexes every document's content and re-reads only what changed", async () => {
     const docsDir = join(workspaceDir, "spaces", "meta", "docs");
-    for (
-      let index = 0;
-      index < COMMON_SEARCH_PROJECTION_BUDGET.maxDocuments;
-      index += 1
-    ) {
+    // More documents than the 128 whose content search once indexed.
+    for (let index = 0; index < 140; index += 1) {
       writeFileSync(
-        join(docsDir, `a-budget-${String(index).padStart(3, "0")}.md`),
-        `# Budget ${index}\n\nProjected body ${index}.`,
+        join(docsDir, `a-bulk-${String(index).padStart(3, "0")}.md`),
+        `# Bulk ${index}\n\nProjected body ${index}.`,
       );
     }
     const created = await req(app, "POST", "/api/spaces", { name: "Zulu" });
     expect(created.status).toBe(201);
     writeFileSync(
-      join(workspaceDir, "spaces", "zulu", "docs", "budget-sentinel.md"),
-      "# Budget sentinel\n\nThis body is beyond the aggregate projection budget.",
+      join(workspaceDir, "spaces", "zulu", "docs", "late-sentinel.md"),
+      "# Late sentinel\n\nThe quetzalcoatl survey sits after every other document.",
     );
-
-    const results = await searchResults(app, "budget-sentinel", {
+    // Documents modified moments before a read are read again at each sync
+    // until their timestamps settle. Age them so unchanged ones are trusted.
+    ageDocuments(join(workspaceDir, "spaces"));
+    const reread = new Map<string, number>();
+    setSearchIndexRebuildHookForTests(async ({ spaceId, documents }) => {
+      reread.set(spaceId, (reread.get(spaceId) ?? 0) + documents);
+    });
+    const common = {
       scopes: ["search:read", "documents:read"],
-      documentMode: "common",
+      documentMode: "common" as const,
+    };
+
+    expect(await searchResults(app, "quetzalcoatl", common)).toEqual([
+      expect.objectContaining({
+        spaceId: "zulu",
+        path: "late-sentinel",
+        title: "Late sentinel",
+        documentKind: "document",
+        documentView: "doc",
+        format: { id: "worktable.markdown", sourceVersion: 1 },
+        health: "supported",
+        excerpt: expect.stringContaining("quetzalcoatl survey"),
+      }),
+    ]);
+    expect(reread.get("meta")).toBeGreaterThan(140);
+
+    reread.clear();
+    const edited = await req(app, "PUT", "/api/spaces/meta/docs/richdoc", {
+      content: [
+        { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Rich doc", styles: {} }] },
+        { type: "paragraph", content: [{ type: "text", text: "The narwhal census is complete.", styles: {} }] },
+      ],
     });
-    const sentinel = results.find(
-      (result) =>
-        result.spaceId === "zulu" && result.path === "budget-sentinel",
-    );
-    expect(sentinel).toMatchObject({
-      documentKind: "document",
-      documentView: "doc",
-      title: "Budget Sentinel",
-      format: { id: "worktable.markdown", sourceVersion: 1 },
-      health: "supported",
-    });
-    expect(sentinel).not.toHaveProperty("excerpt");
+    expect(edited.status).toBe(200);
+    expect(await searchResults(app, "narwhal", common)).toEqual([
+      expect.objectContaining({ spaceId: "meta", path: "richdoc" }),
+    ]);
+    expect(await searchResults(app, "observatory", common)).toEqual([]);
+    expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
+  });
+
+  it("answers while edits keep arriving", async () => {
+    for (const documentAccess of ["legacy", "common"] as const) {
+      let syncs = 0;
+      setSearchIndexRebuildHookForTests(async () => {
+        syncs += 1;
+        // Another save lands during every sync.
+        invalidateSearchIndex({ spaceId: "meta", path: "zeppelin" });
+      });
+      const results = await search("zeppelin", { documentAccess });
+      expect(results).toContainEqual(
+        expect.objectContaining({ spaceId: "meta", path: "zeppelin" }),
+      );
+      expect(syncs).toBeLessThanOrEqual(3);
+    }
   });
 
   it("builds readable record excerpts in both record-search modes", async () => {

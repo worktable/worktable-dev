@@ -137,28 +137,16 @@ export type DocumentHandleResolution =
   | { kind: "not-found" }
   | { kind: "alias-error" }
 
-export interface DocumentProjectionBudget {
-  maxDocuments: number
-  maxOutputBytes: number
-  timeoutMs: number
-}
-
-export interface DocumentProjectionBudgetState {
-  limits: DocumentProjectionBudget
-  deadlineMs: number
-  projectedDocuments: number
-  projectedBytes: number
-}
-
-export function createDocumentProjectionBudgetState(
-  limits: DocumentProjectionBudget
-): DocumentProjectionBudgetState {
-  return {
-    limits,
-    deadlineMs: performance.now() + limits.timeoutMs,
-    projectedDocuments: 0,
-    projectedBytes: 0,
-  }
+/** One current catalog entry of a Space, as seen by the search index. */
+export interface SearchProjectionCandidate {
+  /** Path comparison key; stable across case-only renames. */
+  key: string
+  /** Changes whenever the catalog's view of the entry changes. */
+  revision: string
+  /** Source modification time reported by the catalog, when known. */
+  updatedAt?: string
+  /** The projection, when this call projected the entry; null if it vanished. */
+  read?: DocumentReadWithView | null
 }
 
 function claimsFor(entry: DocumentCatalogEntry): QueryClaim[] {
@@ -489,10 +477,6 @@ export type DocumentNavigationResolution =
   | { kind: "target"; target: DocumentNavigationTarget }
   | { kind: "not-found" | "conflict" }
 
-interface PreparedProjectionOptions {
-  budget?: DocumentProjectionBudgetState
-}
-
 export function legacySpecializedDocumentView(input: {
   path: string
   format: DocumentFormatClaim
@@ -541,7 +525,6 @@ async function projectClassifiedDocument(options: {
   context: DocumentQueryContext
   classified: ClassifiedDocument
   resolvedFrom?: string
-  timeoutMs?: number
 }): Promise<DocumentReadResult> {
   const { claim, item } = options.classified
   if (item.health === "unsupported-format") {
@@ -561,16 +544,7 @@ async function projectClassifiedDocument(options: {
   if (!adapter?.projectText) {
     return metadataOnly(item, "projection-unavailable", options.resolvedFrom)
   }
-  if (options.timeoutMs !== undefined && options.timeoutMs <= 0) {
-    return metadataOnly(item, "projection-unavailable", options.resolvedFrom)
-  }
-  const timeoutMs = Math.max(
-    1,
-    Math.min(
-      options.timeoutMs ?? DOCUMENT_READ_BUDGET.timeoutMs,
-      DOCUMENT_READ_BUDGET.timeoutMs
-    )
-  )
+  const timeoutMs = DOCUMENT_READ_BUDGET.timeoutMs
   const signal = AbortSignal.timeout(timeoutMs)
   const maxInputBytes = Math.min(
     adapter.projectionMaxInputBytes ?? DOCUMENT_READ_BUDGET.maxInputBytes,
@@ -616,20 +590,36 @@ async function projectClassifiedDocument(options: {
   }
 }
 
+function searchCandidate(item: ClassifiedEntry): SearchProjectionCandidate {
+  if (item.kind === "conflict") {
+    return { key: item.item.pathKey, revision: JSON.stringify(item.item) }
+  }
+  return {
+    key: analyzeDocumentPath(item.item.path).comparisonKey ?? item.item.path,
+    revision: JSON.stringify([item.item, item.claim.source]),
+    ...(item.item.updatedAt ? { updatedAt: item.item.updatedAt } : {}),
+  }
+}
+
 /**
  * Project one Space for the derived common search index. Callers must apply
- * documents:read policy before invoking this function. Catalog discovery is
- * shared once per Space. A projection budget state may be shared across
- * Spaces so one search rebuild has one aggregate resource boundary.
+ * documents:read policy before invoking this function. Every current catalog
+ * entry comes back as a candidate with its revision, and only the candidates
+ * `shouldProject` selects are projected. With `projectionMs`, projection stops
+ * once that long has passed after catalog discovery, leaving `complete` false;
+ * at least one selected candidate is always projected. Callers continue in
+ * another call, so the Space lock is never held for a whole large Space.
  */
 export async function projectDocumentsForSearch(options: {
   spaceId: string
   includeArchived?: boolean
-  projectionBudget?: DocumentProjectionBudgetState
-}): Promise<DocumentReadWithView[]> {
+  shouldProject?: (candidate: SearchProjectionCandidate) => boolean
+  projectionMs?: number
+}): Promise<{ candidates: SearchProjectionCandidate[]; complete: boolean }> {
   // A search candidate's catalog claim and projection must describe the same
   // committed Doc snapshot while a storage-format transition is in flight.
   return withDocPathLock(options.spaceId, async () => {
+    const startedAt = performance.now()
     const context = await documentQueryContext(options.spaceId)
     const classified = context.catalog.entries.flatMap((entry) => {
       const item = classifyEntry(
@@ -639,51 +629,39 @@ export async function projectDocumentsForSearch(options: {
       )
       return item ? [item] : []
     })
-    const results: DocumentReadWithView[] = []
-    const budget = options.projectionBudget
+    // Project for at least as long as discovery took, so a sliced build is
+    // not dominated by repeating discovery for every slice.
+    const discoveredAt = performance.now()
+    const deadline =
+      options.projectionMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : discoveredAt +
+          Math.max(options.projectionMs, discoveredAt - startedAt)
+    const candidates: SearchProjectionCandidate[] = []
+    let projected = 0
+    let complete = true
     for (const item of classified) {
-      if (item.kind === "conflict") {
-        results.push({ result: { kind: "conflict", conflict: item.item } })
+      const candidate = searchCandidate(item)
+      candidates.push(candidate)
+      if (options.shouldProject && !options.shouldProject(candidate)) continue
+      if (projected > 0 && performance.now() >= deadline) {
+        complete = false
         continue
       }
-      const projected = await readPreparedDocumentTransactionally(
-        {
-          spaceId: options.spaceId,
-          path: item.item.path,
-          includeArchived: options.includeArchived,
-        },
-        { context, classified: item },
-        budget ? { budget } : undefined
-      )
-      if (!projected) continue
-      const { result } = projected
-      const resultBytes =
-        result.kind === "document" && result.projection.kind === "text"
-          ? Buffer.byteLength(result.projection.text) +
-            result.projection.headings.reduce(
-              (total, heading) => total + Buffer.byteLength(heading),
-              0
+      projected += 1
+      candidate.read =
+        item.kind === "conflict"
+          ? { result: { kind: "conflict", conflict: item.item } }
+          : await readPreparedDocumentTransactionally(
+              {
+                spaceId: options.spaceId,
+                path: item.item.path,
+                includeArchived: options.includeArchived,
+              },
+              { context, classified: item }
             )
-          : 0
-      if (
-        budget &&
-        result.kind === "document" &&
-        result.projection.kind === "text" &&
-        budget.projectedBytes + resultBytes > budget.limits.maxOutputBytes
-      ) {
-        results.push({
-          result: metadataOnly(result.document, "projection-unavailable"),
-          ...(projected.documentView
-            ? { documentView: projected.documentView }
-            : {}),
-        })
-        budget.projectedBytes = budget.limits.maxOutputBytes
-        continue
-      }
-      if (budget) budget.projectedBytes += resultBytes
-      results.push(projected)
     }
-    return results
+    return { candidates, complete }
   })
 }
 
@@ -809,8 +787,7 @@ function refreshLegacyHtmlPrepared(
 
 async function readPreparedDocument(
   prepared: PreparedDocumentRead,
-  spaceId: string,
-  options: { projectionAllowed: boolean; timeoutMs?: number }
+  spaceId: string
 ): Promise<DocumentReadWithView> {
   const { context, classified, resolvedFrom } = prepared
   if (classified.kind === "conflict") {
@@ -823,30 +800,12 @@ async function readPreparedDocument(
     }
   }
   const documentView = await specializedViewFor(classified)
-  const adapter = context.registry.get(classified.item.format.id)
-  if (
-    !options.projectionAllowed &&
-    classified.item.health === "supported" &&
-    adapter?.projectText
-  ) {
-    return {
-      result: metadataOnly(
-        classified.item,
-        "projection-unavailable",
-        resolvedFrom
-      ),
-      ...(documentView ? { documentView } : {}),
-    }
-  }
   return {
     result: await projectClassifiedDocument({
       spaceId,
       context,
       classified,
       resolvedFrom,
-      ...(options.timeoutMs !== undefined
-        ? { timeoutMs: options.timeoutMs }
-        : {}),
     }),
     ...(documentView ? { documentView } : {}),
   }
@@ -884,33 +843,11 @@ async function readPreparedDocumentTransactionally(
     path: string
     includeArchived?: boolean
   },
-  prepared: PreparedDocumentRead,
-  projection: PreparedProjectionOptions = {}
+  prepared: PreparedDocumentRead
 ): Promise<DocumentReadWithView | null> {
-  const project = (current: PreparedDocumentRead) => {
-    const budget = projection.budget
-    const timeoutMs =
-      budget === undefined ? undefined : budget.deadlineMs - performance.now()
-    let projectionAllowed = true
-    if (budget && current.classified.kind === "document") {
-      const { item } = current.classified
-      const canProject =
-        item.health === "supported" &&
-        Boolean(current.context.registry.get(item.format.id)?.projectText)
-      if (canProject) {
-        projectionAllowed =
-          budget.projectedDocuments < budget.limits.maxDocuments &&
-          budget.projectedBytes < budget.limits.maxOutputBytes &&
-          (timeoutMs ?? 0) > 0
-        if (projectionAllowed) budget.projectedDocuments += 1
-      }
-    }
-    return readPreparedDocument(current, options.spaceId, {
-      projectionAllowed,
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    })
-  }
-  return usePreparedDocumentTransactionally(options, prepared, project)
+  return usePreparedDocumentTransactionally(options, prepared, (current) =>
+    readPreparedDocument(current, options.spaceId)
+  )
 }
 
 function handleForPrepared(

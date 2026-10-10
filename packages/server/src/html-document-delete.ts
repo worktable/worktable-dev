@@ -57,7 +57,7 @@ export async function deleteHtmlDocument(
         spaceId,
         path: widgetId,
       })
-      invalidateSearchIndex()
+      invalidateSearchIndex({ spaceId })
       wsManager.broadcast(spaceId, {
         type: "widget_deleted",
         spaceId,
@@ -101,7 +101,7 @@ export async function deleteHtmlDocument(
               )
             }
             try {
-              invalidateSearchIndex()
+              invalidateSearchIndex({ spaceId })
               wsManager.broadcast(spaceId, {
                 type: "widget_deleted",
                 spaceId,

@@ -283,7 +283,7 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
 
   const statResult = await docStat(spaceId, docPath);
   const provenance = await getDocProvenance(spaceId, docPath);
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: docPath });
   wsManager.broadcast(spaceId, {
     type: "doc_update",
     spaceId,
@@ -439,7 +439,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       return c.json({ error: result.error, code: "NOT_FOUND" }, 404);
     }
 
-    invalidateSearchIndex();
+    invalidateSearchIndex({ spaceId });
 
     if ("paths" in result) {
       for (const path of result.paths) {
@@ -509,7 +509,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       return c.json({ error: result.error, code: "NOT_FOUND" }, 404);
     }
 
-    invalidateSearchIndex();
+    invalidateSearchIndex({ spaceId });
 
     if ("paths" in result) {
       for (const path of result.paths) {
@@ -662,7 +662,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
               );
             }
             try {
-              invalidateSearchIndex();
+              invalidateSearchIndex({ spaceId, path: docPath });
             } catch (error) {
               console.error(
                 `[docs] failed to invalidate derived state after converting ${spaceId}/${docPath}:`,

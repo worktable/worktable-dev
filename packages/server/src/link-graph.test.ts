@@ -22,6 +22,7 @@ import {
   setWorkspaceRootOverride,
 } from "./workspace.ts";
 import { setAppDirOverride } from "./app-storage.ts";
+import { notifyWorkspaceChange } from "./workspace-events.ts";
 import type { SpaceFile } from "@worktable/types";
 
 const testDir = join(tmpdir(), `worktable-link-graph-test-${Date.now()}`);
@@ -204,6 +205,12 @@ describe("link graph", () => {
       await write("a", "# A\n\n[b](/b)");
       links = await getDocLinks(SPACE, "a");
       expect(links.links.map((l) => l.resolvedPath)).toEqual(["b"]);
+
+      // A Doc written outside the store is picked up from a catalog event.
+      writeFileSync(join(spacesDir, SPACE, "docs", "c.md"), "# C\n\n[a](/a)");
+      notifyWorkspaceChange({ type: "documentCorpus", spaceId: SPACE });
+      links = await getDocLinks(SPACE, "a");
+      expect(links.backlinks).toEqual(["c"]);
     });
 
     it("discards an old-workspace build that finishes after a reset", async () => {

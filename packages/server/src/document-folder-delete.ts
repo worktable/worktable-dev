@@ -185,7 +185,7 @@ async function publishFolderDelete(
       docPath: document.path,
     })
   }
-  invalidateSearchIndex()
+  invalidateSearchIndex({ spaceId })
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 

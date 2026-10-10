@@ -4,9 +4,9 @@
 //
 // Extracts doc→doc references from markdown bodies and BlockNote
 // inline links, resolves them against the space's docs root, and
-// caches the resulting graph with the same lazy dirty/invalidate
-// lifecycle as the search index. The graph is derived, in-memory,
-// and rebuildable — never written to the workspace.
+// caches each Doc's links and the resulting graph, refreshing only
+// the Docs that changed. The graph is derived, in-memory, and
+// rebuildable — never written to the workspace.
 //
 // Link semantics: a leading `/` resolves from the space docs root
 // (the recommended, rename-stable form); anything else resolves
@@ -14,11 +14,16 @@
 // mailto:, anchors) are ignored. Broken links are legal — they may
 // simply be not-yet-written docs — and are reported, not rejected.
 
-import { listDocs, readDoc } from "./store.ts";
+import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
 import { resolveDocLink, type DocListEntry } from "@worktable/types";
-import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
+import {
+  readDocAliases,
+  resolveDocAliasIn,
+  type DocAliases,
+} from "./doc-aliases.ts";
 import { onWorkspaceChange } from "./workspace-events.ts";
+import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 
 export { resolveDocLink } from "@worktable/types";
 
@@ -91,26 +96,65 @@ export function extractDocLinkTargets(content: string | unknown[]): string[] {
   return [];
 }
 
-// ── Graph cache (mirrors search-index lifecycle) ─────────────
+// ── Graph cache ─────────────────────────────────────────────
+//
+// Per Space: each Doc's raw link targets with the source revision they were
+// read from, and the graph resolved from them. Change events mark the Space
+// dirty and name the Docs that changed. The next read re-lists the Space,
+// re-reads only Docs whose revision changed or that an event named, and
+// re-resolves the graph, which needs no reads.
 
-const graphs = new Map<string, SpaceLinkGraph>();
-const building = new Map<string, { generation: number; promise: Promise<SpaceLinkGraph> }>();
-let dirty = true;
-let generation = 0;
+/** Rebuilds one read waits for before answering with the latest graph. */
+const MAX_REBUILD_ROUNDS = 3;
 
+interface DocTargets extends DerivedRevision {
+  targets: string[];
+}
+
+interface SpaceLinks {
+  docs: Map<string, DocTargets>;
+  graph: SpaceLinkGraph | null;
+  dirty: boolean;
+  /** Doc paths to re-read even when their revision looks unchanged. */
+  forced: Set<string>;
+  building: Promise<void> | null;
+}
+
+const spaces = new Map<string, SpaceLinks>();
+let resetEpoch = 0;
+
+function markSpace(spaceId: string, docPath?: string): void {
+  const space = spaces.get(spaceId);
+  if (!space) return;
+  space.dirty = true;
+  if (docPath !== undefined) space.forced.add(docPath);
+}
+
+/** Re-check every Space at its next read; unchanged Docs are not re-read. */
 export function invalidateLinkGraph(): void {
-  generation += 1;
-  dirty = true;
+  for (const space of spaces.values()) space.dirty = true;
 }
 
 // Store-level change notifications cover internal writes whose watcher
-// events are suppressed (REST PUT, MCP writes, Yjs persists).
-onDocContentChanged(() => {
-  invalidateLinkGraph();
+// events are suppressed (REST PUT, MCP writes, Yjs persists); workspace
+// events carry external edits and catalog changes.
+onDocContentChanged((spaceId, docPath) => {
+  markSpace(spaceId, docPath);
 });
 onWorkspaceChange((event) => {
-  if (event.type === "docAliases" || event.type === "workspaceReset") {
-    invalidateLinkGraph();
+  switch (event.type) {
+    case "doc":
+      markSpace(event.spaceId, event.docPath);
+      break;
+    case "space":
+    case "docAliases":
+    case "documentCorpus":
+      markSpace(event.spaceId);
+      break;
+    case "workspaceReset":
+      resetEpoch += 1;
+      spaces.clear();
+      break;
   }
 });
 
@@ -122,24 +166,23 @@ export function setLinkGraphRebuildHookForTests(
   rebuildHookForTests = hook;
 }
 
-async function buildSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph> {
-  const docPaths = await listDocs(spaceId);
+function resolveSpaceLinkGraph(
+  docPaths: string[],
+  docs: ReadonlyMap<string, DocTargets>,
+  aliases: DocAliases,
+): SpaceLinkGraph {
   const docSet = new Set(docPaths);
   const outbound = new Map<string, DocLink[]>();
   const inbound = new Map<string, string[]>();
   const broken: SpaceLinkGraph["broken"] = [];
-  const { aliases, error: aliasError } = await readDocAliases(spaceId);
-  if (!aliases) {
-    throw new Error(aliasError ?? "Document aliases are unavailable");
-  }
 
   for (const docPath of docPaths) {
-    const result = await readDoc(spaceId, docPath);
-    if (result.error || result.data === null) continue;
+    const targets = docs.get(docPath)?.targets;
+    if (!targets) continue;
 
     const links: DocLink[] = [];
     const seen = new Set<string>();
-    for (const target of extractDocLinkTargets(result.data as string | unknown[])) {
+    for (const target of targets) {
       const lexicalPath = resolveDocLink(docPath, target);
       if (lexicalPath === null) continue;
       const resolvedPath = resolveDocAliasIn(aliases, lexicalPath);
@@ -164,36 +207,86 @@ async function buildSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph> {
   }
 
   const orphans = docPaths.filter((path) => !inbound.has(path));
-  await rebuildHookForTests?.();
   return { outbound, inbound, orphans, broken };
 }
 
-export async function getSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph> {
-  for (;;) {
-    if (dirty) {
-      graphs.clear();
-      dirty = false;
+async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void> {
+  const forced = space.forced;
+  // Marks made while this build runs stay for the next one.
+  space.forced = new Set();
+  space.dirty = false;
+  try {
+    const docPaths = await listDocs(spaceId);
+    const { aliases, error: aliasError } = await readDocAliases(spaceId);
+    if (!aliases) {
+      throw new Error(aliasError ?? "Document aliases are unavailable");
     }
-    const cached = graphs.get(spaceId);
-    if (cached) return cached;
 
-    const expectedGeneration = generation;
-    let pending = building.get(spaceId);
-    if (!pending || pending.generation !== expectedGeneration) {
-      pending = { generation: expectedGeneration, promise: buildSpaceLinkGraph(spaceId) };
-      building.set(spaceId, pending);
+    const docs = new Map<string, DocTargets>();
+    for (const docPath of docPaths) {
+      const readAt = Date.now();
+      const stat = await docStat(spaceId, docPath);
+      const revision = stat ? `${stat.format}:${stat.updatedAt}` : "";
+      const cached = space.docs.get(docPath);
+      if (
+        cached &&
+        !forced.has(docPath) &&
+        canReuseDerived(cached, revision, stat?.updatedAt)
+      ) {
+        docs.set(docPath, cached);
+        continue;
+      }
+      const result = await readDoc(spaceId, docPath);
+      if (result.error || result.data === null) continue;
+      docs.set(docPath, {
+        revision,
+        readAt,
+        targets: extractDocLinkTargets(result.data as string | unknown[]),
+      });
     }
-    let graph: SpaceLinkGraph;
-    try {
-      graph = await pending.promise;
-    } finally {
-      if (building.get(spaceId) === pending) building.delete(spaceId);
+
+    const graph = resolveSpaceLinkGraph(docPaths, docs, aliases);
+    await rebuildHookForTests?.();
+    space.docs = docs;
+    space.graph = graph;
+  } catch (error) {
+    space.dirty = true;
+    for (const docPath of forced) space.forced.add(docPath);
+    throw error;
+  }
+}
+
+function rebuildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void> {
+  if (!space.building) {
+    const building = buildSpaceLinks(spaceId, space);
+    space.building = building;
+    void building
+      .finally(() => {
+        if (space.building === building) space.building = null;
+      })
+      .catch(() => undefined);
+  }
+  return space.building;
+}
+
+export async function getSpaceLinkGraph(spaceId: string): Promise<SpaceLinkGraph> {
+  for (let round = 1; ; round += 1) {
+    const epoch = resetEpoch;
+    let space = spaces.get(spaceId);
+    if (!space) {
+      space = { docs: new Map(), graph: null, dirty: true, forced: new Set(), building: null };
+      spaces.set(spaceId, space);
     }
-    if (generation !== expectedGeneration) {
-      continue;
+    if (space.graph && !space.dirty && !space.building) return space.graph;
+    await rebuildSpaceLinks(spaceId, space);
+    // A workspace reset retired this cache: never answer from another
+    // workspace's Docs.
+    if (resetEpoch !== epoch) continue;
+    // Continuous edits must not hold a reader hostage: after a few rounds,
+    // answer with the graph as of the latest rebuild.
+    if (space.graph && (!space.dirty || round >= MAX_REBUILD_ROUNDS)) {
+      return space.graph;
     }
-    graphs.set(spaceId, graph);
-    return graph;
   }
 }
 

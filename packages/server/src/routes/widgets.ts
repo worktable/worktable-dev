@@ -317,7 +317,7 @@ widgetsRouter.post("/", async (c) => {
   }
   if (!outcome.data) return c.json({ error: outcome.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
   const id = outcome.data.id;
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: id });
   const lifetime = await applyLifetimeOnCreate({
     spaceId,
     path: id,
@@ -513,7 +513,7 @@ async function handlePutWidget(c: Context, spaceId: string, widgetId: string) {
       warnings: outcome.warnings,
     }, 400);
   }
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
   return c.json({ widget: outcome.data, warnings: outcome.warnings });
 }
@@ -540,7 +540,7 @@ async function handlePatchWidget(c: Context, spaceId: string, widgetId: string) 
     return { data: result.data };
   });
   if (!outcome.data) return c.json({ error: outcome.error ?? "Update failed", code: "VALIDATION_ERROR" }, 400);
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
   return c.json({ widget: outcome.data });
 }
@@ -551,7 +551,7 @@ async function handleArchive(c: Context, spaceId: string, widgetId: string) {
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   const result = await setWidgetArchived(spaceId, widgetId, true, restWriteActor(c, parsed.data.archivedBy), parsed.data.reason);
   if (result.error || !result.data) return c.json({ error: result.error ?? "Widget not found", code: "NOT_FOUND" }, 404);
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: result.data });
   return c.json({ ok: true, widget: result.data });
 }
@@ -559,7 +559,7 @@ async function handleArchive(c: Context, spaceId: string, widgetId: string) {
 async function handleRestore(c: Context, spaceId: string, widgetId: string) {
   const result = await setWidgetArchived(spaceId, widgetId, false, restWriteActor(c));
   if (result.error || !result.data) return c.json({ error: result.error ?? "Widget not found", code: "NOT_FOUND" }, 404);
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: result.data });
   return c.json({ ok: true, widget: result.data });
 }
@@ -741,7 +741,7 @@ async function handleRestoreVersion(c: Context, spaceId: string, widgetId: strin
   if (outcome.kind === "invalid") {
     return c.json({ error: outcome.error, code: "VALIDATION_ERROR" }, 400);
   }
-  invalidateSearchIndex();
+  invalidateSearchIndex({ spaceId, path: widgetId });
   wsManager.broadcast(spaceId, { type: "widget_update", spaceId, widgetId, data: outcome.data });
   return c.json({ ok: true, widget: outcome.data, provenance: outcome.provenance });
 }

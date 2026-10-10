@@ -528,8 +528,8 @@ async function removeGeneration(
   )
 }
 
-async function publishMutation(): Promise<void> {
-  invalidateSearchIndex()
+async function publishMutation(spaceId: string): Promise<void> {
+  invalidateSearchIndex({ spaceId })
 }
 
 function suppressRegisteredSourceWrite(input: {
@@ -1039,7 +1039,7 @@ export async function createRegisteredDocument(options: {
     spaceId: options.spaceId,
     documentId: result.documentId,
   })
-  await publishMutation()
+  await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
@@ -1373,7 +1373,7 @@ export async function replaceRegisteredDocument(options: {
     spaceId: options.spaceId,
     documentId: result.documentId,
   })
-  await publishMutation()
+  await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
@@ -1686,7 +1686,7 @@ export async function restoreRegisteredDocumentVersion(options: {
       path: options.path,
       registry,
     })
-    await publishMutation()
+    await publishMutation(options.spaceId)
     await notifyWorkspaceChangeAndWait({
       type: "documentCorpus",
       spaceId: options.spaceId,
@@ -1768,7 +1768,7 @@ export async function moveRegisteredDocument(options: {
     }
   })
   await noteDocumentActivity(options.spaceId, [to])
-  await publishMutation()
+  await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
@@ -1874,7 +1874,7 @@ export async function setRegisteredDocumentArchived(options: {
     }
   })
   if (result.notDue) return result
-  await publishMutation()
+  await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
@@ -1920,7 +1920,7 @@ export async function deleteRegisteredDocument(options: {
     }
     return { documentId: deleted.documentId, path: current.path }
   })
-  await publishMutation()
+  await publishMutation(options.spaceId)
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,

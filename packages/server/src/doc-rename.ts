@@ -237,7 +237,7 @@ async function publishRenameSignals(
     spaceId,
     moves.map(({ to }) => to)
   )
-  invalidateSearchIndex()
+  invalidateSearchIndex({ spaceId })
 
   for (const { from, to } of moves) {
     wsManager.broadcast(spaceId, {

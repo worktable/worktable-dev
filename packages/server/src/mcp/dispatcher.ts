@@ -700,7 +700,7 @@ async function syncDocAfterToolWrite(
   spaceId: string,
   docPath: string
 ): Promise<void> {
-  invalidateSearchIndex()
+  invalidateSearchIndex({ spaceId, path: docPath })
 
   const doc = await readDoc(spaceId, docPath)
   const statResult = await docStat(spaceId, docPath)
@@ -789,7 +789,9 @@ export async function dispatchOperation(
   if (operation?.mutation === "records") {
     noteRecordMutated()
   } else if (operation?.mutation === "workspace") {
-    invalidateSearchIndex()
+    // Operations act within the Space they name; the rest re-check every Space.
+    const spaceId = args["spaceId"]
+    invalidateSearchIndex(typeof spaceId === "string" ? { spaceId } : undefined)
   }
   return result
 }

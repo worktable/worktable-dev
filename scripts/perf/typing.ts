@@ -10,7 +10,7 @@ import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { WebsocketProvider } from "y-websocket"
 import * as Y from "yjs"
-import { percentile, round } from "./lib.ts"
+import { get, healthSampler, percentile, round } from "./lib.ts"
 
 const MESSAGE_PING = 42
 const MESSAGE_INTENT = 43
@@ -128,7 +128,7 @@ export async function runTyping(options: {
 }): Promise<TypingResult> {
   const cps = options.charactersPerSecond ?? 5
   const meta = (await (
-    await fetch(
+    await get(
       `${options.url}/api/spaces/${options.spaceId}/docs/${options.path}?conversionCheck=skip`
     )
   ).json()) as { collaborationEpoch: string; collaborationCacheEpoch: string }
@@ -171,18 +171,7 @@ export async function runTyping(options: {
     }
   }, 50)
 
-  const healthMs: number[] = []
-  let sampling = true
-  const sampler = (async () => {
-    while (sampling) {
-      const started = performance.now()
-      await fetch(`${options.url}/health`).then((response) =>
-        response.arrayBuffer()
-      )
-      healthMs.push(performance.now() - started)
-      await Bun.sleep(Math.max(0, 250 - (performance.now() - started)))
-    }
-  })()
+  const health = healthSampler(options.url, 250)
 
   const before = processCounters(options.pid)
   const alphabet = "the quick brown fox jumps over the lazy dog "
@@ -207,8 +196,7 @@ export async function runTyping(options: {
     await Bun.sleep(100)
   }
   const after = processCounters(options.pid)
-  sampling = false
-  await sampler
+  const healthMs = await health.stop()
   clearInterval(watchFile)
   writer.provider.destroy()
   reader.provider.destroy()

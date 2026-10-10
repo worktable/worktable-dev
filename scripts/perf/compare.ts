@@ -82,10 +82,16 @@ function workingTree(): Side {
   }
 }
 
-export function compareSummary(
-  base: ServerResult[],
-  candidate: ServerResult[]
-) {
+/** Median and range of one metric across rounds. */
+function spread(values: number[]) {
+  return {
+    median: round(median(values)),
+    min: values.length > 0 ? round(Math.min(...values)) : null,
+    max: values.length > 0 ? round(Math.max(...values)) : null,
+  }
+}
+
+function compareSummary(base: ServerResult[], candidate: ServerResult[]) {
   const baseMetrics = base.map(metrics)
   const candidateMetrics = candidate.map(metrics)
   return Object.keys(baseMetrics[0] ?? {}).map((metric) => {
@@ -93,8 +99,10 @@ export function compareSummary(
       all
         .map((entry) => entry[metric])
         .filter((value): value is number => typeof value === "number")
-    const baseMedian = median(values(baseMetrics))
-    const candidateMedian = median(values(candidateMetrics))
+    const baseSpread = spread(values(baseMetrics))
+    const candidateSpread = spread(values(candidateMetrics))
+    const baseMedian = baseSpread.median
+    const candidateMedian = candidateSpread.median
     const wins = baseMetrics.filter((entry, index) => {
       const left = entry[metric]
       const right = candidateMetrics[index]?.[metric]
@@ -104,8 +112,8 @@ export function compareSummary(
     }).length
     return {
       metric,
-      base: round(baseMedian),
-      candidate: round(candidateMedian),
+      base: baseSpread,
+      candidate: candidateSpread,
       changePercent:
         baseMedian && candidateMedian !== null
           ? round(((candidateMedian - baseMedian) / baseMedian) * 100, 0)
@@ -176,14 +184,14 @@ if (import.meta.main) {
     "",
     `Fixture ${profile}, seed ${seed}, ${rounds} alternating rounds, ${samples} samples per endpoint, typing ${typingMinutes} min. ${machine.cpus} CPUs (${machine.model}), Bun ${machine.bun}.`,
     "",
-    "Medians across rounds; lower is better. Advisory: changes within the round-to-round spread are noise.",
+    "Median across rounds, with the lowest and highest round in brackets; lower is better. Advisory: a change inside the ranges is noise.",
     "",
     markdownTable(
       ["Metric", "Base", "Candidate", "Change %", "Candidate faster"],
       rows.map((row) => [
         row.metric,
-        row.base,
-        row.candidate,
+        `${row.base.median} (${row.base.min} to ${row.base.max})`,
+        `${row.candidate.median} (${row.candidate.min} to ${row.candidate.max})`,
         row.changePercent,
         row.candidateFaster,
       ])

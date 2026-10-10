@@ -160,20 +160,6 @@ if (import.meta.main) {
   const sizes = bundleSizes(dist)
   const config = JSON.parse(readFileSync(BUDGETS_FILE, "utf8")) as Budgets
 
-  if (args.has("update")) {
-    config.budgets = Object.fromEntries(
-      Object.entries(sizes).map(([name, size]) => [
-        name,
-        { gzip: Math.ceil((size.gzip * 1.02) / 1000) * 1000 },
-      ])
-    )
-    // One line per bundle, as Prettier leaves it.
-    const json = JSON.stringify(config, null, 2).replace(
-      /\{\n\s+"gzip": (\d+)\n\s+\}/g,
-      '{ "gzip": $1 }'
-    )
-    writeFileSync(BUDGETS_FILE, `${json}\n`)
-  }
   if (args.has("json"))
     writeFileSync(
       resolve(args.get("json")!),
@@ -210,6 +196,23 @@ if (import.meta.main) {
     console.error(
       `\nOver budget: ${over.map(([name]) => name).join(", ")}. Reduce the bundle, or raise the budget in scripts/perf/bundle-budgets.json with the reason in the pull request.`
     )
+  }
+
+  if (args.has("update")) {
+    config.budgets = Object.fromEntries(
+      Object.entries(sizes).map(([name, size]) => [
+        name,
+        { gzip: Math.ceil((size.gzip * 1.02) / 1000) * 1000 },
+      ])
+    )
+    // One line per bundle, as Prettier leaves it.
+    const json = JSON.stringify(config, null, 2).replace(
+      /\{\n\s+"gzip": (\d+)\n\s+\}/g,
+      '{ "gzip": $1 }'
+    )
+    writeFileSync(BUDGETS_FILE, `${json}\n`)
+    console.log("\nBudgets updated to 2% above these sizes.")
+  } else if (over.length > 0) {
     process.exit(1)
   }
 }

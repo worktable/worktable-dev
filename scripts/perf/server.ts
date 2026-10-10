@@ -25,6 +25,8 @@ import {
   PERF_ROOT,
   REPO_ROOT,
   copyFixture,
+  get,
+  healthSampler,
   markdownTable,
   numberArg,
   parseArgs,
@@ -37,7 +39,6 @@ import { runTyping, type TypingResult } from "./typing.ts"
 interface Sample {
   ms: number
   bytes: number
-  ok: boolean
   /** Server-Timing header of each request, when the server sends one. */
   serverTiming: string[]
 }
@@ -46,7 +47,6 @@ export interface RequestStats {
   name: string
   concurrency: number
   samples: number
-  errors: number
   p50Ms: number | null
   p95Ms: number | null
   maxMs: number | null
@@ -134,20 +134,21 @@ function endpoints(fixture: FixtureManifest): Endpoint[] {
   ]
 }
 
-/** One sample: the endpoint's requests in order, as the client makes them. */
+/**
+ * One sample: the endpoint's requests in order, as the client makes them. Any
+ * failed request throws (see `get`), so errors never count as fast samples.
+ */
 async function sample(url: string, paths: string[]): Promise<Sample> {
   const started = performance.now()
   let bytes = 0
-  let ok = true
   const serverTiming: string[] = []
   for (const path of paths) {
-    const response = await fetch(url + path)
+    const response = await get(url + path)
     bytes += (await response.arrayBuffer()).byteLength
-    ok &&= response.ok
     const timing = response.headers.get("server-timing")
     if (timing) serverTiming.push(timing)
   }
-  return { ms: performance.now() - started, bytes, ok, serverTiming }
+  return { ms: performance.now() - started, bytes, serverTiming }
 }
 
 async function measure(
@@ -157,43 +158,37 @@ async function measure(
   samples: number
 ): Promise<RequestStats> {
   const results: Sample[] = []
-  const health: number[] = []
-  let done = concurrency === 1
-  const sampler = (async () => {
-    while (!done) {
-      const started = performance.now()
-      await fetch(`${url}/health`).then((response) => response.arrayBuffer())
-      health.push(performance.now() - started)
-      await Bun.sleep(Math.max(0, 100 - (performance.now() - started)))
-    }
-  })()
+  const health = concurrency > 1 ? healthSampler(url, 100) : null
   // Stop early on very slow endpoints, keeping at least three samples each.
   const deadline = performance.now() + 60_000
   let next = 0
-  await Promise.all(
-    Array.from({ length: concurrency }, async () => {
-      while (
-        next < samples &&
-        (next < concurrency * 3 || performance.now() < deadline)
-      ) {
-        const index = next++
-        results.push(await sample(url, endpoint.paths(index)))
-      }
-    })
-  )
-  done = true
-  await sampler
-  const times = results.filter((result) => result.ok).map((result) => result.ms)
+  try {
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (
+          next < samples &&
+          (next < concurrency * 3 || performance.now() < deadline)
+        ) {
+          const index = next++
+          results.push(await sample(url, endpoint.paths(index)))
+        }
+      })
+    )
+  } catch (error) {
+    await health?.stop().catch(() => {})
+    throw new Error(`${endpoint.name} at concurrency ${concurrency}: ${error}`)
+  }
+  const healthMs = (await health?.stop()) ?? []
+  const times = results.map((result) => result.ms)
   return {
     name: endpoint.name,
     concurrency,
     samples: results.length,
-    errors: results.filter((result) => !result.ok).length,
     p50Ms: round(percentile(times, 0.5)),
     p95Ms: round(percentile(times, 0.95)),
     maxMs: round(percentile(times, 1)),
     bytes: results[0]?.bytes ?? 0,
-    healthP95Ms: concurrency > 1 ? round(percentile(health, 0.95)) : null,
+    healthP95Ms: health ? round(percentile(healthMs, 0.95)) : null,
   }
 }
 
@@ -265,12 +260,7 @@ export async function runServerScenario(options: {
     const all = endpoints(fixture)
     const firsts = new Map<string, Sample>()
     for (const endpoint of all) {
-      const first = await sample(server.url, endpoint.paths(0))
-      if (!first.ok)
-        throw new Error(
-          `${endpoint.name} failed: ${endpoint.paths(0).join(", ")}`
-        )
-      firsts.set(endpoint.name, first)
+      firsts.set(endpoint.name, await sample(server.url, endpoint.paths(0)))
     }
     // The first request is the spaces list, so this is boot to first list.
     const boot = {
@@ -315,7 +305,8 @@ export async function runServerScenario(options: {
           })
         : null
     const diagnosticsResponse = await fetch(
-      `${server.url}/api/diagnostics/perf`
+      `${server.url}/api/diagnostics/perf`,
+      { signal: AbortSignal.timeout(30_000) }
     )
     const diagnostics = diagnosticsResponse.ok
       ? await diagnosticsResponse.json()

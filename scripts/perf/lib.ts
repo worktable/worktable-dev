@@ -132,6 +132,50 @@ export function copyFixture(
   return { workspace, app }
 }
 
+/**
+ * GET with a timeout. A failure or an error status throws, naming the URL, so
+ * a broken server fails the run instead of producing fast-looking numbers.
+ */
+export async function get(url: string, timeoutMs = 120_000): Promise<Response> {
+  let response: Response
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+  } catch (error) {
+    throw new Error(`GET ${url} failed: ${(error as Error).message}`)
+  }
+  if (!response.ok) throw new Error(`GET ${url} returned ${response.status}`)
+  return response
+}
+
+/**
+ * Request /health every `intervalMs` until stopped. Its latency is how long a
+ * trivial request waits for the server's request loop.
+ */
+export function healthSampler(
+  url: string,
+  intervalMs: number
+): { stop: () => Promise<number[]> } {
+  const latencies: number[] = []
+  let running = true
+  const loop = (async () => {
+    while (running) {
+      const started = performance.now()
+      await (await get(`${url}/health`, 30_000)).arrayBuffer()
+      latencies.push(performance.now() - started)
+      await Bun.sleep(Math.max(0, intervalMs - (performance.now() - started)))
+    }
+  })()
+  // Reported by stop(); never an unhandled rejection in the meantime.
+  loop.catch(() => {})
+  return {
+    stop: async () => {
+      running = false
+      await loop
+      return latencies
+    },
+  }
+}
+
 export async function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
     const server = createServer()

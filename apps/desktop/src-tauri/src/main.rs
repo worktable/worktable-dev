@@ -16,7 +16,9 @@ use connections::{
     DesktopConnections, InspectionEnvelope, PreparationEnvelope, SavedWorkspaceResolution,
     WorkspaceInspection, WorkspacePrepared,
 };
-use credential_store::system_credential_store;
+use credential_store::{
+    keychain_service, running_with_developer_id_signature, system_credential_store,
+};
 use host_cookie::{purge_persisted_host_only_cookie, set_host_only_cookie};
 use remote_connection::{
     normalize_remote_origin, remote_origin_string, validate_remote_origin, RemoteConnectionError,
@@ -6538,8 +6540,10 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(
-            CloudAuthController::new(system_credential_store())
-                .expect("failed to initialize the Worktable Cloud client"),
+            CloudAuthController::new(system_credential_store(keychain_service(
+                running_with_developer_id_signature(),
+            )))
+            .expect("failed to initialize the Worktable Cloud client"),
         )
         .manage(DesktopHostState::default())
         .manage(DesktopUpdaterState::default())

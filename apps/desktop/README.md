@@ -37,6 +37,11 @@ WORKTABLE_DESKTOP_LOCAL_APP_DIR=/path/to/local-app-data \
 bun run desktop:dev
 ```
 
+Only the Developer ID-signed app uses the release Keychain entry for its
+Worktable Cloud sign-in. Development and local builds keep a separate entry, so
+sign in to Cloud once in them; they never prompt for the release app's
+credential.
+
 Desktop development serves the shell at `http://127.0.0.1:15321` and loads
 General Sans from Fontshare. Internet access is needed to load that font;
 otherwise the system-font fallback is used. Packaged builds remain offline and

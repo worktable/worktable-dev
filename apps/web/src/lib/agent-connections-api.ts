@@ -152,8 +152,11 @@ export async function saveAgentChanges(
       platform: shownPlatform === "other" ? undefined : shownPlatform,
     })
   }
+  // A connection reports access only where it can be changed.
   const accessChanged =
-    changes.access !== null && !sameAccess(changes.access, connection.access)
+    changes.access !== null &&
+    connection.access != null &&
+    !sameAccess(changes.access, connection.access)
   if (renamed || iconChanged || accessChanged) {
     await updateAgentConnection(connection.id, {
       ...(renamed ? { displayName: name } : {}),

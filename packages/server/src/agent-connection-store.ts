@@ -553,17 +553,23 @@ export async function createAgentCredential(input: {
   if (scopes.length === 0) {
     throw new AgentConnectionUpdateError("Choose at least one kind of access")
   }
-  const { token } = await createToken({ agent: input.label, scopes })
-  const connection = await updateAgentConnection(
-    labeledConnectionId(getWorkspaceRoot(), input.label),
-    {
-      access: input.access,
-      ...(input.displayName ? { displayName: input.displayName } : {}),
-      ...(input.icon !== undefined ? { icon: input.icon } : {}),
-    }
-  )
-  if (!connection) throw new Error("The new credential was revoked")
-  return { token, connection }
+  const { token, metadata } = await createToken({ agent: input.label, scopes })
+  try {
+    const connection = await updateAgentConnection(
+      labeledConnectionId(getWorkspaceRoot(), input.label),
+      {
+        access: input.access,
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+        ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      }
+    )
+    if (!connection) throw new Error("The new credential was revoked")
+    return { token, connection }
+  } catch (error) {
+    // Its secret is never delivered, so it must not stay valid.
+    await revokeToken(metadata.id).catch(() => false)
+    throw error
+  }
 }
 
 export class AgentConnectionUpdateError extends Error {}

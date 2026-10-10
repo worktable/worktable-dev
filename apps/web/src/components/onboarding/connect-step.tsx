@@ -585,13 +585,18 @@ export function ConnectStep({
   // Cloud connects apps and CLI agents by signing in, with no command to
   // create first; the owner's choices apply when the agent is picked.
   const signsIn = isCloud && (method !== "always-on" || alwaysOnSignIn)
-  const accessFixed = method === "always-on" && alwaysOnSignIn
+  // On Cloud, an always-on agent's own registration fixes its access.
+  const accessFixed =
+    method === "always-on" &&
+    alwaysOnSignIn &&
+    alwaysOnAgent.cloudAuth === "agent-registration"
   const created = Boolean(pairing || token)
   const complete = pairingVerified || tokenUsed || cloudComplete
   const busy =
     create.isPending || mint.isPending || useCloudConnection.isPending
   const locked = created || busy || complete
-  const canCreate = name.trim().length > 0 && !busy
+  const anyAccess = access.threads || access.read || access.edit
+  const canCreate = name.trim().length > 0 && anyAccess && !busy
 
   const origin = current ? new URL(current.remoteMcpUrl).origin : ""
   const manualDetails = current ? desktopAgentConnectionDetails(current) : null
@@ -742,11 +747,6 @@ export function ConnectStep({
             .join(" · ")}
         </span>
       </span>
-      {complete ? null : (
-        <Button variant="ghost" size="sm" onClick={reset}>
-          Change
-        </Button>
-      )}
     </div>
   )
 
@@ -890,7 +890,7 @@ export function ConnectStep({
       baseline={baseline}
       alwaysOn={method === "always-on" ? alwaysOnAgent : undefined}
       pending={useCloudConnection.isPending}
-      disabled={!name.trim() || cloudComplete}
+      disabled={!name.trim() || !anyAccess || cloudComplete}
       onUse={(item) => useCloudConnection.mutate(item)}
       onRefresh={() => void connections.refetch()}
     />

@@ -116,9 +116,6 @@ test("new owner can name, connect multiple real agent identities, leave an alway
   await page.getByRole("button", { name: /Claude or ChatGPT/ }).click()
   await page.getByRole("combobox", { name: "App" }).click()
   await page.getByRole("option", { name: "ChatGPT" }).click()
-  await expect(
-    page.getByText("Open ChatGPT desktop Settings → MCP servers.")
-  ).toBeVisible()
   await page.getByLabel("Agent name").fill("Writing ChatGPT")
   let releaseTokenRequest!: () => void
   const tokenRequestGate = new Promise<void>((resolve) => {
@@ -154,6 +151,10 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     token: string
     connection: { displayName: string; platform: string; access: unknown }
   }
+  // The app's own steps follow, with what to paste.
+  await expect(
+    page.getByText("Open ChatGPT desktop Settings → MCP servers.")
+  ).toBeVisible()
   expect(minted.connection).toMatchObject({
     displayName: "Writing ChatGPT",
     platform: "chatgpt",

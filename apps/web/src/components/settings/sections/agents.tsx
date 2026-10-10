@@ -1057,7 +1057,10 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                     variant="outline"
                     size="sm"
                     onClick={() => mintClaude.mutate()}
-                    disabled={mintClaude.isPending}
+                    disabled={
+                      mintClaude.isPending ||
+                      !(access.threads || access.read || access.edit)
+                    }
                   >
                     {mintClaude.isPending
                       ? "Generating…"
@@ -1103,7 +1106,10 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                     variant="outline"
                     size="sm"
                     onClick={() => mintChatGpt.mutate()}
-                    disabled={mintChatGpt.isPending}
+                    disabled={
+                      mintChatGpt.isPending ||
+                      !(access.threads || access.read || access.edit)
+                    }
                   >
                     {mintChatGpt.isPending
                       ? "Generating…"
@@ -1248,7 +1254,10 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
                   variant="outline"
                   size="sm"
                   onClick={() => mint.mutate()}
-                  disabled={mint.isPending}
+                  disabled={
+                    mint.isPending ||
+                    !(access.threads || access.read || access.edit)
+                  }
                 >
                   {mint.isPending ? "Generating…" : "Generate connection token"}
                 </Button>

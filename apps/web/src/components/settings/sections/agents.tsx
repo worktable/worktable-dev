@@ -580,6 +580,7 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
             setPairing(null)
             create.reset()
           }}
+          disabled={create.isPending}
         >
           <SelectTrigger className="w-full sm:w-64">
             <SelectValue>
@@ -606,6 +607,8 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
           setPairing(null)
           create.reset()
         }}
+        // A pairing being created carries this choice; it stays until done.
+        disabled={create.isPending}
       />
 
       <RemoteAgentOriginWarning connection={connection} />
@@ -804,6 +807,7 @@ function AlwaysOnSetupPanel({
               setPairing(null)
             }}
             placeholder={agent.name}
+            disabled={create.isPending}
           />
         </label>
       </div>
@@ -815,6 +819,7 @@ function AlwaysOnSetupPanel({
           setPairing(null)
         }}
         alwaysOn
+        disabled={create.isPending}
       />
 
       <RemoteAgentOriginWarning connection={connection} />

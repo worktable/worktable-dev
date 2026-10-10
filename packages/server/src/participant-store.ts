@@ -290,8 +290,38 @@ export async function resolveParticipant(
     }
   })
   // Outside the binding lock: threads take their own locks.
-  if (renamed) await renameThreadMember(renamed.id, renamed.name)
+  if (renamed) await reconcileThreadNames(renamed.id)
   return resolved
+}
+
+const reconciling = new Map<string, Promise<void>>()
+
+/**
+ * Bring a participant's threads in line with its current name. Runs for one
+ * participant at a time, each run reading the name then, so overlapping
+ * renames finish on the latest one.
+ */
+function reconcileThreadNames(participantId: string): Promise<void> {
+  const run = async () => {
+    const binding = (await loadBindings()).bindings.find(
+      (candidate) => candidate.participant.id === participantId
+    )
+    if (binding) {
+      await renameThreadMember(participantId, binding.participant.name)
+    }
+  }
+  const next = (reconciling.get(participantId) ?? Promise.resolve()).then(
+    run,
+    run
+  )
+  const settled = next.catch(() => undefined)
+  reconciling.set(participantId, settled)
+  void settled.then(() => {
+    if (reconciling.get(participantId) === settled) {
+      reconciling.delete(participantId)
+    }
+  })
+  return next
 }
 
 /** Each identity's current participant, keyed like `participantKey`. */

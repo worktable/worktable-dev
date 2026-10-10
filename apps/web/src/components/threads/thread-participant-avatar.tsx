@@ -19,10 +19,9 @@ export function ThreadParticipantAvatar({
   const participants = useThreadParticipants()
 
   if (participant && isAgent) {
-    // The directory has the agent's current platform and chosen icon.
-    const current = participants.data?.participants.find(
-      (candidate) => candidate.id === participant.id
-    )
+    // The directory has the agent's current platform and chosen icon, also
+    // for an agent no longer offered as a recipient.
+    const current = participants.data?.presentations?.[participant.id]
     return (
       <AgentAvatar
         name={participant.name}

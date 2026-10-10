@@ -638,37 +638,52 @@ export async function listThreadParticipants(
     }))
 }
 
+/** How a connected agent looks: where it comes from and its chosen icon. */
+export interface AgentPresentation {
+  platform?: AgentPlatformId
+  icon?: string | null
+}
+
 /**
  * Participants as the web app shows them: an agent also carries its platform
- * and the icon its owner chose, for its avatar.
+ * and the icon its owner chose, for its avatar. `presentations` covers every
+ * connected agent, including one no longer offered as a recipient, so it
+ * keeps its avatar in the threads it is already in.
  */
 export async function listThreadParticipantsForDisplay(
   identity?: ThreadIdentity
-): Promise<
-  Array<
+): Promise<{
+  participants: Array<
     ParticipantRef & {
       defaultIdentityId: string
       alwaysOn: boolean
-      platform?: AgentPlatformId
-      icon?: string | null
-    }
+    } & AgentPresentation
   >
-> {
+  presentations: Record<string, AgentPresentation>
+}> {
   const [participants, connections] = await Promise.all([
     listThreadParticipants(identity),
     listAgentConnections(),
   ])
-  const byParticipant = new Map(
+  const presentations: Record<string, AgentPresentation> = Object.fromEntries(
     connections.flatMap((connection) =>
-      connection.participant ? [[connection.participant.id, connection]] : []
+      connection.participant
+        ? [
+            [
+              connection.participant.id,
+              { platform: connection.platform, icon: connection.icon },
+            ],
+          ]
+        : []
     )
   )
-  return participants.map((participant) => {
-    const connection = byParticipant.get(participant.id)
-    return connection
-      ? { ...participant, platform: connection.platform, icon: connection.icon }
-      : participant
-  })
+  return {
+    participants: participants.map((participant) => ({
+      ...participant,
+      ...presentations[participant.id],
+    })),
+    presentations,
+  }
 }
 
 export async function listThreadSummaries(

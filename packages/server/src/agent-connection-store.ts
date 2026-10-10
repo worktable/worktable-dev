@@ -159,7 +159,8 @@ export async function upsertAgentConnection(input: {
   credentialId: string
   displayName?: string
 }): Promise<boolean> {
-  return serialized(async () => {
+  let carryName: { token: TokenMetadata; name: string } | undefined
+  const stored = await serialized(async () => {
     const file = await loadFile()
     const workspace = getWorkspaceRoot()
     const id = connectionId(
@@ -194,6 +195,14 @@ export async function upsertAgentConnection(input: {
         // installed and recorded its credential. Never point the semantic
         // connection back at an older or concurrently revoked token.
         return false
+      }
+      if (
+        existing.participant === null &&
+        existing.displayName &&
+        input.participant &&
+        input.participant.name !== existing.displayName
+      ) {
+        carryName = { token: incomingToken, name: existing.displayName }
       }
       existing.id = id
       existing.workspace = workspace
@@ -234,6 +243,15 @@ export async function upsertAgentConnection(input: {
     if (participantsChanged) await notifyThreadParticipantsChanged()
     return true
   })
+  if (carryName) {
+    // Its first connection since agents have one name: the name its owner
+    // gave it becomes its thread name. Outside the lock, like any rename.
+    await resolveParticipant(
+      { agent: carryName.token.agent, principal: carryName.token.principal },
+      { name: carryName.name }
+    )
+  }
+  return stored
 }
 
 function platformForTarget(target: AgentConnectionTarget): AgentPlatformId {
@@ -302,11 +320,16 @@ function publicConnection(
     participants.get(
       participantKey({ agent: token.agent, principal: token.principal })
     ) ?? stored.participant
+  // A pairing recorded before agents had one name keeps the name its owner
+  // gave it until reconnecting or renaming carries that name into threads.
+  const legacyName =
+    stored.participant === null ? stored.displayName : undefined
   return {
     id: stored.id,
     authKind: "local-token",
     // One name: the agent's thread participant carries it once it has one.
     displayName:
+      legacyName ??
       participant?.name ??
       stored.displayName ??
       (platform === "other"
@@ -402,7 +425,10 @@ export async function rotateAgentCredential(options: {
 }): Promise<{ token: string; metadata: TokenMetadata }> {
   return serialized(async () => {
     const workspace = getWorkspaceRoot()
-    const predecessors = (await listTokens()).filter(
+    // Read the record first: an unreadable one fails before the current
+    // credential is revoked.
+    const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+    const predecessors = tokens.filter(
       (token) =>
         token.agent === options.agent &&
         token.workspace === workspace &&
@@ -413,7 +439,6 @@ export async function rotateAgentCredential(options: {
       scopes: predecessors.at(-1)?.scopes ?? options.scopes,
     })
     const replaced = new Set(predecessors.map((token) => token.id))
-    const file = await loadFile()
     let changed = false
     for (const connection of file.connections) {
       if (
@@ -424,7 +449,9 @@ export async function rotateAgentCredential(options: {
         changed = true
       }
     }
-    if (changed) await saveFile(file)
+    // The new credential is already the only one, so it is returned even if
+    // its record cannot follow; the agent then lists as newly set up.
+    if (changed) await saveFile(file).catch(() => undefined)
     return rotated
   })
 }
@@ -446,6 +473,7 @@ export async function updateAgentConnection(
   const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
+    let previousScopes: string[] | undefined
     let connection = file.connections.find(
       (candidate) => candidate.id === id && candidate.workspace === workspace
     )
@@ -480,6 +508,7 @@ export async function updateAgentConnection(
       }
       // Revoked meanwhile (token management has its own lock): nothing to edit.
       if (!(await setTokenScopes(token.id, scopes))) return null
+      previousScopes = token.scopes
     }
     if (changes.icon !== undefined) {
       if (changes.icon === null) delete connection.icon
@@ -488,17 +517,35 @@ export async function updateAgentConnection(
     if (changes.displayName !== undefined) {
       connection.displayName = changes.displayName
     }
-    await saveFile(file)
+    try {
+      await saveFile(file)
+    } catch (error) {
+      // The edit applies whole or not at all.
+      if (previousScopes) {
+        await setTokenScopes(token.id, previousScopes).catch(() => false)
+      }
+      throw error
+    }
     return token
   })
   if (!token) return null
   if (changes.displayName !== undefined) {
     // Outside the connection lock: the rename rewrites every thread the
     // agent is in, and other processes should not wait on that.
-    await resolveParticipant(
+    const { participant } = await resolveParticipant(
       { agent: token.agent, principal: token.principal },
       { name: changes.displayName }
     )
+    // From now on its participant carries its name.
+    await serialized(async () => {
+      const file = await loadFile()
+      const connection = file.connections.find(
+        (candidate) => candidate.id === id && candidate.participant === null
+      )
+      if (!connection) return
+      connection.participant = participant
+      await saveFile(file)
+    })
   }
   await notifyThreadParticipantsChanged()
   return (

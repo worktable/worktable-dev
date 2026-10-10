@@ -11,6 +11,7 @@ import {
   upsertAgentConnection,
 } from "./agent-connection-store.ts"
 import { DEFAULT_AGENT_TOKEN_SCOPES } from "@worktable/types"
+import { resolveParticipant } from "./participant-store.ts"
 import { listThreadParticipants } from "./thread-service.ts"
 import { createToken, verifyToken } from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
@@ -301,6 +302,46 @@ describe("semantic agent connections", () => {
       setWorkspaceRootOverride(workspaceDir)
       await rm(otherWorkspace, { recursive: true, force: true })
     }
+  })
+
+  it("keeps the name an owner gave a pairing from an earlier release", async () => {
+    const target = { kind: "mcp-client" as const, clientId: "codex" }
+    const first = await createToken({
+      scopes: ["threads:*"],
+      agent: "codex@devbox",
+    })
+    // Recorded before agents had one name: no participant, the owner's name.
+    await upsertAgentConnection({
+      target,
+      mode: "on-demand",
+      participant: null,
+      machine: "devbox",
+      credentialId: first.metadata.id,
+      displayName: "My Codex",
+    })
+    // Its thread participant was named separately.
+    const identity = (await verifyToken(first.token))!
+    const { participant } = await resolveParticipant(identity)
+    expect(participant.name).not.toBe("My Codex")
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "My Codex" },
+    ])
+
+    // Reconnecting carries the owner's name into threads.
+    const second = await createToken({
+      scopes: ["threads:*"],
+      agent: "codex@devbox",
+    })
+    await upsertAgentConnection({
+      target,
+      mode: "on-demand",
+      participant,
+      machine: "devbox",
+      credentialId: second.metadata.id,
+    })
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "My Codex", participant: { name: "My Codex" } },
+    ])
   })
 
   it("keeps hostname-less MCP clients distinct by credential", async () => {

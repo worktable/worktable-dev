@@ -189,6 +189,13 @@ export function hostedAgentBase(req: Request): string | null {
   }
 }
 
+/** The address an anonymous request came from, as the gateway saw it. */
+export function hostedClientAddress(req: Request): string | null {
+  if (!isHosted() || !gatewaySecret() || !gatewayAdmits(req)) return null
+  const raw = req.headers.get(AGENT_ROUTE_HEADERS.CLIENT_ADDRESS)
+  return validHeaderText(raw, 64) ? raw : null
+}
+
 /**
  * Whether the gateway forwarded this request from the workspace's agent route
  * with a credential the workspace issued, which the workspace verifies itself.

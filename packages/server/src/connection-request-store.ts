@@ -20,7 +20,10 @@ import { formatPairingCode, normalizePairingCode } from "./pairing-store.ts"
 
 const REQUEST_TTL_MS = 15 * 60 * 1000
 const PURGE_AFTER_MS = 24 * 60 * 60 * 1000
-const MAX_PENDING = 20
+/** Waiting requests from one sender: enough for a few computers behind it. */
+const MAX_PENDING_PER_SOURCE = 3
+/** All waiting requests, a bound on storage only. */
+const MAX_PENDING = 100
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ" // no vowels: no words
 const USER_CODE_LENGTH = 8
 
@@ -54,6 +57,8 @@ interface StoredConnectionRequest {
   expiresAt: string
   status: "pending" | "approved" | "denied" | "delivered"
   approval?: ConnectionApproval
+  /** Who asked, hashed: one sender cannot crowd out everyone else. */
+  sourceHash?: string
 }
 
 export type ConnectionRequestPoll =
@@ -146,6 +151,8 @@ export async function createConnectionRequest(input: {
   target: ConnectionRequestTarget
   hostname: string | null
   suggestedName: string | null
+  /** The sender, as requestSource reports it. */
+  source: string
 }): Promise<{ userCode: string; pollToken: string; expiresAt: string }> {
   return serialized(async () => {
     const now = Date.now()
@@ -153,6 +160,15 @@ export async function createConnectionRequest(input: {
     const pending = requests.filter(
       (request) => request.status === "pending" && isLive(request, now)
     )
+    const sourceHash = hash(`source:${input.source}`)
+    if (
+      pending.filter((request) => request.sourceHash === sourceHash).length >=
+      MAX_PENDING_PER_SOURCE
+    ) {
+      throw new ConnectionRequestLimitError(
+        "Agents from this address are already waiting for approval. Approve them, or try again once they expire."
+      )
+    }
     if (pending.length >= MAX_PENDING) {
       throw new ConnectionRequestLimitError(
         "Too many agents are waiting for approval. Try again later."
@@ -170,6 +186,7 @@ export async function createConnectionRequest(input: {
       createdAt: new Date(now).toISOString(),
       expiresAt,
       status: "pending",
+      sourceHash,
     })
     await saveRequests(requests)
     return { userCode: formatPairingCode(userCode), pollToken, expiresAt }

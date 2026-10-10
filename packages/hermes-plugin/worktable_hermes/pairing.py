@@ -30,6 +30,14 @@ def worktable_origin(server: str) -> str:
     return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
 
 
+# Consecutive failed checks tolerated when a request has no expiry.
+MAX_WAIT_FAILURES = 30
+
+
+def _retryable_wait_error(error: PairingError) -> bool:
+    return error.status is None or error.status == 429 or error.status >= 500
+
+
 def _timestamp(value: object) -> Optional[float]:
     """Seconds since the epoch for an ISO 8601 time, or None."""
     if not isinstance(value, str):
@@ -132,9 +140,22 @@ def request_approval(
     interval = max(1.0, float(request.get("interval") or 2))
     # Whatever it answers, a request is over when it expires.
     deadline = _timestamp(request.get("expiresAt"))
+    failures = 0
     while True:
         sleep(interval)
-        result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
+        try:
+            result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
+            failures = 0
+        except PairingError as error:
+            # A dropped connection, a restarting Worktable, or a busy one does
+            # not end the wait for approval; anything else does.
+            failures += 1
+            expired = time.time() >= deadline if deadline is not None else failures > MAX_WAIT_FAILURES
+            if not _retryable_wait_error(error) or expired:
+                raise
+            if error.status == 429:
+                sleep(max(interval, 10.0))
+            continue
         status = result.get("status")
         if status == "approved" and isinstance(result.get("code"), str):
             server = result.get("server")

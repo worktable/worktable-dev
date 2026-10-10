@@ -54,6 +54,7 @@ import {
   wsAuthRequired,
 } from "./auth.ts";
 import { gatewayAdmits, hostedAgentBase, isHosted } from "./hosted.ts";
+import { rememberPeer } from "./request-source.ts";
 import { warmAuthServerCaches } from "./oauth-jwt.ts";
 import { verifyRawCookieHeader, hasOwnerPasswordSync } from "./session-store.ts";
 import { hasScope, listTokens, tokenIdFromToken, type TokenIdentity } from "./token-store.ts";
@@ -1507,6 +1508,7 @@ export function startServer(
     ...(hostname ? { hostname } : {}),
     idleTimeout: 120, // seconds — sync MCP calls can poll up to 60s
     async fetch(req, server) {
+      rememberPeer(req, server.requestIP(req)?.address);
       const url = new URL(req.url);
       // A full-workspace capture may be quiet for hours. This capability is
       // process-local and owner-only, so disable Bun's idle timer only for the

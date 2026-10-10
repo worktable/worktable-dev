@@ -90,6 +90,10 @@ describe("OpenClaw asking Worktable to connect", () => {
         }
         if (path === "/api/pairing/requests/poll") {
           const next = polls.shift() ?? { status: "expired" }
+          // An HTTP failure instead of an answer.
+          if (typeof next === "object" && typeof next.httpStatus === "number") {
+            return Response.json({ error: "unavailable" }, { status: next.httpStatus })
+          }
           return Response.json(
             typeof next === "function" ? next(new URL(request.url).origin) : next
           )
@@ -130,6 +134,30 @@ describe("OpenClaw asking Worktable to connect", () => {
       path: "/w/ws_approved/api/pairing/redeem",
       body: { code: "T83PD-NSQDP" },
     })
+  })
+
+  it("keeps waiting through a brief outage, but not past a refusal", async () => {
+    const outage = await serveRequests([
+      { httpStatus: 503 },
+      { status: "approved", code: "T83PD-NSQDP" },
+    ])
+    await expect(
+      requestWorktablePairing({
+        server: outage.server,
+        onApprovalNeeded: () => undefined,
+        sleep: () => Promise.resolve(),
+      })
+    ).rejects.toThrow("stop")
+    expect(outage.seen.at(-1)?.path).toBe("/api/pairing/redeem")
+
+    const refused = await serveRequests([{ httpStatus: 404 }])
+    await expect(
+      requestWorktablePairing({
+        server: refused.server,
+        onApprovalNeeded: () => undefined,
+        sleep: () => Promise.resolve(),
+      })
+    ).rejects.toThrow("unavailable")
   })
 
   it("stops without pairing when the owner declines", async () => {

@@ -148,6 +148,22 @@ function retryablePairingError(error: unknown): boolean {
   return true
 }
 
+/** Consecutive failed checks tolerated when a request has no expiry. */
+const MAX_WAIT_FAILURES = 30
+
+function isRateLimited(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    "status" in error &&
+    error.status === 429
+  )
+}
+
+function retryableWaitError(error: unknown): boolean {
+  return isRateLimited(error) || retryablePairingError(error)
+}
+
 export async function completePairingWithRetry(
   origin: string,
   code: string,
@@ -270,12 +286,27 @@ export async function requestWorktablePairing(options: {
   const interval = Math.max(1, request.interval ?? 2) * 1000
   // Whatever it answers, a request is over when it expires.
   const deadline = Date.parse(request.expiresAt)
+  let failures = 0
   for (;;) {
     await sleep(interval)
-    const poll = await jsonRequest<ConnectionRequestPoll>(
-      `${origin}/api/pairing/requests/poll`,
-      { pollToken: request.pollToken }
-    )
+    let poll: ConnectionRequestPoll
+    try {
+      poll = await jsonRequest<ConnectionRequestPoll>(
+        `${origin}/api/pairing/requests/poll`,
+        { pollToken: request.pollToken }
+      )
+      failures = 0
+    } catch (error) {
+      // A dropped connection, a restarting Worktable, or a busy one does not
+      // end the wait for approval; anything else does.
+      failures += 1
+      const expired = Number.isFinite(deadline)
+        ? Date.now() >= deadline
+        : failures > MAX_WAIT_FAILURES
+      if (!retryableWaitError(error) || expired) throw error
+      if (isRateLimited(error)) await sleep(Math.max(interval, 10_000))
+      continue
+    }
     if (poll.status === "approved") {
       return pairWorktableChannel({
         server: poll.server ?? origin,

@@ -10,7 +10,10 @@ def serve(monkeypatch, polls, **created):
         calls.append((url.rsplit("/api/", 1)[-1], body))
         if url.endswith("/api/pairing/requests"):
             return {"code": "BCDF-GHJK", "pollToken": "poll-secret", "approvalUrl": "http://w/connect?code=BCDF-GHJK", "interval": 1, **created}
-        return polls.pop(0)
+        result = polls.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     monkeypatch.setattr(pairing, "_request", fake_request)
     return calls
@@ -49,3 +52,21 @@ def test_pairs_with_the_cloud_workspace_its_owner_approved(monkeypatch):
     assert pairing.request_approval(
         "https://app.worktable.cloud", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None
     ) == ("T83PD-NSQDP", "https://app.worktable.cloud/w/ws_1")
+
+
+def test_keeps_waiting_through_a_brief_outage_but_not_past_a_refusal(monkeypatch):
+    serve(
+        monkeypatch,
+        [
+            pairing.PairingError("Could not reach Worktable", "UNREACHABLE"),
+            pairing.PairingError("Busy", "HTTP_503", 503),
+            {"status": "approved", "code": "T83PD-NSQDP"},
+        ],
+    )
+    code, _ = pairing.request_approval("http://w", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None)
+    assert code == "T83PD-NSQDP"
+
+    serve(monkeypatch, [pairing.PairingError("Unknown connection request", "NOT_FOUND", 404)])
+    with pytest.raises(pairing.PairingError) as error:
+        pairing.request_approval("http://w", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None)
+    assert error.value.code == "NOT_FOUND"

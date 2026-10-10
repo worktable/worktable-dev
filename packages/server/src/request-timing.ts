@@ -165,8 +165,10 @@ async function timeRequest(
   const { method, path } = c.req
   const status = c.res.status
   recordRouteLatency(method, routePath(c), totalMs)
-  // MCP responses stay exactly as the MCP transport produced them.
-  if (!isMcpPath(path)) {
+  // Only an authenticated caller sees the breakdown: span durations would let
+  // anyone else time workspace size and activity. MCP responses stay exactly
+  // as the MCP transport produced them.
+  if (c.get("identity") && !isMcpPath(path)) {
     try {
       c.res.headers.set("Server-Timing", current.header(totalMs))
     } catch {

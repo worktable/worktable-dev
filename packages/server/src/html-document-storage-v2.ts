@@ -49,6 +49,7 @@ import {
   getDocArchiveInfo,
   getDocArchiveInfoMap,
   getDocLifetimeView,
+  sanitizeDocPath,
 } from "./store.ts"
 import { readFileFingerprint } from "./file-fingerprint.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
@@ -508,7 +509,7 @@ export async function listHtmlDocumentsStorageV2(input: {
       return widgetForOwner(
         owner,
         properties?.kind === "read" ? properties.entry : undefined,
-        archives.get(owner.path),
+        archives.get(sanitizeDocPath(owner.path)),
         () => digest.sha256
       )
     } catch {

@@ -85,6 +85,7 @@ import {
 import {
   agentConnectionPlatform,
   connectAgentApp,
+  getAppAgent,
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
@@ -954,9 +955,17 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
   const [chatGptToken, setChatGptToken] = useState<string | null>(null)
-  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
 
   const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
+  // Connecting an app again is the same agent: start from its access.
+  const existing = useQuery({
+    queryKey: ["agent-connections", "app", app],
+    queryFn: () => getAppAgent(app),
+    enabled: needsToken,
+  })
+  const existingAgent = existing.data?.connection ?? null
+  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const afterMint = () => {
     void queryClient.invalidateQueries({ queryKey: ["tokens"] })
@@ -996,7 +1005,10 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
         <span className="text-sm font-medium text-foreground">Desktop app</span>
         <Select
           value={app}
-          onValueChange={(value) => setApp(value as DesktopAppChoice)}
+          onValueChange={(value) => {
+            setApp(value as DesktopAppChoice)
+            setAccess(null)
+          }}
         >
           <SelectTrigger aria-label="Desktop app" className="w-full sm:w-64">
             <SelectValue>
@@ -1052,6 +1064,12 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                   onChange={setAccess}
                   disabled={mintClaude.isPending}
                 />
+                {existingAgent ? (
+                  <p className="text-xs text-muted-foreground">
+                    Already connected as {existingAgent.displayName}. A new
+                    token joins it.
+                  </p>
+                ) : null}
                 <div>
                   <Button
                     variant="outline"
@@ -1101,6 +1119,12 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                   onChange={setAccess}
                   disabled={mintChatGpt.isPending}
                 />
+                {existingAgent ? (
+                  <p className="text-xs text-muted-foreground">
+                    Already connected as {existingAgent.displayName}. A new
+                    token joins it.
+                  </p>
+                ) : null}
                 <div>
                   <Button
                     variant="outline"
@@ -1150,7 +1174,14 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   // everything on close, so the token can't survive a close. Switching client
   // also drops it (it was minted for the prior agent).
   const [token, setToken] = useState<string | null>(null)
-  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
+  // Connecting a client again is the same agent: start from its access.
+  const existing = useQuery({
+    queryKey: ["agent-connections", "app", clientId],
+    queryFn: () => getAppAgent(clientId),
+  })
+  const existingAgent = existing.data?.connection ?? null
+  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const mint = useMutation({
     mutationFn: () => connectAgentApp({ client: clientId, access }),
@@ -1170,6 +1201,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   function selectClient(next: McpSnippetClientId) {
     setClientId(next)
     setToken(null)
+    setAccess(null)
     mint.reset()
   }
 
@@ -1249,6 +1281,12 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
                 onChange={setAccess}
                 disabled={mint.isPending}
               />
+              {existingAgent ? (
+                <p className="text-xs text-muted-foreground">
+                  Already connected as {existingAgent.displayName}. A new token
+                  joins it.
+                </p>
+              ) : null}
               <div>
                 <Button
                   variant="outline"

@@ -10,6 +10,7 @@ import { Hono } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import {
   createAgentCredential,
+  findAppAgent,
   disconnectAgentConnection,
   AgentConnectionUpdateError,
   listAgentConnections,
@@ -52,6 +53,16 @@ function parseAccess(value: unknown): AgentAccess | undefined | false {
 function badRequest(error: string) {
   return { error, code: "BAD_REQUEST" }
 }
+
+// The agent an app already is, so connecting it again starts from its name
+// and access rather than resetting them.
+agentConnectionsRouter.get("/apps/:label", async (c) => {
+  const label = c.req.param("label")
+  const connection = isDirectAgentLabel(label)
+    ? await findAppAgent(label)
+    : null
+  return c.json({ connection })
+})
 
 // The owner connects an app with a credential made here, named and with the
 // access chosen. Cloud connects these apps by signing in instead.

@@ -105,6 +105,13 @@ export function agentConnectionPlatform(
     : fromClient
 }
 
+/** The agent an app already is here, if it was connected before. */
+export function getAppAgent(
+  label: DirectAgentLabel
+): Promise<{ connection: AgentConnection | null }> {
+  return fetchJSON(`/api/agent-connections/apps/${encodeURIComponent(label)}`)
+}
+
 /**
  * Connect an app with a credential made here, named and with the access its
  * owner chose. The token is returned once.

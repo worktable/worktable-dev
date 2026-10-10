@@ -129,6 +129,14 @@ describe("agent connection routes", () => {
     expect(scopes).toContain("docs:read")
     expect(scopes).not.toContain("docs:write")
 
+    // Connecting it again starts from the agent it already is.
+    const known = (await (
+      await app.fetch(
+        request("GET", "/api/agent-connections/apps/chatgpt-desktop", cookie)
+      )
+    ).json()) as { connection: { id: string } | null }
+    expect(known.connection?.id).toBe(first.connection.id)
+
     // Connecting the same app again is the same agent, with the new access.
     const again = (await (
       await connect({

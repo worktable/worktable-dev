@@ -486,6 +486,17 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
     .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
 
+/** The agent an app connected with a credential made here is, if any. */
+export async function findAppAgent(
+  label: DirectAgentLabel
+): Promise<AgentConnection | null> {
+  const id = labeledConnectionId(getWorkspaceRoot(), label)
+  return (
+    (await listAgentConnections()).find((connection) => connection.id === id) ??
+    null
+  )
+}
+
 export async function disconnectAgentConnection(id: string): Promise<boolean> {
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])

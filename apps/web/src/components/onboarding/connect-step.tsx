@@ -31,6 +31,7 @@ import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import {
   connectAgentApp,
+  getAppAgent,
   listAgentConnections,
   saveAgentChanges,
 } from "@/lib/agent-connections-api"
@@ -335,7 +336,7 @@ export function ConnectStep({
   const [alwaysOnAgent, setAlwaysOnAgent] = useState<AlwaysOnAgent>(OPENCLAW)
   // Until the owner types a name, the agent is named after what it is.
   const [typedName, setTypedName] = useState<string | null>(null)
-  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
   const [token, setToken] = useState<{ value: string; id: string } | null>(null)
   const [cloudComplete, setCloudComplete] = useState(false)
@@ -392,8 +393,24 @@ export function ConnectStep({
         : method === "always-on"
           ? alwaysOnAgent.name
           : MCP_CLIENTS[manualClient].label
-  const defaultName =
-    method === "computer" && computerTarget === "auto"
+  // An app connected with a token made here is the same agent when it is
+  // connected again: start from its name and access.
+  const appLabel =
+    method === "native"
+      ? NATIVE_LABELS[nativeApp]
+      : method === "other"
+        ? manualClient
+        : null
+  const appAgent = useQuery({
+    queryKey: ["agent-connections", "app", appLabel],
+    queryFn: () => getAppAgent(appLabel!),
+    enabled: Boolean(appLabel) && connection.isSuccess && !isCloud,
+  })
+  const existingAgent = appLabel ? (appAgent.data?.connection ?? null) : null
+  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
+  const defaultName = existingAgent
+    ? existingAgent.displayName
+    : method === "computer" && computerTarget === "auto"
       ? "Agents on my computer"
       : platform === "other"
         ? agentTitle
@@ -523,7 +540,7 @@ export function ConnectStep({
     reset()
     setMethod(next)
     setTypedName(null)
-    setAccess(DEFAULT_AGENT_ACCESS)
+    setAccess(null)
     setBaseline(
       new Set((connections.data?.connections ?? []).map((item) => item.id))
     )
@@ -666,7 +683,10 @@ export function ConnectStep({
           { value: "claude", label: "Claude" },
           { value: "chatgpt", label: "ChatGPT" },
         ]}
-        onChange={(value) => setNativeApp(value as NativeApp)}
+        onChange={(value) => {
+          setNativeApp(value as NativeApp)
+          setAccess(null)
+        }}
       />
     ) : method === "always-on" ? (
       <LabeledSelect
@@ -694,7 +714,10 @@ export function ConnectStep({
           value: id,
           label: MCP_CLIENTS[id].label,
         }))}
-        onChange={(value) => setManualClient(value as McpSnippetClientId)}
+        onChange={(value) => {
+          setManualClient(value as McpSnippetClientId)
+          setAccess(null)
+        }}
       />
     )
 
@@ -732,6 +755,12 @@ export function ConnectStep({
           disabled={locked}
         />
       )}
+      {existingAgent ? (
+        <p className="text-xs text-muted-foreground">
+          Already connected as {existingAgent.displayName}. A new token joins
+          it.
+        </p>
+      ) : null}
       {signsIn ? null : (
         <Button
           disabled={!canCreate}

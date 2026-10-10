@@ -19,6 +19,7 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 
 import {
+  agentConnectionPlatform,
   updateAgentConnection,
   updateSignInAgent,
 } from "@/lib/agent-connections-api"
@@ -57,24 +58,26 @@ export function AgentEditDialog({
       const trimmed = name.trim()
       const renamed = trimmed !== connection.displayName
       const iconChanged = icon !== (connection.icon ?? null)
+      // A sign-in agent on Cloud also appears in this workspace's threads.
+      // Its whole presentation goes there first: if Cloud then fails, the
+      // form still differs and saving again completes both.
+      if (
+        connection.authKind === "oauth" &&
+        connection.target.kind === "mcp-client" &&
+        connection.target.clientId
+      ) {
+        await updateSignInAgent(connection.target.clientId, {
+          displayName: trimmed,
+          icon,
+          platform: agentConnectionPlatform(connection),
+          threads: (access ?? connection.access)?.threads ?? true,
+        })
+      }
       await updateAgentConnection(connection.id, {
         ...(renamed ? { displayName: trimmed } : {}),
         ...(iconChanged ? { icon } : {}),
         ...(access && !sameAccess(access, connection.access) ? { access } : {}),
       })
-      // A sign-in agent on Cloud also appears in this workspace's threads.
-      if (
-        connection.authKind === "oauth" &&
-        connection.target.kind === "mcp-client" &&
-        connection.target.clientId &&
-        (renamed || iconChanged)
-      ) {
-        await updateSignInAgent(connection.target.clientId, {
-          ...(renamed ? { displayName: trimmed } : {}),
-          ...(iconChanged ? { icon } : {}),
-          platform: connection.platform,
-        })
-      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

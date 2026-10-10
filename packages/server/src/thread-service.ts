@@ -604,12 +604,14 @@ export async function listThreadParticipants(
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
-  const [bindings, connections, tokens, participants] = await Promise.all([
-    listParticipantBindings(),
-    listAgentConnections(),
-    listTokens(),
-    participantsByKey(),
-  ])
+  const [bindings, connections, tokens, participants, signIns] =
+    await Promise.all([
+      listParticipantBindings(),
+      listAgentConnections(),
+      listTokens(),
+      participantsByKey(),
+      signInPresentations(),
+    ])
   const alwaysOnParticipantIds = new Set(
     connections.flatMap((connection) =>
       connection.mode === "always-on" && connection.participant
@@ -635,6 +637,13 @@ export async function listThreadParticipants(
         (hasScope(token.scopes, "threads:read") &&
           hasScope(token.scopes, "threads:write"))
     )
+  }
+  // A sign-in agent on Cloud whose owner took Threads away, likewise.
+  for (const [key, signIn] of signIns) {
+    const participant = participants.get(key)
+    if (participant && signIn.threads === false) {
+      readsThreads.set(participant.id, false)
+    }
   }
   const withoutThreads = new Set(
     [...readsThreads].flatMap(([id, reads]) => (reads ? [] : [id]))

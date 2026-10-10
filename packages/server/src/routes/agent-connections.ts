@@ -118,8 +118,12 @@ agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
     displayName?: unknown
     icon?: unknown
     platform?: unknown
+    threads?: unknown
   } | null
   if (!body) return c.json(badRequest("Expected a JSON object"), 400)
+  if (body.threads !== undefined && typeof body.threads !== "boolean") {
+    return c.json(badRequest("threads must be true or false"), 400)
+  }
   const displayName =
     body.displayName === undefined
       ? undefined
@@ -147,6 +151,7 @@ agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
     ...(body.platform !== undefined
       ? { platform: body.platform as AgentPlatformId }
       : {}),
+    ...(typeof body.threads === "boolean" ? { threads: body.threads } : {}),
   })
   return c.json({ ok: true as const })
 })

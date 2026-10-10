@@ -211,5 +211,22 @@ describe("a sign-in agent on a Cloud workspace", () => {
       platform: "chatgpt",
       icon: "flask-conical",
     })
+
+    // Without Threads on Cloud it is not offered as a recipient, though it
+    // keeps its avatar in threads it is already in.
+    expect(
+      (
+        await call(path, {
+          method: "PUT",
+          body: { ...body, threads: false },
+          owner: true,
+        })
+      ).status
+    ).toBe(200)
+    const withoutThreads = await listThreadParticipantsForDisplay()
+    expect(withoutThreads.participants).toHaveLength(0)
+    expect(withoutThreads.presentations[participant!.id]).toMatchObject({
+      platform: "chatgpt",
+    })
   })
 })

@@ -17,16 +17,11 @@ import {
   DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
-  isAgentPlatformId,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
   mcpClientSnippet,
-  platformForAdapter,
-  platformForClient,
-  platformForName,
   type AgentAccess,
   type AgentConnection,
-  type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
   type McpSnippetClientId,
 } from "@worktable/types"
@@ -89,6 +84,7 @@ import {
   type TokenMetadata,
 } from "@/lib/tokens-api"
 import {
+  agentConnectionPlatform,
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
@@ -1291,18 +1287,6 @@ function agentConnectionName(connection: AgentConnection): string {
       : undefined) ??
     clientDisplayName(connection.displayName)
   )
-}
-
-function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
-  if (isAgentPlatformId(connection.platform)) return connection.platform
-  if (connection.target.kind === "agent-adapter") {
-    return platformForAdapter(connection.target.adapter)
-  }
-  const fromClient = platformForClient(connection.target.clientId)
-  // Cloud's sign-ins carry an opaque client id, so their name decides.
-  return fromClient === "other"
-    ? platformForName(connection.displayName)
-    : fromClient
 }
 
 export function ConnectedAgentsGroup() {

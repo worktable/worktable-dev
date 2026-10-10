@@ -228,6 +228,9 @@ jobs:
         run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
       - name: Install Chromium
         run: bunx playwright@1.61.1 install --with-deps chromium
+      - name: Provision pinned product font
+        # Journeys render with the General Sans that releases ship.
+        run: bun scripts/provision-product-font.ts
       - name: Run selected browser journeys
         env:
           SELECTED_SUITES: ${{ needs.plan.outputs.suites }}

@@ -87,8 +87,10 @@ paths select every lane; unavailable history also falls back conservatively.
 
 Before relying on full verification, install Chromium with
 `bunx playwright@1.61.1 install --with-deps chromium` and the Rust/native
-dependencies listed in CI. `bun run verify:full` also builds release-lab artifacts;
-follow the source-identity setup in [Building](building.md) first.
+dependencies listed in CI, and run `bun scripts/provision-product-font.ts` so
+browser journeys render with General Sans as releases do. `bun run verify:full`
+also builds release-lab artifacts; follow the source-identity setup in
+[Building](building.md) first.
 No test requires a production Cloud deployment.
 
 Boot the affected runtime path and exercise the behavior as well as running

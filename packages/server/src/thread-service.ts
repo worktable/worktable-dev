@@ -614,8 +614,8 @@ export async function listThreadParticipants(
         : []
     )
   )
-  // An agent none of whose credentials has Threads can neither read nor
-  // answer one, so it is not offered.
+  // An agent none of whose credentials has Threads (read and reply) cannot
+  // take part in one, so it is not offered.
   const workspace = getWorkspaceRoot()
   const readsThreads = new Map<string, boolean>()
   for (const token of tokens) {
@@ -629,7 +629,8 @@ export async function listThreadParticipants(
     readsThreads.set(
       participant.id,
       readsThreads.get(participant.id) === true ||
-        hasScope(token.scopes, "threads:read")
+        (hasScope(token.scopes, "threads:read") &&
+          hasScope(token.scopes, "threads:write"))
     )
   }
   const withoutThreads = new Set(

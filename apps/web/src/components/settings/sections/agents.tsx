@@ -959,6 +959,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
   const afterMint = () => {
     void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
   }
   const mintClaude = useMutation({
     mutationFn: () =>
@@ -1137,6 +1138,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
       // The new bearer must show up (and be revocable) in the table below.
       // Minting does not change literal-loopback MCP's implicit-owner posture.
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
     onError: (err) =>
       toast.error(
@@ -1275,6 +1277,8 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
 
 /** The agent's one name; Cloud's inventory still reports it beside a platform label. */
 function agentConnectionName(connection: AgentConnection): string {
+  // This Worktable reports each of its agents under its canonical name.
+  if (connection.authKind === "local-token") return connection.displayName
   return (
     connection.participant?.name ??
     (connection.target.kind === "agent-adapter"
@@ -1537,6 +1541,9 @@ export function AccessTokensGroup() {
         onOpenChange={setNewOpen}
         onMinted={() => {
           void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+          void queryClient.invalidateQueries({
+            queryKey: ["agent-connections"],
+          })
           void queryClient.invalidateQueries({
             queryKey: ["system", "connection"],
           })

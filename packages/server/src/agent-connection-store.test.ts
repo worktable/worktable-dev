@@ -255,8 +255,15 @@ describe("semantic agent connections", () => {
       access: { threads: true, read: true, edit: false },
     })
 
+    // Another credential under the same label is the same agent, too.
+    const another = await createToken({
+      scopes: ["docs:read"],
+      agent: "manual-codex",
+    })
+    expect(await listAgentConnections()).toHaveLength(2)
     expect(await disconnectAgentConnection(codex.id)).toBe(true)
     expect(await verifyToken(reissued.token)).toBeNull()
+    expect(await verifyToken(another.token)).toBeNull()
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {

@@ -699,6 +699,7 @@ function ConnectStep({
     onSuccess: (result) => {
       setToken({ value: result.token, id: result.metadata.id })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
   const useCloudConnection = useMutation({

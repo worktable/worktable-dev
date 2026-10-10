@@ -480,7 +480,12 @@ export function ConnectStep({
         icon: selected.icon ?? null,
         access: savedAccess,
       })
-      return { selected, name: chosenName, access: savedAccess }
+      // Access is only saved where the connection reports it.
+      return {
+        selected,
+        name: chosenName,
+        access: selected.access == null ? null : savedAccess,
+      }
     },
     onSuccess: ({ selected, name: chosenName, access: savedAccess }) => {
       setPicked({ name: chosenName, access: savedAccess })

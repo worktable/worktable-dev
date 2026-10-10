@@ -462,18 +462,25 @@ export function ConnectStep({
     mutationFn: async (selected: AgentConnection) => {
       // Its registration fixes an always-on agent's access on Cloud.
       const registered = selected.authKind === "agent-registration"
+      // An agent that was already connected keeps its own name and access
+      // unless the owner changed them here.
+      const known = baseline.has(selected.id)
+      const chosenName =
+        typedName?.trim() || (known ? selected.displayName : name.trim())
       await saveAgentChanges(selected, {
-        name: name.trim(),
+        name: chosenName,
         icon: selected.icon ?? null,
-        access: registered ? null : access,
+        access: registered
+          ? null
+          : (chosenAccess ?? (known ? (selected.access ?? null) : access)),
       })
-      return selected
+      return { selected, name: chosenName }
     },
-    onSuccess: (selected) => {
+    onSuccess: ({ selected, name: chosenName }) => {
       const isAlwaysOn = method === "always-on"
       addSetup({
         id: selected.id,
-        name: name.trim(),
+        name: chosenName,
         harness: isAlwaysOn ? alwaysOnAgent.name : agentTitle,
         mode: isAlwaysOn ? "always-on" : "on-demand",
         verified: true,
@@ -481,7 +488,7 @@ export function ConnectStep({
           selected.platform && selected.platform !== "other"
             ? selected.platform
             : platform,
-        ...(isAlwaysOn ? { participantName: name.trim() } : {}),
+        ...(isAlwaysOn ? { participantName: chosenName } : {}),
       })
       setCloudComplete(true)
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

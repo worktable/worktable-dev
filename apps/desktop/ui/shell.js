@@ -2,6 +2,9 @@ const elements = {
   bootstrap: document.querySelector("#bootstrap"),
   progressMessage: document.querySelector("#progress-message"),
   cancelCloudConnection: document.querySelector("#cancel-cloud-connection"),
+  updatePage: document.querySelector("#update-page"),
+  updateIcon: document.querySelector(".update-icon"),
+  updateSymbol: document.querySelector(".update-symbol"),
   updateTitle: document.querySelector("#update-title"),
   updateMessage: document.querySelector("#update-message"),
   updateVersion: document.querySelector("#update-version"),
@@ -56,6 +59,7 @@ const elements = {
   ),
   recoveryTroubleshooting: document.querySelector("#recovery-troubleshooting"),
   recoveryUtilityActions: document.querySelector("#recovery-utility-actions"),
+  checkDesktopUpdates: document.querySelector("#check-desktop-updates"),
   retryConnection: document.querySelector("#retry-connection"),
   restartLocalHost: document.querySelector("#restart-local-host"),
   repairLocalAuthority: document.querySelector("#repair-local-authority"),
@@ -390,6 +394,7 @@ function groupHasVisibleActions(group) {
 
 function renderRecoveryActions(status) {
   const actions = [
+    elements.checkDesktopUpdates,
     elements.retryConnection,
     elements.restartLocalHost,
     elements.repairLocalAuthority,
@@ -490,7 +495,15 @@ function renderRecoveryActions(status) {
   ].includes(status.errorCode)
   const corruptLocalConfig = status.errorCode === "CONFIG_CORRUPT"
   let primaryAction = null
-  if (corruptConnections && status.canRemoveConnection) {
+  if (unsupportedAuthoritySchema) {
+    primaryAction = elements.checkDesktopUpdates
+    placeRecoveryAction(
+      primaryAction,
+      elements.recoveryPrimaryActions,
+      "Check for updates",
+      "primary"
+    )
+  } else if (corruptConnections && status.canRemoveConnection) {
     primaryAction = elements.removeConnection
     placeRecoveryAction(
       primaryAction,
@@ -546,21 +559,24 @@ function renderRecoveryActions(status) {
     placeRecoveryAction(
       elements.restartLocalHost,
       elements.recoveryUtilityActions,
-      "Restart local service"
+      "Restart local service",
+      "quiet"
     )
   }
   if (status.canOpenLogs) {
     placeRecoveryAction(
       elements.openLocalLogs,
       elements.recoveryUtilityActions,
-      "Open logs"
+      "Open logs",
+      "quiet"
     )
   }
   if (status.canLocateWorkspace) {
     placeRecoveryAction(
       elements.locateWorkspace,
       elements.recoveryUtilityActions,
-      "Find moved Worktable…"
+      "Find moved Worktable…",
+      "quiet"
     )
   }
   if (
@@ -646,7 +662,7 @@ function render(status) {
     )
     if (status.provider === "cloud") {
       elements.cloudStatusMessage.textContent =
-        status.message || "Continue in your browser to sign in."
+        status.message || "Continue in your browser."
       elements.connectCloud.textContent = status.connectionProfileId
         ? "Sign in again"
         : "Sign in"
@@ -727,6 +743,10 @@ function renderUpdater(status) {
   }
   elements.updateTitle.textContent = titles[status.state] ?? "Worktable update"
   elements.updateMessage.textContent = status.message ?? ""
+  const needsIntervention = ["error", "recovery"].includes(status.state)
+  elements.updatePage.dataset.tone = needsIntervention ? "recovery" : "default"
+  elements.updateIcon.hidden = needsIntervention
+  elements.updateSymbol.hidden = !needsIntervention
 
   const version =
     status.availableVersion &&
@@ -769,16 +789,20 @@ function renderUpdater(status) {
 
   elements.installUpdate.hidden = !status.canInstall
   elements.installUpdate.disabled = updateBusy || !status.canInstall
-  elements.retryUpdate.hidden = !["error", "recovery"].includes(status.state)
+  elements.retryUpdate.hidden = !needsIntervention
   elements.retryUpdate.disabled = updateBusy
   elements.dismissUpdate.hidden = !status.canDismiss
   elements.dismissUpdate.disabled = updateBusy
   elements.dismissUpdate.textContent =
     status.state === "available" ? "Later" : "Return to Worktable"
-  elements.openUpdateDownload.hidden = !["error", "recovery"].includes(
-    status.state
-  )
+  // Confirming "you're up to date" is the only action, so it leads.
+  elements.dismissUpdate.className = `button ${status.state === "current" ? "primary" : "secondary"}`
+  // Reinstalling only helps after an install attempt, which native recovery
+  // records along with the release that was running before it.
+  const previousVersion = status.recovery?.fromVersion
+  elements.openUpdateDownload.hidden = !needsIntervention || !previousVersion
   elements.openUpdateDownload.disabled = updateBusy
+  elements.openUpdateDownload.textContent = `Download Worktable ${previousVersion ?? ""}`
 }
 
 async function checkTrustBoundary() {
@@ -1047,6 +1071,10 @@ elements.locateWorkspace.addEventListener("click", () =>
   })
 )
 
+elements.checkDesktopUpdates.addEventListener("click", () =>
+  runAction(() => invoke("desktop_check_for_updates"))
+)
+
 elements.recoveryChangeWorkspace.addEventListener("click", () =>
   runAction(async () => {
     selectedCreatePath = ""
@@ -1103,6 +1131,51 @@ elements.openUpdateDownload.addEventListener("click", () =>
   })
 )
 
+// A native <details> snaps open and shut. Animate its panel like the app's
+// collapsibles while keeping the element's keyboard and accessibility behavior.
+function animateDisclosure(details, panel) {
+  let running = null
+  const sync = () => {
+    details.dataset.expanded = String(details.open)
+  }
+  details.addEventListener("toggle", () => {
+    if (!details.open) {
+      running?.cancel()
+      running = null
+      panel.style.removeProperty("overflow")
+    }
+    if (!running) sync()
+  })
+  details.querySelector("summary").addEventListener("click", (event) => {
+    if (prefersReducedMotion.matches) return
+    event.preventDefault()
+    const expanding = details.dataset.expanded !== "true"
+    // Some engines keep laying out closed content, so only trust its measured
+    // height while the panel is showing (including mid-animation).
+    const from = details.open ? panel.getBoundingClientRect().height : 0
+    running?.cancel()
+    details.dataset.expanded = String(expanding)
+    details.open = true
+    const to = expanding ? panel.scrollHeight : 0
+    panel.style.overflow = "hidden"
+    const animation = panel.animate(
+      [{ height: `${from}px` }, { height: `${to}px` }],
+      { duration: 250, easing: "cubic-bezier(0.33, 1, 0.68, 1)" }
+    )
+    running = animation
+    animation.onfinish = () => {
+      running = null
+      panel.style.removeProperty("overflow")
+      if (!expanding) details.open = false
+    }
+  })
+  sync()
+}
+
+animateDisclosure(
+  elements.recoveryTroubleshooting,
+  elements.recoveryUtilityActions
+)
 void checkTrustBoundary()
 syncPageAccessibility(viewPages[document.body.dataset.view])
 setupBootstrapScrollFade()

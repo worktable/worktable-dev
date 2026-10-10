@@ -60,6 +60,9 @@
             aria-hidden="true"
             draggable="false"
           />
+          <span class="recovery-symbol update-symbol" aria-hidden="true" hidden
+            >!</span
+          >
           <h1 id="update-title">Checking for updates</h1>
           <p
             class="lede update-message"
@@ -95,12 +98,12 @@
               Download and Restart
             </button>
             <button
-              class="button secondary"
+              class="button primary"
               id="retry-update"
               type="button"
               hidden
             >
-              Check again
+              Try again
             </button>
             <button
               class="button secondary"
@@ -182,7 +185,7 @@
           />
           <h1 id="cloud-title">Sign in</h1>
           <p class="lede" id="cloud-status-message">
-            Continue in your browser to sign in.
+            Continue in your browser.
           </p>
         </div>
         <div class="cloud-connect-actions" aria-label="Cloud sign-in">
@@ -400,6 +403,13 @@
             <div class="recovery-primary-actions" id="recovery-primary-actions">
               <button
                 class="button primary"
+                id="check-desktop-updates"
+                type="button"
+              >
+                Check for updates
+              </button>
+              <button
+                class="button primary"
                 id="retry-connection"
                 type="button"
               >
@@ -439,7 +449,16 @@
             class="recovery-troubleshooting"
             id="recovery-troubleshooting"
           >
-            <summary>More options</summary>
+            <summary>
+              <svg
+                class="disclosure-chevron"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+              More options
+            </summary>
             <div class="recovery-utility-actions" id="recovery-utility-actions">
               <button
                 class="button secondary"

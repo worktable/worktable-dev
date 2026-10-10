@@ -12,9 +12,8 @@ export function rememberPeer(req: Request, address: string | undefined): void {
 }
 
 /**
- * Whether a connection comes from this computer or a private network, where
- * a reverse proxy or tunnel in front of Worktable usually runs: on loopback,
- * in a container network, on the LAN, or over Tailscale.
+ * Whether a connection comes from this computer or a private network: on
+ * loopback, in a container network, on the LAN, or over Tailscale.
  */
 function isLocalNetwork(address: string): boolean {
   const ip = address.toLowerCase().replace(/^::ffff:/, "")
@@ -36,11 +35,10 @@ function isLocalNetwork(address: string): boolean {
 
 /**
  * The sender of a request: on Cloud, the address the gateway saw; otherwise
- * the connecting address. A connection from this computer or a private
- * network is usually a proxy: its forwarded address counts, only the one it
- * added last, which a sender cannot forge; without one, senders behind it
- * cannot be told apart. Null when they cannot, and then only the overall
- * limit applies.
+ * the connecting address when it is public. A connection from this computer
+ * or a private network may be a proxy, a tunnel, or a neighbour, and anything
+ * it says about the sender could be made up, so its senders cannot be told
+ * apart. Null when they cannot, and they share a limit.
  */
 export function requestSource(req: Request): string | null {
   const hosted = hostedClientAddress(req)
@@ -50,12 +48,5 @@ export function requestSource(req: Request): string | null {
   if (isHosted()) return null
   const peer = peers.get(req)
   if (!peer) return "unknown"
-  if (!isLocalNetwork(peer)) return peer
-  const forwarded = req.headers
-    .get("x-forwarded-for")
-    ?.split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .at(-1)
-  return forwarded && forwarded.length <= 64 ? forwarded : null
+  return isLocalNetwork(peer) ? null : peer
 }

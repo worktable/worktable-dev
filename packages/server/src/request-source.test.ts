@@ -18,22 +18,17 @@ function from(peer: string, forwardedFor?: string): Request {
 }
 
 describe("who sent a request", () => {
-  it("trusts a forwarded address only from a proxy on this computer", () => {
+  it("is the public address that connected, never one a request claims", () => {
     expect(requestSource(from("203.0.113.7"))).toBe("203.0.113.7")
-    // A remote sender cannot claim another address.
     expect(requestSource(from("203.0.113.7", "198.51.100.1"))).toBe(
       "203.0.113.7"
     )
-    // A local proxy's last entry is the address it saw; earlier ones are the
-    // sender's own claims.
-    expect(requestSource(from("127.0.0.1", "198.51.100.1, 203.0.113.9"))).toBe(
-      "203.0.113.9"
-    )
-    // A proxy in a container or on the LAN forwards addresses the same way.
-    expect(requestSource(from("172.18.0.5", "203.0.113.9"))).toBe("203.0.113.9")
-    // Without a forwarded address, senders behind it cannot be told apart.
+    // Through a proxy, a tunnel, or from a neighbour, senders cannot be told
+    // apart, whatever they forward.
+    expect(requestSource(from("127.0.0.1", "203.0.113.9"))).toBeNull()
+    expect(requestSource(from("172.18.0.5", "203.0.113.9"))).toBeNull()
+    expect(requestSource(from("100.101.102.103"))).toBeNull()
     expect(requestSource(from("::1"))).toBeNull()
-    expect(requestSource(from("192.168.1.20"))).toBeNull()
   })
 
   it("on Cloud, cannot tell senders apart without the gateway's address", () => {

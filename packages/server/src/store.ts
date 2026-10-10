@@ -1013,17 +1013,18 @@ async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
   }
   const cached = docMetaCache.get(path);
   if (fingerprint && cached?.fingerprint === fingerprint.key) return cached.meta;
-  const meta = await parseDocMetaFile(path);
-  if (fingerprint && !fingerprint.racy) {
-    docMetaCache.set(path, { fingerprint: fingerprint.key, meta });
+  const parsed = await parseDocMetaFile(path);
+  if (parsed && fingerprint && !fingerprint.racy) {
+    docMetaCache.set(path, { fingerprint: fingerprint.key, meta: parsed });
   } else {
     docMetaCache.delete(path);
   }
-  return meta;
+  return parsed ?? { ...EMPTY_DOC_META, docs: {} };
 }
 
-async function parseDocMetaFile(path: string): Promise<DocMetaFile> {
-  if (!existsSync(path)) return { ...EMPTY_DOC_META, docs: {} };
+/** Null when the file could not be read, as opposed to read and found empty. */
+async function parseDocMetaFile(path: string): Promise<DocMetaFile | null> {
+  if (!existsSync(path)) return null;
 
   try {
     const raw = await Bun.file(path).json();
@@ -1102,7 +1103,7 @@ async function parseDocMetaFile(path: string): Promise<DocMetaFile> {
 
     return { version: 1, docs };
   } catch {
-    return { ...EMPTY_DOC_META, docs: {} };
+    return null;
   }
 }
 

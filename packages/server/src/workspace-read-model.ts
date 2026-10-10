@@ -145,7 +145,11 @@ async function isCurrent(
   const observed = await Promise.all(
     snapshot.sources.map(([path]) => sourceKey(path))
   )
-  return observed.every((key, index) => key === snapshot.sources[index]![1])
+  // A write may have started while the files were inspected.
+  return (
+    snapshot.generation === spaceGeneration(spaceId) &&
+    observed.every((key, index) => key === snapshot.sources[index]![1])
+  )
 }
 
 /**

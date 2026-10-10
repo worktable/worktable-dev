@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import {
   Archive,
@@ -9,7 +9,6 @@ import {
   Infinity as InfinityIcon,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { Calendar } from "@worktable/ui/components/calendar"
 import {
   Popover,
   PopoverContent,
@@ -27,6 +26,14 @@ import {
   useTemporaryArchiveLabel,
 } from "@/hooks/use-document-organize"
 import { useDocumentSummary } from "@/lib/lifetime"
+
+// The date picker (react-day-picker and date-fns) loads on demand. It starts
+// loading when the lifetime controls open, so it is ready by the time someone
+// chooses to change the date.
+const loadCalendar = () => import("@worktable/ui/components/calendar")
+const Calendar = lazy(() =>
+  loadCalendar().then((module) => ({ default: module.Calendar }))
+)
 
 /** Compare calendar days in the person's local timezone. */
 function localDay(iso: string): Date {
@@ -126,6 +133,9 @@ export function DocumentLifetimeControls({
   )
   const changeDateRef = useRef<HTMLButtonElement>(null)
   const restoreDateFocus = useRef(false)
+  useEffect(() => {
+    void loadCalendar()
+  }, [])
   // A save can outlive these controls (the page changed); its completion
   // must not close whatever surface is open by then.
   const mounted = useRef(true)
@@ -165,16 +175,18 @@ export function DocumentLifetimeControls({
     return (
       <>
         {heading?.("date")}
-        <Calendar
-          mode="single"
-          required
-          autoFocus
-          selected={date}
-          defaultMonth={date}
-          onSelect={setDate}
-          disabled={pending !== null ? true : { before: tomorrow }}
-          startMonth={tomorrow}
-        />
+        <Suspense fallback={null}>
+          <Calendar
+            mode="single"
+            required
+            autoFocus
+            selected={date}
+            defaultMonth={date}
+            onSelect={setDate}
+            disabled={pending !== null ? true : { before: tomorrow }}
+            startMonth={tomorrow}
+          />
+        </Suspense>
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <Button
             variant="ghost"

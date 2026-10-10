@@ -64,7 +64,9 @@ afterEach(async () => {
 })
 
 describe("OpenClaw asking Worktable to connect", () => {
-  async function serveRequests(polls: Array<Record<string, unknown>>) {
+  async function serveRequests(
+    polls: Array<Record<string, unknown> | ((origin: string) => Record<string, unknown>)>
+  ) {
     const stateDir = await mkdtemp(join(tmpdir(), "worktable-request-"))
     tempDirs.push(stateDir)
     process.env.OPENCLAW_STATE_DIR = stateDir
@@ -87,7 +89,10 @@ describe("OpenClaw asking Worktable to connect", () => {
           )
         }
         if (path === "/api/pairing/requests/poll") {
-          return Response.json(polls.shift() ?? { status: "expired" })
+          const next = polls.shift() ?? { status: "expired" }
+          return Response.json(
+            typeof next === "function" ? next(new URL(request.url).origin) : next
+          )
         }
         // Stop at redeem: the request flow's job ends with the right code.
         return Response.json({ error: "stop" }, { status: 400 })
@@ -98,9 +103,14 @@ describe("OpenClaw asking Worktable to connect", () => {
   }
 
   it("waits for approval, then pairs with the code Worktable approved", async () => {
+    // On Worktable Cloud the approval names the owner's workspace address.
     const { server, seen } = await serveRequests([
       { status: "pending" },
-      { status: "approved", code: "T83PD-NSQDP" },
+      (origin) => ({
+        status: "approved",
+        code: "T83PD-NSQDP",
+        server: `${origin}/w/ws_approved`,
+      }),
     ])
     const shown: string[] = []
     await expect(
@@ -117,7 +127,7 @@ describe("OpenClaw asking Worktable to connect", () => {
       name: "Lobster",
     })
     expect(seen.at(-1)).toMatchObject({
-      path: "/api/pairing/redeem",
+      path: "/w/ws_approved/api/pairing/redeem",
       body: { code: "T83PD-NSQDP" },
     })
   })

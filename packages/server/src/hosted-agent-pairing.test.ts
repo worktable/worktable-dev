@@ -116,7 +116,7 @@ describe("an agent paired with a Cloud workspace", () => {
       ).status
     ).toBe(403)
     const created = await call("/api/pairing", {
-      body: { target },
+      body: { target, icon: "brain" },
       owner: true,
     })
     expect(created.status).toBe(201)
@@ -169,6 +169,7 @@ describe("an agent paired with a Cloud workspace", () => {
         {
           displayName: "Atlas",
           platform: "openclaw",
+          icon: "brain",
           mode: "always-on",
           machine: "studio",
         },

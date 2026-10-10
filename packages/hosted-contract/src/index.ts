@@ -199,6 +199,11 @@ export const AGENT_ROUTE_HEADERS = {
    * the workspace issued at pairing, and the workspace verifies it itself.
    */
   CREDENTIAL: "x-worktable-agent-credential",
+  /**
+   * The address an anonymous request came from, as the gateway saw it, so the
+   * workspace can limit each sender on its own. Set only by the gateway.
+   */
+  CLIENT_ADDRESS: "x-worktable-client-address",
 } as const
 
 /** The workspace segment of the gateway's agent route: `/w/<id>/…`. */

@@ -1604,8 +1604,12 @@ describe("connection requests (an agent asks, the owner approves)", () => {
     const pairingCode = delivered.body["code"];
     expect(delivered.body["status"]).toBe("approved");
     expect(typeof pairingCode).toBe("string");
-    // The code goes to the asking agent once.
-    expect((await poll(asked.pollToken)).body).toEqual({ status: "expired" });
+    // If that answer is lost, the agent's next poll gets the same code: one
+    // pairing, not a second one.
+    expect((await poll(asked.pollToken)).body).toEqual({
+      status: "approved",
+      code: pairingCode,
+    });
 
     const redeemed = await app.fetch(
       jsonReq("POST", "/api/pairing/redeem", {

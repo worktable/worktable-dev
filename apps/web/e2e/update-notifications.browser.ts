@@ -247,6 +247,22 @@ test("Desktop's own update controls replace the server's, even when its status f
   await expect(
     settings.getByText("Check for updates automatically")
   ).toHaveCount(0)
+
+  // A later failed read replaces the earlier status rather than leaving it.
+  await page.evaluate(() => {
+    ;(window as { __desktopStatusFails?: boolean }).__desktopStatusFails = true
+    window.dispatchEvent(
+      new CustomEvent("worktable:open-settings", {
+        detail: { section: "system" },
+      })
+    )
+  })
+  await expect(
+    settings.getByText("Couldn’t get the update status.")
+  ).toBeVisible()
+  await expect(
+    settings.getByText("You’re on the latest version.")
+  ).toHaveCount(0)
 })
 
 test("a manual API failure hides a previously confirmed update action", async ({

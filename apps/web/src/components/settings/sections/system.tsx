@@ -79,14 +79,13 @@ export function SystemSection() {
   }
 
   // In Worktable Desktop the app updates itself, so its own controls replace
-  // the server's. Wait for Desktop's answer rather than flash the server's.
+  // the server's. Wait for Desktop's answer rather than flash the server's,
+  // and never act on a status Desktop can no longer confirm.
   const inDesktop = mayHaveDesktopUpdates()
   return (
     <div className="flex flex-col gap-6">
       <AboutGroup />
-      {desktopUpdate.data ? (
-        <DesktopUpdateSection status={desktopUpdate.data} />
-      ) : inDesktop && desktopUpdate.isError ? (
+      {inDesktop && desktopUpdate.isError ? (
         <DesktopUpdateFrame>
           <StatusRow
             icon={<TriangleAlert className="size-4 text-destructive" />}
@@ -108,6 +107,8 @@ export function SystemSection() {
             </Button>
           </div>
         </DesktopUpdateFrame>
+      ) : desktopUpdate.data ? (
+        <DesktopUpdateSection status={desktopUpdate.data} />
       ) : inDesktop && desktopUpdate.isPending ? null : (
         <>
           {deployment?.capabilities.softwareUpdates ? (

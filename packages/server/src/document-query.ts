@@ -976,6 +976,8 @@ export async function useResolvedDocumentHandle<T>(
           options,
           result.prepared,
           async (current) => {
+            // A legacy HTML read may have waited for its widget lock.
+            options.signal?.throwIfAborted()
             const resolution = handleForPrepared(current)
             if (resolution.kind !== "document") return resolution
             if (

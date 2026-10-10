@@ -328,7 +328,8 @@ async function inventoryClaims(
   spaceId: string,
   legacyClaims: DocumentSourceClaim[],
   aliases: DocAliases,
-  registry: DocumentFormatRegistry
+  registry: DocumentFormatRegistry,
+  signal?: AbortSignal
 ): Promise<{
   claims: Array<
     DocumentSourceClaim & {
@@ -347,6 +348,7 @@ async function inventoryClaims(
   const provenCoreBundleIdentities = new Set<string>()
   const provenCoreBundleUpdatedAt = new Map<DocumentId, string>()
   for (const entry of inventory.entries.values()) {
+    signal?.throwIfAborted()
     const snapshot = await provenCoreBundleSnapshot(spaceRoot, entry)
     if (snapshot) {
       provenCoreBundleIds.add(entry.documentId)
@@ -358,6 +360,7 @@ async function inventoryClaims(
   }
   const visibleLegacyClaims: DocumentSourceClaim[] = []
   for (const claim of legacyClaims) {
+    signal?.throwIfAborted()
     const inspected = await inspectSourceOwnership(
       spaceRoot,
       claim.source,
@@ -419,6 +422,7 @@ async function inventoryClaims(
   }
 
   for (const entry of inventory.entries.values()) {
+    signal?.throwIfAborted()
     if (consumed.has(entry.documentId)) continue
     const legacyPath = registeredFileLogicalPath(entry, registry)
     if (legacyPath && reservedByAliasIn(aliases, legacyPath)) continue
@@ -615,7 +619,8 @@ async function buildDocumentCatalogFromFiles(
     spaceId,
     legacyClaims,
     aliasResult.aliases,
-    registry
+    registry,
+    options.signal
   )
   const grouped = new Map<string, typeof merged.claims>()
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()

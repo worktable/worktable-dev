@@ -9,7 +9,10 @@ import { cn } from "@worktable/ui/lib/utils"
 import { getIcon } from "@/lib/icons"
 import { participantInitials } from "@/lib/thread-presentation"
 
-/** Logos drawn edge to edge; the rest sit inset on a neutral disc. */
+/**
+ * Logos drawn edge to edge; the rest sit inset on a white disc in both themes,
+ * because brand rules forbid recoloring marks such as OpenAI's black Blossom.
+ */
 const FULL_BLEED_LOGOS = new Set<AgentPlatformId>(["hermes"])
 
 export function agentLogoUrl(
@@ -45,7 +48,7 @@ export function AgentAvatar({
           className={cn(
             platform && FULL_BLEED_LOGOS.has(platform)
               ? "object-cover"
-              : "bg-card object-contain p-[18%]"
+              : "bg-white object-contain p-[18%]"
           )}
         />
       ) : null}

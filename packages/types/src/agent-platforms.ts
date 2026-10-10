@@ -39,7 +39,12 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "always-on",
     logo: "hermes.png",
   },
-  chatgpt: { id: "chatgpt", name: "ChatGPT", mode: "on-demand", logo: null },
+  chatgpt: {
+    id: "chatgpt",
+    name: "ChatGPT",
+    mode: "on-demand",
+    logo: "openai.svg",
+  },
   claude: {
     id: "claude",
     name: "Claude",
@@ -52,7 +57,7 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "claude.svg",
   },
-  codex: { id: "codex", name: "Codex", mode: "on-demand", logo: null },
+  codex: { id: "codex", name: "Codex", mode: "on-demand", logo: "openai.svg" },
   cursor: { id: "cursor", name: "Cursor", mode: "on-demand", logo: null },
   opencode: { id: "opencode", name: "opencode", mode: "on-demand", logo: null },
   vscode: { id: "vscode", name: "VS Code", mode: "on-demand", logo: null },

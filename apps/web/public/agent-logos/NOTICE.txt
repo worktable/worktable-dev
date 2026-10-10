@@ -14,3 +14,8 @@ hermes.png    Hermes Agent logo from github.com/NousResearch/hermes-agent
 claude.svg    "Claude Spark - Clay" from Anthropic's press kit
               (https://www.anthropic.com/press-kit), unmodified.
               Claude and the Claude Spark are trademarks of Anthropic.
+
+openai.svg    OpenAI Blossom (black) from OpenAI's brand page
+              (https://openai.com/brand/), unmodified, used under OpenAI's
+              marks usage terms for ChatGPT and Codex. OpenAI, ChatGPT, and
+              the Blossom are trademarks of OpenAI.

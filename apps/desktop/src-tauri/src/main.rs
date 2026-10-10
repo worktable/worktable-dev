@@ -5138,6 +5138,10 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
 
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     {
+        eprintln!(
+            "[Worktable Desktop] checking for updates ({})",
+            if manual { "manual" } else { "automatic" }
+        );
         let result = async {
             let updater = app
                 .updater()
@@ -5149,16 +5153,23 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
         }
         .await;
         let to_download = updater_state.apply_check_result_if_current(|| match result {
-            Ok(Some(update)) => updater_state
-                .record_update_found(
-                    update.version.clone(),
-                    update.body.clone(),
-                    update.date.map(|date| date.to_string()),
-                    checked_at,
-                    manual,
-                )
-                .map(|needs_download| needs_download.then_some(update)),
+            Ok(Some(update)) => {
+                eprintln!(
+                    "[Worktable Desktop] Worktable {} is available",
+                    update.version
+                );
+                updater_state
+                    .record_update_found(
+                        update.version.clone(),
+                        update.body.clone(),
+                        update.date.map(|date| date.to_string()),
+                        checked_at,
+                        manual,
+                    )
+                    .map(|needs_download| needs_download.then_some(update))
+            }
             Ok(None) => {
+                eprintln!("[Worktable Desktop] no newer Desktop release");
                 updater_state.record_no_update(manual, checked_at)?;
                 Ok(None)
             }
@@ -5208,8 +5219,19 @@ async fn prepare_update(app: &AppHandle, update: tauri_plugin_updater::Update) {
             bundle_installs_without_authorization(),
         )
     });
-    if let Err(error) = prepared {
-        eprintln!("[Worktable Desktop] {error}");
+    match &prepared {
+        Ok(prepared) => eprintln!(
+            "[Worktable Desktop] downloaded and verified Worktable {}; it installs on {}",
+            prepared.version,
+            if prepared.installs_on_quit {
+                "restart or quit"
+            } else {
+                "restart"
+            }
+        ),
+        Err(error) => eprintln!("[Worktable Desktop] {error}"),
+    }
+    if prepared.is_err() {
         let _ = set_pending_native_update(&pending, None);
         let _ = updater_state.take_prepared();
         if let Err(error) = updater_state.record_download_failure(
@@ -5289,6 +5311,10 @@ fn install_prepared_update_on_exit<R: Runtime>(app: &AppHandle<R>) {
     if !prepared.installs_on_quit || !bundle_installs_without_authorization() {
         return;
     }
+    eprintln!(
+        "[Worktable Desktop] installing Worktable {} on quit",
+        prepared.version
+    );
     if let Some(window) = app.get_window(WINDOW_LABEL) {
         let _ = window.hide();
     }

@@ -1004,16 +1004,21 @@ const docMetaCache = new Map<string, { fingerprint: string; meta: DocMetaFile }>
 /** Shared parsed docs.meta.json. Callers must not mutate it or its entries. */
 async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
   const path = docMetaPath(spaceId);
-  const fingerprint = await readFileFingerprint(path);
-  if (!fingerprint) {
+  // Metadata stays optional: a file that cannot be inspected is read the
+  // tolerant way and not cached.
+  const fingerprint = await readFileFingerprint(path).catch(() => undefined);
+  if (fingerprint === null) {
     docMetaCache.delete(path);
     return { ...EMPTY_DOC_META, docs: {} };
   }
   const cached = docMetaCache.get(path);
-  if (cached?.fingerprint === fingerprint.key) return cached.meta;
+  if (fingerprint && cached?.fingerprint === fingerprint.key) return cached.meta;
   const meta = await parseDocMetaFile(path);
-  if (fingerprint.racy) docMetaCache.delete(path);
-  else docMetaCache.set(path, { fingerprint: fingerprint.key, meta });
+  if (fingerprint && !fingerprint.racy) {
+    docMetaCache.set(path, { fingerprint: fingerprint.key, meta });
+  } else {
+    docMetaCache.delete(path);
+  }
   return meta;
 }
 

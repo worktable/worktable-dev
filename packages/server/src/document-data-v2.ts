@@ -62,6 +62,7 @@ import {
   ensureRealDocumentStorageDirectory,
   requireRealDocumentStorageDirectory,
 } from "./workspace-storage-v2.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
 
 export const LEGACY_DOCUMENT_SELECTOR_TYPES = {
   richTextBlock: "worktable.rich-text-block",
@@ -1024,6 +1025,9 @@ export async function writeDocumentPortableStateV2(input: {
             2
           )}\n`
         )
+        // Saved properties name HTML Docs in list snapshots; no identity
+        // file changes with them, so say so before the write returns.
+        noteSpaceChanged(input.spaceId)
         const keep = new Set([
           revision,
           ...(DOCUMENT_PORTABLE_STATE_REVISIONS_KEPT > 1 && priorRevision

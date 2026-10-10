@@ -39,9 +39,8 @@ function sharedReadKey(url: URL, identity: TokenIdentity | undefined): string {
   return JSON.stringify([
     workspaceGeneration(),
     url.pathname,
-    [...url.searchParams.entries()].sort(
-      ([a, av], [b, bv]) => compare(a, b) || compare(av, bv)
-    ),
+    // Handlers read the first of repeated parameters, so keep their order.
+    [...url.searchParams.entries()].sort(([a], [b]) => compare(a, b)),
     identity
       ? [
           identity.workspace,

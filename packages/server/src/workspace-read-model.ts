@@ -117,6 +117,15 @@ export function documentSpaceForPath(
   return spaceId
 }
 
+/** A source's fingerprint key: null when missing, undefined when unreadable. */
+async function sourceKey(path: string): Promise<string | null | undefined> {
+  try {
+    return (await readFileFingerprint(path))?.key ?? null
+  } catch {
+    return undefined
+  }
+}
+
 function snapshotsEnabled(): boolean {
   return process.env["WORKTABLE_MODEL"] !== "0"
 }
@@ -134,12 +143,9 @@ async function isCurrent(
     return false
   }
   const observed = await Promise.all(
-    snapshot.sources.map(([path]) => readFileFingerprint(path))
+    snapshot.sources.map(([path]) => sourceKey(path))
   )
-  return observed.every(
-    (fingerprint, index) =>
-      (fingerprint?.key ?? null) === snapshot.sources[index]![1]
-  )
+  return observed.every((key, index) => key === snapshot.sources[index]![1])
 }
 
 /**
@@ -187,17 +193,19 @@ export async function readSpaceSnapshot<T>(options: {
     // runs leaves the snapshot already stale. A same-size rewrite within one
     // timestamp tick would not change them; the watcher and maximum age cover
     // that case for these small identity files.
-    const fingerprints = await Promise.all(
-      options.sources.map((path) => readFileFingerprint(path))
-    )
+    const keys = await Promise.all(options.sources.map(sourceKey))
     const value = await options.build()
-    if (publishable && spaceGeneration(spaceId) === generation) {
+    if (
+      publishable &&
+      spaceGeneration(spaceId) === generation &&
+      !keys.includes(undefined)
+    ) {
       snapshots.set(spaceId, {
         workspaceRoot,
         generation,
         builtAt,
         sources: options.sources.map(
-          (path, index) => [path, fingerprints[index]?.key ?? null] as const
+          (path, index) => [path, keys[index] ?? null] as const
         ),
         value,
       })

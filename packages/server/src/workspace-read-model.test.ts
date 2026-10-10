@@ -24,6 +24,8 @@ import { createRegisteredDocument } from "./document-write-service.ts"
 import { listDocuments } from "./document-query.ts"
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
+import { updateWidgetMetadata } from "./widget-store.ts"
+import { writeManagedFixtureHtml } from "./fixtures/managed-content.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
 import {
   ensureWorkspaceManifest,
@@ -65,10 +67,12 @@ async function createSpace(id: string): Promise<void> {
 
 async function listed(
   space = spaceId
-): Promise<Map<string, string | undefined>> {
+): Promise<Map<string, { title: string; updatedAt?: string }>> {
   return new Map(
     (await listDocuments({ spaceId: space })).flatMap((item) =>
-      item.kind === "document" ? [[item.path, item.updatedAt] as const] : []
+      item.kind === "document"
+        ? [[item.path, { title: item.title, updatedAt: item.updatedAt }]]
+        : []
     )
   )
 }
@@ -137,18 +141,56 @@ describe("workspace read model", () => {
           }),
         paths: ["notes/a"],
       },
+      {
+        space: "renamed",
+        write: async () =>
+          (
+            await updateWidgetMetadata("renamed", "boards/status", {
+              name: "Renamed board",
+            })
+          ).release?.(),
+        paths: ["boards/status", "notes/a"],
+      },
     ]
     // Each write lands in its own Space after that Space's list is current.
     for (const { space } of writes) await createSpace(space)
-    const before = new Map<string, Map<string, string | undefined>>()
+    const now = new Date().toISOString()
+    const created = await writeManagedFixtureHtml(
+      "renamed",
+      {
+        version: 1,
+        kind: "worktable.widget",
+        id: "boards/status",
+        name: "Status",
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "test",
+        metadata: {},
+        runtime: { type: "html", entry: "index.html" },
+        permissions: {
+          network: false,
+          records: {},
+          state: { read: true, write: true },
+        },
+      },
+      "<h1>Status</h1>"
+    )
+    created.release?.()
+    const before = new Map<string, Awaited<ReturnType<typeof listed>>>()
     for (const { space } of writes) before.set(space, await listed(space))
+    expect(before.get("renamed")?.get("boards/status")?.title).toBe("Status")
 
     for (const { space, write, paths } of writes) {
       await write()
       const after = await listed(space)
       expect([...after.keys()]).toEqual(paths)
       if (space === "edited") {
-        expect(after.get("notes/a")).not.toBe(before.get(space)?.get("notes/a"))
+        expect(after.get("notes/a")?.updatedAt).not.toBe(
+          before.get(space)?.get("notes/a")?.updatedAt
+        )
+      }
+      if (space === "renamed") {
+        expect(after.get("boards/status")?.title).toBe("Renamed board")
       }
     }
   })
@@ -196,7 +238,9 @@ describe("workspace read model", () => {
     const edited = new Date("2030-01-02T03:04:05.000Z")
     await utimes(added, edited, edited)
     await eventually(
-      async () => (await listed()).get("notes/outside") === edited.toISOString()
+      async () =>
+        (await listed()).get("notes/outside")?.updatedAt ===
+        edited.toISOString()
     )
   })
 

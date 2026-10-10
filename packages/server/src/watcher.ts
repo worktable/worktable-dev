@@ -258,14 +258,6 @@ export function parseChangedPath(
   if (parts.length >= 3 && parts[1] === "docs") {
     const docParts = parts.slice(2)
     const lastPart = docParts[docParts.length - 1]
-    // A temporary file staged by an atomic write is published by a rename,
-    // which the watcher also reports under the document's own name.
-    if (
-      isAtomicWriteTemporaryFileName(lastPart ?? "") ||
-      /\.(?:json|md|html)\.tmp$/.test(lastPart ?? "")
-    ) {
-      return null
-    }
     if (lastPart?.endsWith(".json")) {
       const docPath = docParts.join("/").replace(/\.json$/, "")
       return { type: "doc", spaceId, docPath }
@@ -281,11 +273,13 @@ export function parseChangedPath(
     return { type: "documentCorpus", spaceId }
   }
 
-  // Temporary siblings of these files are published by a rename, which the
-  // watcher also reports under the canonical name.
   if (
     parts.length === 2 &&
-    (parts[1] === "docs.meta.json" || parts[1] === "documents.meta.json")
+    (parts[1] === "docs.meta.json" ||
+      parts[1]?.startsWith("docs.meta.json.") ||
+      parts[1] === "documents.meta.json" ||
+      parts[1]?.startsWith("documents.meta.json.") ||
+      isAtomicWriteTemporaryFileName(parts[1] ?? ""))
   ) {
     return { type: "documentCorpus", spaceId }
   }
@@ -422,7 +416,8 @@ export class WorkspaceWatcher {
       const parsed = parse(changedPath)
       const fullPath = join(dir, changedPath)
       // Any activity, including the server's own suppressed writes and
-      // temporary files, ages the read model before debouncing.
+      // temporary files, ages the read model before debouncing. Bun 1.3
+      // reports an atomic rename only under its temporary name.
       const changedSpace = documentSpaceForPath(spacesBase, fullPath)
       if (changedSpace) noteSpaceChanged(changedSpace)
       else noteWorkspaceActivity()

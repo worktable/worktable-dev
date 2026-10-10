@@ -28,6 +28,7 @@ import { useServerSettings } from "@/hooks/use-server-settings"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import {
   DESKTOP_UPDATE_QUERY_KEY,
+  noteDesktopCheckRequested,
   useDesktopUpdate,
 } from "@/hooks/use-desktop-update"
 import {
@@ -196,7 +197,10 @@ function DesktopUpdateSection({ status }: { status: DesktopUpdateStatus }) {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: DESKTOP_UPDATE_QUERY_KEY })
   const check = useMutation({
-    mutationFn: checkDesktopUpdates,
+    mutationFn: () => {
+      noteDesktopCheckRequested()
+      return checkDesktopUpdates()
+    },
     onSettled: refresh,
   })
   const restart = useMutation({ mutationFn: restartDesktopToUpdate })

@@ -46,7 +46,8 @@
       "endpoints": [
         "https://worktable.dev/releases/latest/desktop-updater.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkyQUMxMEQ5N0EwRDE0NjYKUldSbUZBMTYyUkNza3A3V3oyeEZvelRJaFBBTGw3T01pTDBNa09mVStsbkdOSVRNQ2l4QkNYMDAK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkyQUMxMEQ5N0EwRDE0NjYKUldSbUZBMTYyUkNza3A3V3oyeEZvelRJaFBBTGw3T01pTDBNa09mVStsbkdOSVRNQ2l4QkNYMDAK",
+      "requireSignedVersion": true
     }
   }
 }

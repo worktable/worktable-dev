@@ -6,7 +6,11 @@ import { AccessTokensGroup, ConnectedAgentsGroup } from "./agents"
 test("connected identity and disconnect remain available when OAuth inventory is unavailable", () => {
   for (const unavailableAuthKinds of [[], ["oauth"]]) {
     const client = new QueryClient()
-    client.setQueryData(["agent-connections"], {
+    client.setQueryData(["system", "connection"], {
+      mcpAuthMode: "oauth",
+      agentPairing: false,
+    })
+    client.setQueryData(["agent-connections", false], {
       unavailableAuthKinds,
       connections: [
         {

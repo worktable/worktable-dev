@@ -60,6 +60,8 @@ after the upgrade.
 Existing documents, history, and share links are preserved. Worktable retains the
 original workspace as a rollback copy beside the workspace folder. Keep that copy
 until you have verified the upgraded workspace; it contains private data.
+Annotations on documents that no longer exist are not carried over; they remain
+in the rollback copy.
 
 If you see **Workspace upgrade needs attention**, the owner needs to inspect the
 server logs and resolve the reported issue before choosing **Retry upgrade**.

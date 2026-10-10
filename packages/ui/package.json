@@ -71,6 +71,7 @@
     "./globals.css": "./src/styles/globals.css",
     "./theme.css": "./src/styles/theme.generated.css",
     "./backdrop.css": "./src/styles/backdrop.css",
+    "./control-finishes.css": "./src/styles/control-finishes.css",
     "./theme": "./src/theme/theme-config.ts",
     "./document-reading-preview": "./src/document-reading-preview.ts",
     "./theme/mermaid-config": "./src/theme/mermaid-config.ts",

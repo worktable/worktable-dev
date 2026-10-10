@@ -1,0 +1,21 @@
+Agent platform logos
+
+These marks identify the platform a connected agent comes from. Each belongs
+to its owner; showing it does not imply endorsement of Worktable.
+
+openclaw.svg  OpenClaw mascot from the openclaw npm package
+              (dist/control-ui/favicon.svg), animation removed.
+              OpenClaw is MIT licensed, Copyright (c) 2026 OpenClaw Foundation.
+
+hermes.png    Hermes Agent logo from github.com/NousResearch/hermes-agent
+              (website/static/img/logo.png), scaled to 128 px.
+              Hermes Agent is MIT licensed, Copyright (c) 2025 Nous Research.
+
+claude.svg    "Claude Spark - Clay" from Anthropic's press kit
+              (https://www.anthropic.com/press-kit), unmodified.
+              Claude and the Claude Spark are trademarks of Anthropic.
+
+openai.svg    OpenAI Blossom (black) from OpenAI's brand page
+              (https://openai.com/brand/), unmodified, used under OpenAI's
+              marks usage terms for ChatGPT and Codex. OpenAI, ChatGPT, and
+              the Blossom are trademarks of OpenAI.

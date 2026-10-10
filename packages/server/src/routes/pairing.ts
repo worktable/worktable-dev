@@ -1,13 +1,17 @@
 import { basename } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
+  type AgentAccess,
+  AGENT_PLATFORMS,
+  type AgentPlatformId,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
+  DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
+  platformForClient,
+  scopesForAccess,
 } from "@worktable/types";
 import {
-  requireMintAuth,
-  requireScope,
-  trustedLocalIdentity,
+  requireAgentManager,
 } from "../auth.ts";
 import {
   CONNECTOR_PROGRESS_EVENTS,
@@ -32,10 +36,22 @@ import {
   tokenIdFromToken,
   verifyToken,
 } from "../token-store.ts";
-import { resolveParticipant } from "../participant-store.ts";
+import {
+  listParticipantBindings,
+  resolveParticipant,
+} from "../participant-store.ts";
 import { upsertAgentConnection } from "../agent-connection-store.ts";
+import {
+  ConnectionRequestLimitError,
+  createConnectionRequest,
+  getConnectionRequest,
+  pollConnectionRequest,
+  settleConnectionRequest,
+  type ConnectionRequestTarget,
+} from "../connection-request-store.ts";
 import { readSpace } from "../store.ts";
 import { getWorkspaceRoot } from "../workspace.ts";
+import { hostedAgentBase } from "../hosted.ts";
 import { resolveOrigin } from "./system.ts";
 
 // ============================================================
@@ -150,12 +166,6 @@ function parseAgentAdapterTarget(value: unknown):
   ) {
     return { ok: false, error: "defaultSpaceId must be a non-empty string" };
   }
-  if (
-    target.workspaceAccess !== undefined &&
-    typeof target.workspaceAccess !== "boolean"
-  ) {
-    return { ok: false, error: "workspaceAccess must be a boolean" };
-  }
   return {
     ok: true,
     target: {
@@ -165,32 +175,68 @@ function parseAgentAdapterTarget(value: unknown):
       ...(typeof target.defaultSpaceId === "string"
         ? { defaultSpaceId: target.defaultSpaceId.trim() }
         : {}),
-      ...(target.workspaceAccess === true ? { workspaceAccess: true } : {}),
     },
   };
 }
 
 /**
- * An always-on adapter receives addressed messages through threads. One whose
- * agent also reaches the workspace through the same credential gets the
- * ordinary agent content scopes as well.
+ * A platform's name, or with the machine added when another participant
+ * already has it, so a message addressed by name still finds one agent.
  */
-function agentAdapterScopes(
-  target: Extract<PairingTarget, { kind: "agent-adapter" }>
-): string[] {
-  if (!target.workspaceAccess) return ["threads:*"];
-  return [
-    ...DEFAULT_AGENT_TOKEN_SCOPES.filter((scope) => !scope.startsWith("threads:")),
-    "threads:*",
-  ];
+async function defaultAgentName(
+  platform: AgentPlatformId,
+  machine: string | null
+): Promise<string> {
+  const name = AGENT_PLATFORMS[platform].name;
+  const taken = new Set(
+    (await listParticipantBindings()).map(({ participant }) =>
+      participant.name.toLocaleLowerCase()
+    )
+  );
+  if (!taken.has(name.toLocaleLowerCase())) return name;
+  const withMachine = machine ? `${name} (${machine})` : undefined;
+  if (withMachine && !taken.has(withMachine.toLocaleLowerCase())) {
+    return withMachine;
+  }
+  for (let n = 2; ; n += 1) {
+    const numbered = `${name} ${n}`;
+    if (!taken.has(numbered.toLocaleLowerCase())) return numbered;
+  }
+}
+
+function parseAccess(value: unknown): AgentAccess | undefined | false {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const access = value as Record<string, unknown>;
+  return typeof access.threads === "boolean" &&
+    typeof access.read === "boolean" &&
+    typeof access.edit === "boolean"
+    ? { threads: access.threads, read: access.read, edit: access.edit }
+    : false;
+}
+
+/**
+ * Where an agent reaches this Worktable. On Cloud that is the workspace's
+ * agent address from the gateway, which routes an agent's own credential;
+ * elsewhere the Worktable's public origin.
+ */
+function agentEndpoint(c: Context): {
+  origin: string;
+  originSource: ReturnType<typeof resolveOrigin>["originSource"];
+  mcpUrl: string;
+} {
+  const base = hostedAgentBase(c.req.raw);
+  if (base) {
+    return { origin: base, originSource: "resource", mcpUrl: `${base}/api/mcp` };
+  }
+  const { origin, originSource } = resolveOrigin(c);
+  return { origin, originSource, mcpUrl: remoteMcpUrl(origin) };
 }
 
 // ---- Owner surface -------------------------------------------------------
 
 const ownerSurface = new Hono();
-ownerSurface.use("*", trustedLocalIdentity());
-ownerSurface.use("*", requireMintAuth());
-ownerSurface.use("*", requireScope("tokens:manage"));
+ownerSurface.use("*", requireAgentManager());
 
 // POST /api/pairing — create a pairing session. The code is shown exactly
 // once; only its hash persists.
@@ -200,7 +246,25 @@ ownerSurface.post("/", async (c) => {
     displayName?: unknown;
     scopes?: unknown;
     target?: unknown;
+    access?: unknown;
   } | null;
+
+  const access = parseAccess(body?.access);
+  if (access === false) {
+    return c.json(
+      {
+        error: "access must have boolean threads, read, and edit",
+        code: "BAD_REQUEST",
+      },
+      400
+    );
+  }
+  if (access && body?.scopes !== undefined) {
+    return c.json(
+      { error: "access and scopes cannot both be supplied", code: "BAD_REQUEST" },
+      400
+    );
+  }
 
   if (body?.client !== undefined && body?.target !== undefined) {
     return c.json(
@@ -234,7 +298,16 @@ ownerSurface.post("/", async (c) => {
     if (body.scopes !== undefined) {
       return c.json(
         {
-          error: "agent adapter scopes are fixed by Worktable",
+          error: "choose an always-on agent's access with access, not scopes",
+          code: "BAD_REQUEST",
+        },
+        400
+      );
+    }
+    if (access && !access.threads) {
+      return c.json(
+        {
+          error: "an always-on agent needs threads: that is how it receives messages",
           code: "BAD_REQUEST",
         },
         400
@@ -272,8 +345,16 @@ ownerSurface.post("/", async (c) => {
   }
 
   let scopes = target
-    ? agentAdapterScopes(target)
-    : [...DEFAULT_AGENT_TOKEN_SCOPES];
+    ? scopesForAccess(access || DEFAULT_AGENT_ACCESS)
+    : access
+      ? scopesForAccess(access)
+      : [...DEFAULT_AGENT_TOKEN_SCOPES];
+  if (scopes.length === 0) {
+    return c.json(
+      { error: "choose at least one kind of access", code: "BAD_REQUEST" },
+      400
+    );
+  }
   if (body?.scopes !== undefined) {
     if (
       !Array.isArray(body.scopes) ||
@@ -303,8 +384,7 @@ ownerSurface.post("/", async (c) => {
     scopes = body.scopes;
   }
 
-  const { origin, originSource } = resolveOrigin(c);
-  const mcpUrl = remoteMcpUrl(origin);
+  const { origin, originSource, mcpUrl } = agentEndpoint(c);
   const { code, session } = await createPairingSession({
     client,
     target: target ?? {
@@ -375,8 +455,8 @@ pairingRouter.post("/target", async (c) => {
           result.reason === "not_found"
             ? "Unknown or invalid code"
             : result.reason === "expired"
-              ? "Pairing code expired — create a new one in Settings"
-              : "Pairing code already used — create a new one in Settings",
+              ? "Pairing code expired. Create a new one in Settings."
+              : "Pairing code already used. Create a new one in Settings.",
         code:
           result.reason === "not_found"
             ? "INVALID_CODE"
@@ -500,8 +580,8 @@ pairingRouter.post("/redeem", async (c) => {
       {
         error:
           result.reason === "expired"
-            ? "Pairing code expired — create a new one in Settings"
-            : "Pairing code already used — create a new one in Settings",
+            ? "Pairing code expired. Create a new one in Settings."
+            : "Pairing code already used. Create a new one in Settings.",
         code: result.reason === "expired" ? "EXPIRED" : "ALREADY_REDEEMED",
       },
       410
@@ -551,16 +631,21 @@ pairingRouter.post("/redeem", async (c) => {
     agent: agentLabel,
     scopes: session.scopes,
   });
+  // The pairing's name only names a new agent. Reconnecting an installation
+  // keeps the name its owner gave it, and the adapter learns that name here.
+  let participantName = adapterTarget?.participantName;
   try {
     await attachPairingToken(session.id, metadata.id);
     if (adapterTarget) {
-      await resolveParticipant(
-        { agent: metadata.agent, principal: metadata.principal },
-        {
-          name: adapterTarget.participantName,
-          defaultSpaceId: adapterTarget.defaultSpaceId ?? null,
-        }
-      );
+      participantName = (
+        await resolveParticipant(
+          { agent: metadata.agent, principal: metadata.principal },
+          {
+            initialName: adapterTarget.participantName,
+            defaultSpaceId: adapterTarget.defaultSpaceId ?? null,
+          }
+        )
+      ).participant.name;
     }
   } catch {
     const setupTarget = adapterTarget
@@ -589,7 +674,7 @@ pairingRouter.post("/redeem", async (c) => {
     workspaceName: basename(getWorkspaceRoot()),
     ...(adapterTarget
       ? {
-          participantName: adapterTarget.participantName,
+          participantName,
           ...(adapterTarget.defaultSpaceId
             ? { defaultSpaceId: adapterTarget.defaultSpaceId }
             : {}),
@@ -647,7 +732,7 @@ pairingRouter.post("/complete", async (c) => {
           await resolveParticipant(
             { agent: metadata.agent, principal: metadata.principal },
             {
-              name: target.participantName,
+              initialName: target.participantName,
               defaultSpaceId: target.defaultSpaceId ?? null,
             }
           )
@@ -662,20 +747,34 @@ pairingRouter.post("/complete", async (c) => {
           participant,
           machine: session.redeemedBy?.hostname ?? null,
           credentialId: tokenId,
+          ...(target.icon ? { icon: target.icon } : {}),
         });
       } else {
+        const clientId = session.redeemedBy?.all
+          ? null
+          : (session.redeemedBy?.client ?? session.requestedClient ?? null);
+        const machine = session.redeemedBy?.hostname ?? null;
+        // The agent's name is its thread name from the start. Like an
+        // adapter's, it only names a new agent: reconnecting keeps the name
+        // its owner gave it since.
+        const participant = (
+          await resolveParticipant(
+            { agent: metadata.agent, principal: metadata.principal },
+            {
+              initialName:
+                target.displayName ??
+                (await defaultAgentName(platformForClient(clientId), machine)),
+            }
+          )
+        ).participant;
         connectionStored = await upsertAgentConnection({
-          target: {
-            kind: "mcp-client",
-            clientId: session.redeemedBy?.all
-              ? null
-              : (session.redeemedBy?.client ?? session.requestedClient ?? null),
-          },
+          target: { kind: "mcp-client", clientId },
           mode: "on-demand",
-          participant: null,
-          machine: session.redeemedBy?.hostname ?? null,
+          participant,
+          machine,
           credentialId: tokenId,
           displayName: target.displayName,
+          ...(target.icon ? { icon: target.icon } : {}),
         });
       }
       if (!connectionStored) {
@@ -792,4 +891,216 @@ pairingRouter.post("/progress", async (c) => {
 
 // Owner routes mount last so code-surface POSTs match first; a GET to one of
 // those names falls through to the owner-gated :id lookup and 404s there.
+// ---- Connection requests: an agent asks, the owner approves --------------
+
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function parseRequestTarget(value: unknown): ConnectionRequestTarget | null {
+  if (!value || typeof value !== "object") return null;
+  const target = value as Record<string, unknown>;
+  if (
+    target.kind === "agent-adapter" &&
+    typeof target.adapter === "string" &&
+    AGENT_ADAPTER_ID.test(target.adapter) &&
+    typeof target.installationId === "string" &&
+    AGENT_ADAPTER_INSTALLATION_ID.test(target.installationId)
+  ) {
+    return {
+      kind: "agent-adapter",
+      adapter: target.adapter,
+      installationId: target.installationId,
+    };
+  }
+  if (target.kind === "mcp-client") {
+    const { ok, client } = parseClient(target.client);
+    return ok ? { kind: "mcp-client", client } : null;
+  }
+  return null;
+}
+
+// POST /api/pairing/requests — an agent that knows only this address asks to
+// connect. Its owner approves the returned code in Worktable.
+/**
+ * Anyone may ask, so only an agent's own process may: a browser always
+ * sends Origin on a POST, and the loopback CORS policy would otherwise let
+ * any page a visitor opens fill the waiting list. JSON only, as well.
+ */
+function agentRequestOnly(c: Context): Response | null {
+  if (c.req.header("Origin") !== undefined) {
+    return c.json({ error: "Agents ask to connect from their own process", code: "FORBIDDEN" }, 403);
+  }
+  const type = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+  return type === "application/json"
+    ? null
+    : c.json({ error: "Content-Type must be application/json", code: "JSON_REQUIRED" }, 415);
+}
+
+pairingRouter.post("/requests", async (c) => {
+  const notJson = agentRequestOnly(c);
+  if (notJson) return notJson;
+  if (codeSurfaceLocked()) {
+    return c.json({ error: "Too many attempts. Try again later.", code: "RATE_LIMITED" }, 429);
+  }
+  const body = (await c.req.json().catch(() => null)) as {
+    target?: unknown;
+    hostname?: unknown;
+    name?: unknown;
+  } | null;
+  const target = parseRequestTarget(body?.target);
+  if (!target) {
+    return c.json(
+      { error: "target must name an agent adapter installation or an MCP client", code: "BAD_REQUEST" },
+      400
+    );
+  }
+  const name = typeof body?.name === "string" ? body.name.trim().slice(0, 100) : "";
+  try {
+    const request = await createConnectionRequest({
+      target,
+      hostname: sanitizeHostname(body?.hostname),
+      suggestedName: name || null,
+    });
+    const { origin } = resolveOrigin(c);
+    const approvalUrl = new URL("/connect", origin);
+    approvalUrl.searchParams.set("code", request.userCode);
+    return c.json(
+      {
+        code: request.userCode,
+        pollToken: request.pollToken,
+        approvalUrl: approvalUrl.href,
+        expiresAt: request.expiresAt,
+        interval: 2,
+      },
+      201
+    );
+  } catch (error) {
+    if (error instanceof ConnectionRequestLimitError) {
+      return c.json({ error: error.message, code: "RATE_LIMITED" }, 429);
+    }
+    throw error;
+  }
+});
+
+// POST /api/pairing/requests/poll — the asking agent waits for its owner.
+// Once approved it receives a one-time pairing code and pairs as usual.
+pairingRouter.post("/requests/poll", async (c) => {
+  const notJson = agentRequestOnly(c);
+  if (notJson) return notJson;
+  const body = (await c.req.json().catch(() => null)) as {
+    pollToken?: unknown;
+  } | null;
+  if (typeof body?.pollToken !== "string" || !body.pollToken) {
+    return c.json({ error: "pollToken is required", code: "BAD_REQUEST" }, 400);
+  }
+  const { mcpUrl } = agentEndpoint(c);
+  const result = await pollConnectionRequest(
+    body.pollToken,
+    async (target, approval) => {
+      const icon = approval.icon ? { icon: approval.icon } : {};
+      const { code } = await createPairingSession({
+        client: target.kind === "mcp-client" ? target.client : null,
+        target:
+          target.kind === "agent-adapter"
+            ? {
+                kind: "agent-adapter",
+                adapter: target.adapter,
+                participantName: approval.displayName,
+                ...icon,
+              }
+            : {
+                kind: "mcp-client",
+                client: target.client,
+                displayName: approval.displayName,
+                ...icon,
+              },
+        scopes: scopesForAccess(approval.access),
+        mcpUrl,
+      });
+      return code;
+    }
+  );
+  if (!result) {
+    recordCodeFailure();
+    return c.json({ error: "Unknown connection request", code: "NOT_FOUND" }, 404);
+  }
+  return c.json(result);
+});
+
+// GET /api/pairing/requests/:code — the owner looks at a waiting agent.
+ownerSurface.get("/requests/:code", async (c) => {
+  const request = await getConnectionRequest(c.req.param("code"));
+  if (!request) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ request });
+});
+
+// POST /api/pairing/requests/:code/approve — with its name, icon, and access.
+ownerSurface.post("/requests/:code/approve", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    displayName?: unknown;
+    icon?: unknown;
+    access?: unknown;
+  } | null;
+  const displayName =
+    typeof body?.displayName === "string" ? body.displayName.trim() : "";
+  if (!displayName || displayName.length > 100) {
+    return c.json({ error: "displayName must be 1 to 100 characters", code: "BAD_REQUEST" }, 400);
+  }
+  if (
+    body?.icon !== undefined &&
+    body.icon !== null &&
+    (typeof body.icon !== "string" || body.icon.length > 64 || !ICON_NAME.test(body.icon))
+  ) {
+    return c.json({ error: "icon must be an icon name or null", code: "BAD_REQUEST" }, 400);
+  }
+  const access = parseAccess(body?.access);
+  if (!access) {
+    return c.json(
+      { error: "access must have boolean threads, read, and edit", code: "BAD_REQUEST" },
+      400
+    );
+  }
+  if (scopesForAccess(access).length === 0) {
+    return c.json({ error: "choose at least one kind of access", code: "BAD_REQUEST" }, 400);
+  }
+  const pending = await getConnectionRequest(c.req.param("code"));
+  if (pending?.target.kind === "agent-adapter" && !access.threads) {
+    return c.json(
+      {
+        error: "an always-on agent needs threads: that is how it receives messages",
+        code: "BAD_REQUEST",
+      },
+      400
+    );
+  }
+  const settled = await settleConnectionRequest(c.req.param("code"), {
+    displayName,
+    icon: typeof body?.icon === "string" ? body.icon : null,
+    access,
+  });
+  if (!settled) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ ok: true as const });
+});
+
+// POST /api/pairing/requests/:code/deny
+ownerSurface.post("/requests/:code/deny", async (c) => {
+  const settled = await settleConnectionRequest(c.req.param("code"), null);
+  if (!settled) {
+    return c.json(
+      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      404
+    );
+  }
+  return c.json({ ok: true as const });
+});
+
 pairingRouter.route("/", ownerSurface);

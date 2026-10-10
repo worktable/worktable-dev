@@ -100,12 +100,15 @@ export async function ensureOpenClawInstallationId(
   })
 }
 
+/**
+ * The Worktable address agents use, path included: Worktable Cloud gives each
+ * workspace an agent address such as `https://app.worktable.cloud/w/<id>`.
+ */
 function worktableOrigin(server: string): string {
   const url = new URL(server)
-  url.pathname = ""
   url.search = ""
   url.hash = ""
-  return url.toString().replace(/\/$/, "")
+  return url.toString().replace(/\/+$/, "")
 }
 
 async function jsonRequest<T>(
@@ -222,6 +225,68 @@ async function reportFailure(
     event: "failed_no_config",
     detail,
   }).catch(() => undefined)
+}
+
+interface ConnectionRequestCreated {
+  code: string
+  pollToken: string
+  approvalUrl: string
+  expiresAt: string
+  interval?: number
+}
+
+type ConnectionRequestPoll =
+  | { status: "pending" | "denied" | "expired" }
+  | { status: "approved"; code: string }
+
+/**
+ * Ask Worktable to connect this installation and wait for its owner to
+ * approve it, then pair with the code Worktable hands back.
+ */
+export async function requestWorktablePairing(options: {
+  server: string
+  participantName?: string
+  onApprovalNeeded(request: { code: string; approvalUrl: string }): void
+  sleep?: (ms: number) => Promise<void>
+}): Promise<{ workspaceName: string; participantName?: string }> {
+  const origin = worktableOrigin(options.server)
+  const installationId = await ensureOpenClawInstallationId()
+  const request = await jsonRequest<ConnectionRequestCreated>(
+    `${origin}/api/pairing/requests`,
+    {
+      target: { kind: "agent-adapter", adapter: "openclaw", installationId },
+      hostname: hostname(),
+      ...(options.participantName ? { name: options.participantName } : {}),
+    }
+  )
+  options.onApprovalNeeded({
+    code: request.code,
+    approvalUrl: request.approvalUrl,
+  })
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  const interval = Math.max(1, request.interval ?? 2) * 1000
+  // Whatever it answers, a request is over when it expires.
+  const deadline = Date.parse(request.expiresAt)
+  for (;;) {
+    await sleep(interval)
+    const poll = await jsonRequest<ConnectionRequestPoll>(
+      `${origin}/api/pairing/requests/poll`,
+      { pollToken: request.pollToken }
+    )
+    if (poll.status === "approved") {
+      return pairWorktableChannel({ server: origin, pairingCode: poll.code })
+    }
+    if (poll.status === "denied") {
+      throw new Error("The Worktable owner declined this connection.")
+    }
+    if (poll.status === "expired" || Date.now() >= deadline) {
+      throw new Error(
+        "The connection request expired. Run the connect command again."
+      )
+    }
+  }
 }
 
 export async function pairWorktableChannel(options: {

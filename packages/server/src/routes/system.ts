@@ -22,7 +22,7 @@ import {
 } from "../settings-store.ts";
 import { normalizePublicUrl } from "../public-origin.ts";
 import { hasOwnerPassword } from "../session-store.ts";
-import { isHosted } from "../hosted.ts";
+import { hostedAgentBase, isHosted } from "../hosted.ts";
 import { getDocumentSharingConfig } from "../linked-sharing.ts";
 import { runRetentionSweep } from "../version-retention.ts";
 import {
@@ -209,6 +209,9 @@ systemRouter.get("/connection", async (c) => {
   const { origin, originSource } = resolveOrigin(c);
   return c.json({
     mcpAuthMode: isHosted() ? "oauth" : "local-token",
+    // Whether always-on agents can pair here. Cloud pairs once its gateway
+    // routes agents to this workspace and says so with the agent address.
+    agentPairing: !isHosted() || hostedAgentBase(c.req.raw) !== null,
     endpoint: localMcpEndpoint(),
     remoteMcpUrl: remoteMcpUrl(origin),
     reachable: exposed,

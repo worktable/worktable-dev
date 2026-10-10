@@ -936,6 +936,69 @@ async function persistThreadMutation(
   })
 }
 
+/** A thread deleted or moved since the scan no longer needs the new name. */
+async function renameInThread(
+  ...args: Parameters<typeof persistThreadMutation>
+): Promise<void> {
+  try {
+    await persistThreadMutation(...args)
+  } catch (error) {
+    if (
+      error instanceof ThreadError &&
+      (error.code === "THREAD_NOT_FOUND" ||
+        error.code === "THREAD_SPACE_MISMATCH")
+    ) {
+      return
+    }
+    throw error
+  }
+}
+
+/**
+ * Carry a participant's new name into every thread it belongs to: its member
+ * entry and its default identity, so the thread shows it and @mentions match.
+ * Other identities keep the names they were given in that thread.
+ */
+export async function renameThreadMember(
+  participantId: string,
+  name: string
+): Promise<void> {
+  const scan = await scanAllThreads()
+  for (const found of scan.threads) {
+    if (!found.members.some((member) => member.id === participantId)) continue
+    await renameInThread(threadLocation(found), found.id, (thread, now) => {
+      const isRenamed = (identity: Thread["identities"][number]) =>
+        identity.memberId === participantId && identity.default
+      const otherNames = thread.identities
+        .filter((identity) => !isRenamed(identity))
+        .map((identity) => identity.name)
+      const identityName = uniqueConversationIdentityNames([
+        ...otherNames,
+        name,
+      ]).at(-1)!
+      const unchanged =
+        thread.members.every(
+          (member) => member.id !== participantId || member.name === name
+        ) &&
+        thread.identities.every(
+          (identity) => !isRenamed(identity) || identity.name === identityName
+        )
+      if (unchanged) return thread
+      return {
+        ...thread,
+        members: thread.members.map((member) =>
+          member.id === participantId ? { ...member, name } : member
+        ),
+        identities: thread.identities.map((identity) =>
+          isRenamed(identity)
+            ? { ...identity, name: identityName, updatedAt: now }
+            : identity
+        ),
+      }
+    })
+  }
+}
+
 function threadWithParticipants(
   thread: Thread,
   participants: ParticipantRef[],

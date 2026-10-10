@@ -269,15 +269,52 @@ test("new owner can name, connect multiple real agent identities, leave an alway
       expect.objectContaining({ displayName: "My Codex" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "openclaw" }),
-        participant: expect.objectContaining({ name: "Atlas" }),
+        displayName: "Atlas",
+        platform: "openclaw",
+        access: { threads: true, read: true, edit: true },
       }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
-        participant: expect.objectContaining({ name: "Ada" }),
-        scopes: expect.arrayContaining(["threads:*", "docs:*"]),
+        displayName: "Ada",
+        platform: "hermes",
+        access: { threads: true, read: true, edit: true },
       }),
     ]),
   })
+
+  // The owner renames an always-on agent and narrows what it may do.
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  const agentSettings = page.getByRole("dialog", { name: "Settings" })
+  await agentSettings
+    .getByRole("button", { name: "Agents", exact: true })
+    .click()
+  await agentSettings
+    .getByRole("listitem")
+    .filter({ hasText: "Ada" })
+    .getByRole("button", { name: "Edit" })
+    .click()
+  const editAgent = page.getByRole("dialog", { name: "Ada" })
+  await editAgent.getByLabel("Name").fill("Ada Lovelace")
+  await editAgent.getByText("Edit workspace").click()
+  await editAgent.getByRole("button", { name: "Save" }).click()
+  await expect(editAgent).toHaveCount(0)
+  await expect(
+    agentSettings.getByText("Ada Lovelace", { exact: true })
+  ).toBeVisible()
+  expect(
+    await fetch(`${harness.apiUrl}/api/agent-connections`).then((res) =>
+      res.json()
+    )
+  ).toMatchObject({
+    connections: expect.arrayContaining([
+      expect.objectContaining({
+        displayName: "Ada Lovelace",
+        participant: expect.objectContaining({ name: "Ada Lovelace" }),
+        access: { threads: true, read: true, edit: false },
+      }),
+    ]),
+  })
+  await page.keyboard.press("Escape")
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()

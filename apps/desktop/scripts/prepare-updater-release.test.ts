@@ -9,6 +9,21 @@ import {
 
 const roots: string[] = []
 
+/** A minisign document shaped like Tauri's, recording `version` if given. */
+function updaterSignature(version?: string): string {
+  const fields = ["timestamp:1791580176", "file:Worktable.app.tar.gz"]
+  if (version) fields.push(`version:${version}`)
+  return Buffer.from(
+    [
+      "untrusted comment: signature from tauri secret key",
+      "RUSignatureRecord",
+      `trusted comment: ${fields.join("\t")}`,
+      "GlobalSignature",
+      "",
+    ].join("\n")
+  ).toString("base64")
+}
+
 function temporaryDirectory(): string {
   const root = mkdtempSync(join(tmpdir(), "worktable-updater-release-"))
   roots.push(root)
@@ -28,7 +43,8 @@ describe("Desktop updater release feed", () => {
     const sourceSignature = `${sourceBundle}.sig`
     const releaseDirectory = join(root, "release")
     writeFileSync(sourceBundle, "signed application archive")
-    writeFileSync(sourceSignature, "detached-signature\n")
+    const signature = updaterSignature("0.0.46")
+    writeFileSync(sourceSignature, `${signature}\n`)
 
     const prepared = prepareDesktopUpdaterRelease({
       appVersion: "0.0.46",
@@ -43,16 +59,14 @@ describe("Desktop updater release feed", () => {
     expect(readFileSync(prepared.bundlePath, "utf8")).toBe(
       "signed application archive"
     )
-    expect(readFileSync(prepared.signaturePath, "utf8")).toBe(
-      "detached-signature\n"
-    )
+    expect(readFileSync(prepared.signaturePath, "utf8")).toBe(`${signature}\n`)
     expect(prepared.feed).toEqual({
       version: "0.0.46",
       notes: "Native Worktable Cloud.",
       pub_date: "2026-07-29T12:34:56.000Z",
       platforms: {
         "darwin-aarch64": {
-          signature: "detached-signature",
+          signature,
           url: "https://worktable.dev/releases/v0.0.46/worktable-desktop-darwin-arm64.app.tar.gz",
         },
       },
@@ -67,7 +81,7 @@ describe("Desktop updater release feed", () => {
     const sourceBundle = join(root, "Worktable.app.tar.gz")
     const sourceSignature = `${sourceBundle}.sig`
     writeFileSync(sourceBundle, "archive")
-    writeFileSync(sourceSignature, "signature")
+    writeFileSync(sourceSignature, updaterSignature("0.0.45"))
     const base = {
       appVersion: "0.0.45",
       tag: "v0.0.45",
@@ -91,6 +105,14 @@ describe("Desktop updater release feed", () => {
       prepareDesktopUpdaterRelease({ ...base, releaseNotes: " " })
     ).toThrow("release notes are empty")
 
+    writeFileSync(sourceSignature, updaterSignature())
+    expect(() => prepareDesktopUpdaterRelease(base)).toThrow(
+      "does not record its version"
+    )
+    writeFileSync(sourceSignature, updaterSignature("0.0.44"))
+    expect(() => prepareDesktopUpdaterRelease(base)).toThrow(
+      "signature is for 0.0.44, not 0.0.45"
+    )
     writeFileSync(sourceSignature, "\n")
     expect(() => prepareDesktopUpdaterRelease(base)).toThrow(
       "detached signature is empty"

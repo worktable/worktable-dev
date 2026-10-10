@@ -4,8 +4,6 @@ export interface AlwaysOnAgent {
   name: string
   installCommand: string
   restartCommand: string
-  /** The agent also uses its paired credential for the workspace tools. */
-  workspaceAccess: boolean
   /** Whether the gateway restarts before connecting (OpenClaw) or after (Hermes). */
   restartBeforeConnect: boolean
   /** How the agent appears in Worktable Cloud's connections once it connects. */
@@ -26,7 +24,6 @@ export const OPENCLAW: AlwaysOnAgent = {
   name: "OpenClaw",
   installCommand: OPENCLAW_INSTALL_COMMAND,
   restartCommand: "openclaw gateway restart",
-  workspaceAccess: false,
   restartBeforeConnect: true,
   cloudAuth: "agent-registration",
   localConnectCommand: (serverOrigin, code) =>
@@ -41,7 +38,6 @@ export const HERMES: AlwaysOnAgent = {
   installCommand:
     "hermes plugins install worktable/worktable-dev#packages/hermes-plugin --enable",
   restartCommand: "hermes gateway restart",
-  workspaceAccess: true,
   restartBeforeConnect: false,
   cloudAuth: "oauth",
   localConnectCommand: (serverOrigin, code) =>

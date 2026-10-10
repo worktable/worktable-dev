@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ActivityRouteImport } from './routes/activity'
+import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SpacesSpaceIdRouteImport } from './routes/spaces/$spaceId'
 import { Route as ThreadsSplatRouteImport } from './routes/threads/$'
@@ -29,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const ActivityRoute = ActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnectRoute = ConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -85,6 +91,7 @@ const SpacesSpaceIdRecordsCollectionIdRecordIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
+  '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
+  '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
+  '/connect': typeof ConnectRoute
   '/login': typeof LoginRoute
   '/spaces/$spaceId': typeof SpacesSpaceIdRouteWithChildren
   '/threads/$': typeof ThreadsSplatRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/activity'
+    | '/connect'
     | '/login'
     | '/spaces/$spaceId'
     | '/threads/$'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/activity'
+    | '/connect'
     | '/login'
     | '/spaces/$spaceId'
     | '/threads/$'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/activity'
+    | '/connect'
     | '/login'
     | '/spaces/$spaceId'
     | '/threads/$'
@@ -167,6 +179,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
+  ConnectRoute: typeof ConnectRoute
   LoginRoute: typeof LoginRoute
   SpacesSpaceIdRoute: typeof SpacesSpaceIdRouteWithChildren
   ThreadsSplatRoute: typeof ThreadsSplatRoute
@@ -186,6 +199,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof ActivityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connect': {
+      id: '/connect'
+      path: '/connect'
+      fullPath: '/connect'
+      preLoaderRoute: typeof ConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -280,6 +300,7 @@ const SpacesSpaceIdRouteWithChildren = SpacesSpaceIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
+  ConnectRoute: ConnectRoute,
   LoginRoute: LoginRoute,
   SpacesSpaceIdRoute: SpacesSpaceIdRouteWithChildren,
   ThreadsSplatRoute: ThreadsSplatRoute,

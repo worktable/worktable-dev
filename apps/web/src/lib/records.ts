@@ -123,7 +123,7 @@ export function recordDetailSections(
  *  agent (`agent:<principal>`), Worktable itself, or a file-authored name. */
 export function recordActorName(actor: string, agents?: ReadonlyArray<{ id: string; name?: string }>): string {
   if (actor === "user") return "You"
-  if (actor === "system") return "Worktable"
+  if (actor === "system" || actor === "worktable") return "Worktable"
   if (actor.startsWith("agent:")) return agents?.find((agent) => agent.id === actor.slice(6))?.name ?? "An agent"
   return actor
 }
@@ -319,12 +319,13 @@ export interface ColumnPrefs {
 export function compareGroupLabels(column: Pick<RecordFieldColumn, "type" | "field"> | undefined, a: unknown, b: unknown): number {
   const isEmpty = (value: unknown) => value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)
   if (isEmpty(a) || isEmpty(b)) return Number(isEmpty(a)) - Number(isEmpty(b))
-  const first = (value: unknown) => (Array.isArray(value) ? value[0] : value)
   const options = column?.field?.values ?? []
   if ((column?.type === "select" || column?.type === "multi_select") && options.length > 0) {
+    // Multi-select values are stored in click order but grouped regardless of
+    // it, so a group ranks by its earliest option in schema order.
     const rank = (value: unknown) => {
-      const index = options.indexOf(String(first(value)))
-      return index === -1 ? options.length : index
+      const indexes = (Array.isArray(value) ? value : [value]).map((entry) => options.indexOf(String(entry))).filter((index) => index !== -1)
+      return indexes.length > 0 ? Math.min(...indexes) : options.length
     }
     const byRank = rank(a) - rank(b)
     if (byRank !== 0) return byRank

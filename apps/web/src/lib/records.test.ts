@@ -80,6 +80,8 @@ describe("record document fields and portable column order", () => {
     const order = (column: Parameters<typeof compareGroupLabels>[0], labels: unknown[]) => [...labels].sort((a, b) => compareGroupLabels(column, a, b))
     const stage = { type: "select", field: { type: "select", values: ["sourcing", "screening", "offer"] } }
     expect(order(stage, [null, "offer", "unknown", "sourcing", "screening"])).toEqual(["sourcing", "screening", "offer", "unknown", null])
+    const tags = { type: "multi_select", field: { type: "multi_select", values: ["design", "product", "ops"] } }
+    expect(order(tags, [["ops"], ["ops", "design"], ["product"]])).toEqual([["ops", "design"], ["product"], ["ops"]])
     expect(order({ type: "number", field: { type: "number" } }, [12, null, 9, 100])).toEqual([9, 12, 100, null])
     expect(order({ type: "boolean", field: { type: "boolean" } }, [false, null, true])).toEqual([true, false, null])
     expect(order({ type: "string", field: { type: "string" } }, ["beta", "", "Alpha", "item 10", "item 9"])).toEqual(["Alpha", "beta", "item 9", "item 10", ""])

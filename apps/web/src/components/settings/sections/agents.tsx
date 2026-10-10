@@ -15,7 +15,6 @@ import {
 import {
   AGENT_PLATFORMS,
   DEFAULT_AGENT_ACCESS,
-  DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
@@ -85,6 +84,8 @@ import {
 } from "@/lib/tokens-api"
 import {
   agentConnectionPlatform,
+  connectAgentApp,
+  getAppAgent,
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
@@ -101,7 +102,6 @@ const DEFAULT_CLIENT: McpSnippetClientId = "claude-code"
 
 // The scopes a "Connect an agent" token grants — everything an interactive agent
 // needs, minus token management (the shared agent-token scope set).
-const CONNECT_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
 
 const CLIENT_OPTIONS = MCP_SNIPPET_CLIENT_IDS.map((id) => MCP_CLIENTS[id])
 
@@ -955,16 +955,27 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
   const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
   const [claudeToken, setClaudeToken] = useState<string | null>(null)
   const [chatGptToken, setChatGptToken] = useState<string | null>(null)
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
 
   const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
+  // Connecting an app again is the same agent: start from its access.
+  const existing = useQuery({
+    queryKey: ["agent-connections", "app", app],
+    queryFn: () => getAppAgent(app),
+    enabled: needsToken,
+  })
+  const existingAgent = existing.data?.connection ?? null
+  // Until it is known whether the app is already an agent, its access is not:
+  // generating then could widen an agent its owner had limited.
+  const appKnown = existing.isSuccess
+  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const afterMint = () => {
     void queryClient.invalidateQueries({ queryKey: ["tokens"] })
     void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
   }
   const mintClaude = useMutation({
-    mutationFn: () =>
-      mintToken({ scopes: CONNECT_SCOPES, agent: "claude-desktop" }),
+    mutationFn: () => connectAgentApp({ client: "claude-desktop", access }),
     onSuccess: (result) => {
       setClaudeToken(result.token)
       afterMint()
@@ -977,7 +988,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
       ),
   })
   const mintChatGpt = useMutation({
-    mutationFn: () => mintToken({ scopes: CONNECT_SCOPES, agent: "codex" }),
+    mutationFn: () => connectAgentApp({ client: "chatgpt-desktop", access }),
     onSuccess: (result) => {
       setChatGptToken(result.token)
       afterMint()
@@ -997,7 +1008,10 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
         <span className="text-sm font-medium text-foreground">Desktop app</span>
         <Select
           value={app}
-          onValueChange={(value) => setApp(value as DesktopAppChoice)}
+          onValueChange={(value) => {
+            setApp(value as DesktopAppChoice)
+            setAccess(null)
+          }}
         >
           <SelectTrigger aria-label="Desktop app" className="w-full sm:w-64">
             <SelectValue>
@@ -1047,17 +1061,46 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 </Callout>
               </div>
             ) : (
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mintClaude.mutate()}
-                  disabled={mintClaude.isPending}
-                >
-                  {mintClaude.isPending
-                    ? "Generating…"
-                    : "Generate Claude access token"}
-                </Button>
+              <div className="flex flex-col gap-4">
+                <AgentAccessFields
+                  value={access}
+                  onChange={setAccess}
+                  disabled={mintClaude.isPending || !appKnown}
+                />
+                {existing.isError ? (
+                  <Callout variant="danger">
+                    Couldn’t check whether this app is already connected.{" "}
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2"
+                      onClick={() => void existing.refetch()}
+                    >
+                      Try again
+                    </button>
+                  </Callout>
+                ) : null}
+                {existingAgent ? (
+                  <p className="text-xs text-muted-foreground">
+                    Already connected as {existingAgent.displayName}. A new
+                    token joins it.
+                  </p>
+                ) : null}
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => mintClaude.mutate()}
+                    disabled={
+                      mintClaude.isPending ||
+                      !appKnown ||
+                      !(access.threads || access.read || access.edit)
+                    }
+                  >
+                    {mintClaude.isPending
+                      ? "Generating…"
+                      : "Generate Claude access token"}
+                  </Button>
+                </div>
               </div>
             )
           ) : null}
@@ -1086,17 +1129,46 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
                 </Callout>
               </div>
             ) : (
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => mintChatGpt.mutate()}
-                  disabled={mintChatGpt.isPending}
-                >
-                  {mintChatGpt.isPending
-                    ? "Generating…"
-                    : "Generate ChatGPT access token"}
-                </Button>
+              <div className="flex flex-col gap-4">
+                <AgentAccessFields
+                  value={access}
+                  onChange={setAccess}
+                  disabled={mintChatGpt.isPending || !appKnown}
+                />
+                {existing.isError ? (
+                  <Callout variant="danger">
+                    Couldn’t check whether this app is already connected.{" "}
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2"
+                      onClick={() => void existing.refetch()}
+                    >
+                      Try again
+                    </button>
+                  </Callout>
+                ) : null}
+                {existingAgent ? (
+                  <p className="text-xs text-muted-foreground">
+                    Already connected as {existingAgent.displayName}. A new
+                    token joins it.
+                  </p>
+                ) : null}
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => mintChatGpt.mutate()}
+                    disabled={
+                      mintChatGpt.isPending ||
+                      !appKnown ||
+                      !(access.threads || access.read || access.edit)
+                    }
+                  >
+                    {mintChatGpt.isPending
+                      ? "Generating…"
+                      : "Generate ChatGPT access token"}
+                  </Button>
+                </div>
               </div>
             )
           ) : null}
@@ -1131,9 +1203,20 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   // everything on close, so the token can't survive a close. Switching client
   // also drops it (it was minted for the prior agent).
   const [token, setToken] = useState<string | null>(null)
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
+  // Connecting a client again is the same agent: start from its access.
+  const existing = useQuery({
+    queryKey: ["agent-connections", "app", clientId],
+    queryFn: () => getAppAgent(clientId),
+  })
+  const existingAgent = existing.data?.connection ?? null
+  // Until it is known whether the app is already an agent, its access is not:
+  // generating then could widen an agent its owner had limited.
+  const appKnown = existing.isSuccess
+  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
 
   const mint = useMutation({
-    mutationFn: () => mintToken({ scopes: CONNECT_SCOPES, agent: clientId }),
+    mutationFn: () => connectAgentApp({ client: clientId, access }),
     onSuccess: (res) => {
       setToken(res.token)
       // The new bearer must show up (and be revocable) in the table below.
@@ -1150,6 +1233,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
   function selectClient(next: McpSnippetClientId) {
     setClientId(next)
     setToken(null)
+    setAccess(null)
     mint.reset()
   }
 
@@ -1223,15 +1307,44 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
       ) : (
         <>
           {needsToken && !token ? (
-            <div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => mint.mutate()}
-                disabled={mint.isPending}
-              >
-                {mint.isPending ? "Generating…" : "Generate connection token"}
-              </Button>
+            <div className="flex flex-col gap-4">
+              <AgentAccessFields
+                value={access}
+                onChange={setAccess}
+                disabled={mint.isPending || !appKnown}
+              />
+              {existing.isError ? (
+                <Callout variant="danger">
+                  Couldn’t check whether this client is already connected.{" "}
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2"
+                    onClick={() => void existing.refetch()}
+                  >
+                    Try again
+                  </button>
+                </Callout>
+              ) : null}
+              {existingAgent ? (
+                <p className="text-xs text-muted-foreground">
+                  Already connected as {existingAgent.displayName}. A new token
+                  joins it.
+                </p>
+              ) : null}
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => mint.mutate()}
+                  disabled={
+                    mint.isPending ||
+                    !appKnown ||
+                    !(access.threads || access.read || access.edit)
+                  }
+                >
+                  {mint.isPending ? "Generating…" : "Generate connection token"}
+                </Button>
+              </div>
             </div>
           ) : null}
 

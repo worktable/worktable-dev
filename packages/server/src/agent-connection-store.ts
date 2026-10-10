@@ -6,6 +6,7 @@ import type {
   AgentConnection,
   AgentConnectionTarget,
   AgentPlatformId,
+  DirectAgentLabel,
   ParticipantRef,
 } from "@worktable/types"
 import {
@@ -25,6 +26,7 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import {
+  createToken,
   listTokens,
   revokeToken,
   rotateAgentToken,
@@ -484,6 +486,17 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
     .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
 
+/** The agent an app connected with a credential made here is, if any. */
+export async function findAppAgent(
+  label: DirectAgentLabel
+): Promise<AgentConnection | null> {
+  const id = labeledConnectionId(getWorkspaceRoot(), label)
+  return (
+    (await listAgentConnections()).find((connection) => connection.id === id) ??
+    null
+  )
+}
+
 export async function disconnectAgentConnection(id: string): Promise<boolean> {
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
@@ -533,6 +546,41 @@ export async function currentAgentScopes(
       .get(agent)
       ?.at(-1)?.scopes ?? null
   )
+}
+
+/**
+ * Connect an app with a credential made here (the Claude and ChatGPT desktop
+ * apps, or an MCP client configured by hand), with the name and access its
+ * owner chose. Connecting the same app again is the same agent, so its
+ * other credentials take the same access. Returns the credential once.
+ */
+export async function createAgentCredential(input: {
+  label: DirectAgentLabel
+  displayName?: string
+  icon?: string | null
+  access: AgentAccess
+}): Promise<{ token: string; connection: AgentConnection }> {
+  const scopes = scopesForAccess(input.access)
+  if (scopes.length === 0) {
+    throw new AgentConnectionUpdateError("Choose at least one kind of access")
+  }
+  const { token, metadata } = await createToken({ agent: input.label, scopes })
+  try {
+    const connection = await updateAgentConnection(
+      labeledConnectionId(getWorkspaceRoot(), input.label),
+      {
+        access: input.access,
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+        ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      }
+    )
+    if (!connection) throw new Error("The new credential was revoked")
+    return { token, connection }
+  } catch (error) {
+    // Its secret is never delivered, so it must not stay valid.
+    await revokeToken(metadata.id).catch(() => false)
+    throw error
+  }
 }
 
 export class AgentConnectionUpdateError extends Error {}

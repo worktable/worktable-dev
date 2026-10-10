@@ -1,12 +1,16 @@
 import { hostedOAuthPrincipalId } from "@worktable/hosted-contract"
 import {
+  DEFAULT_AGENT_ACCESS,
   isAgentPlatformId,
+  isDirectAgentLabel,
   type AgentAccess,
   type AgentPlatformId,
 } from "@worktable/types"
 import { Hono } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import {
+  createAgentCredential,
+  findAppAgent,
   disconnectAgentConnection,
   AgentConnectionUpdateError,
   listAgentConnections,
@@ -49,6 +53,79 @@ function parseAccess(value: unknown): AgentAccess | undefined | false {
 function badRequest(error: string) {
   return { error, code: "BAD_REQUEST" }
 }
+
+// The agent an app already is, so connecting it again starts from its name
+// and access rather than resetting them.
+agentConnectionsRouter.get("/apps/:label", async (c) => {
+  const label = c.req.param("label")
+  const connection = isDirectAgentLabel(label)
+    ? await findAppAgent(label)
+    : null
+  return c.json({ connection })
+})
+
+// The owner connects an app with a credential made here, named and with the
+// access chosen. Cloud connects these apps by signing in instead.
+agentConnectionsRouter.post("/", async (c) => {
+  if (isHosted()) {
+    return c.json(
+      {
+        error: "On Worktable Cloud, apps connect by signing in.",
+        code: "HOSTED_DISABLED",
+      },
+      403
+    )
+  }
+  const body = (await c.req.json().catch(() => null)) as {
+    client?: unknown
+    displayName?: unknown
+    icon?: unknown
+    access?: unknown
+  } | null
+  if (!body) return c.json(badRequest("Expected a JSON object"), 400)
+  if (!isDirectAgentLabel(body.client)) {
+    return c.json(badRequest("client must be an app Worktable connects"), 400)
+  }
+  const displayName =
+    body.displayName === undefined
+      ? undefined
+      : typeof body.displayName === "string"
+        ? body.displayName.trim()
+        : ""
+  if (displayName !== undefined && (!displayName || displayName.length > 100)) {
+    return c.json(badRequest("displayName must be 1 to 100 characters"), 400)
+  }
+  if (
+    body.icon !== undefined &&
+    body.icon !== null &&
+    (typeof body.icon !== "string" ||
+      body.icon.length > 64 ||
+      !ICON_NAME.test(body.icon))
+  ) {
+    return c.json(badRequest("icon must be an icon name or null"), 400)
+  }
+  const access = parseAccess(body.access)
+  if (access === false) {
+    return c.json(
+      badRequest("access must have boolean threads, read, and edit"),
+      400
+    )
+  }
+  try {
+    const created = await createAgentCredential({
+      label: body.client,
+      access: access ?? DEFAULT_AGENT_ACCESS,
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
+    })
+    return c.json(created, 201)
+  } catch (error) {
+    if (error instanceof AgentConnectionUpdateError) {
+      return c.json(badRequest(error.message), 400)
+    }
+    throw error
+  }
+})
 
 // The owner renames an agent, changes its icon, or changes its access.
 agentConnectionsRouter.patch("/:id", async (c) => {

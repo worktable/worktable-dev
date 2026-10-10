@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { QueryClient, QueryObserver } from "@tanstack/react-query"
-import type { ThreadReadResult, ThreadSummary } from "@worktable/types"
+import type { ThreadReadResult, ThreadListItem } from "@worktable/types"
 import { threadQueryKeys } from "./threads-queries"
 import {
   applyThreadActivityToQueries,
@@ -147,8 +147,8 @@ describe("Space WebSocket reconnect backoff", () => {
     const summary = {
       id: "thr_progress",
       location: spaceA,
-      lastMessage: message,
-    } as ThreadSummary
+      lastMessage: { id: message.id, excerpt: "" },
+    } as ThreadListItem
     const duplicateAtRoot = {
       ...summary,
       location: { kind: "worktable" as const },
@@ -191,13 +191,13 @@ describe("Space WebSocket reconnect backoff", () => {
       threadQueryKeys.list(spaceA),
     ]) {
       expect(
-        queryClient.getQueryData<{ threads: ThreadSummary[] }>(queryKey)
+        queryClient.getQueryData<{ threads: ThreadListItem[] }>(queryKey)
           ?.threads[0]?.activity
       ).toEqual(activity)
       expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false)
     }
     expect(
-      queryClient.getQueryData<{ threads: ThreadSummary[] }>(
+      queryClient.getQueryData<{ threads: ThreadListItem[] }>(
         threadQueryKeys.list({ kind: "all" })
       )?.threads[1]?.activity
     ).toBeUndefined()

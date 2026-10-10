@@ -384,6 +384,36 @@ export interface ReconcileThreadSnapshot {
   revision: number
 }
 
+/** A thread's activities, oldest first, from one read of the delivery state. */
+export type ThreadActivityLookup = (
+  location: ThreadLocation,
+  threadId: string
+) => ThreadActivity[]
+
+function activityLookup(deliveries: DeliveryRecord[]): ThreadActivityLookup {
+  const byThread = new Map<string, ThreadActivity[]>()
+  const sorted = [...deliveries].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt)
+  )
+  for (const delivery of sorted) {
+    const key = `${threadLocationKey(delivery.location)}\0${delivery.threadId}`
+    const activities = byThread.get(key)
+    if (activities) activities.push(activityFor(delivery))
+    else byThread.set(key, [activityFor(delivery)])
+  }
+  return (location, threadId) =>
+    byThread.get(`${threadLocationKey(location)}\0${threadId}`) ?? []
+}
+
+/** Every thread's activities from a single read of the delivery state. */
+export async function readThreadActivities(): Promise<ThreadActivityLookup> {
+  return activityLookup((await loadFile()).deliveries)
+}
+
+/**
+ * Bring one participant's deliveries in line with the canonical threads.
+ * Returns every thread's activities as of the reconciled state.
+ */
 export async function reconcileThreadDeliveries(
   participantId: string,
   inputs: ReconcileThreadDeliveryInput[],
@@ -391,8 +421,8 @@ export async function reconcileThreadDeliveries(
     retireMissing?: boolean
     threads?: ReconcileThreadSnapshot[]
   } = {}
-): Promise<void> {
-  await serialized(async () => {
+): Promise<ThreadActivityLookup> {
+  return serialized(async () => {
     const retireMissing = options.retireMissing !== false
     const file = await loadFile()
     const changed: DeliveryRecord[] = []
@@ -604,11 +634,12 @@ export async function reconcileThreadDeliveries(
       removedTerminal.length === 0 &&
       !metadataChanged
     ) {
-      return
+      return activityLookup(file.deliveries)
     }
     await saveFile(file)
     for (const record of changed) notify(record)
     for (const record of removedTerminal) notify(record)
+    return activityLookup(file.deliveries)
   })
 }
 

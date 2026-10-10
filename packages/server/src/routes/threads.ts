@@ -3,8 +3,11 @@ import { z } from "zod"
 import {
   ThreadDeliveryStateSchema,
   ConversationIdentityIdSchema,
+  markdownPlainText,
+  type ThreadListItem,
   type ThreadLocation,
   ThreadMessageIdSchema,
+  type ThreadSummary,
 } from "@worktable/types"
 import { hasScope } from "../token-store.ts"
 import {
@@ -116,6 +119,31 @@ function managementResult(thread: { id: string; revision: number }) {
   return { threadId: thread.id, revision: thread.revision }
 }
 
+const LIST_EXCERPT_LENGTH = 280
+
+/**
+ * The app's list shows one line per thread, so rows carry a plain-text
+ * excerpt of the last message rather than the message itself. MCP keeps the
+ * full summary.
+ */
+function threadListItem({
+  lastMessage,
+  ...summary
+}: ThreadSummary): ThreadListItem {
+  // Markdown above the excerpt length is enough to fill it; bounding the
+  // input keeps a very long message from costing the whole list.
+  const plain = markdownPlainText(
+    lastMessage.body.slice(0, LIST_EXCERPT_LENGTH * 8)
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+  const excerpt =
+    plain.length <= LIST_EXCERPT_LENGTH
+      ? plain
+      : `${plain.slice(0, LIST_EXCERPT_LENGTH - 1).trimEnd()}…`
+  return { ...summary, lastMessage: { id: lastMessage.id, excerpt } }
+}
+
 threadsRouter.get("/participants", async (c) => {
   const denied = requireThreadScope(c, "threads:read")
   if (denied) return denied
@@ -146,14 +174,13 @@ threadsRouter.get("/", async (c) => {
     )
   }
   try {
-    return c.json({
-      threads: await listThreadSummaries(
-        c.get("identity"),
-        parsedLocation.location,
-        participantId,
-        parsedDeliveryState.data
-      ),
-    })
+    const summaries = await listThreadSummaries(
+      c.get("identity"),
+      parsedLocation.location,
+      participantId,
+      parsedDeliveryState.data
+    )
+    return c.json({ threads: summaries.map(threadListItem) })
   } catch (error) {
     return errorResponse(c, error)
   }

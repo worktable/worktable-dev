@@ -232,6 +232,48 @@ describe("workspace activity", () => {
     expect(rest.nextCursor).toBeNull()
   })
 
+  it("names moved docs and record collections as they are called now", async () => {
+    await agentTool("worktable_docs_write", {
+      action: "write",
+      spaceId: "company",
+      docPath: "pulse",
+      content: "# Pulse\n",
+      lifetime: "durable",
+    })
+    await agentTool("worktable_documents_write", {
+      action: "move",
+      spaceId: "company",
+      path: "pulse",
+      to: "reports/pulse",
+    })
+    for (const name of ["Hiring", "Hiring plan"]) {
+      await agentTool("worktable_records_write", {
+        action: "upsert_collection",
+        spaceId: "company",
+        collectionId: "hiring",
+        name,
+      })
+      await agentTool("worktable_records_write", {
+        action: "create",
+        spaceId: "company",
+        collectionId: "hiring",
+        data: { title: name },
+      })
+    }
+
+    const page = await request<ActivityPage>("/api/activity")
+    expect(
+      page.entries.find((entry) => entry.action === "doc.created")?.target
+    ).toMatchObject({ kind: "doc", path: "reports/pulse", title: "Pulse" })
+    const collections = page.entries.flatMap((entry) =>
+      entry.target.kind === "collection" ? [entry.target] : []
+    )
+    expect(collections.length).toBeGreaterThan(0)
+    expect(collections.every((target) => target.name === "Hiring plan")).toBe(
+      true
+    )
+  })
+
   it("lists what is waiting on the reader until they answer", async () => {
     const owner = ownerIdentity()
     const ownerParticipant = (

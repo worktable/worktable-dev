@@ -158,25 +158,40 @@ export function buildRecordFile(input: {
   };
 }
 
-export async function listRecordCollections(spaceId: string): Promise<RecordCollectionSummary[]> {
+async function collectionIds(spaceId: string): Promise<string[]> {
   if (!isCanonicalId(spaceId)) return [];
   const dir = recordsDir(spaceId);
   if (!existsSync(dir)) return [];
-  const entries = await readdir(dir, { withFileTypes: true });
+  return (await readdir(dir, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && isCanonicalId(entry.name))
+    .map((entry) => entry.name);
+}
+
+export async function listRecordCollections(spaceId: string): Promise<RecordCollectionSummary[]> {
   const summaries: RecordCollectionSummary[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !isCanonicalId(entry.name)) continue;
-    const records = await listRecords(spaceId, entry.name, { includeArchived: false });
-    const schema = await readRecordCollectionSchema(spaceId, entry.name);
+  for (const collectionId of await collectionIds(spaceId)) {
+    // The index counts rows without loading them; the file scan is the fallback.
+    const count = (recordIndexEnabled() ? recordIndex.countCollection(spaceId, collectionId) : null) ??
+      (await listRecords(spaceId, collectionId, { includeArchived: false })).length;
+    const schema = await readRecordCollectionSchema(spaceId, collectionId);
     summaries.push({
-      id: entry.name,
-      name: schema.data?.name ?? entry.name,
+      id: collectionId,
+      name: schema.data?.name ?? collectionId,
       description: schema.data?.description,
-      count: records.length,
+      count,
       ...(schema.data ? { schema: schema.data } : {}),
     });
   }
   return summaries.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Collection display names by id, without counting or listing records. */
+export async function listRecordCollectionNames(spaceId: string): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  for (const collectionId of await collectionIds(spaceId)) {
+    names.set(collectionId, (await readRecordCollectionSchema(spaceId, collectionId)).data?.name ?? collectionId);
+  }
+  return names;
 }
 
 export async function readRecordCollectionSchema(spaceId: string, collectionId: string): Promise<{ data: RecordCollectionSchema | null; error: string | null }> {
@@ -415,12 +430,29 @@ export function resetRecordDiagnosticsForTests(): void {
   loggedDiagnostics.clear();
 }
 
-// Returns the diagnostics from the most recent scan of the collection, scanning
-// now if this collection has not been listed yet this process.
+// With the record index ready, returns the current diagnostics from it.
+// Otherwise returns the diagnostics from the most recent scan of the
+// collection, scanning now if this collection has not been listed yet this
+// process.
 export async function getRecordDiagnostics(spaceId: string, collectionId: string): Promise<RecordDiagnostic[]> {
   const key = diagnosticsKey(spaceId, collectionId);
+  const indexed = isCanonicalId(spaceId) && isCanonicalId(collectionId) && recordIndexEnabled()
+    ? recordIndex.listDiagnostics(spaceId, collectionId)
+    : null;
+  if (indexed) {
+    const schemaResult = await readRecordCollectionSchema(spaceId, collectionId);
+    return cacheIndexDiagnostics(key, indexed, schemaResult.error);
+  }
   if (!scanDiagnostics.has(key)) await listRecords(spaceId, collectionId, { includeArchived: true });
   return scanDiagnostics.get(key) ?? [];
+}
+
+function cacheIndexDiagnostics(key: string, indexed: { file: string; error: string }[], schemaError: string | null): RecordDiagnostic[] {
+  const diagnostics: RecordDiagnostic[] = [];
+  for (const diagnostic of indexed) recordDiagnostic(diagnostics, diagnostic.file, diagnostic.error, key);
+  if (schemaError) recordDiagnostic(diagnostics, "schema.yaml", schemaError, key);
+  scanDiagnostics.set(key, diagnostics);
+  return diagnostics;
 }
 
 /**
@@ -485,11 +517,7 @@ export async function listRecords(spaceId: string, collectionId: string, query: 
   if (recordIndexEnabled() && recordIndex.isReady()) {
     const rows = recordIndex.listCollection(spaceId, collectionId, safeQuery.includeArchived ?? false);
     if (rows) {
-      const indexDiagnostics = recordIndex.listDiagnostics(spaceId, collectionId) ?? [];
-      const diagnostics: RecordDiagnostic[] = [];
-      for (const diagnostic of indexDiagnostics) recordDiagnostic(diagnostics, diagnostic.file, diagnostic.error, key);
-      if (schemaResult.error) recordDiagnostic(diagnostics, "schema.yaml", schemaResult.error, key);
-      scanDiagnostics.set(key, diagnostics);
+      cacheIndexDiagnostics(key, recordIndex.listDiagnostics(spaceId, collectionId) ?? [], schemaResult.error);
       return filterRecords(rows, safeQuery, fields, resolveDocumentPath);
     }
   }

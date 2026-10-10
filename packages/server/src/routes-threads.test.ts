@@ -274,6 +274,29 @@ describe("thread REST routes", () => {
     )
     expect(invalidCursor.status).toBe(400)
     expect(invalidCursor.json.code).toBe("VALIDATION_ERROR")
+
+    // List rows carry a short plain-text excerpt, not the whole message.
+    const long = await request(
+      "POST",
+      `/api/spaces/connected-agents/threads/${threadId}/messages`,
+      {
+        body: `**Status:** ${"all good. ".repeat(100)}`,
+        idempotencyKey: "route-long-follow-up",
+        waitSeconds: 0,
+      }
+    )
+    const relisted = await request(
+      "GET",
+      "/api/spaces/connected-agents/threads"
+    )
+    const [row] = relisted.json.threads as Array<{
+      lastMessage: { id: string; excerpt: string }
+    }>
+    expect(row?.lastMessage.id).toBe(String(long.json.messageId))
+    expect(row?.lastMessage.excerpt).toStartWith("Status: all good. all good.")
+    expect(row?.lastMessage.excerpt).toEndWith("…")
+    expect(row?.lastMessage.excerpt.length).toBeLessThanOrEqual(280)
+    expect(row?.lastMessage).not.toHaveProperty("body")
   })
 
   it("enforces the operation scopes at the REST boundary", async () => {

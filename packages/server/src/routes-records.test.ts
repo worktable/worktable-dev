@@ -139,13 +139,17 @@ describe("record REST routes", () => {
     const canonicalYaml = stringifyCanonicalYaml(missed);
     writeFileSync(missedPath, canonicalYaml);
 
-    const health = await req(app, "GET", "/api/spaces/meta/records/tasks?includeRecords=false");
-    expect(health.status).toBe(200);
-    expect(health.json.projection).toMatchObject({ state: "drifted", canonicalFileCount: 2, indexedFileCount: 1 });
+    // A full check (the periodic sweep's or a reconciliation's) finds the
+    // file the watcher missed.
+    expect(await recordIndex.collectionHealth("meta", "tasks")).toMatchObject({ state: "drifted", canonicalFileCount: 2, indexedFileCount: 1 });
 
     const originalHealth = recordIndex.collectionHealth.bind(recordIndex);
-    recordIndex.collectionHealth = async () => { throw new Error("query hot path must not rescan canonical files"); };
+    recordIndex.collectionHealth = async () => { throw new Error("request paths must not rescan canonical files"); };
     try {
+      const health = await req(app, "GET", "/api/spaces/meta/records/tasks?includeRecords=false");
+      expect(health.status).toBe(200);
+      expect(health.json.projection).toMatchObject({ state: "drifted", canonicalFileCount: 2, indexedFileCount: 1 });
+
       const staleQuery = await req(app, "POST", "/api/spaces/meta/records/tasks/query", {});
       expect(staleQuery.json.records).toHaveLength(1);
       expect(staleQuery.json.warnings[0]).toContain("1 of 2 canonical files are indexed");

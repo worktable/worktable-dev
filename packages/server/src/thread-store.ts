@@ -270,10 +270,13 @@ export async function listThreads(
   return (await scanThreads(location)).threads
 }
 
-export async function scanAllThreads(): Promise<ThreadScanResult> {
+/** Every thread, in the given Spaces (default: all of them) and the root. */
+export async function scanAllThreads(
+  spaces?: Array<{ id: string }>
+): Promise<ThreadScanResult> {
   const scans = await Promise.all([
     scanThreads({ kind: "worktable" }),
-    ...(await listSpaces()).map((space) => scanThreads(space.id)),
+    ...(spaces ?? (await listSpaces())).map((space) => scanThreads(space.id)),
   ])
   return {
     threads: scans

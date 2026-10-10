@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import fc from "fast-check"
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -599,6 +606,58 @@ describe("record index", () => {
       recordIndex.ingestFile = originalIngest
       release()
     }
+  })
+
+  it("the periodic sweep re-reads changed files and announces only the collections it changed", async () => {
+    for (const [collectionId, recordId] of [
+      ["notes", "unchanged"],
+      ["ideas", "edited"],
+    ] as const) {
+      await createRecord("meta", collectionId, {
+        id: recordId,
+        data: { title: "Before" },
+      })
+      // Old enough that the sweep can trust the file's fingerprint.
+      const past = new Date(Date.now() - 60_000)
+      utimesSync(recordFilePath("meta", collectionId, recordId), past, past)
+    }
+    await runRecordReconcileSweep()
+    writeRecordFileDirectly("meta", "ideas", "edited", { title: "After" })
+
+    const broadcasts: { spaceId: string; collectionId?: string }[] = []
+    const originalBroadcast = wsManager.broadcast.bind(wsManager)
+    wsManager.broadcast = ((spaceId, message) => {
+      broadcasts.push({
+        spaceId,
+        collectionId:
+          "collectionId" in message ? message.collectionId : undefined,
+      })
+    }) as typeof wsManager.broadcast
+    try {
+      await runRecordReconcileSweep()
+    } finally {
+      wsManager.broadcast = originalBroadcast
+    }
+    expect(broadcasts).toEqual([{ spaceId: "meta", collectionId: "ideas" }])
+    expect(
+      recordIndex.listCollection("meta", "ideas", true)?.[0]?.data["title"]
+    ).toBe("After")
+  })
+
+  it("re-reads a same-size rewrite that keeps a recent mtime", async () => {
+    // Coarse filesystem clocks can give a quick rewrite the same mtime.
+    const path = recordFilePath("meta", "tasks", "alpha")
+    const tick = new Date(Math.floor(Date.now() / 1_000) * 1_000)
+    writeRecordFileDirectly("meta", "tasks", "alpha", { title: "Alpha" })
+    utimesSync(path, tick, tick)
+    await recordIndex.ingestFile("meta", "tasks", "alpha")
+
+    writeFileSync(path, readFileSync(path, "utf8").replace("Alpha", "Omega"))
+    utimesSync(path, tick, tick)
+    await recordIndex.rebuild()
+    expect(
+      recordIndex.listCollection("meta", "tasks", true)?.[0]?.data["title"]
+    ).toBe("Omega")
   })
 
   it("the periodic sweep invalidates a collection removed from canonical files", async () => {

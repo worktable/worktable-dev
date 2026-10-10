@@ -187,10 +187,10 @@ test("recovers committed creation and direct replies after participant refresh f
     .poll(async () => {
       const response = await fetch(`${harness.apiUrl}/api/threads`)
       const payload = (await response.json()) as {
-        threads: Array<{ lastMessage: { body: string } }>
+        threads: Array<{ lastMessage: { excerpt: string } }>
       }
       return payload.threads.filter(
-        (thread) => thread.lastMessage.body === "A general Worktable thread"
+        (thread) => thread.lastMessage.excerpt === "A general Worktable thread"
       ).length
     })
     .toBe(1)

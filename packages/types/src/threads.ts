@@ -708,6 +708,11 @@ export interface ThreadSummary {
   updatedAt: string
 }
 
+/** A thread list row in the app: a plain-text excerpt of the last message. */
+export interface ThreadListItem extends Omit<ThreadSummary, "lastMessage"> {
+  lastMessage: { id: string; excerpt: string }
+}
+
 export interface ThreadReadResult {
   location: ThreadLocation
   /** @deprecated Use location instead. */

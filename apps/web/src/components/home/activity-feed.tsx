@@ -3,7 +3,7 @@ import { useId, type ReactNode } from "react"
 import type {
   ActivityActor,
   ActivityEntry,
-  ThreadSummary,
+  ThreadListItem,
 } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -328,7 +328,7 @@ export function ActivityItem({
 // ── Live work ──────────────────────────────────────────────
 
 /** Agents replying right now, from the threads' delivery state. */
-function useLiveReplies(spaceId?: string): ThreadSummary[] {
+function useLiveReplies(spaceId?: string): ThreadListItem[] {
   const { data } = useThreads(
     spaceId ? { kind: "space", spaceId } : { kind: "all" }
   )
@@ -339,7 +339,13 @@ function useLiveReplies(spaceId?: string): ThreadSummary[] {
   )
 }
 
-function LiveReply({ thread, last }: { thread: ThreadSummary; last: boolean }) {
+function LiveReply({
+  thread,
+  last,
+}: {
+  thread: ThreadListItem
+  last: boolean
+}) {
   const activity = thread.activity!
   const name =
     thread.identities.find((identity) => identity.id === activity.identityId)

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
-import { execFileSync } from "node:child_process"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import {
   linkSync,
   mkdirSync,
@@ -30,9 +31,11 @@ interface LockOwner {
   incarnation?: string
 }
 
-function operatingSystemProcessIncarnation(
+const execFileAsync = promisify(execFile)
+
+async function operatingSystemProcessIncarnation(
   pid: number
-): string | undefined {
+): Promise<string | undefined> {
   if (process.platform === "linux") {
     try {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8")
@@ -64,15 +67,13 @@ function operatingSystemProcessIncarnation(
     process.platform !== "android"
   ) {
     try {
-      const started = execFileSync(
+      // Asynchronous: a stale-lock check must not stall the request loop.
+      const { stdout } = await execFileAsync(
         "ps",
         ["-p", String(pid), "-o", "lstart="],
-        {
-          encoding: "utf8",
-          timeout: 1_000,
-          stdio: ["ignore", "pipe", "ignore"],
-        }
-      ).trim()
+        { encoding: "utf8", timeout: 1_000 }
+      )
+      const started = stdout.trim()
       return started ? `ps:${started}` : undefined
     } catch {
       return undefined
@@ -81,9 +82,17 @@ function operatingSystemProcessIncarnation(
   return undefined
 }
 
-const PROCESS_INCARNATION =
-  operatingSystemProcessIncarnation(process.pid) ??
-  `started:${Math.round(Date.now() - process.uptime() * 1_000)}:${randomBytes(12).toString("hex")}`
+let processIncarnation: Promise<string> | null = null
+
+/** This process's incarnation, queried once on first use. */
+function currentProcessIncarnation(): Promise<string> {
+  processIncarnation ??= operatingSystemProcessIncarnation(process.pid).then(
+    (incarnation) =>
+      incarnation ??
+      `started:${Math.round(Date.now() - process.uptime() * 1_000)}:${randomBytes(12).toString("hex")}`
+  )
+  return processIncarnation
+}
 
 function readOwner(lockDir: string): LockOwner | undefined {
   try {
@@ -139,12 +148,12 @@ function sameOwner(
   )
 }
 
-function ownerProcessIsCurrent(owner: LockOwner): boolean {
+async function ownerProcessIsCurrent(owner: LockOwner): Promise<boolean> {
   if (owner.pid === process.pid) {
-    return owner.incarnation === PROCESS_INCARNATION
+    return owner.incarnation === (await currentProcessIncarnation())
   }
   if (!owner.incarnation) return processIsAlive(owner.pid)
-  const currentIncarnation = operatingSystemProcessIncarnation(owner.pid)
+  const currentIncarnation = await operatingSystemProcessIncarnation(owner.pid)
   if (currentIncarnation) {
     return currentIncarnation === owner.incarnation
   }
@@ -207,7 +216,7 @@ export async function acquireCrossProcessLock(
   const owner: LockOwner = {
     pid: process.pid,
     nonce: randomBytes(16).toString("hex"),
-    incarnation: PROCESS_INCARNATION,
+    incarnation: await currentProcessIncarnation(),
   }
   mkdirSync(dirname(lockDir), { recursive: true, mode: 0o700 })
   const candidate = `${lockDir}.candidate-${process.pid}-${owner.nonce}`
@@ -238,7 +247,7 @@ export async function acquireCrossProcessLock(
         if (Date.now() - statSync(lockDir).mtimeMs > staleMs) {
           const current = readOwner(lockDir)
           if (
-            (!current || !ownerProcessIsCurrent(current)) &&
+            (!current || !(await ownerProcessIsCurrent(current))) &&
             quarantineStaleLock(lockDir, current)
           ) {
             continue

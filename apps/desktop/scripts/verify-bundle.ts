@@ -104,11 +104,12 @@ const sidecarEntitlements = run([
   "--display",
   "--entitlements",
   "-",
+  "--xml",
   sidecarBinary,
-])
+]).stdout
 if (
-  !`${sidecarEntitlements.stdout}\n${sidecarEntitlements.stderr}`.includes(
-    "com.apple.security.cs.allow-jit"
+  !/<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/.test(
+    sidecarEntitlements
   )
 ) {
   throw new Error(`${sidecarBinary} is missing the allow-jit entitlement`)

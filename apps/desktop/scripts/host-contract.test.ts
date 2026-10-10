@@ -220,8 +220,10 @@ describe("desktop package contracts", () => {
   test("grants the shell and server only JIT under the hardened runtime", () => {
     const plist = readFileSync(join(nativeRoot, "Entitlements.plist"), "utf8")
     expect(
-      [...plist.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1])
-    ).toEqual(["com.apple.security.cs.allow-jit"])
+      [...plist.matchAll(/<key>([^<]+)<\/key>\s*<([a-z]+)\/>/g)].map(
+        ([, key, value]) => [key, value]
+      )
+    ).toEqual([["com.apple.security.cs.allow-jit", "true"]])
   })
 
   test("creates signed updater artifacts only in protected release builds", () => {

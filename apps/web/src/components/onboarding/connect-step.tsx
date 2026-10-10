@@ -345,6 +345,11 @@ export function ConnectStep({
     agentId: string
   } | null>(null)
   const [cloudComplete, setCloudComplete] = useState(false)
+  // What was saved for the agent picked on Cloud, for the finished summary.
+  const [picked, setPicked] = useState<{
+    name: string
+    access: AgentAccess | null
+  } | null>(null)
   const [baseline, setBaseline] = useState<Set<string>>(new Set())
 
   const connection = useQuery({
@@ -467,16 +472,18 @@ export function ConnectStep({
       const known = baseline.has(selected.id)
       const chosenName =
         typedName?.trim() || (known ? selected.displayName : name.trim())
+      const savedAccess = registered
+        ? null
+        : (chosenAccess ?? (known ? (selected.access ?? null) : access))
       await saveAgentChanges(selected, {
         name: chosenName,
         icon: selected.icon ?? null,
-        access: registered
-          ? null
-          : (chosenAccess ?? (known ? (selected.access ?? null) : access)),
+        access: savedAccess,
       })
-      return { selected, name: chosenName }
+      return { selected, name: chosenName, access: savedAccess }
     },
-    onSuccess: ({ selected, name: chosenName }) => {
+    onSuccess: ({ selected, name: chosenName, access: savedAccess }) => {
+      setPicked({ name: chosenName, access: savedAccess })
       const isAlwaysOn = method === "always-on"
       addSetup({
         id: selected.id,
@@ -554,6 +561,7 @@ export function ConnectStep({
     setPairing(null)
     setToken(null)
     setCloudComplete(false)
+    setPicked(null)
     create.reset()
     mint.reset()
     useCloudConnection.reset()
@@ -818,17 +826,19 @@ export function ConnectStep({
     </div>
   )
 
+  const summaryName = picked?.name ?? name.trim()
+  const summaryAccess = picked ? picked.access : access
   const chosenSummary = (
     <div className="flex items-center gap-3 rounded-xl border border-border/70 bg-background px-3 py-2.5">
-      <AgentAvatar name={name.trim()} platform={platform} />
+      <AgentAvatar name={summaryName} platform={platform} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">
-          {name.trim()}
+          {summaryName}
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {[
-            name.trim() === agentTitle ? null : agentTitle,
-            accessFixed ? null : accessSummary(access),
+            summaryName === agentTitle ? null : agentTitle,
+            accessFixed || !summaryAccess ? null : accessSummary(summaryAccess),
           ]
             .filter(Boolean)
             .join(" · ")}

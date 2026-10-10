@@ -18,7 +18,7 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 
-import { updateAgentConnection } from "@/lib/agent-connections-api"
+import { saveAgentChanges } from "@/lib/agent-connections-api"
 import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
@@ -49,14 +49,9 @@ export function AgentEditDialog({
   }, [connection])
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!connection) throw new Error("No agent selected")
-      const trimmed = name.trim()
-      return updateAgentConnection(connection.id, {
-        ...(trimmed !== connection.displayName ? { displayName: trimmed } : {}),
-        ...(icon !== (connection.icon ?? null) ? { icon } : {}),
-        ...(access && !sameAccess(access, connection.access) ? { access } : {}),
-      })
+      await saveAgentChanges(connection, { name, icon, access })
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

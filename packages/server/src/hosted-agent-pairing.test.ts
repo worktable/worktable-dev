@@ -10,6 +10,7 @@ import {
 } from "@worktable/hosted-contract"
 import { setAppDirOverride } from "./app-storage.ts"
 import { startServer } from "./index.ts"
+import { listThreadParticipantsForDisplay } from "./thread-service.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 
 // Worktable Cloud routes an agent that paired with this workspace through the
@@ -176,5 +177,56 @@ describe("an agent paired with a Cloud workspace", () => {
       ],
     })
     expect((await call("/api/agent-connections")).status).toBe(403)
+  })
+})
+
+describe("a sign-in agent on a Cloud workspace", () => {
+  it("takes the name, icon, and platform its owner chose", async () => {
+    const path = "/api/agent-connections/sign-ins/client_chatgpt"
+    const body = {
+      displayName: "Research GPT",
+      icon: "flask-conical",
+      platform: "chatgpt",
+    }
+    expect((await call(path, { method: "PUT", body })).status).toBe(403)
+    expect(
+      (
+        await call(path, {
+          method: "PUT",
+          body: { platform: "skynet" },
+          owner: true,
+        })
+      ).status
+    ).toBe(400)
+    expect(
+      (await call(path, { method: "PUT", body, owner: true })).status
+    ).toBe(200)
+
+    const {
+      participants: [participant],
+    } = await listThreadParticipantsForDisplay()
+    expect(participant).toMatchObject({
+      kind: "agent",
+      name: "Research GPT",
+      platform: "chatgpt",
+      icon: "flask-conical",
+    })
+
+    // Without Threads on Cloud it is not offered as a recipient, though it
+    // keeps its avatar in threads it is already in.
+    expect(
+      (
+        await call(path, {
+          method: "PUT",
+          body: { ...body, threads: false },
+          owner: true,
+        })
+      ).status
+    ).toBe(200)
+    const withoutThreads = await listThreadParticipantsForDisplay()
+    expect(withoutThreads.participants).toHaveLength(0)
+    expect(withoutThreads.presentations[participant!.id]).toMatchObject({
+      platform: "chatgpt",
+    })
   })
 })

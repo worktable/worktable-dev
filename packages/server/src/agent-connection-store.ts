@@ -6,6 +6,7 @@ import type {
   AgentConnection,
   AgentConnectionTarget,
   AgentPlatformId,
+  DirectAgentLabel,
   ParticipantRef,
 } from "@worktable/types"
 import {
@@ -25,6 +26,7 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import {
+  createToken,
   listTokens,
   revokeToken,
   rotateAgentToken,
@@ -56,10 +58,27 @@ interface StoredAgentConnection {
   agentLabel?: string
 }
 
+/**
+ * How a sign-in agent (Claude or ChatGPT on Worktable Cloud) appears here.
+ * Its access and grant live with Cloud; its thread name lives with its
+ * participant.
+ */
+interface StoredSignInPresentation {
+  principalId: string
+  platform?: AgentPlatformId
+  icon?: string
+  /**
+   * False when its owner took Threads away on Cloud, which enforces it; here
+   * it only keeps the agent out of thread recipients.
+   */
+  threads?: boolean
+}
+
 interface AgentConnectionFile {
   type: "worktable.agent-connections"
   version: 1
   connections: StoredAgentConnection[]
+  signIns?: StoredSignInPresentation[]
 }
 
 let mutationQueue: Promise<unknown> = Promise.resolve()
@@ -467,6 +486,17 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
     .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
 
+/** The agent an app connected with a credential made here is, if any. */
+export async function findAppAgent(
+  label: DirectAgentLabel
+): Promise<AgentConnection | null> {
+  const id = labeledConnectionId(getWorkspaceRoot(), label)
+  return (
+    (await listAgentConnections()).find((connection) => connection.id === id) ??
+    null
+  )
+}
+
 export async function disconnectAgentConnection(id: string): Promise<boolean> {
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
@@ -516,6 +546,41 @@ export async function currentAgentScopes(
       .get(agent)
       ?.at(-1)?.scopes ?? null
   )
+}
+
+/**
+ * Connect an app with a credential made here (the Claude and ChatGPT desktop
+ * apps, or an MCP client configured by hand), with the name and access its
+ * owner chose. Connecting the same app again is the same agent, so its
+ * other credentials take the same access. Returns the credential once.
+ */
+export async function createAgentCredential(input: {
+  label: DirectAgentLabel
+  displayName?: string
+  icon?: string | null
+  access: AgentAccess
+}): Promise<{ token: string; connection: AgentConnection }> {
+  const scopes = scopesForAccess(input.access)
+  if (scopes.length === 0) {
+    throw new AgentConnectionUpdateError("Choose at least one kind of access")
+  }
+  const { token, metadata } = await createToken({ agent: input.label, scopes })
+  try {
+    const connection = await updateAgentConnection(
+      labeledConnectionId(getWorkspaceRoot(), input.label),
+      {
+        access: input.access,
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+        ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      }
+    )
+    if (!connection) throw new Error("The new credential was revoked")
+    return { token, connection }
+  } catch (error) {
+    // Its secret is never delivered, so it must not stay valid.
+    await revokeToken(metadata.id).catch(() => false)
+    throw error
+  }
 }
 
 export class AgentConnectionUpdateError extends Error {}
@@ -623,5 +688,70 @@ export async function updateAgentConnection(
   return (
     (await listAgentConnections()).find((connection) => connection.id === id) ??
     null
+  )
+}
+
+/**
+ * The owner names a sign-in agent, picks its icon (null for its platform's
+ * logo), and records its platform. Its thread participant takes the name.
+ */
+export async function updateSignInAgent(
+  principalId: string,
+  changes: {
+    displayName?: string
+    icon?: string | null
+    platform?: AgentPlatformId
+    threads?: boolean
+  }
+): Promise<void> {
+  await serialized(async () => {
+    const file = await loadFile()
+    const signIns = (file.signIns ??= [])
+    let record = signIns.find((entry) => entry.principalId === principalId)
+    if (!record) {
+      record = { principalId }
+      signIns.push(record)
+    }
+    if (changes.platform) record.platform = changes.platform
+    if (changes.icon === null) delete record.icon
+    else if (changes.icon !== undefined) record.icon = changes.icon
+    if (changes.threads === true) delete record.threads
+    else if (changes.threads === false) record.threads = false
+    await saveFile(file)
+  })
+  if (changes.displayName !== undefined) {
+    // Outside the connection lock: a rename rewrites the agent's threads.
+    await resolveParticipant(
+      {
+        agent: null,
+        principal: {
+          id: principalId,
+          type: "agent",
+          displayName: changes.displayName,
+        },
+      },
+      { name: changes.displayName }
+    )
+  }
+  await notifyThreadParticipantsChanged()
+}
+
+/**
+ * Platform, icon, and Threads access of sign-in agents, keyed by their
+ * participant's key.
+ */
+export async function signInPresentations(): Promise<
+  Map<string, { platform?: AgentPlatformId; icon?: string; threads?: false }>
+> {
+  const file = await loadFile()
+  return new Map(
+    (file.signIns ?? []).map((entry) => [
+      `principal:${entry.principalId}`,
+      {
+        platform: entry.platform,
+        icon: entry.icon,
+        ...(entry.threads === false ? { threads: false as const } : {}),
+      },
+    ])
   )
 }

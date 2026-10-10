@@ -154,9 +154,11 @@ it returns the intended workspace and Spaces. A conversation-only participant
 may not have discovery access; verify it by sending an authorized test message.
 
 On local and self-hosted Worktable, choose what an agent may do when you connect
-it in **Settings → Agents**: **Threads**, **Read workspace**, and **Edit
-workspace**. All three are on by default; an always-on agent always keeps
-Threads. Select **Edit** on a connected agent to rename it, choose its icon, or
+it, during onboarding or in **Settings → Agents**: **Threads**, **Read
+workspace**, and **Edit workspace**. All three are on by default; an always-on
+agent always keeps Threads. Connecting the same desktop app or manually
+configured client again is the same agent, and its access applies to every
+token it holds. Select **Edit** on a connected agent to rename it, choose its icon, or
 change its access. Its name is also its name in threads.
 
 To disconnect, remove the client configuration and revoke its token or approved

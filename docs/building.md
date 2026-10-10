@@ -148,6 +148,12 @@ substituting an ad hoc identity. Development builds retain the existing ad hoc
 signing convention. The runtime manifest retains the original executable digest
 and records the digest after signing.
 
+Tauri signs the shell and the bundled server with
+`apps/desktop/src-tauri/Entitlements.plist`. It grants only
+`com.apple.security.cs.allow-jit`: under the hardened runtime, the server's
+JavaScriptCore otherwise runs without a JIT and without `SharedArrayBuffer`.
+Bundle verification checks that the server carries it.
+
 The pinned Linux ARM64 headless archive omits standalone notices. Release
 assembly therefore obtains the full Chromium archive at the exact same revision
 and extracts its generated credits from `resources.pak`. Only those credits and

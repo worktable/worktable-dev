@@ -207,6 +207,9 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await expect(shareButton).toHaveAttribute("title", "Share document")
 
   sharingEnabled = false
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+  )
   await expect(shareButton).toBeHidden({ timeout: 10_000 })
 
   expect(mutations).toEqual([

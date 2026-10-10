@@ -1,4 +1,9 @@
-import type { AgentAccess } from "@worktable/types"
+import { hostedOAuthPrincipalId } from "@worktable/hosted-contract"
+import {
+  isAgentPlatformId,
+  type AgentAccess,
+  type AgentPlatformId,
+} from "@worktable/types"
 import { Hono } from "hono"
 import { requireAgentManager } from "../auth.ts"
 import {
@@ -6,7 +11,10 @@ import {
   AgentConnectionUpdateError,
   listAgentConnections,
   updateAgentConnection,
+  updateSignInAgent,
 } from "../agent-connection-store.ts"
+import { isHosted } from "../hosted.ts"
+import { getOwnerSubject } from "../oauth-jwt.ts"
 
 export const agentConnectionsRouter = new Hono()
 
@@ -93,4 +101,52 @@ agentConnectionsRouter.patch("/:id", async (c) => {
     }
     throw error
   }
+})
+
+const CLIENT_ID = /^[A-Za-z0-9_-]{1,128}$/
+
+// On Cloud, the owner's name, icon, and platform for a sign-in agent such as
+// Claude or ChatGPT. Cloud keeps its access and grant; this workspace keeps
+// how it appears in threads.
+agentConnectionsRouter.put("/sign-ins/:clientId", async (c) => {
+  const owner = getOwnerSubject()
+  const clientId = c.req.param("clientId")
+  if (!isHosted() || !owner || !CLIENT_ID.test(clientId)) {
+    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  }
+  const body = (await c.req.json().catch(() => null)) as {
+    displayName?: unknown
+    icon?: unknown
+    platform?: unknown
+  } | null
+  if (!body) return c.json(badRequest("Expected a JSON object"), 400)
+  const displayName =
+    body.displayName === undefined
+      ? undefined
+      : typeof body.displayName === "string"
+        ? body.displayName.trim()
+        : ""
+  if (displayName !== undefined && (!displayName || displayName.length > 100)) {
+    return c.json(badRequest("displayName must be 1 to 100 characters"), 400)
+  }
+  if (
+    body.icon !== undefined &&
+    body.icon !== null &&
+    (typeof body.icon !== "string" ||
+      body.icon.length > 64 ||
+      !ICON_NAME.test(body.icon))
+  ) {
+    return c.json(badRequest("icon must be an icon name or null"), 400)
+  }
+  if (body.platform !== undefined && !isAgentPlatformId(body.platform)) {
+    return c.json(badRequest("platform must be a known agent platform"), 400)
+  }
+  await updateSignInAgent(hostedOAuthPrincipalId(clientId, owner), {
+    ...(displayName !== undefined ? { displayName } : {}),
+    ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
+    ...(body.platform !== undefined
+      ? { platform: body.platform as AgentPlatformId }
+      : {}),
+  })
+  return c.json({ ok: true as const })
 })

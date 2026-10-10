@@ -1401,7 +1401,8 @@ export function ConnectedAgentsGroup() {
                           : "Not used yet"}
                       </p>
                     </div>
-                    {connection.authKind === "local-token" ? (
+                    {connection.authKind === "local-token" ||
+                    (connection.authKind === "oauth" && connection.access) ? (
                       <Button
                         variant="ghost"
                         size="sm"

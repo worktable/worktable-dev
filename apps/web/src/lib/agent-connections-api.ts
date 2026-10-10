@@ -1,6 +1,7 @@
 import type {
   AgentAccess,
   AgentConnection,
+  AgentPlatformId,
   AgentConnectionInventory,
 } from "@worktable/types"
 import { fetchJSON } from "./http"
@@ -65,5 +66,20 @@ export function updateAgentConnection(
   return fetchJSON(
     `/api/agent-connections/${encodeURIComponent(connectionId)}`,
     { method: "PATCH", body: JSON.stringify(changes) }
+  )
+}
+
+/** On Cloud, how a sign-in agent such as Claude or ChatGPT appears in threads. */
+export function updateSignInAgent(
+  clientId: string,
+  changes: {
+    displayName?: string
+    icon?: string | null
+    platform?: AgentPlatformId
+  }
+): Promise<{ ok: true }> {
+  return fetchJSON(
+    `/api/agent-connections/sign-ins/${encodeURIComponent(clientId)}`,
+    { method: "PUT", body: JSON.stringify(changes) }
   )
 }

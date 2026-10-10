@@ -18,7 +18,10 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 
-import { updateAgentConnection } from "@/lib/agent-connections-api"
+import {
+  updateAgentConnection,
+  updateSignInAgent,
+} from "@/lib/agent-connections-api"
 import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
@@ -49,14 +52,29 @@ export function AgentEditDialog({
   }, [connection])
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!connection) throw new Error("No agent selected")
       const trimmed = name.trim()
-      return updateAgentConnection(connection.id, {
-        ...(trimmed !== connection.displayName ? { displayName: trimmed } : {}),
-        ...(icon !== (connection.icon ?? null) ? { icon } : {}),
+      const renamed = trimmed !== connection.displayName
+      const iconChanged = icon !== (connection.icon ?? null)
+      await updateAgentConnection(connection.id, {
+        ...(renamed ? { displayName: trimmed } : {}),
+        ...(iconChanged ? { icon } : {}),
         ...(access && !sameAccess(access, connection.access) ? { access } : {}),
       })
+      // A sign-in agent on Cloud also appears in this workspace's threads.
+      if (
+        connection.authKind === "oauth" &&
+        connection.target.kind === "mcp-client" &&
+        connection.target.clientId &&
+        (renamed || iconChanged)
+      ) {
+        await updateSignInAgent(connection.target.clientId, {
+          ...(renamed ? { displayName: trimmed } : {}),
+          ...(iconChanged ? { icon } : {}),
+          platform: connection.platform,
+        })
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

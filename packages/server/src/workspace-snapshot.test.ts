@@ -233,9 +233,10 @@ describe("portable workspace snapshots", () => {
 
 describe("durable backup change reports", () => {
   async function until(predicate: () => Promise<boolean>) {
-    const deadline = Date.now() + 3000
+    // A monotonic clock, so a test that sets the system time still times out.
+    const deadline = performance.now() + 3000
     while (!(await predicate())) {
-      if (Date.now() >= deadline)
+      if (performance.now() >= deadline)
         throw new Error("backup report did not settle")
       // test-policy: external-readiness-backoff (persisted outbox and HTTP delivery)
       await Bun.sleep(10)

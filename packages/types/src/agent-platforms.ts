@@ -99,3 +99,28 @@ export function platformForClient(
 ): AgentPlatformId {
   return (clientId && CLIENT_PLATFORMS[clientId.toLowerCase()]) || "other"
 }
+
+/** The token label `worktable mcp setup` shares among one computer's agents. */
+export const SHARED_LOCAL_AGENT_LABEL = "managed"
+
+/**
+ * The MCP client an agent token's label names: `codex`, `manual-codex`,
+ * `managed:codex`, or `codex@laptop`. Null for any other label.
+ */
+export function clientIdForAgentLabel(label: string | null): string | null {
+  if (!label) return null
+  const client = label
+    .replace(/^managed:/, "")
+    .replace(/^manual-/, "")
+    .replace(/@.*$/, "")
+    .toLowerCase()
+  return client in CLIENT_PLATFORMS ? client : null
+}
+
+/** A readable default name for an agent known only by its token label. */
+export function defaultAgentNameForLabel(label: string | null): string | null {
+  if (!label) return null
+  if (label === SHARED_LOCAL_AGENT_LABEL) return "Agents on this computer"
+  const client = clientIdForAgentLabel(label)
+  return client ? AGENT_PLATFORMS[platformForClient(client)].name : null
+}

@@ -6,6 +6,7 @@ import { setAppDirOverride } from "./app-storage.ts"
 import {
   disconnectAgentConnection,
   listAgentConnections,
+  updateAgentConnection,
   upsertAgentConnection,
 } from "./agent-connection-store.ts"
 import { createToken, verifyToken } from "./token-store.ts"
@@ -178,9 +179,46 @@ describe("semantic agent connections", () => {
     expect(await verifyToken(third.token)).toBeNull()
   })
 
-  it("does not turn an ordinary hand-minted token into a connection", async () => {
-    await createToken({ scopes: ["docs:read"], agent: "manual-token" })
-    expect(await listAgentConnections()).toEqual([])
+  it("lists agent credentials minted outside pairing as agents", async () => {
+    await createToken({ scopes: ["docs:read"] })
+    const desktop = await createToken({
+      scopes: ["docs:read"],
+      agent: "manual-codex",
+    })
+    await createToken({ scopes: ["docs:read"], agent: "managed" })
+    const listed = await listAgentConnections()
+    // An owner token without an agent label is not an agent.
+    expect(listed).toHaveLength(2)
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          displayName: "Codex",
+          platform: "codex",
+          mode: "on-demand",
+        }),
+        expect.objectContaining({
+          displayName: "Agents on this computer",
+          platform: "other",
+        }),
+      ])
+    )
+
+    // Editing records it; the rename is its thread name too.
+    const codex = listed.find((connection) => connection.platform === "codex")!
+    const renamed = await updateAgentConnection(codex.id, {
+      displayName: "Desk Codex",
+      icon: "terminal",
+    })
+    expect(renamed).toMatchObject({
+      id: codex.id,
+      displayName: "Desk Codex",
+      icon: "terminal",
+      participant: { name: "Desk Codex" },
+    })
+    expect(await listAgentConnections()).toHaveLength(2)
+
+    expect(await disconnectAgentConnection(codex.id)).toBe(true)
+    expect(await verifyToken(desktop.token)).toBeNull()
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {

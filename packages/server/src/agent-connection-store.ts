@@ -11,6 +11,8 @@ import type {
 import {
   accessFromScopes,
   AGENT_PLATFORMS,
+  clientIdForAgentLabel,
+  defaultAgentNameForLabel,
   platformForAdapter,
   platformForClient,
   scopesForAccess,
@@ -239,6 +241,54 @@ function platformForTarget(target: AgentConnectionTarget): AgentPlatformId {
     : platformForClient(target.clientId)
 }
 
+const UNRECORDED_PREFIX = "acn_tok_"
+
+/**
+ * An agent credential minted outside pairing (`worktable mcp setup`, the
+ * Desktop and manual setup panels, or a token made by hand with an agent
+ * label) is still an agent. It gets a record the first time its owner edits
+ * it. Pairing labels (`client@host`, `adapter@install`) always have one.
+ */
+function unrecordedConnection(
+  token: TokenMetadata
+): StoredAgentConnection | null {
+  if (!token.agent || token.agent.includes("@")) return null
+  const clientId = clientIdForAgentLabel(token.agent)
+  return {
+    id: `${UNRECORDED_PREFIX}${token.id}`,
+    workspace: token.workspace,
+    target: { kind: "mcp-client", clientId },
+    mode: "on-demand",
+    participant: null,
+    machine: null,
+    credentialId: token.id,
+    connectedAt: token.createdAt,
+    platform: platformForClient(clientId),
+  }
+}
+
+/** Recorded connections plus agent credentials that have none yet. */
+function allConnections(
+  file: AgentConnectionFile,
+  tokens: TokenMetadata[],
+  workspace: string
+): StoredAgentConnection[] {
+  const recorded = file.connections.filter(
+    (connection) => connection.workspace === workspace
+  )
+  const recordedCredentials = new Set(
+    recorded.map((connection) => connection.credentialId)
+  )
+  return [
+    ...recorded,
+    ...tokens.flatMap((token) =>
+      token.workspace === workspace && !recordedCredentials.has(token.id)
+        ? (unrecordedConnection(token) ?? [])
+        : []
+    ),
+  ]
+}
+
 function publicConnection(
   stored: StoredAgentConnection,
   token: TokenMetadata,
@@ -259,7 +309,9 @@ function publicConnection(
       participant?.name ??
       stored.displayName ??
       (platform === "other"
-        ? (token.agent ?? AGENT_PLATFORMS.other.name)
+        ? (defaultAgentNameForLabel(token.agent) ??
+          token.agent ??
+          AGENT_PLATFORMS.other.name)
         : AGENT_PLATFORMS[platform].name),
     platform,
     icon: stored.icon ?? null,
@@ -288,8 +340,7 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
   const workspace = getWorkspaceRoot()
   const tokensById = new Map(tokens.map((token) => [token.id, token]))
   const names = new Map<string, string>()
-  for (const connection of file.connections) {
-    if (connection.workspace !== workspace) continue
+  for (const connection of allConnections(file, tokens, workspace)) {
     const token = tokensById.get(connection.credentialId)
     if (!token) continue
     names.set(
@@ -314,9 +365,8 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
       )
       .map((token) => [token.id, token])
   )
-  return file.connections
+  return allConnections(file, tokens, workspace)
     .flatMap((connection) => {
-      if (connection.workspace !== workspace) return []
       const token = activeById.get(connection.credentialId)
       return token ? [publicConnection(connection, token, participants)] : []
     })
@@ -328,10 +378,9 @@ export async function disconnectAgentConnection(id: string): Promise<boolean> {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
     const tokenById = new Map(tokens.map((token) => [token.id, token]))
-    const connection = file.connections.find(
+    const connection = allConnections(file, tokens, workspace).find(
       (candidate) =>
         candidate.id === id &&
-        candidate.workspace === workspace &&
         tokenById.get(candidate.credentialId)?.workspace === workspace
     )
     if (!connection) return false
@@ -357,9 +406,19 @@ export async function updateAgentConnection(
   const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
-    const connection = file.connections.find(
+    let connection = file.connections.find(
       (candidate) => candidate.id === id && candidate.workspace === workspace
     )
+    if (!connection && id.startsWith(UNRECORDED_PREFIX)) {
+      // First edit of an agent credential minted outside pairing: record it.
+      const unrecorded = allConnections(file, tokens, workspace).find(
+        (candidate) => candidate.id === id
+      )
+      if (unrecorded) {
+        connection = unrecorded
+        file.connections.push(unrecorded)
+      }
+    }
     const token = tokens.find(
       (candidate) =>
         candidate.id === connection?.credentialId &&

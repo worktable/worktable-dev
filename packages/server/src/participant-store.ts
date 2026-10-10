@@ -2,7 +2,10 @@ import { createHash, randomBytes } from "node:crypto"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { ParticipantKind, ParticipantRef } from "@worktable/types"
-import { ParticipantRefSchema } from "@worktable/types"
+import {
+  defaultAgentNameForLabel,
+  ParticipantRefSchema,
+} from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
@@ -164,7 +167,10 @@ function createParticipant(
   return {
     id: `ptc_${randomBytes(16).toString("base64url")}`,
     kind: kindForPrincipal(identity.principal),
-    name: name?.trim() || identity.principal.displayName,
+    name:
+      name?.trim() ||
+      defaultAgentNameForLabel(identity.agent) ||
+      identity.principal.displayName,
     identityFingerprint: participantIdentityFingerprint(identity),
   }
 }

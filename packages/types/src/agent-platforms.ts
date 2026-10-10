@@ -1,3 +1,5 @@
+import { MCP_SNIPPET_CLIENT_IDS } from "./mcp-clients"
+
 // The platforms a connected agent can come from. One list for the server,
 // the web app, and Cloud, so names, logos, and always-on behavior agree.
 
@@ -107,6 +109,24 @@ function clientPlatform(
   return client && Object.hasOwn(CLIENT_PLATFORMS, client)
     ? CLIENT_PLATFORMS[client]!
     : null
+}
+
+/**
+ * Apps connected with a credential made in Worktable rather than by pairing.
+ * The label is the agent: connecting the same app again is the same agent.
+ */
+export const DIRECT_AGENT_LABELS = [
+  "claude-desktop",
+  "chatgpt-desktop",
+  ...MCP_SNIPPET_CLIENT_IDS,
+] as const
+export type DirectAgentLabel = (typeof DIRECT_AGENT_LABELS)[number]
+
+export function isDirectAgentLabel(value: unknown): value is DirectAgentLabel {
+  return (
+    typeof value === "string" &&
+    (DIRECT_AGENT_LABELS as readonly string[]).includes(value)
+  )
 }
 
 /** The token label `worktable mcp setup` shares among one computer's agents. */

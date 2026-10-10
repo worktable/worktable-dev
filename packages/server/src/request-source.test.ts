@@ -29,7 +29,11 @@ describe("who sent a request", () => {
     expect(requestSource(from("127.0.0.1", "198.51.100.1, 203.0.113.9"))).toBe(
       "203.0.113.9"
     )
-    expect(requestSource(from("::1"))).toBe("::1")
+    // A proxy in a container or on the LAN forwards addresses the same way.
+    expect(requestSource(from("172.18.0.5", "203.0.113.9"))).toBe("203.0.113.9")
+    // Without a forwarded address, senders behind it cannot be told apart.
+    expect(requestSource(from("::1"))).toBeNull()
+    expect(requestSource(from("192.168.1.20"))).toBeNull()
   })
 
   it("on Cloud, cannot tell senders apart without the gateway's address", () => {

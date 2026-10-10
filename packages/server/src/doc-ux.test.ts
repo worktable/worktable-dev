@@ -201,20 +201,24 @@ describe("doc UX routes", () => {
         });
       };
 
-      const before = await req(app, "GET", "/api/spaces/doc-ux-space/docs/safe-rich");
+      const before = await req(
+        app,
+        "GET",
+        "/api/spaces/doc-ux-space/docs/safe-rich?conversionCheck=include"
+      );
       expect(before.status).toBe(200);
       const beforeMeta = before.json as {
         markdownCompatible: boolean;
         collaborationCacheEpoch: string;
       };
       expect(beforeMeta.markdownCompatible).toBe(true);
-      const fastRead = await req(
+      const plainRead = await req(
         app,
         "GET",
-        "/api/spaces/doc-ux-space/docs/safe-rich?conversionCheck=skip"
+        "/api/spaces/doc-ux-space/docs/safe-rich"
       );
-      expect(fastRead.status).toBe(200);
-      expect(fastRead.json).toEqual({
+      expect(plainRead.status).toBe(200);
+      expect(plainRead.json).toEqual({
         ...(before.json as object),
         markdownCompatible: null,
       });
@@ -297,7 +301,7 @@ describe("doc UX routes", () => {
       await writeDoc("doc-ux-space", "rich-formatting", blocks);
       const storedBefore = await readDoc("doc-ux-space", "rich-formatting");
 
-      const before = await req(app, "GET", "/api/spaces/doc-ux-space/docs/rich-formatting");
+      const before = await req(app, "GET", "/api/spaces/doc-ux-space/docs/rich-formatting?conversionCheck=include");
       expect((before.json as { markdownCompatible: boolean }).markdownCompatible).toBe(false);
 
       const converted = await req(
@@ -358,7 +362,7 @@ describe("doc UX routes", () => {
         const before = await req(
           app,
           "GET",
-          `/api/spaces/doc-ux-space/docs/${docPath}`
+          `/api/spaces/doc-ux-space/docs/${docPath}?conversionCheck=include`
         );
         expect(
           (before.json as { markdownCompatible: boolean }).markdownCompatible
@@ -394,7 +398,7 @@ describe("doc UX routes", () => {
       const before = await req(
         app,
         "GET",
-        "/api/spaces/doc-ux-space/docs/annotated-rich"
+        "/api/spaces/doc-ux-space/docs/annotated-rich?conversionCheck=include"
       );
       expect(
         (before.json as { markdownCompatible: boolean }).markdownCompatible
@@ -432,7 +436,7 @@ describe("doc UX routes", () => {
       const before = await req(
         app,
         "GET",
-        "/api/spaces/doc-ux-space/docs/duplicate-quote-rich"
+        "/api/spaces/doc-ux-space/docs/duplicate-quote-rich?conversionCheck=include"
       );
       expect(
         (before.json as { markdownCompatible: boolean }).markdownCompatible

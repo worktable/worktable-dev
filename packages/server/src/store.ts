@@ -470,11 +470,10 @@ async function atomicWrite(filePath: string, data: unknown): Promise<void> {
 
 async function atomicWriteAfterValidation(
   filePath: string,
-  data: unknown,
+  json: string,
   validateBeforePublish: () => Promise<boolean>
 ): Promise<boolean> {
   const tmpPath = `${filePath}.tmp`;
-  const json = JSON.stringify(data, null, 2);
   let published = false;
   try {
     await writeFile(tmpPath, json, "utf8");
@@ -2143,6 +2142,12 @@ export interface DocWriteOptions {
   managedIdentity?: boolean;
   /** Fail with SOURCE_CHANGED instead of replacing a document that exists. */
   createOnly?: boolean;
+  /**
+   * Blocks are already canonical (exported from a collaborative room) and the
+   * caller has compared them with the stored blocks: write them without
+   * canonicalizing either side again.
+   */
+  canonical?: boolean;
 }
 
 type DocWriteTransactionOptions = DocWriteOptions & {
@@ -2164,6 +2169,8 @@ export interface DocWriteResult {
   revision?: DocSourceRevision;
   /** The content stored at `revision`, on success. */
   content?: unknown[] | string;
+  /** Provenance of the version this write recorded, when it recorded one. */
+  provenance?: DocProvenance;
   repairs?: import("@worktable/types").MermaidDocumentRepair[];
 }
 
@@ -2905,15 +2912,17 @@ export async function restoreDocVersion(
   });
 }
 
+/** The stored text of document content, as written to its file. */
+function docFileText(content: unknown[] | string): string {
+  return typeof content === "string" ? content : JSON.stringify(content, null, 2);
+}
+
 function committedRevision(
   spaceId: string,
   filePath: string,
-  content: unknown[] | string
+  fileText: string
 ): DocSourceRevision {
-  const bytes = Buffer.from(
-    typeof content === "string" ? content : JSON.stringify(content, null, 2),
-    "utf8"
-  );
+  const bytes = Buffer.from(fileText, "utf8");
   return {
     relativePath: relative(spaceDir(spaceId), filePath).split(sep).join("/"),
     size: bytes.byteLength,
@@ -2989,7 +2998,8 @@ async function writeDocUnlocked(
 
   const finalizeWrite = async (
     storedAs: DocFileFormat,
-    writtenContent: unknown[] | string
+    writtenContent: unknown[] | string,
+    writtenText: string
   ): Promise<DocWriteResult> => {
     const after: DocReadResult = {
       data: writtenContent,
@@ -2997,8 +3007,9 @@ async function writeDocUnlocked(
       storedAs,
       error: null,
     };
+    let provenance: DocProvenance | undefined;
     if (options?.recordVersion !== false) {
-      await recordDocVersion(spaceId, docPath, before, after, {
+      provenance = await recordDocVersion(spaceId, docPath, before, after, {
         updatedBy: options?.updatedBy ?? "unknown",
         source: options?.source ?? "unknown",
         reason: options?.reason,
@@ -3012,10 +3023,7 @@ async function writeDocUnlocked(
           ...(sourceSnapshot?.bytes
             ? { before: sourceSnapshot.bytes }
             : {}),
-          after:
-            storedAs === "md"
-              ? Buffer.from(writtenContent as string, "utf8")
-              : Buffer.from(JSON.stringify(writtenContent, null, 2), "utf8"),
+          after: Buffer.from(writtenText, "utf8"),
         },
       });
     }
@@ -3027,9 +3035,10 @@ async function writeDocUnlocked(
       revision: committedRevision(
         spaceId,
         storedAs === "md" ? docFilePathMd(spaceId, docPath) : docFilePathJson(spaceId, docPath),
-        writtenContent
+        writtenText
       ),
       content: writtenContent,
+      ...(provenance ? { provenance } : {}),
     };
   };
   const unchangedResult = (storedAs: DocFileFormat): DocWriteResult => ({
@@ -3078,15 +3087,16 @@ async function writeDocUnlocked(
       }
       let staleSource = false;
       const markdownPath = docFilePathMd(spaceId, docPath);
+      const convertedText = docFileText(preparedBlocks.content);
       await withWriteLock(resolved.path, async () => {
         staleSource = !(await atomicWriteAfterValidation(
           resolved.path,
-          preparedBlocks.content,
+          convertedText,
           async () => !(await sourceChanged()) && !existsSync(markdownPath)
         ));
       });
       if (staleSource) return staleSourceResult("json");
-      return finalizeWrite("json", preparedBlocks.content);
+      return finalizeWrite("json", preparedBlocks.content, convertedText);
     }
 
     // No existing .json: write as .md
@@ -3104,16 +3114,22 @@ async function writeDocUnlocked(
       await rename(tmpPath, mdPath);
     });
     if (staleSource) return staleSourceResult("md");
-    return finalizeWrite("md", content as string);
+    return finalizeWrite("md", content as string, content as string);
   }
 
   // BlockNote blocks: always write as .json
   const jsonPath = docFilePathJson(spaceId, docPath);
   await mkdir(dirname(jsonPath), { recursive: true });
-  const preparedBlocks = await prepareBlocksCanonical(
-    content as unknown[],
-    Array.isArray(before?.data) ? before.data : undefined
-  );
+  const preparedBlocks = options?.canonical
+    ? { skipped: false, content: content as unknown[] }
+    : await prepareBlocksCanonical(
+        content as unknown[],
+        Array.isArray(before?.data) ? before.data : undefined
+      );
+  // Serialized once for the file, its version and its revision.
+  let serialized: string | undefined;
+  const fileText = (): string =>
+    (serialized ??= docFileText(preparedBlocks.content));
 
   if (resolved?.format === "md") {
     const after: DocReadResult = {
@@ -3131,7 +3147,7 @@ async function writeDocUnlocked(
         id: "worktable.rich-text",
         sourceVersion: 1,
       },
-      bytes: Buffer.from(JSON.stringify(preparedBlocks.content, null, 2)),
+      bytes: Buffer.from(fileText()),
       sourceRevision: sourceSnapshot?.revision,
       context: {
         updatedBy: options?.updatedBy ?? "unknown",
@@ -3154,10 +3170,7 @@ async function writeDocUnlocked(
             ...(sourceSnapshot?.bytes
               ? { before: sourceSnapshot.bytes }
               : {}),
-            after: Buffer.from(
-              JSON.stringify(preparedBlocks.content, null, 2),
-              "utf8"
-            ),
+            after: Buffer.from(fileText(), "utf8"),
           },
         });
       },
@@ -3171,7 +3184,7 @@ async function writeDocUnlocked(
         ok: true,
         storedAs: "json",
         repairs,
-        revision: committedRevision(spaceId, jsonPath, preparedBlocks.content),
+        revision: committedRevision(spaceId, jsonPath, fileText()),
         content: preparedBlocks.content,
       };
     }
@@ -3215,7 +3228,7 @@ async function writeDocUnlocked(
   await withWriteLock(jsonPath, async () => {
     staleSource = !(await atomicWriteAfterValidation(
       jsonPath,
-      preparedBlocks.content,
+      fileText(),
       async () =>
         !(
           (resolved?.format === "json" && (await sourceChanged())) ||
@@ -3224,7 +3237,7 @@ async function writeDocUnlocked(
     ));
   });
   if (staleSource) return staleSourceResult("json");
-  return finalizeWrite("json", preparedBlocks.content);
+  return finalizeWrite("json", preparedBlocks.content, fileText());
 }
 
 type DeleteDocResult = { error: string | null; notFound?: true };
@@ -3498,12 +3511,21 @@ export async function docExists(spaceId: string, docPath: string): Promise<boole
 export async function docStat(
   spaceId: string,
   docPath: string
-): Promise<{ updatedAt: number; format: DocFileFormat } | null> {
+): Promise<{
+  updatedAt: number;
+  format: DocFileFormat;
+  /** Changes whenever the file is replaced or rewritten: inode, size and modification time. */
+  fingerprint: string;
+} | null> {
   const resolved = resolveDocFile(spaceId, docPath);
   if (!resolved) return null;
   try {
     const s = await stat(resolved.path);
-    return { updatedAt: s.mtimeMs, format: resolved.format };
+    return {
+      updatedAt: s.mtimeMs,
+      format: resolved.format,
+      fingerprint: `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`,
+    };
   } catch {
     return null;
   }

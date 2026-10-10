@@ -14,6 +14,7 @@ const para = (text: string) => ({
 
 describe("canonicalizeBlocks", () => {
   it("does not mark an already-canonical mermaid block as changed", () => {
+    // The shape the editor exports, including its undefined content.
     const block = {
       id: "diagram",
       type: "mermaid",
@@ -23,6 +24,7 @@ describe("canonicalizeBlocks", () => {
         collapsed: "false",
         locked: "false",
       },
+      content: undefined,
       children: [],
     };
     const normalized = normalizeMermaidBlocks([block]);

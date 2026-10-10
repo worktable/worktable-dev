@@ -1,3 +1,4 @@
+import { timing } from "./request-timing.ts";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts";
 
 const tails = new Map<string, Promise<void>>();
@@ -14,7 +15,9 @@ export async function withDocPathLock<T>(
   });
   const tail = previous.then(() => current);
   tails.set(spaceId, tail);
+  const waitStartedAt = performance.now();
   await previous;
+  timing.end("lock-wait", waitStartedAt);
   try {
     assertWorkspaceAvailable();
     return await fn();

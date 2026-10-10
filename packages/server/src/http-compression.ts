@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono"
 import { promisify } from "node:util"
 import { gzip } from "node:zlib"
+import { timing } from "./request-timing.ts"
 
 const gzipAsync = promisify(gzip)
 
@@ -58,7 +59,9 @@ export const compressApiResponse: MiddlewareHandler = async (c, next) => {
   // current body after Vary has been applied, not the earlier response object.
   const body = new Uint8Array(await c.res.arrayBuffer())
   const compressed =
-    body.byteLength >= 1024 ? await gzipAsync(body, { level: 6 }) : null
+    body.byteLength >= 1024
+      ? await timing.span("gzip", () => gzipAsync(body, { level: 6 }))
+      : null
   if (compressed && compressed.byteLength < body.byteLength) {
     c.res = new Response(compressed, c.res)
     c.header("Content-Encoding", "gzip")

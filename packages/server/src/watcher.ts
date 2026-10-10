@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { CanonicalIdSchema, WidgetIdSchema } from "@worktable/types"
 import { isAtomicWriteTemporaryFileName } from "./atomic-file.ts"
+import { debugLogging } from "./debug-log.ts"
 import {
   getSpacesBaseDir,
   notePathEventIfSuppressed,
@@ -473,9 +474,11 @@ export class WorkspaceWatcher {
         const suppressed =
           rawSuppressed || notePathEventIfSuppressed(fullPath)
         const event = parse(changedPath)
-        console.log(
-          `[Worktable] watcher debounce: file=${changedPath}, parsed=${event ? JSON.stringify(event) : "null"}, suppressed=${suppressed}`
-        )
+        if (debugLogging) {
+          console.debug(
+            `[Worktable] watcher debounce: file=${changedPath}, parsed=${event ? JSON.stringify(event) : "null"}, suppressed=${suppressed}`
+          )
+        }
 
         if (suppressed) {
           return

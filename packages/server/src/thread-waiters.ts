@@ -2,6 +2,7 @@ import type { ThreadLocation } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 import { onWorkspaceChange, threadEventLocation } from "./workspace-events.ts"
 import { readThread } from "./thread-store.ts"
+import { timing } from "./request-timing.ts"
 
 type Resolve = () => void
 
@@ -75,7 +76,8 @@ function wait(
   if ((revisions.get(key) ?? 0) !== afterRevision) {
     return Promise.resolve(true)
   }
-  return new Promise((resolve) => {
+  // A held long-poll is reported as `wait`, not counted as a slow request.
+  return timing.span("wait", () => new Promise<boolean>((resolve) => {
     const waiters = map.get(key) ?? new Set<Resolve>()
     let settled = false
     const finish = (changed: boolean) => {
@@ -90,7 +92,7 @@ function wait(
     waiters.add(onChange)
     map.set(key, waiters)
     const timer = setTimeout(() => finish(false), timeoutMs)
-  })
+  }))
 }
 
 export function threadSignalRevision(

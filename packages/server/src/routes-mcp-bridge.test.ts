@@ -67,8 +67,15 @@ async function call(
   return JSON.parse(item?.text ?? "{}") as Record<string, unknown>
 }
 
-/** A bridge-shaped client: loopback URL, bridge id header, in-process fetch. */
-async function bridgeClient(responses: Response[]): Promise<Client> {
+/**
+ * A bridge-shaped client: loopback URL, bridge id header, in-process fetch.
+ * `onStream` sees each streamed (SSE) response as soon as the server opens it,
+ * which happens once the tool handler is running.
+ */
+async function bridgeClient(
+  responses: Response[],
+  onStream: (response: Response) => void = () => {}
+): Promise<Client> {
   const app = new Hono()
   app.route("/mcp", mcpRouter)
   const transport = new StreamableHTTPClientTransport(
@@ -80,6 +87,9 @@ async function bridgeClient(responses: Response[]): Promise<Client> {
       fetch: async (input, init) => {
         const response = await app.fetch(new Request(input, init))
         responses.push(response.clone())
+        if (response.headers.get("content-type")?.includes("text/event-stream")) {
+          onStream(response)
+        }
         return response
       },
     }
@@ -199,7 +209,11 @@ describe("MCP bridge over HTTP", () => {
   it("ends a cancelled call instead of letting it run on", async () => {
     const { threadId, cursor } = await postToAtlas()
     const responses: Response[] = []
-    const bridge = await bridgeClient(responses)
+    let streamOpened!: () => void
+    const opened = new Promise<void>((resolve) => {
+      streamOpened = resolve
+    })
+    const bridge = await bridgeClient(responses, () => streamOpened())
     const abort = new AbortController()
     const startedAt = Date.now()
     const waiting = bridge.callTool(
@@ -212,7 +226,7 @@ describe("MCP bridge over HTTP", () => {
       CallToolResultSchema,
       { signal: abort.signal }
     )
-    await Bun.sleep(300)
+    await opened
     abort.abort()
     await expect(waiting).rejects.toThrow()
 

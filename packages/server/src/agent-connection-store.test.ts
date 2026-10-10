@@ -224,6 +224,15 @@ describe("semantic agent connections", () => {
     const recipients = async () =>
       (await listThreadParticipants()).map((participant) => participant.name)
     expect(await recipients()).not.toContain("Desk Codex")
+    // Also for a credential made by hand under a label like a pairing's.
+    const handMade = await createToken({
+      scopes: ["docs:read"],
+      agent: "claude@build-host",
+    })
+    const { participant: handMadeAgent } = await resolveParticipant(
+      (await verifyToken(handMade.token))!
+    )
+    expect(await recipients()).not.toContain(handMadeAgent.name)
 
     // Setting it up again re-issues its credential; it stays the same agent,
     // with the access its owner chose.

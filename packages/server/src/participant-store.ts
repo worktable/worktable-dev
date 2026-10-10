@@ -290,7 +290,13 @@ export async function resolveParticipant(
     }
   })
   // Outside the binding lock: threads take their own locks.
-  if (renamed) await reconcileThreadNames(renamed.id)
+  // The rename is made. Threads following it is best effort: a failure here
+  // is retried by the next rename, and must not report the rename failed.
+  if (renamed) {
+    await reconcileThreadNames(renamed.id).catch((error: unknown) => {
+      console.error("Could not update thread names after a rename", error)
+    })
+  }
   return resolved
 }
 

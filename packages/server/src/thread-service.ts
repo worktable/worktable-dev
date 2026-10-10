@@ -12,7 +12,8 @@ import type {
   ThreadWaitResult,
 } from "@worktable/types"
 import { defaultConversationIdentityId, threadLocation } from "@worktable/types"
-import type { TokenIdentity } from "./token-store.ts"
+import { hasScope, listTokens, type TokenIdentity } from "./token-store.ts"
+import { getWorkspaceRoot } from "./workspace.ts"
 import { hasWorkspaceOwnerAuthority } from "./owner-authority.ts"
 import {
   acceptThreadDelivery,
@@ -46,6 +47,8 @@ import {
 } from "./thread-store.ts"
 import {
   listParticipantBindings,
+  participantKey,
+  participantsByKey,
   requireParticipant,
   resolveParticipant,
 } from "./participant-store.ts"
@@ -598,9 +601,11 @@ export async function listThreadParticipants(
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
-  const [bindings, connections] = await Promise.all([
+  const [bindings, connections, tokens, participants] = await Promise.all([
     listParticipantBindings(),
     listAgentConnections(),
+    listTokens(),
+    participantsByKey(),
   ])
   const alwaysOnParticipantIds = new Set(
     connections.flatMap((connection) =>
@@ -609,21 +614,26 @@ export async function listThreadParticipants(
         : []
     )
   )
-  // An agent connected without Threads can neither read nor answer one.
-  const threadParticipantIds = new Set(
-    connections.flatMap((connection) =>
-      connection.participant && connection.access?.threads !== false
-        ? [connection.participant.id]
-        : []
+  // An agent none of whose credentials has Threads can neither read nor
+  // answer one, so it is not offered.
+  const workspace = getWorkspaceRoot()
+  const readsThreads = new Map<string, boolean>()
+  for (const token of tokens) {
+    if (!token.agent || token.revokedAt || token.workspace !== workspace) {
+      continue
+    }
+    const participant = participants.get(
+      participantKey({ agent: token.agent, principal: token.principal })
     )
-  )
+    if (!participant) continue
+    readsThreads.set(
+      participant.id,
+      readsThreads.get(participant.id) === true ||
+        hasScope(token.scopes, "threads:read")
+    )
+  }
   const withoutThreads = new Set(
-    connections.flatMap((connection) =>
-      connection.participant &&
-      !threadParticipantIds.has(connection.participant.id)
-        ? [connection.participant.id]
-        : []
-    )
+    [...readsThreads].flatMap(([id, reads]) => (reads ? [] : [id]))
   )
   return bindings
     .map((binding) => binding.participant)

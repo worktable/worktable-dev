@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createThread, threadPath } from "./thread-store.ts"
@@ -47,23 +47,30 @@ describe("WsManager", () => {
       await runSpaceListSweep()
       messages.length = 0
       const now = new Date().toISOString()
+      const writeOutside = (name: string) =>
+        writeFile(
+          join(workspaceDir, "spaces", "outside", "space.json"),
+          JSON.stringify({
+            type: "worktable.space",
+            version: 1,
+            id: "outside",
+            name,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: "test",
+            settings: {},
+          })
+        )
       await mkdir(join(workspaceDir, "spaces", "outside"), { recursive: true })
-      await writeFile(
-        join(workspaceDir, "spaces", "outside", "space.json"),
-        JSON.stringify({
-          type: "worktable.space",
-          version: 1,
-          id: "outside",
-          name: "Outside",
-          createdAt: now,
-          updatedAt: now,
-          createdBy: "test",
-          settings: {},
-        })
-      )
+      await writeOutside("Outside")
       await runSpaceListSweep()
       await runSpaceListSweep()
       expect(messages).toEqual([{ type: "spaces_changed" }])
+
+      // So does an edit to an existing Space.
+      await writeOutside("Renamed outside")
+      await runSpaceListSweep()
+      expect(messages).toHaveLength(2)
     } finally {
       wsManager.unsubscribe(client)
       setWorkspaceRootOverride(null)

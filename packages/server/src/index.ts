@@ -890,19 +890,19 @@ export async function runRecordReconcileSweep(): Promise<void> {
   }
 }
 
-// Space ids seen by the last space sweep, or null before the first one.
-let sweptSpaceIds: Set<string> | null = null;
+// Spaces as seen by the last space sweep, or null before the first one.
+let sweptSpaces: Map<string, string> | null = null;
 
 /**
  * Watcher space events announce created, removed and edited Spaces as they
  * happen. Filesystem events are not a durable queue, so the periodic sweep
- * also compares the Space list and announces a change the watcher missed.
+ * also compares the Spaces and announces a change the watcher missed.
  */
 export async function runSpaceListSweep(): Promise<void> {
-  const ids = new Set((await listSpaces()).map((space) => space.id));
-  const previous = sweptSpaceIds;
-  sweptSpaceIds = ids;
-  if (previous && (previous.size !== ids.size || [...ids].some((id) => !previous.has(id)))) {
+  const spaces = new Map((await listSpaces()).map((space) => [space.id, JSON.stringify(space)]));
+  const previous = sweptSpaces;
+  sweptSpaces = spaces;
+  if (previous && (previous.size !== spaces.size || [...spaces].some(([id, space]) => previous.get(id) !== space))) {
     wsManager.broadcastAll({ type: "spaces_changed" });
   }
 }
@@ -1199,7 +1199,7 @@ export function startServer(
   }
   if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
   recordReconcileSweepTimer = null;
-  sweptSpaceIds = null;
+  sweptSpaces = null;
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] !== "1") {
     recordReconcileSweepTimer = setInterval(() => {
       void runSpaceListSweep().catch((err) => console.error("[Worktable] periodic space sweep failed:", err));

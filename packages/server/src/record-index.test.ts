@@ -612,7 +612,12 @@ describe("record index", () => {
     for (const [collectionId, recordId] of [
       ["notes", "unchanged"],
       ["ideas", "edited"],
+      ["plans", "kept"],
     ] as const) {
+      await writeRecordCollectionSchema(
+        "meta",
+        buildRecordCollectionSchema({ id: collectionId, name: collectionId })
+      )
       await createRecord("meta", collectionId, {
         id: recordId,
         data: { title: "Before" },
@@ -622,7 +627,13 @@ describe("record index", () => {
       utimesSync(recordFilePath("meta", collectionId, recordId), past, past)
     }
     await runRecordReconcileSweep()
+    // Changes the watcher never reported: an edited record and a schema
+    // file that no longer parses.
     writeRecordFileDirectly("meta", "ideas", "edited", { title: "After" })
+    writeFileSync(
+      join(workspaceDir, "spaces", "meta", "records", "plans", "schema.yaml"),
+      "fields: [broken\n"
+    )
 
     const broadcasts: { spaceId: string; collectionId?: string }[] = []
     const originalBroadcast = wsManager.broadcast.bind(wsManager)
@@ -638,7 +649,9 @@ describe("record index", () => {
     } finally {
       wsManager.broadcast = originalBroadcast
     }
-    expect(broadcasts).toEqual([{ spaceId: "meta", collectionId: "ideas" }])
+    expect(
+      broadcasts.map((broadcast) => broadcast.collectionId).sort()
+    ).toEqual(["ideas", "plans"])
     expect(
       recordIndex.listCollection("meta", "ideas", true)?.[0]?.data["title"]
     ).toBe("After")

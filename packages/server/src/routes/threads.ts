@@ -130,17 +130,17 @@ function threadListItem({
   lastMessage,
   ...summary
 }: ThreadSummary): ThreadListItem {
-  // Markdown above the excerpt length is enough to fill it; bounding the
-  // input keeps a very long message from costing the whole list.
-  const plain = markdownPlainText(
-    lastMessage.body.slice(0, LIST_EXCERPT_LENGTH * 8)
-  )
-    .replace(/\s+/g, " ")
-    .trim()
-  const excerpt =
-    plain.length <= LIST_EXCERPT_LENGTH
-      ? plain
-      : `${plain.slice(0, LIST_EXCERPT_LENGTH - 1).trimEnd()}…`
+  // Convert the whole message: cutting Markdown first could split a long link
+  // or image and leave its raw source in the excerpt.
+  const plain = markdownPlainText(lastMessage.body).replace(/\s+/g, " ").trim()
+  if (plain.length <= LIST_EXCERPT_LENGTH) {
+    return { ...summary, lastMessage: { id: lastMessage.id, excerpt: plain } }
+  }
+  let end = LIST_EXCERPT_LENGTH - 1
+  // Keep a surrogate pair, such as an emoji, whole.
+  const last = plain.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  const excerpt = `${plain.slice(0, end).trimEnd()}…`
   return { ...summary, lastMessage: { id: lastMessage.id, excerpt } }
 }
 

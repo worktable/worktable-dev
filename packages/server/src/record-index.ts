@@ -384,12 +384,17 @@ class RecordIndex {
     }
   }
 
-  /** A collection's projected rows or schema changed. */
-  private noteCollectionChanged(spaceId: string, collectionId: string): void {
+  private bumpRevision(spaceId: string, collectionId: string): void {
     const key = `${spaceId}/${collectionId}`;
     const previous = this.collectionRevisions.get(key);
     this.collectionRevisions.set(key, { spaceId, collectionId, revision: (previous?.revision ?? 0) + 1 });
+  }
+
+  /** A collection's projected rows or schema changed. */
+  private noteCollectionChanged(spaceId: string, collectionId: string): void {
+    this.bumpRevision(spaceId, collectionId);
     // A drift verdict may no longer hold; the next health read checks again.
+    const key = `${spaceId}/${collectionId}`;
     if (this.healthCache.get(key)?.state === "drifted") this.healthCache.delete(key);
   }
 
@@ -890,6 +895,10 @@ class RecordIndex {
       invalidRecordCount,
       lastReconciledAt: this.lastReconciledAt.get(`${spaceId}/${collectionId}`) ?? null,
     };
+    // A changed verdict is news for open grids even when no row changed, such
+    // as a schema file that stopped parsing behind the watcher's back.
+    const previous = this.healthCache.get(`${spaceId}/${collectionId}`);
+    if (previous && previous.state !== state) this.bumpRevision(spaceId, collectionId);
     this.healthCache.set(`${spaceId}/${collectionId}`, health);
     return health;
   }

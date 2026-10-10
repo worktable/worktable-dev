@@ -280,7 +280,7 @@ describe("thread REST routes", () => {
       "POST",
       `/api/spaces/connected-agents/threads/${threadId}/messages`,
       {
-        body: `**Status:** ${"all good. ".repeat(100)}`,
+        body: `**Status:** [report](https://example.com/${"r".repeat(3_000)}) ${"all good. ".repeat(100)}`,
         idempotencyKey: "route-long-follow-up",
         waitSeconds: 0,
       }
@@ -293,7 +293,7 @@ describe("thread REST routes", () => {
       lastMessage: { id: string; excerpt: string }
     }>
     expect(row?.lastMessage.id).toBe(String(long.json.messageId))
-    expect(row?.lastMessage.excerpt).toStartWith("Status: all good. all good.")
+    expect(row?.lastMessage.excerpt).toStartWith("Status: report all good.")
     expect(row?.lastMessage.excerpt).toEndWith("…")
     expect(row?.lastMessage.excerpt.length).toBeLessThanOrEqual(280)
     expect(row?.lastMessage).not.toHaveProperty("body")

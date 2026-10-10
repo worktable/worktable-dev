@@ -3,7 +3,8 @@ import { promisify } from "node:util"
 import { gzip } from "node:zlib"
 import { timing } from "./request-timing.ts"
 
-const gzipAsync = promisify(gzip)
+/** Compress off the request loop, on libuv's thread pool. */
+export const gzipAsync = promisify(gzip)
 
 export function acceptsGzip(value: string): boolean {
   const codings = new Map(

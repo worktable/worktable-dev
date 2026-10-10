@@ -581,6 +581,8 @@ type DocumentCatalogOptions = {
   workspaceRoot: string
   spaceId: string
   registry?: DocumentFormatRegistry
+  /** Stops discovery between phases once the caller no longer needs it. */
+  signal?: AbortSignal
 }
 
 export function buildDocumentCatalog(
@@ -601,11 +603,13 @@ async function buildDocumentCatalogFromFiles(
   if (!aliasResult.aliases) {
     throw new Error(aliasResult.error ?? "Document aliases are unavailable")
   }
+  options.signal?.throwIfAborted()
   const legacyClaims = await listLegacyDocumentClaims(
     spaceRoot,
     aliasResult.aliases,
     registry
   )
+  options.signal?.throwIfAborted()
   const merged = await inventoryClaims(
     spaceRoot,
     spaceId,
@@ -616,6 +620,7 @@ async function buildDocumentCatalogFromFiles(
   const grouped = new Map<string, typeof merged.claims>()
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   for (const claim of merged.claims) {
+    options.signal?.throwIfAborted()
     if (
       claim.identity === "durable" &&
       claim.format.id === "worktable.html" &&

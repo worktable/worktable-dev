@@ -1839,7 +1839,9 @@ export function startServer(
   startEventLoopLagSampler();
 
   // Build the search index while the server is quiet, not on the first search.
-  const stopSearchWarmup = workspaceRejected ? () => {} : startSearchWarmup();
+  const stopSearchWarmup = workspaceRejected
+    ? () => Promise.resolve()
+    : startSearchWarmup();
 
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";
   // Print the actual bound port (server.port), not the requested `port` arg:
@@ -1871,7 +1873,7 @@ export function startServer(
     // await stop(). The returned promise drains work that was already running.
     stopWorkspaceSafetyHandler()
     clearInterval(credentialTimer);
-    stopSearchWarmup();
+    const searchWarmupStopping = stopSearchWarmup();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator
       .stop()
@@ -1940,6 +1942,7 @@ export function startServer(
         await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);
         await settle(() => updateChecksStopping);
+        await settle(() => searchWarmupStopping);
         await settle(() => recordIndex.whenIdle());
         try {
           recordIndex.stop();

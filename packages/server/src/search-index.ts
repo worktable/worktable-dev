@@ -911,14 +911,16 @@ export async function warmSearchIndex(stopped: () => boolean = () => false): Pro
 /**
  * Warm the index in the background once the process has been quiet for a
  * few seconds, or 30 s after start, so the first search after a start or a
- * Cloud wake does not wait for the whole build. Returns a stop function.
+ * Cloud wake does not wait for the whole build. The returned stop function
+ * settles once a Space sync already under way has finished.
  */
-export function startSearchWarmup(): () => void {
+export function startSearchWarmup(): () => Promise<void> {
   const startedAt = Date.now();
   let quietSince = startedAt;
   let lastCheck = startedAt;
   let lastCpu = process.cpuUsage();
   let stopped = false;
+  let warming: Promise<void> = Promise.resolve();
   const timer = setInterval(() => {
     const now = Date.now();
     const cpu = process.cpuUsage();
@@ -930,7 +932,7 @@ export function startSearchWarmup(): () => void {
       return;
     }
     clearInterval(timer);
-    void warmSearchIndex(() => stopped).catch((error: unknown) => {
+    warming = warmSearchIndex(() => stopped).catch((error: unknown) => {
       console.warn(
         "[search] warm-up stopped:",
         error instanceof Error ? error.message : error,
@@ -941,6 +943,7 @@ export function startSearchWarmup(): () => void {
   return () => {
     stopped = true;
     clearInterval(timer);
+    return warming;
   };
 }
 

@@ -1,9 +1,21 @@
-import { afterEach, describe, expect, it, mock } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
 import { openCloudBillingCheckout } from "./billing-api.ts"
-import { UnauthorizedError } from "./http.ts"
+import { getFreshBrowserCsrfToken, UnauthorizedError } from "./http.ts"
 
 const realFetch = globalThis.fetch
 const realWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
+
+// http.ts caches the Cloud CSRF token for the page's lifetime, and test files
+// share one process. Start each test with no cached token through the public
+// API: a session without a token clears it.
+async function forgetCachedCsrfToken() {
+  globalThis.fetch = (async () =>
+    Response.json({ authenticated: false })) as unknown as typeof fetch
+  await getFreshBrowserCsrfToken()
+  globalThis.fetch = realFetch
+}
+
+beforeEach(forgetCachedCsrfToken)
 
 afterEach(() => {
   globalThis.fetch = realFetch

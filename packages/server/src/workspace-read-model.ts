@@ -107,7 +107,9 @@ export function documentSpaceForPath(
   const rel = relative(spacesRoot, absolutePath)
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null
   const [spaceId, area, , documentArea] = rel.split(sep)
-  if (!spaceId || spaceId.startsWith(".")) return null
+  // Legacy Space ids may start with a dot. Staging and trash directories
+  // map to ids no reader asks for, which costs nothing.
+  if (!spaceId) return null
   if (area === "threads" || area === "records") return null
   if (area === "document-data" && documentArea && documentArea !== "state") {
     return null

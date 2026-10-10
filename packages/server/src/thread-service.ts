@@ -1,5 +1,6 @@
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
+  AgentPlatformId,
   ParticipantRef,
   Thread,
   ThreadActivity,
@@ -11,7 +12,8 @@ import type {
   ThreadWaitResult,
 } from "@worktable/types"
 import { defaultConversationIdentityId, threadLocation } from "@worktable/types"
-import type { TokenIdentity } from "./token-store.ts"
+import { hasScope, listTokens, type TokenIdentity } from "./token-store.ts"
+import { getWorkspaceRoot } from "./workspace.ts"
 import { hasWorkspaceOwnerAuthority } from "./owner-authority.ts"
 import {
   acceptThreadDelivery,
@@ -45,6 +47,8 @@ import {
 } from "./thread-store.ts"
 import {
   listParticipantBindings,
+  participantKey,
+  participantsByKey,
   requireParticipant,
   resolveParticipant,
 } from "./participant-store.ts"
@@ -597,9 +601,11 @@ export async function listThreadParticipants(
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
-  const [bindings, connections] = await Promise.all([
+  const [bindings, connections, tokens, participants] = await Promise.all([
     listParticipantBindings(),
     listAgentConnections(),
+    listTokens(),
+    participantsByKey(),
   ])
   const alwaysOnParticipantIds = new Set(
     connections.flatMap((connection) =>
@@ -608,14 +614,87 @@ export async function listThreadParticipants(
         : []
     )
   )
+  // An agent none of whose credentials has Threads (read and reply) cannot
+  // take part in one, so it is not offered.
+  const workspace = getWorkspaceRoot()
+  const readsThreads = new Map<string, boolean>()
+  for (const token of tokens) {
+    if (!token.agent || token.revokedAt || token.workspace !== workspace) {
+      continue
+    }
+    const participant = participants.get(
+      participantKey({ agent: token.agent, principal: token.principal })
+    )
+    if (!participant) continue
+    readsThreads.set(
+      participant.id,
+      readsThreads.get(participant.id) === true ||
+        (hasScope(token.scopes, "threads:read") &&
+          hasScope(token.scopes, "threads:write"))
+    )
+  }
+  const withoutThreads = new Set(
+    [...readsThreads].flatMap(([id, reads]) => (reads ? [] : [id]))
+  )
   return bindings
     .map((binding) => binding.participant)
-    .filter((participant) => participant.id !== actorId)
+    .filter(
+      (participant) =>
+        participant.id !== actorId && !withoutThreads.has(participant.id)
+    )
     .map((participant) => ({
       ...participant,
       defaultIdentityId: defaultConversationIdentityId(participant.id),
       alwaysOn: alwaysOnParticipantIds.has(participant.id),
     }))
+}
+
+/** How a connected agent looks: where it comes from and its chosen icon. */
+export interface AgentPresentation {
+  platform?: AgentPlatformId
+  icon?: string | null
+}
+
+/**
+ * Participants as the web app shows them: an agent also carries its platform
+ * and the icon its owner chose, for its avatar. `presentations` covers every
+ * connected agent, including one no longer offered as a recipient, so it
+ * keeps its avatar in the threads it is already in.
+ */
+export async function listThreadParticipantsForDisplay(
+  identity?: ThreadIdentity
+): Promise<{
+  participants: Array<
+    ParticipantRef & {
+      defaultIdentityId: string
+      alwaysOn: boolean
+    } & AgentPresentation
+  >
+  presentations: Record<string, AgentPresentation>
+}> {
+  const [participants, connections] = await Promise.all([
+    listThreadParticipants(identity),
+    listAgentConnections(),
+  ])
+  const presentations: Record<string, AgentPresentation> = Object.fromEntries(
+    connections.flatMap((connection) =>
+      connection.participant
+        ? [
+            [
+              connection.participant.id,
+              { platform: connection.platform, icon: connection.icon },
+            ],
+          ]
+        : []
+    )
+  )
+  return {
+    participants: participants.map((participant) => ({
+      ...participant,
+      ...presentations[participant.id],
+    })),
+    presentations,
+  }
 }
 
 export async function listThreadSummaries(

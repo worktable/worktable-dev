@@ -43,6 +43,7 @@ import {
 import { UsageError } from "./style.ts"
 import {
   createToken,
+  currentAgentScopes,
   finalizeAgentTokenRotations,
   getWorkspaceRoot,
   listTokens,
@@ -89,15 +90,15 @@ const MANAGED_TOKEN_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
  */
 export async function rotateManagedToken(): Promise<string> {
   const existing = await listTokens()
+  // Re-issuing keeps the access its owner chose in Settings.
+  const scopes =
+    (await currentAgentScopes(MANAGED_AGENT_LABEL)) ?? MANAGED_TOKEN_SCOPES
   for (const meta of existing) {
     if (meta.agent === MANAGED_AGENT_LABEL && !meta.revokedAt) {
       await revokeToken(meta.id)
     }
   }
-  const { token } = await createToken({
-    scopes: MANAGED_TOKEN_SCOPES,
-    agent: MANAGED_AGENT_LABEL,
-  })
+  const { token } = await createToken({ scopes, agent: MANAGED_AGENT_LABEL })
   return token
 }
 
@@ -517,10 +518,12 @@ export async function setupManagedClients(
   const candidates: Array<Awaited<ReturnType<typeof createToken>>> = []
   try {
     for (const clientId of clientIds) {
+      const agent = managedClientAgentLabel(clientId)
       candidates.push(
         await createToken({
-          scopes: MANAGED_TOKEN_SCOPES,
-          agent: managedClientAgentLabel(clientId),
+          // Setting a client up again keeps the access its owner chose.
+          scopes: (await currentAgentScopes(agent)) ?? MANAGED_TOKEN_SCOPES,
+          agent,
         })
       )
     }

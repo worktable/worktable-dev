@@ -86,14 +86,15 @@ export type PairingTarget =
       kind: "mcp-client";
       client: string | null;
       displayName?: string;
+      /** Icon the owner chose for the new agent. */
+      icon?: string;
     }
   | {
       kind: "agent-adapter";
       adapter: string;
       participantName: string;
       defaultSpaceId?: string;
-      /** The adapter's agent also uses the paired credential for workspace tools. */
-      workspaceAccess?: true;
+      icon?: string;
     };
 
 interface StoredPairingSession {

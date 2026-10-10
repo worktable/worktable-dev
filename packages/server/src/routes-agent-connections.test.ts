@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { upsertAgentConnection } from "./agent-connection-store.ts"
+import { resolveParticipant } from "./participant-store.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { authSessionRouter } from "./routes/auth-session.ts"
 import { SESSION_COOKIE_NAME, setOwnerPassword } from "./session-store.ts"
@@ -83,11 +84,11 @@ afterEach(async () => {
 })
 
 describe("agent connection routes", () => {
-  it("rejects local connection inventory on Worktable Cloud", async () => {
+  it("lets only the signed-in owner manage agents on Worktable Cloud", async () => {
     process.env["WORKTABLE_HOSTED"] = "1"
     const response = await app.fetch(request("GET"))
     expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: "HOSTED_DISABLED" })
+    expect(await response.json()).toMatchObject({ required: "owner" })
   })
 
   it("requires the owner and disconnects the verified credential", async () => {
@@ -114,7 +115,6 @@ describe("agent connection routes", () => {
       },
       machine: "studio",
       credentialId: credential.metadata.id,
-      displayName: "Studio Claw",
     })
 
     expect((await app.fetch(request("GET"))).status).toBe(401)
@@ -130,21 +130,63 @@ describe("agent connection routes", () => {
     expect(body.connections[0]?.["credentialId"]).toBeUndefined()
     expect(body.connections[0]).toMatchObject({
       authKind: "local-token",
-      displayName: "Studio Claw",
-      permissionGroups: null,
+      displayName: "Atlas",
+      platform: "openclaw",
+      icon: null,
+      access: { threads: true, read: false, edit: false },
     })
 
     const path = `/api/agent-connections/${body.connections[0]!.id}`
-    const renamed = await app.fetch(
-      request("PATCH", path, cookie, { displayName: "Research Claw" })
+    const updated = await app.fetch(
+      request("PATCH", path, cookie, {
+        displayName: "Research Claw",
+        icon: "flask-conical",
+        access: { threads: true, read: true, edit: false },
+      })
     )
-    expect(renamed.status).toBe(200)
-    const afterRename = await app.fetch(
-      request("GET", "/api/agent-connections", cookie)
-    )
-    expect(await afterRename.json()).toMatchObject({
-      connections: [{ displayName: "Research Claw" }],
+    expect(updated.status).toBe(200)
+    const afterUpdate = (await (
+      await app.fetch(request("GET", "/api/agent-connections", cookie))
+    ).json()) as { connections: Array<Record<string, unknown>> }
+    expect(afterUpdate.connections[0]).toMatchObject({
+      displayName: "Research Claw",
+      participant: { name: "Research Claw" },
+      icon: "flask-conical",
+      access: { threads: true, read: true, edit: false },
     })
+    // The agent's own credential now carries exactly the chosen access.
+    const scopes = (await verifyToken(credential.token))?.scopes ?? []
+    expect(scopes).toContain("docs:read")
+    expect(scopes).not.toContain("docs:write")
+
+    // An always-on agent receives messages through threads.
+    const withoutThreads = await app.fetch(
+      request("PATCH", path, cookie, {
+        access: { threads: false, read: true, edit: true },
+      })
+    )
+    expect(withoutThreads.status).toBe(400)
+    expect((await verifyToken(credential.token))?.scopes).toEqual(scopes)
+
+    // An agent may rename its own participant; Settings shows that name.
+    const identity = (await verifyToken(credential.token))!
+    await resolveParticipant(identity, { name: "Self Named Claw" })
+    expect(
+      (
+        (await (
+          await app.fetch(request("GET", "/api/agent-connections", cookie))
+        ).json()) as { connections: Array<{ displayName: string }> }
+      ).connections[0]?.displayName
+    ).toBe("Self Named Claw")
+
+    const platformLogo = await app.fetch(
+      request("PATCH", path, cookie, { icon: null })
+    )
+    expect(platformLogo.status).toBe(200)
+    expect(
+      ((await platformLogo.json()) as { connection: { icon: unknown } })
+        .connection.icon
+    ).toBeNull()
 
     expect((await app.fetch(request("DELETE", path, cookie))).status).toBe(200)
     expect((await app.fetch(request("DELETE", path, cookie))).status).toBe(200)

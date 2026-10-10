@@ -2,13 +2,35 @@ import { createHash } from "node:crypto"
 import { chmod, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type {
+  AgentAccess,
   AgentConnection,
   AgentConnectionTarget,
+  AgentPlatformId,
   ParticipantRef,
+} from "@worktable/types"
+import {
+  accessFromScopes,
+  AGENT_PLATFORMS,
+  clientIdForAgentLabel,
+  defaultAgentNameForLabel,
+  platformForAdapter,
+  platformForClient,
+  scopesForAccess,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { listTokens, revokeToken, type TokenMetadata } from "./token-store.ts"
+import {
+  participantKey,
+  participantsByKey,
+  resolveParticipant,
+} from "./participant-store.ts"
+import {
+  listTokens,
+  revokeToken,
+  rotateAgentToken,
+  setTokenScopes,
+  type TokenMetadata,
+} from "./token-store.ts"
 import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
@@ -23,6 +45,15 @@ interface StoredAgentConnection {
   credentialId: string
   connectedAt: string
   displayName?: string
+  /** Recorded when the agent first connects; never taken from later requests. */
+  platform?: AgentPlatformId
+  /** A Lucide icon name the owner chose instead of the platform's logo. */
+  icon?: string
+  /**
+   * An agent set up outside pairing is its label: the record follows the
+   * label's newest active credential when setup issues a new one.
+   */
+  agentLabel?: string
 }
 
 interface AgentConnectionFile {
@@ -132,8 +163,11 @@ export async function upsertAgentConnection(input: {
   machine: string | null
   credentialId: string
   displayName?: string
+  /** Applied to a new agent only; the owner changes it afterwards. */
+  icon?: string
 }): Promise<boolean> {
-  return serialized(async () => {
+  let carryName: { token: TokenMetadata; name: string } | undefined
+  const stored = await serialized(async () => {
     const file = await loadFile()
     const workspace = getWorkspaceRoot()
     const id = connectionId(
@@ -169,6 +203,14 @@ export async function upsertAgentConnection(input: {
         // connection back at an older or concurrently revoked token.
         return false
       }
+      if (
+        existing.participant === null &&
+        existing.displayName &&
+        input.participant &&
+        input.participant.name !== existing.displayName
+      ) {
+        carryName = { token: incomingToken, name: existing.displayName }
+      }
       existing.id = id
       existing.workspace = workspace
       existing.target = input.target
@@ -200,6 +242,7 @@ export async function upsertAgentConnection(input: {
         id,
         workspace,
         ...input,
+        platform: platformForTarget(input.target),
         connectedAt: new Date().toISOString(),
       })
     }
@@ -207,29 +250,163 @@ export async function upsertAgentConnection(input: {
     if (participantsChanged) await notifyThreadParticipantsChanged()
     return true
   })
+  if (carryName) {
+    // Its first connection since agents have one name: the name its owner
+    // gave it becomes its thread name. Outside the lock, like any rename.
+    await resolveParticipant(
+      { agent: carryName.token.agent, principal: carryName.token.principal },
+      { name: carryName.name }
+    )
+  }
+  return stored
 }
 
-const AGENT_ADAPTER_NAMES: Record<string, string> = {
-  hermes: "Hermes",
-  openclaw: "OpenClaw",
+function platformForTarget(target: AgentConnectionTarget): AgentPlatformId {
+  return target.kind === "agent-adapter"
+    ? platformForAdapter(target.adapter)
+    : platformForClient(target.clientId)
+}
+
+const LABELED_PREFIX = "acn_agent_"
+
+function labeledConnectionId(workspace: string, label: string): string {
+  return `${LABELED_PREFIX}${createHash("sha256")
+    .update(`${workspace}\0${label}`)
+    .digest("hex")
+    .slice(0, 24)}`
+}
+
+/**
+ * Active credentials of agents set up outside pairing (`worktable mcp setup`,
+ * the Desktop and manual setup panels, or a token made by hand with an agent
+ * label), by label, oldest first. Pairing labels (`client@host`,
+ * `adapter@install`) are recorded when they connect.
+ */
+function labeledCredentials(
+  tokens: TokenMetadata[],
+  workspace: string
+): Map<string, TokenMetadata[]> {
+  const byLabel = new Map<string, TokenMetadata[]>()
+  for (const token of tokens) {
+    if (
+      !token.agent ||
+      token.agent.includes("@") ||
+      token.revokedAt !== null ||
+      token.workspace !== workspace
+    ) {
+      continue
+    }
+    byLabel.set(token.agent, [...(byLabel.get(token.agent) ?? []), token])
+  }
+  return byLabel
+}
+
+/** An agent set up outside pairing, before its owner first edits it. */
+function unrecordedConnection(
+  label: string,
+  credentials: TokenMetadata[],
+  workspace: string
+): StoredAgentConnection {
+  const clientId = clientIdForAgentLabel(label)
+  return {
+    id: labeledConnectionId(workspace, label),
+    workspace,
+    target: { kind: "mcp-client", clientId },
+    mode: "on-demand",
+    participant: null,
+    machine: null,
+    credentialId: credentials.at(-1)!.id,
+    connectedAt: credentials[0]!.createdAt,
+    platform: platformForClient(clientId),
+    agentLabel: label,
+  }
+}
+
+/**
+ * Recorded connections plus agents set up outside pairing that have no
+ * record yet. One agent per label, however many credentials it holds.
+ */
+function allConnections(
+  file: AgentConnectionFile,
+  tokens: TokenMetadata[],
+  workspace: string
+): StoredAgentConnection[] {
+  const byLabel = labeledCredentials(tokens, workspace)
+  const recorded = file.connections
+    .filter((connection) => connection.workspace === workspace)
+    .map((connection) => {
+      const newest = connection.agentLabel
+        ? byLabel.get(connection.agentLabel)?.at(-1)
+        : undefined
+      return newest ? { ...connection, credentialId: newest.id } : connection
+    })
+  const recordedLabels = new Set(
+    recorded.flatMap((connection) =>
+      connection.agentLabel ? [connection.agentLabel] : []
+    )
+  )
+  return [
+    ...recorded,
+    ...[...byLabel].flatMap(([label, credentials]) =>
+      recordedLabels.has(label)
+        ? []
+        : [unrecordedConnection(label, credentials, workspace)]
+    ),
+  ]
+}
+
+/** Every credential an agent holds: one for a pairing, any for a label. */
+function credentialsOf(
+  connection: StoredAgentConnection,
+  tokens: TokenMetadata[],
+  workspace: string,
+  includeRevoked = false
+): TokenMetadata[] {
+  return tokens.filter(
+    (token) =>
+      token.workspace === workspace &&
+      (includeRevoked || token.revokedAt === null) &&
+      (connection.agentLabel
+        ? token.agent === connection.agentLabel
+        : token.id === connection.credentialId)
+  )
 }
 
 function publicConnection(
   stored: StoredAgentConnection,
-  token: TokenMetadata
+  token: TokenMetadata,
+  participants: Map<string, ParticipantRef>
 ): AgentConnection {
-  const displayName =
-    stored.displayName ??
-    (stored.target.kind === "agent-adapter"
-      ? (AGENT_ADAPTER_NAMES[stored.target.adapter] ?? stored.target.adapter)
-      : (stored.target.clientId ?? token.agent ?? "Agent"))
+  const platform = stored.platform ?? platformForTarget(stored.target)
+  // The participant's current record, not the copy saved when it connected:
+  // the agent itself may have renamed it since.
+  const participant =
+    participants.get(
+      participantKey({ agent: token.agent, principal: token.principal })
+    ) ?? stored.participant
+  // A pairing recorded before agents had one name keeps the name its owner
+  // gave it until reconnecting or renaming carries that name into threads.
+  const legacyName =
+    stored.participant === null ? stored.displayName : undefined
   return {
     id: stored.id,
     authKind: "local-token",
-    displayName,
+    // One name: the agent's thread participant carries it once it has one.
+    displayName:
+      legacyName ??
+      participant?.name ??
+      stored.displayName ??
+      (platform === "other"
+        ? (defaultAgentNameForLabel(token.agent) ??
+          token.agent ??
+          AGENT_PLATFORMS.other.name)
+        : AGENT_PLATFORMS[platform].name),
+    platform,
+    icon: stored.icon ?? null,
+    access: accessFromScopes(token.scopes),
     target: stored.target,
     mode: stored.mode,
-    participant: stored.participant,
+    participant,
     machine: stored.machine,
     connectedAt: stored.connectedAt,
     scopes: token.scopes,
@@ -243,24 +420,37 @@ function publicConnection(
  * credentials stay in the map so earlier activity keeps a readable name.
  */
 export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
-  const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+  const [file, tokens, participants] = await Promise.all([
+    loadFile(),
+    listTokens(),
+    participantsByKey(),
+  ])
   const workspace = getWorkspaceRoot()
   const tokensById = new Map(tokens.map((token) => [token.id, token]))
   const names = new Map<string, string>()
-  for (const connection of file.connections) {
-    if (connection.workspace !== workspace) continue
+  for (const connection of allConnections(file, tokens, workspace)) {
     const token = tokensById.get(connection.credentialId)
     if (!token) continue
-    names.set(
-      `local-token:${token.id}`,
-      publicConnection(connection, token).displayName
-    )
+    const name = publicConnection(connection, token, participants).displayName
+    for (const credential of credentialsOf(
+      connection,
+      tokens,
+      workspace,
+      true
+    )) {
+      names.set(`local-token:${credential.id}`, name)
+    }
+    names.set(`local-token:${token.id}`, name)
   }
   return names
 }
 
 export async function listAgentConnections(): Promise<AgentConnection[]> {
-  const [file, tokens] = await Promise.all([loadFile(), listTokens()])
+  const [file, tokens, participants] = await Promise.all([
+    loadFile(),
+    listTokens(),
+    participantsByKey(),
+  ])
   const workspace = getWorkspaceRoot()
   const activeById = new Map(
     tokens
@@ -269,11 +459,10 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
       )
       .map((token) => [token.id, token])
   )
-  return file.connections
+  return allConnections(file, tokens, workspace)
     .flatMap((connection) => {
-      if (connection.workspace !== workspace) return []
       const token = activeById.get(connection.credentialId)
-      return token ? [publicConnection(connection, token)] : []
+      return token ? [publicConnection(connection, token, participants)] : []
     })
     .sort((a, b) => (b.connectedAt ?? "").localeCompare(a.connectedAt ?? ""))
 }
@@ -283,41 +472,156 @@ export async function disconnectAgentConnection(id: string): Promise<boolean> {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
     const tokenById = new Map(tokens.map((token) => [token.id, token]))
-    const connection = file.connections.find(
+    const connection = allConnections(file, tokens, workspace).find(
       (candidate) =>
         candidate.id === id &&
-        candidate.workspace === workspace &&
         tokenById.get(candidate.credentialId)?.workspace === workspace
     )
     if (!connection) return false
-    await revokeToken(connection.credentialId)
+    const credentials = credentialsOf(connection, tokens, workspace)
+    if (credentials.length === 0) {
+      await revokeToken(connection.credentialId)
+    }
+    for (const credential of credentials) await revokeToken(credential.id)
     return true
   })
 }
 
-export async function renameAgentConnection(
+/**
+ * Re-issue the credential of an agent set up outside pairing (`worktable mcp
+ * setup --with-token`). It stays the same agent: its record follows its
+ * label, and access its owner narrowed stays narrowed. `scopes` applies only
+ * to an agent set up for the first time.
+ */
+export async function rotateAgentCredential(options: {
+  agent: string
+  scopes: string[]
+}): Promise<{ token: string; metadata: TokenMetadata }> {
+  return rotateAgentToken({
+    agent: options.agent,
+    scopes: (await currentAgentScopes(options.agent)) ?? options.scopes,
+  })
+}
+
+/**
+ * The scopes an agent set up outside pairing holds now, so setting it up
+ * again keeps what its owner chose. Null for an agent not set up yet.
+ */
+export async function currentAgentScopes(
+  agent: string
+): Promise<string[] | null> {
+  const workspace = getWorkspaceRoot()
+  return (
+    labeledCredentials(await listTokens(), workspace)
+      .get(agent)
+      ?.at(-1)?.scopes ?? null
+  )
+}
+
+export class AgentConnectionUpdateError extends Error {}
+
+/**
+ * The owner's changes to an agent: its name (also its name in threads), its
+ * icon, and its access. Returns the updated agent, or null if it is gone.
+ */
+export async function updateAgentConnection(
   id: string,
-  displayName: string
-): Promise<boolean> {
-  return serialized(async () => {
+  changes: {
+    displayName?: string
+    icon?: string | null
+    access?: AgentAccess
+  }
+): Promise<AgentConnection | null> {
+  const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
-    const activeTokenIds = new Set(
-      tokens
-        .filter(
-          (token) => token.workspace === workspace && token.revokedAt === null
-        )
-        .map((token) => token.id)
+    const previousScopes = new Map<string, string[]>()
+    const current = allConnections(file, tokens, workspace).find(
+      (candidate) => candidate.id === id
     )
-    const connection = file.connections.find(
+    let connection = file.connections.find(
+      (candidate) => candidate.id === id && candidate.workspace === workspace
+    )
+    if (!connection && current?.agentLabel) {
+      // First edit of an agent set up outside pairing: record it.
+      connection = current
+      file.connections.push(current)
+    }
+    if (!connection || !current) return null
+    // A labeled agent's record follows its newest credential.
+    connection.credentialId = current.credentialId
+    const token = tokens.find(
       (candidate) =>
-        candidate.id === id &&
+        candidate.id === connection.credentialId &&
         candidate.workspace === workspace &&
-        activeTokenIds.has(candidate.credentialId)
+        candidate.revokedAt === null
     )
-    if (!connection) return false
-    connection.displayName = displayName
-    await saveFile(file)
-    return true
+    if (!token) return null
+    if (changes.access) {
+      if (connection.mode === "always-on" && !changes.access.threads) {
+        throw new AgentConnectionUpdateError(
+          "An always-on agent needs threads: that is how it receives messages"
+        )
+      }
+      const scopes = scopesForAccess(changes.access)
+      if (scopes.length === 0) {
+        throw new AgentConnectionUpdateError(
+          "Choose at least one kind of access"
+        )
+      }
+      // Every credential the agent holds gets the access. Revoked meanwhile
+      // (token management has its own lock): nothing to edit.
+      for (const credential of credentialsOf(connection, tokens, workspace)) {
+        if (await setTokenScopes(credential.id, scopes)) {
+          previousScopes.set(credential.id, credential.scopes)
+        } else if (credential.id === token.id) {
+          for (const [restoreId, restore] of previousScopes) {
+            await setTokenScopes(restoreId, restore).catch(() => false)
+          }
+          return null
+        }
+      }
+    }
+    if (changes.icon !== undefined) {
+      if (changes.icon === null) delete connection.icon
+      else connection.icon = changes.icon
+    }
+    if (changes.displayName !== undefined) {
+      connection.displayName = changes.displayName
+    }
+    try {
+      await saveFile(file)
+    } catch (error) {
+      // The edit applies whole or not at all.
+      for (const [restoreId, restore] of previousScopes) {
+        await setTokenScopes(restoreId, restore).catch(() => false)
+      }
+      throw error
+    }
+    return token
   })
+  if (!token) return null
+  if (changes.displayName !== undefined) {
+    // Outside the connection lock: the rename rewrites every thread the
+    // agent is in, and other processes should not wait on that.
+    const { participant } = await resolveParticipant(
+      { agent: token.agent, principal: token.principal },
+      { name: changes.displayName }
+    )
+    // From now on its participant carries its name.
+    await serialized(async () => {
+      const file = await loadFile()
+      const connection = file.connections.find(
+        (candidate) => candidate.id === id && candidate.participant === null
+      )
+      if (!connection) return
+      connection.participant = participant
+      await saveFile(file)
+    })
+  }
+  await notifyThreadParticipantsChanged()
+  return (
+    (await listAgentConnections()).find((connection) => connection.id === id) ??
+    null
+  )
 }

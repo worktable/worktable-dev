@@ -159,6 +159,9 @@ if (options.command === "census") {
         `Conflicts: ${plan.conflictCount}`,
         `Dependencies: ${plan.dependencyCount} entries, ${plan.dependencyBytes} bytes`,
         `Status: ${plan.clean ? "ready" : "blocked"}`,
+        ...plan.orphanedAnnotationFiles.map(
+          (path) => `SKIP ${path}: annotation file has no document and will be left out`
+        ),
         ...plan.diagnostics.map(
           (diagnostic) => `ERROR ${diagnostic.path}: ${diagnostic.message}`
         ),
@@ -186,6 +189,12 @@ if (options.command === "census") {
         `Source workspace unchanged: ${result.sourceWorkspace}`,
         `Documents: ${result.documentCount} (${result.materializedCount} IDs materialized)`,
         `Annotations: ${result.annotationsMigrated} across ${result.annotationFilesMigrated} files`,
+        ...(result.orphanedAnnotationFiles.length > 0
+          ? [
+              `Left out ${result.orphanedAnnotationFiles.length} annotation files with no document (kept in the V1 backup):`,
+              ...result.orphanedAnnotationFiles.map((path) => `  ${path}`),
+            ]
+          : []),
         `Copied bytes: ${result.copiedBytes}`,
         `Elapsed: ${result.elapsedMs} ms`,
         `Retained V1 backup: ${result.backupPath}`,

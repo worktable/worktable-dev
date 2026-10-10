@@ -16,7 +16,7 @@ import {
 } from "./session-store.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { postThreadMessage } from "./thread-service.ts"
-import { createToken, verifyToken, revokeToken } from "./token-store.ts"
+import { createToken, verifyToken, revokeToken, setTokenScopes } from "./token-store.ts"
 import {
   convertDocToMarkdownStorage,
   getDocCollaborationCacheEpoch,
@@ -574,6 +574,17 @@ describe("WS upgrade gate", () => {
       expect(wsManager.subscriberCount("demo")).toBe(2)
       expect(memberSocket.socket.readyState).toBe(WebSocket.OPEN)
       expect((await tryUpgrade(port, `/ws?spaceId=demo&token=${encodeURIComponent(scopedHumanCredential.token)}`, {})).ok).toBe(false)
+      // Changing a credential's access also ends its sockets: their reads
+      // were fixed when they connected.
+      const narrowedCredential = await createToken({ scopes: ["threads:read", "docs:read"] })
+      const narrowedSocket = await openCollectingSocket(port, narrowedCredential.token, "demo")
+      try {
+        const narrowed = narrowedSocket.waitFor("error")
+        await setTokenScopes(narrowedCredential.metadata.id, ["threads:read"])
+        expect(await narrowed).toMatchObject({ error: "Credential revoked" })
+      } finally {
+        narrowedSocket.socket.close()
+      }
       if (required) {
         const cookie = await makeCookie()
         const headers = { Cookie: cookie, Origin: `http://127.0.0.1:${port}` }

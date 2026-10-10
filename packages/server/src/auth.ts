@@ -10,7 +10,7 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { verifyOwnerSessionCookie } from "./session-store.ts"
 import { getServerSettings, settingsFailClosed } from "./settings-store.ts"
 import { asHttpOrigin } from "./public-origin.ts"
-import { isHosted } from "./hosted.ts"
+import { hostedWorktableCredential, isHosted } from "./hosted.ts"
 import {
   trustedGatewayPrincipal,
   trustedGatewayScopeCeiling,
@@ -371,6 +371,17 @@ export function requireIdentity() {
     const bearer = bearerOf(c)
     if (c.req.header("Authorization") !== undefined && !bearer) return unauthorized(c)
     if (bearer) {
+      // On Cloud, the gateway's per-workspace agent route forwards a
+      // credential this workspace issued at pairing; only this workspace can
+      // verify it, and its agent list inventories and revokes it.
+      if (hostedWorktableCredential(c.req.raw)) {
+        const identity = await verifyLocalBearer(bearer)
+        if (!identity || identity.principal.type !== "agent") {
+          return unauthorized(c)
+        }
+        c.set("identity", identity)
+        return next()
+      }
       const identity = await verifyBearer(bearer)
       if (!identity) return unauthorized(c)
       if (isHosted() && trustedGatewayPrincipal(c.req.raw)?.type !== "agent") {
@@ -567,4 +578,29 @@ export function restWriteActor(c: Context, requested?: string): string {
   if (principal?.type === "human") return requested ?? "user"
   if (principal?.type === "agent") return `agent:${principal.id}`
   return "system"
+}
+
+/**
+ * Who may connect, approve, and manage agents: locally, the owner (owner
+ * token, or a password session where one is required, with tokens:manage);
+ * on Cloud, the workspace owner signed in to the browser.
+ */
+export function requireAgentManager() {
+  const local = [
+    trustedLocalIdentity(),
+    requireMintAuth(),
+    requireScope("tokens:manage"),
+  ]
+  return async (c: Context, next: Next) => {
+    if (isHosted()) {
+      return isHostedBrowserOwner(c)
+        ? next()
+        : c.json({ error: "Forbidden", required: "owner" }, 403)
+    }
+    const run = async (index: number): Promise<Response | void> =>
+      index < local.length
+        ? local[index]!(c, () => run(index + 1) as Promise<void>)
+        : next()
+    return run(0)
+  }
 }

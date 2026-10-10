@@ -113,7 +113,7 @@ export function FieldValue({
         <a
           href={`mailto:${email}`}
           onClick={(e) => e.stopPropagation()}
-          className="truncate text-primary-text underline-offset-2 hover:underline"
+          className={whole ? "break-all text-primary-text underline-offset-2 hover:underline" : "truncate text-primary-text underline-offset-2 hover:underline"}
         >
           {email}
         </a>
@@ -162,7 +162,7 @@ export function FieldValue({
     case "json":
     case "unknown":
       return (
-        <span className={mode === "detail" ? "block whitespace-pre-wrap break-words font-mono text-xs leading-5 text-muted-foreground" : "block max-w-72 truncate font-mono text-xs text-muted-foreground"} title={safeStringify(value)}>
+        <span className={whole ? "block whitespace-pre-wrap break-words font-mono text-xs leading-5 text-muted-foreground" : "block max-w-72 truncate font-mono text-xs text-muted-foreground"} title={safeStringify(value)}>
           {safeStringify(value)}
         </span>
       )

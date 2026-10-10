@@ -248,7 +248,6 @@ export function CellTextEditor({ column, value, open, onOpenChange, onCommit, ch
   useEffect(() => {
     if (open) {
       setDraft(seed === undefined || seed === null ? "" : String(seed))
-      nextFocus.current = null
       // Widen to a readable measure, but only into the room to the right:
       // shifting the field left would move the text away from the cell.
       const rect = triggerRef.current?.getBoundingClientRect()
@@ -256,15 +255,20 @@ export function CellTextEditor({ column, value, open, onOpenChange, onCommit, ch
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when opening
   }, [open])
-  const close = async (commit: boolean) => {
+  // Focus moves on only after a successful save; a failed save keeps the
+  // field open, and closing it later returns focus to this cell.
+  const close = async (commit: boolean, then: HTMLElement | null = null) => {
     if (state.pending) return
     if (commit && !await state.save(draft)) return
+    nextFocus.current = then
     onOpenChange(false)
   }
-  const aimFocus = (step: 1 | -1) => {
+  // Tab order runs across the whole table, as in a spreadsheet, skipping
+  // rows folded away inside collapsed groups.
+  const adjacentCell = (step: 1 | -1) => {
     const trigger = triggerRef.current
-    const triggers = [...(trigger?.closest("tr")?.querySelectorAll<HTMLElement>("[data-field-editor]") ?? [])]
-    nextFocus.current = trigger ? (triggers[triggers.indexOf(trigger) + step] ?? null) : null
+    const triggers = [...(trigger?.closest("table")?.querySelectorAll<HTMLElement>("[data-field-editor]") ?? [])].filter((element) => !element.closest("[inert]"))
+    return trigger ? (triggers[triggers.indexOf(trigger) + step] ?? null) : null
   }
   return (
     <Popover open={open} onOpenChange={(next, details) => { if (next) onOpenChange(true); else void close(details?.reason !== "escape-key") }}>
@@ -292,8 +296,7 @@ export function CellTextEditor({ column, value, open, onOpenChange, onCommit, ch
             onKeyDown={(event) => {
               if (event.key === "Tab" && !event.nativeEvent.isComposing) {
                 event.preventDefault()
-                aimFocus(event.shiftKey ? -1 : 1)
-                void close(true)
+                void close(true, adjacentCell(event.shiftKey ? -1 : 1))
                 return
               }
               const action = draftKeyAction(event, multiline)

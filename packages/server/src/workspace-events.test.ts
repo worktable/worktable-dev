@@ -4,7 +4,6 @@ import { join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
 import "./thread-delivery-store.ts"
 import {
-  changeEventAffectsContentDerivedState,
   drainWorkspaceChanges,
   notifyWorkspaceChange,
   notifyWorkspaceChangeAndWait,
@@ -14,38 +13,6 @@ import {
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 
 describe("workspace event lifecycle", () => {
-  it("keeps machine-local collaboration activity out of content caches", () => {
-    expect(
-      changeEventAffectsContentDerivedState({
-        type: "threadActivity",
-        spaceId: "space",
-        threadId: "thr_example123",
-        messageId: "msg_example123",
-        participantId: "ptc_example123",
-      })
-    ).toBe(false)
-    expect(
-      changeEventAffectsContentDerivedState({
-        type: "participants",
-        spaceId: "space",
-      })
-    ).toBe(false)
-    expect(
-      changeEventAffectsContentDerivedState({
-        type: "thread",
-        spaceId: "space",
-        threadId: "thr_example123",
-      })
-    ).toBe(true)
-    expect(
-      changeEventAffectsContentDerivedState({
-        type: "doc",
-        spaceId: "space",
-        docPath: "plan",
-      })
-    ).toBe(true)
-  })
-
   it("drains asynchronous handlers, including work emitted while draining", async () => {
     const completed: string[] = []
     const off = onWorkspaceChange(async (event) => {

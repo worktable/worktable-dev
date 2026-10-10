@@ -1632,10 +1632,32 @@ export interface PortableWorkspaceInventory {
   files: WorkspaceExportV2File[]
 }
 
+/**
+ * Content hashes remembered between inspections, by portable path. A hash is
+ * reused only while the file keeps its device, inode, size, modification time
+ * and change time. Inspection replaces the contents with the files it saw.
+ */
+export type PortableContentHashCache = Map<
+  string,
+  { identity: string; sha256: string }
+>
+
+// File timestamps can be coarser than the time between two writes, so a file
+// written just before an inspection could change again without changing its
+// identity. Only files older than this are remembered.
+const CONTENT_HASH_SETTLED_MS = 2_000
+
+function sourceContentIdentity(entry: SourceEntry): string {
+  return `${entry.dev}:${entry.ino}:${entry.size}:${entry.mtimeMs}:${entry.ctimeMs}`
+}
+
 /** Hash an admitted tree, including its identity manifest, without copying it. */
 export async function inspectPortableWorkspaceTree(
-  workspaceRoot: string
+  workspaceRoot: string,
+  options: { hashCache?: PortableContentHashCache } = {}
 ): Promise<PortableWorkspaceInventory> {
+  const settledBefore = Date.now() - CONTENT_HASH_SETTLED_MS
+  const remembered: PortableContentHashCache = new Map()
   const inventory = await listSourceEntries(resolve(workspaceRoot))
   const directoryEntries = inventory.entries.filter(
     (entry): entry is SourceEntry & { kind: "directory" } =>
@@ -1650,13 +1672,26 @@ export async function inspectPortableWorkspaceTree(
   const files = await mapWithConcurrency(
     fileEntries,
     HISTORY_CLASSIFICATION_CONCURRENCY,
-    async (entry): Promise<WorkspaceExportV2File> => ({
-      path: entry.path,
-      size: entry.size,
-      mode: entry.mode,
-      mtime: entry.mtime.toISOString(),
-      sha256: await hashSourceEntry(entry, inventory, directoriesByPath),
-    })
+    async (entry): Promise<WorkspaceExportV2File> => {
+      const identity = sourceContentIdentity(entry)
+      const cached = options.hashCache?.get(entry.path)
+      const sha256 =
+        cached?.identity === identity
+          ? cached.sha256
+          : await hashSourceEntry(entry, inventory, directoriesByPath)
+      if (
+        options.hashCache &&
+        Math.max(entry.mtimeMs, entry.ctimeMs) < settledBefore
+      )
+        remembered.set(entry.path, { identity, sha256 })
+      return {
+        path: entry.path,
+        size: entry.size,
+        mode: entry.mode,
+        mtime: entry.mtime.toISOString(),
+        sha256,
+      }
+    }
   )
   let current: SourceInventory
   try {
@@ -1667,6 +1702,10 @@ export async function inspectPortableWorkspaceTree(
     )
   }
   assertSourceInventoryUnchanged(inventory, current)
+  if (options.hashCache) {
+    options.hashCache.clear()
+    for (const [path, entry] of remembered) options.hashCache.set(path, entry)
+  }
   return {
     directories: directoryEntries
       .map((entry) => ({

@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test"
 import {
   cp,
   mkdir,
@@ -7,6 +14,7 @@ import {
   readdir,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -249,6 +257,7 @@ describe("durable backup change reports", () => {
       }
     )
     await first.initialize()
+    await first.audit()
     await until(async () => attempted)
     await first.stop()
     const pending = JSON.parse(await readFile(ledger, "utf8"))
@@ -281,6 +290,33 @@ describe("durable backup change reports", () => {
       await second.stop()
     }
   })
+  it("notices a same-size edit to a file whose hash an earlier audit remembered", async () => {
+    const file = join(workspace, "settled.md")
+    await writeFile(file, "Settled content")
+    const past = new Date(Date.now() - 60_000)
+    await utimes(file, past, past)
+    const reports: number[] = []
+    const notifier = new WorkspaceBackupNotifier(
+      join(root, "outbox.json"),
+      workspace,
+      async (value) => {
+        reports.push(value.generation)
+      }
+    )
+    try {
+      await notifier.initialize()
+      // Audit once every file has settled, so the audit remembers its hash.
+      setSystemTime(new Date(Date.now() + 60_000))
+      await notifier.audit()
+      await until(async () => reports.length === 1)
+      await writeFile(file, "Changed content")
+      await notifier.audit()
+      await until(async () => reports.length === 2)
+    } finally {
+      setSystemTime()
+      await notifier.stop()
+    }
+  })
   it("persists edits arriving during a report without acknowledging them with the older request", async () => {
     const ledger = join(root, "outbox.json")
     let release!: () => void
@@ -301,6 +337,7 @@ describe("durable backup change reports", () => {
     )
     try {
       await notifier.initialize()
+      await notifier.audit()
       await until(async () => calls === 1)
       notifier.changed()
       release()

@@ -9,10 +9,19 @@ import { ensureAppDir } from "./app-storage.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { onDocContentChanged } from "./content-events.ts"
-import { inspectPortableWorkspaceTree } from "./workspace-transfer-v2.ts"
+import {
+  inspectPortableWorkspaceTree,
+  type PortableContentHashCache,
+} from "./workspace-transfer-v2.ts"
 
 export const LOCAL_OPERATOR_BACKUP_AUDIT_PATH =
   "/internal/operator/workspace-backup-audit"
+// Hashing the workspace would compete with the first requests after a boot or
+// wake, so the first audit waits. Later audits rehash only changed files, and
+// all of them once a day.
+const FIRST_AUDIT_DELAY_MS = 2 * 60_000
+const AUDIT_INTERVAL_MS = 60 * 60_000
+const FULL_AUDIT_INTERVAL_MS = 24 * 60 * 60_000
 const Ledger = z
   .object({
     version: z.literal(1),
@@ -37,6 +46,8 @@ export class WorkspaceBackupNotifier {
   private stopped = false
   private loaded = false
   private pendingChanges = 0
+  private readonly hashes: PortableContentHashCache = new Map()
+  private hashesSince = 0
   private readonly cancellation = new AbortController()
   private readonly file: string
   private readonly workspace: string
@@ -68,7 +79,6 @@ export class WorkspaceBackupNotifier {
     this.state.generation += this.pendingChanges
     this.loaded = true
     this.queue()
-    await this.audit()
   }
   changed() {
     if (this.stopped) return
@@ -116,8 +126,14 @@ export class WorkspaceBackupNotifier {
   }
   async audit() {
     if (this.stopped || !this.loaded) return
+    if (Date.now() - this.hashesSince >= FULL_AUDIT_INTERVAL_MS) {
+      this.hashes.clear()
+      this.hashesSince = Date.now()
+    }
     try {
-      const inventory = await inspectPortableWorkspaceTree(this.workspace)
+      const inventory = await inspectPortableWorkspaceTree(this.workspace, {
+        hashCache: this.hashes,
+      })
       if (this.stopped) return
       const fingerprint = createHash("sha256")
         .update(
@@ -204,13 +220,18 @@ export function startWorkspaceBackupNotifier(): () => Promise<void> {
   })
   const initialized = notifier.initialize()
   void initialized.catch(() => {})
+  const firstAudit = setTimeout(() => {
+    void notifier.audit()
+  }, FIRST_AUDIT_DELAY_MS)
+  firstAudit.unref()
   const auditTimer = setInterval(() => {
     void notifier.audit()
-  }, 60 * 60000)
+  }, AUDIT_INTERVAL_MS)
   auditTimer.unref()
   return async () => {
     stopWorkspace()
     stopContent()
+    clearTimeout(firstAudit)
     clearInterval(auditTimer)
     await initialized.catch(() => {})
     await notifier.stop()

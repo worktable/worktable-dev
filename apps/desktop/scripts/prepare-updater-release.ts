@@ -58,6 +58,30 @@ function normalizePubDate(value: string): string {
   return new Date(trimmed).toISOString()
 }
 
+/**
+ * The app version recorded in an updater signature's trusted comment. Tauri
+ * CLI 2.12 and later record it there, under minisign's global signature, and
+ * Desktop's `requireSignedVersion` rejects updates whose signature lacks it.
+ */
+export function signedUpdaterVersion(signature: string): string | null {
+  let document: string
+  try {
+    document = Buffer.from(signature.trim(), "base64").toString("utf8")
+  } catch {
+    return null
+  }
+  const trustedComment = document
+    .split(/\r?\n/)
+    .find((line) => line.startsWith("trusted comment: "))
+  return (
+    trustedComment
+      ?.slice("trusted comment: ".length)
+      .split("\t")
+      .find((field) => field.startsWith("version:"))
+      ?.slice("version:".length) ?? null
+  )
+}
+
 export function renderDesktopUpdaterNotes(markdown: string): string {
   const beforeInstallFooter = markdown.split(/\r?\n---\r?(?:\n|$)/, 1)[0]
   let insideFence = false
@@ -106,6 +130,15 @@ export function prepareDesktopUpdaterRelease(
 
   const signature = readFileSync(options.updaterSignaturePath, "utf8").trim()
   if (!signature) fail("Desktop updater detached signature is empty")
+  // Installed apps refuse a signature that does not name this exact version.
+  const signedVersion = signedUpdaterVersion(signature)
+  if (signedVersion !== appVersion) {
+    fail(
+      signedVersion
+        ? `Desktop updater signature is for ${signedVersion}, not ${appVersion}`
+        : `Desktop updater signature does not record its version; sign with Tauri CLI 2.12 or later`
+    )
+  }
 
   const releaseNotes = renderDesktopUpdaterNotes(options.releaseNotes)
 

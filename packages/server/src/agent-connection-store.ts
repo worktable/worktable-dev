@@ -27,6 +27,7 @@ import {
 import {
   listTokens,
   revokeToken,
+  rotateAgentToken,
   setTokenScopes,
   type TokenMetadata,
 } from "./token-store.ts"
@@ -389,6 +390,45 @@ export async function disconnectAgentConnection(id: string): Promise<boolean> {
   })
 }
 
+/**
+ * Re-issue the credential of an agent set up outside pairing (`worktable mcp
+ * setup --with-token`). The agent stays the same one: its record follows the
+ * new credential, and access its owner narrowed stays narrowed. `scopes`
+ * applies only to an agent set up for the first time.
+ */
+export async function rotateAgentCredential(options: {
+  agent: string
+  scopes: string[]
+}): Promise<{ token: string; metadata: TokenMetadata }> {
+  return serialized(async () => {
+    const workspace = getWorkspaceRoot()
+    const predecessors = (await listTokens()).filter(
+      (token) =>
+        token.agent === options.agent &&
+        token.workspace === workspace &&
+        token.revokedAt === null
+    )
+    const rotated = await rotateAgentToken({
+      agent: options.agent,
+      scopes: predecessors.at(-1)?.scopes ?? options.scopes,
+    })
+    const replaced = new Set(predecessors.map((token) => token.id))
+    const file = await loadFile()
+    let changed = false
+    for (const connection of file.connections) {
+      if (
+        connection.workspace === workspace &&
+        replaced.has(connection.credentialId)
+      ) {
+        connection.credentialId = rotated.metadata.id
+        changed = true
+      }
+    }
+    if (changed) await saveFile(file)
+    return rotated
+  })
+}
+
 export class AgentConnectionUpdateError extends Error {}
 
 /**
@@ -438,7 +478,8 @@ export async function updateAgentConnection(
           "Choose at least one kind of access"
         )
       }
-      await setTokenScopes(token.id, scopes)
+      // Revoked meanwhile (token management has its own lock): nothing to edit.
+      if (!(await setTokenScopes(token.id, scopes))) return null
     }
     if (changes.icon !== undefined) {
       if (changes.icon === null) delete connection.icon

@@ -6,9 +6,12 @@ import { setAppDirOverride } from "./app-storage.ts"
 import {
   disconnectAgentConnection,
   listAgentConnections,
+  rotateAgentCredential,
   updateAgentConnection,
   upsertAgentConnection,
 } from "./agent-connection-store.ts"
+import { DEFAULT_AGENT_TOKEN_SCOPES } from "@worktable/types"
+import { listThreadParticipants } from "./thread-service.ts"
 import { createToken, verifyToken } from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -216,9 +219,34 @@ describe("semantic agent connections", () => {
       participant: { name: "Desk Codex" },
     })
     expect(await listAgentConnections()).toHaveLength(2)
+    // Without Threads it cannot read or answer one, so it is not offered.
+    const recipients = async () =>
+      (await listThreadParticipants()).map((participant) => participant.name)
+    expect(await recipients()).not.toContain("Desk Codex")
+
+    // Setting it up again re-issues its credential; it stays the same agent,
+    // with the access its owner chose.
+    await updateAgentConnection(codex.id, {
+      access: { threads: true, read: true, edit: false },
+    })
+    expect(await recipients()).toContain("Desk Codex")
+    const reissued = await rotateAgentCredential({
+      agent: "manual-codex",
+      scopes: [...DEFAULT_AGENT_TOKEN_SCOPES],
+    })
+    expect(await verifyToken(desktop.token)).toBeNull()
+    const after = await listAgentConnections()
+    expect(after).toHaveLength(2)
+    expect(
+      after.find((connection) => connection.id === codex.id)
+    ).toMatchObject({
+      displayName: "Desk Codex",
+      icon: "terminal",
+      access: { threads: true, read: true, edit: false },
+    })
 
     expect(await disconnectAgentConnection(codex.id)).toBe(true)
-    expect(await verifyToken(desktop.token)).toBeNull()
+    expect(await verifyToken(reissued.token)).toBeNull()
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {

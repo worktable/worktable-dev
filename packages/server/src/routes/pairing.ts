@@ -731,18 +731,17 @@ pairingRouter.post("/complete", async (c) => {
           ? null
           : (session.redeemedBy?.client ?? session.requestedClient ?? null);
         const machine = session.redeemedBy?.hostname ?? null;
-        // The agent's name is its thread name from the start.
+        // The agent's name is its thread name from the start. Like an
+        // adapter's, it only names a new agent: reconnecting keeps the name
+        // its owner gave it since.
         const participant = (
           await resolveParticipant(
             { agent: metadata.agent, principal: metadata.principal },
-            target.displayName
-              ? { name: target.displayName }
-              : {
-                  initialName: await defaultAgentName(
-                    platformForClient(clientId),
-                    machine
-                  ),
-                }
+            {
+              initialName:
+                target.displayName ??
+                (await defaultAgentName(platformForClient(clientId), machine)),
+            }
           )
         ).participant;
         connectionStored = await upsertAgentConnection({

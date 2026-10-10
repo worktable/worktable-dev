@@ -1074,7 +1074,11 @@ describe("redeem (code surface)", () => {
         body: { code: first.code },
       })
     );
-    const second = await createPairing(app, { client: "codex" });
+    // Reconnecting names nothing: the agent keeps the name it was given.
+    const second = await createPairing(app, {
+      client: "codex",
+      displayName: "Codex",
+    });
     const secondRedeem = await app.fetch(
       jsonReq("POST", "/api/pairing/redeem", {
         body: { code: second.code, hostname: "devbox" },
@@ -1124,7 +1128,10 @@ describe("redeem (code surface)", () => {
     expect(await verifyToken(firstToken)).toBeNull();
     expect(await verifyToken(secondToken)).not.toBeNull();
     expect(await listAgentConnections()).toEqual([
-      expect.objectContaining({ displayName: "My Codex" }),
+      expect.objectContaining({
+        displayName: "My Codex",
+        participant: expect.objectContaining({ name: "My Codex" }),
+      }),
     ]);
     const status = await app.fetch(jsonReq("GET", `/api/pairing/${second.id}`));
     const view = (await status.json()) as {

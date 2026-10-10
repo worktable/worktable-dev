@@ -241,9 +241,6 @@ export async function resolveParticipant(
         nextDefault !== existing.defaultSpaceId ||
         nextThreadLocationVersion !== existing.threadLocationVersion
       ) {
-        if (nextName && nextName !== existing.participant.name) {
-          renamed = { ...existing.participant, name: nextName }
-        }
         existing.key = key
         existing.participant = {
           ...existing.participant,
@@ -256,6 +253,10 @@ export async function resolveParticipant(
         await saveBindings(file)
         await notifyParticipantsChanged()
       }
+      // An explicit name also brings threads in line when the binding
+      // already has it, so a rename interrupted before its threads finished
+      // completes when it is repeated.
+      if (options.name?.trim()) renamed = existing.participant
       return {
         participant: existing.participant,
         defaultSpaceId: existing.defaultSpaceId,

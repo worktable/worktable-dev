@@ -609,9 +609,28 @@ export async function listThreadParticipants(
         : []
     )
   )
+  // An agent connected without Threads can neither read nor answer one.
+  const threadParticipantIds = new Set(
+    connections.flatMap((connection) =>
+      connection.participant && connection.access?.threads !== false
+        ? [connection.participant.id]
+        : []
+    )
+  )
+  const withoutThreads = new Set(
+    connections.flatMap((connection) =>
+      connection.participant &&
+      !threadParticipantIds.has(connection.participant.id)
+        ? [connection.participant.id]
+        : []
+    )
+  )
   return bindings
     .map((binding) => binding.participant)
-    .filter((participant) => participant.id !== actorId)
+    .filter(
+      (participant) =>
+        participant.id !== actorId && !withoutThreads.has(participant.id)
+    )
     .map((participant) => ({
       ...participant,
       defaultIdentityId: defaultConversationIdentityId(participant.id),

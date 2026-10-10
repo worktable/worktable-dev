@@ -537,10 +537,6 @@ export function useSpaceSubscription(
             exact: true,
           })
           void queryClient.invalidateQueries({
-            queryKey: queryKeys.spaces,
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
             queryKey: documentQueryKeys.list(spaceId),
           })
         }
@@ -559,10 +555,6 @@ export function useSpaceSubscription(
           })
           void queryClient.invalidateQueries({
             queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.spaces,
             exact: true,
           })
           void queryClient.invalidateQueries({
@@ -601,10 +593,6 @@ export function useSpaceSubscription(
           })
           void queryClient.invalidateQueries({
             queryKey: queryKeys.space(spaceId),
-            exact: true,
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.spaces,
             exact: true,
           })
           void queryClient.invalidateQueries({

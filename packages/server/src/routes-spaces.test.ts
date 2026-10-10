@@ -16,7 +16,8 @@ let root = ""
 function app() {
   const instance = new Hono()
   instance.use("*", async (c, next) => {
-    c.set("identity", ownerIdentity())
+    const scopes = c.req.header("x-test-scopes")?.split(",") ?? ["*"]
+    c.set("identity", { ...ownerIdentity(), scopes })
     return next()
   })
   instance.route("/api/spaces", spacesRouter)
@@ -85,5 +86,18 @@ describe("spaces routes", () => {
     expect(
       Object.keys(await json(instance, "/api/spaces/plans")).sort()
     ).toEqual(["pins", "space"])
+
+    // Neither response carries HTML Doc data, so docs:read alone is enough.
+    for (const path of ["/api/spaces", "/api/spaces/plans"]) {
+      for (const [scopes, status] of [
+        ["docs:read", 200],
+        ["widgets:read", 403],
+      ] as const) {
+        const response = await instance.request(path, {
+          headers: { "x-test-scopes": scopes },
+        })
+        expect(response.status).toBe(status)
+      }
+    }
   })
 })

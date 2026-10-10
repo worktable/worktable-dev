@@ -30,7 +30,7 @@ const ArchiveSpaceSchema = z.object({
 
 // GET /api/spaces — every Space, archived ones included. Each Space's
 // documents are listed by /api/spaces/:spaceId/documents.
-spacesRouter.get("/", requireScope("docs:read"), requireScope("widgets:read"), async (c) => {
+spacesRouter.get("/", requireScope("docs:read"), async (c) => {
   return c.json({ spaces: await listSpaces() });
 });
 
@@ -130,7 +130,7 @@ spacesRouter.get("/:spaceId/index", requireScope("docs:read"), async (c) => {
 });
 
 // GET /api/spaces/:spaceId — space + resolved pins
-spacesRouter.get("/:spaceId", requireScope("docs:read"), requireScope("widgets:read"), async (c) => {
+spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const { data: space, error } = await readSpace(spaceId);
 

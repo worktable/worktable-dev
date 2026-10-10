@@ -222,6 +222,11 @@ function isCookieSurface(pathname: string): boolean {
   return pathname.startsWith("/api/") || pathname.startsWith("/auth/");
 }
 
+// Server-Timing, route latency and slow-request logging. Registered first so
+// CORS preflights are counted, and before compression so the header and total
+// include it.
+app.use("*", serverTiming);
+
 app.use("*", async (c, next) => {
   const bearerPreflight = c.req.method === "OPTIONS" &&
     c.req.header("Access-Control-Request-Headers")?.toLowerCase().split(",").some((header) => header.trim() === "authorization");
@@ -231,9 +236,6 @@ app.use("*", async (c, next) => {
   }
   return wildcardCors(c, next);
 });
-// Server-Timing, route latency and slow-request logging. Registered before
-// compression so the header and total include it.
-app.use("*", serverTiming);
 app.use("/api/*", compressApiResponse);
 
 // A replacement closes this gate before stopping the listener. Every admitted

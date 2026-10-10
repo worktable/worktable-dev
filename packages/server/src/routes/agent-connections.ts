@@ -1,32 +1,16 @@
 import type { AgentAccess } from "@worktable/types"
 import { Hono } from "hono"
-import { requireMintAuth, requireScope, trustedLocalIdentity } from "../auth.ts"
+import { requireAgentManager } from "../auth.ts"
 import {
   disconnectAgentConnection,
   AgentConnectionUpdateError,
   listAgentConnections,
   updateAgentConnection,
 } from "../agent-connection-store.ts"
-import { isHosted } from "../hosted.ts"
 
 export const agentConnectionsRouter = new Hono()
 
-agentConnectionsRouter.use("*", async (c, next) => {
-  if (isHosted()) {
-    return c.json(
-      {
-        error:
-          "Local agent connections are not available on Worktable Cloud; connect agents with OAuth.",
-        code: "HOSTED_DISABLED",
-      },
-      403
-    )
-  }
-  return next()
-})
-agentConnectionsRouter.use("*", trustedLocalIdentity())
-agentConnectionsRouter.use("*", requireMintAuth())
-agentConnectionsRouter.use("*", requireScope("tokens:manage"))
+agentConnectionsRouter.use("*", requireAgentManager())
 
 agentConnectionsRouter.get("/", async (c) =>
   c.json({ connections: await listAgentConnections() })

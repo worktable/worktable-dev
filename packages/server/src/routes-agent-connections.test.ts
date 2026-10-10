@@ -84,11 +84,11 @@ afterEach(async () => {
 })
 
 describe("agent connection routes", () => {
-  it("rejects local connection inventory on Worktable Cloud", async () => {
+  it("lets only the signed-in owner manage agents on Worktable Cloud", async () => {
     process.env["WORKTABLE_HOSTED"] = "1"
     const response = await app.fetch(request("GET"))
     expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: "HOSTED_DISABLED" })
+    expect(await response.json()).toMatchObject({ required: "owner" })
   })
 
   it("requires the owner and disconnects the verified credential", async () => {

@@ -5,8 +5,30 @@ import type {
 } from "@worktable/types"
 import { fetchJSON } from "./http"
 
-export function listAgentConnections(): Promise<AgentConnectionInventory> {
-  return fetchJSON("/api/agent-connections")
+/**
+ * Every agent connected to this Worktable. On Cloud, sign-ins such as Claude
+ * and ChatGPT come from the gateway, and agents paired with the workspace from
+ * the workspace itself (`scope=workspace`), so the two lists are merged.
+ */
+export async function listAgentConnections(
+  options: { workspaceAgentsOnCloud?: boolean } = {}
+): Promise<AgentConnectionInventory> {
+  if (!options.workspaceAgentsOnCloud) {
+    return fetchJSON("/api/agent-connections")
+  }
+  const [signIns, paired] = await Promise.all([
+    fetchJSON<AgentConnectionInventory>("/api/agent-connections"),
+    fetchJSON<AgentConnectionInventory>(
+      "/api/agent-connections?scope=workspace"
+    ).catch(() => null),
+  ])
+  return {
+    connections: [...(paired?.connections ?? []), ...signIns.connections],
+    unavailableAuthKinds: [
+      ...(signIns.unavailableAuthKinds ?? []),
+      ...(paired ? [] : (["local-token"] as const)),
+    ],
+  }
 }
 
 export function disconnectAgentConnection(

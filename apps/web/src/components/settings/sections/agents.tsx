@@ -23,6 +23,7 @@ import {
   mcpClientSnippet,
   platformForAdapter,
   platformForClient,
+  platformForName,
   type AgentAccess,
   type AgentConnection,
   type AgentPlatformId,
@@ -210,7 +211,11 @@ function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
             className="border-t border-border/60"
             {...panelProps(agent.adapter)}
           >
-            <CloudAlwaysOnPanel connection={connection} agent={agent} />
+            {connection.agentPairing ? (
+              <AlwaysOnSetupPanel connection={connection} agent={agent} />
+            ) : (
+              <CloudAlwaysOnPanel connection={connection} agent={agent} />
+            )}
           </AgentSetupDisclosure>
         ))}
         <AgentSetupDisclosure
@@ -1290,18 +1295,31 @@ function agentConnectionName(connection: AgentConnection): string {
 
 function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
   if (isAgentPlatformId(connection.platform)) return connection.platform
-  return connection.target.kind === "agent-adapter"
-    ? platformForAdapter(connection.target.adapter)
-    : platformForClient(connection.target.clientId)
+  if (connection.target.kind === "agent-adapter") {
+    return platformForAdapter(connection.target.adapter)
+  }
+  const fromClient = platformForClient(connection.target.clientId)
+  // Cloud's sign-ins carry an opaque client id, so their name decides.
+  return fromClient === "other"
+    ? platformForName(connection.displayName)
+    : fromClient
 }
 
 export function ConnectedAgentsGroup() {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
-  const connectionsQuery = useQuery({
-    queryKey: ["agent-connections"],
-    queryFn: listAgentConnections,
+  const systemConnection = useQuery({
+    queryKey: ["system", "connection"],
+    queryFn: getConnection,
     enabled: sectionActive,
+  })
+  const workspaceAgentsOnCloud =
+    systemConnection.data?.mcpAuthMode === "oauth" &&
+    systemConnection.data.agentPairing === true
+  const connectionsQuery = useQuery({
+    queryKey: ["agent-connections", workspaceAgentsOnCloud],
+    queryFn: () => listAgentConnections({ workspaceAgentsOnCloud }),
+    enabled: sectionActive && systemConnection.isFetched,
   })
   const disconnect = useMutation({
     mutationFn: disconnectAgentConnection,
@@ -1320,7 +1338,7 @@ export function ConnectedAgentsGroup() {
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
   const oauthInventoryUnavailable =
-    connectionsQuery.data?.unavailableAuthKinds?.includes("oauth") ?? false
+    (connectionsQuery.data?.unavailableAuthKinds?.length ?? 0) > 0
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connected-agents">
       <h3 id="connected-agents" className="text-sm font-medium text-foreground">

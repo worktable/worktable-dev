@@ -1,4 +1,4 @@
-import type { ParticipantRef } from "@worktable/types"
+import { platformForName, type ParticipantRef } from "@worktable/types"
 import { Avatar, AvatarFallback } from "@worktable/ui/components/avatar"
 import { cn } from "@worktable/ui/lib/utils"
 
@@ -25,7 +25,8 @@ export function ThreadParticipantAvatar({
     return (
       <AgentAvatar
         name={participant.name}
-        platform={current?.platform}
+        // A sign-in agent (Claude, ChatGPT on Cloud) has no agent record here.
+        platform={current?.platform ?? platformForName(participant.name)}
         icon={current?.icon}
         className={className}
       />

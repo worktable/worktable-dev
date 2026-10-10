@@ -1,5 +1,6 @@
 import {
   ACTOR_HEADERS,
+  AGENT_ROUTE_HEADERS,
   GATEWAY_HEADER,
   HOSTED_AGENT_SCOPES,
   SHARE_CAPABILITY_HEADER,
@@ -169,6 +170,36 @@ export function trustedGatewayScopeCeiling(req: Request): string[] | null {
   } catch {
     return []
   }
+}
+
+/**
+ * This workspace's agent address, from the gateway. Present only when the
+ * gateway routes agents by workspace, so pairing on Cloud depends on it.
+ */
+export function hostedAgentBase(req: Request): string | null {
+  if (!isHosted() || !gatewaySecret() || !gatewayAdmits(req)) return null
+  const raw = req.headers.get(AGENT_ROUTE_HEADERS.BASE)
+  if (!validHeaderText(raw, 512)) return null
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== "https:" || url.search || url.hash) return null
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether the gateway forwarded this request from the workspace's agent route
+ * with a credential the workspace issued, which the workspace verifies itself.
+ */
+export function hostedWorktableCredential(req: Request): boolean {
+  return (
+    isHosted() &&
+    Boolean(gatewaySecret()) &&
+    gatewayAdmits(req) &&
+    req.headers.get(AGENT_ROUTE_HEADERS.CREDENTIAL) === "worktable"
+  )
 }
 
 /** Constant-time compare; a length mismatch is an immediate, safe reject. */

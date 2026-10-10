@@ -11,9 +11,7 @@ import {
   scopesForAccess,
 } from "@worktable/types";
 import {
-  requireMintAuth,
-  requireScope,
-  trustedLocalIdentity,
+  requireAgentManager,
 } from "../auth.ts";
 import {
   CONNECTOR_PROGRESS_EVENTS,
@@ -53,6 +51,7 @@ import {
 } from "../connection-request-store.ts";
 import { readSpace } from "../store.ts";
 import { getWorkspaceRoot } from "../workspace.ts";
+import { hostedAgentBase } from "../hosted.ts";
 import { resolveOrigin } from "./system.ts";
 
 // ============================================================
@@ -216,12 +215,28 @@ function parseAccess(value: unknown): AgentAccess | undefined | false {
     : false;
 }
 
+/**
+ * Where an agent reaches this Worktable. On Cloud that is the workspace's
+ * agent address from the gateway, which routes an agent's own credential;
+ * elsewhere the Worktable's public origin.
+ */
+function agentEndpoint(c: Context): {
+  origin: string;
+  originSource: ReturnType<typeof resolveOrigin>["originSource"];
+  mcpUrl: string;
+} {
+  const base = hostedAgentBase(c.req.raw);
+  if (base) {
+    return { origin: base, originSource: "resource", mcpUrl: `${base}/api/mcp` };
+  }
+  const { origin, originSource } = resolveOrigin(c);
+  return { origin, originSource, mcpUrl: remoteMcpUrl(origin) };
+}
+
 // ---- Owner surface -------------------------------------------------------
 
 const ownerSurface = new Hono();
-ownerSurface.use("*", trustedLocalIdentity());
-ownerSurface.use("*", requireMintAuth());
-ownerSurface.use("*", requireScope("tokens:manage"));
+ownerSurface.use("*", requireAgentManager());
 
 // POST /api/pairing — create a pairing session. The code is shown exactly
 // once; only its hash persists.
@@ -369,8 +384,7 @@ ownerSurface.post("/", async (c) => {
     scopes = body.scopes;
   }
 
-  const { origin, originSource } = resolveOrigin(c);
-  const mcpUrl = remoteMcpUrl(origin);
+  const { origin, originSource, mcpUrl } = agentEndpoint(c);
   const { code, session } = await createPairingSession({
     client,
     target: target ?? {
@@ -978,7 +992,7 @@ pairingRouter.post("/requests/poll", async (c) => {
   if (typeof body?.pollToken !== "string" || !body.pollToken) {
     return c.json({ error: "pollToken is required", code: "BAD_REQUEST" }, 400);
   }
-  const mcpUrl = remoteMcpUrl(resolveOrigin(c).origin);
+  const { mcpUrl } = agentEndpoint(c);
   const result = await pollConnectionRequest(
     body.pollToken,
     async (target, approval) => {

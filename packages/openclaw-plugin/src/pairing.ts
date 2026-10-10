@@ -100,12 +100,15 @@ export async function ensureOpenClawInstallationId(
   })
 }
 
+/**
+ * The Worktable address agents use, path included: Worktable Cloud gives each
+ * workspace an agent address such as `https://app.worktable.cloud/w/<id>`.
+ */
 function worktableOrigin(server: string): string {
   const url = new URL(server)
-  url.pathname = ""
   url.search = ""
   url.hash = ""
-  return url.toString().replace(/\/$/, "")
+  return url.toString().replace(/\/+$/, "")
 }
 
 async function jsonRequest<T>(

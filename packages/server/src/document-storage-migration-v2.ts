@@ -98,6 +98,9 @@ export interface DocumentStorageV2MigrationPlan {
   dependencyBytes: number
   clean: boolean
   diagnostics: Array<{ path: string; message: string }>
+  /** Legacy annotation files whose document no longer exists. Conversion
+   * leaves them out of the V2 tree; the V1 source keeps the originals. */
+  orphanedAnnotationFiles: string[]
   identityPlan: DocumentIdMaterializationPlan
 }
 
@@ -117,6 +120,7 @@ export interface DocumentStorageV2MigrationResult {
   htmlDocumentsMigrated: number
   annotationFilesMigrated: number
   annotationsMigrated: number
+  orphanedAnnotationFiles: string[]
   backupPath: string
   backupWorkspaceContentCheckpoint: string
   copiedBytes: number
@@ -248,17 +252,40 @@ async function reservedV2NamespaceDiagnostics(
   return diagnostics
 }
 
-async function legacyAnnotationOwnershipDiagnostics(
+async function legacyAnnotationCensus(
   workspaceRoot: string,
-  documents: readonly PreflightDocumentSource[]
-): Promise<Array<{ path: string; message: string }>> {
+  documents: readonly PreflightDocumentSource[],
+  inventoriedSpaceIds: readonly string[]
+): Promise<{
+  diagnostics: Array<{ path: string; message: string }>
+  orphans: string[]
+}> {
   const diagnostics: Array<{ path: string; message: string }> = []
+  const orphans: string[] = []
+  const inventoried = new Set(inventoriedSpaceIds)
   const expected = new Set(
     documents.map(
       (document) =>
         `${document.spaceId}\0${legacyAnnotationKind(document)}\0${document.path}`
     )
   )
+  // On a case-insensitive filesystem a document's annotation path can resolve
+  // to a file spelled differently, which the migration will consume. Compare
+  // file identity, not spelling, before calling a file an orphan.
+  let ownedFiles: Set<string> | null = null
+  const ownedByDocument = async (path: string): Promise<boolean> => {
+    if (!ownedFiles) {
+      ownedFiles = new Set()
+      for (const document of documents) {
+        const info = await Promise.resolve()
+          .then(() => lstat(legacyAnnotationPath(workspaceRoot, document), { bigint: true }))
+          .catch(() => null)
+        if (info?.isFile()) ownedFiles.add(`${info.dev}:${info.ino}`)
+      }
+    }
+    const info = await lstat(path, { bigint: true })
+    return ownedFiles.has(`${info.dev}:${info.ino}`)
+  }
   const spacesRoot = join(workspaceRoot, "spaces")
   const spaces = await readdir(spacesRoot, { withFileTypes: true }).catch(
     (error) => {
@@ -332,9 +359,18 @@ async function legacyAnnotationOwnershipDiagnostics(
             .split(sep)
             .join("/")
             .slice(0, -".annotations.json".length)
-          if (!expected.has(`${space.name}\0${root}\0${key}`)) {
+          if (expected.has(`${space.name}\0${root}\0${key}`)) continue
+          const path = relative(workspaceRoot, entryPath).split(sep).join("/")
+          // A document removed or renamed outside Worktable can leave its
+          // annotation file behind. Nothing is left to annotate, so the file
+          // must not block the upgrade or attach to a future document here.
+          // Outside an inventoried Space, the documents were never counted,
+          // so a missing owner proves nothing.
+          if (inventoried.has(space.name)) {
+            if (!(await ownedByDocument(entryPath))) orphans.push(path)
+          } else {
             diagnostics.push({
-              path: relative(workspaceRoot, entryPath).split(sep).join("/"),
+              path,
               message: "legacy annotation has no inventoried document owner",
             })
           }
@@ -343,7 +379,24 @@ async function legacyAnnotationOwnershipDiagnostics(
       await walk(annotationRoot)
     }
   }
-  return diagnostics
+  return { diagnostics, orphans }
+}
+
+async function omitOrphanedLegacyAnnotations(
+  workspaceRoot: string,
+  orphans: readonly string[]
+): Promise<void> {
+  for (const orphan of orphans) {
+    const path = resolve(workspaceRoot, orphan)
+    if (!isInside(join(workspaceRoot, "spaces"), path)) {
+      throw new Error("orphaned legacy annotation path escapes the workspace")
+    }
+    const info = await lstat(path)
+    if (!info.isFile() || info.isSymbolicLink()) {
+      throw new Error("orphaned legacy annotation is no longer a regular file")
+    }
+    await unlink(path)
+  }
 }
 
 function isInside(root: string, candidate: string): boolean {
@@ -847,9 +900,10 @@ export async function planDocumentStorageV2Migration(
   )
   const reservedDiagnostics =
     await reservedV2NamespaceDiagnostics(workspaceRoot)
-  const annotationDiagnostics = await legacyAnnotationOwnershipDiagnostics(
+  const annotationCensus = await legacyAnnotationCensus(
     workspaceRoot,
-    identityPlan.preflight.documents
+    identityPlan.preflight.documents,
+    identityPlan.preflight.spaceIds
   )
   const spaceDiagnostics = identityPlan.preflight.spaceIds
     .filter((spaceId) => !CanonicalIdSchema.safeParse(spaceId).success)
@@ -873,7 +927,7 @@ export async function planDocumentStorageV2Migration(
       message: diagnostic.message,
     })),
     ...reservedDiagnostics,
-    ...annotationDiagnostics,
+    ...annotationCensus.diagnostics,
     ...spaceDiagnostics,
   ]
   const targetLayout = workspaceStorageLayoutFromManifest({
@@ -912,6 +966,7 @@ export async function planDocumentStorageV2Migration(
     ),
     clean: identityPlan.clean && diagnostics.length === 0,
     diagnostics,
+    orphanedAnnotationFiles: annotationCensus.orphans,
     identityPlan,
   }
 }
@@ -1009,6 +1064,7 @@ export async function convertStagedWorkspaceStorageV2(
     stagingPath,
     materializedPreflight.documents
   )
+  await omitOrphanedLegacyAnnotations(stagingPath, plan.orphanedAnnotationFiles)
   const htmlDocumentsMigrated = await migrateLegacyHtmlDocuments(
     stagingPath,
     materializedPreflight.documents
@@ -1184,6 +1240,7 @@ export async function migrateDocumentStorageV2(input: {
         htmlDocumentsMigrated,
         annotationFilesMigrated: migratedAnnotations.files,
         annotationsMigrated: migratedAnnotations.annotations,
+        orphanedAnnotationFiles: converted.plan.orphanedAnnotationFiles,
         backupPath,
         backupWorkspaceContentCheckpoint:
           backupCheckpoints.workspaceContentCheckpoint,

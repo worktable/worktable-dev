@@ -47,13 +47,19 @@ export async function upgradeWorkspaceBeforeStartup(): Promise<void> {
         appDir,
         runtimeCacheKey,
       })
-      await migrateDocumentStorageV2({
+      const result = await migrateDocumentStorageV2({
         workspaceRoot,
         expectedWorkspaceId: plan.workspaceId,
         expectedWorkspaceContentCheckpoint: plan.workspaceContentCheckpoint,
         appDir,
         runtimeCacheKey,
       })
+      if (result.orphanedAnnotationFiles.length > 0) {
+        console.warn(
+          `[workspace] storage upgrade left out ${result.orphanedAnnotationFiles.length} annotation file(s) for deleted documents; the originals remain in ${result.backupPath}:`,
+          result.orphanedAnnotationFiles.join(", ")
+        )
+      }
     }
   )
 }

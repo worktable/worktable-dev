@@ -37,10 +37,11 @@ WORKTABLE_DESKTOP_LOCAL_APP_DIR=/path/to/local-app-data \
 bun run desktop:dev
 ```
 
-Only the Developer ID-signed app uses the release Keychain entry for its
-Worktable Cloud sign-in. Development and local builds keep a separate entry, so
-sign in to Cloud once in them; they never prompt for the release app's
-credential.
+Only a release signed with Worktable's Developer ID uses the release Keychain
+entry for its Worktable Cloud sign-in. Development and local builds keep a
+separate entry and never prompt for the release app's credential. macOS
+identifies each ad hoc build separately, so a rebuilt local app may ask once to
+use its own entry; choose Always Allow.
 
 Desktop development serves the shell at `http://127.0.0.1:15321` and loads
 General Sans from Fontshare. Internet access is needed to load that font;

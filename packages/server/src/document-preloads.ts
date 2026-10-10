@@ -10,6 +10,7 @@ type Chunk = {
   name?: string
   isEntry?: boolean
   imports?: string[]
+  dynamicImports?: string[]
 }
 type Manifest = Record<string, Chunk>
 
@@ -26,17 +27,26 @@ function readManifest(staticDir: string): Manifest | null {
 
 // Route modules are split by TanStack Router. Rollup can also promote a
 // dynamically imported module into a shared chunk; Vite then keys it by
-// output name instead of source.
-function manifestKey(manifest: Manifest, source: string): string | null {
+// output name ("_name-hash.js") instead of source. Chunk names are file names,
+// so they collide across directories: only a unique shared chunk qualifies.
+function manifestKey(
+  manifest: Manifest,
+  source: string,
+  candidates: readonly string[] = Object.keys(manifest)
+): string | null {
   for (const key of [`${source}?tsr-split=component`, source])
     if (manifest[key]) return key
   const name = source
     .split("/")
     .at(-1)!
     .replace(/\.tsx$/, "")
-  const shared = Object.keys(manifest).filter(
-    (key) => manifest[key]!.name === name
-  )
+  const shared = [
+    ...new Set(
+      candidates.filter(
+        (key) => key.startsWith("_") && manifest[key]?.name === name
+      )
+    ),
+  ]
   return shared.length === 1 ? shared[0]! : null
 }
 
@@ -67,15 +77,24 @@ function sourcesClosure(manifest: Manifest, sources: readonly string[]) {
 
 export function readDocumentPreloads(staticDir: string): DocumentPreloads {
   const manifest = readManifest(staticDir)
-  const preloads = (sources: string[]) =>
-    manifest ? sourcesClosure(manifest, sources) : []
-  return {
-    "rich-text": preloads([
-      "src/components/doc-document.tsx",
+  if (!manifest) return { "rich-text": [], markdown: [], html: [] }
+  const renderer = manifestKey(manifest, "src/components/doc-document.tsx")
+  // The rich-text editor is the renderer's own dynamic import. Settings has an
+  // "editor" chunk too, so never resolve it by name across the whole build.
+  const editor =
+    renderer &&
+    manifestKey(
+      manifest,
       "src/components/editor/editor.tsx",
-    ]),
-    markdown: preloads(["src/components/doc-document.tsx"]),
-    html: preloads(["src/components/html-document.tsx"]),
+      manifest[renderer]?.dynamicImports
+    )
+  return {
+    "rich-text": staticImports(
+      manifest,
+      [renderer, editor].filter((key): key is string => Boolean(key))
+    ),
+    markdown: renderer ? staticImports(manifest, [renderer]) : [],
+    html: sourcesClosure(manifest, ["src/components/html-document.tsx"]),
   }
 }
 

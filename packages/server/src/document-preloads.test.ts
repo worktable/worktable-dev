@@ -8,21 +8,29 @@ import {
   shellWithRoutePreloads,
 } from "./document-preloads.ts"
 
-it("preloads only the selected renderer's static dependencies, deduplicating cycles", async () => {
+it("preloads the selected renderer's static dependencies and the rich-text editor, deduplicating cycles", async () => {
   const root = await mkdtemp(join(tmpdir(), "worktable-preloads-"))
   try {
     await mkdir(join(root, ".vite"))
     await writeFile(
       join(root, ".vite/manifest.json"),
       JSON.stringify({
-        "src/components/doc-document.tsx": {
+        // As in production builds: the renderer and its editor are merged
+        // into shared chunks, and Settings has its own chunk named "editor".
+        "_doc-document-abc.js": {
+          name: "doc-document",
           file: "assets/doc.js",
           imports: ["shared"],
-          dynamicImports: ["mermaid"],
+          dynamicImports: ["mermaid", "_editor-abc.js"],
         },
         "_editor-abc.js": {
           name: "editor",
           file: "assets/editor.js",
+          imports: ["shared"],
+        },
+        "src/components/settings/sections/editor.tsx": {
+          name: "editor",
+          file: "assets/settings-editor.js",
           imports: ["shared"],
         },
         "src/components/html-document.tsx": {
@@ -31,7 +39,7 @@ it("preloads only the selected renderer's static dependencies, deduplicating cyc
         },
         shared: {
           file: "assets/shared.js",
-          imports: ["src/components/doc-document.tsx"],
+          imports: ["_doc-document-abc.js"],
         },
         mermaid: { file: "assets/mermaid.js" },
         unsafe: { file: "https://foreign.test/code.js" },

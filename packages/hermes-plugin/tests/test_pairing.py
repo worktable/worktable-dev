@@ -3,13 +3,13 @@ import pytest
 from worktable_hermes import pairing
 
 
-def serve(monkeypatch, polls):
+def serve(monkeypatch, polls, **created):
     calls = []
 
     def fake_request(url, body=None, token=None):
         calls.append((url.rsplit("/api/", 1)[-1], body))
         if url.endswith("/api/pairing/requests"):
-            return {"code": "BCDF-GHJK", "pollToken": "poll-secret", "approvalUrl": "http://w/connect?code=BCDF-GHJK", "interval": 1}
+            return {"code": "BCDF-GHJK", "pollToken": "poll-secret", "approvalUrl": "http://w/connect?code=BCDF-GHJK", "interval": 1, **created}
         return polls.pop(0)
 
     monkeypatch.setattr(pairing, "_request", fake_request)
@@ -35,3 +35,10 @@ def test_stops_when_the_owner_declines(monkeypatch):
     with pytest.raises(pairing.PairingError) as error:
         pairing.request_approval("http://w", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None)
     assert error.value.code == "DENIED"
+
+
+def test_stops_waiting_when_the_request_expires(monkeypatch):
+    serve(monkeypatch, [{"status": "unexpected"}], expiresAt="2020-01-01T00:00:00.000Z")
+    with pytest.raises(pairing.PairingError) as error:
+        pairing.request_approval("http://w", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None)
+    assert error.value.code == "EXPIRED"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 import urllib.error
 import urllib.request
 from typing import Callable, Optional
@@ -26,6 +27,16 @@ def worktable_origin(server: str) -> str:
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise PairingError(f"Not a Worktable address: {server}", "BAD_SERVER")
     return f"{parts.scheme}://{parts.netloc}"
+
+
+def _timestamp(value: object) -> Optional[float]:
+    """Seconds since the epoch for an ISO 8601 time, or None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None) -> dict:
@@ -117,6 +128,8 @@ def request_approval(
         raise PairingError("Worktable returned an incomplete connection request", "INVALID_REQUEST")
     on_approval_needed(str(request.get("code")), request["approvalUrl"])
     interval = max(1.0, float(request.get("interval") or 2))
+    # Whatever it answers, a request is over when it expires.
+    deadline = _timestamp(request.get("expiresAt"))
     while True:
         sleep(interval)
         result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
@@ -125,5 +138,5 @@ def request_approval(
             return result["code"]
         if status == "denied":
             raise PairingError("The Worktable owner declined this connection.", "DENIED")
-        if status == "expired":
+        if status == "expired" or (deadline is not None and time.time() >= deadline):
             raise PairingError("The connection request expired. Run the connect command again.", "EXPIRED")

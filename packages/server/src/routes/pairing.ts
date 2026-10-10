@@ -907,10 +907,14 @@ function parseRequestTarget(value: unknown): ConnectionRequestTarget | null {
 // POST /api/pairing/requests — an agent that knows only this address asks to
 // connect. Its owner approves the returned code in Worktable.
 /**
- * Anyone may ask, so only in JSON: a web page cannot send JSON cross-origin
- * without a preflight, so visitors' browsers cannot fill the waiting list.
+ * Anyone may ask, so only an agent's own process may: a browser always
+ * sends Origin on a POST, and the loopback CORS policy would otherwise let
+ * any page a visitor opens fill the waiting list. JSON only, as well.
  */
-function jsonRequired(c: Context): Response | null {
+function agentRequestOnly(c: Context): Response | null {
+  if (c.req.header("Origin") !== undefined) {
+    return c.json({ error: "Agents ask to connect from their own process", code: "FORBIDDEN" }, 403);
+  }
   const type = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
   return type === "application/json"
     ? null
@@ -918,7 +922,7 @@ function jsonRequired(c: Context): Response | null {
 }
 
 pairingRouter.post("/requests", async (c) => {
-  const notJson = jsonRequired(c);
+  const notJson = agentRequestOnly(c);
   if (notJson) return notJson;
   if (codeSurfaceLocked()) {
     return c.json({ error: "Too many attempts. Try again later.", code: "RATE_LIMITED" }, 429);
@@ -966,7 +970,7 @@ pairingRouter.post("/requests", async (c) => {
 // POST /api/pairing/requests/poll — the asking agent waits for its owner.
 // Once approved it receives a one-time pairing code and pairs as usual.
 pairingRouter.post("/requests/poll", async (c) => {
-  const notJson = jsonRequired(c);
+  const notJson = agentRequestOnly(c);
   if (notJson) return notJson;
   const body = (await c.req.json().catch(() => null)) as {
     pollToken?: unknown;

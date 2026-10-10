@@ -264,6 +264,8 @@ export async function requestWorktablePairing(options: {
     options.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const interval = Math.max(1, request.interval ?? 2) * 1000
+  // Whatever it answers, a request is over when it expires.
+  const deadline = Date.parse(request.expiresAt)
   for (;;) {
     await sleep(interval)
     const poll = await jsonRequest<ConnectionRequestPoll>(
@@ -276,7 +278,7 @@ export async function requestWorktablePairing(options: {
     if (poll.status === "denied") {
       throw new Error("The Worktable owner declined this connection.")
     }
-    if (poll.status === "expired") {
+    if (poll.status === "expired" || Date.now() >= deadline) {
       throw new Error(
         "The connection request expired. Run the connect command again."
       )

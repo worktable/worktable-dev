@@ -11,6 +11,7 @@ import {
 import {
   aliasesResolveAcyclically,
   docAliasReservationError,
+  parseDocAliasesSnapshot,
   DOC_ALIASES_MAX_BYTES,
   prepareDocAliasBatch,
   prepareDocAliasPrefixRetirement,
@@ -495,12 +496,23 @@ describe("alias cycle validation", () => {
       return map;
     });
 
-  it("skipping unreachable probes never changes the verdict", () => {
+  it("rejects exactly the alias files the exhaustive check rejects", () => {
+    // The exhaustive mode is the unchanged earlier algorithm. Reading a file
+    // through the supported parse path must reach the same verdict.
+    let file = 0;
     fc.assert(
       fc.property(aliasMap, aliasMap, (exact, prefixes) => {
-        const aliases: DocAliases = { exact, prefixes };
-        expect(aliasesResolveAcyclically(aliases)).toBe(
-          aliasesResolveAcyclically(aliases, { exhaustive: true })
+        const text = JSON.stringify({
+          type: "worktable.doc-aliases",
+          version: 1,
+          exact,
+          prefixes,
+        });
+        const parsed = parseDocAliasesSnapshot(text, `/aliases-${file++}.json`);
+        // Malformed maps are rejected before any cycle check.
+        fc.pre(!parsed.error?.startsWith("Corrupt document alias file"));
+        expect(parsed.error === null).toBe(
+          aliasesResolveAcyclically({ exact, prefixes }, { exhaustive: true })
         );
       }),
       { numRuns: 1000 }

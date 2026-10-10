@@ -185,24 +185,24 @@ export function processCounters(pid: number): ProcessCounters | null {
 
 /**
  * Wait until a process stays under 5% CPU for two seconds, so steady-state
- * timings are not mixed with boot work such as index rebuilds. Returns false
- * when it is still busy after `limitMs`, or when /proc is unavailable.
+ * timings are not mixed with boot work such as index rebuilds. "unknown"
+ * where /proc is unavailable; "busy" when `limitMs` passes first.
  */
 export async function waitForIdle(
   pid: number,
   limitMs: number
-): Promise<boolean> {
+): Promise<"idle" | "busy" | "unknown"> {
   const deadline = performance.now() + limitMs
   let last = processCounters(pid)?.cpuMs
-  if (last === undefined) return false
+  if (last === undefined) return "unknown"
   while (performance.now() < deadline) {
     await Bun.sleep(2_000)
     const now = processCounters(pid)?.cpuMs
-    if (now === undefined) return false
-    if (now - last < 100) return true
+    if (now === undefined) return "unknown"
+    if (now - last < 100) return "idle"
     last = now
   }
-  return false
+  return "busy"
 }
 
 export async function freePort(): Promise<number> {

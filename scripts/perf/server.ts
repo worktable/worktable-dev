@@ -73,7 +73,8 @@ export interface ServerResult {
   }
   /**
    * Spawn to listening, to the first spaces list, and to the server going
-   * idle after its boot work (null: still busy after 5 minutes, or no /proc).
+   * idle after its boot work (null without /proc; a server still busy after
+   * 5 minutes fails the run).
    */
   boot: { listenMs: number; firstListMs: number; idleMs: number | null }
   firstResponseMs: Record<string, number>
@@ -271,11 +272,16 @@ export async function runServerScenario(options: {
     // Steady-state timings start once boot work (such as rebuilding the
     // records index) has finished.
     const idle = await waitForIdle(server.pid, 300_000)
+    if (idle === "busy")
+      throw new Error(
+        "the server was still busy 5 minutes after boot, so steady-state timings would include boot work"
+      )
     // The first request is the spaces list, so this is boot to first list.
     const boot = {
       listenMs: round(server.listenMs, 0)!,
       firstListMs: round(server.listenMs + firsts.get(all[0]!.name)!.ms, 0)!,
-      idleMs: idle ? round(performance.now() - server.startedAt, 0) : null,
+      idleMs:
+        idle === "idle" ? round(performance.now() - server.startedAt, 0) : null,
     }
     const firstResponseMs = Object.fromEntries(
       all

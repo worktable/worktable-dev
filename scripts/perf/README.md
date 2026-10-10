@@ -44,8 +44,9 @@ copy to that same path: the server keys machine-local state such as activity
 history and the records index by workspace path, so a run starts like a
 restart of an existing workspace. The generator builds the records index for
 the same reason. Generation is slow because every write goes through the
-store: on a busy 6-core machine `100` took 20 seconds and `1k` 20 minutes
-(310 MB), most of it in the HTML documents. Generate `5k` on an idle machine.
+store: on a busy 6-core machine `100` took 20 seconds and `1k` 21 minutes
+(350 MB), mostly the 200-document HTML space and the records index. Generate
+`5k` on an idle machine.
 
 ## Server timings
 
@@ -54,7 +55,8 @@ one) on a copy of the fixture and records:
 
 - **Boot:** time to the listening line, to the first `/api/spaces` response,
   and until the server goes idle after its boot work (Linux only; it rescans
-  every record file on start). Steady-state timings start once it is idle.
+  every record file on start). Steady-state timings start once it is idle; a
+  server still busy after 5 minutes fails the run.
 - **First response** of each endpoint after boot, before anything is warm.
 - **p50 and p95** at concurrency 1 and 4 for the spaces list, a space's
   documents, Recent, Activity, Pending, threads, search, and opening a Markdown, a

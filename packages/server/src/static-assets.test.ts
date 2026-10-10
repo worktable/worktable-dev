@@ -1,4 +1,9 @@
-import { gunzipSync } from "node:zlib"
+import {
+  brotliCompressSync,
+  brotliDecompressSync,
+  gunzipSync,
+  gzipSync,
+} from "node:zlib"
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +11,7 @@ import { join } from "node:path";
 import {
   createStaticFileResponse,
   getStaticAssetsInfo,
+  indexStaticAssets,
   resolveStaticFilePath,
 } from "./static-assets.ts";
 
@@ -126,61 +132,69 @@ describe("static file responses", () => {
 })
 
 describe("static asset delivery", () => {
-  it("compresses hashed assets, negotiates gzip, and revalidates each representation", async () => {
+  it("serves the build's compressed copies of hashed assets and revalidates each representation", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worktable-delivery-"))
     try {
       mkdirSync(join(dir, "assets"))
       const path = "/assets/main-abcdefgh.js"
       const source = "console.log('asset');\n".repeat(200)
       writeFileSync(join(dir, path), source)
-      const request = (headers: HeadersInit) =>
-        new Request("http://localhost" + path, { headers })
-      const compressed = createStaticFileResponse(
-        dir,
-        path,
-        undefined,
-        request({ "accept-encoding": "br, gzip" })
-      )!
-      expect(compressed.headers.get("cache-control")).toBe(
+      writeFileSync(join(dir, path + ".br"), brotliCompressSync(source))
+      writeFileSync(join(dir, path + ".gz"), gzipSync(source))
+      // Small or unlisted files have no copies and are sent as they are.
+      writeFileSync(join(dir, "assets", "tiny-abcdefgh.js"), "1;\n")
+      expect(indexStaticAssets(dir)).toBe(1)
+      const request = (headers: HeadersInit, method = "GET") =>
+        new Request("http://localhost" + path, { headers, method })
+      const respond = (headers: HeadersInit, method?: string) =>
+        createStaticFileResponse(dir, path, undefined, request(headers, method))!
+
+      const brotli = respond({ "accept-encoding": "gzip, deflate, br" })
+      expect(brotli.headers.get("cache-control")).toBe(
         "public, max-age=31536000, immutable"
       )
-      expect(compressed.headers.get("vary")).toContain("Accept-Encoding")
+      expect(brotli.headers.get("content-type")).toContain("text/javascript")
+      expect(brotli.headers.get("vary")).toContain("Accept-Encoding")
+      expect(brotli.headers.get("content-encoding")).toBe("br")
+      const brotliBytes = Buffer.from(await brotli.arrayBuffer())
+      expect(brotliBytes.length).toBe(Number(brotli.headers.get("content-length")))
+      expect(brotliDecompressSync(brotliBytes).toString()).toBe(source)
+
+      const compressed = respond({ "accept-encoding": "gzip" })
       expect(compressed.headers.get("content-encoding")).toBe("gzip")
-      const bytes = Buffer.from(await compressed.arrayBuffer())
-      expect(bytes.length).toBe(
-        Number(compressed.headers.get("content-length"))
-      )
-      expect(bytes.length).toBeLessThan(source.length / 2)
-      expect(gunzipSync(bytes).toString()).toBe(source)
-      const plain = createStaticFileResponse(
-        dir,
-        path,
-        undefined,
-        request({ "accept-encoding": "gzip;q=0, *;q=1" })
-      )!
+      expect(gunzipSync(Buffer.from(await compressed.arrayBuffer())).toString()).toBe(source)
+
+      const plain = respond({ "accept-encoding": "gzip;q=0, br;q=0" })
       expect(plain.headers.get("content-encoding")).toBeNull()
       expect(await plain.text()).toBe(source)
-      expect(plain.headers.get("etag")).not.toBe(compressed.headers.get("etag"))
-      const revalidated = createStaticFileResponse(
-        dir,
-        path,
-        undefined,
-        request({
-          "accept-encoding": "gzip",
-          "if-none-match": compressed.headers.get("etag")!,
-        })
-      )!
+      expect(plain.headers.get("content-length")).toBe(String(source.length))
+      expect(
+        new Set([brotli, compressed, plain].map((r) => r.headers.get("etag"))).size
+      ).toBe(3)
+
+      const revalidated = respond({
+        "accept-encoding": "gzip",
+        "if-none-match": `W/${compressed.headers.get("etag")}`,
+      })
       expect(revalidated.status).toBe(304)
       expect(await revalidated.text()).toBe("")
       expect(revalidated.headers.get("content-length")).toBeNull()
       expect(
-        createStaticFileResponse(
-          dir,
-          path,
-          undefined,
-          request({ "if-none-match": compressed.headers.get("etag")! })
-        )!.status
+        respond({ "if-none-match": compressed.headers.get("etag")! }).status
       ).toBe(200)
+
+      const head = respond({ "accept-encoding": "br" }, "HEAD")
+      expect(head.headers.get("content-length")).toBe(String(brotliBytes.length))
+      expect(await head.text()).toBe("")
+
+      const tiny = createStaticFileResponse(
+        dir,
+        "/assets/tiny-abcdefgh.js",
+        undefined,
+        new Request("http://localhost/", { headers: { "accept-encoding": "br" } })
+      )!
+      expect(tiny.headers.get("content-encoding")).toBeNull()
+      expect(await tiny.text()).toBe("1;\n")
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto"
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
+import { precompressAssets } from "./precompress-assets"
 import { sharedIconChunk } from "./shared-icon-chunk"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
-import { VitePWA } from "vite-plugin-pwa"
-import type { ManifestOptions } from "vite-plugin-pwa"
-import type { Plugin } from "vite"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import { browserNotices } from "../../scripts/browser-notices"
 
@@ -33,6 +31,7 @@ export const webManifest = {
   theme_color: THEME_SHELL_COLORS.dark,
   background_color: THEME_SHELL_COLORS.dark,
   display: "standalone",
+  lang: "en",
   start_url: "/",
   scope: "/",
   icons: [
@@ -58,18 +57,23 @@ export const webManifest = {
       purpose: "maskable",
     },
   ],
-} satisfies Partial<ManifestOptions>
+}
 
-// These navigations belong to the Cloud gateway, not the tenant SPA. Whenever
-// a Workbox navigation fallback is active, it must leave the logout
-// confirmation and signed-out resting page on the network.
-export const navigateFallbackDenylist = [
-  /^\/api\//,
-  /^\/ws/,
-  /^\/yjs/,
-  /^\/(?:logout|signed-out)(?:\?|$)/,
-  /^\/backups(?:\/|\?|$)/,
-]
+// Installable web app metadata. Worktable has no service worker.
+function webAppManifest(): Plugin {
+  return {
+    name: "worktable-web-app-manifest",
+    apply: "build",
+    applyToEnvironment: (environment) => environment.name === "client",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "manifest.webmanifest",
+        source: JSON.stringify(webManifest),
+      })
+    },
+  }
+}
 
 // One id per build. The client compiles it in; the server reports the id of
 // the build it serves (build-id.txt beside the assets), so an open tab can
@@ -118,41 +122,8 @@ export default defineConfig({
     tailwindcss(),
     browserNotices(),
     buildIdFile(),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: [
-        "favicon.ico",
-        "favicon.svg",
-        "apple-touch-icon-180x180.png",
-      ],
-      manifest: webManifest,
-      devOptions: {
-        enabled: false,
-      },
-      workbox: {
-        navigateFallback: "index.html",
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
-        navigateFallbackDenylist,
-        runtimeCaching: [
-          {
-            urlPattern: /\/api\/backups(?:[/?]|$)/,
-            handler: "NetworkOnly",
-          },
-          {
-            urlPattern: /^\/api\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 300,
-              },
-            },
-          },
-        ],
-      },
-    }),
+    webAppManifest(),
+    precompressAssets(),
   ],
   // Keep the dynamic catalog out of the dev prebundle. Otherwise esbuild
   // splits the static icon barrel into thousands of shared chunks, making

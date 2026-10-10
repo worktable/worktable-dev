@@ -45,7 +45,11 @@ import {
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
-import { fontBootstrapScript } from "@worktable/ui/lib/fonts"
+import {
+  PRODUCT_FONT_PATH,
+  PRODUCT_FONT_STYLE_ID,
+  productFontFaceCss,
+} from "@worktable/ui/lib/fonts"
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import {
@@ -177,7 +181,12 @@ function RootShell({ children }: { children: ReactNode }) {
         <DocumentOpeningData />
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
-        <script dangerouslySetInnerHTML={{ __html: fontBootstrapScript }} />
+        <style
+          id={PRODUCT_FONT_STYLE_ID}
+          dangerouslySetInnerHTML={{
+            __html: productFontFaceCss(PRODUCT_FONT_PATH),
+          }}
+        />
         <script
           dangerouslySetInnerHTML={{ __html: documentOpeningLayoutScript }}
         />

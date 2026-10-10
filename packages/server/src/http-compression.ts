@@ -1,15 +1,18 @@
 import type { MiddlewareHandler } from "hono"
 import { promisify } from "node:util"
-import { gzip } from "node:zlib"
-import { timing } from "./request-timing.ts"
+import { brotliCompress, constants, gzip } from "node:zlib"
 import { publicSurfaceAuthRequired } from "./auth.ts"
 import { isLoopbackPeer } from "./request-source.ts"
+import { timing } from "./request-timing.ts"
 
 /** Compress off the request loop, on libuv's thread pool. */
 export const gzipAsync = promisify(gzip)
+const brotliAsync = promisify(brotliCompress)
 
-export function acceptsGzip(value: string): boolean {
-  const codings = new Map(
+export type ContentEncoding = "br" | "gzip"
+
+function codingQualities(value: string): Map<string, number> {
+  return new Map(
     value
       .toLowerCase()
       .split(",")
@@ -20,7 +23,31 @@ export function acceptsGzip(value: string): boolean {
         return [name, Number.isFinite(q) && q >= 0 && q <= 1 ? q : 0] as const
       })
   )
-  return (codings.get("gzip") ?? codings.get("*") ?? 0) > 0
+}
+
+/**
+ * The offered coding the client weights highest, or null for identity. Ties
+ * go to the earlier offer, so list Brotli first.
+ */
+export function preferredEncoding(
+  acceptEncoding: string,
+  offered: readonly ContentEncoding[]
+): ContentEncoding | null {
+  const codings = codingQualities(acceptEncoding)
+  let best: ContentEncoding | null = null
+  let bestQuality = 0
+  for (const coding of offered) {
+    const quality = codings.get(coding) ?? codings.get("*") ?? 0
+    if (quality > bestQuality) {
+      best = coding
+      bestQuality = quality
+    }
+  }
+  return best
+}
+
+export function acceptsGzip(value: string): boolean {
+  return preferredEncoding(value, ["gzip"]) === "gzip"
 }
 
 /**
@@ -63,20 +90,32 @@ export const compressApiResponse: MiddlewareHandler = async (c, next) => {
   ) {
     c.header("Vary", vary ? `${vary}, Accept-Encoding` : "Accept-Encoding")
   }
-  if (!acceptsGzip(c.req.header("Accept-Encoding") ?? "")) {
-    return
-  }
+  const encoding = preferredEncoding(c.req.header("Accept-Encoding") ?? "", [
+    "br",
+    "gzip",
+  ])
+  if (!encoding || isLocalBrowserRequest(c.req.raw)) return
 
   // Hono may replace a response while updating its headers; consume the
   // current body after Vary has been applied, not the earlier response object.
   const body = new Uint8Array(await c.res.arrayBuffer())
   const compressed =
-    body.byteLength >= 1024
-      ? await timing.span("gzip", () => gzipAsync(body, { level: 6 }))
-      : null
+    body.byteLength < 1024
+      ? null
+      : await timing.span(encoding, () =>
+          encoding === "br"
+            ? brotliAsync(body, {
+                params: {
+                  // Fast enough for every response; smaller than gzip level 6.
+                  [constants.BROTLI_PARAM_QUALITY]: 5,
+                  [constants.BROTLI_PARAM_SIZE_HINT]: body.byteLength,
+                },
+              })
+            : gzipAsync(body, { level: 6 })
+        )
   if (compressed && compressed.byteLength < body.byteLength) {
     c.res = new Response(compressed, c.res)
-    c.header("Content-Encoding", "gzip")
+    c.header("Content-Encoding", encoding)
     c.header("Content-Length", String(compressed.byteLength))
     // A strong validator describes bytes. The weak form still validates the
     // same JSON representation across content encodings without false identity.

@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto"
-import { gzipSync } from "node:zlib"
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve, sep } from "node:path";
-import { acceptsGzip } from "./http-compression.ts";
+import { preferredEncoding, type ContentEncoding } from "./http-compression.ts";
 
 export type StaticAssetsSource =
   | "env"
@@ -158,13 +156,49 @@ function contentTypeFor(path: string): string {
   )
 }
 
-// Bound retained buffers across release changes and large asset collections.
-const MAX_ASSET_CACHE_BYTES = 32 * 1024 * 1024
-const assetCache = new Map<
-  string,
-  { identity: string; body: Buffer; gzip?: Buffer; etag: string; bytes: number }
->()
-let assetCacheBytes = 0
+// Vite names build assets by content hash, so their bytes never change.
+const IMMUTABLE_ASSET = /^\/assets\/[^/]+-[\w-]{8,}\.[a-z0-9]+$/i
+
+type EncodedVariant = { path: string; size: number }
+type Precompressed = Partial<Record<ContentEncoding, EncodedVariant>>
+const precompressedByRoot = new Map<string, Map<string, Precompressed>>()
+
+/**
+ * List the Brotli and gzip copies that the web build writes beside hashed
+ * assets. Requests then serve those files directly: nothing is compressed or
+ * held in memory at run time. Called at startup; later calls rescan.
+ */
+export function indexStaticAssets(staticDir: string): number {
+  const root = resolve(staticDir)
+  const index = new Map<string, Precompressed>()
+  const assets = join(root, "assets")
+  let names: string[] = []
+  try {
+    names = readdirSync(assets)
+  } catch {
+    // A build without hashed assets has nothing to index.
+  }
+  const present = new Set(names)
+  for (const name of names) {
+    const match = /^(.+)\.(br|gz)$/.exec(name)
+    if (!match || !present.has(match[1]!)) continue
+    const path = join(assets, name)
+    const variants = index.get(join(assets, match[1]!)) ?? {}
+    variants[match[2] === "br" ? "br" : "gzip"] = {
+      path,
+      size: statSync(path).size,
+    }
+    index.set(join(assets, match[1]!), variants)
+  }
+  precompressedByRoot.set(root, index)
+  return index.size
+}
+
+function precompressedFor(staticDir: string, filePath: string) {
+  const root = resolve(staticDir)
+  if (!precompressedByRoot.has(root)) indexStaticAssets(root)
+  return precompressedByRoot.get(root)!.get(filePath)
+}
 
 export function createStaticFileResponse(
   staticDir: string,
@@ -183,22 +217,6 @@ export function createStaticFileResponse(
   }
   if (!stats.isFile()) return null;
 
-  const identity = `${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`
-  let asset = assetCache.get(filePath)
-  if (asset && asset.identity !== identity) {
-    assetCacheBytes -= asset.bytes
-    assetCache.delete(filePath)
-    asset = undefined
-  }
-  if (!asset) {
-    const body = readFileSync(filePath)
-    asset = {
-      identity,
-      body,
-      etag: createHash("sha256").update(body).digest("hex"),
-      bytes: body.length,
-    }
-  }
   const responseHeaders = new Headers(headers);
   if (!responseHeaders.has("Content-Type")) {
     responseHeaders.set("Content-Type", contentTypeFor(filePath));
@@ -207,39 +225,32 @@ export function createStaticFileResponse(
     /^(text\/|application\/(json|manifest\+json)|image\/svg\+xml)/.test(
       responseHeaders.get("Content-Type")!
     )
-  const compressed =
-    compressible &&
-    asset.body.length >= 1024 &&
-    acceptsGzip(request?.headers.get("accept-encoding") ?? "")
   if (compressible) responseHeaders.append("Vary", "Accept-Encoding")
-  if (compressed && !asset.gzip) {
-    asset.gzip = gzipSync(asset.body, { level: 6 })
-    if (assetCache.has(filePath)) assetCacheBytes += asset.gzip.length
-    asset.bytes += asset.gzip.length
-  }
-  // Refresh LRU position, and evict even when an existing entry grew a gzip buffer.
-  if (asset.bytes <= MAX_ASSET_CACHE_BYTES) {
-    if (!assetCache.has(filePath)) assetCacheBytes += asset.bytes
-    assetCache.delete(filePath)
-    assetCache.set(filePath, asset)
-  }
-  while (assetCacheBytes > MAX_ASSET_CACHE_BYTES || assetCache.size > 128) {
-    const oldest = assetCache.keys().next().value!
-    assetCacheBytes -= assetCache.get(oldest)!.bytes
-    assetCache.delete(oldest)
-  }
+  const immutable = IMMUTABLE_ASSET.test(requestPath)
+  // Only hashed assets have build-time copies; other files are small.
+  const variants = immutable ? precompressedFor(staticDir, filePath) : undefined
+  const encoding = variants
+    ? preferredEncoding(
+        request?.headers.get("accept-encoding") ?? "",
+        (["br", "gzip"] as const).filter((coding) => variants[coding])
+      )
+    : null
+  const body =
+    encoding && variants ? variants[encoding]! : { path: filePath, size: stats.size }
 
   if (!responseHeaders.has("Cache-Control")) {
     responseHeaders.set(
       "Cache-Control",
-      /^\/assets\/[^/]+-[\w-]{8,}\.[a-z0-9]+$/i.test(requestPath)
-        ? "public, max-age=31536000, immutable"
-        : "no-cache"
+      immutable ? "public, max-age=31536000, immutable" : "no-cache"
     )
   }
-  const etag = `"${asset.etag}${compressed ? "-gzip" : ""}"`
+  // File identity, not content: an atomic replace or rewrite changes it.
+  const identity = [stats.ino, stats.size, Math.round(stats.mtimeMs * 1000)]
+    .map((part) => part.toString(36))
+    .join("-")
+  const etag = `"${identity}${encoding ? `-${encoding}` : ""}"`
   responseHeaders.set("ETag", etag)
-  if (compressed) responseHeaders.set("Content-Encoding", "gzip")
+  if (encoding) responseHeaders.set("Content-Encoding", encoding)
   const ifNoneMatch = request?.headers.get("if-none-match")
   if (
     ifNoneMatch
@@ -251,14 +262,9 @@ export function createStaticFileResponse(
     responseHeaders.delete("Content-Length")
     return new Response(null, { status: 304, headers: responseHeaders })
   }
-  const body = compressed ? asset.gzip! : asset.body
-  responseHeaders.set("Content-Length", String(body.length));
+  responseHeaders.set("Content-Length", String(body.size));
   return new Response(
-    request?.method === "HEAD"
-      ? null
-      : new Uint8Array(
-          body.buffer as ArrayBuffer,
-          body.byteOffset,
-          body.byteLength
-        ), { headers: responseHeaders });
+    request?.method === "HEAD" ? null : Bun.file(body.path),
+    { headers: responseHeaders }
+  );
 }

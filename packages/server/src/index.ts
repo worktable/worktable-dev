@@ -16,8 +16,8 @@ import { debugLogging } from "./debug-log.ts";
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
 import { acceptsGzip, gzipAsync, isLocalBrowserRequest } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
-import { readDocumentPreloads } from "./document-preloads.ts";
-import { readFileSync } from "node:fs";
+import { createAppShell } from "./app-shell.ts";
+import { productFontAssets } from "./product-fonts.ts";
 import { gzipSync } from "node:zlib";
 import { existsSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -98,7 +98,7 @@ import {
   updateCheckSupported,
 } from "./update-check.ts";
 import { VERSION } from "./release-info.ts";
-import { createStaticFileResponse, getStaticAssetsInfo, readBuildId } from "./static-assets.ts";
+import { createStaticFileResponse, getStaticAssetsInfo, indexStaticAssets, readBuildId } from "./static-assets.ts";
 import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
@@ -470,22 +470,18 @@ if (HAS_STATIC) {
     createStaticFileResponse(staticDir, requestPath, headers, request) ??
     new Response("Not found", { status: 404 });
 
-  // Serve static assets (js, css, images, fonts)
+  // Serve static assets (js, css, images, fonts) with their build-time compression
+  indexStaticAssets(staticDir);
   app.get("/assets/*", (c) => staticFile(c.req.path, c.req.raw));
 
-  // PWA files: service worker, manifest, registerSW, icons, favicons, robots
-  if (existsSync(join(staticDir, "sw.js"))) {
-    app.get("/sw.js", (c) => staticFile(c.req.path, c.req.raw));
-    app.get("/workbox-*.js", (c) => staticFile(c.req.path, c.req.raw));
-    app.get("/registerSW.js", (c) => staticFile(c.req.path, c.req.raw));
-  } else {
-    // The PWA plugin can emit registerSW.js without sw.js for this TanStack Start build.
-    // Never let /sw.js fall through to the HTML shell: browsers reject it as a service
-    // worker, and stale clients can keep serving broken cached bundles.
-    app.get("/sw.js", (c) => c.text(SERVICE_WORKER_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
-    app.get("/workbox-*.js", (c) => c.text("", 404));
-    app.get("/registerSW.js", (c) => c.text(REGISTER_SW_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
-  }
+  // Worktable no longer ships a service worker. Browsers that installed one
+  // keep checking /sw.js; this one clears its caches and unregisters. Keep it
+  // through the second release without the worker, then delete these routes.
+  // Never let /sw.js fall through to the HTML shell: browsers reject it as a
+  // service worker, and stale clients can keep serving broken cached bundles.
+  app.get("/sw.js", (c) => c.text(SERVICE_WORKER_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
+  app.get("/workbox-*.js", (c) => c.text("", 404));
+  app.get("/registerSW.js", (c) => c.text(REGISTER_SW_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
   app.get("/manifest.webmanifest", (c) =>
     staticFile(c.req.path, c.req.raw, { "Content-Type": "application/manifest+json" })
   );
@@ -500,14 +496,15 @@ if (HAS_STATIC) {
   // Agent platform logos shown in Settings and onboarding.
   app.get("/agent-logos/*", (c) => staticFile(c.req.path, c.req.raw));
 
-  // SPA fallback: any non-API, non-WS route serves the shell HTML
-  // TanStack Start uses _shell.html; older builds use index.html
-  const shellPath = STATIC_ASSETS.shellPath!;
-  const shellTemplate = readFileSync(shellPath, "utf8");
-  const documentPreloads = readDocumentPreloads(staticDir);
+  // SPA fallback: any non-API, non-WS route serves the shell HTML, with that
+  // route's preloads. TanStack Start uses _shell.html; older builds index.html
+  const shell = createAppShell(staticDir, STATIC_ASSETS.shellPath!, () =>
+    productFontAssets().length ? previewFontVersion() : null
+  );
 
   app.get("*", async (c) => {
-    const opening = await injectDocumentOpening(c.req.raw, shellTemplate, documentPreloads);
+    const pathname = new URL(c.req.url).pathname;
+    const opening = await injectDocumentOpening(c.req.raw, shell.html(pathname), shell.documentPreloads());
     if (opening) {
       const compressed =
         acceptsGzip(c.req.header("Accept-Encoding") ?? "") &&
@@ -521,12 +518,7 @@ if (HAS_STATIC) {
         },
       });
     }
-    return (
-      createStaticFileResponse(staticDir, `/${shellPath.slice(staticDir.length + 1)}`, {
-        "Content-Type": "text/html; charset=utf-8",
-      }, c.req.raw) ??
-      c.text("Static shell not found", 500)
-    );
+    return shell.response(pathname, c.req.raw);
   });
 
 }

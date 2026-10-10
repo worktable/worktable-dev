@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 
-import {
-  devServerProxy,
-  navigateFallbackDenylist,
-  webManifest,
-} from "./vite.config"
+import { devServerProxy, webManifest } from "./vite.config"
 
 describe("development server proxy", () => {
   test("forwards the authenticated app surface without changing HTTP origins", () => {
@@ -27,7 +23,7 @@ describe("development server proxy", () => {
   })
 })
 
-describe("PWA manifest configuration", () => {
+describe("web app manifest", () => {
   test("installs and launches from the application root", () => {
     expect(webManifest.start_url).toBe("/")
     expect(webManifest.scope).toBe("/")
@@ -36,18 +32,5 @@ describe("PWA manifest configuration", () => {
   test("uses the canonical dark shell color", () => {
     expect(webManifest.theme_color).toBe(THEME_SHELL_COLORS.dark)
     expect(webManifest.background_color).toBe(THEME_SHELL_COLORS.dark)
-  })
-
-  test("leaves gateway-owned sign-out navigations on the network", () => {
-    const denied = (path: string) =>
-      navigateFallbackDenylist.some((pattern) => pattern.test(path))
-
-    expect(denied("/logout")).toBe(true)
-    expect(denied("/logout?from=settings")).toBe(true)
-    expect(denied("/backups")).toBe(true)
-    expect(denied("/backups/restore?checkpoint=saved")).toBe(true)
-    expect(denied("/signed-out")).toBe(true)
-    expect(denied("/signed-out?done=1")).toBe(true)
-    expect(denied("/spaces/logout-notes")).toBe(false)
   })
 })

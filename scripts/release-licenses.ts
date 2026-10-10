@@ -18,17 +18,21 @@ const drawingLicenses = [
   "scripts/licenses/caveat-OFL.txt",
   "scripts/licenses/noto-sans-symbols-2-OFL.txt",
 ]
+// The web app embeds these, as does the Desktop shell.
+const appFontLicenses = [
+  "apps/desktop/ui/fonts/Fraunces-OFL.txt",
+  "apps/desktop/ui/fonts/JetBrainsMono-OFL.txt",
+]
 const skillLicense = "plugins/worktable/LICENSE"
 export const releaseLicenses = {
-  cli: [...appLicenses, skillLicense, ...drawingLicenses],
-  server: [...appLicenses, ...drawingLicenses],
+  cli: [...appLicenses, skillLicense, ...drawingLicenses, ...appFontLicenses],
+  server: [...appLicenses, ...drawingLicenses, ...appFontLicenses],
   skills: [skillLicense],
   desktop: [
     ...appLicenses,
     skillLicense,
     ...drawingLicenses,
-    "apps/desktop/ui/fonts/Fraunces-OFL.txt",
-    "apps/desktop/ui/fonts/JetBrainsMono-OFL.txt",
+    ...appFontLicenses,
   ],
 } as const
 export type ReleaseLicenseKind = keyof typeof releaseLicenses

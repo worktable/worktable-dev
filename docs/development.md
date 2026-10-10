@@ -43,9 +43,10 @@ The web app proxies API requests to the first terminal. Stop both processes with
 Ctrl+C. `.local-dev/` is ignored by Git; do not put real secrets in demo content.
 If a port is occupied, choose another and keep the API port and URL consistent.
 
-The development web app loads General Sans from Fontshare. Raw General Sans
-font files are not included in this repository. See the
-[font setup notes](../apps/desktop/ui/fonts/README.md) for Desktop.
+The web app loads General Sans from the Worktable server, which serves a
+provisioned local file. Raw General Sans font files are not included in this
+repository; without one, the app uses fallback fonts. See the
+[font setup notes](../apps/desktop/ui/fonts/README.md).
 
 ## Repository map
 

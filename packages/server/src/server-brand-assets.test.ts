@@ -55,7 +55,7 @@ async function waitForServerUrl(
 }
 
 describe("production brand asset serving", () => {
-  it("serves every PWA raster as an image instead of the SPA shell", async () => {
+  it("serves every PWA raster and the service worker retirement instead of the SPA shell", async () => {
     const root = await mkdtemp(join(tmpdir(), "worktable-brand-static-"))
     roots.push(root)
     const staticDir = join(root, "web")
@@ -98,5 +98,14 @@ describe("production brand asset serving", () => {
       expect(response.headers.get("content-type")).toBe("image/png")
       expect(new Uint8Array(await response.arrayBuffer())).toEqual(iconBytes)
     }
+
+    // Browsers that installed the retired service worker get one that
+    // unregisters itself, never the page shell.
+    const worker = await fetch(`${serverUrl}/sw.js`)
+    expect(worker.headers.get("content-type")).toContain("text/javascript")
+    expect(await worker.text()).toContain("registration.unregister()")
+    const page = await fetch(`${serverUrl}/spaces/notes`)
+    expect(page.headers.get("content-type")).toContain("text/html")
+    expect(await page.text()).toBe("<!doctype html>")
   })
 })

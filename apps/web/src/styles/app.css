@@ -6,3 +6,24 @@
 @import "./markdown.css";
 @import "./document.css";
 @import "./print.css";
+
+/* Fraunces and JetBrains Mono ship with the app as hashed assets: the Latin
+   subsets Desktop uses, licensed in apps/desktop/ui/fonts. General Sans comes
+   from the Worktable server; see @worktable/ui/lib/fonts. */
+@font-face {
+  font-family: Fraunces;
+  src: url("../../../desktop/ui/fonts/fraunces-variable-latin.woff2")
+    format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../../../desktop/ui/fonts/jetbrains-mono-variable-latin.woff2")
+    format("woff2");
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+}

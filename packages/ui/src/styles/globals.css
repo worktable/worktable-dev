@@ -1,5 +1,5 @@
-/* The application shell loads optional remote fonts after first paint through
-   @worktable/ui/lib/fonts. Slow font providers must not block these rules. */
+/* Font faces are declared by the web app (styles/app.css and
+   @worktable/ui/lib/fonts) and swap in when loaded; these rules never wait. */
 @import "./theme.generated.css";
 @import "./backdrop.css";
 @import "./control-finishes.css";

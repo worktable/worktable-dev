@@ -701,6 +701,17 @@ export async function updateDocumentInventoryAt(
     expectedSpaceRootIdentity?: InventorySpaceRootIdentity
   } = {}
 ): Promise<DocumentInventory> {
+  return (await applyDocumentInventoryMutationAt(spaceRoot, mutation, options))
+    .inventory
+}
+
+async function applyDocumentInventoryMutationAt(
+  spaceRoot: string,
+  mutation: DocumentInventoryMutation,
+  options: {
+    expectedSpaceRootIdentity?: InventorySpaceRootIdentity
+  } = {}
+): Promise<{ inventory: DocumentInventory; changed: boolean }> {
   const inventoryPath = resolve(spaceRoot, "documents.meta.json")
   return withStoreWriteLock(inventoryPath, async () => {
     const initialIdentity = await requireInventorySpaceRootIdentity(
@@ -709,12 +720,20 @@ export async function updateDocumentInventoryAt(
     )
     const current = await readDocumentInventoryAt(inventoryPath, spaceRoot)
     const serialized = prepareInventoryMutation(current, spaceRoot, mutation)
+    // Saving a document restates its unchanged claim. Rewriting identical
+    // identity would only wake every watcher and corpus consumer.
+    if (current.exists && serialized === serializeInventory(current.raw)) {
+      return { inventory: current, changed: false }
+    }
     // Bind publication to the Space directory observed before preparation.
     // This refuses ordinary concurrent parent or Space replacement immediately
     // before atomicWriteText creates its sibling temporary file.
     await requireInventorySpaceRootIdentity(spaceRoot, initialIdentity)
     await atomicWriteText(inventoryPath, serialized)
-    return readDocumentInventoryAt(inventoryPath, spaceRoot)
+    return {
+      inventory: await readDocumentInventoryAt(inventoryPath, spaceRoot),
+      changed: true,
+    }
   })
 }
 
@@ -723,9 +742,12 @@ export async function updateDocumentInventory(
   mutation: DocumentInventoryMutation
 ): Promise<DocumentInventory> {
   const spaceRoot = await requireRealInventorySpaceRoot(spaceId)
-  const updated = await updateDocumentInventoryAt(spaceRoot, mutation)
-  notifyWorkspaceChange({ type: "documentCorpus", spaceId })
-  return updated
+  const { inventory, changed } = await applyDocumentInventoryMutationAt(
+    spaceRoot,
+    mutation
+  )
+  if (changed) notifyWorkspaceChange({ type: "documentCorpus", spaceId })
+  return inventory
 }
 
 export async function readDocumentBundleManifest(

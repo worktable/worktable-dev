@@ -86,7 +86,6 @@ describe("WorkspaceWatcher", () => {
   it("routes format-neutral inventory and future source edits through one corpus seam", () => {
     for (const path of [
       "space/docs.meta.json",
-      "space/docs.meta.json.tmp",
       "space/documents.meta.json",
       "space/docs/canvas.bin",
       "space/widgets/canvas/source.md",
@@ -96,13 +95,20 @@ describe("WorkspaceWatcher", () => {
         parseChangedPath("/workspace/spaces", path, "/workspace/spaces")
       ).toEqual({ type: "documentCorpus", spaceId: "space" })
     }
-    expect(
-      parseChangedPath(
-        "/workspace/spaces",
-        "space/annotations/note.json",
-        "/workspace/spaces"
-      )
-    ).toBeNull()
+    // Atomic writes stage a temporary sibling; the publishing rename is
+    // reported under the canonical name above.
+    for (const path of [
+      "space/annotations/note.json",
+      "space/docs.meta.json.tmp",
+      "space/documents.meta.json.tmp",
+      `space/.worktable-write-42-${"a".repeat(32)}.tmp`,
+      `space/docs/plans/.worktable-write-42-${"b".repeat(32)}.tmp`,
+      "space/docs/plans/q3.md.tmp",
+    ]) {
+      expect(
+        parseChangedPath("/workspace/spaces", path, "/workspace/spaces")
+      ).toBeNull()
+    }
   })
   it("reconciles Space and HTML Doc identities from directory-level events", () => {
     expect(

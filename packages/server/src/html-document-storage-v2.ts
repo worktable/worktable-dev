@@ -10,6 +10,7 @@ export {
   isHtmlDocumentPath,
   parseHtmlDocumentWidgetFile,
 } from "./html-document-properties-v2.ts"
+import { isUtf8 } from "node:buffer"
 import { createHash } from "node:crypto"
 import { lstat } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
@@ -20,7 +21,10 @@ import {
 } from "@worktable/types"
 import { atomicWriteText } from "./atomic-file.ts"
 import { BoundedFileReadError } from "./bounded-file.ts"
-import { buildDocumentCatalog } from "./document-catalog.ts"
+import {
+  buildDocumentCatalog,
+  type DocumentCatalog,
+} from "./document-catalog.ts"
 import {
   readDocumentPortableStateV2,
   writeDocumentPortableStateV2,
@@ -41,7 +45,12 @@ import {
   mintDocumentId,
   updateDocumentInventory,
 } from "./document-inventory.ts"
-import { getDocArchiveInfo, getDocLifetimeView } from "./store.ts"
+import {
+  getDocArchiveInfo,
+  getDocArchiveInfoMap,
+  getDocLifetimeView,
+} from "./store.ts"
+import { readFileFingerprint } from "./file-fingerprint.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import {
   ensureRealDocumentStorageDirectory,
@@ -346,6 +355,36 @@ export async function readHtmlDocumentStorageV2(input: {
   return readHtmlDocumentStorageV2Owner(input.spaceId, owner)
 }
 
+/** The listed widget for an HTML Doc from its saved properties. */
+function widgetForOwner(
+  owner: HtmlDocumentStorageV2Owner,
+  propertiesEntry: DocumentGenerationPayloadEntry | undefined,
+  archive: WidgetFile["archive"] | undefined,
+  sourceSha256: () => string
+): WidgetFile {
+  const properties = parsePropertiesEnvelope(
+    propertiesEntry,
+    owner.path,
+    archive ?? null
+  )
+  if (!properties) {
+    return defaultWidget({
+      path: owner.path,
+      title: owner.title,
+      updatedAt: owner.updatedAt,
+      archive: archive ?? null,
+    })
+  }
+  // Properties saved for different source bytes keep their metadata but
+  // lose granted permissions: the source changed outside Worktable.
+  return properties.sourceSha256 === sourceSha256()
+    ? properties.widget
+    : parseHtmlDocumentWidgetFile(
+        { ...properties.widget, permissions: DENIED_PERMISSIONS },
+        owner.path
+      )
+}
+
 async function readHtmlDocumentStorageV2Owner(
   spaceId: string,
   owner: HtmlDocumentStorageV2Owner
@@ -360,25 +399,12 @@ async function readHtmlDocumentStorageV2Owner(
     portableState(owner, spaceId),
     getDocArchiveInfo(spaceId, owner.path),
   ])
-  const fallback = defaultWidget({
-    path: owner.path,
-    title: owner.title,
-    updatedAt: owner.updatedAt,
-    archive,
-  })
-  const properties = parsePropertiesEnvelope(
+  const widget = widgetForOwner(
+    owner,
     state ? entryAt(state.entries, HTML_DOCUMENT_PROPERTIES_ENTRY) : undefined,
-    owner.path,
-    archive
+    archive,
+    () => sourceHash(bytes)
   )
-  const widget = properties
-    ? properties.sourceSha256 === sourceHash(bytes)
-      ? properties.widget
-      : parseHtmlDocumentWidgetFile(
-          { ...properties.widget, permissions: DENIED_PERMISSIONS },
-          owner.path
-        )
-    : fallback
   return {
     owner,
     widget,
@@ -387,15 +413,53 @@ async function readHtmlDocumentStorageV2Owner(
   }
 }
 
+// Listing compares each source with its saved properties. Hash a source once
+// per change rather than once per list; outside edits change the fingerprint.
+const SOURCE_DIGEST_CACHE_LIMIT = 4096
+const sourceDigests = new Map<
+  string,
+  { fingerprint: string; sha256: string; utf8: boolean }
+>()
+
+async function sourceDigest(
+  spaceId: string,
+  owner: HtmlDocumentStorageV2Owner
+): Promise<{ sha256: string; utf8: boolean }> {
+  const path = resolve(
+    getWorkspaceRoot(),
+    "spaces",
+    spaceId,
+    owner.sourceRelativePath
+  )
+  const fingerprint = await readFileFingerprint(path)
+  const cached = sourceDigests.get(path)
+  if (fingerprint && cached?.fingerprint === fingerprint.key) return cached
+  sourceDigests.delete(path)
+  const bytes = await readBoundedRegularFileBytes(
+    path,
+    DOCUMENT_GENERATION_MAX_ENTRY_BYTES
+  )
+  const digest = { sha256: sourceHash(bytes), utf8: isUtf8(bytes) }
+  if (fingerprint && !fingerprint.racy) {
+    if (sourceDigests.size >= SOURCE_DIGEST_CACHE_LIMIT) sourceDigests.clear()
+    sourceDigests.set(path, { fingerprint: fingerprint.key, ...digest })
+  }
+  return digest
+}
+
 export async function listHtmlDocumentsStorageV2(input: {
   spaceId: string
   includeArchived?: boolean
   includeAliasShadows?: boolean
+  /** Read callers may list from the Space's read-model snapshot. */
+  catalog?: () => Promise<DocumentCatalog>
 }): Promise<WidgetFile[]> {
-  const catalog = await buildDocumentCatalog({
-    workspaceRoot: getWorkspaceRoot(),
-    spaceId: input.spaceId,
-  })
+  const catalog = input.catalog
+    ? await input.catalog()
+    : await buildDocumentCatalog({
+        workspaceRoot: getWorkspaceRoot(),
+        spaceId: input.spaceId,
+      })
   const owners = catalog.entries.flatMap((entry) => {
     if (
       entry.kind !== "document" ||
@@ -426,9 +490,27 @@ export async function listHtmlDocumentsStorageV2(input: {
       } satisfies HtmlDocumentStorageV2Owner,
     ]
   })
+  const archives = await getDocArchiveInfoMap(
+    input.spaceId,
+    owners.map((owner) => owner.path)
+  )
   const results = await mapWithConcurrency(owners, 4, async (owner) => {
     try {
-      return (await readHtmlDocumentStorageV2Owner(input.spaceId, owner)).widget
+      // The catalog already read each durable Doc's saved properties.
+      const properties = catalog.htmlProperties.get(owner.documentId)
+      if (owner.identity === "durable" && properties === undefined) {
+        return (await readHtmlDocumentStorageV2Owner(input.spaceId, owner))
+          .widget
+      }
+      if (properties === null || properties?.kind === "mismatch") return null
+      const digest = await sourceDigest(input.spaceId, owner)
+      if (!digest.utf8) return null
+      return widgetForOwner(
+        owner,
+        properties?.kind === "read" ? properties.entry : undefined,
+        archives.get(owner.path),
+        () => digest.sha256
+      )
     } catch {
       return null
     }

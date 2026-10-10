@@ -48,6 +48,13 @@ import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
 import { analyzeDocumentPath } from "./document-path.ts";
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts";
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts";
+import {
+  beginSpaceWrite,
+  documentSpaceForPath,
+  endSpaceWrite,
+  noteWorkspaceActivity,
+} from "./workspace-read-model.ts";
+import { readFileFingerprint } from "./file-fingerprint.ts";
 import { noteDocumentEdited } from "./activity-log.ts";
 import {
   invalidateHostedDocumentShares,
@@ -304,16 +311,24 @@ interface PendingDocReplay {
 const suppressedPaths = new Map<string, SuppressedPathState>();
 const pendingDocReplays = new Map<string, PendingDocReplay>();
 
+// Suppression brackets every internal write the watcher would otherwise echo,
+// so it also tells the read model when a Space's documents are mid-write.
 export function suppressPath(filePath: string): void {
   const state = suppressedPaths.get(filePath);
   if (state) state.count += 1;
   else suppressedPaths.set(filePath, { count: 1, observed: false });
+  const spaceId = documentSpaceForPath(baseDir(), filePath);
+  if (spaceId) beginSpaceWrite(spaceId);
+  else noteWorkspaceActivity();
 }
 
 export function unsuppressPath(filePath: string): void {
   const state = suppressedPaths.get(filePath);
   if (!state) return;
   state.count -= 1;
+  const spaceId = documentSpaceForPath(baseDir(), filePath);
+  if (spaceId) endSpaceWrite(spaceId);
+  else noteWorkspaceActivity();
   if (state.count > 0) return;
   suppressedPaths.delete(filePath);
   if (state.observed && state.docReplay) {
@@ -980,8 +995,29 @@ export async function deleteSpace(spaceId: string): Promise<void> {
   });
 }
 
+// Parsed docs.meta.json by file fingerprint. Provenance and collaboration
+// epochs make this file large and every list, open and save reads it, while it
+// changes far less often. An outside edit or replacement changes the
+// fingerprint; a file modified too recently to trust is parsed every time.
+const docMetaCache = new Map<string, { fingerprint: string; meta: DocMetaFile }>();
+
+/** Shared parsed docs.meta.json. Callers must not mutate it or its entries. */
 async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
   const path = docMetaPath(spaceId);
+  const fingerprint = await readFileFingerprint(path);
+  if (!fingerprint) {
+    docMetaCache.delete(path);
+    return { ...EMPTY_DOC_META, docs: {} };
+  }
+  const cached = docMetaCache.get(path);
+  if (cached?.fingerprint === fingerprint.key) return cached.meta;
+  const meta = await parseDocMetaFile(path);
+  if (fingerprint.racy) docMetaCache.delete(path);
+  else docMetaCache.set(path, { fingerprint: fingerprint.key, meta });
+  return meta;
+}
+
+async function parseDocMetaFile(path: string): Promise<DocMetaFile> {
   if (!existsSync(path)) return { ...EMPTY_DOC_META, docs: {} };
 
   try {
@@ -1092,7 +1128,7 @@ async function mutateDocMetaFile<T>(
   mutate: (meta: DocMetaFile) => T | Promise<T>
 ): Promise<T> {
   return withWriteLock(docMetaPath(spaceId), async () => {
-    const meta = await readDocMetaFile(spaceId);
+    const meta = structuredClone(await readDocMetaFile(spaceId));
     const before = JSON.stringify(meta);
     const result = await mutate(meta);
     // Bookkeeping that changes nothing must not touch the file: the watcher
@@ -1247,26 +1283,70 @@ export async function recordDocCreated(
   });
 }
 
+/** A caller-owned copy of a value from the shared parsed docs.meta.json. */
+function ownedCopy<T>(value: T): T {
+  return value === undefined ? value : structuredClone(value);
+}
+
 export async function getDocArchiveInfo(spaceId: string, docPath: string): Promise<ArchiveInfo | undefined> {
   const meta = await readDocMetaFile(spaceId);
-  return meta.docs[sanitizeDocPath(docPath)]?.archived;
+  return ownedCopy(meta.docs[sanitizeDocPath(docPath)]?.archived);
 }
 
 /** Read archive metadata once for a bounded set of document paths. */
 export async function getDocArchiveInfoMap(spaceId: string, docPaths: Iterable<string>): Promise<Map<string, ArchiveInfo>> {
+  return (await getDocMetaFactsMaps(spaceId, docPaths)).archives;
+}
+
+/**
+ * Archive and lifetime facts for a set of document paths from one read of
+ * docs.meta.json. Archive entries are keyed by sanitized path, lifetimes by
+ * the path as given.
+ */
+export async function getDocMetaFactsMaps(
+  spaceId: string,
+  docPaths: Iterable<string>
+): Promise<{
+  archives: Map<string, ArchiveInfo>;
+  lifetimes: Map<string, DocLifetimeFacts>;
+}> {
   const meta = await readDocMetaFile(spaceId);
-  const result = new Map<string, ArchiveInfo>();
+  const archives = new Map<string, ArchiveInfo>();
+  const lifetimes = new Map<string, DocLifetimeFacts>();
   for (const rawPath of docPaths) {
     const path = sanitizeDocPath(rawPath);
     const archived = meta.docs[path]?.archived;
-    if (archived) result.set(path, archived);
+    if (archived) archives.set(path, ownedCopy(archived));
+    const facts = lifetimeFacts(meta.docs[path]);
+    if (Object.keys(facts).length > 0) lifetimes.set(rawPath, facts);
   }
-  return result;
+  return { archives, lifetimes };
+}
+
+/** Everything a document read reports from docs.meta.json, from one read. */
+export async function getDocMetaView(
+  spaceId: string,
+  docPath: string
+): Promise<{
+  archived?: ArchiveInfo;
+  provenance?: DocProvenance;
+  collaborationCacheEpoch: string;
+  collaborationCacheEpochHistory: string[];
+}> {
+  const entry = (await readDocMetaFile(spaceId)).docs[sanitizeDocPath(docPath)];
+  return {
+    archived: ownedCopy(entry?.archived),
+    provenance: ownedCopy(entry?.provenance),
+    collaborationCacheEpoch: entry?.collaborationCacheEpoch ?? "legacy",
+    collaborationCacheEpochHistory: [
+      ...(entry?.collaborationCacheEpochHistory ?? []),
+    ],
+  };
 }
 
 export async function getDocProvenance(spaceId: string, docPath: string): Promise<DocProvenance | undefined> {
   const meta = await readDocMetaFile(spaceId);
-  return meta.docs[sanitizeDocPath(docPath)]?.provenance;
+  return ownedCopy(meta.docs[sanitizeDocPath(docPath)]?.provenance);
 }
 
 export async function getDocCollaborationCacheEpoch(
@@ -1282,9 +1362,9 @@ export async function getDocCollaborationCacheEpochHistory(
   docPath: string
 ): Promise<string[]> {
   const meta = await readDocMetaFile(spaceId);
-  return (
-    meta.docs[sanitizeDocPath(docPath)]?.collaborationCacheEpochHistory ?? []
-  );
+  return [
+    ...(meta.docs[sanitizeDocPath(docPath)]?.collaborationCacheEpochHistory ?? []),
+  ];
 }
 
 async function rotateDocCollaborationCacheEpoch(
@@ -1909,9 +1989,9 @@ export async function listDocsDetailed(
       blockCount,
       containsMermaid,
       richBlockTypes,
-      archived: meta.docs[path]?.archived,
+      archived: ownedCopy(meta.docs[path]?.archived),
       ...lifetimeListFields(meta.docs[path], statResult?.updatedAt),
-      provenance: meta.docs[path]?.provenance,
+      provenance: ownedCopy(meta.docs[path]?.provenance),
     };
   }));
 

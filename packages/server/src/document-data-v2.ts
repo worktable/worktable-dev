@@ -721,31 +721,36 @@ async function readStateRevisionAt(
   ) {
     throw new Error("document format does not admit portable state")
   }
-  const entries = await mapWithConcurrency(
+  // Entries share directories; check each directory once per read.
+  const checkedDirectories = new Map<string, Promise<string>>()
+  const hashed = await mapWithConcurrency(
     manifest.entries,
     DOCUMENT_PORTABLE_STATE_READ_CONCURRENCY,
     async (entry) => {
       const path = join(root, "entries", entry.path)
-      await requireRealDocumentStorageDirectory(root, dirname(path))
+      const directory = dirname(path)
+      let checked = checkedDirectories.get(directory)
+      if (!checked) {
+        checked = requireRealDocumentStorageDirectory(root, directory)
+        checkedDirectories.set(directory, checked)
+      }
+      await checked
       const bytes = await readBoundedRegularFileBytes(
         path,
         Math.min(entry.bytes, DOCUMENT_GENERATION_MAX_ENTRY_BYTES)
       )
-      const hash = createHash("sha256").update(bytes).digest("hex")
-      if (bytes.byteLength !== entry.bytes || hash !== entry.sha256) {
+      const sha256 = createHash("sha256").update(bytes).digest("hex")
+      if (bytes.byteLength !== entry.bytes || sha256 !== entry.sha256) {
         throw new Error(`document state entry hash mismatch: ${entry.path}`)
       }
-      return { path: entry.path, bytes }
+      return { path: entry.path, bytes, sha256 }
     }
   )
+  const entries = hashed.map(({ path, bytes }) => ({ path, bytes }))
   const totalBytes = entries.reduce(
     (total, entry) => total + entry.bytes.byteLength,
     0
   )
-  const hashed = entries.map((entry) => ({
-    ...entry,
-    sha256: createHash("sha256").update(entry.bytes).digest("hex"),
-  }))
   if (
     totalBytes !== manifest.totalBytes ||
     stateRevision(

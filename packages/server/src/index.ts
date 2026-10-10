@@ -10,6 +10,7 @@ import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { compressApiResponse } from "./http-compression.ts";
+import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
 import { acceptsGzip } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
 import { readDocumentPreloads } from "./document-preloads.ts";
@@ -233,6 +234,7 @@ app.use("*", (c, next) =>
   c.req.path === "/api/linked/account/callback" ? next() : requestLogger(c, next)
 );
 app.use("/api/*", compressApiResponse);
+app.use("*", advanceGenerationOnWrite);
 
 // A replacement closes this gate before stopping the listener. Every admitted
 // workspace mutation is held until its complete route lifecycle settles, so a
@@ -373,6 +375,7 @@ app.use("/api/*", (c, next) =>
   runAsActivityActor(c.get("identity")?.principal, next)
 );
 app.use("/api/*", requireWorkspaceContentEpoch);
+app.use("/api/*", shareInFlightReads);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
 // login and status work unauthenticated (the login page must be reachable with

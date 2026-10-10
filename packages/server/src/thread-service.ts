@@ -53,7 +53,10 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import { getSpaceArchiveInfo, listSpaces, readSpace } from "./store.ts"
-import { listAgentConnections } from "./agent-connection-store.ts"
+import {
+  listAgentConnections,
+  signInPresentations,
+} from "./agent-connection-store.ts"
 import {
   inboxSignalRevision,
   threadSignalRevision,
@@ -601,12 +604,14 @@ export async function listThreadParticipants(
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
-  const [bindings, connections, tokens, participants] = await Promise.all([
-    listParticipantBindings(),
-    listAgentConnections(),
-    listTokens(),
-    participantsByKey(),
-  ])
+  const [bindings, connections, tokens, participants, signIns] =
+    await Promise.all([
+      listParticipantBindings(),
+      listAgentConnections(),
+      listTokens(),
+      participantsByKey(),
+      signInPresentations(),
+    ])
   const alwaysOnParticipantIds = new Set(
     connections.flatMap((connection) =>
       connection.mode === "always-on" && connection.participant
@@ -632,6 +637,13 @@ export async function listThreadParticipants(
         (hasScope(token.scopes, "threads:read") &&
           hasScope(token.scopes, "threads:write"))
     )
+  }
+  // A sign-in agent on Cloud whose owner took Threads away, likewise.
+  for (const [key, signIn] of signIns) {
+    const participant = participants.get(key)
+    if (participant && signIn.threads === false) {
+      readsThreads.set(participant.id, false)
+    }
   }
   const withoutThreads = new Set(
     [...readsThreads].flatMap(([id, reads]) => (reads ? [] : [id]))
@@ -688,6 +700,19 @@ export async function listThreadParticipantsForDisplay(
         : []
     )
   )
+  // Sign-in agents (Claude, ChatGPT on Cloud) carry what their owner chose.
+  const [bindings, signIns] = await Promise.all([
+    participantsByKey(),
+    signInPresentations(),
+  ])
+  for (const [key, signIn] of signIns) {
+    const participant = bindings.get(key)
+    if (!participant || presentations[participant.id]) continue
+    presentations[participant.id] = {
+      ...(signIn.platform ? { platform: signIn.platform } : {}),
+      icon: signIn.icon ?? null,
+    }
+  }
   return {
     participants: participants.map((participant) => ({
       ...participant,

@@ -56,10 +56,27 @@ interface StoredAgentConnection {
   agentLabel?: string
 }
 
+/**
+ * How a sign-in agent (Claude or ChatGPT on Worktable Cloud) appears here.
+ * Its access and grant live with Cloud; its thread name lives with its
+ * participant.
+ */
+interface StoredSignInPresentation {
+  principalId: string
+  platform?: AgentPlatformId
+  icon?: string
+  /**
+   * False when its owner took Threads away on Cloud, which enforces it; here
+   * it only keeps the agent out of thread recipients.
+   */
+  threads?: boolean
+}
+
 interface AgentConnectionFile {
   type: "worktable.agent-connections"
   version: 1
   connections: StoredAgentConnection[]
+  signIns?: StoredSignInPresentation[]
 }
 
 let mutationQueue: Promise<unknown> = Promise.resolve()
@@ -623,5 +640,70 @@ export async function updateAgentConnection(
   return (
     (await listAgentConnections()).find((connection) => connection.id === id) ??
     null
+  )
+}
+
+/**
+ * The owner names a sign-in agent, picks its icon (null for its platform's
+ * logo), and records its platform. Its thread participant takes the name.
+ */
+export async function updateSignInAgent(
+  principalId: string,
+  changes: {
+    displayName?: string
+    icon?: string | null
+    platform?: AgentPlatformId
+    threads?: boolean
+  }
+): Promise<void> {
+  await serialized(async () => {
+    const file = await loadFile()
+    const signIns = (file.signIns ??= [])
+    let record = signIns.find((entry) => entry.principalId === principalId)
+    if (!record) {
+      record = { principalId }
+      signIns.push(record)
+    }
+    if (changes.platform) record.platform = changes.platform
+    if (changes.icon === null) delete record.icon
+    else if (changes.icon !== undefined) record.icon = changes.icon
+    if (changes.threads === true) delete record.threads
+    else if (changes.threads === false) record.threads = false
+    await saveFile(file)
+  })
+  if (changes.displayName !== undefined) {
+    // Outside the connection lock: a rename rewrites the agent's threads.
+    await resolveParticipant(
+      {
+        agent: null,
+        principal: {
+          id: principalId,
+          type: "agent",
+          displayName: changes.displayName,
+        },
+      },
+      { name: changes.displayName }
+    )
+  }
+  await notifyThreadParticipantsChanged()
+}
+
+/**
+ * Platform, icon, and Threads access of sign-in agents, keyed by their
+ * participant's key.
+ */
+export async function signInPresentations(): Promise<
+  Map<string, { platform?: AgentPlatformId; icon?: string; threads?: false }>
+> {
+  const file = await loadFile()
+  return new Map(
+    (file.signIns ?? []).map((entry) => [
+      `principal:${entry.principalId}`,
+      {
+        platform: entry.platform,
+        icon: entry.icon,
+        ...(entry.threads === false ? { threads: false as const } : {}),
+      },
+    ])
   )
 }

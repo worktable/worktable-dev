@@ -18,7 +18,11 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 
-import { updateAgentConnection } from "@/lib/agent-connections-api"
+import {
+  agentConnectionPlatform,
+  updateAgentConnection,
+  updateSignInAgent,
+} from "@/lib/agent-connections-api"
 import { threadQueryKeys } from "@/lib/threads-queries"
 import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
@@ -49,14 +53,40 @@ export function AgentEditDialog({
   }, [connection])
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!connection) throw new Error("No agent selected")
       const trimmed = name.trim()
-      return updateAgentConnection(connection.id, {
-        ...(trimmed !== connection.displayName ? { displayName: trimmed } : {}),
-        ...(icon !== (connection.icon ?? null) ? { icon } : {}),
+      const renamed = trimmed !== connection.displayName
+      const iconChanged = icon !== (connection.icon ?? null)
+      const shownPlatform = agentConnectionPlatform(connection)
+      // A sign-in agent on Cloud also appears in this workspace's threads.
+      // Its name and icon go there first: if Cloud then fails, the form
+      // still differs and saving again completes both.
+      const signInClient =
+        connection.authKind === "oauth" &&
+        connection.target.kind === "mcp-client"
+          ? connection.target.clientId
+          : null
+      if (signInClient) {
+        await updateSignInAgent(signInClient, {
+          displayName: trimmed,
+          icon,
+          // Never record "other" over a platform the workspace already knows.
+          platform: shownPlatform === "other" ? undefined : shownPlatform,
+        })
+      }
+      await updateAgentConnection(connection.id, {
+        ...(renamed ? { displayName: trimmed } : {}),
+        ...(iconChanged ? { icon } : {}),
         ...(access && !sameAccess(access, connection.access) ? { access } : {}),
       })
+      // Its Threads access only once Cloud has accepted it, so a refused
+      // change never hides an agent that can still take part.
+      if (signInClient) {
+        await updateSignInAgent(signInClient, {
+          threads: (access ?? connection.access)?.threads ?? true,
+        })
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

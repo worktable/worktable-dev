@@ -1,7 +1,12 @@
-import type {
-  AgentAccess,
-  AgentConnection,
-  AgentConnectionInventory,
+import {
+  isAgentPlatformId,
+  platformForAdapter,
+  platformForClient,
+  platformForName,
+  type AgentAccess,
+  type AgentConnection,
+  type AgentPlatformId,
+  type AgentConnectionInventory,
 } from "@worktable/types"
 import { fetchJSON } from "./http"
 
@@ -66,4 +71,35 @@ export function updateAgentConnection(
     `/api/agent-connections/${encodeURIComponent(connectionId)}`,
     { method: "PATCH", body: JSON.stringify(changes) }
   )
+}
+
+/** On Cloud, how a sign-in agent such as Claude or ChatGPT appears in threads. */
+export function updateSignInAgent(
+  clientId: string,
+  changes: {
+    displayName?: string
+    icon?: string | null
+    platform?: AgentPlatformId
+    threads?: boolean
+  }
+): Promise<{ ok: true }> {
+  return fetchJSON(
+    `/api/agent-connections/sign-ins/${encodeURIComponent(clientId)}`,
+    { method: "PUT", body: JSON.stringify(changes) }
+  )
+}
+
+/** The platform an agent is shown with: recorded, else inferred. */
+export function agentConnectionPlatform(
+  connection: AgentConnection
+): AgentPlatformId {
+  if (isAgentPlatformId(connection.platform)) return connection.platform
+  if (connection.target.kind === "agent-adapter") {
+    return platformForAdapter(connection.target.adapter)
+  }
+  const fromClient = platformForClient(connection.target.clientId)
+  // Cloud's sign-ins carry an opaque client id, so their name decides.
+  return fromClient === "other"
+    ? platformForName(connection.displayName)
+    : fromClient
 }

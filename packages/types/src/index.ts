@@ -4,6 +4,7 @@ import type {
   DocumentHealth,
 } from "./documents";
 
+export * from "./constants";
 export * from "./mermaid";
 export * from "./markdown";
 export * from "./annotations";

@@ -323,9 +323,6 @@ export const DocumentArchiveOnInputSchema = z
   })
   .describe(DOCUMENT_ARCHIVE_ON_DESCRIPTION)
 
-/** A Space shows at most this many pinned starting points. */
-export const START_HERE_LIMIT = 7
-
 /** One pinned starting point, stored in space.json settings.startHere. */
 export const StartHerePinSchema = z.object({
   path: z.string().min(1).max(4096),

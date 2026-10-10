@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import { Clock3, Pin, PinOff, Infinity as InfinityIcon } from "lucide-react"
-import { START_HERE_LIMIT } from "@worktable/types"
+import { START_HERE_LIMIT } from "@worktable/types/constants"
 import { toast } from "@worktable/ui/components/sonner"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import { activityQueryKeys } from "@/lib/activity"

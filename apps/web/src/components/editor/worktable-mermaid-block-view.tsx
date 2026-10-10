@@ -8,9 +8,7 @@ import {
   Pencil,
   Workflow,
 } from "lucide-react"
-import CodeMirror from "@uiw/react-codemirror"
-import { mermaid as mermaidLanguage } from "codemirror-lang-mermaid"
-import { useCallback, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useMemo, useState } from "react"
 import { Button } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
 import { cn } from "@worktable/ui/lib/utils"
@@ -19,6 +17,9 @@ import { WorktableMermaidRenderer } from "./worktable-mermaid-renderer"
 import { MERMAID_EXAMPLES } from "./worktable-mermaid-examples"
 import type { MermaidExample } from "./worktable-mermaid-examples"
 import { useTheme } from "@/components/theme-provider"
+
+const loadSourceEditor = () => import("./worktable-mermaid-source-editor")
+const MermaidSourceEditor = lazy(loadSourceEditor)
 
 /** Small identity tile shown in both collapsed and expanded headers. */
 function MermaidIconTile() {
@@ -58,7 +59,6 @@ export default function MermaidBlockComponent({
     [isLocked, updateProps]
   )
 
-  const languageExtension = useMemo(() => mermaidLanguage(), [])
   const [showEditor, setShowEditor] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -181,6 +181,8 @@ export default function MermaidBlockComponent({
                   aria-pressed={showEditor}
                   className={cn(showEditor && "bg-muted text-foreground")}
                   onClick={() => setShowEditor((current) => !current)}
+                  onPointerEnter={() => void loadSourceEditor()}
+                  onFocus={() => void loadSourceEditor()}
                   title={showEditor ? "Hide source" : "Edit source"}
                 >
                   <Code2 className="size-3.5" />
@@ -279,21 +281,13 @@ export default function MermaidBlockComponent({
 
       {!isReadOnly && !isLocked && showEditor && (
         <div className="mermaid-source-editor overflow-hidden rounded-lg border border-border">
-          <CodeMirror
-            placeholder="Write your mermaid code here…"
-            style={{ width: "100%" }}
-            extensions={[languageExtension]}
-            basicSetup={{
-              lineNumbers: true,
-              foldGutter: false,
-              syntaxHighlighting: true,
-            }}
-            theme={resolvedTheme === "dark" ? "dark" : "light"}
-            value={data}
-            width="100%"
-            height="200px"
-            onChange={(value) => updateProps({ data: value })}
-          />
+          <Suspense fallback={<div className="h-[200px]" />}>
+            <MermaidSourceEditor
+              value={data}
+              theme={resolvedTheme === "dark" ? "dark" : "light"}
+              onChange={(value) => updateProps({ data: value })}
+            />
+          </Suspense>
         </div>
       )}
 

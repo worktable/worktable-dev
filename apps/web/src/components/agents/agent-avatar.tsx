@@ -6,7 +6,7 @@ import {
 } from "@worktable/ui/components/avatar"
 import { cn } from "@worktable/ui/lib/utils"
 
-import { getIcon } from "@/lib/icons"
+import { NamedIcon } from "@/lib/icons"
 import { participantInitials } from "@/lib/thread-presentation"
 
 /**
@@ -37,8 +37,8 @@ export function AgentAvatar({
   icon?: string | null
   className?: string
 }) {
-  const Icon = icon ? getIcon(icon) : null
-  const logo = Icon ? null : agentLogoUrl(platform)
+  const logo = icon ? null : agentLogoUrl(platform)
+  const initials = participantInitials(name)
   return (
     <Avatar className={cn("size-8", className)} aria-label={name}>
       {logo ? (
@@ -53,10 +53,15 @@ export function AgentAvatar({
         />
       ) : null}
       <AvatarFallback className="bg-surface-tint text-xs font-medium text-primary">
-        {Icon ? (
-          <Icon className="size-[55%]" aria-hidden />
+        {icon ? (
+          <NamedIcon
+            name={icon}
+            className="size-[55%]"
+            aria-hidden
+            fallback={initials}
+          />
         ) : (
-          participantInitials(name)
+          initials
         )}
       </AvatarFallback>
     </Avatar>

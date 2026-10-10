@@ -179,7 +179,7 @@ async function timeRequest(
     console.error(
       `[http] ${method} ${path} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
     )
-  } else if (totalMs - current.duration("wait") >= SLOW_REQUEST_MS) {
+  } else if (totalMs - current.duration("wait") > SLOW_REQUEST_MS) {
     console.warn(
       `[http] slow ${method} ${path} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
     )

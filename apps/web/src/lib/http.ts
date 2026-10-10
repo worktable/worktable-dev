@@ -1,3 +1,4 @@
+import { noteServerBuild } from "./build-version";
 import {
   workspaceContentEpoch,
   workspaceContentChanged,
@@ -130,6 +131,7 @@ export async function authenticatedFetch(
   };
 
   let response = await send(csrfToken);
+  noteServerBuild(response);
   if (unsafe(method) && (await csrfFailure(response))) {
     const token = await acquireCsrfToken();
     if (token) response = await send(token);

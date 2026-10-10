@@ -84,6 +84,7 @@ describe("record document fields and portable column order", () => {
     expect(order(tags, [["ops"], ["ops", "design"], ["product"]])).toEqual([["ops", "design"], ["product"], ["ops"]])
     expect(order({ type: "number", field: { type: "number" } }, [12, null, 9, 100])).toEqual([9, 12, 100, null])
     expect(order({ type: "boolean", field: { type: "boolean" } }, [false, null, true])).toEqual([true, false, null])
+    expect(order({ type: "datetime", field: { type: "datetime" } }, ["2025-12-31T20:00:00Z", "2026-01-01T00:00:00+10:00"])).toEqual(["2026-01-01T00:00:00+10:00", "2025-12-31T20:00:00Z"])
     expect(order({ type: "string", field: { type: "string" } }, ["beta", "", "Alpha", "item 10", "item 9"])).toEqual(["Alpha", "beta", "item 9", "item 10", ""])
   })
 

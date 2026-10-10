@@ -332,6 +332,11 @@ export function compareGroupLabels(column: Pick<RecordFieldColumn, "type" | "fie
   }
   if (column?.type === "boolean" && typeof a === "boolean" && typeof b === "boolean") return Number(b) - Number(a)
   if (column?.type === "number" && typeof a === "number" && typeof b === "number") return a - b
+  if (column?.type === "date" || column?.type === "datetime") {
+    // Compare instants, not strings: offsets make text order disagree with time.
+    const [timeA, timeB] = [Date.parse(String(a)), Date.parse(String(b))]
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) return timeA - timeB
+  }
   const text = (value: unknown) => (Array.isArray(value) ? value.map(String).join(", ") : String(value))
   return text(a).localeCompare(text(b), undefined, { numeric: true, sensitivity: "base" })
 }

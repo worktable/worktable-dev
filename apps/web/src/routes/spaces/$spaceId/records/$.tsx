@@ -329,10 +329,12 @@ function RecordsPage() {
   // to record METADATA before data (same collision that blocks sorting them).
   const queryableColumns = useMemo(() => orderedColumns.filter((column) => !RECORD_TOP_LEVEL_KEYS.has(column.key)), [orderedColumns])
   // The grouped field is already each group's heading; repeating it in every
-  // row is noise, so its column steps aside until the table is ungrouped.
+  // row is noise, so its column steps aside until the table is ungrouped,
+  // unless it is the only visible column and rows would have nothing to show.
   const visibleColumns = useMemo(() => {
     const hidden = new Set(colPrefs.hidden)
-    return orderedColumns.filter((column) => !hidden.has(column.key) && column.key !== groupBy)
+    const shown = orderedColumns.filter((column) => !hidden.has(column.key))
+    return shown.some((column) => column.key !== groupBy) ? shown.filter((column) => column.key !== groupBy) : shown
   }, [orderedColumns, colPrefs.hidden, groupBy])
 
   // Merges into the existing search: the peek must not clobber filters/sort.

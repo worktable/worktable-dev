@@ -38,6 +38,8 @@ interface Sample {
   ms: number
   bytes: number
   ok: boolean
+  /** Server-Timing header of each request, when the server sends one. */
+  serverTiming: string[]
 }
 
 export interface RequestStats {
@@ -71,6 +73,8 @@ export interface ServerResult {
   boot: { listenMs: number; firstListMs: number }
   firstResponseMs: Record<string, number>
   requests: RequestStats[]
+  /** Server-Timing headers of the first and a warm response, per endpoint. */
+  serverTiming: Record<string, { first: string[]; warm: string[] }>
   typing: TypingResult | null
   /** GET /api/diagnostics/perf at the end of the run, when the server has it. */
   diagnostics: unknown
@@ -135,12 +139,15 @@ async function sample(url: string, paths: string[]): Promise<Sample> {
   const started = performance.now()
   let bytes = 0
   let ok = true
+  const serverTiming: string[] = []
   for (const path of paths) {
     const response = await fetch(url + path)
     bytes += (await response.arrayBuffer()).byteLength
     ok &&= response.ok
+    const timing = response.headers.get("server-timing")
+    if (timing) serverTiming.push(timing)
   }
-  return { ms: performance.now() - started, bytes, ok }
+  return { ms: performance.now() - started, bytes, ok, serverTiming }
 }
 
 async function measure(
@@ -255,30 +262,46 @@ export async function runServerScenario(options: {
   const run = copyFixture(dir, options.runDir)
   const server = await startServer({ checkout: options.checkout, ...run })
   try {
-    const list = await fetch(`${server.url}/api/spaces`)
-    await list.arrayBuffer()
-    if (!list.ok) throw new Error(`first /api/spaces returned ${list.status}`)
-    const boot = {
-      listenMs: round(server.listenMs, 0)!,
-      firstListMs: round(performance.now() - server.startedAt, 0)!,
-    }
-
     const all = endpoints(fixture)
-    const firstResponseMs: Record<string, number> = {}
-    for (const endpoint of all.slice(1)) {
+    const firsts = new Map<string, Sample>()
+    for (const endpoint of all) {
       const first = await sample(server.url, endpoint.paths(0))
       if (!first.ok)
         throw new Error(
           `${endpoint.name} failed: ${endpoint.paths(0).join(", ")}`
         )
-      firstResponseMs[endpoint.name] = round(first.ms, 0)!
+      firsts.set(endpoint.name, first)
     }
+    // The first request is the spaces list, so this is boot to first list.
+    const boot = {
+      listenMs: round(server.listenMs, 0)!,
+      firstListMs: round(server.listenMs + firsts.get(all[0]!.name)!.ms, 0)!,
+    }
+    const firstResponseMs = Object.fromEntries(
+      all
+        .slice(1)
+        .map((endpoint) => [
+          endpoint.name,
+          round(firsts.get(endpoint.name)!.ms, 0)!,
+        ])
+    )
     const requests: RequestStats[] = []
     for (const concurrency of [1, 4]) {
       for (const endpoint of all)
         requests.push(
           await measure(server.url, endpoint, concurrency, options.samples)
         )
+    }
+    // Only servers that send Server-Timing (Plan 15, W0-01) get a breakdown.
+    const serverTiming: ServerResult["serverTiming"] = {}
+    if ([...firsts.values()].some((first) => first.serverTiming.length > 0)) {
+      for (const endpoint of all) {
+        const warm = await sample(server.url, endpoint.paths(0))
+        serverTiming[endpoint.name] = {
+          first: firsts.get(endpoint.name)!.serverTiming,
+          warm: warm.serverTiming,
+        }
+      }
     }
     const typing =
       options.typingMinutes > 0
@@ -315,6 +338,7 @@ export async function runServerScenario(options: {
       boot,
       firstResponseMs,
       requests,
+      serverTiming,
       typing,
       diagnostics,
     }
@@ -392,6 +416,20 @@ export function summary(result: ServerResult): string {
       requestRows
     ),
   ]
+  const timings = Object.entries(result.serverTiming)
+  if (timings.length > 0) {
+    lines.push(
+      "",
+      markdownTable(
+        ["Server-Timing", "First", "Warm"],
+        timings.map(([name, { first, warm }]) => [
+          name,
+          first.join(" / "),
+          warm.join(" / "),
+        ])
+      )
+    )
+  }
   const typing = result.typing
   if (typing) {
     lines.push(

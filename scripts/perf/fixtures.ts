@@ -11,14 +11,8 @@
  * seed; ids and save times assigned by the store are not.
  */
 import { createHash } from "node:crypto"
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs"
-import { join } from "node:path"
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import type {
   ActivityAction,
   ActivityActor,
@@ -751,8 +745,9 @@ if (import.meta.main) {
       `--profile must be one of ${Object.keys(PROFILES).join(", ")}`
     )
   const seed = numberArg(args, "seed", 1)
-  const dir = fixtureDir(profile, seed, args.get("out"))
-  if (!args.has("force") && existsSync(dir) && readFixture(dir)) {
+  const out = args.get("out")
+  const dir = fixtureDir(profile, seed, out ? resolve(out) : undefined)
+  if (!args.has("force") && readFixture(dir)) {
     console.log(`[perf-fixtures] ${dir} is current`)
   } else {
     const started = performance.now()

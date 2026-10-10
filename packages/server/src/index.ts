@@ -100,6 +100,7 @@ import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } fro
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
 import { settleRetentionPolicy } from "./settings-store.ts";
+import { readLocalWorkspaceRegistry } from "./local-host.ts";
 import {
   changeEventAffectsContentDerivedState,
   drainWorkspaceChanges,
@@ -714,6 +715,23 @@ function startLifetimeSweep(): void {
 let stopUpdateCheckScheduler: (() => Promise<void>) | null = null;
 let stopWorkspaceTransferMaintenance: (() => Promise<void>) | null = null;
 
+/**
+ * Whether this install already kept version history before retention limits:
+ * in the open workspace or in any other workspace it has opened. Settings are
+ * per install, so a later-opened older workspace must not get the new-install
+ * default. Errs toward true when the registry can't be read.
+ */
+function installHasVersionHistory(): boolean {
+  if (workspaceHasVersionHistory()) return true;
+  try {
+    return readLocalWorkspaceRegistry().workspaces.some((entry) =>
+      workspaceHasVersionHistory(entry.path),
+    );
+  } catch {
+    return true;
+  }
+}
+
 // Version-retention timers for the most recent startServer. Module-scoped and
 // replaced (not stacked) on each boot, same rationale as the update scheduler: one
 // deferred boot sweep + one 24h steady-state sweep per running server.
@@ -1122,7 +1140,7 @@ export function startServer(
   retentionSweepTimer = null;
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_RETENTION_SWEEP"] !== "1") {
     const settled = settleRetentionPolicy({
-      hasVersionHistory: workspaceHasVersionHistory,
+      hasVersionHistory: installHasVersionHistory,
     }).catch((err) =>
       console.error("[version-retention] could not settle the policy:", err),
     );

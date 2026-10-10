@@ -237,7 +237,8 @@ interface ConnectionRequestCreated {
 
 type ConnectionRequestPoll =
   | { status: "pending" | "denied" | "expired" }
-  | { status: "approved"; code: string }
+  /** On Worktable Cloud, `server` is the workspace the owner approved into. */
+  | { status: "approved"; code: string; server?: string }
 
 /**
  * Ask Worktable to connect this installation and wait for its owner to
@@ -276,7 +277,10 @@ export async function requestWorktablePairing(options: {
       { pollToken: request.pollToken }
     )
     if (poll.status === "approved") {
-      return pairWorktableChannel({ server: origin, pairingCode: poll.code })
+      return pairWorktableChannel({
+        server: poll.server ?? origin,
+        pairingCode: poll.code,
+      })
     }
     if (poll.status === "denied") {
       throw new Error("The Worktable owner declined this connection.")

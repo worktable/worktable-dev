@@ -79,10 +79,10 @@ def connect(ctx: Any, args: Any) -> int:
     origin = pairing.worktable_origin(args.server)
     name = (args.name or DEFAULT_PARTICIPANT_NAME).strip()
     code: Optional[str] = (args.pairing_code or "").strip() or None
-    # A Worktable with sign-in (Cloud) advertises its MCP resource.
-    resource = None if code else pairing.mcp_resource(origin)
-    if not code and not resource:
-        # This Worktable pairs agents: ask it, and its owner approves us there.
+    resource: Optional[str] = None
+    if not code:
+        # Ask Worktable to connect; its owner approves Hermes there. A Cloud
+        # whose gateway cannot pair agents yet answers with a sign-in instead.
         def show(user_code: str, approval_url: str) -> None:
             print(
                 f"Approve this Hermes in Worktable:\n{approval_url}\n"
@@ -90,13 +90,18 @@ def connect(ctx: Any, args: Any) -> int:
                 flush=True,
             )
 
-        code = pairing.request_approval(
-            origin,
-            DeliveryStore(ctx.state).installation_id(),
-            socket.gethostname()[:64],
-            (args.name or "").strip() or None,
-            show,
-        )
+        try:
+            code, origin = pairing.request_approval(
+                origin,
+                DeliveryStore(ctx.state).installation_id(),
+                socket.gethostname()[:64],
+                (args.name or "").strip() or None,
+                show,
+            )
+        except pairing.PairingError as error:
+            resource = pairing.mcp_resource(origin) if error.status in (401, 403, 404, 405) else None
+            if not resource:
+                raise
 
     if code:
         store = DeliveryStore(ctx.state)
@@ -123,7 +128,7 @@ def connect(ctx: Any, args: Any) -> int:
         pairing.report(origin, code, "verifying", "Waiting for the Hermes gateway to connect.")
         print(f"Connected Hermes to {redeemed.get('workspaceName') or origin} as {redeemed.get('participantName') or name}.")
     else:
-        assert resource  # Without sign-in, Hermes asked for approval above.
+        assert resource  # Approval was unavailable and this Worktable offers sign-in.
         _enable(resource, "oauth")
         settings.save(server=origin, auth="oauth", participant_name=name, pending_pairing_code=None)
         try:

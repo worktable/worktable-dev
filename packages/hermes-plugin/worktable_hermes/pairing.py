@@ -114,8 +114,9 @@ def request_approval(
     name: Optional[str],
     on_approval_needed: Callable[[str, str], None],
     sleep: Callable[[float], None] = time.sleep,
-) -> str:
-    """Ask Worktable to connect; return the pairing code once its owner approves."""
+) -> tuple[str, str]:
+    """Ask Worktable to connect; once its owner approves, return the pairing
+    code and the address to pair with (on Cloud, the approved workspace's)."""
     request = _request(
         f"{origin}/api/pairing/requests",
         {
@@ -136,7 +137,8 @@ def request_approval(
         result = _request(f"{origin}/api/pairing/requests/poll", {"pollToken": poll_token})
         status = result.get("status")
         if status == "approved" and isinstance(result.get("code"), str):
-            return result["code"]
+            server = result.get("server")
+            return result["code"], worktable_origin(server) if isinstance(server, str) else origin
         if status == "denied":
             raise PairingError("The Worktable owner declined this connection.", "DENIED")
         if status == "expired" or (deadline is not None and time.time() >= deadline):

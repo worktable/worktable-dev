@@ -1,6 +1,10 @@
 import { defineChannelPluginEntry } from "openclaw/plugin-sdk/channel-core"
 import { createInterface } from "node:readline/promises"
-import { pairWorktableChannel, registerWorktableAgent } from "./src/pairing.js"
+import {
+  pairWorktableChannel,
+  registerWorktableAgent,
+  requestWorktablePairing,
+} from "./src/pairing.js"
 import { worktableChannel } from "./src/channel.js"
 import { setWorktableRuntime } from "./src/runtime.js"
 
@@ -19,7 +23,7 @@ export default defineChannelPluginEntry({
           .description("Manage the Worktable channel")
           .command("connect")
           .description(
-            "Configure Worktable with local pairing or Cloud Agent Registration"
+            "Connect Worktable: approve this installation there, or use a pairing code"
           )
           .requiredOption("--server <url>", "Worktable server origin")
           .option("--pairing-code <code>", "Single-use Worktable pairing code")
@@ -37,13 +41,33 @@ export default defineChannelPluginEntry({
               email?: string
               participantName?: string
             }) => {
-              if (
-                Boolean(options.pairingCode) ===
-                Boolean(options.agentRegistration)
-              ) {
+              if (options.pairingCode && options.agentRegistration) {
                 throw new Error(
-                  "Choose exactly one of --pairing-code or --agent-registration"
+                  "Choose one of --pairing-code or --agent-registration"
                 )
+              }
+              if (!options.pairingCode && !options.agentRegistration) {
+                // Ask Worktable; its owner approves this installation there.
+                const result = await requestWorktablePairing({
+                  server: options.server,
+                  participantName: options.participantName,
+                  onApprovalNeeded({ code, approvalUrl }) {
+                    // Written directly: OpenClaw masks token-like console text.
+                    process.stdout.write(
+                      `Approve this OpenClaw in Worktable:\n${approvalUrl}\nCheck that Worktable shows ${code}. Waiting for approval…\n`
+                    )
+                  },
+                })
+                const participant = result.participantName
+                  ? ` as ${result.participantName}`
+                  : ""
+                console.log(
+                  `Configured Worktable ${result.workspaceName}${participant}.`
+                )
+                console.log(
+                  "Start or restart the OpenClaw Gateway to verify and start the channel."
+                )
+                return
               }
               if (options.agentRegistration) {
                 const prompt = createInterface({
@@ -64,8 +88,10 @@ export default defineChannelPluginEntry({
                     email,
                     participantName,
                     async readUserCode(verificationUri) {
-                      console.log(
-                        `Open this URL, sign in, and view the claim code:\n${verificationUri}`
+                      // OpenClaw masks token-like text in console output, which
+                      // would make the claim link unusable.
+                      process.stdout.write(
+                        `Open this URL, sign in, and view the claim code:\n${verificationUri}\n`
                       )
                       return prompt.question("Claim code: ")
                     },

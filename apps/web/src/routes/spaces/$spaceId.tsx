@@ -5,63 +5,34 @@ import {
   useMatchRoute,
   useRouter,
 } from "@tanstack/react-router"
-import { useCallback, useEffect, useState } from "react"
-import type { ReactNode } from "react"
-import {
-  AppWindow,
-  Archive,
-  Database,
-  FileText,
-  Layers,
-  MessageCircle,
-  RotateCcw,
-} from "lucide-react"
-import { useRecordCollections, useRecords, useSpace, spaceQueryOptions } from "@/lib/queries"
-import { useDocuments } from "@/lib/documents-queries"
-import { formatArchiveDate, setStartHere } from "@/lib/lifetime"
-import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Archive, Database, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useSpaceAttention } from "@/lib/annotations-queries"
-import type { AttentionSignal } from "@/lib/annotations-queries"
-import { useSpaceSubscription } from "@/lib/ws"
-import { recordTitle } from "@/lib/records"
-import { RelativeTime } from "@/lib/time"
-import { resolveIcon } from "@/lib/icons"
-import { Button } from "@worktable/ui/components/button"
-import { restoreSpace } from "@/lib/api"
-import { toast } from "@worktable/ui/components/sonner"
 import type {
   DocumentSummary,
   RecordCollectionSummary,
   ResolvedStartHerePin,
 } from "@worktable/types"
-import { useThreads } from "@/lib/threads-queries"
-
-/** Wraps an attention chip in a deep link to its newest target. Widget-target
- *  signals link to the HTML doc route; doc/block targets to the doc route.
- *  Widget wins when both are set (the newest annotation carries one target). */
-function attentionLink(
-  spaceId: string,
-  signal: AttentionSignal,
-  key: string,
-  chip: ReactNode
-): ReactNode {
-  if (signal.newestWidgetId) {
-    return (
-      <Link key={key} to="/spaces/$spaceId/documents/$" params={{ spaceId, _splat: signal.newestWidgetId }} className="transition-opacity hover:opacity-80">
-        {chip}
-      </Link>
-    )
-  }
-  if (signal.newestDocPath) {
-    return (
-      <Link key={key} to="/spaces/$spaceId/documents/$" params={{ spaceId, _splat: signal.newestDocPath }} className="transition-opacity hover:opacity-80">
-        {chip}
-      </Link>
-    )
-  }
-  return chip
-}
+import { Button } from "@worktable/ui/components/button"
+import { toast } from "@worktable/ui/components/sonner"
+import { cn } from "@worktable/ui/lib/utils"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { PageWithActivity } from "@/components/home/page-with-activity"
+import {
+  PendingSection,
+  RecentRows,
+  TemporaryGroup,
+  type RecentItem,
+} from "@/components/home/home-sections"
+import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
+import { activityQueryKeys } from "@/lib/activity"
+import { restoreSpace } from "@/lib/api"
+import { useDocuments } from "@/lib/documents-queries"
+import { setPins } from "@/lib/lifetime"
+import { spaceQueryOptions, useRecordCollections, useSpace } from "@/lib/queries"
+import { RelativeTime } from "@/lib/time"
+import { humanizeSegment } from "@/lib/tree"
+import { useSpaceSubscription } from "@/lib/ws"
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
@@ -104,21 +75,15 @@ function ArchivedSpaceBanner({
   restoring: boolean
 }) {
   return (
-    <div className="mx-auto mb-6 max-w-4xl px-4 pt-6 sm:px-6">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/70 bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+    <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-8">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-sm text-foreground">
         <div className="flex items-center gap-2">
-          <Archive className="size-4 shrink-0" />
+          <Archive className="size-4 shrink-0 text-warning" />
           <span>
-            This space is archived and hidden from the main spaces list by
-            default. Archived <RelativeTime iso={archivedAt} />.
+            This space is archived. Archived <RelativeTime iso={archivedAt} />.
           </span>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onRestore}
-          disabled={restoring}
-        >
+        <Button size="sm" variant="outline" onClick={onRestore} disabled={restoring}>
           <RotateCcw className="mr-2 size-4" />
           {restoring ? "Restoring..." : "Restore"}
         </Button>
@@ -127,261 +92,7 @@ function ArchivedSpaceBanner({
   )
 }
 
-function SpaceOverview({
-  spaceId,
-  spaceName,
-  spaceDescription,
-  spaceIcon,
-  documents,
-  startHere,
-  recordCollections,
-  loaded,
-}: {
-  spaceId: string
-  spaceName: string
-  spaceDescription?: string
-  spaceIcon?: string
-  documents: DocumentSummary[]
-  startHere: ResolvedStartHerePin[]
-  recordCollections: RecordCollectionSummary[]
-  /** False until documents and records have loaded, so nothing reads as empty early. */
-  loaded: boolean
-}) {
-  const active = documents.filter((document) => !document.archived)
-  const docsCount = active.filter((document) => document.format.id !== "worktable.html").length
-  const widgetsCount = active.length - docsCount
-  const recordCount = recordCollections.reduce((sum, collection) => sum + collection.count, 0)
-  const { data: threadsData } = useThreads({ kind: "space", spaceId })
-  const threads = threadsData?.threads ?? []
-  const threadCount = threads.length
-  const byUpdated = (a: DocumentSummary, b: DocumentSummary) =>
-    (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
-  const recent = active
-    .filter((document) => document.lifetime !== "temporary")
-    .sort(byUpdated)
-    .slice(0, 8)
-  const temporary = active
-    .filter((document) => document.lifetime === "temporary")
-    .sort((a, b) => (a.archiveOn ?? "").localeCompare(b.archiveOn ?? ""))
-
-  // Open instructions are real requests, counted server-side (an exact
-  // filtered total, immune to pagination).
-  const { data: attention } = useSpaceAttention(spaceId)
-  const instructions = attention?.instructions ?? { count: 0, newestDocPath: null, newestWidgetId: null }
-
-  return (
-    <main className="mx-auto flex min-h-full max-w-5xl flex-col px-4 py-8 sm:px-6 lg:py-10">
-      <header className="mb-10 grid gap-6 border-b border-border/70 pb-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div className="min-w-0">
-          <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground/70">
-            {resolveIcon(spaceIcon, "size-4")}
-            <span>Space</span>
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            {spaceName}
-          </h1>
-          {spaceDescription && (
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-              {spaceDescription}
-            </p>
-          )}
-        </div>
-
-        <dl className="grid w-full grid-cols-2 overflow-hidden rounded-2xl border border-border/70 bg-muted/20 sm:grid-cols-4 lg:w-[27rem]">
-          <div className="border-r border-border/70 p-4">
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <FileText className="size-3.5" />
-              Docs
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">{docsCount}</dd>
-          </div>
-          <div className="border-r border-border/70 p-4">
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <AppWindow className="size-3.5" />
-              HTML docs
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">{widgetsCount}</dd>
-          </div>
-          <div className="border-r border-border/70 p-4">
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Database className="size-3.5" />
-              Records
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">{recordCount}</dd>
-          </div>
-          <Link
-            to="/spaces/$spaceId/threads/$"
-            params={{ spaceId, _splat: "" }}
-            className="p-4 transition-colors hover:bg-muted/50"
-          >
-            <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MessageCircle className="size-3.5" />
-              Threads
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">{threadCount}</dd>
-          </Link>
-        </dl>
-      </header>
-
-      {instructions.count > 0 && (
-        <div className="-mt-4 mb-8 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground/70">Needs attention</span>
-          {attentionLink(
-            spaceId,
-            instructions,
-            "instructions",
-            <span className="inline-flex items-center rounded-full border border-border px-2.5 py-1 text-[color:var(--accent-bronze-ink)]">
-              {instructions.count} {instructions.count === 1 ? "instruction" : "instructions"}
-            </span>
-          )}
-        </div>
-      )}
-
-      {!loaded ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/20" />
-          ))}
-        </div>
-      ) : docsCount === 0 &&
-        widgetsCount === 0 &&
-        recordCount === 0 &&
-        threadCount === 0 &&
-        startHere.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
-          <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-muted/40">
-            <Layers className="size-7 text-muted-foreground" />
-          </div>
-          <h2 className="text-lg font-medium text-foreground">Empty space</h2>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            Start with a doc for durable context, then add HTML docs when an agent has something visual or interactive to show.
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-          <section className="min-w-0 space-y-10">
-            <StartHereSection spaceId={spaceId} pins={startHere} />
-            <OverviewDocuments
-              spaceId={spaceId}
-              title="Recent"
-              documents={recent}
-              empty="No documents yet."
-            />
-            {temporary.length > 0 && (
-              <OverviewDocuments
-                spaceId={spaceId}
-                title="Temporary"
-                description="Supporting work that archives on its date unless kept."
-                documents={temporary}
-                showArchiveDate
-              />
-            )}
-          </section>
-
-          <aside className="min-w-0 lg:sticky lg:top-6">
-            <div className="mb-8">
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                    Threads
-                  </h2>
-                  <p className="mt-1 text-sm text-muted-foreground/75">
-                    Durable conversations with connected agents.
-                  </p>
-                </div>
-                <Link
-                  to="/spaces/$spaceId/threads/$"
-                  params={{ spaceId, _splat: "" }}
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  Open
-                </Link>
-              </div>
-              {threads.length > 0 ? (
-                <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
-                  {threads.slice(0, 3).map((thread) => (
-                    <Link
-                      key={thread.id}
-                      to="/spaces/$spaceId/threads/$"
-                      params={{ spaceId, _splat: thread.id }}
-                      className="group flex min-w-0 items-center gap-2 py-2.5 text-sm transition-colors hover:bg-muted/30"
-                    >
-                      <MessageCircle className="size-4 shrink-0 text-muted-foreground/70 group-hover:text-foreground" />
-                      <span className="min-w-0 flex-1 truncate font-medium">
-                        {thread.title}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        <RelativeTime iso={thread.updatedAt} />
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-3xl border border-dashed border-border/80 px-5 py-6 text-sm leading-6 text-muted-foreground">
-                  No threads yet. Connect an agent, then begin a conversation here.
-                </div>
-              )}
-            </div>
-
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Records
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground/75">
-                File-backed state shared by agents and HTML docs.
-              </p>
-              {recordCollections.length > 0 ? (
-                <div className="mt-4 space-y-2">
-                  {recordCollections.slice(0, 6).map((collection) => (
-                    <RecordCollectionPreview key={collection.id} spaceId={spaceId} collection={collection} />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-3xl border border-dashed border-border/80 px-5 py-8 text-sm leading-6 text-muted-foreground">
-                  No records yet. Create a collection when independently changing items need shared fields or queries across the set.
-                </div>
-              )}
-            </div>
-          </aside>
-        </div>
-      )}
-    </main>
-  )
-}
-
-function RecordCollectionPreview({ spaceId, collection }: { spaceId: string; collection: RecordCollectionSummary }) {
-  const { data } = useRecords(spaceId, collection.id, collection.count > 0)
-  const records = data?.records?.slice(0, 3) ?? []
-
-  return (
-    <Link
-      to="/spaces/$spaceId/records/$"
-      params={{ spaceId, _splat: collection.id }}
-      className="block rounded-2xl border border-border/70 bg-muted/20 p-4 transition-colors hover:border-primary/30 hover:bg-muted/30"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <Database className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium text-foreground">{collection.name}</span>
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">{collection.count} records · {collection.id}</div>
-        </div>
-      </div>
-      {records.length > 0 && (
-        <div className="mt-3 space-y-1.5">
-          {records.map((record) => (
-            <div key={record.id} className="truncate rounded-lg bg-background/70 px-2.5 py-1.5 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{recordTitle(record, data?.schema)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Link>
-  )
-}
-
-function StartHereSection({
+function PinnedSection({
   spaceId,
   pins,
 }: {
@@ -391,13 +102,16 @@ function StartHereSection({
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
     try {
-      await setStartHere(
+      await setPins(
         spaceId,
         pins
           .filter((pin) => pin.path !== path)
           .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
       )
-      await queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
+        queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
+      ])
     } catch (error) {
       console.error("Failed to unpin:", error)
       toast.error("Couldn’t unpin. Try again.")
@@ -405,110 +119,256 @@ function StartHereSection({
   }
 
   return (
-    <section aria-labelledby="start-here-heading">
-      <h2
-        id="start-here-heading"
-        className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground"
-      >
-        Start here
+    <section aria-labelledby="pinned-heading">
+      <h2 id="pinned-heading" className="mb-2 text-sm font-semibold text-foreground">
+        Pinned
       </h2>
-      {pins.length > 0 ? (
-        <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+      {pins.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Pin the brief or current plan from its menu.
+        </p>
+      ) : (
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           {pins.map((pin) => (
-            <div key={pin.path} className="group flex min-w-0 items-start gap-3 px-1 py-3">
-              <div className="min-w-0 flex-1">
-                {pin.status === "missing" ? (
-                  <span className="text-sm font-medium text-muted-foreground">{pin.path}</span>
-                ) : (
-                  <Link
-                    to="/spaces/$spaceId/documents/$"
-                    params={{ spaceId, _splat: pin.path }}
-                    className="text-sm font-medium text-foreground hover:text-primary"
-                  >
-                    {pin.title ?? pin.path}
-                  </Link>
-                )}
-                {pin.note && <p className="mt-0.5 text-sm text-muted-foreground">{pin.note}</p>}
-              </div>
-              {pin.status !== "active" && (
-                <span className="shrink-0 rounded-full bg-surface-tint px-2 py-0.5 text-xs text-muted-foreground">
-                  {pin.status === "archived" ? "Archived" : "Missing"}
-                </span>
+            <div
+              key={pin.path}
+              className="group relative rounded-xl border border-border bg-card px-4 py-3.5 transition-colors hover:border-foreground/15"
+            >
+              {pin.status === "active" && (
+                <Link
+                  to="/spaces/$spaceId/documents/$"
+                  params={{ spaceId, _splat: pin.path }}
+                  className="absolute inset-0 rounded-xl"
+                  aria-label={pin.title ?? pin.path}
+                />
               )}
-              <Button
-                size="xs"
-                variant="ghost"
-                className="shrink-0 text-muted-foreground opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={() => void unpin(pin.path)}
-              >
-                Unpin
-              </Button>
+              <div className="flex min-w-0 items-center gap-2">
+                <DocumentFormatIcon
+                  formatId={pin.format?.id}
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                  {pin.title ?? pin.path}
+                </span>
+                {pin.status !== "active" && (
+                  <span className="shrink-0 rounded-full bg-surface-tint px-2 py-0.5 text-xs text-muted-foreground">
+                    {pin.status === "archived" ? "Archived" : "Missing"}
+                  </span>
+                )}
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                  onClick={() => void unpin(pin.path)}
+                >
+                  Unpin
+                </Button>
+              </div>
+              {pin.note && (
+                <p className="mt-1.5 text-[0.8rem] leading-5 text-muted-foreground">
+                  {pin.note}
+                </p>
+              )}
             </div>
           ))}
         </div>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Pin the documents to read first from their menu.
-        </p>
       )}
     </section>
   )
 }
 
-function OverviewDocuments({
+/** Top-level folders and record collections, as quick ways into the Space. */
+function ContentChips({
   spaceId,
-  title,
-  description,
-  documents,
-  empty,
-  showArchiveDate = false,
+  folders,
+  collections,
+  folder,
+  onFolder,
 }: {
   spaceId: string
-  title: string
-  description?: string
-  documents: DocumentSummary[]
-  empty?: string
-  showArchiveDate?: boolean
+  folders: { name: string; count: number }[]
+  collections: RecordCollectionSummary[]
+  folder: string | null
+  onFolder: (folder: string | null) => void
 }) {
+  if (folders.length === 0 && collections.length === 0) return null
+  const chip =
+    "inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.8rem] transition-colors"
   return (
-    <div>
-      <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        {title}
-      </h2>
-      {description && <p className="mt-1 text-sm text-muted-foreground/75">{description}</p>}
-      {documents.length > 0 ? (
-        <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
-          {documents.map((document) => (
-            <Link
-              key={document.path}
-              to="/spaces/$spaceId/documents/$"
-              params={{ spaceId, _splat: document.path }}
-              className="group grid min-w-0 gap-1 px-1 py-3 transition-colors hover:bg-muted/30 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
-            >
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <DocumentFormatIcon
-                    formatId={document.format.id}
-                    className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
-                  />
-                  <span className="truncate text-sm font-medium text-foreground">{document.title}</span>
-                </div>
-                <div className="mt-1 truncate pl-6 text-xs text-muted-foreground">{document.path}</div>
-              </div>
-              <div className="pl-6 text-xs text-muted-foreground sm:pl-0">
-                {showArchiveDate && document.archiveOn ? (
-                  `Archives ${formatArchiveDate(document.archiveOn)}`
-                ) : document.updatedAt ? (
-                  <RelativeTime iso={document.updatedAt} />
-                ) : null}
-              </div>
-            </Link>
-          ))}
-        </div>
-      ) : empty ? (
-        <div className="mt-4 border-y border-border/70 py-8 text-sm text-muted-foreground">{empty}</div>
-      ) : null}
+    <div className="flex flex-wrap gap-2">
+      {folders.map((entry) => {
+        const active = folder === entry.name
+        return (
+          <button
+            key={entry.name}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onFolder(active ? null : entry.name)}
+            className={cn(
+              chip,
+              active
+                ? "border-foreground/20 bg-surface-selected text-foreground"
+                : "border-border text-muted-foreground hover:border-foreground/15 hover:text-foreground"
+            )}
+          >
+            <Folder className="size-3.5" />
+            {humanizeSegment(entry.name)}
+          </button>
+        )
+      })}
+      {collections.map((collection) => (
+        <Link
+          key={collection.id}
+          to="/spaces/$spaceId/records/$"
+          params={{ spaceId, _splat: collection.id }}
+          className={cn(
+            chip,
+            "border-border text-muted-foreground hover:border-foreground/15 hover:text-foreground"
+          )}
+        >
+          <Database className="size-3.5" />
+          {collection.name}
+          <span className="text-muted-foreground/60">{collection.count}</span>
+        </Link>
+      ))}
     </div>
+  )
+}
+
+const RECENT_ROWS = 8
+
+function SpaceOverview({
+  spaceId,
+  spaceName,
+  spaceDescription,
+  pins,
+}: {
+  spaceId: string
+  spaceName: string
+  spaceDescription?: string
+  pins: ResolvedStartHerePin[]
+}) {
+  const [folder, setFolder] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const { data: documentItems, isPending: documentsPending } = useDocuments(spaceId)
+  const { data: collections } = useRecordCollections(spaceId)
+
+  const documents = (documentItems ?? []).filter(
+    (item): item is DocumentSummary => item.kind === "document" && !item.archived
+  )
+  const folders = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const document of documents) {
+      const [top, ...rest] = document.path.split("/")
+      if (top && rest.length > 0) counts.set(top, (counts.get(top) ?? 0) + 1)
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [documents])
+
+  const byUpdated = (a: DocumentSummary, b: DocumentSummary) =>
+    (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")
+  // Built from the Space's own listing, so an archived Space still shows its docs.
+  const listed: RecentItem[] = documents
+    .filter(
+      (document) =>
+        document.lifetime !== "temporary" &&
+        (!folder || document.path.startsWith(`${folder}/`))
+    )
+    .sort(byUpdated)
+    .map((document) => ({ spaceId, document }))
+  const temporary: RecentItem[] = documents
+    .filter(
+      (document) =>
+        document.lifetime === "temporary" &&
+        (!folder || document.path.startsWith(`${folder}/`))
+    )
+    .map((document) => ({ spaceId, document }))
+  const visible = showAll ? listed : listed.slice(0, RECENT_ROWS)
+  const loading = documentsPending
+
+  return (
+    <PageWithActivity spaceId={spaceId} className="xl:h-auto xl:min-h-0 xl:flex-1">
+        <header className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
+              {spaceName}
+            </h1>
+            {spaceDescription && (
+              <p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
+                {spaceDescription}
+              </p>
+            )}
+          </div>
+          <SpaceNewMenu
+            spaceId={spaceId}
+            trigger={
+              <Button variant="outline" size="sm" className="shrink-0">
+                <Plus className="size-4" />
+                New
+              </Button>
+            }
+          />
+        </header>
+
+        <PendingSection spaceId={spaceId} />
+
+        <PinnedSection spaceId={spaceId} pins={pins} />
+
+        <section aria-labelledby="recent-heading">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 id="recent-heading" className="text-sm font-semibold text-foreground">
+              {folder ? humanizeSegment(folder) : "Recent"}
+            </h2>
+            {folder && (
+              <button
+                type="button"
+                onClick={() => setFolder(null)}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {loading ? (
+            <div className="space-y-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted/20" />
+              ))}
+            </div>
+          ) : listed.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {folder ? "No docs here." : "No docs yet."}
+            </p>
+          ) : (
+            <>
+              <RecentRows items={visible} />
+              {!showAll && listed.length > RECENT_ROWS && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="mt-1 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Show more
+                </button>
+              )}
+            </>
+          )}
+        </section>
+        <TemporaryGroup items={temporary} />
+
+        <ContentChips
+          spaceId={spaceId}
+          folders={folders}
+          collections={collections ?? []}
+          folder={folder}
+          onFolder={(next) => {
+            setFolder(next)
+            setShowAll(false)
+          }}
+        />
+    </PageWithActivity>
   )
 }
 
@@ -596,10 +456,10 @@ function SpaceDetailPage() {
 
   if (!mounted || isLoading) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-        <div className="mb-6 space-y-2">
-          <div className="h-7 w-48 animate-pulse rounded-lg bg-muted/30" />
-          <div className="h-4 w-72 animate-pulse rounded bg-muted/20" />
+      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 lg:py-10">
+        <div className="space-y-3">
+          <div className="h-9 w-56 animate-pulse rounded-lg bg-muted/30" />
+          <div className="h-4 w-80 animate-pulse rounded bg-muted/20" />
         </div>
       </div>
     )
@@ -610,7 +470,7 @@ function SpaceDetailPage() {
   const { space } = data
 
   return (
-    <>
+    <div className="xl:flex xl:h-full xl:flex-col">
       {archiveInfo && (
         <ArchivedSpaceBanner
           archivedAt={archiveInfo.archivedAt}
@@ -618,30 +478,12 @@ function SpaceDetailPage() {
           restoring={restoring}
         />
       )}
-      <SpaceOverviewWithData
+      <SpaceOverview
         spaceId={spaceId}
         spaceName={space.name}
         spaceDescription={space.description}
-        spaceIcon={space.icon}
-        startHere={data.startHere ?? []}
+        pins={data.pins ?? []}
       />
-    </>
-  )
-}
-
-function SpaceOverviewWithData(
-  props: Omit<Parameters<typeof SpaceOverview>[0], "documents" | "recordCollections" | "loaded">
-) {
-  const { data: documents, isPending: documentsPending } = useDocuments(props.spaceId)
-  const { data: recordCollections, isPending: recordsPending } = useRecordCollections(props.spaceId)
-  return (
-    <SpaceOverview
-      {...props}
-      documents={(documents ?? []).filter(
-        (item): item is DocumentSummary => item.kind === "document"
-      )}
-      recordCollections={recordCollections ?? []}
-      loaded={!documentsPending && !recordsPending}
-    />
+    </div>
   )
 }

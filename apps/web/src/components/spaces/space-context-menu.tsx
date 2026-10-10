@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { useScrollFade } from "@/hooks/use-scroll-fade"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -38,7 +37,8 @@ import {
   Clock3,
   GripVertical,
 } from "lucide-react"
-import { getIcon, ALL_ICON_NAMES } from "@/lib/icons"
+import { IconSearchGrid } from "@/components/icon-search-grid"
+import { ALL_ICON_NAMES } from "@/lib/icons"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSpaces } from "@/lib/queries"
 import type { DocSortMode } from "@/lib/tree"
@@ -159,7 +159,7 @@ export function SpaceContextMenuButton({
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <ArrowUpDown className="mr-2 h-4 w-4" />
-              Sort Docs
+              Sort
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {DOC_SORT_OPTIONS.map(({ mode, label, icon: Icon }) => (
@@ -376,49 +376,6 @@ function SpaceDeleteDialog({
 
 // ── Icon Picker Dialog ───────────────────────────────────────
 
-/** Popular/common icons shown by default before searching */
-const POPULAR_ICONS = [
-  "folder",
-  "file-text",
-  "star",
-  "heart",
-  "bookmark",
-  "target",
-  "zap",
-  "rocket",
-  "lightbulb",
-  "code",
-  "database",
-  "globe",
-  "search",
-  "settings",
-  "users",
-  "briefcase",
-  "calendar",
-  "map",
-  "music",
-  "camera",
-  "shield",
-  "layers",
-  "package",
-  "brain",
-  "palette",
-  "cpu",
-  "eye",
-  "flask-conical",
-  "layout-dashboard",
-  "tag",
-  "bar-chart-3",
-  "message-square",
-  "book-open",
-  "pen-tool",
-  "compass",
-  "trophy",
-  "wrench",
-  "box",
-  "grid-3x3",
-]
-
 function IconPickerDialog({
   open,
   onClose,
@@ -430,23 +387,10 @@ function IconPickerDialog({
   onSelect: (icon: string) => void
   currentIcon?: string
 }) {
-  const [query, setQuery] = useState("")
-  const iconGridRef = useScrollFade<HTMLDivElement>()
-
-  // Reset search when dialog opens
-  useEffect(() => {
-    if (open) setQuery("")
-  }, [open])
-
   const handleSelect = (icon: string) => {
     onSelect(icon)
     onClose()
   }
-
-  const trimmed = query.trim().toLowerCase()
-  const displayIcons = trimmed
-    ? ALL_ICON_NAMES.filter((name) => name.includes(trimmed)).slice(0, 80)
-    : POPULAR_ICONS
 
   return (
     <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -463,44 +407,11 @@ function IconPickerDialog({
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody>
-          <Input
-            placeholder="Search icons..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+          <IconSearchGrid
+            selected={currentIcon}
+            onSelect={handleSelect}
             autoFocus
-            className="mb-3"
           />
-          <div
-            ref={iconGridRef}
-            className="scroll-fade grid max-h-64 grid-cols-8 gap-1 overflow-y-auto"
-            style={{ "--sf-size": "20px" } as React.CSSProperties}
-          >
-            {displayIcons.map((iconKey) => {
-              const IconComp = getIcon(iconKey)
-              if (!IconComp) return null
-              const isActive = currentIcon === iconKey
-              return (
-                <button
-                  key={iconKey}
-                  type="button"
-                  onClick={() => handleSelect(iconKey)}
-                  title={iconKey}
-                  className={`flex size-9 items-center justify-center rounded-md transition-colors duration-150 ${
-                    isActive
-                      ? "bg-surface-selected text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                >
-                  <IconComp className="size-4" />
-                </button>
-              )
-            })}
-            {displayIcons.length === 0 && trimmed && (
-              <p className="col-span-8 py-4 text-center text-sm text-muted-foreground">
-                No icons matching &ldquo;{trimmed}&rdquo;
-              </p>
-            )}
-          </div>
         </ResponsiveDialogBody>
 
         <ResponsiveDialogFooter>

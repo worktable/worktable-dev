@@ -82,7 +82,7 @@ describe("WorkOS Agent Registration", () => {
     const credential = await completeServiceAuthRegistration(
       discovery,
       registration,
-      "BCDF-GHJK",
+      "bcdf-ghjk",
       fetchImpl
     )
 
@@ -95,7 +95,7 @@ describe("WorkOS Agent Registration", () => {
     })
     expect(requests.at(-1)?.body).toEqual({
       claim_token: "claim_1",
-      user_code: "BCDF-GHJK",
+      user_code: "BCDFGHJK",
     })
     expect(requests).toHaveLength(4)
     expect(

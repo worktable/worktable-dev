@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { name as packageName, version as packageVersion } from "../package.json"
 import { AGENT_PRESENTATION_HEADERS } from "./worktable-contract"
 import type { WorktableAgentCredentialProvider } from "./agent-auth.js"
 import type {
@@ -183,7 +184,7 @@ export class McpWorktableClient implements WorktableClient {
     if (this.#connected && this.#session) return this.#session.client
     if (this.#connecting) return this.#connecting
     const session = {
-      client: new Client({ name: "@worktable/openclaw", version: "0.0.12" }),
+      client: new Client({ name: packageName, version: packageVersion }),
       transport: this.#createTransport(),
     }
     this.#session = session

@@ -9,7 +9,7 @@ prompts below, [connect an agent](/start/connect-your-agent/) first.
 ## Create a brief
 
 Use an existing Space for the project, or create one from the sidebar. From the
-Space's **+** menu, choose **New doc**. Write the objective, constraints, and next
+Space's **+** menu, choose **Doc**. Write the objective, constraints, and next
 question you need to answer.
 
 You can instead give your agent the source material and ask:
@@ -28,10 +28,10 @@ agent for a link to the result and open it in Worktable.
 
 New documents created in the app start temporary by default. If the brief is
 temporary, open **Archives** and choose **Keep** so it will stay until you archive it.
-Then choose **Pin to Start here** from the document menu.
+Then choose **Pin** from the document menu.
 
-Click the Space name to open Space Home. Your brief appears under **Start here**,
-alongside recent work, temporary documents, and open instructions.
+Click the Space name to open Space Home. Your brief appears under **Pinned**,
+alongside recent docs, temporary docs, and the Space's activity.
 
 ## Request a revision
 

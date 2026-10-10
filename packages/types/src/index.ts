@@ -17,6 +17,8 @@ export * from "./documents";
 export * from "./document-storage-v2";
 export * from "./threads";
 export * from "./agent-connections";
+export * from "./agent-platforms";
+export * from "./activity";
 
 export type SpaceId = string;
 export type AgentId = string;

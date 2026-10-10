@@ -95,7 +95,7 @@ export function missingMcpScope(
     required.push("widgets:read")
   if (id.startsWith("drawings.") && definition.mutation !== "none")
     required.push("documents:read")
-  if (id === "spaces.update" && request.startHere !== undefined)
+  if (id === "spaces.update" && request.pins !== undefined)
     required.push("documents:write")
   return required.find((scope) => !hasScope(scopes, scope)) ?? null
 }
@@ -110,9 +110,9 @@ export function mcpToolAuthorized(
 
 export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
   worktable_discover:
-    "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its Start here pins: read those first.",
+    "Orient to the workspace or a Space, search scoped context, or inspect a Space index. A Space's state starts with its pinned docs: read those first.",
   worktable_spaces:
-    "Create, update, archive, or restore a Worktable Space, including its pinned Start here documents.",
+    "Create, update, archive, or restore a Worktable Space, including its pinned docs.",
   worktable_documents_read:
     "List every document format, safely read source or versions, diff a document's text against an earlier revision, or render drawings and HTML as model-visible PNG previews with action render.",
   worktable_documents_write:

@@ -28,8 +28,9 @@ the documentation's source revision.
 ## Installation
 
 The general Worktable plugin bundles every skill except Set up Worktable with
-its **Cloud** MCP connection. The OpenClaw plugin bundles the full suite. If your
-client already loads either bundle, avoid installing another copy. To add only
+its **Cloud** MCP connection. The OpenClaw plugin bundles the full suite, and the
+Hermes plugin bundles the same skills as the general plugin. If your client
+already loads one of these bundles, avoid installing another copy. To add only
 Set up Worktable, download its package from the
 [Set up Worktable](/agents/setup/) page and place it in your client's skills
 folder.

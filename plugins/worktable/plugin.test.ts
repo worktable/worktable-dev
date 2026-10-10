@@ -178,6 +178,15 @@ describe("Worktable plugin bundle", () => {
         },
       }),
     ])
+    // `marketplace add` on this repository reads the root catalogs; they must
+    // list the same plugin and version as the distribution copies.
+    const repoRoot = join(pluginRoot, "..", "..")
+    expect(
+      await jsonFile(join(repoRoot, ".claude-plugin", "marketplace.json"))
+    ).toEqual(claudeMarketplace)
+    expect(
+      await jsonFile(join(repoRoot, ".agents", "plugins", "marketplace.json"))
+    ).toEqual(codexMarketplace)
 
     const license = await readFile(join(pluginRoot, "LICENSE"), "utf8")
     expect(license).toStartWith("MIT License\n")

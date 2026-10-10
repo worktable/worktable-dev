@@ -219,7 +219,7 @@ function ExportControls() {
       ) : completedJob ? (
         <OperationStatus state="success">
           {completedJob.manifest?.history.recovery
-            ? `Export ready — ${completedJob.manifest.history.recovery.omittedFiles.toLocaleString()} history ${completedJob.manifest.history.recovery.omittedFiles === 1 ? "file" : "files"} omitted.`
+            ? `Export ready. ${completedJob.manifest.history.recovery.omittedFiles.toLocaleString()} history ${completedJob.manifest.history.recovery.omittedFiles === 1 ? "file" : "files"} omitted.`
             : "Export ready."}
           {completedJob.bytes ? (
             <span className="ml-2 text-xs text-muted-foreground">

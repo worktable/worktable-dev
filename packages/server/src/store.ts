@@ -48,6 +48,7 @@ import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts";
 import { analyzeDocumentPath } from "./document-path.ts";
 import { DOCUMENT_STORAGE_PROFILE_IDS } from "./document-storage-profile.ts";
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts";
+import { noteDocumentEdited } from "./activity-log.ts";
 import {
   invalidateHostedDocumentShares,
   invalidateHostedDocumentSharesForSpace,
@@ -1612,7 +1613,31 @@ async function pruneRecordedDocVersion(
   }
 }
 
+type RecordDocVersionOptions = Parameters<typeof recordDocVersionInner>[5];
+
 async function recordDocVersion(
+  spaceId: string,
+  docPath: string,
+  before: DocReadResult | null,
+  after: DocReadResult,
+  context?: DocVersionContext,
+  opts?: RecordDocVersionOptions
+): Promise<DocProvenance | undefined> {
+  const provenance = await recordDocVersionInner(
+    spaceId,
+    docPath,
+    before,
+    after,
+    context,
+    opts
+  );
+  if (provenance && opts?.operation !== "create" && before?.data != null) {
+    noteDocumentEdited(spaceId, docPath, context?.updatedBy, context?.source);
+  }
+  return provenance;
+}
+
+async function recordDocVersionInner(
   spaceId: string,
   docPath: string,
   before: DocReadResult | null,

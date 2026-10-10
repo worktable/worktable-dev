@@ -720,12 +720,12 @@ export const SpacesInput = z.strictObject({
         .string()
         .optional()
         .describe('Workspace group name; "" clears it'),
-      startHere: z
+      pins: z
         .array(StartHerePinSchema)
         .max(START_HERE_LIMIT)
         .optional()
         .describe(
-          `Replace the Space's pinned starting points (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents a newcomer should read first, each with an optional one-line note on its role. Requires documents:write.`
+          `Replace the Space's pinned docs (at most ${START_HERE_LIMIT}), in reading order. Pin the few active documents to read first, each with an optional one-line note on its role. Requires documents:write.`
         ),
     }),
     actionSchema("archive", {

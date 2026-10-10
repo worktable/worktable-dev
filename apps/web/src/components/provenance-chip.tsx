@@ -103,7 +103,7 @@ export function ProvenanceChip() {
         >
           <div className="font-semibold">
             {label}
-            {p?.disposable ? " — disposable" : ""}
+            {p?.disposable ? " · disposable" : ""}
           </div>
           {p?.source?.label && (
             <div className="mt-1.5 text-muted-foreground">

@@ -7,7 +7,7 @@ import {
 } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Database, FileSearch, FileText, Search, X } from "lucide-react"
+import { Archive, Database, FileSearch, FileText, Search, X } from "lucide-react"
 import { Input } from "@worktable/ui/components/input"
 import { searchQueryOptions, useSpaces } from "@/lib/queries"
 import { resolveIcon } from "@/lib/icons"
@@ -203,6 +203,7 @@ export function SidebarSearchResults({
   ref?: Ref<SidebarSearchResultsHandle>
 }) {
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim())
+  const [includeArchived, setIncludeArchived] = useState(false)
   useEffect(() => {
     const timeout = window.setTimeout(
       () => setDebouncedQuery(query.trim()),
@@ -224,7 +225,11 @@ export function SidebarSearchResults({
     isLoading,
     isPlaceholderData,
   } = useQuery({
-    ...searchQueryOptions({ query: debouncedQuery, maxResults: 50 }),
+    ...searchQueryOptions({
+      query: debouncedQuery,
+      maxResults: 50,
+      includeArchived,
+    }),
     placeholderData: keepPreviousData,
   })
 
@@ -283,6 +288,20 @@ export function SidebarSearchResults({
     return [...bySpace.entries()]
   }, [results])
 
+  const archivedToggle = (
+    <button
+      type="button"
+      aria-pressed={includeArchived}
+      onClick={() => setIncludeArchived((value) => !value)}
+      className={`mb-2 flex items-center gap-1.5 rounded-md px-3 py-1 text-xs transition-colors hover:text-sidebar-foreground ${
+        includeArchived ? "text-sidebar-primary" : "text-sidebar-foreground/45"
+      }`}
+    >
+      <Archive className="size-3" />
+      Include archived
+    </button>
+  )
+
   if (isLoading && !results) {
     return (
       <div className="flex flex-col gap-2">
@@ -298,6 +317,8 @@ export function SidebarSearchResults({
 
   if (results && results.length === 0) {
     return (
+      <div>
+        {archivedToggle}
       <div className="px-3 py-8 text-center">
         <FileSearch className="mx-auto mb-2 size-5 text-sidebar-foreground/30" />
         <p className="text-xs text-sidebar-foreground/40">
@@ -307,11 +328,13 @@ export function SidebarSearchResults({
           Try a broader term
         </p>
       </div>
+      </div>
     )
   }
 
   return (
     <div className="space-y-3">
+      {archivedToggle}
       {groups.map(([spaceId, spaceResults]) => {
         const space = spacesById.get(spaceId)
         return (

@@ -10,10 +10,15 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Hono } from "hono";
-import type { SpaceFile } from "@worktable/types";
+import {
+  DEFAULT_AGENT_ACCESS,
+  scopesForAccess,
+  type SpaceFile,
+} from "@worktable/types";
 import { setAppDirOverride } from "./app-storage.ts";
 import {
   listAgentConnections,
+  updateAgentConnection,
   upsertAgentConnection,
 } from "./agent-connection-store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
@@ -99,6 +104,7 @@ interface CreateResponse {
         adapter: string;
         participantName: string;
         defaultSpaceId?: string;
+        workspaceAccess?: true;
       };
 }
 
@@ -214,6 +220,44 @@ describe("create (owner surface)", () => {
         lastSeenAt: expect.any(String),
       },
     ]);
+
+    // The owner renames it; reconnecting the same installation with the
+    // setup form's default name keeps the owner's name and tells the adapter.
+    const [connection] = await listAgentConnections();
+    await updateAgentConnection(connection!.id, {
+      displayName: "Atlas Studio",
+    });
+    const again = await createPairing(app, {
+      target: {
+        kind: "agent-adapter",
+        adapter: "openclaw",
+        participantName: "OpenClaw",
+      },
+    });
+    const reconnected = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: again.code,
+          hostname: "worktable-host",
+          installationId: "oci_worktable_install",
+        },
+      })
+    );
+    const reconnectedPayload = (await reconnected.json()) as {
+      token: string;
+      participantName: string;
+    };
+    expect(reconnectedPayload.participantName).toBe("Atlas Studio");
+    const recompleted = await app.fetch(
+      jsonReq("POST", "/api/pairing/complete", {
+        bearer: reconnectedPayload.token,
+        body: { code: again.code },
+      })
+    );
+    expect(recompleted.status).toBe(200);
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "Atlas Studio", participant: { name: "Atlas Studio" } },
+    ]);
   });
 
   it("creates with defaults on bare loopback: content scopes, /mcp endpoint", async () => {
@@ -312,7 +356,7 @@ describe("create (owner surface)", () => {
     expect(remoteMcpUrl("http://localhost")).toBe("http://localhost/api/mcp");
   });
 
-  it("creates a typed OpenClaw adapter pairing with fixed thread-only scopes", async () => {
+  it("creates a typed OpenClaw adapter pairing with full access by default", async () => {
     const now = new Date().toISOString();
     const homeSpace: SpaceFile = {
       type: "worktable.space",
@@ -336,7 +380,7 @@ describe("create (owner surface)", () => {
     });
 
     expect(created.client).toBeNull();
-    expect(created.scopes).toEqual(["threads:*"]);
+    expect(created.scopes).toEqual(scopesForAccess(DEFAULT_AGENT_ACCESS));
     expect(created.target).toEqual({
       kind: "agent-adapter",
       adapter: "openclaw",
@@ -367,7 +411,7 @@ describe("create (owner surface)", () => {
 
     const identity = await verifyToken(payload.token);
     expect(identity?.agent).toBe("openclaw@oci_personal_install");
-    expect(identity?.scopes).toEqual(["threads:*"]);
+    expect(identity?.scopes).toEqual(scopesForAccess(DEFAULT_AGENT_ACCESS));
     const bindings = await listParticipantBindings();
     expect(bindings).toHaveLength(1);
     expect(bindings[0]).toMatchObject({
@@ -424,6 +468,45 @@ describe("create (owner surface)", () => {
       ((await redeemed.json()) as { token: string }).token
     );
     expect(identity?.agent).toBe("future-agent@oci_portable_install");
+    expect(identity?.scopes).toEqual(scopesForAccess(DEFAULT_AGENT_ACCESS));
+
+    // The owner can narrow an always-on agent to threads, but not take them away.
+    const threadsOnly = { threads: true, read: false, edit: false };
+    const narrowed = await createPairing(app, {
+      target: {
+        kind: "agent-adapter",
+        adapter: "hermes",
+        participantName: "Hermes",
+      },
+      access: threadsOnly,
+    });
+    const narrowedRedeemed = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: narrowed.code,
+          hostname: "portable-host",
+          installationId: "hci_portable_install",
+        },
+      })
+    );
+    expect(narrowedRedeemed.status).toBe(200);
+    const narrowedIdentity = await verifyToken(
+      ((await narrowedRedeemed.json()) as { token: string }).token
+    );
+    expect(narrowedIdentity?.scopes).toEqual(scopesForAccess(threadsOnly));
+    const withoutThreads = await app.fetch(
+      jsonReq("POST", "/api/pairing", {
+        body: {
+          target: {
+            kind: "agent-adapter",
+            adapter: "hermes",
+            participantName: "Hermes",
+          },
+          access: { threads: false, read: true, edit: true },
+        },
+      })
+    );
+    expect(withoutThreads.status).toBe(400);
 
     const rejected = await app.fetch(
       jsonReq("POST", "/api/pairing", {
@@ -991,7 +1074,11 @@ describe("redeem (code surface)", () => {
         body: { code: first.code },
       })
     );
-    const second = await createPairing(app, { client: "codex" });
+    // Reconnecting names nothing: the agent keeps the name it was given.
+    const second = await createPairing(app, {
+      client: "codex",
+      displayName: "Codex",
+    });
     const secondRedeem = await app.fetch(
       jsonReq("POST", "/api/pairing/redeem", {
         body: { code: second.code, hostname: "devbox" },
@@ -1041,7 +1128,10 @@ describe("redeem (code surface)", () => {
     expect(await verifyToken(firstToken)).toBeNull();
     expect(await verifyToken(secondToken)).not.toBeNull();
     expect(await listAgentConnections()).toEqual([
-      expect.objectContaining({ displayName: "My Codex" }),
+      expect.objectContaining({
+        displayName: "My Codex",
+        participant: expect.objectContaining({ name: "My Codex" }),
+      }),
     ]);
     const status = await app.fetch(jsonReq("GET", `/api/pairing/${second.id}`));
     const view = (await status.json()) as {
@@ -1434,5 +1524,155 @@ describe("progress (code surface)", () => {
       })
     );
     expect(badCode.status).toBe(404);
+  });
+});
+
+describe("connection requests (an agent asks, the owner approves)", () => {
+  async function ask(): Promise<{ code: string; pollToken: string; approvalUrl: string }> {
+    const res = await app.fetch(
+      jsonReq("POST", "/api/pairing/requests", {
+        body: {
+          target: {
+            kind: "agent-adapter",
+            adapter: "hermes",
+            installationId: "hci_request_install",
+          },
+          hostname: "studio",
+          name: "Hermes",
+        },
+      })
+    );
+    expect(res.status).toBe(201);
+    return (await res.json()) as {
+      code: string;
+      pollToken: string;
+      approvalUrl: string;
+    };
+  }
+
+  async function poll(pollToken: string) {
+    const res = await app.fetch(
+      jsonReq("POST", "/api/pairing/requests/poll", { body: { pollToken } })
+    );
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  it("pairs an agent with the name, icon, and access its owner approved", async () => {
+    const asked = await ask();
+    expect(new URL(asked.approvalUrl).pathname).toBe("/connect");
+    expect(new URL(asked.approvalUrl).searchParams.get("code")).toBe(asked.code);
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "pending" });
+
+    const seen = await app.fetch(
+      jsonReq("GET", `/api/pairing/requests/${asked.code}`)
+    );
+    expect(seen.status).toBe(200);
+    const seenText = await seen.text();
+    expect(seenText).not.toContain(asked.pollToken);
+    expect(JSON.parse(seenText)).toMatchObject({
+      request: {
+        userCode: asked.code,
+        target: { kind: "agent-adapter", adapter: "hermes" },
+        hostname: "studio",
+        suggestedName: "Hermes",
+      },
+    });
+
+    // An always-on agent cannot be approved without threads.
+    const withoutThreads = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          access: { threads: false, read: true, edit: true },
+        },
+      })
+    );
+    expect(withoutThreads.status).toBe(400);
+
+    const approved = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          icon: "brain",
+          access: { threads: true, read: true, edit: false },
+        },
+      })
+    );
+    expect(approved.status).toBe(200);
+
+    const delivered = await poll(asked.pollToken);
+    const pairingCode = delivered.body["code"];
+    expect(delivered.body["status"]).toBe("approved");
+    expect(typeof pairingCode).toBe("string");
+    // The code goes to the asking agent once.
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "expired" });
+
+    const redeemed = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: pairingCode,
+          hostname: "studio",
+          installationId: "hci_request_install",
+        },
+      })
+    );
+    expect(redeemed.status).toBe(200);
+    const payload = (await redeemed.json()) as { token: string; participantName: string };
+    expect(payload.participantName).toBe("Ada");
+    const completed = await app.fetch(
+      jsonReq("POST", "/api/pairing/complete", {
+        bearer: payload.token,
+        body: { code: pairingCode },
+      })
+    );
+    expect(completed.status).toBe(200);
+    expect(await listAgentConnections()).toMatchObject([
+      {
+        displayName: "Ada",
+        platform: "hermes",
+        icon: "brain",
+        mode: "always-on",
+        access: { threads: true, read: true, edit: false },
+      },
+    ]);
+  });
+
+  it("tells the agent when its owner declines, and keeps answered requests answered", async () => {
+    // A web page cannot ask on a visitor's behalf.
+    const fromPage = await app.fetch(
+      new Request("http://localhost/api/pairing/requests", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ target: { kind: "mcp-client", client: null } }),
+      })
+    );
+    expect(fromPage.status).toBe(415);
+    const crossOrigin = await app.fetch(
+      new Request("http://localhost/api/pairing/requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://elsewhere.example",
+        },
+        body: JSON.stringify({ target: { kind: "mcp-client", client: null } }),
+      })
+    );
+    expect(crossOrigin.status).toBe(403);
+    const asked = await ask();
+    const denied = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/deny`)
+    );
+    expect(denied.status).toBe(200);
+    expect((await poll(asked.pollToken)).body).toEqual({ status: "denied" });
+    const late = await app.fetch(
+      jsonReq("POST", `/api/pairing/requests/${asked.code}/approve`, {
+        body: {
+          displayName: "Ada",
+          access: { threads: true, read: true, edit: true },
+        },
+      })
+    );
+    expect(late.status).toBe(404);
+    expect((await poll("not-a-real-poll-token")).status).toBe(404);
   });
 });

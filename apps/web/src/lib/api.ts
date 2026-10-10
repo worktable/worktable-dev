@@ -67,7 +67,7 @@ export function getSpace(spaceId: string) {
   return fetchJSON<{
     space: SpaceFile
     widgets: WidgetListEntry[]
-    startHere?: ResolvedStartHerePin[]
+    pins?: ResolvedStartHerePin[]
   }>(`/api/spaces/${spaceId}`)
 }
 

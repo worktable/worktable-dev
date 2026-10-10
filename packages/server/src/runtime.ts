@@ -110,9 +110,12 @@ export {
   hasActiveTokens,
   listTokens,
   revokeToken,
-  rotateAgentToken,
   type TokenMetadata,
 } from "./token-store.ts"
+export {
+  currentAgentScopes,
+  rotateAgentCredential,
+} from "./agent-connection-store.ts"
 export {
   hasOwnerPassword,
   setOwnerPassword,

@@ -1,3 +1,4 @@
+import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   useQueryClient,
@@ -654,6 +655,27 @@ export function useSpaceSubscription(
         ) {
           void queryClient.invalidateQueries({ queryKey: ["search"] })
           void queryClient.invalidateQueries({ queryKey: ["recent"] })
+        }
+
+        // Activity and Pending summarize every kind of change in the Space.
+        if (
+          msg.type.startsWith("doc_") ||
+          msg.type.startsWith("widget_") ||
+          msg.type.startsWith("record") ||
+          msg.type.startsWith("annotation_") ||
+          msg.type === "space_update" ||
+          msg.type === "thread_update"
+        ) {
+          void queryClient.invalidateQueries({ queryKey: activityQueryKeys.all })
+        }
+        if (
+          msg.type.startsWith("annotation_") ||
+          msg.type === "thread_update" ||
+          msg.type === "thread_activity"
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: activityQueryKeys.pending,
+          })
         }
 
         if (

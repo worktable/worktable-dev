@@ -298,6 +298,9 @@ describe("document lifetime", () => {
 
     const withTemporary = await listRecentDocuments({ sort: "updated", includeTemporary: true })
     expect(withTemporary.items.map((item) => item.document.path)).toContain("notes/scratch")
+    // Asking for temporary documents alone is not crowded out by newer durable ones.
+    const temporary = await listRecentDocuments({ sort: "updated", onlyTemporary: true, limit: 1 })
+    expect(temporary.items.map((item) => item.document.path)).toEqual(["notes/scratch"])
 
     // Created order uses recorded creation times; unknown ones are left out.
     const created = await listRecentDocuments({ sort: "created" })

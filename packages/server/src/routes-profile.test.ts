@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
 import { profileRouter } from "./routes/profile.ts"
+import { createThread, readThread } from "./thread-store.ts"
 import { createToken } from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -40,7 +41,17 @@ describe("profile routes", () => {
     const before = await app().fetch(
       new Request("http://localhost/api/profile")
     )
-    expect(await before.json()).toMatchObject({ name: "Owner" })
+    const owner = (await before.json()) as { id: string; name: string }
+    expect(owner).toMatchObject({ name: "Owner" })
+    const { thread } = await createThread(
+      { kind: "worktable" },
+      {
+        author: { id: owner.id, kind: "human", name: owner.name },
+        recipient: { id: "ptc_profile_agent", kind: "agent", name: "Atlas" },
+        body: "Hello",
+        idempotencyKey: "profile-rename",
+      }
+    )
 
     const updated = await app().fetch(
       new Request("http://localhost/api/profile", {
@@ -56,6 +67,14 @@ describe("profile routes", () => {
 
     const after = await app().fetch(new Request("http://localhost/api/profile"))
     expect(await after.json()).toEqual(profile)
+
+    // Existing threads show the new name, and @Alex reaches the owner there.
+    const renamed = await readThread({ kind: "worktable" }, thread.id)
+    expect(renamed.members.find((m) => m.id === owner.id)?.name).toBe("Alex")
+    expect(
+      renamed.identities.find((i) => i.memberId === owner.id && i.default)?.name
+    ).toBe("Alex")
+    expect(renamed.updatedAt).toBe(thread.updatedAt)
   })
 
   it("rejects agent credentials and invalid names", async () => {

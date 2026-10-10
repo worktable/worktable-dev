@@ -27,6 +27,7 @@ import { annotationsRouter } from "./routes/annotations.ts";
 import { threadsRouter } from "./routes/threads.ts";
 import { searchRouter } from "./routes/search.ts";
 import { recentRouter } from "./routes/recent.ts";
+import { activityRouter, pendingRouter } from "./routes/activity.ts";
 import { tokensRouter } from "./routes/tokens.ts";
 import { wellKnownRouter } from "./routes/well-known.ts";
 import { mcpRouter } from "./routes/mcp.ts";
@@ -158,6 +159,7 @@ import {
   initializeLocalOperatorToken,
   isAuthorizedLocalOperatorRequest,
 } from "./operator-export.ts";
+import { runAsActivityActor } from "./activity-log.ts";
 
 // ============================================================
 // App setup
@@ -370,6 +372,9 @@ app.get("/worktable-preview/fonts/*", async (c) => {
 });
 
 app.use("/api/*", trustedLocalIdentity());
+app.use("/api/*", (c, next) =>
+  runAsActivityActor(c.get("identity")?.principal, next)
+);
 app.use("/api/*", requireWorkspaceContentEpoch);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
@@ -397,6 +402,8 @@ app.route("/api/spaces/:spaceId/threads", threadsRouter);
 app.route("/api/threads", threadsRouter);
 app.route("/api/search", searchRouter);
 app.route("/api/recent", recentRouter);
+app.route("/api/activity", activityRouter);
+app.route("/api/pending", pendingRouter);
 app.route("/.well-known", wellKnownRouter);
 app.route("/mcp", mcpRouter);
 // Version-matched, secret-free provider integration packages. Mounted before
@@ -507,6 +514,8 @@ if (HAS_STATIC) {
 
 interface WsData {
   localTokenId?: string;
+  /** The token's scopes at the handshake, which fixed this socket's reads. */
+  localTokenScopes?: string;
   credentialRevoked?: boolean;
   sessionStillValid?: () => Promise<boolean>;
   type: "space" | "yjs";
@@ -605,6 +614,10 @@ async function wsGateIdentity(
 }
 
 // Retain only the public token handle, never the bearer, for session revocation.
+function scopeKey(scopes: readonly string[]): string {
+  return [...scopes].sort().join(" ");
+}
+
 function localRealtimeTokenId(req: Request, url: URL, identity: TokenIdentity): string | undefined {
   if (identity.credentialClass !== "local") return undefined;
   const raw = req.headers.get("Authorization")?.slice("Bearer ".length).trim() ?? url.searchParams.get("token");
@@ -1448,16 +1461,21 @@ export function startServer(
     credentialCheck = (async () => {
       // Read canonical app-private state so CLI / other-process revocations also
       // take effect. No token secrets are copied into WebSocket state.
-      let activeIds = new Set<string>();
+      // A token whose access changed also ends its sockets: their reads were
+      // fixed at the handshake. The client reconnects with the new access.
+      let activeScopes = new Map<string, string>();
       try {
-        activeIds = new Set((await listTokens())
+        activeScopes = new Map((await listTokens())
           .filter(token => !token.revokedAt && token.workspace === getWorkspaceRoot())
-          .map(token => token.id));
+          .map(token => [token.id, scopeKey(token.scopes)]));
       } catch {
         // Losing the credential store cannot preserve authenticated sessions.
       }
       for (const socket of credentialSockets) {
-        let revoked = Boolean(socket.data.localTokenId && !activeIds.has(socket.data.localTokenId));
+        let revoked = Boolean(
+          socket.data.localTokenId &&
+          activeScopes.get(socket.data.localTokenId) !== socket.data.localTokenScopes
+        );
         if (!revoked && socket.data.sessionStillValid) {
           try { revoked = !(await socket.data.sessionStillValid()); } catch { revoked = true; }
         }
@@ -1619,6 +1637,7 @@ export function startServer(
           data: {
             type: "yjs" as const,
             localTokenId: localRealtimeTokenId(req, url, identity),
+            localTokenScopes: scopeKey(identity.scopes),
             sessionStillValid: realtimeCookieCheck(req, url),
             spaceId,
             ...access,
@@ -1652,6 +1671,7 @@ export function startServer(
           data: {
             type: "space" as const,
             localTokenId: localRealtimeTokenId(req, url, identity),
+            localTokenScopes: scopeKey(identity.scopes),
             sessionStillValid: realtimeCookieCheck(req, url),
             spaceId,
             threadScope,

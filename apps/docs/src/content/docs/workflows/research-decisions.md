@@ -40,8 +40,8 @@ Separate the preferred option from a confirmed booking. List what we
 must confirm before committing.
 ```
 
-Ask the agent to address that annotation. Review its revision, then pin the
-document to **Start here** in the Space.
+Ask the agent to address that annotation. Review its revision, then **Pin** the
+document so it leads the Space.
 
 ## Update the evidence
 

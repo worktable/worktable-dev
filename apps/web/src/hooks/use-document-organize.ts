@@ -4,11 +4,12 @@ import { Clock3, Pin, PinOff, Infinity as InfinityIcon } from "lucide-react"
 import { START_HERE_LIMIT } from "@worktable/types"
 import { toast } from "@worktable/ui/components/sonner"
 import type { PageOverflowAction } from "@/hooks/use-page-meta"
+import { activityQueryKeys } from "@/lib/activity"
 import { mutateDocument } from "@/lib/documents-api"
 import {
   formatArchiveDate,
   setDocumentLifetime,
-  setStartHere,
+  setPins,
   useDocumentSummary,
   useRefreshDocumentLists,
 } from "@/lib/lifetime"
@@ -58,7 +59,7 @@ export function useTemporaryArchiveLabel(
   return `Archives ${formatArchiveDate(summary.archiveOn)}`
 }
 
-/** Lifetime and Start here actions for a document's More menu. */
+/** Lifetime and pin actions for a document's More menu. */
 export function useDocumentOrganizeActions(
   spaceId: string,
   path: string
@@ -67,22 +68,23 @@ export function useDocumentOrganizeActions(
   const actions = useLifetimeActions(spaceId, path)
   const { data: space } = useSpace(spaceId)
   const queryClient = useQueryClient()
-  const pins = space?.startHere ?? []
+  const pins = space?.pins ?? []
   const pinned = pins.some((pin) => pin.path === path)
   if (!summary || summary.archived || !summary.lifetime) return []
 
   const updatePins = async (next: Array<{ path: string; note?: string }>) => {
     try {
-      await setStartHere(spaceId, next)
-      await queryClient.invalidateQueries({
-        queryKey: spaceQueryOptions(spaceId).queryKey,
-      })
-      toast.success(
-        pinned ? "Unpinned from Start here" : "Pinned to Start here"
-      )
+      await setPins(spaceId, next)
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: spaceQueryOptions(spaceId).queryKey,
+        }),
+        queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
+      ])
+      toast.success(pinned ? "Unpinned" : "Pinned")
     } catch (error) {
-      console.error("Failed to update Start here:", error)
-      toast.error("Couldn’t update Start here.")
+      console.error("Failed to update pins:", error)
+      toast.error(pinned ? "Couldn’t unpin." : "Couldn’t pin.")
     }
   }
   const currentPins = pins.map((pin) => ({
@@ -100,21 +102,21 @@ export function useDocumentOrganizeActions(
         }
       : {
           id: "make-temporary",
-          label: "Make temporary",
+          label: "Make Temporary",
           icon: Clock3,
           onSelect: () => void actions.makeTemporary(),
         },
     pinned
       ? {
           id: "unpin",
-          label: "Unpin from Start here",
+          label: "Unpin",
           icon: PinOff,
           onSelect: () =>
             void updatePins(currentPins.filter((pin) => pin.path !== path)),
         }
       : {
           id: "pin",
-          label: "Pin to Start here",
+          label: "Pin",
           icon: Pin,
           disabled: pins.length >= START_HERE_LIMIT,
           onSelect: () => void updatePins([...currentPins, { path }]),

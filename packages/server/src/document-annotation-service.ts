@@ -1,3 +1,4 @@
+import { noteCommentActivity } from "./activity-log.ts"
 import { nanoid } from "nanoid"
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
@@ -304,6 +305,14 @@ export async function createDocumentAnnotationForPath(options: {
   }, { materializeIdentity: true })
   if (result.created && options.input.author?.type !== "system") {
     await noteDocumentActivity(options.spaceId, [result.path])
+    noteCommentActivity({
+      spaceId: options.spaceId,
+      action: "comment.created",
+      path: result.path,
+      author: result.annotation.author,
+      body: result.annotation.body,
+      category: result.annotation.category,
+    })
   }
   return { annotation: result.annotation, created: result.created }
 }
@@ -471,6 +480,14 @@ export async function replyDocumentAnnotation(options: {
   })
   if (author.type !== "system") {
     await noteDocumentActivity(options.spaceId, [result.path])
+    noteCommentActivity({
+      spaceId: options.spaceId,
+      action: "comment.replied",
+      path: result.path,
+      author,
+      body: options.body,
+      category: result.annotation.category,
+    })
   }
   return { annotation: result.annotation, replyId: result.replyId }
 }
@@ -503,8 +520,28 @@ export async function resolveDocumentAnnotation(options: {
   })
   if (!NON_ENGAGING_ACTORS.has(options.resolvedBy)) {
     await noteDocumentActivity(options.spaceId, [result.path])
+    noteCommentActivity({
+      spaceId: options.spaceId,
+      action: "comment.resolved",
+      path: result.path,
+      author: resolverAuthor(options.resolvedBy),
+      body: result.annotation.body,
+      category: result.annotation.category,
+    })
   }
   return result.annotation
+}
+
+/** Resolutions record only an actor string; classify it like other writes. */
+function resolverAuthor(resolvedBy: string): AnnotationAuthor {
+  if (resolvedBy === "worktable" || resolvedBy === "system") {
+    return { type: "system", id: resolvedBy }
+  }
+  const human =
+    resolvedBy === "user" ||
+    resolvedBy === "local:owner" ||
+    resolvedBy.startsWith("workos:")
+  return { type: human ? "user" : "agent", id: resolvedBy }
 }
 
 function legacyTargetAtPath(

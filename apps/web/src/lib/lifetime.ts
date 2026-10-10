@@ -1,3 +1,4 @@
+import { activityQueryKeys } from "./activity.ts"
 import { keepPreviousData, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useSyncExternalStore } from "react"
 import type {
@@ -51,10 +52,11 @@ export function useRefreshDocumentLists(spaceId: string): () => Promise<void> {
   return useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: documentQueryKeys.list(spaceId) }),
-      // Start here pins report their document's status.
+      // Pins report their document's status.
       queryClient.invalidateQueries({ queryKey: spaceQueryOptions(spaceId).queryKey }),
       queryClient.invalidateQueries({ queryKey: recentQueryKeys.all }),
       queryClient.invalidateQueries({ queryKey: ["search"] }),
+      queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
     ])
   }, [queryClient, spaceId])
 }
@@ -129,6 +131,8 @@ export interface RecentOptions {
   spaceId?: string
   sort: "updated" | "created"
   includeTemporary: boolean
+  /** Only temporary docs, soonest to archive first. */
+  onlyTemporary?: boolean
   limit?: number
 }
 
@@ -140,6 +144,7 @@ export function recentQueryOptions(options: RecentOptions) {
         sort: options.sort,
         includeTemporary: options.includeTemporary ? "true" : "false",
         limit: String(options.limit ?? 30),
+        ...(options.onlyTemporary ? { lifetime: "temporary" } : {}),
         ...(options.spaceId ? { spaceId: options.spaceId } : {}),
       })
       return fetchJSON<RecentDocuments>(`/api/recent?${query}`)
@@ -158,13 +163,13 @@ export function useRecentDocuments(options: RecentOptions, enabled = true) {
   })
 }
 
-// ── Start here ─────────────────────────────────────────────
+// ── Pins ───────────────────────────────────────────────────
 
-export function setStartHere(
+export function setPins(
   spaceId: string,
   pins: StartHerePin[]
-): Promise<{ startHere: ResolvedStartHerePin[] }> {
-  return fetchJSON(`/api/spaces/${encodeURIComponent(spaceId)}/start-here`, {
+): Promise<{ pins: ResolvedStartHerePin[] }> {
+  return fetchJSON(`/api/spaces/${encodeURIComponent(spaceId)}/pins`, {
     method: "PUT",
     body: JSON.stringify({ pins }),
   })

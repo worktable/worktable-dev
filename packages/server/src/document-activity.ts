@@ -6,6 +6,7 @@
 // without import cycles. Both helpers are best effort: bookkeeping must never
 // fail the operation that triggered it.
 
+import { recordActivity } from "./activity-log.ts"
 import { graceEndsAt } from "./lifetime-rules.ts"
 import { extendDocsArchiveOn, recordDocCreated } from "./store.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
@@ -43,6 +44,12 @@ export async function noteDocumentCreated(
   path: string,
   now: number = Date.now()
 ): Promise<void> {
+  recordActivity({
+    spaceId,
+    action: "doc.created",
+    target: { kind: "doc", path },
+    at: new Date(now).toISOString(),
+  })
   try {
     await recordDocCreated(spaceId, path, new Date(now).toISOString())
   } catch (error) {

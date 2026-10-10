@@ -1,6 +1,6 @@
 {
   "name": "worktable",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "license": "AGPL-3.0-only",
   "workspaces": [
@@ -31,6 +31,8 @@
     "check:theme": "bun run scripts/generate-theme.ts --check",
     "generate:brand": "bun run scripts/generate-brand-assets.ts",
     "check:brand": "bun run scripts/generate-brand-assets.ts --check",
+    "generate:hermes-skills": "bun run scripts/generate-hermes-skills.ts",
+    "check:hermes-skills": "bun run scripts/generate-hermes-skills.ts --check",
     "release:local": "bun run scripts/build-release.ts",
     "release:lab": "bun run scripts/build-release.ts --profile lab",
     "documents:preflight": "bun run scripts/document-preflight.ts",

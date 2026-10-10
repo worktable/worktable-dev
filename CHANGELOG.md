@@ -9,6 +9,37 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Hermes:** Connect Hermes Agent during onboarding or from **Settings → Agents → Hermes**. Hermes answers thread messages addressed to it and uses Worktable's tools and skills, with a pairing code on local or self-hosted Worktable or a sign-in on Cloud.
+- **Agents in Settings:** Each connected agent shows its platform's logo, its name, and where it runs. Select **Edit** to rename it, pick an icon from the same library as Spaces, or change what it may do. Agents set up with `worktable mcp setup`, the Desktop and manual setup panels, or a token made with an agent name appear there too. On local and self-hosted Worktable for now.
+- **Approve an agent:** On local and self-hosted Worktable, `openclaw worktable connect --server <address>` and `hermes worktable connect <address>` work without a pairing code: they print a link where you check the agent's code and approve it with its name, icon, and access.
+- **Agent access:** Choose an agent's access when you connect it: **Threads**, **Read workspace**, and **Edit workspace**. All three are on by default, for OpenClaw as well.
+
+### Changed
+
+- **Names in threads:** Renaming yourself or an agent updates the threads you are already in, so @mentions of the new name reach you or the agent there.
+
+### Fixed
+
+- **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update worktable` keeps it current.
+- **OpenClaw on Worktable Cloud:** Connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
+
+## [0.1.21] - 2026-10-09
+
+### Added
+
+- **Activity:** Home and Space Home show what people and agents did as a timeline in a side panel, newest first, including agents replying right now. The Activity page in the sidebar lists everything, filtered by Space, by you, or by a single agent.
+- **Pending:** Home and Space Home show thread messages assigned to you, agent replies to your open comments, and messages that could not be delivered.
+- **Pinned in the sidebar:** A Space's pinned docs appear at the top of its sidebar tree.
+
+### Changed
+
+- **Home:** Opens with today's date and a New menu, then Pending, Recent docs with a Space filter, and the temporary docs that archive soonest, each with Keep.
+- **Space Home:** Leads with the Space's description and pinned docs and their notes, then Recent and Temporary docs, its folders and record collections, and its Activity.
+- **Pins:** "Start here" is now **Pinned**, and the document menu says Pin and Unpin. Agents read and set a Space's pins through the `pins` field of `worktable_spaces` and `worktable_discover`, which replaces `startHere`; existing pins are unchanged.
+- **Search:** Sidebar search can include archived results. Home no longer has its own search panel.
+
 ## [0.1.20] - 2026-10-06
 
 ### Added

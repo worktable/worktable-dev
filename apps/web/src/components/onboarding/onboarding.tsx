@@ -49,6 +49,11 @@ import {
   listAgentConnections,
   renameAgentConnection,
 } from "@/lib/agent-connections-api"
+import {
+  ALWAYS_ON_AGENTS,
+  OPENCLAW,
+  type AlwaysOnAgent,
+} from "@/lib/always-on-agents"
 import { createClientId } from "@/lib/client-id"
 import { desktopAgentConnectionDetails } from "@/lib/desktop-agent-connection"
 import {
@@ -69,7 +74,7 @@ import { createThread, listThreadParticipants } from "@/lib/threads-api"
 import { listTokens, mintToken } from "@/lib/tokens-api"
 
 type OnboardingStep = "identity" | "connect" | "ready"
-type ConnectionMethod = "computer" | "native" | "openclaw" | "other"
+type ConnectionMethod = "computer" | "native" | "always-on" | "other"
 type ComputerTarget = ConnectorInstallableMcpClientId | "auto"
 type NativeService = "claude" | "chatgpt"
 
@@ -89,8 +94,6 @@ interface OnboardingDraft {
   threads?: Array<{ setupId: string; id: string; participantName: string }>
 }
 
-const OPENCLAW_INSTALL =
-  "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
 const DEFAULT_DRAFT: OnboardingDraft = { step: "identity", setups: [] }
 const AGENT_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
 const STARTER_PROMPTS = [
@@ -105,7 +108,7 @@ const STARTER_PROMPTS = [
       "Find or create a Space for [what I’m working on]. Save [notes or source material] as a document, preserving decisions and open questions.",
   },
 ] as const
-const OPENCLAW_FIRST_MESSAGE =
+const ALWAYS_ON_FIRST_MESSAGE =
   "Help me choose a first task in Worktable. Ask what I want to accomplish, find any related work, and help me create or revise one useful result."
 
 const CONNECTION_METHODS = [
@@ -122,8 +125,8 @@ const CONNECTION_METHODS = [
     icon: MessageCircle,
   },
   {
-    id: "openclaw",
-    title: "OpenClaw",
+    id: "always-on",
+    title: "OpenClaw or Hermes",
     description: "Pair an always-on agent.",
     icon: RadioTower,
   },
@@ -216,10 +219,6 @@ function initialWorktableName(workspace: WorkspaceInfo): string {
   return ["Local Workspace", "My Workspace"].includes(workspace.name)
     ? ""
     : workspace.name
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`
 }
 
 function StepProgress({ step }: { step: OnboardingStep }) {
@@ -557,7 +556,7 @@ function AgentNameField({
 function CloudCandidates({
   connections,
   baseline,
-  method,
+  alwaysOn,
   name,
   onUse,
   pending,
@@ -565,16 +564,17 @@ function CloudCandidates({
 }: {
   connections: AgentConnection[]
   baseline: Set<string>
-  method: ConnectionMethod
+  /** Set for an always-on agent that connects through its own registration. */
+  alwaysOn?: AlwaysOnAgent
   name: string
   onUse: (connection: AgentConnection) => void
   pending: boolean
   onRefresh: () => void
 }) {
   const candidates = connections.filter((connection) =>
-    method === "openclaw"
+    alwaysOn?.cloudAuth === "agent-registration"
       ? connection.target.kind === "agent-adapter" &&
-        connection.target.adapter === "openclaw"
+        connection.target.adapter === alwaysOn.adapter
       : connection.authKind === "oauth"
   )
   const ordered = [...candidates].sort(
@@ -639,6 +639,7 @@ function ConnectStep({
   const [computerTarget, setComputerTarget] = useState<ComputerTarget>("auto")
   const [nativeService, setNativeService] = useState<NativeService>("claude")
   const [manualClient, setManualClient] = useState<McpSnippetClientId>("goose")
+  const [alwaysOnAgent, setAlwaysOnAgent] = useState<AlwaysOnAgent>(OPENCLAW)
   const [agentName, setAgentName] = useState("")
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
   const [token, setToken] = useState<{
@@ -676,11 +677,11 @@ function ConnectStep({
 
   const create = useMutation({
     mutationFn: () => {
-      if (method === "openclaw") {
+      if (method === "always-on") {
         return createPairing({
           target: {
             kind: "agent-adapter",
-            adapter: "openclaw",
+            adapter: alwaysOnAgent.adapter,
             participantName: agentName.trim(),
           },
         })
@@ -698,6 +699,7 @@ function ConnectStep({
     onSuccess: (result) => {
       setToken({ value: result.token, id: result.metadata.id })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
   const useCloudConnection = useMutation({
@@ -706,14 +708,16 @@ function ConnectStep({
       return selected
     },
     onSuccess: (selected) => {
-      const isOpenClaw = method === "openclaw"
+      const isAlwaysOn = method === "always-on"
       addSetup({
         id: selected.id,
         name: agentName.trim(),
-        harness: isOpenClaw ? "OpenClaw" : selected.displayName || "MCP agent",
-        mode: isOpenClaw ? "always-on" : "on-demand",
+        harness: isAlwaysOn
+          ? alwaysOnAgent.name
+          : selected.displayName || "MCP agent",
+        mode: isAlwaysOn ? "always-on" : "on-demand",
         verified: true,
-        ...(isOpenClaw
+        ...(isAlwaysOn
           ? {
               participantName:
                 selected.target.kind === "agent-adapter"
@@ -739,14 +743,14 @@ function ConnectStep({
       id: `pairing:${pairing.id}`,
       name: agentName.trim(),
       harness:
-        method === "openclaw"
-          ? "OpenClaw"
+        method === "always-on"
+          ? alwaysOnAgent.name
           : computerTarget === "auto"
             ? "CLI agents on one computer"
             : MCP_CLIENTS[computerTarget].label,
-      mode: method === "openclaw" ? "always-on" : "on-demand",
+      mode: method === "always-on" ? "always-on" : "on-demand",
       verified: true,
-      ...(method === "openclaw" ? { participantName: agentName.trim() } : {}),
+      ...(method === "always-on" ? { participantName: agentName.trim() } : {}),
     })
     void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     void queryClient.invalidateQueries({ queryKey: ["tokens"] })
@@ -820,10 +824,10 @@ function ConnectStep({
         .filter(Boolean)
         .join(" ")
     : ""
-  const openClawCommand = pairing
-    ? `openclaw worktable connect --server ${pairing.serverOrigin} --pairing-code ${pairing.code}`
+  const alwaysOnCommand = pairing
+    ? alwaysOnAgent.localConnectCommand(pairing.serverOrigin, pairing.code)
     : isCloud && currentConnection
-      ? `openclaw worktable connect --server ${origin} --agent-registration --participant-name ${shellQuote(agentName.trim())}`
+      ? alwaysOnAgent.cloudConnectCommand(origin, agentName.trim())
       : ""
 
   if (!method) {
@@ -896,12 +900,12 @@ function ConnectStep({
         ? nativeService === "claude"
           ? "Claude"
           : "ChatGPT"
-        : method === "openclaw"
-          ? "OpenClaw"
+        : method === "always-on"
+          ? alwaysOnAgent.name
           : MCP_CLIENTS[manualClient].label
   const namePlaceholder =
-    method === "openclaw"
-      ? "OpenClaw"
+    method === "always-on"
+      ? alwaysOnAgent.name
       : method === "computer" && computerTarget === "auto"
         ? "Agents on my computer"
         : `${methodTitle} on my computer`
@@ -936,7 +940,7 @@ function ConnectStep({
             <Laptop className="size-5" />
           ) : method === "native" ? (
             <MessageCircle className="size-5" />
-          ) : method === "openclaw" ? (
+          ) : method === "always-on" ? (
             <RadioTower className="size-5" />
           ) : (
             <Plug className="size-5" />
@@ -948,8 +952,8 @@ function ConnectStep({
             ? "Run one command on the computer where you use this agent."
             : method === "native"
               ? "Add the Worktable MCP endpoint in the app."
-              : method === "openclaw"
-                ? "Install the Worktable plugin, then connect this OpenClaw."
+              : method === "always-on"
+                ? `Install the Worktable plugin, then connect this ${alwaysOnAgent.name}.`
                 : "Add the endpoint or generated configuration to your agent."
         }
       />
@@ -1037,7 +1041,6 @@ function ConnectStep({
                     <CloudCandidates
                       connections={connections.data?.connections ?? []}
                       baseline={baseline}
-                      method={method}
                       name={agentName}
                       pending={useCloudConnection.isPending}
                       onUse={(item) => useCloudConnection.mutate(item)}
@@ -1057,8 +1060,34 @@ function ConnectStep({
               </div>
             ) : null}
 
-            {method === "openclaw" ? (
+            {method === "always-on" ? (
               <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Agent</label>
+                  <Select
+                    value={alwaysOnAgent.adapter}
+                    disabled={configurationLocked}
+                    onValueChange={(value) => {
+                      setAlwaysOnAgent(
+                        ALWAYS_ON_AGENTS.find(
+                          (item) => item.adapter === value
+                        ) ?? OPENCLAW
+                      )
+                      setPairing(null)
+                    }}
+                  >
+                    <SelectTrigger aria-label="Agent">
+                      <SelectValue>{alwaysOnAgent.name}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALWAYS_ON_AGENTS.map((item) => (
+                        <SelectItem key={item.adapter} value={item.adapter}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <AgentNameField
                   value={agentName}
                   disabled={configurationLocked}
@@ -1066,15 +1095,25 @@ function ConnectStep({
                     setAgentName(value)
                     setPairing(null)
                   }}
-                  placeholder="OpenClaw"
+                  placeholder={alwaysOnAgent.name}
                 />
                 <ol className="list-decimal space-y-1.5 pl-5 text-sm leading-6 text-muted-foreground marker:text-foreground/60">
                   <li>Install the Worktable plugin.</li>
-                  <li>Create the connection command.</li>
-                  <li>Run both commands where OpenClaw is installed.</li>
+                  {isCloud ? null : <li>Create the connection command.</li>}
+                  <li>
+                    Run both commands where {alwaysOnAgent.name} is installed.
+                  </li>
+                  {alwaysOnAgent.restartBeforeConnect ? null : (
+                    <li>
+                      Restart its gateway:{" "}
+                      <code className="inline-code-accent font-mono">
+                        {alwaysOnAgent.restartCommand}
+                      </code>
+                    </li>
+                  )}
                 </ol>
                 <CopyValue
-                  value={OPENCLAW_INSTALL}
+                  value={alwaysOnAgent.installCommand}
                   label="Copy install command"
                 />
                 {!isCloud && !pairing ? (
@@ -1087,9 +1126,9 @@ function ConnectStep({
                       : "Create connection command"}
                   </Button>
                 ) : null}
-                {openClawCommand ? (
+                {alwaysOnCommand ? (
                   <CopyValue
-                    value={openClawCommand}
+                    value={alwaysOnCommand}
                     label="Copy connection command"
                   />
                 ) : null}
@@ -1097,7 +1136,7 @@ function ConnectStep({
                   <CloudCandidates
                     connections={connections.data?.connections ?? []}
                     baseline={baseline}
-                    method={method}
+                    alwaysOn={alwaysOnAgent}
                     name={agentName}
                     pending={useCloudConnection.isPending}
                     onUse={(item) => useCloudConnection.mutate(item)}
@@ -1237,7 +1276,6 @@ function ConnectStep({
                   <CloudCandidates
                     connections={connections.data?.connections ?? []}
                     baseline={baseline}
-                    method={method}
                     name={agentName}
                     pending={useCloudConnection.isPending}
                     onUse={(item) => useCloudConnection.mutate(item)}
@@ -1314,7 +1352,6 @@ function ConnectStep({
                   <CloudCandidates
                     connections={connections.data?.connections ?? []}
                     baseline={baseline}
-                    method={method}
                     name={agentName}
                     pending={useCloudConnection.isPending}
                     onUse={(item) => useCloudConnection.mutate(item)}
@@ -1371,7 +1408,7 @@ function ConnectStep({
   )
 }
 
-function OpenClawStarter({
+function AlwaysOnStarter({
   setup,
   headingId,
   participants,
@@ -1400,7 +1437,7 @@ function OpenClawStarter({
         { kind: "worktable" },
         {
           to: target.id,
-          body: OPENCLAW_FIRST_MESSAGE,
+          body: ALWAYS_ON_FIRST_MESSAGE,
           idempotencyKey: starterThreadKey,
           waitSeconds: 0,
         }
@@ -1420,7 +1457,7 @@ function OpenClawStarter({
         Start a Thread with {setup.name}
       </h2>
       <CopyValue
-        value={OPENCLAW_FIRST_MESSAGE}
+        value={ALWAYS_ON_FIRST_MESSAGE}
         label="Copy starter message"
         wrap
       />
@@ -1443,8 +1480,8 @@ function OpenClawStarter({
         </Callout>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Waiting for {setup.name} to
-          appear in Threads…
+          <Loader2 className="size-4 animate-spin" /> Waiting for {setup.name}{" "}
+          to appear in Threads…
         </p>
       )}
       {startThread.isError ? (
@@ -1498,10 +1535,10 @@ function ReadyStep({
       />
       <div className="mt-7 space-y-6">
         {alwaysOn.map((setup, index) => (
-          <OpenClawStarter
+          <AlwaysOnStarter
             key={setup.id}
             setup={setup}
-            headingId={`openclaw-first-thread-${index}`}
+            headingId={`always-on-first-thread-${index}`}
             participants={participants.data?.participants ?? []}
             savedThread={savedThreads?.find(
               (thread) => thread.setupId === setup.id

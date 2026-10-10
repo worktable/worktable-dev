@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { recordActivity } from "./activity-log.ts";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
@@ -743,6 +744,35 @@ export async function writeRecord(spaceId: string, record: RecordFile): Promise<
 }
 
 export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+  // An explicit ID that already exists overwrites that record.
+  const existed =
+    input.id !== undefined &&
+    isCanonicalId(spaceId) &&
+    isCanonicalId(collectionId) &&
+    isCanonicalId(input.id) &&
+    existsSync(recordPath(spaceId, collectionId, input.id));
+  const result = await createRecordInner(spaceId, collectionId, input);
+  if (result.data) {
+    noteRecordActivity(spaceId, collectionId, existed ? "records.updated" : "records.added");
+  }
+  return result;
+}
+
+/** Record changes are noted per collection; readers combine a day's changes. */
+function noteRecordActivity(
+  spaceId: string,
+  collectionId: string,
+  action: "records.added" | "records.updated" | "records.removed"
+): void {
+  recordActivity({
+    spaceId,
+    action,
+    target: { kind: "collection", collectionId },
+    count: 1,
+  });
+}
+
+async function createRecordInner(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   await ensureRecordDirs(spaceId, collectionId);
   if (input.id) {
@@ -762,6 +792,12 @@ export async function createRecord(spaceId: string, collectionId: string, input:
 }
 
 export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+  const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
+  if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
+  return result;
+}
+
+async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -892,6 +928,17 @@ export async function setRecordArchive(
 }
 
 export async function deleteRecord(spaceId: string, collectionId: string, recordId: string): Promise<{ error: string | null }> {
+  const existed =
+    isCanonicalId(spaceId) &&
+    isCanonicalId(collectionId) &&
+    isCanonicalId(recordId) &&
+    existsSync(recordPath(spaceId, collectionId, recordId));
+  const result = await deleteRecordInner(spaceId, collectionId, recordId);
+  if (existed && !result.error) noteRecordActivity(spaceId, collectionId, "records.removed");
+  return result;
+}
+
+async function deleteRecordInner(spaceId: string, collectionId: string, recordId: string): Promise<{ error: string | null }> {
   if (!isCanonicalId(spaceId) || !isCanonicalId(collectionId) || !isCanonicalId(recordId)) return { error: null };
   // Idempotent: deleting a record that does not exist succeeds without policy
   // checks (a retry must not 409 on dangling references to the gone record).

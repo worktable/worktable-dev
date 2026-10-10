@@ -4,3 +4,5 @@
 /scripts/skill-inventory.ts @obkaro
 /plugins/openclaw/ @obkaro
 /.github/workflows/openclaw-plugin.yml @obkaro
+/packages/hermes-plugin/ @obkaro
+/.github/workflows/hermes-plugin.yml @obkaro

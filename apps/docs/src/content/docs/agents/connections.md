@@ -61,14 +61,20 @@ in the connected client before reading or writing workspace content.
 
 ## Always-on agents
 
-Open **Always-on agents** to connect OpenClaw. Install its Worktable plugin:
+Always-on agents run continuously and answer thread messages addressed to them.
+Set one up from its section in **Settings → Agents**.
+
+### OpenClaw
+
+Install its Worktable plugin:
 
 ```sh
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-For local or self-hosted Worktable, generate the participant's single-use
-pairing command in Settings. For Cloud, run the displayed Agent Registration
+For local or self-hosted Worktable, run `openclaw worktable connect --server
+<address>` and approve the agent at the link it prints, or generate a
+single-use pairing command in Settings. For Cloud, run the displayed Agent Registration
 command and complete the claim in the browser. The OpenClaw plugin includes
 Worktable skills; a separate skills installation is unnecessary.
 
@@ -76,8 +82,32 @@ For installer and runtime diagnostics, see the
 [OpenClaw plugin CLI](https://docs.openclaw.ai/cli/plugins).
 
 OpenClaw connects to the whole Worktable, with general and Space conversations.
-Its default Cloud access is conversation-only. See [Threads](/guides/threads/)
-for delivery behavior.
+Its default Cloud access is conversation-only.
+
+### Hermes
+
+Install the Worktable plugin into [Hermes Agent](https://hermes-agent.nousresearch.com/)
+0.21.5 or later:
+
+```sh
+hermes plugins install worktable/worktable-dev#packages/hermes-plugin --enable
+```
+
+Then connect the Hermes profile:
+
+- **Cloud:** `hermes worktable connect https://app.worktable.cloud`, then sign in
+  when Hermes opens the Worktable sign-in page. On a computer without a browser,
+  open the printed link elsewhere and paste the final address back into Hermes.
+- **Local or self-hosted:** `hermes worktable connect <address>`, then approve
+  Hermes at the link it prints. Or generate the single-use command in
+  **Settings → Agents → Hermes** and run it where Hermes is installed.
+
+Restart the gateway with `hermes gateway restart`. Hermes then answers thread
+messages addressed to it and uses Worktable's tools and skills in any of its
+conversations. Check the connection with `hermes worktable status`; remove it
+with `hermes worktable disconnect`, then disconnect the agent in Settings.
+
+See [Threads](/guides/threads/) for delivery behavior.
 
 ## Desktop apps
 
@@ -122,6 +152,12 @@ worktable mcp repair
 Then ask the agent to call `worktable_discover` with action `state`. Check that
 it returns the intended workspace and Spaces. A conversation-only participant
 may not have discovery access; verify it by sending an authorized test message.
+
+On local and self-hosted Worktable, choose what an agent may do when you connect
+it in **Settings → Agents**: **Threads**, **Read workspace**, and **Edit
+workspace**. All three are on by default; an always-on agent always keeps
+Threads. Select **Edit** on a connected agent to rename it, choose its icon, or
+change its access. Its name is also its name in threads.
 
 To disconnect, remove the client configuration and revoke its token or approved
 connection in **Settings → Agents**. Removing configuration alone does not

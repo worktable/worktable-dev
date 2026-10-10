@@ -13,12 +13,19 @@ import {
   Trash2,
 } from "lucide-react"
 import {
+  AGENT_PLATFORMS,
+  DEFAULT_AGENT_ACCESS,
   DEFAULT_AGENT_TOKEN_SCOPES,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
+  isAgentPlatformId,
   MCP_CLIENTS,
   MCP_SNIPPET_CLIENT_IDS,
   mcpClientSnippet,
+  platformForAdapter,
+  platformForClient,
+  type AgentAccess,
   type AgentConnection,
+  type AgentPlatformId,
   type ConnectorInstallableMcpClientId,
   type McpSnippetClientId,
 } from "@worktable/types"
@@ -84,7 +91,11 @@ import {
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
+import { ALWAYS_ON_AGENTS, type AlwaysOnAgent } from "@/lib/always-on-agents"
 import { timeAgo } from "@/lib/time"
+import { AgentAccessFields } from "@/components/agents/agent-access-fields"
+import { AgentAvatar } from "@/components/agents/agent-avatar"
+import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -168,7 +179,11 @@ export function AgentsSection() {
   )
 }
 
-type CloudAgentSetupPanel = "quick" | "always-on" | "desktop" | "manual"
+type CloudAgentSetupPanel =
+  | "quick"
+  | AlwaysOnAgent["adapter"]
+  | "desktop"
+  | "manual"
 
 function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(
@@ -188,13 +203,16 @@ function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
         <AgentSetupDisclosure title="Coding agents" {...panelProps("quick")}>
           <CloudQuickConnectPanel connection={connection} />
         </AgentSetupDisclosure>
-        <AgentSetupDisclosure
-          title="OpenClaw"
-          className="border-t border-border/60"
-          {...panelProps("always-on")}
-        >
-          <CloudOpenClawPanel connection={connection} />
-        </AgentSetupDisclosure>
+        {ALWAYS_ON_AGENTS.map((agent) => (
+          <AgentSetupDisclosure
+            key={agent.adapter}
+            title={agent.name}
+            className="border-t border-border/60"
+            {...panelProps(agent.adapter)}
+          >
+            <CloudAlwaysOnPanel connection={connection} agent={agent} />
+          </AgentSetupDisclosure>
+        ))}
         <AgentSetupDisclosure
           title="Claude and ChatGPT"
           className="border-t border-border/60"
@@ -259,20 +277,27 @@ function CloudQuickConnectPanel({
   )
 }
 
-function CloudOpenClawPanel({ connection }: { connection: ConnectionInfo }) {
+function CloudAlwaysOnPanel({
+  connection,
+  agent,
+}: {
+  connection: ConnectionInfo
+  agent: AlwaysOnAgent
+}) {
   const origin = new URL(connection.remoteMcpUrl).origin
-  const install =
-    "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
-  const connect = `openclaw worktable connect --server ${origin} --agent-registration`
+  const connect = agent.cloudConnectCommand(origin)
   const installCopy = useCopy(() => toast.success("Copied"))
   const connectCopy = useCopy(() => toast.success("Copied"))
   return (
     <div className="flex flex-col gap-4">
-      <OpenClawSteps connectInstruction="Select Connect, then run the copied command." />
+      <AlwaysOnSteps
+        agent={agent}
+        connectInstruction="Select Connect, then run the copied command."
+      />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          onClick={() => void installCopy.copy(install)}
+          onClick={() => void installCopy.copy(agent.installCommand)}
         >
           <Copy className="size-4" aria-hidden />
           {installCopy.copied ? "Copied" : "Install"}
@@ -357,7 +382,7 @@ function CloudManualInstallPanel({
 
 // ── Local/self-hosted setup disclosures ─────────────────────────────────────
 
-type AgentSetupPanel = "quick" | "always-on" | "desktop" | "manual"
+type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
   const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>("quick")
@@ -376,13 +401,16 @@ function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
           <QuickConnectPanel connection={connection} />
         </AgentSetupDisclosure>
 
-        <AgentSetupDisclosure
-          title="OpenClaw"
-          className="border-t border-border/60"
-          {...panelProps("always-on")}
-        >
-          <OpenClawSetupPanel connection={connection} />
-        </AgentSetupDisclosure>
+        {ALWAYS_ON_AGENTS.map((agent) => (
+          <AgentSetupDisclosure
+            key={agent.adapter}
+            title={agent.name}
+            className="border-t border-border/60"
+            {...panelProps(agent.adapter)}
+          >
+            <AlwaysOnSetupPanel connection={connection} agent={agent} />
+          </AgentSetupDisclosure>
+        ))}
 
         <AgentSetupDisclosure
           title="Claude and ChatGPT"
@@ -497,11 +525,13 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
   // can't outlive the dialog. Codes are single-use and expire server-side
   // anyway (15 minutes).
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
 
   const create = useMutation({
     mutationFn: () =>
       createPairing({
         client: clientChoice === "auto" ? null : clientChoice,
+        access,
       }),
     onSuccess: (res) => setPairing(res),
     onError: (err) =>
@@ -550,6 +580,7 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
             setPairing(null)
             create.reset()
           }}
+          disabled={create.isPending}
         >
           <SelectTrigger className="w-full sm:w-64">
             <SelectValue>
@@ -569,11 +600,28 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
         </Select>
       </div>
 
+      <AgentAccessFields
+        value={access}
+        onChange={(next) => {
+          setAccess(next)
+          setPairing(null)
+          create.reset()
+        }}
+        // A pairing being created carries this choice; it stays until done.
+        disabled={create.isPending}
+      />
+
       <RemoteAgentOriginWarning connection={connection} />
 
       {!pairing ? (
         <div>
-          <Button onClick={() => create.mutate()} disabled={create.isPending}>
+          <Button
+            onClick={() => create.mutate()}
+            disabled={
+              create.isPending ||
+              !(access.threads || access.read || access.edit)
+            }
+          >
             {create.isPending ? "Connecting…" : "Connect"}
           </Button>
         </div>
@@ -688,13 +736,18 @@ function PairingStatus({ session }: { session: PairingSession | undefined }) {
   )
 }
 
-function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
+function AlwaysOnSetupPanel({
+  connection,
+  agent,
+}: {
+  connection: ConnectionInfo
+  agent: AlwaysOnAgent
+}) {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
-  const [participantName, setParticipantName] = useState("OpenClaw")
+  const [participantName, setParticipantName] = useState(agent.name)
+  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
   const [pairing, setPairing] = useState<PairingCreated | null>(null)
-  const install =
-    "openclaw plugins install https://github.com/worktable/worktable-dev/releases/latest/download/worktable-openclaw.tgz --pin"
   const installCopy = useCopy(() => toast.success("Copied"))
 
   const create = useMutation({
@@ -702,16 +755,17 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
       createPairing({
         target: {
           kind: "agent-adapter",
-          adapter: "openclaw",
+          adapter: agent.adapter,
           participantName: participantName.trim(),
         },
+        access,
       }),
     onSuccess: setPairing,
     onError: (error) =>
       toast.error(
         error instanceof Error
           ? error.message
-          : "Couldn’t create an OpenClaw pairing."
+          : `Couldn’t create a ${agent.name} pairing.`
       ),
   })
 
@@ -730,12 +784,15 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
   }, [session?.tokenId, session?.status, queryClient])
 
   const command = pairing
-    ? `openclaw worktable connect --server ${pairing.serverOrigin} --pairing-code ${pairing.code}`
+    ? agent.localConnectCommand(pairing.serverOrigin, pairing.code)
     : null
 
   return (
     <div className="flex flex-col gap-4">
-      <OpenClawSteps connectInstruction="Select Connect, then run the generated command." />
+      <AlwaysOnSteps
+        agent={agent}
+        connectInstruction="Select Connect, then run the generated command."
+      />
 
       <div className="max-w-sm">
         <label className="flex flex-col gap-1.5">
@@ -749,17 +806,28 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
               setParticipantName(event.target.value)
               setPairing(null)
             }}
-            placeholder="OpenClaw"
+            placeholder={agent.name}
+            disabled={create.isPending}
           />
         </label>
       </div>
+
+      <AgentAccessFields
+        value={access}
+        onChange={(next) => {
+          setAccess(next)
+          setPairing(null)
+        }}
+        alwaysOn
+        disabled={create.isPending}
+      />
 
       <RemoteAgentOriginWarning connection={connection} />
 
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          onClick={() => void installCopy.copy(install)}
+          onClick={() => void installCopy.copy(agent.installCommand)}
         >
           <Copy className="size-4" aria-hidden />
           {installCopy.copied ? "Copied" : "Install"}
@@ -782,7 +850,7 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
           <p className="text-sm leading-5 text-muted-foreground">
             One use. Expires in 15 minutes.
           </p>
-          <OpenClawPairingStatus session={session} />
+          <AlwaysOnPairingStatus agent={agent} session={session} />
           <div>
             <Button
               variant="outline"
@@ -799,39 +867,53 @@ function OpenClawSetupPanel({ connection }: { connection: ConnectionInfo }) {
   )
 }
 
-function OpenClawSteps({ connectInstruction }: { connectInstruction: string }) {
+function AlwaysOnSteps({
+  agent,
+  connectInstruction,
+}: {
+  agent: AlwaysOnAgent
+  connectInstruction: string
+}) {
+  const restart = (
+    <li>
+      Restart the Gateway
+      {agent.restartBeforeConnect ? " if it doesn’t restart automatically" : ""}
+      :{" "}
+      <code className="inline-code-accent font-mono">
+        {agent.restartCommand}
+      </code>
+      .
+    </li>
+  )
   return (
     <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
       <li>Select Install, then run the copied command.</li>
-      <li>
-        Restart the Gateway if it doesn&rsquo;t restart automatically:{" "}
-        <code className="inline-code-accent font-mono">
-          openclaw gateway restart
-        </code>
-        .
-      </li>
+      {agent.restartBeforeConnect ? restart : null}
       <li>{connectInstruction}</li>
+      {agent.restartBeforeConnect ? null : restart}
     </ol>
   )
 }
 
-function OpenClawPairingStatus({
+function AlwaysOnPairingStatus({
+  agent,
   session,
 }: {
+  agent: AlwaysOnAgent
   session: PairingSession | undefined
 }) {
   if (!session || session.status === "pending") {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" aria-hidden />
-        Waiting for OpenClaw…
+        Waiting for {agent.name}…
       </div>
     )
   }
   if (session.status === "expired") {
     return (
       <Callout variant="warning">
-        This code expired before OpenClaw redeemed it.
+        This code expired before {agent.name} redeemed it.
       </Callout>
     )
   }
@@ -850,7 +932,7 @@ function OpenClawPairingStatus({
   if (failure) {
     return (
       <Callout variant="danger">
-        OpenClaw setup failed
+        {agent.name} setup failed
         {failure.detail ? `: ${failure.detail}` : "."}
       </Callout>
     )
@@ -877,6 +959,7 @@ function DesktopAppsPanel({ connection }: { connection: ConnectionInfo }) {
 
   const afterMint = () => {
     void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
   }
   const mintClaude = useMutation({
     mutationFn: () =>
@@ -1055,6 +1138,7 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
       // The new bearer must show up (and be revocable) in the table below.
       // Minting does not change literal-loopback MCP's implicit-owner posture.
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
     onError: (err) =>
       toast.error(
@@ -1191,8 +1275,24 @@ function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
 
 // ── Connected agents ---------------------------------------------------------
 
+/** The agent's one name; Cloud's inventory still reports it beside a platform label. */
 function agentConnectionName(connection: AgentConnection): string {
-  return clientDisplayName(connection.displayName)
+  // This Worktable reports each of its agents under its canonical name.
+  if (connection.authKind === "local-token") return connection.displayName
+  return (
+    connection.participant?.name ??
+    (connection.target.kind === "agent-adapter"
+      ? connection.target.participantName
+      : undefined) ??
+    clientDisplayName(connection.displayName)
+  )
+}
+
+function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
+  if (isAgentPlatformId(connection.platform)) return connection.platform
+  return connection.target.kind === "agent-adapter"
+    ? platformForAdapter(connection.target.adapter)
+    : platformForClient(connection.target.clientId)
 }
 
 export function ConnectedAgentsGroup() {
@@ -1217,6 +1317,7 @@ export function ConnectedAgentsGroup() {
       ),
   })
 
+  const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
   const oauthInventoryUnavailable =
     connectionsQuery.data?.unavailableAuthKinds?.includes("oauth") ?? false
@@ -1247,46 +1348,71 @@ export function ConnectedAgentsGroup() {
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {connections.map((connection) => (
-                <li
-                  key={connection.id}
-                  className="flex min-h-14 items-center gap-3 rounded-xl bg-muted/35 px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {agentConnectionName(connection)}
-                      </span>
-                      <Badge variant="secondary">
-                        {connection.mode === "always-on"
-                          ? "Always-on"
-                          : "On-demand"}
-                      </Badge>
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {connection.participant?.name
-                        ? `${connection.participant.name} · `
-                        : ""}
-                      {connection.machine ? `${connection.machine} · ` : ""}
-                      {connection.lastSeenAt
-                        ? `Last seen ${timeAgo(connection.lastSeenAt)}`
-                        : "Not used yet"}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={disconnect.isPending}
-                    onClick={() => disconnect.mutate(connection.id)}
+              {connections.map((connection) => {
+                const name = agentConnectionName(connection)
+                const platform = agentConnectionPlatform(connection)
+                const platformName = AGENT_PLATFORMS[platform].name
+                return (
+                  <li
+                    key={connection.id}
+                    className="flex min-h-14 items-center gap-3 rounded-xl bg-muted/35 px-3 py-2"
                   >
-                    Disconnect
-                  </Button>
-                </li>
-              ))}
+                    <AgentAvatar
+                      name={name}
+                      platform={platform}
+                      icon={connection.icon}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">
+                          {name}
+                        </span>
+                        <Badge variant="secondary">
+                          {connection.mode === "always-on"
+                            ? "Always-on"
+                            : "On-demand"}
+                        </Badge>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {platform !== "other" && platformName !== name
+                          ? `${platformName} · `
+                          : ""}
+                        {connection.machine ? `${connection.machine} · ` : ""}
+                        {connection.lastSeenAt
+                          ? `Last seen ${timeAgo(connection.lastSeenAt)}`
+                          : "Not used yet"}
+                      </p>
+                    </div>
+                    {connection.authKind === "local-token" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(connection)}
+                      >
+                        Edit
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={disconnect.isPending}
+                      onClick={() => disconnect.mutate(connection.id)}
+                    >
+                      Disconnect
+                    </Button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </CardContent>
       </Card>
+      <AgentEditDialog
+        connection={editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null)
+        }}
+      />
     </section>
   )
 }
@@ -1415,6 +1541,9 @@ export function AccessTokensGroup() {
         onOpenChange={setNewOpen}
         onMinted={() => {
           void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+          void queryClient.invalidateQueries({
+            queryKey: ["agent-connections"],
+          })
           void queryClient.invalidateQueries({
             queryKey: ["system", "connection"],
           })

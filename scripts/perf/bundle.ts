@@ -167,7 +167,12 @@ if (import.meta.main) {
         { gzip: Math.ceil((size.gzip * 1.02) / 1000) * 1000 },
       ])
     )
-    writeFileSync(BUDGETS_FILE, `${JSON.stringify(config, null, 2)}\n`)
+    // One line per bundle, as Prettier leaves it.
+    const json = JSON.stringify(config, null, 2).replace(
+      /\{\n\s+"gzip": (\d+)\n\s+\}/g,
+      '{ "gzip": $1 }'
+    )
+    writeFileSync(BUDGETS_FILE, `${json}\n`)
   }
   if (args.has("json"))
     writeFileSync(

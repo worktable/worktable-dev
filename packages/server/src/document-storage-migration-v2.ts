@@ -269,6 +269,23 @@ async function legacyAnnotationCensus(
         `${document.spaceId}\0${legacyAnnotationKind(document)}\0${document.path}`
     )
   )
+  // On a case-insensitive filesystem a document's annotation path can resolve
+  // to a file spelled differently, which the migration will consume. Compare
+  // file identity, not spelling, before calling a file an orphan.
+  let ownedFiles: Set<string> | null = null
+  const ownedByDocument = async (path: string): Promise<boolean> => {
+    if (!ownedFiles) {
+      ownedFiles = new Set()
+      for (const document of documents) {
+        const info = await Promise.resolve()
+          .then(() => lstat(legacyAnnotationPath(workspaceRoot, document), { bigint: true }))
+          .catch(() => null)
+        if (info?.isFile()) ownedFiles.add(`${info.dev}:${info.ino}`)
+      }
+    }
+    const info = await lstat(path, { bigint: true })
+    return ownedFiles.has(`${info.dev}:${info.ino}`)
+  }
   const spacesRoot = join(workspaceRoot, "spaces")
   const spaces = await readdir(spacesRoot, { withFileTypes: true }).catch(
     (error) => {
@@ -350,7 +367,7 @@ async function legacyAnnotationCensus(
           // Outside an inventoried Space, the documents were never counted,
           // so a missing owner proves nothing.
           if (inventoried.has(space.name)) {
-            orphans.push(path)
+            if (!(await ownedByDocument(entryPath))) orphans.push(path)
           } else {
             diagnostics.push({
               path,

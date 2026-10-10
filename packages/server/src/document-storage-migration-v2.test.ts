@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { createHash } from "node:crypto"
 import {
   cp,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -372,6 +373,10 @@ describe("document storage V2 migration", () => {
       ),
       annotationFile()
     )
+    // A case-insensitive filesystem shows the owner's file under another
+    // spelling. A hard link presents the same file identity on any filesystem.
+    const annotationDocs = join(copiedWorkspace, "spaces", "notes", "annotations", "docs")
+    await link(join(annotationDocs, "kept.annotations.json"), join(annotationDocs, "Kept.annotations.json"))
     // Without a Space manifest its documents are never inventoried, so a
     // missing owner proves nothing.
     const unlisted = "spaces/drafts/annotations/docs/plan.annotations.json"

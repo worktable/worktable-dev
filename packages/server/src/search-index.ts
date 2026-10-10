@@ -232,6 +232,8 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
 const PROJECTION_SLICE_MS = 250;
 /** Sync rounds one search runs before serving the latest index. */
 const MAX_SYNC_ROUNDS = 3;
+/** Wait before a search re-reads documents that could not be read. */
+const UNREADABLE_RETRY_MS = 30_000;
 
 interface IndexedDocument extends DerivedRevision {
   id: string;
@@ -246,6 +248,8 @@ interface SpaceSegment {
   recordsDirty: boolean;
   /** Document keys to re-read even when their revision looks unchanged. */
   forced: Set<string>;
+  /** When to re-read documents that were temporarily unreadable. */
+  retryAt: number | null;
   syncing: Promise<void> | null;
 }
 
@@ -646,6 +650,7 @@ async function syncCommonDocuments(
         revision: transient ? "" : candidate.revision,
         readAt,
       });
+      if (transient) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
     }
     if (!pass.complete) {
       await yieldToEventLoop();
@@ -688,11 +693,13 @@ async function syncLegacyDocuments(
       continue;
     }
     reread += 1;
-    const indexed = legacyEntry(spaceId, docPath, await readDoc(spaceId, docPath));
+    const result = await readDoc(spaceId, docPath);
+    const indexed = legacyEntry(spaceId, docPath, result);
     if (variant.segments.get(spaceId) !== segment) return reread;
     if (!indexed) {
       if (previous) dropEntry(variant, previous.id);
       segment.documents.delete(docPath);
+      if (result.error) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
       continue;
     }
     putEntry(variant, indexed.entry, indexed.displayBody);
@@ -729,7 +736,7 @@ async function runSegmentSync(
   spaceId: string,
   segment: SpaceSegment,
 ): Promise<void> {
-  const syncDocuments = segment.dirty || !segment.built;
+  const syncDocuments = segment.dirty || !segment.built || retryDue(segment);
   const syncRecords =
     variant.includesRecords && (segment.recordsDirty || !segment.built);
   const forced = segment.forced;
@@ -737,6 +744,7 @@ async function runSegmentSync(
   segment.forced = new Set();
   segment.dirty = false;
   segment.recordsDirty = false;
+  if (syncDocuments) segment.retryAt = null;
   try {
     let documents = 0;
     if (syncDocuments) {
@@ -803,6 +811,7 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
             dirty: true,
             recordsDirty: variant.includesRecords,
             forced: new Set(),
+            retryAt: null,
             syncing: null,
           });
         }
@@ -821,11 +830,18 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
   return variant.listing;
 }
 
+// A document that timed out or could not be read is retried after a pause,
+// not trusted until the document next changes, nor re-read on every search.
+function retryDue(segment: SpaceSegment): boolean {
+  return segment.retryAt !== null && Date.now() >= segment.retryAt;
+}
+
 function segmentNeedsSync(segment: SpaceSegment): boolean {
   return (
     !segment.built ||
     segment.dirty ||
     segment.recordsDirty ||
+    retryDue(segment) ||
     segment.syncing !== null
   );
 }
@@ -848,7 +864,10 @@ async function freshVariant(
   for (let round = 1; ; round += 1) {
     const epoch = resetEpoch;
     const variant = variantFor(documentAccess, includeArchived, includesRecords);
-    if (!variant.spacesListed) await listVariantSpaces(variant);
+    // Another search may be listing; its segments are not there yet.
+    if (!variant.spacesListed || variant.listing) {
+      await listVariantSpaces(variant);
+    }
     for (const [id, segment] of segmentsInScope(variant, spaceId)) {
       if (segmentNeedsSync(segment)) await syncSegment(variant, id, segment);
     }

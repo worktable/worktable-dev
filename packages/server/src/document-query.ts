@@ -1,4 +1,5 @@
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
+import { lstat } from "node:fs/promises"
 import { resolve } from "node:path"
 import type {
   DocumentConflictItem,
@@ -629,14 +630,36 @@ async function projectClassifiedDocument(options: {
   }
 }
 
-function searchCandidate(item: ClassifiedEntry): SearchProjectionCandidate {
+async function searchCandidate(
+  spaceId: string,
+  item: ClassifiedEntry
+): Promise<SearchProjectionCandidate> {
   if (item.kind === "conflict") {
     return { key: item.item.pathKey, revision: JSON.stringify(item.item) }
   }
+  let revision = JSON.stringify([item.item, item.claim.source])
+  let updatedAt = item.item.updatedAt
+  // A legacy HTML bundle dates itself from widget.yaml, which an outside edit
+  // of its index.html does not touch. Its revision includes the page itself.
+  if (legacyHtmlWidgetId(item)) {
+    const page = await lstat(
+      resolve(
+        getWorkspaceRoot(),
+        "spaces",
+        spaceId,
+        item.claim.source.relativePath,
+        "index.html"
+      )
+    ).catch(() => null)
+    revision += page ? `\0${page.ino}:${page.size}:${page.mtimeMs}` : "\0missing"
+    if (page && !(Date.parse(updatedAt ?? "") >= page.mtimeMs)) {
+      updatedAt = page.mtime.toISOString()
+    }
+  }
   return {
     key: analyzeDocumentPath(item.item.path).comparisonKey ?? item.item.path,
-    revision: JSON.stringify([item.item, item.claim.source]),
-    ...(item.item.updatedAt ? { updatedAt: item.item.updatedAt } : {}),
+    revision,
+    ...(updatedAt ? { updatedAt } : {}),
   }
 }
 
@@ -680,7 +703,7 @@ export async function projectDocumentsForSearch(options: {
     let projected = 0
     let complete = true
     for (const item of classified) {
-      const candidate = searchCandidate(item)
+      const candidate = await searchCandidate(options.spaceId, item)
       candidates.push(candidate)
       if (options.shouldProject && !options.shouldProject(candidate)) continue
       if (projected > 0 && performance.now() >= deadline) {

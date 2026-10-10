@@ -33,6 +33,7 @@ import {
   updateDocumentInventory,
 } from "./document-inventory.ts";
 import { recordDocAlias, retireDocAlias } from "./doc-aliases.ts";
+import { notifyWorkspaceChange } from "./workspace-events.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -532,6 +533,52 @@ describe("search excerpts", () => {
     ]);
     expect(await searchResults(app, "observatory", common)).toEqual([]);
     expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
+  });
+
+  it("sees an outside edit to a legacy HTML page from a catalog event alone", async () => {
+    const created = await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "board",
+      name: "Board",
+      html: "<p>The ocelot board.</p>",
+    });
+    expect(created.status).toBe(201);
+    const bundle = join(workspaceDir, "spaces", "meta", "widgets", "board");
+    const metadata = join(bundle, "widget.yaml");
+    writeFileSync(
+      metadata,
+      readFileSync(metadata, "utf8").replace(/^updatedAt: .*$/m, "updatedAt: 2026-01-01T00:00:00.000Z"),
+    );
+    ageDocuments(join(workspaceDir, "spaces"));
+    const common = {
+      scopes: ["search:read", "documents:read"],
+      documentMode: "common" as const,
+    };
+    expect(await searchResults(app, "ocelot", common)).toContainEqual(
+      expect.objectContaining({ path: "board" }),
+    );
+
+    // An editor rewrites the page; the watcher's precise event was lost.
+    writeFileSync(join(bundle, "index.html"), "<p>The tapir board.</p>");
+    notifyWorkspaceChange({ type: "documentCorpus", spaceId: "meta" });
+    expect(await searchResults(app, "tapir", common)).toContainEqual(
+      expect.objectContaining({ path: "board" }),
+    );
+  });
+
+  it("answers concurrent searches while a new Space is being listed", async () => {
+    expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+    await req(app, "PUT", "/api/spaces/zulu/docs/kestrel", {
+      content: [{ type: "paragraph", content: [{ type: "text", text: "The kestrel nests here.", styles: {} }] }],
+    });
+    const results = await Promise.all([
+      search("kestrel", { documentAccess: "common" }),
+      search("kestrel", { documentAccess: "common" }),
+    ]);
+    for (const hits of results) {
+      expect(hits).toContainEqual(
+        expect.objectContaining({ spaceId: "zulu", path: "kestrel" }),
+      );
+    }
   });
 
   it("answers while edits keep arriving", async () => {

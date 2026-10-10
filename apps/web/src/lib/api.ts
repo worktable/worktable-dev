@@ -3,9 +3,7 @@ import type {
   ResolvedStartHerePin,
   SearchResult,
   SpaceFile,
-  SpaceWithDocs,
 } from "@worktable/types"
-import type { WidgetListEntry } from "./widgets-api.ts"
 import { fetchJSON, fetchVoid } from "./http.ts"
 
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
@@ -57,16 +55,16 @@ export function updateWorkspace(patch: {
   })
 }
 
+/** Every Space, archived ones included. */
 export function getSpaces() {
-  return fetchJSON<{ spaces: SpaceWithDocs[] }>(
-    "/api/spaces?includeArchived=true"
-  ).then((r) => r.spaces)
+  return fetchJSON<{ spaces: SpaceFile[] }>("/api/spaces").then(
+    (r) => r.spaces
+  )
 }
 
 export function getSpace(spaceId: string) {
   return fetchJSON<{
     space: SpaceFile
-    widgets: WidgetListEntry[]
     pins?: ResolvedStartHerePin[]
   }>(`/api/spaces/${spaceId}`)
 }

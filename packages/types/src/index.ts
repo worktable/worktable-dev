@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { WidgetFile } from "./widgets";
 import type {
   DocumentFormatClaim,
   DocumentHealth,
@@ -120,8 +119,6 @@ export interface SearchResult {
   /** Present on temporary documents: when the document archives itself. */
   archiveOn?: string;
 }
-
-export type SpaceWithDocs = SpaceFile & { docs: DocListEntry[]; widgets?: WidgetFile[] };
 
 export interface DocFile {
   path: string;

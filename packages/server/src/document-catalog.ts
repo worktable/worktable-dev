@@ -37,6 +37,7 @@ import {
   documentStorageProfiles,
   type DocumentStorageProfileId,
 } from "./document-storage-profile.ts"
+import { timing } from "./request-timing.ts"
 
 export interface DocumentHandle {
   documentId: DocumentId
@@ -566,11 +567,21 @@ function aliasClaimsFor(
   })
 }
 
-export async function buildDocumentCatalog(options: {
+type DocumentCatalogOptions = {
   workspaceRoot: string
   spaceId: string
   registry?: DocumentFormatRegistry
-}): Promise<DocumentCatalog> {
+}
+
+export function buildDocumentCatalog(
+  options: DocumentCatalogOptions
+): Promise<DocumentCatalog> {
+  return timing.span("catalog", () => buildDocumentCatalogFromFiles(options))
+}
+
+async function buildDocumentCatalogFromFiles(
+  options: DocumentCatalogOptions
+): Promise<DocumentCatalog> {
   const spaceId = CanonicalIdSchema.parse(options.spaceId)
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const spaceRoot = resolve(options.workspaceRoot, "spaces", spaceId)

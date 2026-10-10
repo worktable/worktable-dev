@@ -1040,7 +1040,13 @@ async fn desktop_workspace_restart_to_update(
     state: State<'_, DesktopHostState>,
 ) -> Result<(), String> {
     require_local_workspace_surface(&webview, &state, "update")?;
-    install_available_update(app).await
+    install_available_update(app.clone()).await?;
+    // A failed install records a recoverable error. Its screen offers the
+    // retry and, after a partial install, the signed disk image.
+    if updater_surface_active(&app) {
+        show_updater_surface(&app)?;
+    }
+    Ok(())
 }
 
 fn start_in_app_update_check(app: AppHandle) {

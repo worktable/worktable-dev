@@ -80,13 +80,35 @@ export function SystemSection() {
 
   // In Worktable Desktop the app updates itself, so its own controls replace
   // the server's. Wait for Desktop's answer rather than flash the server's.
-  const askingDesktop = mayHaveDesktopUpdates() && desktopUpdate.isPending
+  const inDesktop = mayHaveDesktopUpdates()
   return (
     <div className="flex flex-col gap-6">
       <AboutGroup />
       {desktopUpdate.data ? (
         <DesktopUpdateSection status={desktopUpdate.data} />
-      ) : askingDesktop ? null : (
+      ) : inDesktop && desktopUpdate.isError ? (
+        <DesktopUpdateFrame>
+          <StatusRow
+            icon={<TriangleAlert className="size-4 text-destructive" />}
+            alert
+          >
+            <span className="text-destructive">
+              Couldn’t get the update status.
+            </span>
+          </StatusRow>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void desktopUpdate.refetch()}
+              disabled={desktopUpdate.isFetching}
+            >
+              <RefreshCw className="size-4" />
+              Try again
+            </Button>
+          </div>
+        </DesktopUpdateFrame>
+      ) : inDesktop && desktopUpdate.isPending ? null : (
         <>
           {deployment?.capabilities.softwareUpdates ? (
             <SoftwareUpdateSection />
@@ -279,57 +301,73 @@ function DesktopUpdateSection({ status }: { status: DesktopUpdateStatus }) {
   }
 
   return (
+    <DesktopUpdateFrame version={status.currentVersion}>
+      {body}
+      {status.canRestart && status.notes ? (
+        <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+          {status.notes}
+        </p>
+      ) : null}
+      {lastCheck && !working && !status.canRestart ? (
+        <p
+          className="text-xs text-muted-foreground"
+          title={new Date(lastCheck.checkedAt * 1000).toLocaleString()}
+        >
+          Last checked{" "}
+          <RelativeTime
+            iso={new Date(lastCheck.checkedAt * 1000).toISOString()}
+          />
+        </p>
+      ) : null}
+      {actionError ? (
+        <StatusRow
+          icon={<TriangleAlert className="size-4 text-destructive" />}
+          alert
+        >
+          <span className="text-destructive">{actionError}</span>
+        </StatusRow>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {status.canRestart ? (
+          <Button onClick={() => restart.mutate()} disabled={working}>
+            <RefreshCw className="size-4" />
+            Restart to update
+          </Button>
+        ) : working ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => check.mutate()}
+            disabled={check.isPending}
+          >
+            <RefreshCw className="size-4" />
+            {lastCheck ? "Check again" : "Check now"}
+          </Button>
+        )}
+      </div>
+    </DesktopUpdateFrame>
+  )
+}
+
+function DesktopUpdateFrame({
+  version,
+  children,
+}: {
+  version?: string
+  children: ReactNode
+}) {
+  return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-foreground">Software update</h3>
-        <span className="font-mono text-xs text-muted-foreground">
-          v{status.currentVersion}
-        </span>
+        {version ? (
+          <span className="font-mono text-xs text-muted-foreground">
+            v{version}
+          </span>
+        ) : null}
       </div>
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
-        {body}
-        {status.canRestart && status.notes ? (
-          <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-            {status.notes}
-          </p>
-        ) : null}
-        {lastCheck && !working && !status.canRestart ? (
-          <p
-            className="text-xs text-muted-foreground"
-            title={new Date(lastCheck.checkedAt * 1000).toLocaleString()}
-          >
-            Last checked{" "}
-            <RelativeTime
-              iso={new Date(lastCheck.checkedAt * 1000).toISOString()}
-            />
-          </p>
-        ) : null}
-        {actionError ? (
-          <StatusRow
-            icon={<TriangleAlert className="size-4 text-destructive" />}
-            alert
-          >
-            <span className="text-destructive">{actionError}</span>
-          </StatusRow>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          {status.canRestart ? (
-            <Button onClick={() => restart.mutate()} disabled={working}>
-              <RefreshCw className="size-4" />
-              Restart to update
-            </Button>
-          ) : working ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => check.mutate()}
-              disabled={check.isPending}
-            >
-              <RefreshCw className="size-4" />
-              {lastCheck ? "Check again" : "Check now"}
-            </Button>
-          )}
-        </div>
+        {children}
       </div>
     </section>
   )

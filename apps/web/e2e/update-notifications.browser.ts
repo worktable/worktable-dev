@@ -171,6 +171,84 @@ test("a slow System check still announces after the user leaves the section", as
   await expect(page.getByText("Worktable 9.9.9 is available")).toBeVisible()
 })
 
+test("Desktop's own update controls replace the server's, even when its status fails", async ({
+  page,
+}) => {
+  await mockDeployment(page)
+  await page.route("**/api/system/version**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(versionResponse("fresh")),
+    })
+  )
+  await page.addInitScript(() => {
+    Object.assign(window, {
+      __desktopStatusFails: true,
+      __TAURI__: {
+        core: {
+          invoke: async (command: string) => {
+            if (command !== "desktop_workspace_update_status") {
+              throw new Error(`unexpected ${command}`)
+            }
+            if (
+              (window as { __desktopStatusFails?: boolean })
+                .__desktopStatusFails
+            ) {
+              throw new Error("desktop updater status lock is poisoned")
+            }
+            return {
+              schemaVersion: 1,
+              currentVersion: "1.2.3",
+              state: "current",
+              availableVersion: null,
+              notes: null,
+              downloadedBytes: 0,
+              totalBytes: null,
+              canRestart: false,
+              lastCheck: {
+                checkedAt: Math.floor(Date.now() / 1000) + 60,
+                outcome: "current",
+                message: null,
+              },
+            }
+          },
+        },
+      },
+    })
+  })
+
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 15_000 })
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent("worktable:open-settings", {
+        detail: { section: "system" },
+      })
+    )
+  })
+  const settings = page.getByRole("dialog")
+  await expect(
+    settings.getByText("Couldn’t get the update status.")
+  ).toBeVisible()
+  await expect(
+    settings.getByText("Check for updates automatically")
+  ).toHaveCount(0)
+  await expect(
+    settings.getByRole("button", { name: "Update to 9.9.9" })
+  ).toHaveCount(0)
+
+  await page.evaluate(() => {
+    ;(window as { __desktopStatusFails?: boolean }).__desktopStatusFails = false
+  })
+  await settings.getByRole("button", { name: "Try again" }).click()
+  await expect(
+    settings.getByText("You’re on the latest version.")
+  ).toBeVisible()
+  await expect(
+    settings.getByText("Check for updates automatically")
+  ).toHaveCount(0)
+})
+
 test("a manual API failure hides a previously confirmed update action", async ({
   page,
 }) => {

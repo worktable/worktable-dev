@@ -60,19 +60,19 @@ export function AgentEditDialog({
       const iconChanged = icon !== (connection.icon ?? null)
       const shownPlatform = agentConnectionPlatform(connection)
       // A sign-in agent on Cloud also appears in this workspace's threads.
-      // Its whole presentation goes there first: if Cloud then fails, the
-      // form still differs and saving again completes both.
-      if (
+      // Its name and icon go there first: if Cloud then fails, the form
+      // still differs and saving again completes both.
+      const signInClient =
         connection.authKind === "oauth" &&
-        connection.target.kind === "mcp-client" &&
-        connection.target.clientId
-      ) {
-        await updateSignInAgent(connection.target.clientId, {
+        connection.target.kind === "mcp-client"
+          ? connection.target.clientId
+          : null
+      if (signInClient) {
+        await updateSignInAgent(signInClient, {
           displayName: trimmed,
           icon,
           // Never record "other" over a platform the workspace already knows.
           platform: shownPlatform === "other" ? undefined : shownPlatform,
-          threads: (access ?? connection.access)?.threads ?? true,
         })
       }
       await updateAgentConnection(connection.id, {
@@ -80,6 +80,13 @@ export function AgentEditDialog({
         ...(iconChanged ? { icon } : {}),
         ...(access && !sameAccess(access, connection.access) ? { access } : {}),
       })
+      // Its Threads access only once Cloud has accepted it, so a refused
+      // change never hides an agent that can still take part.
+      if (signInClient) {
+        await updateSignInAgent(signInClient, {
+          threads: (access ?? connection.access)?.threads ?? true,
+        })
+      }
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })

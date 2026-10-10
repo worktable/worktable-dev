@@ -97,6 +97,23 @@ run(["codesign", "--verify", "--strict", "--verbose=2", previewBrowser])
 
 verifyReleaseLicenses(join(import.meta.dir, "../../.."), runtimeRoot, "desktop")
 run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", bundle])
+// Tauri signs the server with the app's entitlements. Without JIT, its
+// JavaScriptCore drops SharedArrayBuffer and Welcome never seeds.
+const sidecarEntitlements = run([
+  "codesign",
+  "--display",
+  "--entitlements",
+  "-",
+  "--xml",
+  sidecarBinary,
+]).stdout
+if (
+  !/<key>com\.apple\.security\.cs\.allow-jit<\/key>\s*<true\/>/.test(
+    sidecarEntitlements
+  )
+) {
+  throw new Error(`${sidecarBinary} is missing the allow-jit entitlement`)
+}
 const infoPlist = join(contents, "Info.plist")
 const expectedIdentifier =
   expectedEnvironment === "staging"

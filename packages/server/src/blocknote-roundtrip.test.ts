@@ -12,9 +12,17 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import fc from "fast-check";
+import * as Y from "yjs";
+import { normalizeMermaidBlocks } from "@worktable/types";
 
 import { blocksToMarkdown, markdownToBlocks } from "./markdown.ts";
-import { canonicalizeBlocks } from "./blocknote.ts";
+import {
+  FRAGMENT_NAME,
+  canonicalizeBlocks,
+  canonicalizeBlocksForWrite,
+  getServerEditor,
+} from "./blocknote.ts";
 import { projectBlocks, spliceBlockEdits, spliceBlockReplacement } from "./markdown-edit.ts";
 import { readDoc, writeDoc, writeSpace } from "./store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
@@ -355,6 +363,84 @@ describe("canonicalizeBlocks on the full corpus", () => {
     ]);
   });
 });
+
+// ── 3b. A collaborative room exports canonical blocks ────
+//
+// Collaborative saves write a room's export without canonicalizing it again,
+// which is sound only while the export already is the canonical form. A room
+// holding a Mermaid code block is the known exception; saves send it through
+// full canonicalization (covered in yjs-manager.test.ts).
+
+describe("a collaborative room's export", () => {
+  const nested = {
+    type: "bulletListItem",
+    content: text("parent item"),
+    children: [
+      { type: "numberedListItem", content: text("child item"), children: [quoteBlock] },
+      { type: "paragraph", content: [{ type: "text", text: "line one\nline two", styles: {} }] },
+    ],
+  };
+
+  it("is unchanged by canonicalization, before and after typing", async () => {
+    const editor = await getServerEditor();
+    const pool = [...corpus, nested, ...(await markdownToBlocks(markdownFixture))];
+    const edit = fc.record({
+      node: fc.nat(),
+      offset: fc.nat(),
+      text: fc.string({ unit: fc.constantFrom("a", "b", " ", "é"), maxLength: 4 }),
+      mark: fc.constantFrom(null, "bold", "italic", "strike"),
+      remove: fc.nat({ max: 3 }),
+    });
+
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.constantFrom(...pool), { minLength: 1, maxLength: 8 }),
+        fc.array(edit, { maxLength: 6 }),
+        async (blocks, edits) => {
+          // Opened the way a room opens a stored document.
+          const room: Y.Doc = editor.blocksToYDoc(
+            normalizeMermaidBlocks(blocks).blocks,
+            FRAGMENT_NAME
+          );
+          try {
+            const opened = editor.yDocToBlocks(room, FRAGMENT_NAME);
+            expect(await canonicalizeBlocksForWrite(opened)).toEqual(opened);
+
+            // Typing and deleting in inline text, as an editor's updates do.
+            const texts = inlineTexts(room.getXmlFragment(FRAGMENT_NAME));
+            if (texts.length > 0) {
+              room.transact(() => {
+                for (const change of edits) {
+                  const node = texts[change.node % texts.length]!;
+                  const at = change.offset % (node.length + 1);
+                  node.delete(at, Math.min(change.remove, node.length - at));
+                  node.insert(at, change.text, change.mark ? { [change.mark]: {} } : {});
+                }
+              });
+            }
+            const typed = editor.yDocToBlocks(room, FRAGMENT_NAME);
+            expect(await canonicalizeBlocksForWrite(typed)).toEqual(typed);
+          } finally {
+            room.destroy();
+          }
+        }
+      ),
+      { numRuns: 60 }
+    );
+  });
+});
+
+/** Text nodes of blocks with inline content (code blocks take no marks). */
+function inlineTexts(parent: Y.XmlFragment | Y.XmlElement): Y.XmlText[] {
+  const texts: Y.XmlText[] = [];
+  for (const child of parent.toArray()) {
+    if (child instanceof Y.XmlText) texts.push(child);
+    else if (child instanceof Y.XmlElement && child.nodeName !== "codeBlock") {
+      texts.push(...inlineTexts(child));
+    }
+  }
+  return texts;
+}
 
 // ── 4. Storage round-trip through the real store ──────────
 

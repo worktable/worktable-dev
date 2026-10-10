@@ -10,14 +10,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { deleteDoc, docExists, getDocPath, getDocProvenance, readDoc, renameDoc, writeSpace } from "./store.ts";
-import { getServerEditor } from "./blocknote.ts";
+import { canonicalizeBlocksForWrite, getServerEditor } from "./blocknote.ts";
 import { MermaidDocumentValidationError } from "./mermaid-document.ts";
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
 } from "./workspace.ts";
 import { YjsDocManager, yjsManager } from "./yjs-manager.ts";
-import type { SpaceFile } from "@worktable/types"
+import { wsManager } from "./ws.ts";
+import { MERMAID_BLOCK_NORMALIZER_VERSION, type SpaceFile } from "@worktable/types"
 import {
   mintDocumentId,
   readDocumentInventory,
@@ -77,6 +78,39 @@ async function simulateManagerClientEdit(
     fragment.delete(0, fragment.length);
     editor.blocksToYXmlFragment(blocks, fragment);
   }, "test-client");
+}
+
+function firstText(ydoc: Y.Doc): Y.XmlText {
+  const find = (node: Y.XmlFragment | Y.XmlElement): Y.XmlText | null => {
+    for (const child of node.toArray()) {
+      if (child instanceof Y.XmlText) return child;
+      if (child instanceof Y.XmlElement) {
+        const text = find(child);
+        if (text) return text;
+      }
+    }
+    return null;
+  };
+  const text = find(ydoc.getXmlFragment("document-store"));
+  if (!text) throw new Error("the document has no text");
+  return text;
+}
+
+/** An editor update that leaves the content as it was, like the initial sync echo. */
+function typeAndUndo(ydoc: Y.Doc): void {
+  const text = firstText(ydoc);
+  ydoc.transact(() => text.insert(0, "x"), "test-client");
+  ydoc.transact(() => text.delete(0, 1), "test-client");
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitFor(condition: () => boolean | Promise<boolean>, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await sleep(10);
+  }
 }
 
 function makeSpace(id: string): SpaceFile {
@@ -654,9 +688,10 @@ describe("YjsDocManager sync persistence", () => {
     const provenance = await getDocProvenance("test-space", "folder/doc");
     expect(readYjsStateHeader("folder/doc")).toMatchObject({
       type: "worktable.yjs-state",
-      version: 1,
+      version: 2,
       docContentHash: provenance?.contentHash,
       docVersionId: provenance?.versionId,
+      mermaidNormalizer: MERMAID_BLOCK_NORMALIZER_VERSION,
     });
 
     const renamedStatePath = yjsStatePath("folder/renamed");
@@ -733,8 +768,9 @@ describe("YjsDocManager sync persistence", () => {
     });
     const before = await getDocProvenance("test-space", "agent-doc");
 
-    await yjsManager.getOrCreateDoc("test-space", "agent-doc");
+    const ydoc = await yjsManager.getOrCreateDoc("test-space", "agent-doc");
     // A pure open with no genuine edit: flushing persist must be a no-op.
+    typeAndUndo(ydoc);
     await yjsManager.flushPersist("test-space", "agent-doc");
 
     const after = await getDocProvenance("test-space", "agent-doc");
@@ -751,7 +787,8 @@ describe("YjsDocManager sync persistence", () => {
     });
     const before = await getDocProvenance("test-space", "browser-doc");
 
-    await yjsManager.getOrCreateDoc("test-space", "browser-doc");
+    const ydoc = await yjsManager.getOrCreateDoc("test-space", "browser-doc");
+    typeAndUndo(ydoc);
     await yjsManager.flushPersist("test-space", "browser-doc");
 
     const after = await getDocProvenance("test-space", "browser-doc");
@@ -966,7 +1003,8 @@ describe("YjsDocManager sync persistence", () => {
       JSON.stringify([{ type: "paragraph", content: [{ type: "text", text: "legacy", styles: {} }] }])
     );
 
-    await yjsManager.getOrCreateDoc("test-space", "legacy-doc");
+    const ydoc = await yjsManager.getOrCreateDoc("test-space", "legacy-doc");
+    typeAndUndo(ydoc);
     await yjsManager.flushPersist("test-space", "legacy-doc");
 
     // No provenance was ever recorded for this doc, and a pure open must not
@@ -1833,5 +1871,219 @@ describe("YjsDocManager sync persistence", () => {
     ).rejects.toThrow(/does not exist/);
 
     expect(existsSync(statePath)).toBe(false);
+  });
+
+  it("saves while typing continues instead of waiting for a pause", async () => {
+    await writeDoc("test-space", "typing", [para("start")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const manager = new YjsDocManager({
+      timing: { persistDebounceMs: 200, persistMaxWaitMs: 600 },
+    });
+    try {
+      const ydoc = await manager.getOrCreateDoc("test-space", "typing");
+      const text = firstText(ydoc);
+      const saved = async () =>
+        JSON.stringify((await readDoc("test-space", "typing")).data).includes("kk");
+      const started = Date.now();
+      // A keystroke every 50 ms never leaves the 200 ms quiet period.
+      while (!(await saved())) {
+        if (Date.now() - started > 10_000) throw new Error("typing was never saved");
+        ydoc.transact(() => text.insert(0, "k"), "test-client");
+        await sleep(50);
+      }
+    } finally {
+      await manager.shutdown();
+    }
+  });
+
+  it("announces a room save with its origin and content hash", async () => {
+    await writeDoc("test-space", "announced", [para("before")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const messages: unknown[] = [];
+    const spaceSocket = {
+      send: (message: string) => messages.push(JSON.parse(message)),
+      close() {},
+      data: { spaceId: "test-space", canReadDocs: true },
+    };
+    wsManager.subscribe(spaceSocket, "test-space");
+    try {
+      await simulateClientEdit("test-space", "announced", [para("after")]);
+      await yjsManager.flushPersist("test-space", "announced");
+    } finally {
+      wsManager.unsubscribe(spaceSocket);
+    }
+
+    const provenance = await getDocProvenance("test-space", "announced");
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "doc_update",
+        docPath: "announced",
+        data: expect.objectContaining({
+          origin: "yjs",
+          contentHash: provenance!.contentHash,
+          provenance,
+        }),
+      })
+    );
+  });
+
+  it("saves a Mermaid code block typed into a room as a canonical Mermaid block", async () => {
+    await writeDoc("test-space", "typed-mermaid", [para("before")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const ydoc = await yjsManager.getOrCreateDoc("test-space", "typed-mermaid");
+    const editor = await getServerEditor();
+    ydoc.transact(() => {
+      const fragment = ydoc.getXmlFragment("document-store");
+      fragment.delete(0, fragment.length);
+      editor.blocksToYXmlFragment(
+        [
+          {
+            id: "typed-diagram",
+            type: "codeBlock",
+            props: { language: "typescript" },
+            content: [{ type: "text", text: "flowchart TD\nA-->B", styles: {} }],
+          },
+        ],
+        fragment
+      );
+      const container = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlElement;
+      (container.get(0) as Y.XmlElement).setAttribute("language", "mermaid");
+    }, "test-client");
+
+    await yjsManager.flushPersist("test-space", "typed-mermaid");
+
+    const stored = (await readDoc("test-space", "typed-mermaid")).data as unknown[];
+    expect(stored).toEqual(await canonicalizeBlocksForWrite(stored));
+    expect(stored[0]).toMatchObject({
+      id: "typed-diagram",
+      type: "mermaid",
+      props: { data: "flowchart TD\nA-->B" },
+    });
+  });
+
+  it("compares a save with a file changed outside the room since its last save", async () => {
+    await writeDoc("test-space", "outside", [para("first")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const ydoc = await yjsManager.getOrCreateDoc("test-space", "outside");
+    await simulateClientEdit("test-space", "outside", [para("room text")]);
+    await yjsManager.flushPersist("test-space", "outside");
+    const saved = (await readDoc("test-space", "outside")).data;
+
+    // An outside write the room misses: no watcher runs here, and the file
+    // keeps its old modification time.
+    const path = getDocPath("test-space", "outside");
+    const { atime, mtime } = statSync(path);
+    writeFileSync(path, JSON.stringify([para("written outside the room")]));
+    utimesSync(path, atime, mtime);
+
+    // Typing that leaves the room exactly as it was last saved.
+    typeAndUndo(ydoc);
+    await yjsManager.flushPersist("test-space", "outside");
+
+    expect((await readDoc("test-space", "outside")).data).toEqual(saved);
+  });
+
+  it("loads collaboration state saved before the normalizer version was recorded", async () => {
+    await writeDoc("test-space", "state-v1", [para("portable text")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const provenance = (await getDocProvenance("test-space", "state-v1"))!;
+    const editor = await getServerEditor();
+    const legacyRoom: Y.Doc = editor.blocksToYDoc(
+      [
+        {
+          id: "legacy-diagram",
+          type: "codeBlock",
+          props: { language: "mermaid" },
+          content: [{ type: "text", text: "flowchart TD\nOld-->State", styles: {} }],
+        },
+      ],
+      "document-store"
+    );
+    const header = Buffer.from(
+      JSON.stringify({
+        type: "worktable.yjs-state",
+        version: 1,
+        docContentHash: provenance.contentHash,
+        docVersionId: provenance.versionId,
+        storedAt: new Date().toISOString(),
+      })
+    );
+    mkdirSync(dirname(yjsStatePath("state-v1")), { recursive: true });
+    writeFileSync(
+      yjsStatePath("state-v1"),
+      Buffer.concat([
+        Buffer.from(`WTYJS1\n${header.length}\n`),
+        header,
+        Y.encodeStateAsUpdate(legacyRoom),
+      ])
+    );
+    legacyRoom.destroy();
+
+    const manager = new YjsDocManager();
+    try {
+      const ydoc = await manager.getOrCreateDoc("test-space", "state-v1");
+      const opened = editor.yDocToBlocks(ydoc, "document-store") as unknown[];
+      expect(opened).toHaveLength(1);
+      expect(opened[0]).toMatchObject({
+        type: "mermaid",
+        props: { data: "flowchart TD\nOld-->State" },
+      });
+    } finally {
+      await manager.shutdown();
+    }
+  });
+
+  it("keeps rooms without clients loaded, and saves the oldest before unloading it past the limit", async () => {
+    for (const path of ["empty-a", "empty-b", "empty-c"]) {
+      await writeDoc("test-space", path, [para(path)], {
+        updatedBy: "user",
+        source: "browser-yjs",
+      });
+    }
+    const manager = new YjsDocManager({
+      timing: { maxEmptyRooms: 2, pingIntervalMs: 20 },
+    });
+    const sockets = new Map<string, FakeWs>();
+    try {
+      for (const path of ["empty-a", "empty-b", "empty-c"]) {
+        const ws = new FakeWs();
+        sockets.set(path, ws);
+        await manager.handleConnection(ws, "test-space", path);
+      }
+      // Connected clients get keepalive pings.
+      await waitFor(() =>
+        [...sockets.values()].every((ws) =>
+          ws.sent.some((frame) => frame instanceof Uint8Array && frame.length === 1 && frame[0] === 42)
+        )
+      );
+      await simulateManagerClientEdit(manager, "test-space", "empty-a", [
+        para("typed before closing"),
+      ]);
+
+      manager.handleDisconnect(sockets.get("empty-a")!, "test-space", "empty-a");
+      manager.handleDisconnect(sockets.get("empty-b")!, "test-space", "empty-b");
+      expect(manager.isLoaded("test-space", "empty-a")).toBe(true);
+      expect(manager.isLoaded("test-space", "empty-b")).toBe(true);
+
+      manager.handleDisconnect(sockets.get("empty-c")!, "test-space", "empty-c");
+      await waitFor(() => !manager.isLoaded("test-space", "empty-a"));
+      expect(JSON.stringify((await readDoc("test-space", "empty-a")).data)).toContain(
+        "typed before closing"
+      );
+      expect(manager.isLoaded("test-space", "empty-b")).toBe(true);
+      expect(manager.isLoaded("test-space", "empty-c")).toBe(true);
+    } finally {
+      await manager.shutdown();
+    }
   });
 });

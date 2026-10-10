@@ -3,7 +3,8 @@ import type { SettingsSectionId } from "@/components/settings/sections"
 // Imperative "open Settings at a section" channel. The dialog is owned by the
 // app shell; surfaces that live elsewhere in the tree (e.g. the
 // update-nudge toast) dispatch this event instead of threading dialog state
-// through the app shell.
+// through the app shell. Worktable Desktop dispatches it too, from its native
+// menu, to open System for its own updates; keep the name and detail stable.
 
 const OPEN_SETTINGS_EVENT = "worktable:open-settings"
 

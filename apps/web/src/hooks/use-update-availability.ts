@@ -6,6 +6,7 @@ import {
   type SystemVersion,
 } from "@/lib/system-api"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useDesktopUpdateReady } from "@/hooks/use-desktop-update"
 
 const STARTUP_POLL_MS = 10_000
 const STARTUP_POLL_WINDOW_MS = 60_000
@@ -55,4 +56,14 @@ export function useUpdateAvailability(): SystemVersion | null {
   })
   if (deploymentQuery.data?.mode !== "self-managed") return null
   return query.data?.updateAvailable ? query.data : null
+}
+
+/**
+ * The durable "an update is waiting" signal for ambient indicators: a newer
+ * server release, or a Worktable Desktop update downloaded and ready to install.
+ */
+export function useUpdateWaiting(): boolean {
+  const serverUpdate = useUpdateAvailability() !== null
+  const desktopUpdate = useDesktopUpdateReady()
+  return serverUpdate || desktopUpdate
 }

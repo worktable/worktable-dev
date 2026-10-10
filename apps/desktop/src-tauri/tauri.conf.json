@@ -17,7 +17,8 @@
       "capabilities": [
         "trusted-shell",
         "workspace-window-chrome",
-        "workspace-agent-skills"
+        "workspace-agent-skills",
+        "workspace-desktop-updates"
       ],
       "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' https://api.fontshare.com; script-src 'self'; font-src 'self' https://cdn.fontshare.com"
     }

@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
-import { DocumentLifetimeChip, DocumentOrganizeMenuItems } from "@/components/document-organize"
+import {
+  DocumentLifetimeChip,
+  DocumentOrganizeMenuItems,
+} from "@/components/document-organize"
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
 import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
@@ -82,7 +85,7 @@ import { Breadcrumb } from "@/components/breadcrumb"
 import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { onBrowserLogout } from "@/lib/auth-events"
-import { useUpdateAvailability } from "@/hooks/use-update-availability"
+import { useUpdateWaiting } from "@/hooks/use-update-availability"
 const Onboarding = lazy(() =>
   import("@/components/onboarding/onboarding").then((module) => ({
     default: module.Onboarding,
@@ -274,7 +277,7 @@ function MobileSidebarOverlay({
 }
 
 function MobileSidebarToggle({ onClick }: { onClick: () => void }) {
-  const updateAvailable = useUpdateAvailability() !== null
+  const updateAvailable = useUpdateWaiting()
   const label = updateAvailable
     ? "Toggle sidebar, update available"
     : "Toggle sidebar"
@@ -315,7 +318,9 @@ function RootLayoutWithProviders() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <WorkspaceStorageGate><RootLayout /></WorkspaceStorageGate>
+        <WorkspaceStorageGate>
+          <RootLayout />
+        </WorkspaceStorageGate>
       </ThemeProvider>
     </QueryClientProvider>
   )
@@ -601,32 +606,36 @@ function RootLayout() {
               </div>
 
               {/* Narrow screens keep one action; the page menu holds the rest. */}
-              {secondaryAction && SecondaryActionIcon && (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
-                <Button
-                  variant={secondaryAction.displayLabel ? "outline" : "ghost"}
-                  size={secondaryAction.displayLabel ? "sm" : "icon"}
-                  className={
-                    secondaryAction.displayLabel
-                      ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
-                      : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                  }
-                  onClick={secondaryAction.onClick}
-                  aria-label={secondaryAction.label}
-                  title={secondaryAction.label}
-                  disabled={secondaryAction.disabled || secondaryAction.pending}
-                >
-                  {secondaryAction.pending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <SecondaryActionIcon className="size-4" />
-                  )}
-                  {secondaryAction.displayLabel ? (
-                    <span className="hidden sm:inline">
-                      {secondaryAction.displayLabel}
-                    </span>
-                  ) : null}
-                </Button>
-              )}
+              {secondaryAction &&
+                SecondaryActionIcon &&
+                (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
+                  <Button
+                    variant={secondaryAction.displayLabel ? "outline" : "ghost"}
+                    size={secondaryAction.displayLabel ? "sm" : "icon"}
+                    className={
+                      secondaryAction.displayLabel
+                        ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
+                        : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    }
+                    onClick={secondaryAction.onClick}
+                    aria-label={secondaryAction.label}
+                    title={secondaryAction.label}
+                    disabled={
+                      secondaryAction.disabled || secondaryAction.pending
+                    }
+                  >
+                    {secondaryAction.pending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <SecondaryActionIcon className="size-4" />
+                    )}
+                    {secondaryAction.displayLabel ? (
+                      <span className="hidden sm:inline">
+                        {secondaryAction.displayLabel}
+                      </span>
+                    ) : null}
+                  </Button>
+                )}
 
               {!isMobile && pageMeta?.annotations && (
                 <Button
@@ -677,7 +686,8 @@ function RootLayout() {
                 />
               )}
 
-              {!isMobile && (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
+              {!isMobile &&
+              (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     aria-label="More actions"
@@ -718,7 +728,9 @@ function RootLayout() {
                       <DocumentOrganizeMenuItems
                         spaceId={pageMeta.document.spaceId}
                         path={pageMeta.document.path}
-                        separatorBefore={Boolean(pageMeta.overflowActions?.length)}
+                        separatorBefore={Boolean(
+                          pageMeta.overflowActions?.length
+                        )}
                       />
                     )}
                   </DropdownMenuContent>

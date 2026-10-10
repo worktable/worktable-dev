@@ -101,6 +101,12 @@ const workspaceAgentSkillsCapability = JSON.parse(
     "utf8"
   )
 ) as Capability
+const workspaceUpdatesCapability = JSON.parse(
+  readFileSync(
+    join(nativeRoot, "capabilities", "workspace-desktop-updates.json"),
+    "utf8"
+  )
+) as Capability
 const desktopPackage = JSON.parse(
   readFileSync(join(appRoot, "package.json"), "utf8")
 ) as DesktopPackage
@@ -133,6 +139,7 @@ describe("desktop package contracts", () => {
       "trusted-shell",
       "workspace-window-chrome",
       "workspace-agent-skills",
+      "workspace-desktop-updates",
     ])
     expect(trustedShellCapability.identifier).toBe("trusted-shell")
     expect(trustedShellCapability.webviews).toEqual(["trusted-shell"])
@@ -194,6 +201,22 @@ describe("desktop package contracts", () => {
         "allow-desktop-agent-skills-apply",
       ],
     })
+    expect(workspaceUpdatesCapability).toMatchObject({
+      identifier: "workspace-desktop-updates",
+      local: false,
+      remote: workspaceAgentSkillsCapability.remote,
+      webviews: ["workspace"],
+      permissions: [
+        "allow-desktop-workspace-update-status",
+        "allow-desktop-workspace-check-for-updates",
+        "allow-desktop-workspace-restart-to-update",
+      ],
+    })
+    // Remote workspace pages and the shell never get the workspace commands.
+    for (const permission of workspaceUpdatesCapability.permissions) {
+      expect(trustedShellCapability.permissions).not.toContain(permission)
+      expect(workspaceChromeCapability.permissions).not.toContain(permission)
+    }
     expect(trustedShellCapability.permissions).not.toContain(
       "allow-desktop-agent-skills-status"
     )

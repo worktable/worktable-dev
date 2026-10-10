@@ -750,12 +750,24 @@ fn require_desktop_agent_skill_surface(
     webview: &Webview,
     state: &DesktopHostState,
 ) -> Result<(), String> {
+    require_local_workspace_surface(webview, state, "agent skill")
+}
+
+/// Native commands for the active local workspace only. A self-hosted or
+/// Cloud page is remote content, so it never reaches these. `kind` names the
+/// command family in errors, which the web app reads to tell "unavailable"
+/// apart from a real failure.
+fn require_local_workspace_surface(
+    webview: &Webview,
+    state: &DesktopHostState,
+    kind: &str,
+) -> Result<(), String> {
     if webview.label() == TRUSTED_WEBVIEW_LABEL {
         return Ok(());
     }
     if webview.label() != WORKSPACE_WEBVIEW_LABEL {
         return Err(format!(
-            "native agent skill command denied for webview '{}'",
+            "native {kind} command denied for webview '{}'",
             webview.label()
         ));
     }
@@ -788,10 +800,9 @@ fn require_desktop_agent_skill_surface(
     ) {
         Ok(())
     } else {
-        Err(
-            "native agent skill command requires the active local Desktop workspace and origin"
-                .into(),
-        )
+        Err(format!(
+            "native {kind} command requires the active local Desktop workspace and origin"
+        ))
     }
 }
 
@@ -970,6 +981,110 @@ fn desktop_dismiss_update(webview: Webview, app: AppHandle) -> Result<(), String
     require_trusted_surface(&webview)?;
     app.state::<DesktopUpdaterState>().dismiss()?;
     restore_workspace_surface(&app)
+}
+
+/// What the local workspace page shows about Desktop updates.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceUpdateStatus {
+    schema_version: u8,
+    current_version: String,
+    state: &'static str,
+    available_version: Option<String>,
+    notes: Option<String>,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    can_restart: bool,
+    last_check: Option<updater::LastUpdateCheck>,
+}
+
+#[tauri::command]
+fn desktop_workspace_update_status(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, DesktopHostState>,
+) -> Result<WorkspaceUpdateStatus, String> {
+    require_local_workspace_surface(&webview, &state, "update")?;
+    let updater_state = app.state::<DesktopUpdaterState>();
+    let status = updater_state.snapshot()?;
+    Ok(WorkspaceUpdateStatus {
+        schema_version: 1,
+        can_restart: status.state == "ready",
+        current_version: status.current_version,
+        state: status.state,
+        available_version: status.available_version,
+        notes: status.notes,
+        downloaded_bytes: status.downloaded_bytes,
+        total_bytes: status.total_bytes,
+        last_check: updater_state.last_check()?,
+    })
+}
+
+/// Starts a background check for the app's own update controls. It reports
+/// through the status above and never takes over the window.
+#[tauri::command]
+fn desktop_workspace_check_for_updates(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, DesktopHostState>,
+) -> Result<(), String> {
+    require_local_workspace_surface(&webview, &state, "update")?;
+    start_in_app_update_check(app);
+    Ok(())
+}
+
+#[tauri::command]
+async fn desktop_workspace_restart_to_update(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, DesktopHostState>,
+) -> Result<(), String> {
+    require_local_workspace_surface(&webview, &state, "update")?;
+    install_available_update(app).await
+}
+
+fn start_in_app_update_check(app: AppHandle) {
+    let ready = app
+        .state::<DesktopUpdaterState>()
+        .snapshot()
+        .is_ok_and(|status| status.state == "ready");
+    if ready {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = run_updater_check(app, false).await {
+            eprintln!("[Worktable Desktop] in-app update check failed: {error}");
+        }
+    });
+}
+
+/// With a local workspace open, the app's own Settings shows updates; this
+/// opens it there. Remote pages get the shell's update screen instead.
+fn open_in_app_update_settings(app: &AppHandle) -> bool {
+    let local_ready = app
+        .state::<DesktopHostState>()
+        .status
+        .lock()
+        .is_ok_and(|status| status.state == "ready" && status.provider == Some("local"));
+    let Some(workspace) = app.get_webview(WORKSPACE_WEBVIEW_LABEL) else {
+        return false;
+    };
+    // While the shell's update screen covers the workspace, it stays in charge.
+    if !local_ready || updater_surface_active(app) {
+        return false;
+    }
+    // The web app listens for this event to open Settings at a section.
+    if workspace
+        .eval(
+            "window.dispatchEvent(new CustomEvent(\"worktable:open-settings\", { detail: { section: \"system\" } }))",
+        )
+        .is_err()
+    {
+        return false;
+    }
+    let _ = show_main_window(app);
+    let _ = workspace.set_focus();
+    true
 }
 
 #[tauri::command]
@@ -6685,6 +6800,10 @@ fn handle_desktop_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         }
         CHECK_UPDATES_MENU_ID => {
             let app = app.clone();
+            if open_in_app_update_settings(&app) {
+                start_in_app_update_check(app);
+                return;
+            }
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = run_updater_check(app, true).await {
                     eprintln!("[Worktable Desktop] manual update check failed: {error}");
@@ -6736,6 +6855,9 @@ fn main() {
             desktop_install_update,
             desktop_dismiss_update,
             desktop_open_update_download,
+            desktop_workspace_update_status,
+            desktop_workspace_check_for_updates,
+            desktop_workspace_restart_to_update,
             desktop_select_connection_provider,
             desktop_start_cloud_connection,
             desktop_cancel_cloud_connection,

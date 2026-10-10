@@ -1,6 +1,6 @@
 import { StatusRow } from "../operation-status"
 import { SourceCodeLink } from "@/components/source-code-link"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import { Check, Loader2, RefreshCw, TriangleAlert } from "lucide-react"
@@ -26,6 +26,16 @@ import { RelativeTime } from "@/lib/time"
 import { useWorkspace } from "@/lib/queries"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import {
+  DESKTOP_UPDATE_QUERY_KEY,
+  useDesktopUpdate,
+} from "@/hooks/use-desktop-update"
+import {
+  checkDesktopUpdates,
+  mayHaveDesktopUpdates,
+  restartDesktopToUpdate,
+  type DesktopUpdateStatus,
+} from "@/lib/desktop-updates"
 import { useSettingsPatch } from "../use-settings-patch"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -61,18 +71,28 @@ export function SystemSection() {
   const deploymentQuery = useDeploymentInfo()
   const deployment = deploymentQuery.data
   const cloud = deployment?.mode === "cloud"
+  const desktopUpdate = useDesktopUpdate()
 
   if (cloud) {
     return <AboutGroup cloud />
   }
 
+  // In Worktable Desktop the app updates itself, so its own controls replace
+  // the server's. Wait for Desktop's answer rather than flash the server's.
+  const askingDesktop = mayHaveDesktopUpdates() && desktopUpdate.isPending
   return (
     <div className="flex flex-col gap-6">
       <AboutGroup />
-      {deployment?.capabilities.softwareUpdates ? (
-        <SoftwareUpdateSection />
-      ) : null}
-      {deployment?.capabilities.updateChecks ? <AutoUpdateGroup /> : null}
+      {desktopUpdate.data ? (
+        <DesktopUpdateSection status={desktopUpdate.data} />
+      ) : askingDesktop ? null : (
+        <>
+          {deployment?.capabilities.softwareUpdates ? (
+            <SoftwareUpdateSection />
+          ) : null}
+          {deployment?.capabilities.updateChecks ? <AutoUpdateGroup /> : null}
+        </>
+      )}
     </div>
   )
 }
@@ -159,6 +179,155 @@ function AboutRow({ label, value }: { label: string; value: string | null }) {
         {value ?? "—"}
       </span>
     </div>
+  )
+}
+
+// ── Desktop updates ──────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  const megabytes = bytes / 1_000_000
+  return `${megabytes >= 10 ? megabytes.toFixed(0) : megabytes.toFixed(1)} MB`
+}
+
+// Desktop checks, downloads and installs on its own; this only shows where it
+// is and offers the restart. Checking here never takes over the window.
+function DesktopUpdateSection({ status }: { status: DesktopUpdateStatus }) {
+  const queryClient = useQueryClient()
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: DESKTOP_UPDATE_QUERY_KEY })
+  const check = useMutation({
+    mutationFn: checkDesktopUpdates,
+    onSettled: refresh,
+  })
+  const restart = useMutation({ mutationFn: restartDesktopToUpdate })
+  const version = status.availableVersion
+  const working =
+    status.state === "checking" ||
+    status.state === "downloading" ||
+    status.state === "installing" ||
+    restart.isPending
+  const lastCheck = status.lastCheck
+  const actionError =
+    (restart.error instanceof Error && restart.error.message) ||
+    (check.error instanceof Error && check.error.message) ||
+    null
+
+  let body: ReactNode
+  if (status.state === "installing" || restart.isPending) {
+    body = (
+      <StatusRow
+        icon={<Loader2 className="size-4 animate-spin text-primary-text" />}
+      >
+        Installing{version ? ` version ${version}` : ""}. Worktable restarts
+        when it finishes.
+      </StatusRow>
+    )
+  } else if (status.canRestart && version) {
+    body = (
+      <StatusRow icon={<Check className="size-4 text-primary-text" />}>
+        Version {version} is ready. Restart to finish updating.
+      </StatusRow>
+    )
+  } else if (status.state === "downloading") {
+    const progress = status.totalBytes
+      ? ` (${formatBytes(status.downloadedBytes)} of ${formatBytes(status.totalBytes)})`
+      : ""
+    body = (
+      <StatusRow
+        icon={<Loader2 className="size-4 animate-spin text-primary-text" />}
+      >
+        Downloading version {version}
+        {progress}…
+      </StatusRow>
+    )
+  } else if (status.state === "checking") {
+    body = (
+      <StatusRow
+        icon={<Loader2 className="size-4 animate-spin text-primary-text" />}
+      >
+        Checking for updates…
+      </StatusRow>
+    )
+  } else if (lastCheck?.outcome === "failed") {
+    body = (
+      <StatusRow
+        icon={<TriangleAlert className="size-4 text-destructive" />}
+        alert
+      >
+        <span className="text-destructive">
+          {lastCheck.message ?? "Couldn’t check for updates."}
+        </span>
+      </StatusRow>
+    )
+  } else if (lastCheck?.outcome === "current") {
+    body = (
+      <StatusRow icon={<Check className="size-4 text-primary-text" />}>
+        You’re on the latest version.
+      </StatusRow>
+    )
+  } else {
+    body = (
+      <p className="text-sm text-muted-foreground">
+        Worktable checks for updates automatically and installs them when you
+        restart or quit.
+      </p>
+    )
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-foreground">Software update</h3>
+        <span className="font-mono text-xs text-muted-foreground">
+          v{status.currentVersion}
+        </span>
+      </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+        {body}
+        {status.canRestart && status.notes ? (
+          <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+            {status.notes}
+          </p>
+        ) : null}
+        {lastCheck && !working && !status.canRestart ? (
+          <p
+            className="text-xs text-muted-foreground"
+            title={new Date(lastCheck.checkedAt * 1000).toLocaleString()}
+          >
+            Last checked{" "}
+            <RelativeTime
+              iso={new Date(lastCheck.checkedAt * 1000).toISOString()}
+            />
+          </p>
+        ) : null}
+        {actionError ? (
+          <StatusRow
+            icon={<TriangleAlert className="size-4 text-destructive" />}
+            alert
+          >
+            <span className="text-destructive">{actionError}</span>
+          </StatusRow>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {status.canRestart ? (
+            <Button onClick={() => restart.mutate()} disabled={working}>
+              <RefreshCw className="size-4" />
+              Restart to update
+            </Button>
+          ) : working ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => check.mutate()}
+              disabled={check.isPending}
+            >
+              <RefreshCw className="size-4" />
+              {lastCheck ? "Check again" : "Check now"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
 

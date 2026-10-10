@@ -485,6 +485,12 @@ describe("Space events in the query cache", () => {
     const plain = grid({}, [record("rec_1", { title: "One" }), record("rec_2", { title: "Two" })])
     const filtered = grid({ where: { status: "open" } }, [record("rec_1", { title: "One" })])
     const counts = watched(queryClient, queryKeys.recordCollections("space-r"), [])
+    // Another collection's grid showing rec_1 as a linked title.
+    const linkingKey = queryKeys.recordPages("space-r", "hires", { expand: { task: true } })
+    queryClient.setQueryData(linkingKey, {
+      pages: [{ records: [], expanded: { tasks: { rec_1: record("rec_1", { title: "One" }) } } }],
+      pageParams: [""],
+    })
 
     applySpaceEvent(queryClient, "space-r", {
       type: "record_update",
@@ -495,8 +501,10 @@ describe("Space events in the query cache", () => {
     })
     await settle(queryClient)
     expect(plain.records()[0]?.data.title).toBe("One, edited")
-    // The unfiltered grid needs nothing more; a filtered one may no longer match.
+    // The unfiltered grid needs nothing more; a filtered one may no longer match,
+    // and a grid in another collection shows its old title.
     expect([plain.reads, filtered.reads, counts.reads]).toEqual([0, 1, 0])
+    expect(queryClient.getQueryState(linkingKey)?.isInvalidated).toBe(true)
 
     applySpaceEvent(queryClient, "space-r", {
       type: "record_deleted",

@@ -15,6 +15,7 @@ import {
   applyRecordChange,
   patchRecordInPages,
   recordPagesKey,
+  relationFieldsAmong,
   relationGridsShowing,
 } from "./record-cache"
 import { isSpaceLive } from "./space-observation"
@@ -62,8 +63,12 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
     onSuccess: (record, { recordId, data }) => {
       applyChange(recordId, record)
       // The optimistic patch already holds the new links, so neither this
-      // response nor its echo looks like a change: read their titles now.
-      for (const filters of relationGridsShowing(queryClient, spaceId, collectionId, Object.keys(data))) {
+      // response nor its echo looks like a change: read their titles, and the
+      // integrity check for dangling links, now.
+      const relations = relationFieldsAmong(queryClient, spaceId, collectionId, Object.keys(data))
+      if (relations.length === 0) return
+      void queryClient.invalidateQueries({ queryKey: [...recordsKey, "health"], exact: true })
+      for (const filters of relationGridsShowing(queryClient, spaceId, collectionId, relations)) {
         void queryClient.invalidateQueries(filters)
       }
     },

@@ -51,6 +51,12 @@ export function isSpaceLive(spaceId: string): boolean {
   return observations.get(spaceId)?.live === true
 }
 
+/** Whether any stream is live, so the server can reach this tab at all. */
+export function anyStreamLive(): boolean {
+  for (const entry of observations.values()) if (entry.live) return true
+  return false
+}
+
 /**
  * Refresh interval for a list the socket keeps current: none while the
  * Space's socket is live, a slow check otherwise. Workspace-wide lists have

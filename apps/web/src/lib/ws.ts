@@ -74,7 +74,14 @@ interface SharedSpaceConnection {
   hasConnected: boolean
   /** Cache updates run once per message here, not once per listener. */
   queryClient: QueryClient | null
+  /** Pending close after the last listener left. */
+  closeTimer: ReturnType<typeof setTimeout> | null
 }
+
+// Views unmount and mount again during route changes and Suspense. Keep a
+// socket briefly after its last listener leaves, so that churn neither
+// reconnects it nor forgets that the cache was being kept current.
+const CLOSE_GRACE_MS = 1_000
 
 interface WorktableBrowserGlobal {
   __worktableSpaceConnections?: Map<string, SharedSpaceConnection>
@@ -638,6 +645,14 @@ function applyMessage(
 function revalidateAfterReconnect(connection: SharedSpaceConnection): void {
   const queryClient = connection.queryClient
   if (!queryClient) return
+  // A reconnect can follow a workspace replaced from another tab, or a
+  // network change that moved linked sharing: check both, once.
+  for (const queryKey of [queryKeys.workspace, ["system", "deployment"]]) {
+    void queryClient.invalidateQueries(
+      { queryKey, exact: true },
+      { cancelRefetch: false }
+    )
+  }
   if (connection.stream === THREAD_STREAM) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })
     return
@@ -768,8 +783,13 @@ function subscribeShared(
       reconnectAttempts: 0,
       hasConnected: false,
       queryClient: null,
+      closeTimer: null,
     }
     sharedConnections.set(key, connection)
+  }
+  if (connection.closeTimer) {
+    clearTimeout(connection.closeTimer)
+    connection.closeTimer = null
   }
   if (queryClient) connection.queryClient = queryClient
   connection.messageListeners.add(onMessage)
@@ -780,9 +800,23 @@ function subscribeShared(
   return () => {
     connection.messageListeners.delete(onMessage)
     connection.statusListeners.delete(onStatus)
-    if (connection.messageListeners.size > 0) return
-    closeShared(connection)
-    sharedConnections.delete(key)
+    if (connection.messageListeners.size > 0 || connection.closeTimer) return
+    connection.closeTimer = setTimeout(() => {
+      connection.closeTimer = null
+      if (connection.messageListeners.size > 0) return
+      closeShared(connection)
+      sharedConnections.delete(key)
+      // Nothing keeps this Space's cache current any more: whatever is
+      // cached reads again when it is next shown.
+      if (connection.queryClient && stream !== THREAD_STREAM) {
+        for (const queryKey of [["spaces", stream], ["annotations", stream]]) {
+          void connection.queryClient.invalidateQueries({
+            queryKey,
+            refetchType: "none",
+          })
+        }
+      }
+    }, CLOSE_GRACE_MS)
   }
 }
 

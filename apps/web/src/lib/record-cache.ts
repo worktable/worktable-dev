@@ -3,7 +3,11 @@ import type {
   InvalidateQueryFilters,
   QueryClient,
 } from "@tanstack/react-query"
-import type { RecordFile, RecordQueryResult } from "@worktable/types"
+import type {
+  RecordCollectionSchema,
+  RecordFile,
+  RecordQueryResult,
+} from "@worktable/types"
 import { queryKeys, type RecordPageParams } from "./queries"
 
 export const recordPagesKey = (spaceId: string, collectionId: string) =>
@@ -43,6 +47,29 @@ export function patchRecordInPages(
     { queryKey: recordPointKey(spaceId, collectionId, recordId) },
     (record) => (record ? patch(record) : record)
   )
+}
+
+/** Which of these fields link to records, by the collection's cached schema. */
+export function relationFieldsAmong(
+  queryClient: QueryClient,
+  spaceId: string,
+  collectionId: string,
+  fields: string[]
+): string[] {
+  const schema =
+    queryClient.getQueryData<{ schema?: RecordCollectionSchema | null }>([
+      ...queryKeys.records(spaceId, collectionId),
+      "health",
+    ])?.schema ??
+    queryClient
+      .getQueryData<
+        Array<{ id: string; schema?: RecordCollectionSchema | null }>
+      >(queryKeys.recordCollections(spaceId))
+      ?.find((collection) => collection.id === collectionId)?.schema
+  return fields.filter((field) => {
+    const type = schema?.fields?.[field]?.type
+    return type === "relation" || type === "reference"
+  })
 }
 
 /** Grids that expand any of these relation fields into linked titles. */
@@ -136,6 +163,29 @@ export function applyRecordChange(
       record.createdAt < oldestLoaded
     )
     if (scoped || relationChanged || (!held && visible && !beyondLoaded)) {
+      refresh.push({ queryKey: query.queryKey, exact: true })
+    }
+  }
+  // Other collections' grids embed this record as a related title, or may
+  // filter and sort through relation fields: read those again too.
+  for (const query of queryClient.getQueryCache().findAll({
+    predicate: (candidate) =>
+      candidate.queryKey[0] === "spaces" &&
+      candidate.queryKey[1] === spaceId &&
+      candidate.queryKey[2] === "records" &&
+      candidate.queryKey[3] !== collectionId &&
+      candidate.queryKey[4] === "pages",
+  })) {
+    const data = query.state.data as InfiniteData<RecordQueryResult> | undefined
+    const params = (query.queryKey[5] ?? {}) as RecordPageParams
+    const shows = data?.pages.some(
+      (page) => page.expanded?.[collectionId]?.[recordId] !== undefined
+    )
+    const throughRelations = Boolean(
+      params.expand &&
+      (params.search?.trim() || params.where || params.orderBy?.length)
+    )
+    if (shows || throughRelations) {
       refresh.push({ queryKey: query.queryKey, exact: true })
     }
   }

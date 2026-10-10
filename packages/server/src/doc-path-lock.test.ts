@@ -18,16 +18,18 @@ it("lets an abandoned waiter leave the Space queue without running", async () =>
     },
     controller.signal
   )
-  const next = withDocPathLock("space", async () => {
-    order.push("next")
-  })
 
   controller.abort()
   // It gives up at once, while the holder still owns the Space.
   await expect(abandoned).rejects.toThrow()
+  // A caller arriving after that still waits for the holder.
+  const later = withDocPathLock("space", async () => {
+    order.push("later")
+  })
+  await Promise.resolve()
   expect(order).toEqual([])
 
   release()
-  await Promise.all([holder, next])
-  expect(order).toEqual(["holder", "next"])
+  await Promise.all([holder, later])
+  expect(order).toEqual(["holder", "later"])
 })

@@ -38,6 +38,10 @@ export async function withDocPathLock<T>(
   });
   const tail = previous.then(() => current);
   tails.set(spaceId, tail);
+  const forget = () => {
+    if (tails.get(spaceId) === tail) tails.delete(spaceId);
+  };
+  let acquired = false;
   const waitStartedAt = performance.now();
   try {
     if (signal) {
@@ -51,10 +55,15 @@ export async function withDocPathLock<T>(
       await previous;
     }
     timing.end("lock-wait", waitStartedAt);
+    acquired = true;
     assertWorkspaceAvailable();
     return await fn();
   } finally {
     release();
-    if (tails.get(spaceId) === tail) tails.delete(spaceId);
+    // A caller that gave up may still be the newest in line while an earlier
+    // holder runs. Its place then stands for that holder until it finishes,
+    // so a later caller still waits for it.
+    if (acquired) forget();
+    else void tail.then(forget);
   }
 }

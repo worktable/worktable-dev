@@ -5209,15 +5209,20 @@ async fn prepare_update(app: &AppHandle, update: tauri_plugin_updater::Update) {
         .await
         .map_err(|error| format!("update download failed: {error}"));
     let pending = app.state::<PendingNativeUpdate>();
-    // Hold the native installer before the state reports `ready`, so a
-    // restart requested at that moment always finds both halves.
+    // Publish both halves under the installer lock, so a restart or quit
+    // either sees the complete prepared update or none of it.
     let prepared = downloaded.and_then(|bytes| {
-        set_pending_native_update(&pending, Some(update.clone()))?;
-        updater_state.record_prepared(
+        let mut native = pending
+            .0
+            .lock()
+            .map_err(|_| "pending Desktop update lock is poisoned".to_string())?;
+        let prepared = updater_state.record_prepared(
             &update.version,
             &bytes,
             bundle_installs_without_authorization(),
-        )
+        )?;
+        *native = Some(update.clone());
+        Ok(prepared)
     });
     match &prepared {
         Ok(prepared) => eprintln!(
@@ -5264,14 +5269,15 @@ fn set_pending_native_update(
 fn take_prepared_update<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Option<(updater::PreparedUpdate, tauri_plugin_updater::Update)>, String> {
-    let prepared = app.state::<DesktopUpdaterState>().take_prepared()?;
-    let native = app
-        .state::<PendingNativeUpdate>()
+    // Restart now and quit can race; the installer lock hands both halves to
+    // exactly one of them.
+    let pending = app.state::<PendingNativeUpdate>();
+    let mut native = pending
         .0
         .lock()
-        .map_err(|_| "pending Desktop update lock is poisoned".to_string())?
-        .take();
-    Ok(prepared.zip(native))
+        .map_err(|_| "pending Desktop update lock is poisoned".to_string())?;
+    let prepared = app.state::<DesktopUpdaterState>().take_prepared()?;
+    Ok(prepared.zip(native.take()))
 }
 
 /// The plugin replaces the bundle by renaming it. When that needs an

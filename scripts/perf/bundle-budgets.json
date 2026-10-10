@@ -1,0 +1,34 @@
+{
+  "$comment": "Gzip bytes. Budgets sit 2% above the sizes at the time they were set; lower them as bundles shrink (bun scripts/perf/bundle.ts --update). Targets are Plan 15 goals and are not enforced yet.",
+  "budgets": {
+    "entry": {
+      "gzip": 379000
+    },
+    "root css": {
+      "gzip": 44000
+    },
+    "home": {
+      "gzip": 416000
+    },
+    "space": {
+      "gzip": 408000
+    },
+    "rich document": {
+      "gzip": 877000
+    },
+    "html document": {
+      "gzip": 433000
+    }
+  },
+  "targets": {
+    "entry": {
+      "gzip": 180000
+    },
+    "root css": {
+      "gzip": 25000
+    },
+    "rich document": {
+      "gzip": 600000
+    }
+  }
+}

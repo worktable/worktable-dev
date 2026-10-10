@@ -4,6 +4,7 @@ import { Hono } from "hono"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { gunzipSync } from "node:zlib"
 import { ACTOR_HEADERS, GATEWAY_HEADER } from "@worktable/hosted-contract"
 import { JSDOM } from "jsdom"
 import {
@@ -82,13 +83,15 @@ async function ownerRequest(
 async function publicRequest(
   token: string,
   path = "/public/share",
-  method = "GET"
+  method = "GET",
+  headers: Record<string, string> = {}
 ): Promise<Response> {
   return app().fetch(
     new Request(`http://tenant${path}`, {
       method,
       headers: {
         ...admittedHeaders(),
+        ...headers,
         "x-worktable-share-capability": token,
       },
     })
@@ -143,7 +146,7 @@ describe("Cloud document share HTTP boundary", () => {
     await writeDoc(
       artifact.spaceId,
       artifact.artifactKey,
-      "# First\n\nPrivate notes."
+      `# First\n\nPrivate notes.\n\n${"Shared detail. ".repeat(80)}`
     )
 
     const forbidden = await app().fetch(
@@ -188,6 +191,17 @@ describe("Cloud document share HTTP boundary", () => {
     expect(firstProjection.format).toBe("markdown")
     expect(first.headers.get("Cache-Control")).toContain("no-store")
     expect(first.headers.get("Content-Type")).toContain("application/json")
+
+    const compressed = await publicRequest(token, "/public/share", "GET", {
+      "Accept-Encoding": "gzip",
+    })
+    expect(compressed.headers.get("Content-Encoding")).toBe("gzip")
+    expect(compressed.headers.get("Vary")).toContain("Accept-Encoding")
+    expect(
+      JSON.parse(
+        gunzipSync(new Uint8Array(await compressed.arrayBuffer())).toString()
+      )
+    ).toEqual(firstProjection)
 
     await writeDoc(
       artifact.spaceId,

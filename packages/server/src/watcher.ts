@@ -17,6 +17,11 @@ import {
   type ChangeHandler,
   threadEventLocation,
 } from "./workspace-events.ts"
+import {
+  documentSpaceForPath,
+  noteSpaceChanged,
+  noteWorkspaceActivity,
+} from "./workspace-read-model.ts"
 
 export {
   notifyWorkspaceChange,
@@ -252,6 +257,14 @@ export function parseChangedPath(
   if (parts.length >= 3 && parts[1] === "docs") {
     const docParts = parts.slice(2)
     const lastPart = docParts[docParts.length - 1]
+    // A temporary file staged by an atomic write is published by a rename,
+    // which the watcher also reports under the document's own name.
+    if (
+      isAtomicWriteTemporaryFileName(lastPart ?? "") ||
+      /\.(?:json|md|html)\.tmp$/.test(lastPart ?? "")
+    ) {
+      return null
+    }
     if (lastPart?.endsWith(".json")) {
       const docPath = docParts.join("/").replace(/\.json$/, "")
       return { type: "doc", spaceId, docPath }
@@ -267,13 +280,11 @@ export function parseChangedPath(
     return { type: "documentCorpus", spaceId }
   }
 
+  // Temporary siblings of these files are published by a rename, which the
+  // watcher also reports under the canonical name.
   if (
     parts.length === 2 &&
-    (parts[1] === "docs.meta.json" ||
-      parts[1]?.startsWith("docs.meta.json.") ||
-      parts[1] === "documents.meta.json" ||
-      parts[1]?.startsWith("documents.meta.json.") ||
-      isAtomicWriteTemporaryFileName(parts[1] ?? ""))
+    (parts[1] === "docs.meta.json" || parts[1] === "documents.meta.json")
   ) {
     return { type: "documentCorpus", spaceId }
   }
@@ -409,6 +420,11 @@ export class WorkspaceWatcher {
       // file. A 60-record agent batch should cause one bounded scan, not 60.
       const parsed = parse(changedPath)
       const fullPath = join(dir, changedPath)
+      // Any activity, including the server's own suppressed writes and
+      // temporary files, ages the read model before debouncing.
+      const changedSpace = documentSpaceForPath(spacesBase, fullPath)
+      if (changedSpace) noteSpaceChanged(changedSpace)
+      else noteWorkspaceActivity()
       const rawSuppressed = notePathEventIfSuppressed(fullPath)
       const key = rootThreadParent
         ? "thread-root-parent"

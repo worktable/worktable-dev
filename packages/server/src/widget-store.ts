@@ -27,6 +27,7 @@ import {
   type HtmlDocumentStorageV2Owner,
 } from "./html-document-storage-v2.ts";
 import { setRegisteredDocumentArchived } from "./document-write-service.ts";
+import type { DocumentCatalog } from "./document-catalog.ts";
 
 function isCanonicalId(id: string): boolean {
   return CanonicalIdSchema.safeParse(id).success;
@@ -146,6 +147,8 @@ export async function listWidgets(
     includeArchived?: boolean;
     /** Internal topology callers may need every physical bundle for slugging. */
     includeAliasShadows?: boolean;
+    /** Read callers may list V2 HTML Docs from the read-model snapshot. */
+    catalog?: () => Promise<DocumentCatalog>;
   } = {}
 ): Promise<WidgetFile[]> {
   if (!isCanonicalId(spaceId)) return [];
@@ -154,6 +157,7 @@ export async function listWidgets(
       spaceId,
       includeArchived: opts.includeArchived,
       includeAliasShadows: opts.includeAliasShadows,
+      ...(opts.catalog ? { catalog: opts.catalog } : {}),
     })
   }
   const base = widgetsDir(spaceId);

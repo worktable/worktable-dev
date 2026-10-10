@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { randomUUID } from "node:crypto"
 import { PassThrough } from "node:stream"
 import {
   CallToolRequestSchema,
@@ -18,6 +19,15 @@ import {
 export { McpBridgeError, type McpBridgeErrorCode } from "./bridge-policy.ts"
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000
+
+/**
+ * Names this bridge process to the server. A stateless HTTP MCP server answers
+ * each POST with a fresh session, so a cancellation sent in a later POST can
+ * only reach the request it cancels when both carry the same bridge id. On a
+ * loopback connection the server also streams the response, which lets
+ * progress notifications through.
+ */
+export const MCP_BRIDGE_HEADER = "x-worktable-mcp-bridge"
 
 export interface McpBridgeOptions {
   endpoint: string
@@ -56,9 +66,11 @@ export async function runMcpBridge(options: McpBridgeOptions): Promise<void> {
     },
     { capabilities: {} }
   )
+  const headers: Record<string, string> = { [MCP_BRIDGE_HEADER]: randomUUID() }
+  if (token) headers["Authorization"] = `Bearer ${token}`
   const upstreamTransport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers,
       redirect: "manual",
     },
     fetch: sameOriginMcpFetch(endpoint.origin),
@@ -123,11 +135,24 @@ export async function runMcpBridge(options: McpBridgeOptions): Promise<void> {
     downstream.setRequestHandler(ListToolsRequestSchema, (request, extra) =>
       upstream.listTools(request.params, { signal: extra.signal })
     )
-    downstream.setRequestHandler(CallToolRequestSchema, (request, extra) =>
-      upstream.callTool(request.params, CallToolResultSchema, {
+    downstream.setRequestHandler(CallToolRequestSchema, (request, extra) => {
+      // Relay progress under the client's own token; cancellation travels
+      // upstream through the abort signal.
+      const progressToken = request.params._meta?.progressToken
+      return upstream.callTool(request.params, CallToolResultSchema, {
         signal: extra.signal,
+        onprogress:
+          progressToken === undefined
+            ? undefined
+            : (progress) =>
+                void extra
+                  .sendNotification({
+                    method: "notifications/progress",
+                    params: { ...progress, progressToken },
+                  })
+                  .catch(() => undefined),
       })
-    )
+    })
     const stdio = new StdioServerTransport(input)
     stdio.onclose = () => void close()
     // Client.onclose is the lifecycle seam; connect owns transport callbacks.

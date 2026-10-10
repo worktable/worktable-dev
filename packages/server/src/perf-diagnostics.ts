@@ -36,7 +36,8 @@ const round = (ms: number) => Math.round(ms * 100) / 100
 
 /** A fixed-size log-bucket histogram. Recording never allocates. */
 export class LatencyHistogram {
-  private readonly counts = new Uint32Array(BUCKETS)
+  // Float64 counts stay exact to 2^53, so a lifetime histogram never wraps.
+  private readonly counts = new Float64Array(BUCKETS)
   count = 0
   sum = 0
   max = 0

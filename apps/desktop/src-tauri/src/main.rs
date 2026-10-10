@@ -81,7 +81,7 @@ const SWITCH_WORKSPACE_MENU_ID: &str = "workspace.switch";
 const REVEAL_WORKSPACE_MENU_ID: &str = "workspace.reveal";
 const CLOUD_SIGN_OUT_MENU_ID: &str = "workspace.cloud-sign-out";
 const CLOUD_END_SESSION_MENU_ID: &str = "workspace.cloud-end-session";
-const CHECK_UPDATES_MENU_ID: &str = "help.check-updates";
+const CHECK_UPDATES_MENU_ID: &str = "app.check-updates";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(25);
 const SEED_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_READ_TIMEOUT: Duration = Duration::from_millis(700);
@@ -96,6 +96,9 @@ const DESKTOP_SKILL_TARGET_IDS: [&str; 2] = ["claude", "agents"];
 const DESKTOP_SKILL_OPERATIONS: [&str; 4] = ["install", "update", "repair", "remove"];
 #[cfg(all(target_os = "macos", not(feature = "staging")))]
 const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(10);
+/// How often the running app asks whether an automatic check is due.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+const AUTOMATIC_UPDATE_POLL_INTERVAL: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -837,7 +840,7 @@ fn desktop_mark_shell_ready(webview: Webview, app: AppHandle) -> Result<(), Stri
     if let Err(error) = complete_healthy_desktop_boot(&app) {
         eprintln!("[Worktable Desktop] failed to finish the healthy boot transition: {error}");
     }
-    schedule_automatic_update_check(app);
+    schedule_automatic_update_checks(app);
     Ok(())
 }
 
@@ -965,8 +968,7 @@ async fn desktop_install_update(webview: Webview, app: AppHandle) -> Result<(), 
 #[tauri::command]
 fn desktop_dismiss_update(webview: Webview, app: AppHandle) -> Result<(), String> {
     require_trusted_surface(&webview)?;
-    app.state::<DesktopUpdaterState>()
-        .dismiss(now_epoch_seconds()?)?;
+    app.state::<DesktopUpdaterState>().dismiss()?;
     restore_workspace_surface(&app)
 }
 
@@ -5106,6 +5108,10 @@ fn show_updater_surface_for_check<R: Runtime>(
 
 async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
     let updater_state = app.state::<DesktopUpdaterState>();
+    // An update waiting for restart needs no network: show it again.
+    if manual && updater_state.reveal_ready_update()? {
+        return show_updater_surface(&app);
+    }
     // Resolve the only fallible bookkeeping input before entering the
     // operation state. Every later early return records a terminal status.
     let checked_at = now_epoch_seconds()?;
@@ -5132,6 +5138,10 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
 
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     {
+        eprintln!(
+            "[Worktable Desktop] checking for updates ({})",
+            if manual { "manual" } else { "automatic" }
+        );
         let result = async {
             let updater = app
                 .updater()
@@ -5142,17 +5152,26 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
                 .map_err(|error| format!("Could not check for a signed Worktable update: {error}"))
         }
         .await;
-        let visible = updater_state.apply_check_result_if_current(|| match result {
-            Ok(Some(update)) => updater_state.record_available(
-                update.version,
-                update.body,
-                update.date.map(|date| date.to_string()),
-                checked_at,
-                manual,
-            ),
+        let to_download = updater_state.apply_check_result_if_current(|| match result {
+            Ok(Some(update)) => {
+                eprintln!(
+                    "[Worktable Desktop] Worktable {} is available",
+                    update.version
+                );
+                updater_state
+                    .record_update_found(
+                        update.version.clone(),
+                        update.body.clone(),
+                        update.date.map(|date| date.to_string()),
+                        checked_at,
+                        manual,
+                    )
+                    .map(|needs_download| needs_download.then_some(update))
+            }
             Ok(None) => {
+                eprintln!("[Worktable Desktop] no newer Desktop release");
                 updater_state.record_no_update(manual, checked_at)?;
-                Ok(false)
+                Ok(None)
             }
             Err(message) => {
                 eprintln!("[Worktable Desktop] update check failed: {message}");
@@ -5161,16 +5180,188 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
                     checked_at,
                     "Could not check for updates. Check your connection and try again.".into(),
                 )?;
-                Ok(false)
+                Ok(None)
             }
         })?;
-        let Some(visible) = visible else {
-            return Ok(());
-        };
-        if visible {
-            show_updater_surface_for_check(&app, &updater_state, checked_at)?;
+        if let Some(Some(update)) = to_download {
+            prepare_update(&app, update).await;
         }
+        sync_update_menu(&app);
         Ok(())
+    }
+}
+
+/// Downloads and verifies an update in the background, then keeps it on disk
+/// until the app restarts or quits.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+async fn prepare_update(app: &AppHandle, update: tauri_plugin_updater::Update) {
+    let updater_state = app.state::<DesktopUpdaterState>();
+    let progress_state = app.clone();
+    let downloaded = update
+        .download(
+            move |chunk, total| {
+                let _ = progress_state
+                    .state::<DesktopUpdaterState>()
+                    .record_download_progress(chunk, total);
+            },
+            || {},
+        )
+        .await
+        .map_err(|error| format!("update download failed: {error}"));
+    let pending = app.state::<PendingNativeUpdate>();
+    // Publish both halves under the installer lock, so a restart or quit
+    // either sees the complete prepared update or none of it.
+    let prepared = downloaded.and_then(|bytes| {
+        let mut native = pending
+            .0
+            .lock()
+            .map_err(|_| "pending Desktop update lock is poisoned".to_string())?;
+        let prepared = updater_state.record_prepared(
+            &update.version,
+            &bytes,
+            bundle_installs_without_authorization(),
+        )?;
+        *native = Some(update.clone());
+        Ok(prepared)
+    });
+    match &prepared {
+        Ok(prepared) => eprintln!(
+            "[Worktable Desktop] downloaded and verified Worktable {}; it installs on {}",
+            prepared.version,
+            if prepared.installs_on_quit {
+                "restart or quit"
+            } else {
+                "restart"
+            }
+        ),
+        Err(error) => eprintln!("[Worktable Desktop] {error}"),
+    }
+    if prepared.is_err() {
+        let _ = set_pending_native_update(&pending, None);
+        let _ = updater_state.take_prepared();
+        if let Err(error) = updater_state.record_download_failure(
+            now_epoch_seconds().unwrap_or(0),
+            "Could not download and verify the update. Check your connection and try again.".into(),
+        ) {
+            eprintln!("[Worktable Desktop] could not record the update failure: {error}");
+        }
+    }
+}
+
+/// The plugin's installer for the prepared archive. Only one caller takes it.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+#[derive(Default)]
+struct PendingNativeUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+fn set_pending_native_update(
+    pending: &PendingNativeUpdate,
+    update: Option<tauri_plugin_updater::Update>,
+) -> Result<(), String> {
+    *pending
+        .0
+        .lock()
+        .map_err(|_| "pending Desktop update lock is poisoned".to_string())? = update;
+    Ok(())
+}
+
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+fn take_prepared_update<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<(updater::PreparedUpdate, tauri_plugin_updater::Update)>, String> {
+    // Restart now and quit can race; the installer lock hands both halves to
+    // exactly one of them.
+    let pending = app.state::<PendingNativeUpdate>();
+    let mut native = pending
+        .0
+        .lock()
+        .map_err(|_| "pending Desktop update lock is poisoned".to_string())?;
+    let prepared = app.state::<DesktopUpdaterState>().take_prepared()?;
+    Ok(prepared.zip(native.take()))
+}
+
+/// The plugin replaces the bundle by renaming it. When that needs an
+/// administrator it asks through the main thread, which a quitting app no
+/// longer runs, so quit-time installs are limited to writable bundles.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+fn bundle_installs_without_authorization() -> bool {
+    let Some(bundle) = std::env::current_exe().ok().and_then(|executable| {
+        tauri_plugin_updater::extract_path_from_executable(&executable).ok()
+    }) else {
+        return false;
+    };
+    directory_is_writable(&bundle) && bundle.parent().is_some_and(directory_is_writable)
+}
+
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+fn directory_is_writable(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `path` is a valid NUL-terminated C string for the call.
+    unsafe { libc::access(path.as_ptr(), libc::W_OK) == 0 }
+}
+
+/// Installs a prepared update while the app exits, so quitting finishes it.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+fn install_prepared_update_on_exit<R: Runtime>(app: &AppHandle<R>) {
+    let (prepared, update) = match take_prepared_update(app) {
+        Ok(Some(pending)) => pending,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("[Worktable Desktop] {error}");
+            return;
+        }
+    };
+    if !prepared.installs_on_quit || !bundle_installs_without_authorization() {
+        return;
+    }
+    eprintln!(
+        "[Worktable Desktop] installing Worktable {} on quit",
+        prepared.version
+    );
+    if let Some(window) = app.get_window(WINDOW_LABEL) {
+        let _ = window.hide();
+    }
+    let result = updater::read_prepared_archive(&prepared).and_then(|bytes| {
+        let updater_state = app.state::<DesktopUpdaterState>();
+        updater_state.begin_install(&prepared.version, now_rfc3339()?)?;
+        update
+            .install(bytes)
+            .map_err(|error| format!("update installation failed: {error}"))
+    });
+    if let Err(error) = result {
+        // The recovery marker, when written, reports this on the next launch.
+        eprintln!("[Worktable Desktop] could not install the update on quit: {error}");
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), feature = "staging"))]
+fn install_prepared_update_on_exit<R: Runtime>(_app: &AppHandle<R>) {}
+
+/// Labels the update menu item for the current state.
+#[cfg_attr(any(not(target_os = "macos"), feature = "staging"), allow(dead_code))]
+fn sync_update_menu<R: Runtime>(app: &AppHandle<R>) {
+    let ready = app
+        .state::<DesktopUpdaterState>()
+        .snapshot()
+        .is_ok_and(|status| status.state == "ready");
+    let label = if ready {
+        "Restart to Update…"
+    } else {
+        "Check for Updates…"
+    };
+    let item = app
+        .menu()
+        .and_then(|menu| menu.items().ok())
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.as_submenu().cloned())
+        .find_map(|submenu| submenu.get(CHECK_UPDATES_MENU_ID))
+        .and_then(|item| item.as_menuitem().cloned());
+    if let Some(item) = item {
+        let _ = item.set_text(label);
     }
 }
 
@@ -5190,69 +5381,24 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
 
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     {
-        let expected_version = updater_state
-            .available_version()?
-            .ok_or_else(|| "there is no confirmed Desktop update to install".to_string())?;
-        let updater = match app.updater() {
-            Ok(updater) => updater,
-            Err(error) => {
-                eprintln!("[Worktable Desktop] updater unavailable: {error}");
-                updater_state
-                    .record_install_failure("Could not start the update. Try again.".into())?;
-                return Ok(());
-            }
-        };
-        let checked_update = match updater.check().await {
-            Ok(update) => update,
-            Err(error) => {
-                eprintln!("[Worktable Desktop] could not confirm update: {error}");
-                updater_state.record_install_failure(
-                    "Could not prepare the update. Check your connection and try again.".into(),
-                )?;
-                return Ok(());
-            }
-        };
-        let Some(update) = checked_update else {
+        let Some((prepared, update)) = take_prepared_update(&app)? else {
             updater_state.record_install_failure(
-                "The confirmed update is no longer available. Check again before retrying.".into(),
+                "The update is no longer ready. Check for updates again.".into(),
             )?;
+            sync_update_menu(&app);
             return Ok(());
         };
-        if update.version != expected_version {
-            updater_state.record_available(
-                update.version,
-                update.body,
-                update.date.map(|date| date.to_string()),
-                now_epoch_seconds()?,
-                true,
-            )?;
-            return Ok(());
-        }
-
-        updater_state.begin_download(&expected_version)?;
-        let progress_state = app.clone();
-        let bytes = match update
-            .download(
-                move |chunk, total| {
-                    let _ = progress_state
-                        .state::<DesktopUpdaterState>()
-                        .record_download_progress(chunk, total);
-                },
-                || {},
-            )
-            .await
-        {
+        let bytes = match updater::read_prepared_archive(&prepared) {
             Ok(bytes) => bytes,
             Err(error) => {
-                eprintln!("[Worktable Desktop] update download failed: {error}");
+                eprintln!("[Worktable Desktop] {error}");
                 updater_state.record_install_failure(
-                    "Could not download and verify the update. Check your connection and try again."
-                        .into(),
+                    "Could not install the update. Check for updates again.".into(),
                 )?;
+                sync_update_menu(&app);
                 return Ok(());
             }
         };
-
         let attempted_at = match now_rfc3339() {
             Ok(attempted_at) => attempted_at,
             Err(error) => {
@@ -5260,14 +5406,25 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
                 updater_state.record_install_failure(
                     "Could not finish preparing the update. Try again.".into(),
                 )?;
+                sync_update_menu(&app);
                 return Ok(());
             }
         };
-        updater_state.begin_install(&expected_version, attempted_at)?;
+        if let Err(error) = updater_state.begin_install(&prepared.version, attempted_at) {
+            // The prepared update is already taken, so the state must not
+            // keep offering it.
+            eprintln!("[Worktable Desktop] could not start the update install: {error}");
+            updater_state.record_install_failure(
+                "Could not finish preparing the update. Try again.".into(),
+            )?;
+            sync_update_menu(&app);
+            return Ok(());
+        }
         if let Err(error) = update.install(bytes) {
             eprintln!("[Worktable Desktop] update installation failed: {error}");
             updater_state
                 .record_install_failure("Could not install the update. Try again.".into())?;
+            sync_update_menu(&app);
             return Ok(());
         }
 
@@ -5277,11 +5434,14 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
     }
 }
 
-fn schedule_automatic_update_check(app: AppHandle) {
+/// Checks on launch and then every few hours while the app keeps running,
+/// including while its window is hidden. The updater state decides whether
+/// each tick is due, including backoff after failures.
+fn schedule_automatic_update_checks(app: AppHandle) {
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     if !app
         .state::<DesktopUpdaterState>()
-        .schedule_automatic_check_once()
+        .schedule_automatic_checks_once()
     {
         return;
     }
@@ -5289,21 +5449,23 @@ fn schedule_automatic_update_check(app: AppHandle) {
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(AUTOMATIC_UPDATE_CHECK_DELAY).await;
-        let now = match now_epoch_seconds() {
-            Ok(now) => now,
-            Err(error) => {
-                eprintln!("[Worktable Desktop] automatic update check skipped: {error}");
-                return;
+        loop {
+            let due = now_epoch_seconds().and_then(|now| {
+                app.state::<DesktopUpdaterState>()
+                    .should_automatically_check(now)
+            });
+            match due {
+                Ok(true) => {
+                    if let Err(error) = run_updater_check(app.clone(), false).await {
+                        eprintln!("[Worktable Desktop] automatic update check failed: {error}");
+                    }
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    eprintln!("[Worktable Desktop] automatic update check skipped: {error}");
+                }
             }
-        };
-        let should_check = app
-            .state::<DesktopUpdaterState>()
-            .should_automatically_check(now)
-            .unwrap_or(false);
-        if should_check {
-            if let Err(error) = run_updater_check(app, false).await {
-                eprintln!("[Worktable Desktop] automatic update check failed: {error}");
-            }
+            tokio::time::sleep(AUTOMATIC_UPDATE_POLL_INTERVAL).await;
         }
     });
 
@@ -6461,6 +6623,17 @@ fn build_desktop_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     menu.insert(&workspace, 2)?;
     let check_updates =
         MenuItemBuilder::with_id(CHECK_UPDATES_MENU_ID, "Check for Updates…").build(app)?;
+    // macOS apps offer updates in the app menu, right after About.
+    #[cfg(target_os = "macos")]
+    if let Some(app_menu) = menu
+        .items()?
+        .into_iter()
+        .next()
+        .and_then(|item| item.as_submenu().cloned())
+    {
+        app_menu.insert(&check_updates, 1)?;
+        return Ok(menu);
+    }
     let update_separator = PredefinedMenuItem::separator(app)?;
     if let Some(help_menu) = menu
         .get(HELP_SUBMENU_ID)
@@ -6533,7 +6706,9 @@ fn main() {
     }
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .manage(PendingNativeUpdate::default());
     }
     let app = builder
         .plugin(tauri_plugin_opener::init())
@@ -6611,8 +6786,10 @@ fn main() {
                 eprintln!("[Worktable Desktop] failed to reopen window: {error}");
             }
         }
+        // A quit from the app menu or Dock arrives only as `Exit`.
         tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
             stop_local_host_once(app);
+            install_prepared_update_on_exit(app);
         }
         _ => {}
     });

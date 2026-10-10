@@ -2,6 +2,7 @@
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -15,9 +16,15 @@ use std::{
 };
 
 const UPDATE_STATE_SCHEMA_VERSION: u8 = 1;
-const AUTOMATIC_CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
+/// How long a successful check stays current, matching the server's checker.
+const AUTOMATIC_CHECK_INTERVAL_SECS: u64 = 6 * 60 * 60;
+/// Retry cadence after consecutive failed automatic checks or downloads.
+const AUTOMATIC_RETRY_DELAYS_SECS: [u64; 4] = [15 * 60, 60 * 60, 3 * 60 * 60, 6 * 60 * 60];
 const UPDATE_STATE_FILE: &str = "desktop-updater-state.json";
 const UPDATE_RECOVERY_FILE: &str = "desktop-update-recovery.json";
+/// Verified archives waiting for a restart or quit. Owned by one process, so a
+/// new launch clears whatever an earlier one left behind.
+const UPDATE_DOWNLOAD_DIR: &str = "desktop-update-download";
 const RELEASE_BASE_URL: &str = "https://worktable.dev/releases";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -33,9 +40,9 @@ pub struct UpdateAttempt {
 #[serde(rename_all = "camelCase")]
 struct PersistedUpdaterState {
     schema_version: u8,
+    /// The last check that reached the release feed. Failed checks are not
+    /// recorded, so an offline launch never postpones the next attempt.
     last_checked_at: Option<u64>,
-    dismissed_version: Option<String>,
-    dismissed_at: Option<u64>,
 }
 
 impl Default for PersistedUpdaterState {
@@ -43,10 +50,25 @@ impl Default for PersistedUpdaterState {
         Self {
             schema_version: UPDATE_STATE_SCHEMA_VERSION,
             last_checked_at: None,
-            dismissed_version: None,
-            dismissed_at: None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AutomaticFailures {
+    count: usize,
+    last_at: Option<u64>,
+}
+
+/// A downloaded, signature-verified update archive on disk. The digest is
+/// taken from the verified bytes and checked again before installation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreparedUpdate {
+    pub version: String,
+    /// Whether quitting can install it without asking for an administrator.
+    pub installs_on_quit: bool,
+    archive_path: PathBuf,
+    sha256: [u8; 32],
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -95,8 +117,11 @@ pub struct DesktopUpdaterState {
     persisted: Mutex<PersistedUpdaterState>,
     state_path: Mutex<Option<PathBuf>>,
     recovery_path: Mutex<Option<PathBuf>>,
+    download_root: Mutex<Option<PathBuf>>,
+    prepared: Mutex<Option<PreparedUpdate>>,
+    automatic_failures: Mutex<AutomaticFailures>,
     operation_in_progress: AtomicBool,
-    automatic_check_scheduled: AtomicBool,
+    automatic_checks_scheduled: AtomicBool,
     workspace_hidden_by_update: AtomicBool,
     workspace_visibility_transition: Mutex<()>,
     check_result_invalidated: AtomicBool,
@@ -110,8 +135,11 @@ impl Default for DesktopUpdaterState {
             persisted: Mutex::new(PersistedUpdaterState::default()),
             state_path: Mutex::new(None),
             recovery_path: Mutex::new(None),
+            download_root: Mutex::new(None),
+            prepared: Mutex::new(None),
+            automatic_failures: Mutex::new(AutomaticFailures::default()),
             operation_in_progress: AtomicBool::new(false),
-            automatic_check_scheduled: AtomicBool::new(false),
+            automatic_checks_scheduled: AtomicBool::new(false),
             workspace_hidden_by_update: AtomicBool::new(false),
             workspace_visibility_transition: Mutex::new(()),
             check_result_invalidated: AtomicBool::new(false),
@@ -124,6 +152,10 @@ impl DesktopUpdaterState {
     pub fn initialize(&self, app_data_root: &Path, current_version: &str) -> Result<(), String> {
         let path = app_data_root.join(UPDATE_STATE_FILE);
         let recovery_path = app_data_root.join(UPDATE_RECOVERY_FILE);
+        let download_root = app_data_root.join(UPDATE_DOWNLOAD_DIR);
+        if let Err(error) = remove_download_root(&download_root) {
+            eprintln!("[Worktable Desktop] {error}");
+        }
         let persisted = match read_persisted_state(&path) {
             Ok(persisted) => persisted,
             Err(error) => {
@@ -175,6 +207,11 @@ impl DesktopUpdaterState {
             .lock()
             .map_err(|_| "desktop updater recovery path lock is poisoned".to_string())? =
             Some(recovery_path);
+        *self
+            .download_root
+            .lock()
+            .map_err(|_| "desktop updater download path lock is poisoned".to_string())? =
+            Some(download_root);
         Ok(())
     }
 
@@ -227,12 +264,18 @@ impl DesktopUpdaterState {
                 Self::set_checking_status(&mut status, true);
                 Ok(None)
             }
+            // A manual check joins a background download already under way.
+            Err(_) if manual && status.state == "downloading" => {
+                status.surface_visible = true;
+                status.can_dismiss = true;
+                Ok(None)
+            }
             Err(_) => Err("another Desktop update operation is already running".to_string()),
         }
     }
 
-    pub fn schedule_automatic_check_once(&self) -> bool {
-        self.automatic_check_scheduled
+    pub fn schedule_automatic_checks_once(&self) -> bool {
+        self.automatic_checks_scheduled
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
     }
@@ -283,16 +326,39 @@ impl DesktopUpdaterState {
     }
 
     pub fn should_automatically_check(&self, now: u64) -> Result<bool, String> {
-        if read_update_attempt(&self.recovery_path()?)?.is_some() {
+        // A failed install waits for the person to choose recovery. A marker
+        // left by a version that did start no longer blocks updates.
+        let current_version = self.snapshot()?.current_version;
+        if read_update_attempt(&self.recovery_path()?)?.is_some_and(|attempt| {
+            !version_reaches_or_exceeds(&current_version, &attempt.to_version)
+        }) {
             return Ok(false);
         }
-        let persisted = self
+        if self.prepared_version()?.is_some() {
+            return Ok(false);
+        }
+        let last_checked_at = self
             .persisted
             .lock()
-            .map_err(|_| "desktop updater persistence lock is poisoned".to_string())?;
-        Ok(persisted
-            .last_checked_at
-            .is_none_or(|checked| !timestamp_is_within_daily_window(now, checked)))
+            .map_err(|_| "desktop updater persistence lock is poisoned".to_string())?
+            .last_checked_at;
+        if last_checked_at
+            .is_some_and(|checked| timestamp_is_within(now, checked, AUTOMATIC_CHECK_INTERVAL_SECS))
+        {
+            return Ok(false);
+        }
+        let failures = *self
+            .automatic_failures
+            .lock()
+            .map_err(|_| "desktop updater failure lock is poisoned".to_string())?;
+        Ok(match (failures.count, failures.last_at) {
+            (0, _) | (_, None) => true,
+            (count, Some(failed_at)) => {
+                let delay = AUTOMATIC_RETRY_DELAYS_SECS
+                    [(count - 1).min(AUTOMATIC_RETRY_DELAYS_SECS.len() - 1)];
+                !timestamp_is_within(now, failed_at, delay)
+            }
+        })
     }
 
     #[cfg(test)]
@@ -321,7 +387,7 @@ impl DesktopUpdaterState {
     }
 
     pub fn record_no_update(&self, manual: bool, checked_at: u64) -> Result<(), String> {
-        self.record_check_time(checked_at);
+        self.record_check_success(checked_at)?;
         let current_version = self.snapshot()?.current_version;
         let mut status = self
             .status
@@ -348,7 +414,9 @@ impl DesktopUpdaterState {
         Ok(())
     }
 
-    pub fn record_available(
+    /// Records a newer release from the feed. Returns whether it still needs
+    /// downloading; a release already prepared goes straight to `ready`.
+    pub fn record_update_found(
         &self,
         version: String,
         notes: Option<String>,
@@ -356,53 +424,65 @@ impl DesktopUpdaterState {
         checked_at: u64,
         manual: bool,
     ) -> Result<bool, String> {
+        // The feed answered, but a failed download run continues until the
+        // archive is verified, so repeated failures keep backing off.
         self.record_check_time(checked_at);
+        let prepared = self
+            .prepared
+            .lock()
+            .map_err(|_| "desktop updater prepared lock is poisoned".to_string())?
+            .clone()
+            .filter(|prepared| prepared.version == version);
         let mut status = self
             .status
             .lock()
             .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
-        let manual = manual || status.surface_visible;
+        let surface_visible = manual || status.surface_visible;
         let recovery = status.recovery.clone();
-        let dismissed = {
-            let persisted = self
-                .persisted
-                .lock()
-                .map_err(|_| "desktop updater persistence lock is poisoned".to_string())?;
-            persisted.dismissed_version.as_deref() == Some(version.as_str())
-                && persisted.dismissed_at.is_some_and(|dismissed_at| {
-                    timestamp_is_within_daily_window(checked_at, dismissed_at)
-                })
-        };
-        if dismissed && !manual {
-            let current_version = status.current_version.clone();
-            *status = DesktopUpdaterStatus::idle(current_version);
-            return Ok(false);
-        }
-
-        status.state = "available";
-        status.surface_visible = true;
-        status.message = format!("Worktable {version} is ready to download.");
-        status.available_version = Some(version);
+        status.surface_visible = surface_visible;
+        status.available_version = Some(version.clone());
         status.notes = notes.filter(|value| !value.trim().is_empty());
         status.published_at = published_at;
-        status.downloaded_bytes = 0;
-        status.total_bytes = None;
         status.can_check = false;
-        status.can_install = true;
-        status.can_dismiss = true;
+        if let Some(prepared) = &prepared {
+            Self::set_ready_status(&mut status, prepared);
+        } else {
+            status.state = "downloading";
+            status.message = format!("Downloading Worktable {version}…");
+            status.downloaded_bytes = 0;
+            status.total_bytes = None;
+            status.can_install = false;
+            // Downloads continue in the background once the surface closes.
+            status.can_dismiss = surface_visible;
+        }
         if let Some(recovery) = recovery {
             Self::apply_recovery_context(&mut status, recovery);
         }
-        Ok(true)
+        Ok(prepared.is_none())
+    }
+
+    fn set_ready_status(status: &mut DesktopUpdaterStatus, prepared: &PreparedUpdate) {
+        let version = &prepared.version;
+        status.state = "ready";
+        status.message = if prepared.installs_on_quit {
+            format!(
+                "Restart now to finish updating to {version}, or Worktable will update the next time you quit."
+            )
+        } else {
+            format!("Restart now to finish updating to {version}.")
+        };
+        status.can_check = false;
+        status.can_install = true;
+        status.can_dismiss = true;
     }
 
     pub fn record_check_failure(
         &self,
         manual: bool,
-        checked_at: u64,
+        failed_at: u64,
         message: String,
     ) -> Result<(), String> {
-        self.record_check_time(checked_at);
+        self.record_automatic_failure(failed_at)?;
         let current_version = self.snapshot()?.current_version;
         let mut status = self
             .status
@@ -426,26 +506,6 @@ impl DesktopUpdaterState {
         Ok(())
     }
 
-    pub fn begin_download(&self, version: &str) -> Result<(), String> {
-        let mut status = self
-            .status
-            .lock()
-            .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
-        if status.available_version.as_deref() != Some(version) {
-            return Err(
-                "the available Desktop update changed; review it before downloading".into(),
-            );
-        }
-        status.state = "downloading";
-        status.surface_visible = true;
-        status.message = format!("Downloading Worktable {version}…");
-        status.downloaded_bytes = 0;
-        status.total_bytes = None;
-        status.can_install = false;
-        status.can_dismiss = false;
-        Ok(())
-    }
-
     #[cfg(all(target_os = "macos", not(feature = "staging")))]
     pub fn record_download_progress(
         &self,
@@ -459,6 +519,83 @@ impl DesktopUpdaterState {
         status.downloaded_bytes = status.downloaded_bytes.saturating_add(chunk_bytes as u64);
         status.total_bytes = total_bytes.or(status.total_bytes);
         Ok(())
+    }
+
+    /// Stores verified update bytes privately and marks the update ready.
+    pub fn record_prepared(
+        &self,
+        version: &str,
+        bytes: &[u8],
+        installs_on_quit: bool,
+    ) -> Result<PreparedUpdate, String> {
+        Version::parse(version)
+            .map_err(|_| "the prepared Desktop update version is not valid".to_string())?;
+        self.reset_automatic_failures()?;
+        let download_root = self
+            .download_root
+            .lock()
+            .map_err(|_| "desktop updater download path lock is poisoned".to_string())?
+            .clone()
+            .ok_or_else(|| "desktop updater is not initialized".to_string())?;
+        // Only one prepared archive is kept; a newer download replaces it.
+        self.take_prepared()?;
+        remove_download_root(&download_root)?;
+        let archive_name = format!("worktable-{version}.app.tar.gz");
+        let archive_path = download_root.join(&archive_name);
+        write_private_bytes(
+            &archive_path,
+            bytes,
+            &archive_name,
+            "Desktop update archive",
+        )?;
+        let prepared = PreparedUpdate {
+            version: version.to_string(),
+            installs_on_quit,
+            archive_path,
+            sha256: Sha256::digest(bytes).into(),
+        };
+        *self
+            .prepared
+            .lock()
+            .map_err(|_| "desktop updater prepared lock is poisoned".to_string())? =
+            Some(prepared.clone());
+        let mut status = self
+            .status
+            .lock()
+            .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
+        Self::set_ready_status(&mut status, &prepared);
+        Ok(prepared)
+    }
+
+    pub fn prepared_version(&self) -> Result<Option<String>, String> {
+        Ok(self
+            .prepared
+            .lock()
+            .map_err(|_| "desktop updater prepared lock is poisoned".to_string())?
+            .as_ref()
+            .map(|prepared| prepared.version.clone()))
+    }
+
+    /// Hands the prepared update to exactly one installer.
+    pub fn take_prepared(&self) -> Result<Option<PreparedUpdate>, String> {
+        Ok(self
+            .prepared
+            .lock()
+            .map_err(|_| "desktop updater prepared lock is poisoned".to_string())?
+            .take())
+    }
+
+    /// Shows the ready update again, for the menu's Restart to Update item.
+    pub fn reveal_ready_update(&self) -> Result<bool, String> {
+        let mut status = self
+            .status
+            .lock()
+            .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
+        if status.state != "ready" {
+            return Ok(false);
+        }
+        status.surface_visible = true;
+        Ok(true)
     }
 
     pub fn begin_install(&self, version: &str, attempted_at: String) -> Result<(), String> {
@@ -480,7 +617,6 @@ impl DesktopUpdaterState {
             .lock()
             .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
         status.state = "installing";
-        status.surface_visible = true;
         status.message = format!("Installing Worktable {version}…");
         status.can_check = false;
         status.can_install = false;
@@ -499,6 +635,26 @@ impl DesktopUpdaterState {
             }
         };
         self.record_recoverable_error(message, recovery)
+    }
+
+    /// A failed download surfaces only when someone is watching; background
+    /// attempts retry on the automatic schedule.
+    pub fn record_download_failure(&self, failed_at: u64, message: String) -> Result<(), String> {
+        // The feed answered but the archive did not arrive; retry on the
+        // failure schedule rather than waiting out a successful check.
+        if let Err(error) = self.update_persisted(|persisted| {
+            persisted.last_checked_at = None;
+        }) {
+            eprintln!(
+                "[Worktable Desktop] could not reset the update check after a failed download: {error}"
+            );
+        }
+        let surface_visible = self.snapshot()?.surface_visible;
+        if surface_visible {
+            self.record_automatic_failure(failed_at)?;
+            return self.record_install_failure(message);
+        }
+        self.record_check_failure(false, failed_at, message)
     }
 
     fn record_recoverable_error(
@@ -529,44 +685,42 @@ impl DesktopUpdaterState {
         status.recovery = Some(recovery);
     }
 
-    pub fn dismiss(&self, now: u64) -> Result<(), String> {
-        let (current_version, available_version) = {
-            let status = self
-                .status
-                .lock()
-                .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
-            if !status.can_dismiss {
-                return Err(
-                    "the Desktop update cannot be dismissed while an operation is in progress"
-                        .to_string(),
-                );
-            }
-            (
-                status.current_version.clone(),
-                status.available_version.clone(),
-            )
-        };
-        let persistence_result = self.update_persisted(|persisted| {
-            if let Some(version) = available_version {
-                persisted.dismissed_version = Some(version);
-                persisted.dismissed_at = Some(now);
-            }
-        });
-        *self
+    /// Closes the update surface. A download in progress or an update waiting
+    /// for restart carries on behind it.
+    pub fn dismiss(&self) -> Result<(), String> {
+        let mut status = self
             .status
             .lock()
-            .map_err(|_| "desktop updater status lock is poisoned".to_string())? =
-            DesktopUpdaterStatus::idle(current_version);
-        if let Err(error) = persistence_result {
-            eprintln!(
-                "[Worktable Desktop] dismissed the update prompt in memory but could not persist the dismissal: {error}"
+            .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
+        if !status.can_dismiss {
+            return Err(
+                "the Desktop update cannot be dismissed while an operation is in progress"
+                    .to_string(),
             );
         }
+        if matches!(status.state, "downloading" | "ready") {
+            status.surface_visible = false;
+            return Ok(());
+        }
+        let current_version = status.current_version.clone();
+        *status = DesktopUpdaterStatus::idle(current_version);
         Ok(())
     }
 
-    pub fn available_version(&self) -> Result<Option<String>, String> {
-        Ok(self.snapshot()?.available_version)
+    /// A check that found no update, or a verified download, ends a failure run.
+    fn record_check_success(&self, checked_at: u64) -> Result<(), String> {
+        self.reset_automatic_failures()?;
+        self.record_check_time(checked_at);
+        Ok(())
+    }
+
+    fn reset_automatic_failures(&self) -> Result<(), String> {
+        *self
+            .automatic_failures
+            .lock()
+            .map_err(|_| "desktop updater failure lock is poisoned".to_string())? =
+            AutomaticFailures::default();
+        Ok(())
     }
 
     fn record_check_time(&self, checked_at: u64) {
@@ -577,6 +731,16 @@ impl DesktopUpdaterState {
                 "[Worktable Desktop] completed the update check in memory but could not persist its timestamp: {error}"
             );
         }
+    }
+
+    fn record_automatic_failure(&self, failed_at: u64) -> Result<(), String> {
+        let mut failures = self
+            .automatic_failures
+            .lock()
+            .map_err(|_| "desktop updater failure lock is poisoned".to_string())?;
+        failures.count = failures.count.saturating_add(1);
+        failures.last_at = Some(failed_at);
+        Ok(())
     }
 
     fn update_persisted(
@@ -618,6 +782,21 @@ impl Drop for UpdaterOperationGuard<'_> {
     }
 }
 
+/// Reads a prepared archive back, refusing bytes that changed after download.
+pub fn read_prepared_archive(prepared: &PreparedUpdate) -> Result<Vec<u8>, String> {
+    let bytes = fs::read(&prepared.archive_path).map_err(|error| {
+        format!(
+            "failed to read the prepared Desktop update {}: {error}",
+            prepared.archive_path.display()
+        )
+    })?;
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    if digest != prepared.sha256 {
+        return Err("the prepared Desktop update changed after verification".into());
+    }
+    Ok(bytes)
+}
+
 pub fn now_epoch_seconds() -> Result<u64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -641,8 +820,8 @@ fn version_reaches_or_exceeds(current_version: &str, target_version: &str) -> bo
         .unwrap_or(false)
 }
 
-fn timestamp_is_within_daily_window(now: u64, recorded_at: u64) -> bool {
-    recorded_at <= now && now - recorded_at < AUTOMATIC_CHECK_INTERVAL_SECS
+fn timestamp_is_within(now: u64, recorded_at: u64, window_secs: u64) -> bool {
+    recorded_at <= now && now - recorded_at < window_secs
 }
 
 fn read_persisted_state(path: &Path) -> Result<PersistedUpdaterState, String> {
@@ -674,7 +853,9 @@ fn read_persisted_state(path: &Path) -> Result<PersistedUpdaterState, String> {
 }
 
 fn write_persisted_state(path: &Path, state: &PersistedUpdaterState) -> Result<(), String> {
-    write_private_json(path, state, UPDATE_STATE_FILE, "Desktop update state")
+    let bytes = serde_json::to_vec_pretty(state)
+        .map_err(|error| format!("failed to serialize Desktop update state: {error}"))?;
+    write_private_json(path, &bytes, UPDATE_STATE_FILE, "Desktop update state")
 }
 
 fn read_update_attempt(path: &Path) -> Result<Option<UpdateAttempt>, String> {
@@ -717,9 +898,11 @@ fn validate_update_attempt(attempt: &UpdateAttempt) -> Result<(), String> {
 }
 
 fn write_update_attempt(path: &Path, attempt: &UpdateAttempt) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(attempt)
+        .map_err(|error| format!("failed to serialize Desktop update recovery marker: {error}"))?;
     write_private_json(
         path,
-        attempt,
+        &bytes,
         UPDATE_RECOVERY_FILE,
         "Desktop update recovery marker",
     )
@@ -731,6 +914,17 @@ fn remove_update_attempt(path: &Path) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!(
             "failed to remove Desktop update recovery marker {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn remove_download_root(path: &Path) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to clear prepared Desktop updates {}: {error}",
             path.display()
         )),
     }
@@ -759,7 +953,18 @@ fn quarantine_invalid_state(path: &Path) {
 
 fn write_private_json(
     path: &Path,
-    state: &impl Serialize,
+    bytes: &[u8],
+    file_name: &str,
+    description: &str,
+) -> Result<(), String> {
+    let mut contents = bytes.to_vec();
+    contents.push(b'\n');
+    write_private_bytes(path, &contents, file_name, description)
+}
+
+fn write_private_bytes(
+    path: &Path,
+    bytes: &[u8],
     file_name: &str,
     description: &str,
 ) -> Result<(), String> {
@@ -777,8 +982,6 @@ fn write_private_json(
         process::id(),
         now_epoch_seconds()?
     ));
-    let bytes = serde_json::to_vec_pretty(state)
-        .map_err(|error| format!("failed to serialize {description}: {error}"))?;
     let mut options = OpenOptions::new();
     options.create_new(true).write(true);
     #[cfg(unix)]
@@ -788,8 +991,7 @@ fn write_private_json(
     }
     let result = (|| {
         let mut file = options.open(&temporary)?;
-        file.write_all(&bytes)?;
-        file.write_all(b"\n")?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         fs::rename(&temporary, path)?;
         Ok::<(), std::io::Error>(())
@@ -816,61 +1018,66 @@ mod tests {
         ))
     }
 
+    fn prepare(state: &DesktopUpdaterState, version: &str, checked_at: u64) -> PreparedUpdate {
+        assert!(state
+            .record_update_found(version.into(), None, None, checked_at, false)
+            .unwrap());
+        state
+            .record_prepared(version, b"signed archive", true)
+            .unwrap()
+    }
+
     #[test]
-    fn automatic_checks_are_throttled_for_twenty_four_hours() {
+    fn automatic_checks_repeat_every_six_hours_while_running() {
         let root = temporary_root("throttle");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
-        assert!(state.schedule_automatic_check_once());
-        assert!(!state.schedule_automatic_check_once());
+        assert!(state.schedule_automatic_checks_once());
+        assert!(!state.schedule_automatic_checks_once());
         assert!(state.should_automatically_check(100_000).unwrap());
         state.record_no_update(false, 100_000).unwrap();
-        assert!(!state.should_automatically_check(186_399).unwrap());
-        assert!(state.should_automatically_check(186_400).unwrap());
+        assert!(!state.should_automatically_check(121_599).unwrap());
+        assert!(state.should_automatically_check(121_600).unwrap());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn backward_clock_corrections_expire_checks_and_dismissals() {
+    fn backward_clock_corrections_expire_checks() {
         let root = temporary_root("backward-clock");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
         state.record_no_update(false, 200_000).unwrap();
         assert!(state.should_automatically_check(100_000).unwrap());
-
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 200_000, true)
-            .unwrap());
-        state.dismiss(200_000).unwrap();
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, false)
-            .unwrap());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn dismissed_version_stays_quiet_until_the_next_daily_window() {
-        let root = temporary_root("dismiss");
+    fn failed_checks_back_off_without_postponing_the_next_launch() {
+        let root = temporary_root("backoff");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, false)
-            .unwrap());
-        state.dismiss(100_100).unwrap();
-        assert!(!state
-            .record_available("0.0.46".into(), None, None, 100_200, false)
-            .unwrap());
-        assert!(state
-            .record_available("0.0.47".into(), None, None, 100_300, false)
-            .unwrap());
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_400, true)
-            .unwrap());
+        state
+            .record_check_failure(false, 100_000, "offline".into())
+            .unwrap();
+        assert!(!state.should_automatically_check(100_899).unwrap());
+        assert!(state.should_automatically_check(100_900).unwrap());
+        state
+            .record_check_failure(false, 100_900, "offline".into())
+            .unwrap();
+        assert!(!state.should_automatically_check(104_499).unwrap());
+        assert!(state.should_automatically_check(104_500).unwrap());
+
+        let relaunch = DesktopUpdaterState::default();
+        relaunch.initialize(&root, "0.0.45").unwrap();
+        assert!(relaunch.should_automatically_check(104_501).unwrap());
+
+        state.record_no_update(false, 104_500).unwrap();
+        assert!(!state.should_automatically_check(104_501).unwrap());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn silent_checks_never_own_the_surface_but_available_updates_do() {
+    fn background_updates_never_take_over_the_window() {
         let root = temporary_root("silent-surface");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
@@ -879,46 +1086,168 @@ mod tests {
         let checking = state.snapshot().unwrap();
         assert_eq!(checking.state, "checking");
         assert!(!checking.surface_visible);
-        assert!(!checking.can_dismiss);
-        state.record_no_update(false, 100_000).unwrap();
-        assert!(!state.snapshot().unwrap().surface_visible);
-
-        state.begin_check(false).unwrap();
         state
             .record_check_failure(false, 150_000, "Network unavailable".into())
             .unwrap();
-        let failed = state.snapshot().unwrap();
-        assert_eq!(failed.state, "idle");
-        assert!(!failed.surface_visible);
+        assert_eq!(state.snapshot().unwrap().state, "idle");
+        assert!(!state.snapshot().unwrap().surface_visible);
 
         state.begin_check(false).unwrap();
         assert!(state
-            .record_available("0.0.46".into(), None, None, 200_000, false)
+            .record_update_found("0.0.46".into(), None, None, 200_000, false)
             .unwrap());
-        let available = state.snapshot().unwrap();
-        assert!(available.surface_visible);
-        assert!(available.can_dismiss);
+        let downloading = state.snapshot().unwrap();
+        assert_eq!(downloading.state, "downloading");
+        assert!(!downloading.surface_visible);
+
+        state
+            .record_prepared("0.0.46", b"signed archive", true)
+            .unwrap();
+        let ready = state.snapshot().unwrap();
+        assert_eq!(ready.state, "ready");
+        assert!(!ready.surface_visible);
+        assert!(ready.can_install);
+        assert!(ready.message.contains("next time you quit"));
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn manual_check_cannot_be_dismissed_until_its_result_arrives() {
-        let root = temporary_root("manual-check-dismiss");
+    fn prepared_update_installs_only_its_verified_bytes_once() {
+        let root = temporary_root("prepared");
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        let prepared = prepare(&state, "0.0.46", 100_000);
+        assert!(!state.should_automatically_check(200_000).unwrap());
+        assert_eq!(read_prepared_archive(&prepared).unwrap(), b"signed archive");
+
+        fs::write(&prepared.archive_path, b"tampered archive").unwrap();
+        assert!(read_prepared_archive(&prepared).is_err());
+
+        assert_eq!(state.take_prepared().unwrap(), Some(prepared));
+        assert_eq!(state.take_prepared().unwrap(), None);
+
+        let relaunch = DesktopUpdaterState::default();
+        relaunch.initialize(&root, "0.0.45").unwrap();
+        assert!(!root.join(UPDATE_DOWNLOAD_DIR).exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ready_message_promises_quit_install_only_when_it_can_happen() {
+        let root = temporary_root("quit-install");
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        state
+            .record_update_found("0.0.46".into(), None, None, 100_000, true)
+            .unwrap();
+        state
+            .record_prepared("0.0.46", b"signed archive", false)
+            .unwrap();
+        assert_eq!(
+            state.snapshot().unwrap().message,
+            "Restart now to finish updating to 0.0.46."
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn closing_the_surface_keeps_downloads_and_ready_updates() {
+        let root = temporary_root("dismiss-ready");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
 
         state.begin_check(true).unwrap();
-        let checking = state.snapshot().unwrap();
-        assert!(checking.surface_visible);
-        assert!(!checking.can_dismiss);
-        assert!(state.dismiss(100_000).is_err());
-        assert_eq!(state.snapshot().unwrap().state, "checking");
-
+        assert!(state.dismiss().is_err());
         assert!(state
-            .record_available("0.0.46".into(), None, None, 100_100, true)
+            .record_update_found("0.0.46".into(), None, None, 100_000, true)
             .unwrap());
-        state.dismiss(100_200).unwrap();
+        state.dismiss().unwrap();
+        let downloading = state.snapshot().unwrap();
+        assert_eq!(downloading.state, "downloading");
+        assert!(!downloading.surface_visible);
+
+        state
+            .record_prepared("0.0.46", b"signed archive", true)
+            .unwrap();
+        assert!(state.reveal_ready_update().unwrap());
+        assert!(state.snapshot().unwrap().surface_visible);
+        state.dismiss().unwrap();
+        let ready = state.snapshot().unwrap();
+        assert_eq!(ready.state, "ready");
+        assert!(!ready.surface_visible);
+
+        let manual = state.begin_check_operation(true).unwrap();
+        assert!(manual.is_some());
+        drop(manual);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn already_prepared_release_is_ready_without_downloading_again() {
+        let root = temporary_root("already-prepared");
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        prepare(&state, "0.0.46", 100_000);
+        assert!(!state
+            .record_update_found("0.0.46".into(), None, None, 200_000, true)
+            .unwrap());
+        let ready = state.snapshot().unwrap();
+        assert_eq!(ready.state, "ready");
+        assert!(ready.surface_visible);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn manual_check_reveals_a_background_download() {
+        let root = temporary_root("manual-joins-download");
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        let automatic = state.begin_check_operation(false).unwrap().unwrap();
+        state
+            .record_update_found("0.0.46".into(), None, None, 100_000, false)
+            .unwrap();
+        assert!(!state.snapshot().unwrap().surface_visible);
+
+        assert!(state.begin_check_operation(true).unwrap().is_none());
+        let joined = state.snapshot().unwrap();
+        assert_eq!(joined.state, "downloading");
+        assert!(joined.surface_visible);
+        assert!(joined.can_dismiss);
+        drop(automatic);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn background_download_failure_stays_silent_and_retries() {
+        let root = temporary_root("download-failure");
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        state
+            .record_update_found("0.0.46".into(), None, None, 100_000, false)
+            .unwrap();
+        state
+            .record_download_failure(100_100, "Could not download".into())
+            .unwrap();
         assert_eq!(state.snapshot().unwrap().state, "idle");
+        assert!(!state.snapshot().unwrap().surface_visible);
+        assert!(!state.should_automatically_check(100_999).unwrap());
+        assert!(state.should_automatically_check(101_000).unwrap());
+
+        state
+            .record_update_found("0.0.46".into(), None, None, 101_000, true)
+            .unwrap();
+        state
+            .record_download_failure(101_100, "Could not download".into())
+            .unwrap();
+        let visible = state.snapshot().unwrap();
+        assert_eq!(visible.state, "error");
+        assert!(visible.can_check);
+
+        // A second failed download backs off further instead of restarting
+        // the 15-minute delay.
+        assert!(!state.should_automatically_check(102_000).unwrap());
+        assert!(!state.should_automatically_check(104_699).unwrap());
+        assert!(state.should_automatically_check(104_700).unwrap());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1016,26 +1345,22 @@ mod tests {
         let root = temporary_root("workspace-visibility-overlap");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, true)
-            .unwrap());
+        state.record_no_update(true, 100_000).unwrap();
 
         {
             let _transition = state.lock_workspace_visibility_transition().unwrap();
-            state.dismiss(100_100).unwrap();
+            state.dismiss().unwrap();
             assert!(!state.snapshot().unwrap().surface_visible);
             assert!(!state.take_workspace_hidden_by_update());
         }
 
-        assert!(state
-            .record_available("0.0.47".into(), None, None, 200_000, true)
-            .unwrap());
+        state.record_no_update(true, 200_000).unwrap();
         {
             let _transition = state.lock_workspace_visibility_transition().unwrap();
             assert!(state.snapshot().unwrap().surface_visible);
             state.mark_workspace_hidden_by_update();
         }
-        state.dismiss(200_100).unwrap();
+        state.dismiss().unwrap();
         {
             let _transition = state.lock_workspace_visibility_transition().unwrap();
             assert!(!state.snapshot().unwrap().surface_visible);
@@ -1065,32 +1390,12 @@ mod tests {
     }
 
     #[test]
-    fn dismiss_restores_idle_state_when_persistence_fails() {
-        let root = temporary_root("dismiss-persistence");
-        let state = DesktopUpdaterState::default();
-        state.initialize(&root, "0.0.45").unwrap();
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, false)
-            .unwrap());
-        let state_path = root.join(UPDATE_STATE_FILE);
-        fs::remove_file(&state_path).unwrap();
-        fs::create_dir(&state_path).unwrap();
-
-        state.dismiss(100_100).unwrap();
-        let status = state.snapshot().unwrap();
-        assert_eq!(status.state, "idle");
-        assert!(status.can_check);
-        assert!(!status.can_dismiss);
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn feed_recheck_failure_becomes_a_persistent_recoverable_state() {
         let root = temporary_root("feed-recheck-failure");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
         assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, true)
+            .record_update_found("0.0.46".into(), None, None, 100_000, true)
             .unwrap());
 
         state
@@ -1110,10 +1415,7 @@ mod tests {
         let root = temporary_root("install-marker-failure");
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
-        assert!(state
-            .record_available("0.0.46".into(), None, None, 100_000, true)
-            .unwrap());
-        state.begin_download("0.0.46").unwrap();
+        prepare(&state, "0.0.46", 100_000);
         fs::create_dir(root.join(UPDATE_RECOVERY_FILE)).unwrap();
 
         assert!(state
@@ -1137,10 +1439,7 @@ mod tests {
         let root = temporary_root("recovery");
         let first = DesktopUpdaterState::default();
         first.initialize(&root, "0.0.45").unwrap();
-        first
-            .record_available("0.0.46".into(), None, None, 100_000, false)
-            .unwrap();
-        first.begin_download("0.0.46").unwrap();
+        prepare(&first, "0.0.46", 100_000);
         first
             .begin_install("0.0.46", "2026-07-29T12:34:56Z".into())
             .unwrap();
@@ -1151,7 +1450,7 @@ mod tests {
         assert_eq!(recovery.state, "recovery");
         assert_eq!(recovery.recovery.unwrap().to_version, "0.0.46");
         assert!(!old_boot.should_automatically_check(200_000).unwrap());
-        old_boot.dismiss(200_000).unwrap();
+        old_boot.dismiss().unwrap();
         assert!(!old_boot.should_automatically_check(200_001).unwrap());
         assert!(read_update_attempt(&root.join(UPDATE_RECOVERY_FILE))
             .unwrap()
@@ -1160,6 +1459,9 @@ mod tests {
         let new_boot = DesktopUpdaterState::default();
         new_boot.initialize(&root, "0.0.46").unwrap();
         assert_eq!(new_boot.snapshot().unwrap().state, "idle");
+        // The new version started, so its pending marker no longer holds
+        // back automatic updates while the boot proves itself healthy.
+        assert!(new_boot.should_automatically_check(200_000).unwrap());
         assert!(read_update_attempt(&root.join(UPDATE_RECOVERY_FILE))
             .unwrap()
             .is_some());
@@ -1175,10 +1477,7 @@ mod tests {
         let root = temporary_root("recorded-recovery");
         let first = DesktopUpdaterState::default();
         first.initialize(&root, "0.0.46").unwrap();
-        first
-            .record_available("0.0.47".into(), None, None, 100_000, false)
-            .unwrap();
-        first.begin_download("0.0.47").unwrap();
+        prepare(&first, "0.0.47", 100_000);
         first
             .begin_install("0.0.47", "2026-07-29T12:34:56Z".into())
             .unwrap();
@@ -1197,10 +1496,7 @@ mod tests {
         let root = temporary_root("recovery-recheck");
         let first = DesktopUpdaterState::default();
         first.initialize(&root, "0.0.46").unwrap();
-        first
-            .record_available("0.0.47".into(), None, None, 100_000, false)
-            .unwrap();
-        first.begin_download("0.0.47").unwrap();
+        prepare(&first, "0.0.47", 100_000);
         first
             .begin_install("0.0.47", "2026-07-29T12:34:56Z".into())
             .unwrap();
@@ -1229,12 +1525,12 @@ mod tests {
 
         old_boot.begin_check(true).unwrap();
         assert!(old_boot
-            .record_available("0.0.47".into(), None, None, 200_200, true)
+            .record_update_found("0.0.47".into(), None, None, 200_200, true)
             .unwrap());
-        let available = old_boot.snapshot().unwrap();
-        assert_eq!(available.state, "available");
-        assert_eq!(available.manual_download_url, versioned_dmg_url("0.0.46"));
-        assert_eq!(available.recovery.unwrap().to_version, "0.0.47");
+        let found = old_boot.snapshot().unwrap();
+        assert_eq!(found.state, "downloading");
+        assert_eq!(found.manual_download_url, versioned_dmg_url("0.0.46"));
+        assert_eq!(found.recovery.unwrap().to_version, "0.0.47");
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1273,10 +1569,7 @@ mod tests {
         let root = temporary_root("newer-recovery");
         let first = DesktopUpdaterState::default();
         first.initialize(&root, "0.0.45").unwrap();
-        first
-            .record_available("0.0.46".into(), None, None, 100_000, false)
-            .unwrap();
-        first.begin_download("0.0.46").unwrap();
+        prepare(&first, "0.0.46", 100_000);
         first
             .begin_install("0.0.46", "2026-07-29T12:34:56Z".into())
             .unwrap();
@@ -1297,7 +1590,7 @@ mod tests {
         let state = DesktopUpdaterState::default();
         state.initialize(&root, "0.0.45").unwrap();
         state
-            .record_available(
+            .record_update_found(
                 "0.0.46".into(),
                 Some("Signed Desktop update".into()),
                 Some("2026-07-29T00:00:00Z".into()),
@@ -1305,7 +1598,9 @@ mod tests {
                 false,
             )
             .unwrap();
-        state.begin_download("0.0.46").unwrap();
+        state
+            .record_prepared("0.0.46", b"signed archive", true)
+            .unwrap();
         state
             .begin_install("0.0.46", "2026-07-29T12:34:56Z".into())
             .unwrap();

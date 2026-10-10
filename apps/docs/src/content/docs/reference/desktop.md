@@ -10,8 +10,9 @@ Worktable connections. It does not introduce a separate workspace format.
 
 - Apple silicon Mac running macOS 13 or later.
 - Distributed as a signed and notarized DMG.
-- In-app updates are signed and install only after you choose **Download and
-  Restart**. **Help → Check for Updates…** checks immediately.
+- In-app updates are signed, download in the background, and install when you
+  quit or choose **Restart now**. **Worktable → Check for Updates…** checks
+  immediately.
 
 ## Connection providers
 

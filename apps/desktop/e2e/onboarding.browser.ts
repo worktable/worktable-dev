@@ -74,10 +74,8 @@ async function installTauriBoundary(
               if (command === "desktop_install_update") {
                 currentUpdater = {
                   ...currentUpdater,
-                  state: "downloading",
+                  state: "installing",
                   surfaceVisible: true,
-                  downloadedBytes: 0,
-                  totalBytes: null,
                   canInstall: false,
                   canDismiss: false,
                 }
@@ -491,7 +489,7 @@ test("retries an interrupted update and offers the release it started from", asy
     .toBe(true)
 })
 
-test("prompts before downloading a newer signed Desktop release", async ({
+test("offers a downloaded update until the person restarts", async ({
   page,
 }) => {
   await installTauriBoundary(
@@ -501,11 +499,11 @@ test("prompts before downloading a newer signed Desktop release", async ({
       provider: "local",
     },
     {
-      state: "available",
+      state: "ready",
       currentVersion: "0.0.45",
       availableVersion: "0.0.46",
       notes: "Native Worktable Cloud.",
-      message: "Worktable 0.0.46 is ready to download.",
+      message: "Restart now to finish updating to 0.0.46.",
       downloadedBytes: 0,
       totalBytes: null,
       canCheck: false,
@@ -516,7 +514,7 @@ test("prompts before downloading a newer signed Desktop release", async ({
   await page.goto("/")
 
   await expect(
-    page.getByRole("heading", { name: "Update Worktable" })
+    page.getByRole("heading", { name: "Update ready" })
   ).toBeVisible()
   await expect(page.getByText("0.0.45 → 0.0.46")).toBeVisible()
   await expect(page.getByText("Native Worktable Cloud.")).toBeVisible()
@@ -595,9 +593,7 @@ test("does not allow a manual check to be dismissed while in flight", async ({
   ).toBeHidden()
 })
 
-test("starts download and restart only after explicit approval", async ({
-  page,
-}) => {
+test("restarts to update only after explicit approval", async ({ page }) => {
   await installTauriBoundary(
     page,
     {
@@ -605,17 +601,21 @@ test("starts download and restart only after explicit approval", async ({
       provider: "local",
     },
     {
-      state: "available",
+      state: "ready",
       currentVersion: "0.0.45",
       availableVersion: "0.0.46",
-      message: "Worktable 0.0.46 is ready to download.",
+      message: "Restart now to finish updating to 0.0.46.",
       notes: "Added\n\n• Signed Desktop updates.",
       canInstall: true,
       canDismiss: true,
     }
   )
   await page.goto("/")
-  await page.getByRole("button", { name: "Download and Restart" }).click()
+  expect(await desktopCalls(page)).not.toContainEqual({
+    command: "desktop_install_update",
+    args: undefined,
+  })
+  await page.getByRole("button", { name: "Restart now" }).click()
 
   expect(await desktopCalls(page)).toContainEqual({
     command: "desktop_install_update",

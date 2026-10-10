@@ -5262,9 +5262,7 @@ fn bundle_installs_without_authorization() -> bool {
     }) else {
         return false;
     };
-    [Some(bundle.as_path()), bundle.parent()]
-        .into_iter()
-        .all(|path| path.is_some_and(directory_is_writable))
+    directory_is_writable(&bundle) && bundle.parent().is_some_and(directory_is_writable)
 }
 
 #[cfg(all(target_os = "macos", not(feature = "staging")))]

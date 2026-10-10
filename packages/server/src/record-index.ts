@@ -16,11 +16,13 @@
 //   2. Watcher events — external edits (agents writing files, git).
 //   3. A background full build at boot / on format mismatch.
 //
-// Each row also remembers the fingerprint (size, mtime, inode) of the file
-// whose bytes it was verified against. Builds, reconciliation and health
-// checks re-read only files whose fingerprint changed. A fingerprint is
-// recorded only once the file's mtime is older than RACY_FINGERPRINT_MS, so
-// a same-size rewrite within one timestamp tick can never hide behind it.
+// Each row also remembers the fingerprint (size, mtime, change time, inode)
+// of the file whose bytes it was verified against. Builds, reconciliation
+// and health checks re-read only files whose fingerprint changed. The change
+// time moves on every write even when a tool restores the mtime. A
+// fingerprint is recorded only once the file's change time is older than
+// RACY_FINGERPRINT_MS, so a same-size rewrite within one timestamp tick can
+// never hide behind it.
 //
 // Invalid YAML is indexed as an invalid row (never silently dropped),
 // so diagnostics can come from the index once reads flip to it.
@@ -46,9 +48,15 @@ import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 const RECORD_INDEX_FORMAT = 4;
 
 // Coarse filesystem clocks (one or two seconds on some volumes) let a rewrite
-// keep the same mtime. Fingerprints of files changed more recently than this
-// are not trusted, so those files are hashed again on the next check.
+// keep the same timestamps. Fingerprints of files changed more recently than
+// this are not trusted, so those files are hashed again on the next check.
 const RACY_FINGERPRINT_MS = 3_000;
+let racyFingerprintMs = RACY_FINGERPRINT_MS;
+
+/** Tests trust fingerprints of just-written files; null restores the default. */
+export function setRacyFingerprintWindowForTests(ms: number | null): void {
+  racyFingerprintMs = ms ?? RACY_FINGERPRINT_MS;
+}
 
 export interface RecordSearchHit {
   spaceId: string;
@@ -84,13 +92,14 @@ function isCanonicalId(id: string): boolean {
   return CanonicalIdSchema.safeParse(id).success;
 }
 
-/** size:mtimeNs:inode of a file, or null when it cannot be read. */
+/** size:mtimeNs:ctimeNs:inode of a file, or null when it cannot be read. */
 async function currentFingerprint(path: string): Promise<{ value: string; stable: boolean } | null> {
   try {
     const stats = await stat(path, { bigint: true });
+    const changedMs = Math.max(Number(stats.mtimeMs), Number(stats.ctimeMs));
     return {
-      value: `${stats.size}:${stats.mtimeNs}:${stats.ino}`,
-      stable: Date.now() - Number(stats.mtimeMs) >= RACY_FINGERPRINT_MS,
+      value: `${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.ino}`,
+      stable: Date.now() - changedMs >= racyFingerprintMs,
     };
   } catch {
     return null;

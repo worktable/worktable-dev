@@ -12,7 +12,10 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
-import { recordIndex } from "./record-index.ts"
+import {
+  recordIndex,
+  setRacyFingerprintWindowForTests,
+} from "./record-index.ts"
 import {
   buildRecordFile,
   createRecord,
@@ -89,6 +92,7 @@ describe("record index", () => {
   afterEach(async () => {
     await recordIndex.whenIdle()
     recordIndex.stop()
+    setRacyFingerprintWindowForTests(null)
     setWorkspaceRootOverride(null)
     setAppDirOverride(null)
     for (const dir of [workspaceDir, appDir]) {
@@ -609,6 +613,8 @@ describe("record index", () => {
   })
 
   it("the periodic sweep re-reads changed files and announces only the collections it changed", async () => {
+    // Trust fingerprints of files written moments ago.
+    setRacyFingerprintWindowForTests(0)
     for (const [collectionId, recordId] of [
       ["notes", "unchanged"],
       ["ideas", "edited"],
@@ -622,9 +628,6 @@ describe("record index", () => {
         id: recordId,
         data: { title: "Before" },
       })
-      // Old enough that the sweep can trust the file's fingerprint.
-      const past = new Date(Date.now() - 60_000)
-      utimesSync(recordFilePath("meta", collectionId, recordId), past, past)
     }
     await runRecordReconcileSweep()
     // Changes the watcher never reported: an edited record and a schema
@@ -657,16 +660,17 @@ describe("record index", () => {
     ).toBe("After")
   })
 
-  it("re-reads a same-size rewrite that keeps a recent mtime", async () => {
-    // Coarse filesystem clocks can give a quick rewrite the same mtime.
+  it("re-reads a same-size rewrite that restores the file's mtime", async () => {
+    setRacyFingerprintWindowForTests(0)
     const path = recordFilePath("meta", "tasks", "alpha")
-    const tick = new Date(Math.floor(Date.now() / 1_000) * 1_000)
+    const past = new Date(Date.now() - 60_000)
     writeRecordFileDirectly("meta", "tasks", "alpha", { title: "Alpha" })
-    utimesSync(path, tick, tick)
+    utimesSync(path, past, past)
     await recordIndex.ingestFile("meta", "tasks", "alpha")
 
+    // Copy and sync tools can keep the size, inode and mtime of a rewrite.
     writeFileSync(path, readFileSync(path, "utf8").replace("Alpha", "Omega"))
-    utimesSync(path, tick, tick)
+    utimesSync(path, past, past)
     await recordIndex.rebuild()
     expect(
       recordIndex.listCollection("meta", "tasks", true)?.[0]?.data["title"]

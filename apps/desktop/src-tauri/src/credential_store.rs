@@ -7,6 +7,18 @@ pub const WORKTABLE_KEYCHAIN_SERVICE: &str = "dev.worktable.desktop.staging.work
 #[cfg(not(feature = "staging"))]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const WORKTABLE_KEYCHAIN_SERVICE: &str = "dev.worktable.desktop.workos";
+// Local and development builds are signed differently on every build, so
+// macOS would ask for a password whenever one touched the release entry.
+#[cfg(feature = "staging")]
+const LOCAL_BUILD_KEYCHAIN_SERVICE: &str = "dev.worktable.desktop.staging.local.workos";
+#[cfg(not(feature = "staging"))]
+const LOCAL_BUILD_KEYCHAIN_SERVICE: &str = "dev.worktable.desktop.local.workos";
+/// The bundle identifier and Apple team that sign Worktable releases.
+#[cfg(feature = "staging")]
+const RELEASE_BUNDLE_IDENTIFIER: &str = "dev.worktable.desktop.staging";
+#[cfg(not(feature = "staging"))]
+const RELEASE_BUNDLE_IDENTIFIER: &str = "dev.worktable.desktop";
+const RELEASE_TEAM_IDENTIFIER: &str = "89XJ6QQG6S";
 
 const STORED_CREDENTIAL_VERSION: u8 = 1;
 pub(crate) const MAX_REFRESH_TOKEN_BYTES: usize = 6_144;
@@ -99,6 +111,46 @@ pub trait CredentialStore: Send + Sync {
     fn remove_all(&self, origin: &str) -> Result<(), String>;
 }
 
+/// Only a Developer ID-signed app uses the release Keychain entry; every
+/// other build keeps its own so it never asks for the release sign-in.
+pub fn keychain_service(release_signed: bool) -> &'static str {
+    if release_signed {
+        WORKTABLE_KEYCHAIN_SERVICE
+    } else {
+        LOCAL_BUILD_KEYCHAIN_SERVICE
+    }
+}
+
+/// Apple's Developer ID designated requirement, bound to Worktable's own bundle
+/// identifier and team so other developers' signed builds stay local.
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+fn release_signature_requirement() -> String {
+    format!(
+        "identifier \"{RELEASE_BUNDLE_IDENTIFIER}\" and anchor apple generic \
+         and certificate 1[field.1.2.840.113635.100.6.2.6] exists \
+         and certificate leaf[field.1.2.840.113635.100.6.1.13] exists \
+         and certificate leaf[subject.OU] = \"{RELEASE_TEAM_IDENTIFIER}\""
+    )
+}
+
+/// Whether this process is a Worktable release signed with Worktable's
+/// Developer ID.
+#[cfg(target_os = "macos")]
+pub fn running_with_developer_id_signature() -> bool {
+    use security_framework::os::macos::code_signing::{Flags, SecCode, SecRequirement};
+    let Ok(requirement) = release_signature_requirement().parse::<SecRequirement>() else {
+        return false;
+    };
+    SecCode::for_self(Flags::NONE)
+        .and_then(|code| code.check_validity(Flags::NONE, &requirement))
+        .is_ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn running_with_developer_id_signature() -> bool {
+    false
+}
+
 #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
 fn credential_account(origin: &str, workos_user_id: &str) -> Result<String, String> {
     if origin.trim().is_empty()
@@ -112,7 +164,9 @@ fn credential_account(origin: &str, workos_user_id: &str) -> Result<String, Stri
 }
 
 #[cfg(target_os = "macos")]
-struct MacOsKeychainCredentialStore;
+struct MacOsKeychainCredentialStore {
+    service: &'static str,
+}
 
 #[cfg(target_os = "macos")]
 impl MacOsKeychainCredentialStore {
@@ -126,7 +180,7 @@ impl MacOsKeychainCredentialStore {
         let mut search = ItemSearchOptions::new();
         let results = match search
             .class(ItemClass::generic_password())
-            .service(WORKTABLE_KEYCHAIN_SERVICE)
+            .service(self.service)
             .load_attributes(true)
             .limit(Limit::All)
             .search()
@@ -162,7 +216,7 @@ impl CredentialStore for MacOsKeychainCredentialStore {
         // Apple documents errSecItemNotFound as -25300.
         const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
         let account = credential_account(origin, workos_user_id)?;
-        let bytes = match get_generic_password(WORKTABLE_KEYCHAIN_SERVICE, &account) {
+        let bytes = match get_generic_password(self.service, &account) {
             Ok(bytes) => bytes,
             Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => return Ok(None),
             Err(_) => {
@@ -189,7 +243,7 @@ impl CredentialStore for MacOsKeychainCredentialStore {
         let Some(account) = accounts.pop() else {
             return Ok(None);
         };
-        let bytes = get_generic_password(WORKTABLE_KEYCHAIN_SERVICE, &account)
+        let bytes = get_generic_password(self.service, &account)
             .map_err(|_| "macOS Keychain could not read the Worktable Cloud credential")?;
         let credential = serde_json::from_slice::<StoredCredential>(&bytes).map_err(|_| {
             "the Worktable Cloud credential in macOS Keychain is unreadable".to_string()
@@ -208,7 +262,7 @@ impl CredentialStore for MacOsKeychainCredentialStore {
         let account = credential_account(origin, credential.workos_user_id())?;
         let bytes = serde_json::to_vec(credential)
             .map_err(|_| "could not encode the Worktable Cloud credential".to_string())?;
-        set_generic_password(WORKTABLE_KEYCHAIN_SERVICE, &account, &bytes)
+        set_generic_password(self.service, &account, &bytes)
             .map_err(|_| "macOS Keychain could not save the Worktable Cloud credential".into())
     }
 
@@ -217,7 +271,7 @@ impl CredentialStore for MacOsKeychainCredentialStore {
 
         const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
         let account = credential_account(origin, workos_user_id)?;
-        match delete_generic_password(WORKTABLE_KEYCHAIN_SERVICE, &account) {
+        match delete_generic_password(self.service, &account) {
             Ok(()) => Ok(()),
             Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
             Err(_) => Err("macOS Keychain could not remove the Worktable Cloud credential".into()),
@@ -229,7 +283,7 @@ impl CredentialStore for MacOsKeychainCredentialStore {
 
         const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
         for account in self.accounts_for_origin(origin)? {
-            match delete_generic_password(WORKTABLE_KEYCHAIN_SERVICE, &account) {
+            match delete_generic_password(self.service, &account) {
                 Ok(()) => {}
                 Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => {}
                 Err(_) => {
@@ -273,13 +327,14 @@ impl CredentialStore for UnsupportedCredentialStore {
     }
 }
 
-pub fn system_credential_store() -> Arc<dyn CredentialStore> {
+pub fn system_credential_store(service: &'static str) -> Arc<dyn CredentialStore> {
     #[cfg(target_os = "macos")]
     {
-        Arc::new(MacOsKeychainCredentialStore)
+        Arc::new(MacOsKeychainCredentialStore { service })
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = service;
         Arc::new(UnsupportedCredentialStore)
     }
 }
@@ -399,6 +454,23 @@ impl CredentialStore for MemoryCredentialStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_release_signed_builds_use_the_release_keychain_entry() {
+        // Renaming the release entry would sign every Desktop user out.
+        #[cfg(not(feature = "staging"))]
+        assert_eq!(keychain_service(true), "dev.worktable.desktop.workos");
+        assert_eq!(keychain_service(true), WORKTABLE_KEYCHAIN_SERVICE);
+        assert_ne!(keychain_service(false), WORKTABLE_KEYCHAIN_SERVICE);
+    }
+
+    #[test]
+    fn release_signature_names_worktables_identifier_and_team() {
+        let requirement = release_signature_requirement();
+        #[cfg(not(feature = "staging"))]
+        assert!(requirement.starts_with("identifier \"dev.worktable.desktop\" and "));
+        assert!(requirement.ends_with("certificate leaf[subject.OU] = \"89XJ6QQG6S\""));
+    }
 
     fn credential() -> StoredCredential {
         StoredCredential::new(

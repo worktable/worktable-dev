@@ -187,6 +187,24 @@ export const ACTOR_HEADERS = {
 } as const
 
 /**
+ * Set only by the gateway, on requests it admits for a workspace. The tenant
+ * reads them only on an admitted request, and the gateway strips any a client
+ * sends.
+ */
+export const AGENT_ROUTE_HEADERS = {
+  /** This workspace's agent address, such as `https://app.worktable.cloud/w/<id>`. */
+  BASE: "x-worktable-agent-base",
+  /**
+   * `worktable` on the per-workspace agent route: the bearer is a credential
+   * the workspace issued at pairing, and the workspace verifies it itself.
+   */
+  CREDENTIAL: "x-worktable-agent-credential",
+} as const
+
+/** The workspace segment of the gateway's agent route: `/w/<id>/…`. */
+export const AGENT_ROUTE_PREFIX = "/w/"
+
+/**
  * Optional self-presentation accepted only after Agent Registration verifies.
  * The gateway consumes and strips these before proxying to the tenant.
  */

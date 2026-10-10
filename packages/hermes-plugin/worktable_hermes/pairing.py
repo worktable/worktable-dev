@@ -23,10 +23,11 @@ class PairingError(Exception):
 
 
 def worktable_origin(server: str) -> str:
+    """The Worktable address, path included: Cloud gives each workspace one under /w/<id>."""
     parts = urlsplit(server.strip() if "://" in server else f"https://{server.strip()}")
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise PairingError(f"Not a Worktable address: {server}", "BAD_SERVER")
-    return f"{parts.scheme}://{parts.netloc}"
+    return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
 
 
 def _timestamp(value: object) -> Optional[float]:

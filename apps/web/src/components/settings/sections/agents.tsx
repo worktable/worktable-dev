@@ -210,7 +210,11 @@ function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
             className="border-t border-border/60"
             {...panelProps(agent.adapter)}
           >
-            <CloudAlwaysOnPanel connection={connection} agent={agent} />
+            {connection.agentPairing ? (
+              <AlwaysOnSetupPanel connection={connection} agent={agent} />
+            ) : (
+              <CloudAlwaysOnPanel connection={connection} agent={agent} />
+            )}
           </AgentSetupDisclosure>
         ))}
         <AgentSetupDisclosure

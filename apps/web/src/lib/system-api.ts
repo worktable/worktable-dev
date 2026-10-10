@@ -145,6 +145,8 @@ export interface DeploymentInfo {
 export interface ConnectionInfo {
   /** Hosted agents authorize through OAuth; other installs manage local wt_ tokens. */
   mcpAuthMode: "oauth" | "local-token"
+  /** Whether always-on agents can pair here; Cloud can once its gateway routes them. */
+  agentPairing?: boolean
   /** Connectable MCP endpoint URL, e.g. http://127.0.0.1:7480/mcp */
   endpoint: string
   /** True when the install is bound reachable (non-loopback) and needs a token. */

@@ -48,7 +48,7 @@ function spans(header: string | null): Map<string, number> {
 describe("request timing", () => {
   it("reports named spans and the total in Server-Timing, including compression", async () => {
     const response = await fixture().request("/api/spaces/alpha/documents", {
-      headers: { "Accept-Encoding": "gzip" },
+      headers: { "Accept-Encoding": "gzip", "X-Test-Identity": "owner" },
     })
     expect(response.headers.get("Content-Encoding")).toBe("gzip")
     const timings = spans(response.headers.get("Server-Timing"))
@@ -58,6 +58,12 @@ describe("request timing", () => {
     expect(timings.get("total")!).toBeGreaterThanOrEqual(
       timings.get("catalog")! + timings.get("gzip")!
     )
+  })
+
+  it("keeps timings from callers without an identity", async () => {
+    const response = await fixture().request("/api/spaces/alpha/documents")
+    expect(response.status).toBe(200)
+    expect(response.headers.has("Server-Timing")).toBe(false)
   })
 
   it("serves diagnostics only to the workspace owner, with latency by route pattern", async () => {

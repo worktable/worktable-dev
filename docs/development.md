@@ -94,6 +94,10 @@ Boot the affected runtime path and exercise the behavior as well as running
 tests. Use the [synthetic fixtures](../fixtures/README.md) where useful and
 describe what you verified in the PR.
 
+For a change meant to make Worktable faster, measure it with the
+[perf lane](../scripts/perf/README.md) and put the before and after numbers in
+the PR. The CI build fails when a web bundle grows past its budget.
+
 ## Documentation checks
 
 For repository guides and issue templates:

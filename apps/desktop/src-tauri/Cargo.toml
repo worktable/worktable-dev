@@ -4,7 +4,7 @@ version = "0.1.21"
 description = "Native Tauri host for Worktable Desktop"
 authors = ["Worktable contributors"]
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.90.0"
 
 [features]
 default = []

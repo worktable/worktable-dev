@@ -23,6 +23,7 @@ import {
   mcpClientSnippet,
   platformForAdapter,
   platformForClient,
+  platformForName,
   type AgentAccess,
   type AgentConnection,
   type AgentPlatformId,
@@ -1294,9 +1295,14 @@ function agentConnectionName(connection: AgentConnection): string {
 
 function agentConnectionPlatform(connection: AgentConnection): AgentPlatformId {
   if (isAgentPlatformId(connection.platform)) return connection.platform
-  return connection.target.kind === "agent-adapter"
-    ? platformForAdapter(connection.target.adapter)
-    : platformForClient(connection.target.clientId)
+  if (connection.target.kind === "agent-adapter") {
+    return platformForAdapter(connection.target.adapter)
+  }
+  const fromClient = platformForClient(connection.target.clientId)
+  // Cloud's sign-ins carry an opaque client id, so their name decides.
+  return fromClient === "other"
+    ? platformForName(connection.displayName)
+    : fromClient
 }
 
 export function ConnectedAgentsGroup() {

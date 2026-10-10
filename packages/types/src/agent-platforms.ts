@@ -124,3 +124,21 @@ export function defaultAgentNameForLabel(label: string | null): string | null {
   const client = clientIdForAgentLabel(label)
   return client ? AGENT_PLATFORMS[platformForClient(client)].name : null
 }
+
+/**
+ * The platform an app's name points to, for sign-ins that carry only a name
+ * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code").
+ */
+export function platformForName(
+  name: string | null | undefined
+): AgentPlatformId {
+  if (!name) return "other"
+  const slug = name.trim().toLowerCase().replace(/\s+/g, "-")
+  if (slug in CLIENT_PLATFORMS) return CLIENT_PLATFORMS[slug]!
+  // "Hermes Agent", "OpenClaw Studio": a platform's id followed by more words.
+  return (
+    AGENT_PLATFORM_IDS.find(
+      (id) => id !== "other" && (slug === id || slug.startsWith(`${id}-`))
+    ) ?? "other"
+  )
+}

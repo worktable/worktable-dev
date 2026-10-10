@@ -99,7 +99,12 @@ export interface FixtureManifest {
   searchTerms: string[]
 }
 
-/** Changes to this file invalidate cached fixtures. */
+/**
+ * Changes to this file invalidate cached fixtures. Changes to the store do
+ * not: a fixture written by an older server is still a valid workspace, as
+ * users' workspaces are, and both sides of a comparison use the same one.
+ * Use --force to rebuild it with the current store.
+ */
 export const GENERATOR_VERSION = createHash("sha256")
   .update(readFileSync(import.meta.filename))
   .digest("hex")

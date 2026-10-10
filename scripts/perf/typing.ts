@@ -94,6 +94,22 @@ async function connect(
   return { doc, provider, text }
 }
 
+/** The last text run in saved BlockNote JSON, where the typing went. */
+function lastSavedText(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+      const found = lastSavedText(value[index])
+      if (found !== null) return found
+    }
+    return null
+  }
+  if (!value || typeof value !== "object") return null
+  const node = value as Record<string, unknown>
+  if (node["type"] === "text" && typeof node["text"] === "string")
+    return node["text"]
+  return lastSavedText(node["children"]) ?? lastSavedText(node["content"])
+}
+
 export async function runTyping(options: {
   url: string
   pid: number
@@ -182,7 +198,6 @@ export async function runTyping(options: {
   const marks = [started, ...during, typingEnd]
   const gaps = marks.slice(1).map((at, index) => at - marks[index]!)
   const saveAfterStop = saves.find((at) => at > typingEnd)
-  const tail = typed.slice(-24)
   return {
     minutes: options.minutes,
     charactersPerSecond: cps,
@@ -203,9 +218,9 @@ export async function runTyping(options: {
     longestUnsavedMs: round(Math.max(...gaps), 0),
     saveAfterStopMs:
       saveAfterStop === undefined ? null : round(saveAfterStop - typingEnd, 0),
-    savedAllText: readFileSync(file, "utf8").includes(
-      JSON.stringify(tail).slice(1, -1)
-    ),
+    savedAllText:
+      lastSavedText(JSON.parse(readFileSync(file, "utf8")))?.endsWith(typed) ??
+      false,
     serverWriteBytes:
       before && after ? after.writeBytes - before.writeBytes : null,
     serverDiskBytes:

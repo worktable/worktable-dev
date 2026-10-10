@@ -39,8 +39,7 @@ export function recordFieldColumns(schema: RecordCollectionSchema | undefined, r
 export interface RecordDetailSections {
   title: RecordFieldColumn | null
   narrative: RecordFieldColumn[]
-  primary: RecordFieldColumn[]
-  secondary: RecordFieldColumn[]
+  properties: RecordFieldColumn[]
   sources: RecordFieldColumn[]
   unmodeled: RecordFieldColumn[]
 }
@@ -101,8 +100,7 @@ export function canApplyFilterValue(needsValue: boolean, value: unknown): boolea
  */
 export function recordDetailSections(
   schema: RecordCollectionSchema | undefined,
-  record: RecordFile,
-  primaryLimit = 5
+  record: RecordFile
 ): RecordDetailSections {
   const columns = recordFieldColumns(schema, [record])
   const titleKey = recordTitleKey(schema)
@@ -115,11 +113,19 @@ export function recordDetailSections(
   return {
     title,
     narrative,
-    primary: properties.slice(0, primaryLimit),
-    secondary: properties.slice(primaryLimit),
+    properties,
     sources,
     unmodeled: columns.filter((column) => !column.field),
   }
+}
+
+/** Who a record's `createdBy`/`updatedBy` names: the owner, a connected
+ *  agent (`agent:<principal>`), Worktable itself, or a file-authored name. */
+export function recordActorName(actor: string, agents?: ReadonlyArray<{ id: string; name?: string }>): string {
+  if (actor === "user") return "You"
+  if (actor === "system") return "Worktable"
+  if (actor.startsWith("agent:")) return agents?.find((agent) => agent.id === actor.slice(6))?.name ?? "An agent"
+  return actor
 }
 
 /** The field recordTitle reads: title/name, else the first required string field. */
@@ -289,10 +295,44 @@ export function filterLabel(filter: RecordFilter): string {
 
 // ── Column prefs (M3 table controls) ─────────────────────────
 
+/** How much of a long value each grid row shows. */
+export type RowHeight = "single" | "double" | "full"
+export const ROW_HEIGHTS: ReadonlyArray<{ value: RowHeight; label: string }> = [
+  { value: "single", label: "Single Line" },
+  { value: "double", label: "Two Lines" },
+  { value: "full", label: "Full Text" },
+]
+
 export interface ColumnPrefs {
   hidden: string[]
   order: string[]
   widths: Record<string, number>
+  /** Absent means the default, two lines. */
+  rowHeight?: RowHeight
+}
+
+/**
+ * Order group buckets the way a reader expects for the grouped field: select
+ * options in schema order, numbers and dates by value, booleans yes first,
+ * text alphabetically. Empty values always come last.
+ */
+export function compareGroupLabels(column: Pick<RecordFieldColumn, "type" | "field"> | undefined, a: unknown, b: unknown): number {
+  const isEmpty = (value: unknown) => value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)
+  if (isEmpty(a) || isEmpty(b)) return Number(isEmpty(a)) - Number(isEmpty(b))
+  const first = (value: unknown) => (Array.isArray(value) ? value[0] : value)
+  const options = column?.field?.values ?? []
+  if ((column?.type === "select" || column?.type === "multi_select") && options.length > 0) {
+    const rank = (value: unknown) => {
+      const index = options.indexOf(String(first(value)))
+      return index === -1 ? options.length : index
+    }
+    const byRank = rank(a) - rank(b)
+    if (byRank !== 0) return byRank
+  }
+  if (column?.type === "boolean" && typeof a === "boolean" && typeof b === "boolean") return Number(b) - Number(a)
+  if (column?.type === "number" && typeof a === "number" && typeof b === "number") return a - b
+  const text = (value: unknown) => (Array.isArray(value) ? value.map(String).join(", ") : String(value))
+  return text(a).localeCompare(text(b), undefined, { numeric: true, sensitivity: "base" })
 }
 
 /** Order columns by saved prefs: known keys in saved order first, then any

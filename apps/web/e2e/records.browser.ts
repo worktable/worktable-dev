@@ -81,9 +81,15 @@ test("detail text edits save directly, cancel, and retain rejected drafts for re
     page.getByRole("button", { name: "Edit table cells" })
   ).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Edit title" })).toHaveCount(0)
+  const resting = await title.boundingBox()
   await title.focus()
   await page.keyboard.press("Enter")
   const input = page.getByRole("textbox", { name: "Edit title" })
+  // The editor takes the resting value's box, so the text does not move.
+  const editing = await input.locator("..").boundingBox()
+  for (const edge of ["x", "y", "width", "height"] as const) {
+    expect(Math.abs((editing?.[edge] ?? 0) - (resting?.[edge] ?? -9))).toBeLessThan(1)
+  }
   await input.fill("Discard this")
   await input.press("Escape")
   await expect(title).toBeFocused()
@@ -140,7 +146,7 @@ test("detail text edits save directly, cancel, and retain rejected drafts for re
     table.getByRole("button", { name: "Edit status", exact: true })
   ).toHaveCount(2)
   await page
-    .getByRole("button", { name: "Stop editing table cells", exact: true })
+    .getByRole("button", { name: "Done editing table cells", exact: true })
     .click()
   await expect(
     table.getByRole("button", { name: "Edit status", exact: true })
@@ -149,7 +155,8 @@ test("detail text edits save directly, cancel, and retain rejected drafts for re
   await page.getByRole("button", { name: "Edit table cells", exact: true }).click()
   const row = table.getByRole("row").filter({ hasText: "A better title" })
   await row.getByRole("button", { name: "Edit title", exact: true }).click()
-  const tableInput = table.getByRole("textbox", { name: "Edit title" })
+  // Cell text opens in a field laid over the table.
+  const tableInput = page.getByRole("textbox", { name: "Edit title" })
   rejectSave = true
   await tableInput.fill("Retried in the table")
   await request(base, "POST", { data: { title: "Arrived while editing" } })
@@ -158,13 +165,39 @@ test("detail text edits save directly, cancel, and retain rejected drafts for re
   await tableInput.press("Enter")
   await expect(tableInput).toHaveAttribute("aria-invalid", "true")
   rejectSave = false
-  await table.getByRole("button", { name: "Retry", exact: true }).click()
+  await page.getByRole("button", { name: "Retry", exact: true }).click()
   await expect.poll(async () => (await data()).title).toBe("Retried in the table")
+  // Tab saves and moves to the next editable cell in the row.
+  const retried = table.getByRole("row").filter({ hasText: "Retried in the table" })
+  await retried.getByRole("button", { name: "Edit title", exact: true }).click()
+  await tableInput.press("Tab")
+  await expect(tableInput).toHaveCount(0)
+  await expect(retried.getByRole("button", { name: "Edit notes", exact: true })).toBeFocused()
   await expect(page.getByRole("button", { name: "Close record details" })).toBeHidden()
   await request(`${base}/arrived-while-editing`, "DELETE")
-  await page.getByRole("button", { name: "Stop editing table cells", exact: true }).click()
+  await page.getByRole("button", { name: "Done editing table cells", exact: true }).click()
   await page.reload()
   await expect(table.getByRole("cell", { name: "Retried in the table", exact: true })).toBeVisible({ timeout: 30_000 })
+
+  // Row height is a remembered per-collection view: Full Text shows every line.
+  await request(`${base}/${recordId}`, "PATCH", { data: { notes: "One\nTwo\nThree\nFour" } })
+  await page.getByRole("button", { name: "Collection actions", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Row Height" }).click()
+  await page.getByRole("menuitemradio", { name: "Full Text" }).click()
+  await page.keyboard.press("Escape")
+  await page.keyboard.press("Escape")
+  await page.reload()
+  const notesCell = table.getByRole("row").filter({ hasText: "Retried in the table" }).getByRole("cell").nth(1)
+  await expect(notesCell).toContainText("Four", { timeout: 30_000 })
+  expect((await notesCell.locator("span").first().boundingBox())?.height).toBeGreaterThan(70)
+
+  // Dragging a header onto the left half of another moves the column before it.
+  const headers = table.locator("thead th")
+  await headers.filter({ hasText: "Status" }).dragTo(headers.filter({ hasText: "Title" }), { targetPosition: { x: 8, y: 10 } })
+  await expect(headers.first()).toHaveText(/Status/i)
+  await page.reload()
+  await expect(headers.first()).toHaveText(/Status/i, { timeout: 30_000 })
+  await expect(headers.nth(1)).toHaveText(/Title/i)
 })
 
 test("pickers open in one click, cancel drafts, and keep link navigation separate", async ({
@@ -223,7 +256,6 @@ test("pickers open in one click, cancel drafts, and keep link navigation separat
   await page.getByRole("button", { name: "Clear done", exact: true }).click()
   await expect.poll(async () => (await data()).done).toBeNull()
 
-  await page.getByRole("button", { name: "More fields" }).click()
   await page.getByRole("button", { name: "Edit related", exact: true }).click()
   await page.getByRole("button", { name: "Follow up", exact: true }).click()
   await page.keyboard.press("Escape")

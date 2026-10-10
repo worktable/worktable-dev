@@ -1,15 +1,16 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react"
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Check, Loader2, Plus, Search, X } from "lucide-react"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { Textarea } from "@worktable/ui/components/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@worktable/ui/components/popover"
+import { cn } from "@worktable/ui/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { documentReferenceFallbackTitle, type RecordFile } from "@worktable/types"
 import { queryKeys } from "@/lib/queries"
 import { queryRecords } from "@/lib/records-api"
-import { documentPathIsSelected, normalizeDocumentPickerSearch, optionColorClass, recordTitle, relationIds, toggleDocumentPath, type RecordFieldColumn } from "@/lib/records"
+import { documentPathIsSelected, fieldEditorSeed, normalizeDocumentPickerSearch, optionColorClass, recordTitle, relationIds, toggleDocumentPath, type RecordFieldColumn } from "@/lib/records"
 import { documentReferencesQueryOptions, useSpaceDocs } from "@/lib/docs-queries"
 
 // Keep nested pickers within a modal drawer's focus and accessibility boundary.
@@ -61,7 +62,115 @@ function SaveFeedback({ state, onRetry }: { state: Pick<ReturnType<typeof useFie
   </div>
 }
 
-const pickerTriggerClass = "flex min-h-6 w-full cursor-pointer items-center rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11"
+/** Errors only: text drafts show pending inside the field, so a save never
+ *  pushes the surrounding layout down and back. */
+function SaveError({ state, onRetry }: { state: Pick<ReturnType<typeof useFieldSave>, "error" | "errorId">; onRetry?: () => void }) {
+  if (!state.error) return null
+  return <div className="mt-1 space-y-1">
+    <p id={state.errorId} role="alert" className="text-xs text-destructive">{state.error}</p>
+    {onRetry && <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>}
+  </div>
+}
+
+/**
+ * One box for a value at rest and while editing. The border is always there
+ * (transparent at rest) and the negative margins cancel the padding, so the
+ * text sits where unboxed values do and editing only reveals the field edge.
+ * Sizes derive from the text's own line height (`lh`), so padding stays even
+ * around one line in the grid, the panel, and the title alike. Touch screens
+ * grow the box to a 44px target symmetrically, leaving the text in place.
+ */
+export const fieldSurfaceClass = "-mx-2 my-[-4px] w-[calc(100%+1rem)] min-w-0 rounded-md border px-[7px] py-[3px] text-left outline-none max-sm:my-[min(-4px,calc((1lh-2.75rem)/2))] max-sm:py-[max(3px,calc((2.75rem-1lh-2px)/2))]"
+/** Resting, editable value: the field hover from the design system, centered
+ *  so chips and single lines sit in the middle of the box. */
+export const fieldSurfaceRestingClass = "flex min-h-[calc(1lh+8px)] items-center border-transparent transition-colors hover:border-(--input-hover) hover:bg-(--well-hover-bg) focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11"
+/** One quiet edge, not a border plus halo: the value is already in place, so
+ *  the field only needs to say it is live. */
+const fieldSurfaceEditingClass = "relative border-ring bg-(--well-bg) has-[[aria-invalid=true]]:border-destructive"
+
+const pickerTriggerClass = cn(fieldSurfaceClass, fieldSurfaceRestingClass, "cursor-pointer")
+
+/** Types whose editor is a single-line native input: they need its picker or
+ *  keyboard. Everything else edits in a wrapping textarea. */
+const NATIVE_INPUT_TYPES = new Set(["number", "date", "datetime"])
+
+/**
+ * Text draft control. Borderless and transparent, it inherits the
+ * surrounding type, so it occupies exactly the text it replaces; the
+ * enclosing field surface draws the edge. Text grows with its content.
+ */
+function DraftControl({ column, value, onValueChange, multiline, state, ...props }: {
+  column: RecordFieldColumn
+  value: string
+  onValueChange: (value: string) => void
+  multiline: boolean
+  state: Pick<ReturnType<typeof useFieldSave>, "pending" | "error" | "errorId">
+  onKeyDown: (event: React.KeyboardEvent) => void
+  onBlur?: (event: React.FocusEvent) => void
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+    const fit = () => {
+      element.style.height = "auto"
+      // Whole lines: tight display leading lets glyphs overhang the line box,
+      // which would otherwise make the field taller than the text it replaces.
+      const line = parseFloat(getComputedStyle(element).lineHeight)
+      element.style.height = `${Number.isFinite(line) ? Math.max(1, Math.round(element.scrollHeight / line)) * line : element.scrollHeight}px`
+    }
+    fit()
+    // Popover widths settle after the first layout; refit when they do.
+    const observer = new ResizeObserver(fit)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [value])
+  const shared = {
+    autoFocus: true,
+    value,
+    readOnly: state.pending,
+    "aria-label": `Edit ${column.key}`,
+    "aria-invalid": Boolean(state.error),
+    "aria-describedby": state.error ? state.errorId : undefined,
+    ...props,
+  }
+  const bare = "block w-full min-w-0 border-0 bg-transparent p-0 font-[inherit] text-[length:inherit] leading-[inherit] tracking-[inherit] text-inherit outline-none placeholder:text-muted-foreground"
+  if (NATIVE_INPUT_TYPES.has(column.type)) {
+    return <input
+      {...shared}
+      type={inputTypeFor(column.type)}
+      inputMode={column.type === "number" ? "decimal" : undefined}
+      onChange={(event) => onValueChange(event.target.value)}
+      className={cn(bare, "h-[1lh]", column.type === "number" && "font-mono text-[13px] tabular-nums")}
+    />
+  }
+  return <textarea
+    {...shared}
+    ref={textareaRef}
+    rows={1}
+    inputMode={column.type === "email" ? "email" : column.type === "url" ? "url" : undefined}
+    // Start at the end of the text, where a click on the value lands the eye.
+    onFocus={(event) => event.currentTarget.setSelectionRange(event.currentTarget.value.length, event.currentTarget.value.length)}
+    // Single-line fields keep pasted line breaks out, as an input would.
+    onChange={(event) => onValueChange(multiline ? event.target.value : event.target.value.replace(/\r?\n/g, " "))}
+    className={cn(bare, "max-h-80 min-h-[1lh] resize-none overflow-y-auto")}
+  />
+}
+
+function draftKeyAction(event: React.KeyboardEvent, multiline: boolean): "commit" | "cancel" | undefined {
+  if (event.nativeEvent.isComposing) return undefined
+  if (event.key === "Escape") return "cancel"
+  if (event.key === "Enter" && (!multiline || event.metaKey || event.ctrlKey)) return "commit"
+  return undefined
+}
+
+function PendingMark({ pending }: { pending: boolean }) {
+  if (!pending) return null
+  return <>
+    <span role="status" className="sr-only">Saving…</span>
+    <Loader2 aria-hidden className="pointer-events-none absolute right-1.5 top-1.5 size-3.5 animate-spin text-muted-foreground" />
+  </>
+}
 
 /**
  * Shared editors for record field values, used by the grid's inline cells and
@@ -69,14 +178,15 @@ const pickerTriggerClass = "flex min-h-6 w-full cursor-pointer items-center roun
  * the PATCH happen in the caller — and closes via `onDone`.
  */
 
-/** Enter commits short text; multiline uses Cmd/Ctrl+Enter. Escape cancels.
- * Blur saves, but failed validation or persistence leaves the draft available. */
-export function TextishEditor({ column, initial, onCommit, onDone, className, multiline = false }: {
+/** In-place text editor for detail surfaces. It replaces a resting value
+ *  drawn with `fieldSurfaceClass`, so nothing moves when editing starts.
+ *  Enter commits short text; multiline uses Cmd/Ctrl+Enter. Escape cancels.
+ *  Blur saves, but failed validation or persistence leaves the draft available. */
+export function TextishEditor({ column, initial, onCommit, onDone, multiline = false }: {
   column: RecordFieldColumn
   initial: unknown
   onCommit: FieldCommit<string>
   onDone: (restoreFocus?: boolean) => void
-  className?: string
   multiline?: boolean
 }) {
   const [value, setValue] = useState(initial === undefined || initial === null ? "" : String(initial))
@@ -89,30 +199,116 @@ export function TextishEditor({ column, initial, onCommit, onDone, className, mu
     if (!commit || await state.save(value)) onDone(restoreFocus && Boolean(editorRef.current?.contains(document.activeElement)))
     else settled.current = false
   }
-  const shared = {
-    autoFocus: true,
-    value,
-    readOnly: state.pending,
-    "aria-label": `Edit ${column.key}`,
-    "aria-invalid": Boolean(state.error),
-    "aria-describedby": state.error ? state.errorId : undefined,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValue(e.target.value),
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.nativeEvent.isComposing) return
-      if (e.key === "Escape" || (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey))) {
-        e.preventDefault()
-        e.stopPropagation()
-        void settle(e.key !== "Escape", true)
-      }
-    },
-    onBlur: (e: React.FocusEvent) => {
-      if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node | null)) void settle(true)
-    },
-  }
-  return <div ref={editorRef} className="space-y-1" aria-busy={state.pending} onClick={(event) => event.stopPropagation()}>
-    {multiline ? <Textarea {...shared} className="min-h-24 text-sm" /> : <Input {...shared} type={inputTypeFor(column.type)} inputMode={column.type === "number" ? "decimal" : undefined} className={className ?? "h-7 px-2 py-0 text-sm"} />}
-    <SaveFeedback state={state} onRetry={() => void settle(true, true)} />
+  return <div ref={editorRef} className="min-w-0" aria-busy={state.pending} onClick={(event) => event.stopPropagation()}>
+    <div className={cn(fieldSurfaceClass, fieldSurfaceEditingClass)}>
+      <DraftControl
+        column={column}
+        value={value}
+        onValueChange={setValue}
+        multiline={multiline}
+        state={state}
+        onKeyDown={(event) => {
+          const action = draftKeyAction(event, multiline)
+          if (!action) return
+          event.preventDefault()
+          event.stopPropagation()
+          void settle(action === "commit", true)
+        }}
+        onBlur={(event) => {
+          if (!editorRef.current?.contains(event.relatedTarget as Node | null)) void settle(true)
+        }}
+      />
+      <PendingMark pending={state.pending} />
+    </div>
+    <SaveError state={state} onRetry={() => void settle(true, true)} />
   </div>
+}
+
+/**
+ * Grid text editor: the value opens in a field laid over its cell, wide
+ * enough to read and growing downward with the text. The draft starts where
+ * the cell text sits, so only the field edge and extra lines appear.
+ * Clicking away saves; Escape cancels; Tab saves and moves to the next cell.
+ */
+export function CellTextEditor({ column, value, open, onOpenChange, onCommit, children }: {
+  column: RecordFieldColumn
+  value: unknown
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onCommit: FieldCommit<string>
+  children: React.ReactNode
+}) {
+  const multiline = column.type === "text"
+  const seed = fieldEditorSeed(column, value)
+  const [draft, setDraft] = useState(seed === undefined || seed === null ? "" : String(seed))
+  const state = useFieldSave(onCommit, open)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const nextFocus = useRef<HTMLElement | null>(null)
+  const [width, setWidth] = useState<number>()
+  useEffect(() => {
+    if (open) {
+      setDraft(seed === undefined || seed === null ? "" : String(seed))
+      nextFocus.current = null
+      // Widen to a readable measure, but only into the room to the right:
+      // shifting the field left would move the text away from the cell.
+      const rect = triggerRef.current?.getBoundingClientRect()
+      if (rect) setWidth(Math.max(rect.width, Math.min(320, window.innerWidth - rect.left - 8)))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when opening
+  }, [open])
+  const close = async (commit: boolean) => {
+    if (state.pending) return
+    if (commit && !await state.save(draft)) return
+    onOpenChange(false)
+  }
+  const aimFocus = (step: 1 | -1) => {
+    const trigger = triggerRef.current
+    const triggers = [...(trigger?.closest("tr")?.querySelectorAll<HTMLElement>("[data-field-editor]") ?? [])]
+    nextFocus.current = trigger ? (triggers[triggers.indexOf(trigger) + step] ?? null) : null
+  }
+  return (
+    <Popover open={open} onOpenChange={(next, details) => { if (next) onOpenChange(true); else void close(details?.reason !== "escape-key") }}>
+      <PopoverTrigger ref={triggerRef} data-field-editor="" className={cn(fieldSurfaceClass, fieldSurfaceRestingClass, "cursor-text data-popup-open:*:invisible")} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
+        {children}
+      </PopoverTrigger>
+      <FieldPopoverContent
+        align="start"
+        sideOffset={({ anchor }) => -anchor.height}
+        finalFocus={() => nextFocus.current ?? true}
+        aria-busy={state.pending}
+        style={{ width }}
+        className="w-auto gap-0 rounded-md p-0 data-open:animate-none data-closed:animate-none"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* The edge sits over the popup's own border, keeping the text exactly
+            where the cell drew it. */}
+        <div className="relative -m-px min-h-[calc(1lh+8px)] rounded-md border border-ring px-[7px] py-[3px] has-[[aria-invalid=true]]:border-destructive max-sm:py-[max(3px,calc((2.75rem-1lh-2px)/2))]">
+          <DraftControl
+            column={column}
+            value={draft}
+            onValueChange={setDraft}
+            multiline={multiline}
+            state={state}
+            onKeyDown={(event) => {
+              if (event.key === "Tab" && !event.nativeEvent.isComposing) {
+                event.preventDefault()
+                aimFocus(event.shiftKey ? -1 : 1)
+                void close(true)
+                return
+              }
+              const action = draftKeyAction(event, multiline)
+              if (!action) return
+              event.preventDefault()
+              event.stopPropagation()
+              void close(action === "commit")
+            }}
+          />
+          <PendingMark pending={state.pending} />
+        </div>
+        {state.error && <div className="border-t border-border/60 px-2 pb-2"><SaveError state={state} onRetry={() => void close(true)} /></div>}
+      </FieldPopoverContent>
+    </Popover>
+  )
 }
 
 function inputTypeFor(type: string): string {
@@ -133,7 +329,7 @@ function inputTypeFor(type: string): string {
 }
 
 /** Option list for select fields (popover: portaled, opaque per the design
- *  system). Optionless select fields use TextishEditor instead. */
+ *  system). Optionless select fields edit as free text instead. */
 export function SelectEditor({
   column,
   value,
@@ -156,7 +352,7 @@ export function SelectEditor({
   }
   return (
     <Popover open={open} onOpenChange={(next) => { if (!state.pending) onOpenChange(next) }}>
-      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
+      <PopoverTrigger data-field-editor="" className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
       <FieldPopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
@@ -235,7 +431,7 @@ export function MultiSelectEditor({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
+      <PopoverTrigger data-field-editor="" className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
       <FieldPopoverContent align="start" className="w-56 gap-0.5 p-1.5" onClick={(e) => e.stopPropagation()}>
@@ -338,7 +534,7 @@ export function RelationPicker({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
+      <PopoverTrigger data-field-editor="" className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
       <FieldPopoverContent align="start" className="w-72 gap-1.5 p-1.5" onClick={(e) => e.stopPropagation()}>
@@ -468,7 +664,7 @@ export function DocumentPicker({
   }
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
+      <PopoverTrigger data-field-editor="" className={pickerTriggerClass} aria-label={`Edit ${column.key}`} onClick={(event) => event.stopPropagation()}>
         {children}
       </PopoverTrigger>
       <FieldPopoverContent align="start" className="w-80 gap-1.5 p-1.5" onClick={(event) => event.stopPropagation()}>
@@ -501,10 +697,6 @@ export function DocumentPicker({
       </FieldPopoverContent>
     </Popover>
   )
-}
-
-export function TextareaEditor(props: Omit<React.ComponentProps<typeof TextishEditor>, "multiline">) {
-  return <TextishEditor {...props} multiline />
 }
 
 /** Block editor for json values (peek only): textarea with explicit save so a
@@ -568,11 +760,11 @@ export function JsonEditor({
 
 export function BooleanEditor({ column, value, onCommit, children }: { column: RecordFieldColumn; value: unknown; onCommit: (raw: unknown) => Promise<void>; children: React.ReactNode }) {
   const state = useFieldSave(onCommit)
-  return <div className="space-y-1" aria-busy={state.pending}>
-    <div className="flex items-center gap-1">
-      <button type="button" disabled={state.pending} className="flex min-h-6 flex-1 items-center rounded-md max-sm:min-h-11 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void state.save(value !== true)} aria-label={`Toggle ${column.key}`} aria-pressed={value == null ? "mixed" : value === true}>{children}</button>
-      {!column.field?.required && value != null && <Button size="icon-sm" variant="ghost" disabled={state.pending} onClick={() => void state.save(null)} aria-label={`Clear ${column.key}`}><X className="size-3" /></Button>}
+  return <div aria-busy={state.pending}>
+    <div className="flex items-start gap-1">
+      <button type="button" disabled={state.pending} data-field-editor="" className={cn(pickerTriggerClass, "mr-0 w-auto flex-1")} onClick={() => void state.save(value !== true)} aria-label={`Toggle ${column.key}`} aria-pressed={value == null ? "mixed" : value === true}>{children}</button>
+      {!column.field?.required && value != null && <Button size="icon-xs" variant="ghost" className="-my-1" disabled={state.pending} onClick={() => void state.save(null)} aria-label={`Clear ${column.key}`}><X className="size-3" /></Button>}
     </div>
-    <SaveFeedback state={state} />
+    <SaveError state={state} />
   </div>
 }

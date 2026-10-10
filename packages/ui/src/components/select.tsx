@@ -91,7 +91,7 @@ function SelectItem({
       </SelectPrimitive.ItemText>
       <span className="pointer-events-none absolute right-2 flex items-center justify-center text-primary">
         <SelectPrimitive.ItemIndicator>
-          <CheckIcon className="size-3.5" />
+          <CheckIcon className="size-3.5 text-primary" />
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>

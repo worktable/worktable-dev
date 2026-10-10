@@ -45,16 +45,35 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Whether the workspace already holds any doc version history. Used once to
- * tell an install that predates retention limits (it kept everything) from a
- * new one. Errs toward true: an unreadable versions directory counts as
- * history, so the longer policy applies.
+ * Whether a workspace folder already holds any doc version history. Used once
+ * to tell an install that predates retention limits (it kept everything) from
+ * a new one. Errs toward true: any entry counts (space ids may start with a
+ * dot), and an unreadable versions directory counts as history, so the longer
+ * policy applies.
  */
-export function workspaceHasVersionHistory(): boolean {
+export function workspaceHasVersionHistory(workspaceRoot = getWorkspaceRoot()): boolean {
   try {
-    return readdirSync(getVersionsDir()).some((name) => !name.startsWith("."));
+    return readdirSync(join(workspaceRoot, "versions")).some(
+      (name) => name !== ".DS_Store",
+    );
   } catch (err) {
     return (err as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
+/**
+ * Whether a legacy snapshot is a meaningful checkpoint. Those are kept forever,
+ * as the legacy store's own pruning and the current store both do; only a
+ * positively identified checkpoint is spared.
+ */
+async function isMeaningfulCheckpoint(file: VersionFile): Promise<boolean> {
+  try {
+    const parsed = JSON.parse(await readFile(file.path, "utf8")) as {
+      checkpoint?: { meaningful?: unknown };
+    } | null;
+    return parsed?.checkpoint?.meaningful === true;
+  } catch {
+    return false;
   }
 }
 
@@ -322,6 +341,7 @@ async function pruneKeyDir(
     const files = await collectVersionFiles(dir);
     const toDelete = selectDeletions(files, ctx.policy, ctx.protect);
     for (const file of toDelete) {
+      if (await isMeaningfulCheckpoint(file)) continue;
       try {
         const result = await deleteVersionFileSafely(file, versionsRootResolved, realRoot);
         if (result.deleted) {

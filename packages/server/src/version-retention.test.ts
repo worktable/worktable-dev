@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -32,6 +33,7 @@ import {
   pruneDocKeyForCount,
   pruneDocumentGenerationsForCountV2,
   runRetentionSweep,
+  workspaceHasVersionHistory,
 } from "./version-retention.ts"
 import {
   getDocProvenance,
@@ -291,6 +293,32 @@ describe("runRetentionSweep — integration", () => {
     expect(ids).toHaveLength(2)
     expect(ids.some((i) => i.endsWith("-d1"))).toBe(true)
     expect(ids.some((i) => i.endsWith("-d10"))).toBe(true)
+  })
+
+  it("never deletes a legacy meaningful checkpoint", async () => {
+    const now = Date.now()
+    await writeVersionFile(SP, "kept", vid(new Date(now - 1 * DAY), "new"))
+    const checkpoint = await writeVersionFile(
+      SP,
+      "kept",
+      vid(new Date(now - 300 * DAY), "mark")
+    )
+    const marked = JSON.parse(readFileSync(checkpoint, "utf8"))
+    marked.checkpoint = { meaningful: true, kind: "manual", sourceCategory: "human" }
+    writeFileSync(checkpoint, JSON.stringify(marked))
+    await writeVersionFile(SP, "kept", vid(new Date(now - 250 * DAY), "plain"))
+
+    const res = await runRetentionSweep({ mode: "age", maxAgeDays: 180 })
+    expect(res.filesDeleted).toBe(1)
+    const ids = remainingIds(SP, "kept")
+    expect(ids.some((i) => i.endsWith("-mark"))).toBe(true)
+    expect(ids.some((i) => i.endsWith("-plain"))).toBe(false)
+  })
+
+  it("counts any versions entry as existing history, including dot-prefixed spaces", async () => {
+    expect(workspaceHasVersionHistory()).toBe(false)
+    await writeVersionFile(".team", "doc", vid(new Date(), "only"))
+    expect(workspaceHasVersionHistory()).toBe(true)
   })
 
   it("age mode keeps the newest even when it is itself out of window", async () => {

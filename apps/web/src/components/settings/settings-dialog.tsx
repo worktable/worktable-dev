@@ -23,7 +23,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
-import { useUpdateAvailability } from "@/hooks/use-update-availability"
+import { useUpdateWaiting } from "@/hooks/use-update-availability"
 import {
   DEFAULT_SETTINGS_SECTION_ID,
   getSettingsSections,
@@ -107,7 +107,7 @@ function SettingsBody({
   const { isMobile } = useResponsiveDialog()
   useEffect(() => markSettingsSectionVisible(activeId), [activeId])
   const deploymentQuery = useDeploymentInfo()
-  const updateAvailable = useUpdateAvailability() !== null
+  const updateAvailable = useUpdateWaiting()
   const sections = deploymentQuery.data
     ? getSettingsSections(deploymentQuery.data)
     : []

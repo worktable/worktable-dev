@@ -1,12 +1,7 @@
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
-import {
-  lazy,
-  useState,
-  useEffect,
-  useRef,
-} from "react"
+import { lazy, useState, useEffect, useRef } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   ChevronRight,
@@ -78,7 +73,7 @@ import {
   type SidebarSearchResultsHandle,
 } from "@/components/sidebar-search"
 import { openSettings } from "@/lib/settings-open"
-import { useUpdateAvailability } from "@/hooks/use-update-availability"
+import { useUpdateWaiting } from "@/hooks/use-update-availability"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { SpaceContextMenuButton } from "@/components/spaces/space-context-menu"
 import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
@@ -200,7 +195,7 @@ async function atCurrentHtmlDocumentPath<T>(
 function SettingsButton() {
   // Passive (cache-only) signal — a dot on the entry point is the durable
   // "an update is waiting" indicator; the one-time toast lives in the shell.
-  const updateAvailable = useUpdateAvailability() !== null
+  const updateAvailable = useUpdateWaiting()
   const settingsLabel = updateAvailable
     ? "Settings, update available"
     : "Settings"
@@ -468,7 +463,9 @@ function SpaceSection({
               render={
                 <button
                   type="button"
-                  aria-label={expanded ? `Collapse ${space.name}` : `Expand ${space.name}`}
+                  aria-label={
+                    expanded ? `Collapse ${space.name}` : `Expand ${space.name}`
+                  }
                 />
               }
             >
@@ -1536,7 +1533,9 @@ function SpaceTreeSection({
                   />
                   <Clock3 className="size-3 shrink-0" />
                   <span>Temporary</span>
-                  <span className="font-normal">{temporaryDocuments.length}</span>
+                  <span className="font-normal">
+                    {temporaryDocuments.length}
+                  </span>
                 </CollapsibleTrigger>
               </div>
               <CollapsibleContent>

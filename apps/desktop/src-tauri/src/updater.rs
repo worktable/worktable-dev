@@ -71,6 +71,18 @@ pub struct PreparedUpdate {
     sha256: [u8; 32],
 }
 
+/// The outcome of the most recent check, whatever started it. Background
+/// checks never surface their result in the shell, so this is how the app
+/// reports "up to date" or a failure for a check it asked for.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LastUpdateCheck {
+    pub checked_at: u64,
+    /// `current`, `available` or `failed`.
+    pub outcome: &'static str,
+    pub message: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopUpdaterStatus {
@@ -120,6 +132,7 @@ pub struct DesktopUpdaterState {
     download_root: Mutex<Option<PathBuf>>,
     prepared: Mutex<Option<PreparedUpdate>>,
     automatic_failures: Mutex<AutomaticFailures>,
+    last_check: Mutex<Option<LastUpdateCheck>>,
     operation_in_progress: AtomicBool,
     automatic_checks_scheduled: AtomicBool,
     workspace_hidden_by_update: AtomicBool,
@@ -138,6 +151,7 @@ impl Default for DesktopUpdaterState {
             download_root: Mutex::new(None),
             prepared: Mutex::new(None),
             automatic_failures: Mutex::new(AutomaticFailures::default()),
+            last_check: Mutex::new(None),
             operation_in_progress: AtomicBool::new(false),
             automatic_checks_scheduled: AtomicBool::new(false),
             workspace_hidden_by_update: AtomicBool::new(false),
@@ -388,6 +402,7 @@ impl DesktopUpdaterState {
 
     pub fn record_no_update(&self, manual: bool, checked_at: u64) -> Result<(), String> {
         self.record_check_success(checked_at)?;
+        self.note_check(checked_at, "current", None)?;
         let current_version = self.snapshot()?.current_version;
         let mut status = self
             .status
@@ -427,6 +442,7 @@ impl DesktopUpdaterState {
         // The feed answered, but a failed download run continues until the
         // archive is verified, so repeated failures keep backing off.
         self.record_check_time(checked_at);
+        self.note_check(checked_at, "available", None)?;
         let prepared = self
             .prepared
             .lock()
@@ -483,6 +499,7 @@ impl DesktopUpdaterState {
         message: String,
     ) -> Result<(), String> {
         self.record_automatic_failure(failed_at)?;
+        self.note_check(failed_at, "failed", Some(message.clone()))?;
         let current_version = self.snapshot()?.current_version;
         let mut status = self
             .status
@@ -640,6 +657,7 @@ impl DesktopUpdaterState {
     /// A failed download surfaces only when someone is watching; background
     /// attempts retry on the automatic schedule.
     pub fn record_download_failure(&self, failed_at: u64, message: String) -> Result<(), String> {
+        self.note_check(failed_at, "failed", Some(message.clone()))?;
         // The feed answered but the archive did not arrive; retry on the
         // failure schedule rather than waiting out a successful check.
         if let Err(error) = self.update_persisted(|persisted| {
@@ -731,6 +749,32 @@ impl DesktopUpdaterState {
                 "[Worktable Desktop] completed the update check in memory but could not persist its timestamp: {error}"
             );
         }
+    }
+
+    fn note_check(
+        &self,
+        checked_at: u64,
+        outcome: &'static str,
+        message: Option<String>,
+    ) -> Result<(), String> {
+        *self
+            .last_check
+            .lock()
+            .map_err(|_| "desktop updater last-check lock is poisoned".to_string())? =
+            Some(LastUpdateCheck {
+                checked_at,
+                outcome,
+                message,
+            });
+        Ok(())
+    }
+
+    pub fn last_check(&self) -> Result<Option<LastUpdateCheck>, String> {
+        Ok(self
+            .last_check
+            .lock()
+            .map_err(|_| "desktop updater last-check lock is poisoned".to_string())?
+            .clone())
     }
 
     fn record_automatic_failure(&self, failed_at: u64) -> Result<(), String> {
@@ -1091,6 +1135,15 @@ mod tests {
             .unwrap();
         assert_eq!(state.snapshot().unwrap().state, "idle");
         assert!(!state.snapshot().unwrap().surface_visible);
+        // The shell stays quiet, but the app can still report what happened.
+        assert_eq!(
+            state.last_check().unwrap(),
+            Some(LastUpdateCheck {
+                checked_at: 150_000,
+                outcome: "failed",
+                message: Some("Network unavailable".into()),
+            })
+        );
 
         state.begin_check(false).unwrap();
         assert!(state
@@ -1099,6 +1152,7 @@ mod tests {
         let downloading = state.snapshot().unwrap();
         assert_eq!(downloading.state, "downloading");
         assert!(!downloading.surface_visible);
+        assert_eq!(state.last_check().unwrap().unwrap().outcome, "available");
 
         state
             .record_prepared("0.0.46", b"signed archive", true)

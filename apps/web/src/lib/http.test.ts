@@ -1,7 +1,19 @@
-import { afterEach, describe, expect, it } from "bun:test"
-import { authenticatedFetch } from "./http.ts"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { authenticatedFetch, getFreshBrowserCsrfToken } from "./http.ts"
 
 const realFetch = globalThis.fetch
+
+// http.ts caches the Cloud CSRF token for the page's lifetime, and test files
+// share one process. Start each test with no cached token through the public
+// API: a session without a token clears it.
+async function forgetCachedCsrfToken() {
+  globalThis.fetch = (async () =>
+    Response.json({ authenticated: false })) as unknown as typeof fetch
+  await getFreshBrowserCsrfToken()
+  globalThis.fetch = realFetch
+}
+
+beforeEach(forgetCachedCsrfToken)
 
 afterEach(() => {
   globalThis.fetch = realFetch

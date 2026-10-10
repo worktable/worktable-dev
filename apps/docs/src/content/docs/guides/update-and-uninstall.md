@@ -11,12 +11,17 @@ Worktable. Worktable Cloud updates automatically.
 Desktop checks for signed releases after startup and every six hours while it
 runs, including when its window is closed. A new release downloads in the
 background and installs the next time you quit Worktable, or right away when
-you choose **Restart now**. Choose **Worktable → Check for Updates…** to check
-immediately; once an update is ready, the same item reads
+you restart to update.
+
+With a local workspace open, Worktable shows a notice when an update is ready,
+and **Settings → System → Software update** shows its progress with
+**Restart to update**. **Worktable → Check for Updates…** opens that section and
+checks immediately. For a self-hosted or Cloud connection, the same menu item
+opens Desktop's own update screen. Once an update is ready, the item reads
 **Restart to Update…**.
 
 If updating the app needs an administrator password, quitting leaves it
-unchanged; choose **Restart now** instead. If installation fails, Desktop keeps
+unchanged; restart to update instead. If installation fails, Desktop keeps
 the current app and offers the signed DMG for manual recovery.
 
 If **Worktable → Check for Updates…** is unavailable, install the latest DMG

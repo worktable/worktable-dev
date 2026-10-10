@@ -17,8 +17,6 @@ import {
   spaceDocumentTrees,
 } from "@/lib/space-document-tree"
 
-const NO_WIDGETS: never[] = []
-
 /** Route context for the shell header, labelled from the sidebar's catalog. */
 export function useBreadcrumbs(): Breadcrumb[] {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -43,7 +41,6 @@ export function useBreadcrumbs(): Breadcrumb[] {
       ? spaceDocumentTrees({
           documents,
           docs,
-          widgets: space.widgets ?? NO_WIDGETS,
           sort: getDocSort(space),
           order: getDocOrder(space),
         })

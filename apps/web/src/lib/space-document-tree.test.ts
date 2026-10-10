@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import type { DocListEntry, DocumentListItem } from "@worktable/types"
-import type { WidgetListEntry } from "./widgets-api"
 import {
   buildSpaceDocumentIndex,
   spaceDocumentTrees,
 } from "./space-document-tree"
 
 const markdown = { id: "worktable.markdown", sourceVersion: 1 } as const
+const html = { id: "worktable.html", sourceVersion: 1 } as const
 const archivedAt = {
   archivedAt: "2026-09-01T00:00:00.000Z",
   archivedBy: "user",
@@ -28,7 +28,7 @@ function document(
 }
 
 describe("space document index", () => {
-  it("finds a row's list entry by path and archive state", () => {
+  it("finds a row's entry by path and archive state, and HTML docs from the catalog", () => {
     const docs = [
       { path: "plan", format: "markdown", headings: ["Plan"] },
       {
@@ -38,19 +38,21 @@ describe("space document index", () => {
         archived: archivedAt,
       },
     ] as DocListEntry[]
-    const widgets = [
-      { id: "board", name: "Board" },
-      { id: "old/board", name: "Old board", archive: archivedAt },
-    ] as unknown as WidgetListEntry[]
-    const index = buildSpaceDocumentIndex({ documents: [], docs, widgets })
+    const index = buildSpaceDocumentIndex({
+      documents: [
+        document("plan"),
+        document("board", { format: html }),
+        document("old/board", { format: html, archived: true }),
+      ],
+      docs,
+    })
 
     expect(index.doc("plan", undefined)?.headings).toEqual(["Plan"])
     expect(index.doc("plan", true)?.headings).toEqual(["Last year's plan"])
-    expect(index.widget("board", undefined)?.name).toBe("Board")
-    expect(index.widget("board", true)).toBeUndefined()
-    expect(index.widget("old/board", true)?.name).toBe("Old board")
-    expect(index.hasWidget("old/board")).toBe(true)
-    expect(index.hasWidget("old")).toBe(false)
+    expect(index.isHtmlDocument("board")).toBe(true)
+    expect(index.isHtmlDocument("old/board")).toBe(true)
+    expect(index.isHtmlDocument("old")).toBe(false)
+    expect(index.isHtmlDocument("plan")).toBe(false)
   })
 
   it("refuses a folder operation when anything at or below the folder cannot take part", () => {
@@ -72,7 +74,6 @@ describe("space document index", () => {
         },
       ],
       docs: [],
-      widgets: [],
     })
 
     expect(index.folderSupports("area-1", "move")).toBe(true)
@@ -89,31 +90,33 @@ describe("space document index", () => {
 
 describe("space document trees", () => {
   it("builds once per catalog read for every view that presents it", () => {
-    const documents = [document("b"), document("a"), document("c")]
+    const documents = [
+      document("b"),
+      document("a"),
+      document("c", { format: html, title: "Launch board" }),
+    ]
     const docs = [
       { path: "a", format: "markdown", headings: ["Alpha"] },
     ] as DocListEntry[]
-    const widgets: WidgetListEntry[] = []
     const sidebar = spaceDocumentTrees({
       documents,
       docs,
-      widgets,
       sort: "custom",
       order: ["b", "a"],
     })
 
-    // A Markdown doc is named by its first heading, others by catalog title.
+    // A Markdown doc is named by its first heading, others by catalog title,
+    // which is an HTML doc's name.
     expect(sidebar.active.map((node) => node.label)).toEqual([
       "b",
       "Alpha",
-      "c",
+      "Launch board",
     ])
     // The header asks with its own copy of the same settings.
     expect(
       spaceDocumentTrees({
         documents,
         docs,
-        widgets,
         sort: "custom",
         order: ["b", "a"],
       })
@@ -123,7 +126,6 @@ describe("space document trees", () => {
       spaceDocumentTrees({
         documents,
         docs: [...docs],
-        widgets,
         sort: "custom",
         order: ["b", "a"],
       })

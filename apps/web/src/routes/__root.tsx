@@ -77,8 +77,8 @@ import { themeBootstrapScript } from "@/lib/theme"
 import { ThemeProvider, useTheme } from "@/components/theme-provider"
 import {
   usePageLifecyclePersistence,
-  useDiscardRecovery,
-  ReconnectingOverlay,
+  DiscardRecoveryOverlay,
+  useRestoreDiscardedPage,
 } from "@/hooks/use-page-lifecycle"
 import {
   PageMetaContext,
@@ -325,6 +325,7 @@ function RootLayoutWithProviders() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <WorkspaceTitle />
       <ThemeProvider>
         <WorkspaceStorageGate>
           <RootLayout />
@@ -352,11 +353,13 @@ function PageMetaProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Tab-title prefix for non-daily workspaces (cheapest unmistakable signal).
- * Re-applied after each navigation, where TanStack's HeadContent resets the
- * document title to the static root "Worktable".
+ * Tab-title prefix for non-daily workspaces (cheapest unmistakable signal),
+ * on every screen including onboarding and loading. Re-applied after each
+ * navigation, where TanStack's HeadContent resets the document title to the
+ * static root "Worktable".
  */
-function WorkspaceTitle({ mode }: { mode: string | undefined }) {
+function WorkspaceTitle() {
+  const mode = useWorkspace().data?.mode
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   useEffect(() => {
     const prefix =
@@ -392,7 +395,7 @@ function RootLayout() {
 
   // Phase 4: Page lifecycle persistence
   usePageLifecyclePersistence(router)
-  const { reconnecting } = useDiscardRecovery()
+  const discarded = useRestoreDiscardedPage()
   useMobileVisualViewport(isMobile)
 
   // Settings actions can arrive before the deferred sidebar mounts. The shell
@@ -533,9 +536,7 @@ function RootLayout() {
   return (
     <PageMetaProvider>
       <SidebarContext.Provider value={sidebarCtx}>
-        <WorkspaceTitle mode={workspace?.mode} />
         <WorkspaceOperationObserver />
-        <ReconnectingOverlay show={reconnecting} />
         <div
           data-worktable-app-shell
           data-worktable-sidebar-open={sidebarOpen ? "true" : "false"}
@@ -662,6 +663,8 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
+        {/* Last, so a socket the page opens on mount counts as reconnecting. */}
+        <DiscardRecoveryOverlay discarded={discarded} />
       </SidebarContext.Provider>
     </PageMetaProvider>
   )

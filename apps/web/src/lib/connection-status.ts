@@ -47,3 +47,41 @@ export function subscribeConnectionSummary(listener: () => void): () => void {
     listeners.delete(listener)
   }
 }
+
+/** The longest a reloaded page waits for its connection before showing itself. */
+export const CONNECTION_RECOVERY_CAP_MS = 3_000
+
+/**
+ * Call `onRecovered` once a reloaded page's live connection is settled: a
+ * socket is live, or every socket failed, or `capMs` passed. A page with no
+ * socket when this starts has nothing to recover, so it settles at once and
+ * a socket opened later never brings the wait back. Returns a cancel.
+ */
+export function waitForConnectionRecovery(
+  onRecovered: () => void,
+  capMs = CONNECTION_RECOVERY_CAP_MS
+): () => void {
+  if (connectionSummary() === "idle") {
+    onRecovered()
+    return () => {}
+  }
+  let done = false
+  const settle = () => {
+    if (done) return
+    stop()
+    onRecovered()
+  }
+  const check = () => {
+    const summary = connectionSummary()
+    if (summary === "live" || summary === "offline") settle()
+  }
+  const unsubscribe = subscribeConnectionSummary(check)
+  const timer = setTimeout(settle, capMs)
+  function stop() {
+    done = true
+    unsubscribe()
+    clearTimeout(timer)
+  }
+  check()
+  return stop
+}

@@ -3,9 +3,9 @@ import type {
   DocumentListItem,
   SpaceFile,
 } from "@worktable/types"
-import type { WidgetListEntry } from "./widgets-api"
 import {
   documentPathKey,
+  specializedDocumentView,
   supportsManagedFolderArchive,
   supportsManagedFolderDelete,
   supportsManagedFolderMove,
@@ -49,14 +49,13 @@ export function documentFolderPaths(items: DocumentListItem[]): Set<string> {
 
 /**
  * Project catalog entries into tree inputs with the labels people see: a
- * Markdown or rich-text doc's first heading, an HTML doc's name, otherwise the
- * catalog title.
+ * Markdown or rich-text doc's first heading, otherwise the catalog title,
+ * which for an HTML doc is its name.
  */
 export function documentTreeInputResolver(
-  docs: DocListEntry[],
-  widgets: WidgetListEntry[]
+  docs: DocListEntry[]
 ): (item: DocumentListItem) => TreeInput {
-  const index = buildSpaceDocumentIndex({ documents: [], docs, widgets })
+  const index = buildSpaceDocumentIndex({ documents: [], docs })
   const legacyDocFor = (
     item: Extract<DocumentListItem, { kind: "document" }>
   ) => {
@@ -78,14 +77,10 @@ export function documentTreeInputResolver(
       }
     }
     const doc = legacyDocFor(item)
-    const widget =
-      item.format.id === "worktable.html"
-        ? index.widget(item.path, item.archived)
-        : undefined
     return {
       path: item.path,
       kind: "document" as const,
-      title: doc?.headings?.[0]?.trim() || widget?.name || item.title,
+      title: doc?.headings?.[0]?.trim() || item.title,
       format: item.format,
       health: item.health,
       archived: item.archived,
@@ -93,7 +88,7 @@ export function documentTreeInputResolver(
         doc?.provenance?.updatedAt ??
         (typeof doc?.updatedAt === "number"
           ? new Date(doc.updatedAt).toISOString()
-          : (widget?.updatedAt ?? item.updatedAt)),
+          : item.updatedAt),
     }
   }
 }
@@ -115,19 +110,17 @@ export interface SpaceDocumentTrees {
 export function buildSpaceDocumentTrees({
   documents,
   docs,
-  widgets,
   sort,
   order,
   separateTemporary = false,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
   sort: DocSortMode
   order?: string[]
   separateTemporary?: boolean
 }): SpaceDocumentTrees {
-  const toTreeInput = documentTreeInputResolver(docs, widgets)
+  const toTreeInput = documentTreeInputResolver(docs)
   const options = { folderPaths: documentFolderPaths(documents) }
   const treeSort = { mode: sort, order }
   const build = (items: DocumentListItem[]) =>
@@ -161,13 +154,8 @@ const FOLDER_OPERATIONS: Record<
 export interface SpaceDocumentIndex {
   /** The legacy list entry for a Markdown or rich-text document. */
   doc(path: string, archived: boolean | undefined): DocListEntry | undefined
-  /** The HTML document at this path in the given archive state. */
-  widget(
-    path: string,
-    archived: boolean | undefined
-  ): WidgetListEntry | undefined
-  /** Whether an HTML document lives at this exact path, archived or not. */
-  hasWidget(path: string): boolean
+  /** Whether the catalog has an HTML document at this exact path. */
+  isHtmlDocument(path: string): boolean
   /** Whether everything at or below the path supports the folder operation. */
   folderSupports(path: string, operation: FolderOperation): boolean
 }
@@ -185,23 +173,22 @@ function pathKeyAndAncestors(path: string): string[] {
 export function buildSpaceDocumentIndex({
   documents,
   docs,
-  widgets,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
 }): SpaceDocumentIndex {
   const docEntries = new Map<string, DocListEntry>()
   for (const doc of docs) {
     const key = archiveKey(doc.path, doc.archived)
     if (!docEntries.has(key)) docEntries.set(key, doc)
   }
-  const widgetEntries = new Map<string, WidgetListEntry>()
-  for (const widget of widgets) {
-    const key = archiveKey(widget.id, widget.archive)
-    if (!widgetEntries.has(key)) widgetEntries.set(key, widget)
-  }
-  const widgetPaths = new Set(widgets.map((widget) => widget.id))
+  const htmlPaths = new Set(
+    documents.flatMap((item) =>
+      item.kind === "document" && specializedDocumentView(item) === "html"
+        ? [item.path]
+        : []
+    )
+  )
   // A folder operation is unavailable when any entry at or below the folder
   // cannot take part: record each such entry's path and all its ancestors.
   const unavailable: Record<FolderOperation, Set<string>> = {
@@ -221,8 +208,7 @@ export function buildSpaceDocumentIndex({
   }
   return {
     doc: (path, archived) => docEntries.get(archiveKey(path, archived)),
-    widget: (path, archived) => widgetEntries.get(archiveKey(path, archived)),
-    hasWidget: (path) => widgetPaths.has(path),
+    isHtmlDocument: (path) => htmlPaths.has(path),
     folderSupports: (path, operation) =>
       !unavailable[operation].has(documentPathKey(path)),
   }
@@ -233,34 +219,26 @@ export function buildSpaceDocumentIndex({
 // across components and renders instead of rebuilding per render.
 interface CachedBuild<T> {
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
   variant: string
   value: T
 }
 
 function cachedBuild<T>(
   cache: WeakMap<DocumentListItem[], CachedBuild<T>[]>,
-  input: {
-    documents: DocumentListItem[]
-    docs: DocListEntry[]
-    widgets: WidgetListEntry[]
-  },
+  input: { documents: DocumentListItem[]; docs: DocListEntry[] },
   variant: string,
   build: () => T
 ): T {
   const entries = cache.get(input.documents) ?? []
   const hit = entries.find(
-    (entry) =>
-      entry.docs === input.docs &&
-      entry.widgets === input.widgets &&
-      entry.variant === variant
+    (entry) => entry.docs === input.docs && entry.variant === variant
   )
   if (hit) return hit.value
   const value = build()
   // A few variants per read: the sidebar's and the header's trees, and a
   // pending custom order while a drag saves.
   cache.set(input.documents, [
-    { docs: input.docs, widgets: input.widgets, variant, value },
+    { docs: input.docs, variant, value },
     ...entries.slice(0, 3),
   ])
   return value

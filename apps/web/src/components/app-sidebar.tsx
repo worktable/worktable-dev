@@ -60,7 +60,6 @@ import {
   useSpace,
   queryKeys,
 } from "@/lib/queries"
-import type { WidgetListEntry } from "@/lib/widgets-api"
 import { useSpaceDocs } from "@/lib/docs-queries"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
@@ -136,7 +135,6 @@ import type {
   DocListEntry,
   DocumentListItem,
   SpaceFile,
-  WidgetFile,
 } from "@worktable/types"
 import type { TreeNode } from "@/lib/tree"
 import {
@@ -226,7 +224,6 @@ function routeDocumentPath(pathname: string, spaceId: string): string | null {
 
 const NO_DOCS: DocListEntry[] = []
 const NO_DOCUMENTS: DocumentListItem[] = []
-const NO_WIDGETS: WidgetFile[] = []
 
 async function atCurrentHtmlDocumentPath<T>(
   attemptedPath: string,
@@ -391,7 +388,7 @@ function GroupSwitcher({
 const SpaceSection = memo(function SpaceSection({
   space,
 }: {
-  space: SpaceFile & { widgets?: WidgetFile[] }
+  space: SpaceFile
 }) {
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
@@ -621,7 +618,7 @@ const SpaceContent = memo(function SpaceContent({
   onNavigate,
   onNewDoc,
 }: {
-  space: SpaceFile & { widgets?: WidgetFile[] }
+  space: SpaceFile
   onNavigate: () => void
   onNewDoc: (folder?: string) => void
 }) {
@@ -670,7 +667,6 @@ const SpaceContent = memo(function SpaceContent({
         space={space}
         documents={documents ?? NO_DOCUMENTS}
         docs={docs ?? NO_DOCS}
-        widgets={space.widgets ?? NO_WIDGETS}
         isLoading={documentsLoading}
         loadFailed={documentsError}
         onNewDoc={onNewDoc}
@@ -1069,22 +1065,20 @@ function WidgetTreeActions({
 function WidgetTreeItem({
   node,
   spaceId,
-  widget,
   onNavigate,
   onRefresh,
   reorder,
 }: {
   node: TreeNode
   spaceId: string
-  widget: WidgetListEntry
   onNavigate: () => void
   onRefresh: (widgetId?: string) => Promise<void>
   reorder?: DocReorder
 }) {
   const isActive = useIsCurrentRoute(
-    `${documentRoutePrefix(spaceId)}${widget.id}`
+    `${documentRoutePrefix(spaceId)}${node.path}`
   )
-  const archived = !!widget.archive
+  const archived = !!node.archived
   const { dragProps, dropIndicator, isDragging } = treeDragPresentation(
     node,
     reorder
@@ -1101,7 +1095,7 @@ function WidgetTreeItem({
         {dropIndicator}
         <Link
           to="/spaces/$spaceId/documents/$"
-          params={{ spaceId, _splat: widget.id }}
+          params={{ spaceId, _splat: node.path }}
           onClick={onNavigate}
           draggable={false}
           className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
@@ -1113,14 +1107,14 @@ function WidgetTreeItem({
           <AppWindow
             className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
           />
-          <span className="truncate">{widget.name}</span>
+          <span className="truncate">{node.label}</span>
         </Link>
         <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/widget:opacity-100 has-[[data-popup-open]]:opacity-100">
           <WidgetTreeActions
-            key={widget.id}
+            key={node.path}
             spaceId={spaceId}
-            widgetId={widget.id}
-            documentName={widget.name}
+            widgetId={node.path}
+            documentName={node.label}
             archived={archived}
             onRefresh={onRefresh}
           />
@@ -1358,7 +1352,6 @@ function SpaceTreeSection({
   space,
   documents,
   docs,
-  widgets,
   isLoading,
   loadFailed,
   onNewDoc,
@@ -1369,7 +1362,6 @@ function SpaceTreeSection({
   space: SpaceFile
   documents: DocumentListItem[]
   docs: DocListEntry[]
-  widgets: WidgetListEntry[]
   isLoading: boolean
   loadFailed: boolean
   onNewDoc: (folder?: string) => void
@@ -1414,12 +1406,11 @@ function SpaceTreeSection({
   } = spaceDocumentTrees({
     documents,
     docs,
-    widgets,
     sort: effectiveSort,
     order: effectiveOrder,
     separateTemporary: true,
   })
-  const index = spaceDocumentIndex({ documents, docs, widgets })
+  const index = spaceDocumentIndex({ documents, docs })
   const { temporaryCount, temporaryPaths, archivedPaths } = useMemo(() => {
     const temporary = documents.filter(
       (item) => !documentListItemArchived(item) && isTemporaryDocument(item)
@@ -1695,19 +1686,15 @@ const TreeItem = memo(function TreeItem(props: TreeRowProps) {
   const { node, spaceId, index, onNavigate, onWidgetRefresh, reorder } = props
   const view = specializedDocumentView(node)
   if (view === "html" && !node.isFolder) {
-    const widget = index.widget(node.path, node.archived)
-    if (widget) {
-      return (
-        <WidgetTreeItem
-          node={node}
-          spaceId={spaceId}
-          widget={widget}
-          onNavigate={onNavigate}
-          onRefresh={onWidgetRefresh}
-          reorder={reorder}
-        />
-      )
-    }
+    return (
+      <WidgetTreeItem
+        node={node}
+        spaceId={spaceId}
+        onNavigate={onNavigate}
+        onRefresh={onWidgetRefresh}
+        reorder={reorder}
+      />
+    )
   }
   if (view === "doc" && !node.isFolder && index.doc(node.path, node.archived)) {
     return <DocTreeItem {...props} />
@@ -1806,7 +1793,7 @@ function DocTreeItem({
   const openWidgetUnderNode = () => {
     const openPath = routeDocumentPath(router.state.location.pathname, spaceId)
     return openPath !== null &&
-      index.hasWidget(openPath) &&
+      index.isHtmlDocument(openPath) &&
       documentPathIsAtOrBelow(openPath, node.path)
       ? openPath
       : undefined

@@ -77,6 +77,9 @@ export function canonicalConflictPath(
 let csrfToken: string | null = null;
 // One session read at a time: a change waits for the read already running.
 let csrfRequest: Promise<string | null> | null = null;
+let csrfPrefetched = false;
+/** The longest a change waits for a session read that is already running. */
+export const CSRF_WAIT_MS = 2_000;
 
 function unsafe(method: string): boolean {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
@@ -120,10 +123,43 @@ export async function getFreshBrowserCsrfToken(): Promise<string | null> {
  * carries it instead of being refused and sent again.
  */
 export function prefetchBrowserCsrfToken(): void {
-  if (csrfToken !== null || csrfRequest) return;
+  // Once per page load: a signed-out session has no token to find on focus.
+  if (csrfPrefetched || csrfToken !== null || csrfRequest) return;
+  csrfPrefetched = true;
   acquireCsrfToken().catch(() => {
     // The refusal-and-retry path still covers a change.
   });
+}
+
+/**
+ * The token a change should carry now. A session read already running gets
+ * `CSRF_WAIT_MS` to answer; after that the change goes without it, and a
+ * refusal is retried once the read answers.
+ */
+async function currentCsrfToken(
+  signal: AbortSignal | null | undefined
+): Promise<string | null> {
+  const request = csrfRequest;
+  if (!request) return csrfToken;
+  signal?.throwIfAborted();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      request.catch(() => csrfToken),
+      new Promise<string | null>((resolve) => {
+        timer = setTimeout(() => resolve(csrfToken), CSRF_WAIT_MS);
+      }),
+      new Promise<never>((_resolve, reject) => {
+        if (!signal) return;
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 /** Shared credentialed fetch with one Cloud-CSRF retry after a refusal. */
@@ -151,10 +187,11 @@ export async function authenticatedFetch(
     return fetch(input, { ...init, method, headers, credentials: "include" });
   };
 
-  const token =
-    unsafe(method) && csrfRequest
-      ? await csrfRequest.catch(() => csrfToken)
-      : csrfToken;
+  const token = unsafe(method)
+    ? await currentCsrfToken(
+        init.signal ?? (input instanceof Request ? input.signal : undefined)
+      )
+    : csrfToken;
   let response = await send(token);
   noteServerBuild(response);
   if (unsafe(method) && (await csrfFailure(response))) {

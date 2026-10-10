@@ -1638,6 +1638,15 @@ describe("connection requests (an agent asks, the owner approves)", () => {
   });
 
   it("tells the agent when its owner declines, and keeps answered requests answered", async () => {
+    // A web page cannot ask on a visitor's behalf: asking takes JSON.
+    const fromPage = await app.fetch(
+      new Request("http://localhost/api/pairing/requests", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ target: { kind: "mcp-client", client: null } }),
+      })
+    );
+    expect(fromPage.status).toBe(415);
     const asked = await ask();
     const denied = await app.fetch(
       jsonReq("POST", `/api/pairing/requests/${asked.code}/deny`)

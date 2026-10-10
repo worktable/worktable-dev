@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   type AgentAccess,
   AGENT_PLATFORMS,
@@ -906,7 +906,20 @@ function parseRequestTarget(value: unknown): ConnectionRequestTarget | null {
 
 // POST /api/pairing/requests — an agent that knows only this address asks to
 // connect. Its owner approves the returned code in Worktable.
+/**
+ * Anyone may ask, so only in JSON: a web page cannot send JSON cross-origin
+ * without a preflight, so visitors' browsers cannot fill the waiting list.
+ */
+function jsonRequired(c: Context): Response | null {
+  const type = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
+  return type === "application/json"
+    ? null
+    : c.json({ error: "Content-Type must be application/json", code: "JSON_REQUIRED" }, 415);
+}
+
 pairingRouter.post("/requests", async (c) => {
+  const notJson = jsonRequired(c);
+  if (notJson) return notJson;
   if (codeSurfaceLocked()) {
     return c.json({ error: "Too many attempts. Try again later.", code: "RATE_LIMITED" }, 429);
   }
@@ -953,6 +966,8 @@ pairingRouter.post("/requests", async (c) => {
 // POST /api/pairing/requests/poll — the asking agent waits for its owner.
 // Once approved it receives a one-time pairing code and pairs as usual.
 pairingRouter.post("/requests/poll", async (c) => {
+  const notJson = jsonRequired(c);
+  if (notJson) return notJson;
   const body = (await c.req.json().catch(() => null)) as {
     pollToken?: unknown;
   } | null;

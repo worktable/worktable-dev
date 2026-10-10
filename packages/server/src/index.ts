@@ -10,7 +10,7 @@ import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { cors } from "hono/cors";
 import { compressApiResponse } from "./http-compression.ts";
 import { serverTiming, timedMiddleware } from "./request-timing.ts";
-import { startEventLoopLagSampler } from "./perf-diagnostics.ts";
+import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
 import { debugLogging } from "./debug-log.ts";
 import { acceptsGzip } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
@@ -1738,6 +1738,7 @@ export function startServer(
         }
       },
       message(ws, message) {
+        noteServerActivity();
         if (ws.data.credentialRevoked) return;
         if (ws.data.type === "yjs") {
           if (workspaceRecoveryRequired()) {
@@ -1811,7 +1812,7 @@ export function startServer(
   if (updateCheckSupported() && !updateCheckDisabled()) {
     stopUpdateCheckScheduler = startBackgroundUpdateCheckScheduler();
   }
-  // Unref'd and process-wide; it outlives this listener and never holds the process.
+  // Process-wide; samples while requests or socket frames arrive, idles otherwise.
   startEventLoopLagSampler();
 
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";

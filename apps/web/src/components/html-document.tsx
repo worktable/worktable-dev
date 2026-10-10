@@ -869,7 +869,7 @@ function WidgetDetailPage({
                 navigation). */}
             <iframe
               key={compareVersionId}
-              title={`${widget.name} — ${compareVersionLabel(compareVersion)}`}
+              title={`${widget.name} · ${compareVersionLabel(compareVersion)}`}
               src={`${widgetVersionContentUrl(spaceId, widgetId, compareVersionId)}?theme=${resolvedTheme}`}
               sandbox=""
               referrerPolicy="no-referrer"

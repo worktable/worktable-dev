@@ -683,9 +683,6 @@ function ConnectStep({
             kind: "agent-adapter",
             adapter: alwaysOnAgent.adapter,
             participantName: agentName.trim(),
-            ...(alwaysOnAgent.workspaceAccess
-              ? { workspaceAccess: true as const }
-              : {}),
           },
         })
       }
@@ -702,6 +699,7 @@ function ConnectStep({
     onSuccess: (result) => {
       setToken({ value: result.token, id: result.metadata.id })
       void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
   const useCloudConnection = useMutation({

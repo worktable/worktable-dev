@@ -2,11 +2,14 @@ import { createHash, randomBytes } from "node:crypto"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { ParticipantKind, ParticipantRef } from "@worktable/types"
-import { ParticipantRefSchema } from "@worktable/types"
+import {
+  defaultAgentNameForLabel,
+  ParticipantRefSchema,
+} from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
-import { scanAllThreads } from "./thread-store.ts"
+import { renameThreadMember, scanAllThreads } from "./thread-store.ts"
 import {
   listTokens,
   type RequestPrincipal,
@@ -32,7 +35,10 @@ interface ParticipantBindingsFile {
 }
 
 export interface ResolveParticipantOptions {
+  /** Renames the participant if it already exists. */
   name?: string
+  /** Names the participant only if it does not exist yet. */
+  initialName?: string
   /** Pass null when a connection explicitly removes its saved default Space. */
   defaultSpaceId?: string | null
   threadLocationVersion?: 2
@@ -108,7 +114,7 @@ async function notifyParticipantsChanged(): Promise<void> {
   }
 }
 
-function participantKey(
+export function participantKey(
   identity: Pick<TokenIdentity, "agent" | "principal">
 ): string {
   return identity.agent
@@ -161,7 +167,10 @@ function createParticipant(
   return {
     id: `ptc_${randomBytes(16).toString("base64url")}`,
     kind: kindForPrincipal(identity.principal),
-    name: name?.trim() || identity.principal.displayName,
+    name:
+      name?.trim() ||
+      defaultAgentNameForLabel(identity.agent) ||
+      identity.principal.displayName,
     identityFingerprint: participantIdentityFingerprint(identity),
   }
 }
@@ -205,7 +214,8 @@ export async function resolveParticipant(
   defaultSpaceId?: string
   threadLocationVersion?: 2
 }> {
-  return serialized(async () => {
+  let renamed: ParticipantRef | undefined
+  const resolved = await serialized(async () => {
     const file = await loadBindings()
     const key = participantKey(identity)
     const exact = file.bindings.find((binding) => binding.key === key)
@@ -243,6 +253,10 @@ export async function resolveParticipant(
         await saveBindings(file)
         await notifyParticipantsChanged()
       }
+      // An explicit name also brings threads in line when the binding
+      // already has it, so a rename interrupted before its threads finished
+      // completes when it is repeated.
+      if (options.name?.trim()) renamed = existing.participant
       return {
         participant: existing.participant,
         defaultSpaceId: existing.defaultSpaceId,
@@ -250,9 +264,11 @@ export async function resolveParticipant(
       }
     }
 
+    const recovered = await recoverPortableParticipant(identity, options)
     const participant =
-      (await recoverPortableParticipant(identity, options)) ??
-      createParticipant(identity, options.name)
+      recovered ??
+      createParticipant(identity, options.name ?? options.initialName)
+    if (recovered && options.name?.trim()) renamed = recovered
     file.bindings.push({
       key,
       participant,
@@ -273,6 +289,55 @@ export async function resolveParticipant(
       threadLocationVersion: options.threadLocationVersion,
     }
   })
+  // Outside the binding lock: threads take their own locks.
+  // The rename is made. Threads following it is best effort: a failure here
+  // is retried by the next rename, and must not report the rename failed.
+  if (renamed) {
+    await reconcileThreadNames(renamed.id).catch((error: unknown) => {
+      console.error("Could not update thread names after a rename", error)
+    })
+  }
+  return resolved
+}
+
+const reconciling = new Map<string, Promise<void>>()
+
+/**
+ * Bring a participant's threads in line with its current name. Runs for one
+ * participant at a time, each run reading the name then, so overlapping
+ * renames finish on the latest one.
+ */
+function reconcileThreadNames(participantId: string): Promise<void> {
+  const run = async () => {
+    const binding = (await loadBindings()).bindings.find(
+      (candidate) => candidate.participant.id === participantId
+    )
+    if (binding) {
+      await renameThreadMember(participantId, binding.participant.name)
+    }
+  }
+  const next = (reconciling.get(participantId) ?? Promise.resolve()).then(
+    run,
+    run
+  )
+  const settled = next.catch(() => undefined)
+  reconciling.set(participantId, settled)
+  void settled.then(() => {
+    if (reconciling.get(participantId) === settled) {
+      reconciling.delete(participantId)
+    }
+  })
+  return next
+}
+
+/** Each identity's current participant, keyed like `participantKey`. */
+export async function participantsByKey(): Promise<
+  Map<string, ParticipantRef>
+> {
+  const file = await loadBindings()
+  return new Map(
+    file.bindings.map((binding) => [binding.key, binding.participant])
+  )
 }
 
 export async function listParticipantBindings(): Promise<

@@ -1,4 +1,5 @@
 import type {
+  AgentPlatformId,
   ParticipantRef,
   ThreadLocation,
   ThreadMessage,
@@ -13,6 +14,9 @@ export type ThreadListScope = { kind: "all" } | ThreadLocation
 export type ThreadParticipant = ParticipantRef & {
   defaultIdentityId: string
   alwaysOn: boolean
+  /** For a connected agent: where it comes from and the icon its owner chose. */
+  platform?: AgentPlatformId
+  icon?: string | null
 }
 type ThreadManagementResult = { threadId: string; revision: number }
 
@@ -31,9 +35,19 @@ function threadBase(location: ThreadLocation): string {
     : `/api/spaces/${encodeURIComponent(location.spaceId)}/threads`
 }
 
+/** How a connected agent looks, keyed by participant id. */
+export type AgentPresentations = Record<
+  string,
+  Pick<ThreadParticipant, "platform" | "icon">
+>
+
 export function listThreadParticipants(
   location: ThreadLocation = { kind: "worktable" }
-): Promise<{ participants: ThreadParticipant[] }> {
+): Promise<{
+  participants: ThreadParticipant[]
+  /** Every connected agent, including ones no longer offered as recipients. */
+  presentations?: AgentPresentations
+}> {
   return fetchJSON(`${threadBase(location)}/participants`)
 }
 

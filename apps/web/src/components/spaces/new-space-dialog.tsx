@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
-import { useScrollFade } from "@/hooks/use-scroll-fade"
+import { useState, useEffect } from "react"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -21,7 +20,7 @@ import {
   Target,
   Church,
 } from "lucide-react"
-import { getIcon, ALL_ICON_NAMES } from "@/lib/icons"
+import { IconSearchGrid } from "@/components/icon-search-grid"
 import { useSpaces } from "@/lib/queries"
 
 // Icon hints for known group slugs
@@ -40,49 +39,6 @@ function formatGroupLabel(slug: string): string {
     .join(" ")
 }
 
-/** Popular icons shown before user searches */
-const POPULAR_ICONS = [
-  "folder",
-  "file-text",
-  "star",
-  "heart",
-  "bookmark",
-  "target",
-  "zap",
-  "rocket",
-  "lightbulb",
-  "code",
-  "database",
-  "globe",
-  "search",
-  "settings",
-  "users",
-  "briefcase",
-  "calendar",
-  "map",
-  "music",
-  "camera",
-  "shield",
-  "layers",
-  "package",
-  "brain",
-  "palette",
-  "cpu",
-  "eye",
-  "flask-conical",
-  "layout-dashboard",
-  "tag",
-  "bar-chart-3",
-  "message-square",
-  "book-open",
-  "pen-tool",
-  "compass",
-  "trophy",
-  "wrench",
-  "box",
-  "grid-3x3",
-]
-
 interface NewSpaceDialogProps {
   open: boolean
   onClose: () => void
@@ -98,11 +54,9 @@ export function NewSpaceDialog({
 }: NewSpaceDialogProps) {
   const [name, setName] = useState("")
   const [selectedIcon, setSelectedIcon] = useState("rocket")
-  const newIconGridRef = useScrollFade<HTMLDivElement>()
   const [selectedGroup, setSelectedGroup] = useState<string | null>(
     defaultGroup ?? null
   )
-  const [iconQuery, setIconQuery] = useState("")
   const [creating, setCreating] = useState(false)
   const isMobile = useIsMobile()
   const { data: spaces } = useSpaces()
@@ -123,16 +77,9 @@ export function NewSpaceDialog({
       setName("")
       setSelectedIcon("rocket")
       setSelectedGroup(defaultGroup ?? null)
-      setIconQuery("")
       setCreating(false)
     }
   }, [open, defaultGroup])
-
-  const displayIcons = useMemo(() => {
-    const trimmed = iconQuery.trim().toLowerCase()
-    if (!trimmed) return POPULAR_ICONS
-    return ALL_ICON_NAMES.filter((n) => n.includes(trimmed)).slice(0, 80)
-  }, [iconQuery])
 
   const handleCreate = async () => {
     if (!name.trim() || creating) return
@@ -227,43 +174,12 @@ export function NewSpaceDialog({
           {/* Icon */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Icon</label>
-            <Input
-              placeholder="Search icons..."
-              value={iconQuery}
-              onChange={(e) => setIconQuery(e.target.value)}
-              className="mb-2"
+            <IconSearchGrid
+              selected={selectedIcon}
+              onSelect={setSelectedIcon}
+              columns={9}
+              className="max-h-40"
             />
-            <div
-              ref={newIconGridRef}
-              className="scroll-fade grid max-h-40 grid-cols-9 gap-1 overflow-y-auto"
-              style={{ "--sf-size": "20px" } as React.CSSProperties}
-            >
-              {displayIcons.map((iconKey) => {
-                const IconComp = getIcon(iconKey)
-                if (!IconComp) return null
-                const isActive = selectedIcon === iconKey
-                return (
-                  <button
-                    key={iconKey}
-                    type="button"
-                    onClick={() => setSelectedIcon(iconKey)}
-                    title={iconKey}
-                    className={`flex size-8 items-center justify-center rounded-md transition-colors duration-150 ${
-                      isActive
-                        ? "bg-surface-selected text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    <IconComp className="size-4" />
-                  </button>
-                )
-              })}
-              {displayIcons.length === 0 && iconQuery.trim() && (
-                <p className="col-span-9 py-2 text-center text-xs text-muted-foreground">
-                  No icons matching &ldquo;{iconQuery.trim()}&rdquo;
-                </p>
-              )}
-            </div>
           </div>
         </ResponsiveDialogBody>
 

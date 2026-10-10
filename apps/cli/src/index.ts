@@ -113,7 +113,7 @@ import {
   readLocalWorkspaceRegistry,
   rememberLocalWorkspace,
   remoteMcpUrl,
-  rotateAgentToken,
+  rotateAgentCredential,
   starterWorkspaceReady,
   UnsupportedLocalRuntimeSchemaError,
   UnsupportedLocalWorkspaceRegistrySchemaError,
@@ -3962,7 +3962,7 @@ async function mcpPrintConfig(
         `The ${clientId} snippet can't embed a bearer token, so --with-token would mint a credential nothing carries.`
       )
     }
-    const { token } = await rotateAgentToken({
+    const { token } = await rotateAgentCredential({
       agent: `manual-${clientId}`,
       scopes: [...DEFAULT_AGENT_TOKEN_SCOPES],
     })

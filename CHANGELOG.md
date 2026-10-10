@@ -12,6 +12,12 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Hermes:** Connect Hermes Agent during onboarding or from **Settings → Agents → Hermes**. Hermes answers thread messages addressed to it and uses Worktable's tools and skills, with a pairing code on local or self-hosted Worktable or a sign-in on Cloud.
+- **Agents in Settings:** Each connected agent shows its platform's logo, its name, and where it runs. Select **Edit** to rename it, pick an icon from the same library as Spaces, or change what it may do. Agents set up with `worktable mcp setup`, the Desktop and manual setup panels, or a token made with an agent name appear there too. On local and self-hosted Worktable for now.
+- **Agent access:** Choose an agent's access when you connect it: **Threads**, **Read workspace**, and **Edit workspace**. All three are on by default, for OpenClaw as well.
+
+### Changed
+
+- **Names in threads:** Renaming yourself or an agent updates the threads you are already in, so @mentions of the new name reach you or the agent there.
 
 ### Fixed
 

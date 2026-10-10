@@ -6,8 +6,13 @@ import { setAppDirOverride } from "./app-storage.ts"
 import {
   disconnectAgentConnection,
   listAgentConnections,
+  rotateAgentCredential,
+  updateAgentConnection,
   upsertAgentConnection,
 } from "./agent-connection-store.ts"
+import { DEFAULT_AGENT_TOKEN_SCOPES } from "@worktable/types"
+import { resolveParticipant } from "./participant-store.ts"
+import { listThreadParticipants } from "./thread-service.ts"
 import { createToken, verifyToken } from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -149,7 +154,8 @@ describe("semantic agent connections", () => {
     const rotated = (await listAgentConnections())[0]!
     expect(rotated.id).toBe(initial.id)
     expect(rotated.connectedAt).toBe(initial.connectedAt)
-    expect(rotated.displayName).toBe("Studio Claw")
+    // An agent has one name: its thread participant's.
+    expect(rotated.displayName).toBe("Atlas")
     expect(await verifyToken(first.token)).toBeNull()
     expect(await verifyToken(second.token)).not.toBeNull()
 
@@ -166,7 +172,8 @@ describe("semantic agent connections", () => {
       displayName: "OpenClaw",
     })
     const rotatedAgain = (await listAgentConnections())[0]!
-    expect(rotatedAgain.displayName).toBe("Studio Claw")
+    // Rotating the credential again is not a rename.
+    expect(rotatedAgain.displayName).toBe("Atlas")
     expect(await verifyToken(second.token)).toBeNull()
     expect(await verifyToken(third.token)).not.toBeNull()
 
@@ -176,9 +183,87 @@ describe("semantic agent connections", () => {
     expect(await verifyToken(third.token)).toBeNull()
   })
 
-  it("does not turn an ordinary hand-minted token into a connection", async () => {
-    await createToken({ scopes: ["docs:read"], agent: "manual-token" })
-    expect(await listAgentConnections()).toEqual([])
+  it("lists agent credentials minted outside pairing as agents", async () => {
+    await createToken({ scopes: ["docs:read"] })
+    const desktop = await createToken({
+      scopes: ["docs:read"],
+      agent: "manual-codex",
+    })
+    await createToken({ scopes: ["docs:read"], agent: "managed" })
+    const listed = await listAgentConnections()
+    // An owner token without an agent label is not an agent.
+    expect(listed).toHaveLength(2)
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          displayName: "Codex",
+          platform: "codex",
+          mode: "on-demand",
+        }),
+        expect.objectContaining({
+          displayName: "Local agents",
+          platform: "other",
+        }),
+      ])
+    )
+
+    // Editing records it; the rename is its thread name too.
+    const codex = listed.find((connection) => connection.platform === "codex")!
+    const renamed = await updateAgentConnection(codex.id, {
+      displayName: "Desk Codex",
+      icon: "terminal",
+    })
+    expect(renamed).toMatchObject({
+      id: codex.id,
+      displayName: "Desk Codex",
+      icon: "terminal",
+      participant: { name: "Desk Codex" },
+    })
+    expect(await listAgentConnections()).toHaveLength(2)
+    // Without Threads it cannot read or answer one, so it is not offered.
+    const recipients = async () =>
+      (await listThreadParticipants()).map((participant) => participant.name)
+    expect(await recipients()).not.toContain("Desk Codex")
+    // Also for a credential made by hand under a label like a pairing's.
+    const handMade = await createToken({
+      scopes: ["docs:read"],
+      agent: "claude@build-host",
+    })
+    const { participant: handMadeAgent } = await resolveParticipant(
+      (await verifyToken(handMade.token))!
+    )
+    expect(await recipients()).not.toContain(handMadeAgent.name)
+
+    // Setting it up again re-issues its credential; it stays the same agent,
+    // with the access its owner chose.
+    await updateAgentConnection(codex.id, {
+      access: { threads: true, read: true, edit: false },
+    })
+    expect(await recipients()).toContain("Desk Codex")
+    const reissued = await rotateAgentCredential({
+      agent: "manual-codex",
+      scopes: [...DEFAULT_AGENT_TOKEN_SCOPES],
+    })
+    expect(await verifyToken(desktop.token)).toBeNull()
+    const after = await listAgentConnections()
+    expect(after).toHaveLength(2)
+    expect(
+      after.find((connection) => connection.id === codex.id)
+    ).toMatchObject({
+      displayName: "Desk Codex",
+      icon: "terminal",
+      access: { threads: true, read: true, edit: false },
+    })
+
+    // Another credential under the same label is the same agent, too.
+    const another = await createToken({
+      scopes: ["docs:read"],
+      agent: "manual-codex",
+    })
+    expect(await listAgentConnections()).toHaveLength(2)
+    expect(await disconnectAgentConnection(codex.id)).toBe(true)
+    expect(await verifyToken(reissued.token)).toBeNull()
+    expect(await verifyToken(another.token)).toBeNull()
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {
@@ -233,6 +318,46 @@ describe("semantic agent connections", () => {
       setWorkspaceRootOverride(workspaceDir)
       await rm(otherWorkspace, { recursive: true, force: true })
     }
+  })
+
+  it("keeps the name an owner gave a pairing from an earlier release", async () => {
+    const target = { kind: "mcp-client" as const, clientId: "codex" }
+    const first = await createToken({
+      scopes: ["threads:*"],
+      agent: "codex@devbox",
+    })
+    // Recorded before agents had one name: no participant, the owner's name.
+    await upsertAgentConnection({
+      target,
+      mode: "on-demand",
+      participant: null,
+      machine: "devbox",
+      credentialId: first.metadata.id,
+      displayName: "My Codex",
+    })
+    // Its thread participant was named separately.
+    const identity = (await verifyToken(first.token))!
+    const { participant } = await resolveParticipant(identity)
+    expect(participant.name).not.toBe("My Codex")
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "My Codex" },
+    ])
+
+    // Reconnecting carries the owner's name into threads.
+    const second = await createToken({
+      scopes: ["threads:*"],
+      agent: "codex@devbox",
+    })
+    await upsertAgentConnection({
+      target,
+      mode: "on-demand",
+      participant,
+      machine: "devbox",
+      credentialId: second.metadata.id,
+    })
+    expect(await listAgentConnections()).toMatchObject([
+      { displayName: "My Codex", participant: { name: "My Codex" } },
+    ])
   })
 
   it("keeps hostname-less MCP clients distinct by credential", async () => {

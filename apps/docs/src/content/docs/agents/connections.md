@@ -151,6 +151,12 @@ Then ask the agent to call `worktable_discover` with action `state`. Check that
 it returns the intended workspace and Spaces. A conversation-only participant
 may not have discovery access; verify it by sending an authorized test message.
 
+On local and self-hosted Worktable, choose what an agent may do when you connect
+it in **Settings → Agents**: **Threads**, **Read workspace**, and **Edit
+workspace**. All three are on by default; an always-on agent always keeps
+Threads. Select **Edit** on a connected agent to rename it, choose its icon, or
+change its access. Its name is also its name in threads.
+
 To disconnect, remove the client configuration and revoke its token or approved
 connection in **Settings → Agents**. Removing configuration alone does not
 revoke access. Signing out of Cloud in the browser does not disconnect agents.

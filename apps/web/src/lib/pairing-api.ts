@@ -1,3 +1,4 @@
+import type { AgentAccess } from "@worktable/types"
 import { fetchJSON } from "./http.ts"
 
 // Client for the /api/pairing surface backing the Settings "Connect remote
@@ -69,7 +70,6 @@ export type PairingTarget =
       adapter: string
       participantName: string
       defaultSpaceId?: string
-      workspaceAccess?: true
     }
 
 /** A verified terminal outcome always wins over stale failure events. */
@@ -95,11 +95,15 @@ export function shouldPollPairing(
 }
 
 export function createPairing(
-  input:
+  input: (
     | { client?: string | null; displayName?: string }
     | {
         target: Extract<PairingTarget, { kind: "agent-adapter" }>
       }
+  ) & {
+    /** What the agent may do; Worktable grants all of it when omitted. */
+    access?: AgentAccess
+  }
 ): Promise<PairingCreated> {
   return fetchJSON<PairingCreated>("/api/pairing", {
     method: "POST",

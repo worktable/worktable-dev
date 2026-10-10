@@ -32,9 +32,13 @@ export function IconSearchGrid({
   const [allNames, setAllNames] = useState<readonly string[] | null>(null)
   useEffect(() => {
     let active = true
-    void loadIconCatalog().then((catalog) => {
-      if (active) setAllNames(catalog.ALL_ICON_NAMES)
-    })
+    loadIconCatalog().then(
+      (catalog) => {
+        if (active) setAllNames(catalog.ALL_ICON_NAMES)
+      },
+      // Popular icons still work; search stays empty rather than claim no match.
+      () => {}
+    )
     return () => {
       active = false
     }

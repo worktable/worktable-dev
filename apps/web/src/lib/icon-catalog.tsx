@@ -10,14 +10,18 @@ const knownIcons = new Set<string>(ALL_ICON_NAMES)
 export default function CatalogIcon({
   name,
   fallback,
-  ...props
-}: LucideProps & { name: string; fallback?: ReactNode }) {
+  iconProps,
+}: {
+  name: string
+  fallback: ReactNode
+  iconProps: LucideProps
+}) {
   if (!knownIcons.has(name)) return fallback
   return (
     <DynamicIcon
-      {...props}
+      {...iconProps}
       name={name as IconName}
-      fallback={() => <Folder {...props} />}
+      fallback={() => <Folder {...iconProps} />}
     />
   )
 }

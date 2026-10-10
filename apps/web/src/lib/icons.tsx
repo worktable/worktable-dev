@@ -90,7 +90,14 @@ export const POPULAR_ICONS = [...COMMON_ICONS.keys()]
 
 /** The full Lucide catalog: every name and a loader per icon (about 44 KB gzip). */
 export const loadIconCatalog = () => import("./icon-catalog")
-const CatalogIcon = lazy(loadIconCatalog)
+const CatalogIcon = lazy(() =>
+  loadIconCatalog().catch(() => ({
+    // An icon that cannot load keeps its placeholder, as it always has.
+    default: ({ iconProps }: { iconProps: LucideProps }) => (
+      <Folder {...iconProps} />
+    ),
+  }))
+)
 
 /**
  * Any Lucide icon by name. Unknown names render `fallback`; a Folder holds
@@ -105,7 +112,7 @@ export function NamedIcon({
   if (Common) return <Common {...props} />
   return (
     <Suspense fallback={<Folder {...props} />}>
-      <CatalogIcon {...props} name={name} fallback={fallback} />
+      <CatalogIcon name={name} fallback={fallback} iconProps={props} />
     </Suspense>
   )
 }

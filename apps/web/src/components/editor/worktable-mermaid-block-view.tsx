@@ -20,6 +20,8 @@ import { useTheme } from "@/components/theme-provider"
 
 const loadSourceEditor = () => import("./worktable-mermaid-source-editor")
 const MermaidSourceEditor = lazy(loadSourceEditor)
+// A hint only: opening the editor loads it again and reports any failure.
+const preloadSourceEditor = () => void loadSourceEditor().catch(() => {})
 
 /** Small identity tile shown in both collapsed and expanded headers. */
 function MermaidIconTile() {
@@ -181,8 +183,8 @@ export default function MermaidBlockComponent({
                   aria-pressed={showEditor}
                   className={cn(showEditor && "bg-muted text-foreground")}
                   onClick={() => setShowEditor((current) => !current)}
-                  onPointerEnter={() => void loadSourceEditor()}
-                  onFocus={() => void loadSourceEditor()}
+                  onPointerEnter={preloadSourceEditor}
+                  onFocus={preloadSourceEditor}
                   title={showEditor ? "Hide source" : "Edit source"}
                 >
                   <Code2 className="size-3.5" />

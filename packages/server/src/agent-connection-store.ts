@@ -209,6 +209,11 @@ export async function upsertAgentConnection(input: {
   })
 }
 
+const AGENT_ADAPTER_NAMES: Record<string, string> = {
+  hermes: "Hermes",
+  openclaw: "OpenClaw",
+}
+
 function publicConnection(
   stored: StoredAgentConnection,
   token: TokenMetadata
@@ -216,9 +221,7 @@ function publicConnection(
   const displayName =
     stored.displayName ??
     (stored.target.kind === "agent-adapter"
-      ? stored.target.adapter === "openclaw"
-        ? "OpenClaw"
-        : stored.target.adapter
+      ? (AGENT_ADAPTER_NAMES[stored.target.adapter] ?? stored.target.adapter)
       : (stored.target.clientId ?? token.agent ?? "Agent"))
   return {
     id: stored.id,

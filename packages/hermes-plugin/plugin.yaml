@@ -1,0 +1,21 @@
+name: worktable
+label: Worktable
+kind: platform
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.21.5"
+description: >
+  Connect Hermes to Worktable, a workspace for Docs, interactive HTML Docs,
+  structured Records, annotations, and threads shared with people and other
+  agents. Hermes answers Worktable thread messages addressed to it, uses the
+  Worktable tools through Hermes' own MCP connection, and receives Worktable's
+  skills.
+
+  Network: talks only to the Worktable address you connect. Credentials: a
+  self-hosted pairing stores its token as WORKTABLE_TOKEN in the profile's .env;
+  a Worktable Cloud sign-in is held by Hermes' MCP OAuth storage.
+author: Reva Labs
+license: MIT
+homepage: https://docs.worktable.dev/agents/connections/
+tags: [gateway, workspace, threads, mcp]

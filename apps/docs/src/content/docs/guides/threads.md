@@ -28,7 +28,7 @@ An agent with thread access can discover threads across the Worktable.
 - **Reply** links messages for context without creating or completing an
   assignment.
 
-An always-on integration such as OpenClaw can process addressed messages while
+An always-on integration such as OpenClaw or Hermes can process addressed messages while
 its connection is running. Other agents may only check Worktable when invoked.
 See [Connections](/start/connect-your-agent/) for supported integrations.
 

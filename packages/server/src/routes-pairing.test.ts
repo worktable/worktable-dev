@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { Hono } from "hono";
-import type { SpaceFile } from "@worktable/types";
+import { DEFAULT_AGENT_TOKEN_SCOPES, type SpaceFile } from "@worktable/types";
 import { setAppDirOverride } from "./app-storage.ts";
 import {
   listAgentConnections,
@@ -99,6 +99,7 @@ interface CreateResponse {
         adapter: string;
         participantName: string;
         defaultSpaceId?: string;
+        workspaceAccess?: true;
       };
 }
 
@@ -424,6 +425,38 @@ describe("create (owner surface)", () => {
       ((await redeemed.json()) as { token: string }).token
     );
     expect(identity?.agent).toBe("future-agent@oci_portable_install");
+    expect(identity?.scopes).toEqual(["threads:*"]);
+
+    // An adapter whose agent also uses the credential for workspace tools
+    // receives the ordinary agent content scopes plus every thread scope.
+    const withWorkspace = await createPairing(app, {
+      target: {
+        kind: "agent-adapter",
+        adapter: "hermes",
+        participantName: "Hermes",
+        workspaceAccess: true,
+      },
+    });
+    expect(withWorkspace.target).toMatchObject({ workspaceAccess: true });
+    const workspaceRedeemed = await app.fetch(
+      jsonReq("POST", "/api/pairing/redeem", {
+        body: {
+          code: withWorkspace.code,
+          hostname: "portable-host",
+          installationId: "hci_portable_install",
+        },
+      })
+    );
+    expect(workspaceRedeemed.status).toBe(200);
+    const workspaceIdentity = await verifyToken(
+      ((await workspaceRedeemed.json()) as { token: string }).token
+    );
+    expect(workspaceIdentity?.scopes).toEqual([
+      ...DEFAULT_AGENT_TOKEN_SCOPES.filter(
+        (scope) => !scope.startsWith("threads:")
+      ),
+      "threads:*",
+    ]);
 
     const rejected = await app.fetch(
       jsonReq("POST", "/api/pairing", {

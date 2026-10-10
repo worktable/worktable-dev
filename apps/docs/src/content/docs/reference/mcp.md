@@ -169,6 +169,7 @@ Support maturity and configuration method are separate:
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |
 | `openclaw`       | OpenClaw                                           | ClawHub plugin plus local pairing or Cloud registration |
+| `hermes`         | Hermes Agent                                       | Hermes plugin plus local pairing or Cloud OAuth         |
 
 `worktable mcp setup`, detection, status, repair, removal, and pairing accept
 only connector-installable IDs. `worktable mcp print-config goose` produces the
@@ -176,10 +177,10 @@ manual Goose configuration. Claude Desktop is installed from the MCPB in
 **Settings → Agents → Desktop apps**; Worktable does not emit a fake CLI snippet
 for it.
 
-OpenClaw is not accepted by `worktable mcp setup`. Install its Worktable plugin
-from ClawHub, then use the pairing command shown by a local/self-hosted
-Worktable or the Cloud agent-registration flow. Its default Cloud scope is
-conversation-only.
+OpenClaw and Hermes are not accepted by `worktable mcp setup`. Install their
+Worktable plugins, then use the pairing command shown by a local/self-hosted
+Worktable. On Cloud, OpenClaw uses the agent-registration flow, with
+conversation-only scope by default, and Hermes signs in with OAuth.
 
 ## HTTP-to-stdio bridge
 

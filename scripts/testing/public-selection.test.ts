@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { execFileSync } from "node:child_process"
 import { publicTestSuites } from "./public-suites.ts"
 import {
+  needsHermesPlugin,
   needsPluginPackaging,
   productDocsOnly,
   publicChangePaths,
@@ -21,6 +22,7 @@ describe("public evidence ownership", () => {
     for (const [path, extra] of [
       ["apps/cli/src/config.ts", []],
       ["packages/openclaw-plugin/src/connector.ts", []],
+      ["packages/hermes-plugin/worktable_hermes/connector.py", []],
       ["apps/web/src/routes/index.tsx", ["web-browser"]],
       ["apps/desktop/ui/main.ts", ["desktop-contracts", "desktop-browser"]],
       ["packages/ui/src/button.tsx", ["web-browser", "desktop-browser"]],
@@ -77,9 +79,23 @@ describe("public evidence ownership", () => {
     for (const path of [
       "apps/web/a.ts",
       "packages/server/src/index.ts",
+      "packages/hermes-plugin/plugin.yaml",
       "README.md",
     ])
       expect(needsPluginPackaging([path])).toBe(false)
+  })
+
+  test("the Hermes check follows its package and the skills it copies", () => {
+    for (const paths of [
+      [],
+      ["packages/hermes-plugin/worktable_hermes/adapter.py"],
+      ["plugins/worktable/skills/worktable-create-or-update-docs/SKILL.md"],
+      ["scripts/skill-inventory.ts"],
+      ["package.json"],
+    ])
+      expect(needsHermesPlugin(paths)).toBe(true)
+    for (const path of ["apps/web/a.ts", "packages/openclaw-plugin/a.ts"])
+      expect(needsHermesPlugin([path])).toBe(false)
   })
 
   test("immutable Git diff includes both sides of renames and unavailable history is conservative", () => {

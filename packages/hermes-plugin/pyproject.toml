@@ -1,0 +1,13 @@
+[project]
+name = "worktable-hermes"
+version = "0.1.0"
+description = "Worktable for Hermes Agent"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"

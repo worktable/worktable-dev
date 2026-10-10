@@ -13,6 +13,7 @@ const repositoryDocuments = new Set([
   "docs/building.md",
   "docs/development.md",
   "docs/openclaw-release.md",
+  "docs/hermes-release.md",
   ".github/CODEOWNERS",
   ".github/PULL_REQUEST_TEMPLATE.md",
 ])

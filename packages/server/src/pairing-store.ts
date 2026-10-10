@@ -92,6 +92,8 @@ export type PairingTarget =
       adapter: string;
       participantName: string;
       defaultSpaceId?: string;
+      /** The adapter's agent also uses the paired credential for workspace tools. */
+      workspaceAccess?: true;
     };
 
 interface StoredPairingSession {

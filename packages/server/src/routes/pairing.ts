@@ -150,6 +150,12 @@ function parseAgentAdapterTarget(value: unknown):
   ) {
     return { ok: false, error: "defaultSpaceId must be a non-empty string" };
   }
+  if (
+    target.workspaceAccess !== undefined &&
+    typeof target.workspaceAccess !== "boolean"
+  ) {
+    return { ok: false, error: "workspaceAccess must be a boolean" };
+  }
   return {
     ok: true,
     target: {
@@ -159,8 +165,24 @@ function parseAgentAdapterTarget(value: unknown):
       ...(typeof target.defaultSpaceId === "string"
         ? { defaultSpaceId: target.defaultSpaceId.trim() }
         : {}),
+      ...(target.workspaceAccess === true ? { workspaceAccess: true } : {}),
     },
   };
+}
+
+/**
+ * An always-on adapter receives addressed messages through threads. One whose
+ * agent also reaches the workspace through the same credential gets the
+ * ordinary agent content scopes as well.
+ */
+function agentAdapterScopes(
+  target: Extract<PairingTarget, { kind: "agent-adapter" }>
+): string[] {
+  if (!target.workspaceAccess) return ["threads:*"];
+  return [
+    ...DEFAULT_AGENT_TOKEN_SCOPES.filter((scope) => !scope.startsWith("threads:")),
+    "threads:*",
+  ];
 }
 
 // ---- Owner surface -------------------------------------------------------
@@ -249,7 +271,9 @@ ownerSurface.post("/", async (c) => {
     );
   }
 
-  let scopes = target ? ["threads:*"] : [...DEFAULT_AGENT_TOKEN_SCOPES];
+  let scopes = target
+    ? agentAdapterScopes(target)
+    : [...DEFAULT_AGENT_TOKEN_SCOPES];
   if (body?.scopes !== undefined) {
     if (
       !Array.isArray(body.scopes) ||
@@ -444,7 +468,7 @@ pairingRouter.post("/redeem", async (c) => {
       return c.json(
         {
           error:
-            "The OpenClaw home Space no longer exists. Create a new pairing for an existing Space.",
+            "The agent's home Space no longer exists. Create a new pairing for an existing Space.",
           code: "PAIRING_TARGET_UNAVAILABLE",
         },
         409

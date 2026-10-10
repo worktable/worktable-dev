@@ -65,7 +65,10 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
     except urllib.error.HTTPError as error:
         try:
             payload = json.loads(error.read() or b"{}")
-        except ValueError:
+        except (ValueError, http.client.HTTPException, OSError):
+            # An unreadable or cut-off body still has its status.
+            payload = {}
+        if not isinstance(payload, dict):
             payload = {}
         raise PairingError(
             payload.get("error") or f"Worktable returned HTTP {error.code}",

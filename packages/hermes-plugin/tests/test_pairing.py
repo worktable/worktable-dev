@@ -90,3 +90,23 @@ def test_a_connection_cut_mid_answer_is_retryable(monkeypatch):
         pairing._request("http://w/api/pairing/requests/poll", {"pollToken": "x"})
     assert error.value.code == "UNREACHABLE"
     assert error.value.status is None
+
+
+def test_a_cut_off_error_answer_keeps_its_status(monkeypatch):
+    import http.client
+    import urllib.error
+
+    class CutBody:
+        def read(self, *_):
+            raise http.client.IncompleteRead(b"{")
+
+        def close(self):
+            pass
+
+    def fail(*_, **__):
+        raise urllib.error.HTTPError("http://w", 503, "Busy", {}, CutBody())
+
+    monkeypatch.setattr(pairing.urllib.request, "urlopen", fail)
+    with pytest.raises(pairing.PairingError) as error:
+        pairing._request("http://w/api/pairing/requests/poll", {"pollToken": "x"})
+    assert error.value.status == 503

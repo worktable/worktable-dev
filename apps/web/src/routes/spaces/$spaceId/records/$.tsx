@@ -15,6 +15,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
+  ChevronRight,
   Copy,
   Database,
   Info,
@@ -26,6 +28,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Rows3,
   Search,
   Settings2,
   Trash,
@@ -39,7 +42,12 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { Input } from "@worktable/ui/components/input"
@@ -55,7 +63,7 @@ import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGr
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
-import { applyColumnOrder, collectRecordQueryWarnings, columnLabel, compileFilters, indexDanglingRelations, isValidFilter, recordTitle, resolveDocumentGroupValue, type ColumnPrefs, type RecordFieldColumn, type RecordFilter } from "@/lib/records"
+import { applyColumnOrder, collectRecordQueryWarnings, compareGroupLabels, optionColorClass, columnLabel, compileFilters, indexDanglingRelations, isValidFilter, recordTitle, resolveDocumentGroupValue, ROW_HEIGHTS, type ColumnPrefs, type RecordFieldColumn, type RecordFilter, type RowHeight } from "@/lib/records"
 import { ColumnConfig } from "@/components/records/column-config"
 import { EditableCell } from "@/components/records/editable-cell"
 import { DocumentReferenceScope, FieldValue, type ExpandedRecords } from "@/components/records/field-value"
@@ -198,11 +206,20 @@ function RecordsPage() {
 
   const [includeArchived, setIncludeArchived] = useState(false)
   const [editCells, setEditCells] = useState(false)
+  // Collapsed groups are a passing reading aid: a new grouping starts open.
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => { setCollapsedGroups(new Set()) }, [collectionId, groupBy])
   const [showUnmodeled, setShowUnmodeled] = useState(false)
 
   // Column prefs (visibility + order) are personal defaults: localStorage
   // only, keyed per collection, alongside the persisted URL table state.
   const [colPrefs, setColPrefsState] = useState<ColumnPrefs>({ hidden: [], order: [], widths: {} })
+  const rowHeight: RowHeight = colPrefs.rowHeight ?? "double"
+  // Header drag-and-drop reorders columns; the Columns popover keeps arrow
+  // buttons for keyboard and touch.
+  const [draggedColumn, setDraggedColumn] = useState<string>()
+  const [columnDrop, setColumnDrop] = useState<{ key: string; side: "before" | "after" }>()
+  const resizePressRef = useRef(false)
   useEffect(() => {
     tableStateTouchedRef.current = false
     setColPrefsState(loadPersistedTableState(spaceId, collectionId)?.cols ?? { hidden: [], order: [], widths: {} })
@@ -311,10 +328,14 @@ function RecordsPage() {
   // Filter and group field pickers exclude names the query grammar resolves
   // to record METADATA before data (same collision that blocks sorting them).
   const queryableColumns = useMemo(() => orderedColumns.filter((column) => !RECORD_TOP_LEVEL_KEYS.has(column.key)), [orderedColumns])
+  // The grouped field is already each group's heading; repeating it in every
+  // row is noise, so its column steps aside until the table is ungrouped,
+  // unless it is the only visible column and rows would have nothing to show.
   const visibleColumns = useMemo(() => {
     const hidden = new Set(colPrefs.hidden)
-    return orderedColumns.filter((column) => !hidden.has(column.key))
-  }, [orderedColumns, colPrefs.hidden])
+    const shown = orderedColumns.filter((column) => !hidden.has(column.key))
+    return shown.some((column) => column.key !== groupBy) ? shown.filter((column) => column.key !== groupBy) : shown
+  }, [orderedColumns, colPrefs.hidden, groupBy])
 
   // Merges into the existing search: the peek must not clobber filters/sort.
   const openPeek = (recordId: string | undefined) => {
@@ -331,16 +352,7 @@ function RecordsPage() {
   }
 
   // Grouped table: one aggregate query over the same scope for true group
-  // totals; loaded rows are bucketed client-side beneath those headers.
-  // Visible + queryable only: metadata-colliding names would sum the wrong
-  // values server-side, and a hidden column must stay hidden in group
-  // headers too.
-  const numberColumns = useMemo(() => {
-    const hidden = new Set(colPrefs.hidden)
-    return queryableColumns
-      .filter((column) => column.type === "number" && !hidden.has(column.key))
-      .map((column) => column.key)
-  }, [queryableColumns, colPrefs.hidden])
+  // counts; loaded rows are bucketed client-side beneath those headers.
   // Sort fields with no VISIBLE column have no header to clear them from
   // (removed fields, but also columns hidden after sorting); they surface as
   // removable chips in the table controls row.
@@ -355,12 +367,11 @@ function RecordsPage() {
   const groupsQuery = useRecordGroups(spaceId, collectionId, {
     ...scopeParams,
     ...(groupBy ? { groupBy } : {}),
-    sums: numberColumns,
   })
   // Group keys normalize array VALUES order-insensitively: editors persist
   // multi-select picks in click order, so ["a","b"] and ["b","a"] are the
   // same group. The server aggregates them separately (raw keys), so totals
-  // for the same normalized key MERGE (counts and sums add).
+  // for the same normalized key MERGE (counts add).
   const groupTotals = useMemo(() => {
     const map = new Map<string, Record<string, unknown>>()
     for (const group of groupsQuery.data?.groups ?? []) {
@@ -587,7 +598,7 @@ function RecordsPage() {
       if (!buckets.has(key)) buckets.set(key, { label: value, rows: [] })
       buckets.get(key)!.rows.push(row)
     }
-    return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b))
+    return [...buckets.entries()].sort(([, a], [, b]) => compareGroupLabels(groupColumn, a.label, b.label))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- table row model derives from rows
   }, [groupBy, rows, table, groupsQuery.data, fieldColumns, documentGroupIdentities])
 
@@ -626,7 +637,7 @@ function RecordsPage() {
       ? `${collection.count} ${collection.count === 1 ? "record" : "records"}`
       : `${rows.length}${hasMoreRows ? "+" : ""} loaded`
   const visibleRecordIds = (groupedRows
-    ? groupedRows.flatMap(([, group]) => group.rows)
+    ? groupedRows.flatMap(([key, group]) => (collapsedGroups.has(key) ? [] : group.rows))
     : table.getRowModel().rows
   ).map((row) => row.original.id)
   const peekPosition = peekRecordId ? visibleRecordIds.indexOf(peekRecordId) : -1
@@ -689,21 +700,21 @@ function RecordsPage() {
               )}
               {(schema || fieldColumns.length > 0 || filters.length > 0 || groupBy || staleSortFields.length > 0) && (
                 <div className="flex items-center gap-1">
-                  <Tooltip>
+                  {/* One control for both states keeps keyboard focus on it. */}
+                  <Tooltip disabled={editCells}>
                     <TooltipTrigger
                       render={
                         <Button
-                          variant={editCells ? "secondary" : "outline"}
-                          size="icon-sm"
+                          variant="outline"
+                          size={editCells ? "sm" : "icon-sm"}
                           onClick={() => setEditCells((value) => !value)}
-                          aria-label={editCells ? "Stop editing table cells" : "Edit table cells"}
-                          aria-pressed={editCells}
+                          aria-label={editCells ? "Done editing table cells" : "Edit table cells"}
                         />
                       }
                     >
-                      <Pencil className="size-4" />
+                      {editCells ? "Done" : <Pencil className="size-4" />}
                     </TooltipTrigger>
-                    <TooltipContent>{editCells ? "Stop editing table cells" : "Edit table cells"}</TooltipContent>
+                    <TooltipContent>Edit table cells</TooltipContent>
                   </Tooltip>
                   <FilterButton
                     spaceId={spaceId}
@@ -733,6 +744,22 @@ function RecordsPage() {
                     Edit Schema
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Rows3 className="mr-2 size-4" />
+                      Row Height
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="min-w-40">
+                      <DropdownMenuRadioGroup
+                        value={rowHeight}
+                        onValueChange={(value) => setColPrefs({ ...colPrefs, rowHeight: value === "double" ? undefined : value as RowHeight })}
+                      >
+                        {ROW_HEIGHTS.map((option) => (
+                          <DropdownMenuRadioItem key={option.value} value={option.value}>{option.label}</DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                   <DropdownMenuCheckboxItem checked={includeArchived} onCheckedChange={setIncludeArchived}>
                     <Archive className="mr-2 size-4" />
                     Include Archived
@@ -851,12 +878,50 @@ function RecordsPage() {
                     <TableRow key={headerGroup.id} className="border-0 hover:bg-transparent">
                       {headerGroup.headers.map((header) => {
                         const sortDir = header.column.getIsSorted()
+                        const key = header.column.id
+                        const movable = orderedColumns.some((column) => column.key === key)
+                        const dragProps: React.ComponentProps<"th"> = movable ? {
+                          draggable: true,
+                          // A press on the resize handle resizes; it must not start a move.
+                          onMouseDownCapture: (event) => { resizePressRef.current = Boolean((event.target as Element).closest('[role="separator"]')) },
+                          onDragStart: (event) => {
+                            if (resizePressRef.current) { event.preventDefault(); return }
+                            event.dataTransfer.effectAllowed = "move"
+                            event.dataTransfer.setData("text/plain", key)
+                            setDraggedColumn(key)
+                          },
+                          onDragEnd: () => { setDraggedColumn(undefined); setColumnDrop(undefined) },
+                          onDragOver: (event) => {
+                            if (!draggedColumn || draggedColumn === key) return
+                            event.preventDefault()
+                            const rect = event.currentTarget.getBoundingClientRect()
+                            const side = event.clientX < rect.left + rect.width / 2 ? "before" : "after"
+                            if (columnDrop?.key !== key || columnDrop.side !== side) setColumnDrop({ key, side })
+                          },
+                          onDrop: (event) => {
+                            event.preventDefault()
+                            if (draggedColumn && columnDrop?.key === key) {
+                              const keys = orderedColumns.map((column) => column.key).filter((entry) => entry !== draggedColumn)
+                              keys.splice(keys.indexOf(key) + (columnDrop.side === "after" ? 1 : 0), 0, draggedColumn)
+                              setColPrefs({ ...colPrefs, order: keys })
+                            }
+                            setDraggedColumn(undefined)
+                            setColumnDrop(undefined)
+                          },
+                        } : {}
+                        const dropMark = columnDrop?.key === key ? (
+                          <span aria-hidden className={`pointer-events-none absolute inset-y-1 z-10 w-0.5 rounded-full bg-primary ${columnDrop.side === "before" ? "-left-px" : "-right-px"}`} />
+                        ) : null
+                        // Grouped tables give the first column a gutter for the
+                        // group chevrons, so headings and values share one edge.
+                        const headClass = `relative px-2 ${groupedRows ? "first:pl-7" : "first:pl-1"} ${draggedColumn === key ? "opacity-50" : ""}`
                         // See RECORD_TOP_LEVEL_KEYS: the server would sort
                         // record metadata, not the displayed data field.
                         const sortable = !RECORD_TOP_LEVEL_KEYS.has(header.column.id)
                         if (!sortable) {
                           return (
-                            <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
+                            <TableHead key={header.id} {...dragProps} className={headClass} style={{ width: header.getSize() }}>
+                              {dropMark}
                               <span
                                 className="flex h-8 items-center px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                                 title="This field name matches record metadata, so it cannot be sorted by its value"
@@ -867,7 +932,8 @@ function RecordsPage() {
                           )
                         }
                         return (
-                          <TableHead key={header.id} className="relative px-2 first:pl-1" style={{ width: header.getSize() }}>
+                          <TableHead key={header.id} {...dragProps} className={headClass} style={{ width: header.getSize() }}>
+                            {dropMark}
                             <button
                               type="button"
                               className="group flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
@@ -900,7 +966,7 @@ function RecordsPage() {
                     </TableRow>
                   ))}
                 </TableHeader>
-                <TableBody className="[&_tr:not([data-state=selected])_td]:border-b [&_tr:not([data-state=selected])_td]:border-border/60 [&_tr:last-child_td]:border-b-0">
+                <TableBody className="[&_td]:border-b [&_td]:border-border/60 [&_tr[data-folded]_td]:border-b-0 [&_tr[data-folded]_td]:border-transparent [&_tr[data-group-heading]_td]:border-transparent [&_tr[data-group-heading][data-collapsed]_td]:border-card [&_tr:has(+tr[data-group-heading])_td]:border-transparent [&_tr:last-child_td]:border-b-0">
                   {(pagesQuery.isLoading || collectionsLoading) && rows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={columns.length + 1}>
@@ -915,11 +981,15 @@ function RecordsPage() {
                   {(() => {
                     const groupColumn = groupBy ? fieldColumns.find((column) => column.key === groupBy) : undefined
                     const renderedRows = groupedRows
-                      ? groupedRows.flatMap(([, group]) => group.rows)
+                      ? groupedRows.flatMap(([key, group]) => (collapsedGroups.has(key) ? [] : group.rows))
                       : table.getRowModel().rows
-                    const renderRow = (row: Row<RecordFile>) => (
+                    const renderRow = (row: Row<RecordFile>, folded = false) => (
                       <TableRow
                         key={row.original.id}
+                        // Folded group rows stay mounted so they can animate; inert
+                        // keeps them out of focus order and the accessibility tree.
+                        inert={folded || undefined}
+                        data-folded={folded ? "" : undefined}
                         onClick={() => openPeek(row.original.id)}
                         tabIndex={0}
                         data-record-id={row.original.id}
@@ -939,18 +1009,19 @@ function RecordsPage() {
                           requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${next.original.id}"]`)?.focus())
                         }}
                         data-state={peekRecordId === row.original.id ? "selected" : undefined}
-                        className={`group/row cursor-pointer border-0 outline-none data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
+                        className={`group/row cursor-pointer border-0 outline-none hover:bg-muted/15 dark:hover:bg-muted/35 data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
                       >
-                        {row.getVisibleCells().map((cell) => {
+                        {row.getVisibleCells().map((cell, cellIndex) => {
                           const column = visibleColumns.find((column) => column.key === cell.column.id)
                           // Render the stable editor type directly: a column callback
                           // recreated on query updates would remount it and lose drafts.
                           return (
                             <TableCell
                               key={cell.id}
-                              className="overflow-hidden px-3 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55"
+                              className={`overflow-hidden px-3 ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} ${groupedRows && cellIndex === 0 ? "pl-9" : ""} ${rowHeight === "full" ? "align-top" : "align-middle"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}
                               style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
                             >
+                              <Fold enabled={Boolean(groupedRows)} folded={folded}>
                               {column ? <EditableCell
                                 column={column}
                                 record={row.original}
@@ -959,11 +1030,14 @@ function RecordsPage() {
                                 danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
                                 onCommitField={peekActions.onCommitField}
                                 editingEnabled={editCells}
+                                rowHeight={rowHeight}
                               /> : <span className="font-mono text-xs">{row.original.id}</span>}
+                              </Fold>
                             </TableCell>
                           )
                         })}
-                        <TableCell className="w-9 px-1 py-2 align-middle transition-colors group-data-[state=selected]/row:bg-muted/25 dark:group-data-[state=selected]/row:bg-muted/55">
+                        <TableCell className={`w-9 overflow-hidden px-1 align-middle ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}>
+                          <Fold enabled={Boolean(groupedRows)} folded={folded}>
                           <RecordRowMenu
                             record={row.original}
                             onOpen={() => openPeek(row.original.id)}
@@ -972,25 +1046,32 @@ function RecordsPage() {
                             onRestore={() => mutations.restore.mutate(row.original.id)}
                             onDelete={() => setDeleteTarget(row.original)}
                           />
+                          </Fold>
                         </TableCell>
                       </TableRow>
                     )
-                    if (!groupedRows) return renderedRows.map(renderRow)
+                    if (!groupedRows) return renderedRows.map((row) => renderRow(row))
                     return groupedRows.map(([key, group]) => {
                       const totals = groupTotals.get(key)
+                      const collapsed = collapsedGroups.has(key)
                       return (
                         <GroupSection
                           key={key}
+                          collapsed={collapsed}
+                          onToggle={() => setCollapsedGroups((current) => {
+                            const next = new Set(current)
+                            if (next.has(key)) next.delete(key)
+                            else next.add(key)
+                            return next
+                          })}
                           colSpan={columns.length + 1}
                           column={groupColumn}
                           label={group.label}
                           totals={totals}
-                          numberColumns={numberColumns}
-                          labelFor={(field) => columnLabel(fieldColumns.find((entry) => entry.key === field) ?? { key: field, field: null })}
                           spaceId={spaceId}
                           expanded={expanded}
                         >
-                          {group.rows.map(renderRow)}
+                          {group.rows.map((row) => renderRow(row, collapsed))}
                         </GroupSection>
                       )
                     })
@@ -1178,56 +1259,79 @@ function RecordRowMenu({
   )
 }
 
-/** Group header + its rows. The header shows the group value (rendered with
- *  the field's own display), the TRUE total from the aggregate query, and
- *  sums for number fields. */
+/** Group rows fold like the app's accordion panels: same duration and ease,
+ *  with the cell's own overflow clipping the closing content. */
+const FOLD_TRANSITION = "transition-[padding,border-width,border-color,background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+
+function Fold({ enabled, folded, children }: { enabled: boolean; folded: boolean; children: React.ReactNode }) {
+  if (!enabled) return children
+  return (
+    <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${folded ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"}`}>
+      <div className="min-h-0">{children}</div>
+    </div>
+  )
+}
+
+/** Group heading + its rows. The heading shows the group value (rendered
+ *  with the field's own display) and the true count from the aggregate query. */
 function GroupSection({
+  collapsed,
+  onToggle,
   colSpan,
   column,
   label,
   totals,
-  numberColumns,
-  labelFor,
   spaceId,
   expanded,
   children,
 }: {
+  collapsed: boolean
+  onToggle: () => void
   colSpan: number
   column: RecordFieldColumn | undefined
   label: unknown
   totals: Record<string, unknown> | undefined
-  numberColumns: string[]
-  labelFor: (field: string) => string
   spaceId: string
   expanded: ExpandedRecords
   children: React.ReactNode
 }) {
   const count = totals?.["count"]
+  const empty = label === null || label === undefined || label === "" || (Array.isArray(label) && label.length === 0)
   return (
     <>
-      <TableRow className="border-b-0 hover:bg-transparent">
-        <TableCell colSpan={colSpan} className="px-3 pb-1 pt-4">
-          <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-sm font-medium text-foreground">
-              {label === null || label === undefined || label === "" ? (
-                <span className="text-muted-foreground">Empty</span>
-              ) : column ? (
-                <FieldValue column={column} value={label} spaceId={spaceId} expanded={expanded} />
-              ) : (
-                String(label)
-              )}
+      {/* A section bar, not a row: a recessed neutral band, darker than rows
+          and the selection in both themes. Its fill is the boundary, so the
+          rules around it stay transparent (in place, so nothing shifts). */}
+      {/* Collapsed bands stack directly; a card-colored hairline keeps them
+          apart without drawing another rule. */}
+      <TableRow data-group-heading="" data-collapsed={collapsed ? "" : undefined} className="border-0 hover:bg-transparent">
+        <TableCell colSpan={colSpan} className="bg-foreground/[0.06] px-0 py-2 dark:bg-black/25">
+          <button
+            type="button"
+            className="group/heading block w-full text-left outline-none"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+          >
+            {/* Pinned left so the heading stays in view while columns scroll. */}
+            <span className="sticky left-0 inline-flex min-h-8 max-w-full items-center gap-2 rounded-md px-3 text-sm group-focus-visible/heading:ring-2 group-focus-visible/heading:ring-inset group-focus-visible/heading:ring-ring">
+              <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-[transform,color] group-hover/heading:text-foreground ${collapsed ? "" : "rotate-90"}`} />
+              <span className="flex min-w-0 items-center gap-2 font-medium text-foreground">
+                {empty ? (
+                  <span className="text-muted-foreground">Empty</span>
+                ) : column?.type === "select" ? (
+                  <>
+                    <span className={`size-2 shrink-0 rounded-full ${optionColorClass(String(label))}`} />
+                    <span className="truncate">{String(label)}</span>
+                  </>
+                ) : column ? (
+                  <FieldValue column={column} value={label} spaceId={spaceId} expanded={expanded} linksDisabled />
+                ) : (
+                  String(label)
+                )}
+              </span>
+              {typeof count === "number" && <span className="tabular-nums text-muted-foreground">{count}</span>}
             </span>
-            {typeof count === "number" && <span className="text-xs text-muted-foreground">{count}</span>}
-            {numberColumns.map((field) => {
-              const sum = totals?.[`sum:${field}`]
-              if (typeof sum !== "number" || sum === 0) return null
-              return (
-                <span key={field} className="text-xs text-muted-foreground">
-                  {labelFor(field)} Σ {Number.isInteger(sum) ? sum.toLocaleString() : sum.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </span>
-              )
-            })}
-          </span>
+          </button>
         </TableCell>
       </TableRow>
       {children}
@@ -1253,37 +1357,36 @@ function GroupByPicker({
   // An ACTIVE groupBy keeps the picker (and its Ungroup action) even when
   // nothing is currently groupable — stale persisted table state must stay escapable.
   if (groupable.length === 0 && !groupBy) return null
+  const activeLabel = groupBy ? columnLabel(columns.find((column) => column.key === groupBy) ?? { key: groupBy, field: null }) : ""
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger render={<span className="inline-flex" />}>
+          {/* Active grouping names its field, like Done in edit mode, so the
+              state is readable without opening the picker. */}
           <PopoverTrigger
-            render={<Button variant={groupBy ? "secondary" : "outline"} size="icon-sm" aria-label="Group records" aria-pressed={Boolean(groupBy)} />}
+            render={<Button variant="outline" size={groupBy ? "sm" : "icon-sm"} aria-label={groupBy ? `Grouped by ${activeLabel}` : "Group records"} />}
           >
-              <Layers className="size-4" />
+            <Layers className="size-4" />
+            {groupBy && <span className="max-w-32 truncate">{activeLabel}</span>}
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent>
-          {groupBy
-            ? `Grouped by ${columnLabel(columns.find((column) => column.key === groupBy) ?? { key: groupBy, field: null })}`
-            : "Group records"}
-        </TooltipContent>
+        <TooltipContent>{groupBy ? `Grouped by ${activeLabel}` : "Group records"}</TooltipContent>
       </Tooltip>
       <PopoverContent align="end" className="w-56 gap-0.5 p-1.5">
         {groupable.map((column) => (
           <button
             key={column.key}
             type="button"
-            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 ${
-              groupBy === column.key ? "text-foreground" : "text-muted-foreground"
-            }`}
+            aria-pressed={groupBy === column.key}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
             onClick={() => {
               onChange(groupBy === column.key ? undefined : column.key)
               setOpen(false)
             }}
           >
             <span className="min-w-0 flex-1 truncate">{columnLabel(column)}</span>
-            {groupBy === column.key && <span className="text-xs text-primary-text">on</span>}
+            {groupBy === column.key && <Check className="size-3.5 shrink-0 text-primary" />}
           </button>
         ))}
         {groupBy && (
@@ -1343,6 +1446,7 @@ function loadPersistedTableState(spaceId: string, collectionId: string): Persist
       widths: typeof cols?.widths === "object" && cols.widths !== null
         ? Object.fromEntries(Object.entries(cols.widths).filter((entry): entry is [string, number] => typeof entry[1] === "number" && Number.isFinite(entry[1])))
         : {},
+      ...(cols?.rowHeight === "single" || cols?.rowHeight === "full" ? { rowHeight: cols.rowHeight } : {}),
     }
     return parsed
   } catch {

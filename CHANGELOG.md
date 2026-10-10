@@ -15,11 +15,16 @@ infrastructure and personal context out of release notes.
 - **Agents in Settings:** Each connected agent shows its platform's logo, its name, and where it runs. Select **Edit** to rename it, pick an icon from the same library as Spaces, or change what it may do. Agents set up with `worktable mcp setup`, the Desktop and manual setup panels, or a token made with an agent name appear there too. On local and self-hosted Worktable for now.
 - **Approve an agent:** On local and self-hosted Worktable, `openclaw worktable connect --server <address>` and `hermes worktable connect <address>` work without a pairing code: they print a link where you check the agent's code and approve it with its name, icon, and access.
 - **Agent access:** Choose an agent's access when you connect it: **Threads**, **Read workspace**, and **Edit workspace**. All three are on by default, for OpenClaw as well.
+- **Row Height:** Choose how much of each value a records table shows from **⋯ → Row Height**: **Single Line**, **Two Lines**, or **Full Text**. Each collection remembers its choice.
+- **Reorder columns:** Drag a column header onto another to move it. The Columns menu still has arrows for keyboard and touch.
 
 ### Changed
 
 - **Connecting during onboarding:** Onboarding shows each agent's logo, walks through connecting it step by step, and lets you choose its name and access first.
 - **Names in threads:** Renaming yourself or an agent updates the threads you are already in, so @mentions of the new name reach you or the agent there.
+- **Editing records:** In edit mode, a text cell opens a field over the cell that wraps long values and grows as you type; Tab saves and moves to the next cell. The edit button reads **Done** while editing is on. In record details, text stays in place when you start editing, long values wrap, and every field in the schema is shown.
+- **Grouped tables:** Groups follow the order of the field's options, collapse and expand from their headings, and hide the grouped column, since each heading already names it. Group headings show the record count.
+- **Record details:** The full record page uses its whole width when a record has no long-text or document fields, and **Copy Record ID** is in the record's menu.
 
 ### Fixed
 
@@ -27,6 +32,7 @@ infrastructure and personal context out of release notes.
 - **OpenClaw on Worktable Cloud:** Connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
 - **ChatGPT desktop:** A token generated for ChatGPT desktop shows ChatGPT in **Settings → Agents** instead of Codex.
 - **Workspace upgrade:** A workspace that still has annotations from deleted documents finishes upgrading instead of stopping at **Workspace upgrade needs attention**, and that screen now shows the Worktable icon.
+- **Records table:** Selecting a row no longer nudges the rows below it.
 
 ## [0.1.21] - 2026-10-09
 

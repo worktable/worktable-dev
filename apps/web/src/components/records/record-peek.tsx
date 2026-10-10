@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Info, Loader2, Maximize2, MoreVertical, ExternalLink, RotateCcw, SearchX, Trash, X } from "lucide-react"
+import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Hash, Info, Loader2, Maximize2, MoreVertical, ExternalLink, RotateCcw, SearchX, Trash, X } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
@@ -29,15 +29,19 @@ import {
   isSafeHttpUrl,
   columnLabel,
   fieldEditorSeed,
+  recordActorName,
   recordDetailSections,
   recordTitle,
   INLINE_EDITABLE_TYPES,
   type RecordFieldColumn,
 } from "@/lib/records"
 import { RelativeTime } from "@/lib/time"
+import { useActivityAgents } from "@/lib/activity"
+import { copyText } from "@/lib/clipboard"
+import { toast } from "@worktable/ui/components/sonner"
 import { FieldValue, type ExpandedRecords } from "./field-value"
 import { Popover, PopoverTrigger } from "@worktable/ui/components/popover"
-import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEditor, TextareaEditor, TextishEditor, BooleanEditor, FieldEditorScope, FieldPopoverContent } from "./field-editor"
+import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEditor, TextishEditor, BooleanEditor, FieldEditorScope, FieldPopoverContent, fieldSurfaceClass, fieldSurfaceRestingClass } from "./field-editor"
 
 /** Types the peek can edit: the grid's inline set plus its own richer
  *  editors. A whitelist, not a blocklist — a field type from a NEWER
@@ -209,8 +213,9 @@ export function RecordDetailBody({
   const scrollRef = useScrollFade<HTMLDivElement>()
   const sections = recordDetailSections(schema, record)
   const archived = Boolean(record.archive)
-  const moreCount = sections.secondary.length + sections.unmodeled.length
-  const visiblePrimary = sections.primary
+  const moreCount = sections.unmodeled.length
+  const { data: agentData } = useActivityAgents()
+  const agents = agentData?.agents
 
   const narrativeContent = sections.narrative.length > 0 ? (
     <section aria-label="Overview">
@@ -232,9 +237,9 @@ export function RecordDetailBody({
     </section>
   ) : null
 
-  const propertiesContent = visiblePrimary.length > 0 ? (
+  const propertiesContent = sections.properties.length > 0 ? (
     <DetailCard title="Properties">
-      {visiblePrimary.map((column) => (
+      {sections.properties.map((column) => (
         <PeekFieldRow
           key={`${record.id}:${column.key}`}
           spaceId={spaceId}
@@ -265,39 +270,22 @@ export function RecordDetailBody({
     </DetailCard>
   ) : null
 
+  // Fields in the file that the schema does not describe stay readable but
+  // out of the way; every schema field is shown above.
   const moreContent = moreCount > 0 ? (
     <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
       <Card className="gap-0 py-0">
         <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-3 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50">
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-foreground">More fields</span>
-            <span className="block text-xs text-muted-foreground">Secondary and file-authored values</span>
+            <span className="block text-sm font-medium text-foreground">Other fields</span>
+            <span className="block text-xs text-muted-foreground">Not in this collection’s schema</span>
           </span>
           <Badge variant="outline" className="font-mono text-[10px]">{moreCount}</Badge>
           <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", moreOpen && "rotate-180")} />
         </CollapsibleTrigger>
         <CollapsibleContent>
           <CardContent className="px-0 pb-1">
-            <dl className="divide-y divide-border/60">
-              {sections.secondary.map((column) => (
-                <PeekFieldRow
-                  key={`${record.id}:${column.key}`}
-                  spaceId={spaceId}
-                  column={column}
-                  record={record}
-                  expanded={expanded}
-                  danglingTargets={danglingByRecordField?.get(`${record.id}:${column.key}`)}
-                  onCommitField={actions.onCommitField}
-                  editingEnabled
-                />
-              ))}
-            </dl>
-            {sections.unmodeled.length > 0 && (
-              <div className="bg-muted/15 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {sections.unmodeled.length} unmodeled {sections.unmodeled.length === 1 ? "field" : "fields"} · preserved from YAML
-              </div>
-            )}
-            <dl className="divide-y divide-border/60">
+            <dl className="divide-y divide-border/60 border-t border-border/60">
               {sections.unmodeled.map((column) => (
                 <PeekFieldRow
                   key={`${record.id}:${column.key}`}
@@ -323,8 +311,8 @@ export function RecordDetailBody({
           <Info className="size-4 text-accent-bronze-ink" />
           Record information
         </div>
-        <ProvenanceRow label="Created" by={record.createdBy} at={record.createdAt} />
-        <ProvenanceRow label="Updated" by={record.updatedBy ?? record.createdBy} at={record.updatedAt} />
+        <ProvenanceRow label="Created" by={recordActorName(record.createdBy, agents)} at={record.createdAt} />
+        <ProvenanceRow label="Updated" by={recordActorName(record.updatedBy ?? record.createdBy, agents)} at={record.updatedAt} />
       </CardContent>
     </Card>
   )
@@ -353,26 +341,33 @@ export function RecordDetailBody({
   ) : null
 
   if (surface === "page") {
+    // Long-form and document fields take the main column with properties
+    // alongside; without them, properties are the page.
+    const hasMain = Boolean(narrativeContent || sourcesContent)
     return (
       <div className="min-h-full">
         {header}
-        <div className="grid gap-8 px-5 pb-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_21rem] lg:px-10 xl:gap-12">
-          <div className="min-w-0 space-y-8">
-            {archiveNotice}
-            {narrativeContent}
-            {sourcesContent}
-            {!narrativeContent && !sourcesContent && (
-              <div className="rounded-xl bg-muted/15 px-5 py-8 text-sm text-muted-foreground ring-1 ring-border">
-                This record has no long-form or document fields. Its properties are shown alongside.
-              </div>
-            )}
+        {hasMain ? (
+          <div className="grid gap-8 px-5 pb-12 sm:px-8 lg:grid-cols-[minmax(0,1fr)_21rem] lg:px-10 xl:gap-12">
+            <div className="min-w-0 space-y-8">
+              {archiveNotice}
+              {narrativeContent}
+              {sourcesContent}
+            </div>
+            <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
+              {propertiesContent}
+              {moreContent}
+              {provenanceContent}
+            </aside>
           </div>
-          <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
+        ) : (
+          <div className="max-w-3xl space-y-4 px-5 pb-12 sm:px-8 lg:px-10">
+            {archiveNotice}
             {propertiesContent}
             {moreContent}
             {provenanceContent}
-          </aside>
-        </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -430,9 +425,7 @@ function RecordDetailHeader({
               </Button>
               <span className="ml-1 whitespace-nowrap font-mono text-[11px] text-muted-foreground">{navigation.position} of {navigation.total}</span>
             </>
-          ) : (
-            <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-wide">Record</Badge>
-          )}
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
           {surface === "rail" && (
@@ -451,12 +444,6 @@ function RecordDetailHeader({
       </div>
 
       <div className={cn("max-w-3xl", surface === "page" && "pt-2")}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[11px] text-muted-foreground">{record.collectionId}</span>
-          <span className="text-muted-foreground/30">/</span>
-          <span className="truncate font-mono text-[11px] text-muted-foreground">{record.id}</span>
-          {archived && <Badge variant="outline" className="text-accent-bronze-ink"><Archive className="size-3" />Archived</Badge>}
-        </div>
         <div className={cn("font-display text-[1.8rem] leading-[1.08] tracking-[-0.02em] text-foreground", surface === "page" && "text-4xl sm:text-5xl")}>
           {titleColumn ? <DetailFieldValue spaceId={spaceId} column={titleColumn} record={record} onCommitField={actions.onCommitField} editingEnabled title /> : <h1>{recordTitle(record, schema)}</h1>}
         </div>
@@ -472,6 +459,17 @@ function RecordActionsMenu({ record, actions, archived }: { record: RecordFile; 
         <MoreVertical className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuItem
+          onClick={() => {
+            void copyText(record.id).then(
+              () => toast.success("Copied record ID"),
+              () => toast.error("Couldn’t copy the record ID. Try again."),
+            )
+          }}
+        >
+          <Hash className="mr-2 size-4" />
+          Copy Record ID
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => actions.onDuplicate(record)}>
           <Copy className="mr-2 size-4" />
           Duplicate
@@ -543,7 +541,7 @@ function PeekFieldRow({
       <dd
         className={cn(
           "min-w-0 text-foreground",
-          layout === "narrative" ? "text-[15px] leading-7" : "text-sm leading-5",
+          layout === "narrative" ? "text-[15px] leading-7" : "text-sm leading-6",
         )}
       >
         <DetailFieldValue spaceId={spaceId} column={column} record={record} expanded={expanded} danglingTargets={danglingTargets} onCommitField={onCommitField} editingEnabled={editingEnabled} />
@@ -638,23 +636,21 @@ function DetailFieldValue({
       return <JsonEditor initial={value} onCommit={commitRaw} onDone={() => done(true)} />
     }
     // Text-like (string/number/date/datetime/url/email/person and optionless
-    // selects); `text` gets a real multiline editor.
+    // selects). The editor takes the resting value's exact box, so starting
+    // to edit only reveals the field edge; `text` keeps line breaks.
     if (editing) {
-      if (column.type === "text") {
-        return <TextareaEditor column={column} initial={value} onCommit={commitRaw} onDone={done} />
-      }
       return (
         <TextishEditor
           column={column}
           initial={fieldEditorSeed(column, value)}
           onCommit={commitRaw}
           onDone={done}
-          className={title ? "h-auto py-0 font-display text-[length:inherit] leading-[inherit] tracking-[inherit] md:text-[length:inherit]" : "h-8 px-2 text-sm"}
+          multiline={column.type === "text"}
         />
       )
     }
     return (
-      <button ref={triggerRef} type="button" className={cn("block min-h-6 w-full cursor-text rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11", title && "-mx-2 -my-1 px-2 py-1 transition-colors hover:bg-muted/40")} onClick={() => setEditing(true)} aria-label={`Edit ${column.key}`}>
+      <button ref={triggerRef} type="button" className={cn(fieldSurfaceClass, fieldSurfaceRestingClass, "cursor-text")} onClick={() => setEditing(true)} aria-label={`Edit ${column.key}`}>
         {display}
       </button>
     )
@@ -662,12 +658,12 @@ function DetailFieldValue({
 
   if (title) return editing ? valueBody : <h1 aria-label={empty ? "Untitled record" : String(value)}>{valueBody}</h1>
 
-  return <div className="flex min-w-0 items-start gap-1">
-    <div className={cn("min-w-0 flex-1", editable && !editing && "-mx-2 -my-1 rounded-md px-2 py-1 transition-colors hover:bg-muted/40 has-focus-visible:bg-muted/40")}>{valueBody}</div>
-    {editable && !empty && column.type === "url" && isSafeHttpUrl(String(value)) && <a className={buttonVariants({ size: "icon-sm", variant: "ghost" })} href={String(value)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${columnLabel(column)}`}><ExternalLink className="size-3.5" /></a>}
-    {editable && !empty && column.type === "email" && <a className={buttonVariants({ size: "icon-sm", variant: "ghost" })} href={`mailto:${String(value)}`} aria-label={`Email ${String(value)}`}><ExternalLink className="size-3.5" /></a>}
+  return <div className="flex min-w-0 items-start gap-3">
+    <div className="min-w-0 flex-1">{valueBody}</div>
+    {editable && !empty && column.type === "url" && isSafeHttpUrl(String(value)) && <a className={cn(buttonVariants({ size: "icon-xs", variant: "ghost" }), "-my-1")} href={String(value)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${columnLabel(column)}`}><ExternalLink className="size-3.5" /></a>}
+    {editable && !empty && column.type === "email" && <a className={cn(buttonVariants({ size: "icon-xs", variant: "ghost" }), "-my-1")} href={`mailto:${String(value)}`} aria-label={`Email ${String(value)}`}><ExternalLink className="size-3.5" /></a>}
     {editable && !empty && ["document", "relation"].includes(column.type) && <Popover>
-      <PopoverTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`Open ${columnLabel(column)}`} />}><ExternalLink className="size-3.5" /></PopoverTrigger>
+      <PopoverTrigger render={<Button size="icon-xs" variant="ghost" className="-my-1" aria-label={`Open ${columnLabel(column)}`} />}><ExternalLink className="size-3.5" /></PopoverTrigger>
       <FieldPopoverContent align="end" aria-label={`Open ${columnLabel(column)}`}><FieldValue column={column} value={value} spaceId={spaceId} expanded={expanded} danglingTargets={danglingTargets} mode="detail" /></FieldPopoverContent>
     </Popover>}
   </div>

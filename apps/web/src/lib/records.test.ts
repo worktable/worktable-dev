@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { RecordCollectionSchema, RecordFile } from "@worktable/types"
-import { canApplyFilterValue, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldLabel, filterOpsForType, indexDanglingRelations, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
+import { canApplyFilterValue, compareGroupLabels, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldLabel, filterOpsForType, indexDanglingRelations, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
 
 const schema = {
   version: 2,
@@ -67,14 +67,25 @@ describe("record document fields and portable column order", () => {
         source: { type: "document" },
       },
     } satisfies RecordCollectionSchema
-    const sections = recordDetailSections(detailedSchema, record, 2)
+    const sections = recordDetailSections(detailedSchema, record)
 
     expect(sections.title?.key).toBe("title")
     expect(sections.narrative.map((column) => column.key)).toEqual(["summary"])
-    expect(sections.primary.map((column) => column.key)).toEqual(["status", "owner"])
-    expect(sections.secondary.map((column) => column.key)).toEqual(["score"])
+    expect(sections.properties.map((column) => column.key)).toEqual(["status", "owner", "score"])
     expect(sections.sources.map((column) => column.key)).toEqual(["source"])
     expect(sections.unmodeled.map((column) => column.key)).toEqual(["externalNote"])
+  })
+
+  it("orders groups by schema options, value, and puts empty groups last", () => {
+    const order = (column: Parameters<typeof compareGroupLabels>[0], labels: unknown[]) => [...labels].sort((a, b) => compareGroupLabels(column, a, b))
+    const stage = { type: "select", field: { type: "select", values: ["sourcing", "screening", "offer"] } }
+    expect(order(stage, [null, "offer", "unknown", "sourcing", "screening"])).toEqual(["sourcing", "screening", "offer", "unknown", null])
+    const tags = { type: "multi_select", field: { type: "multi_select", values: ["design", "product", "ops"] } }
+    expect(order(tags, [["ops"], ["ops", "design"], ["product"]])).toEqual([["ops", "design"], ["product"], ["ops"]])
+    expect(order({ type: "number", field: { type: "number" } }, [12, null, 9, 100])).toEqual([9, 12, 100, null])
+    expect(order({ type: "boolean", field: { type: "boolean" } }, [false, null, true])).toEqual([true, false, null])
+    expect(order({ type: "datetime", field: { type: "datetime" } }, ["2025-12-31T20:00:00Z", "2026-01-01T00:00:00+10:00"])).toEqual(["2026-01-01T00:00:00+10:00", "2025-12-31T20:00:00Z"])
+    expect(order({ type: "string", field: { type: "string" } }, ["beta", "", "Alpha", "item 10", "item 9"])).toEqual(["Alpha", "beta", "item 9", "item 10", ""])
   })
 
   it("turns file-friendly camelCase and slug keys into readable labels", () => {

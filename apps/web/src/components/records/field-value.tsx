@@ -3,7 +3,7 @@ import { createContext, useContext, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { RecordFile, ResolvedDocumentReference } from "@worktable/types"
-import type { RecordFieldColumn } from "@/lib/records"
+import type { RecordFieldColumn, RowHeight } from "@/lib/records"
 import { isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 
@@ -38,6 +38,7 @@ export function FieldValue({
   danglingTargets,
   linksDisabled = false,
   mode = "cell",
+  rowHeight = "double",
 }: {
   column: RecordFieldColumn
   value: unknown
@@ -50,7 +51,12 @@ export function FieldValue({
   /** Grid cells stay concise; detail surfaces preserve long-form content and
    * show every related object. */
   mode?: "cell" | "detail"
+  /** Grid row height: how much of a long value a cell shows. */
+  rowHeight?: RowHeight
 }) {
+  // A full-height grid row shows a value the way the detail panel does.
+  const whole = mode === "detail" || rowHeight === "full"
+  const chipRow = rowHeight === "single" && mode === "cell" ? "flex min-w-0 flex-nowrap gap-1 overflow-hidden" : "flex min-w-0 flex-wrap gap-1"
   if (value === undefined || value === null || value === "") {
     return <span className="text-muted-foreground/40">—</span>
   }
@@ -83,7 +89,7 @@ export function FieldValue({
       // Record data is agent- and file-authored: only http(s) may render as a
       // clickable anchor, anything else (javascript:, data:, ...) stays text.
       if (!isSafeHttpUrl(href) || linksDisabled) {
-        return <span className={mode === "detail" ? "break-all text-muted-foreground" : "truncate text-muted-foreground"} title={href}>{href}</span>
+        return <span className={whole ? "break-all text-muted-foreground" : "truncate text-muted-foreground"} title={href}>{href}</span>
       }
       return (
         <a
@@ -91,7 +97,7 @@ export function FieldValue({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className={mode === "detail" ? "break-all text-primary-text underline-offset-2 hover:underline" : "truncate text-primary-text underline-offset-2 hover:underline"}
+          className={whole ? "break-all text-primary-text underline-offset-2 hover:underline" : "truncate text-primary-text underline-offset-2 hover:underline"}
           title={href}
         >
           {href.replace(/^https?:\/\//, "")}
@@ -101,13 +107,13 @@ export function FieldValue({
     case "email": {
       const email = String(value)
       if (linksDisabled) {
-        return <span className={mode === "detail" ? "break-all text-muted-foreground" : "truncate text-muted-foreground"}>{email}</span>
+        return <span className={whole ? "break-all text-muted-foreground" : "truncate text-muted-foreground"}>{email}</span>
       }
       return (
         <a
           href={`mailto:${email}`}
           onClick={(e) => e.stopPropagation()}
-          className="truncate text-primary-text underline-offset-2 hover:underline"
+          className={whole ? "break-all text-primary-text underline-offset-2 hover:underline" : "truncate text-primary-text underline-offset-2 hover:underline"}
         >
           {email}
         </a>
@@ -117,9 +123,9 @@ export function FieldValue({
       return <SelectChip value={String(value)} />
     case "multi_select": {
       const values = Array.isArray(value) ? value.map(String) : [String(value)]
-      const visible = mode === "cell" ? values.slice(0, 3) : values
+      const visible = whole ? values : values.slice(0, 3)
       return (
-        <span className="flex flex-wrap gap-1">
+        <span className={chipRow}>
           {visible.map((entry) => (
             <SelectChip key={entry} value={entry} />
           ))}
@@ -131,9 +137,9 @@ export function FieldValue({
       const target = column.field?.references
       const ids = relationIds(value)
       if (ids.length === 0) return <span className="text-muted-foreground/40">—</span>
-      const visible = mode === "cell" ? ids.slice(0, 2) : ids
+      const visible = whole ? ids : ids.slice(0, 2)
       return (
-        <span className="flex flex-wrap gap-1">
+        <span className={chipRow}>
           {visible.map((id) => (
             <RelationChip
               key={id}
@@ -150,23 +156,23 @@ export function FieldValue({
       )
     }
     case "document":
-      return <DocumentValue spaceId={spaceId} value={value} linksDisabled={linksDisabled} mode={mode} />
+      return <DocumentValue spaceId={spaceId} value={value} linksDisabled={linksDisabled} whole={whole} className={chipRow} />
     case "person":
-      return <span className={mode === "detail" ? "break-words" : "truncate"}>{String(value)}</span>
+      return <span className={whole ? "break-words" : "truncate"}>{String(value)}</span>
     case "json":
     case "unknown":
       return (
-        <span className={mode === "detail" ? "block whitespace-pre-wrap break-words font-mono text-xs leading-5 text-muted-foreground" : "block max-w-72 truncate font-mono text-xs text-muted-foreground"} title={safeStringify(value)}>
+        <span className={whole ? "block whitespace-pre-wrap break-words font-mono text-xs leading-5 text-muted-foreground" : "block max-w-72 truncate font-mono text-xs text-muted-foreground"} title={safeStringify(value)}>
           {safeStringify(value)}
         </span>
       )
     default:
       // string, text, and any type this build doesn't know (tolerant reader).
-      return <span className={mode === "detail" ? "whitespace-pre-wrap break-words leading-6" : "line-clamp-2 break-words"}>{typeof value === "string" ? value : safeStringify(value)}</span>
+      return <span className={whole ? "whitespace-pre-wrap break-words" : rowHeight === "single" ? "line-clamp-1 break-words" : "line-clamp-2 break-words"}>{typeof value === "string" ? value : safeStringify(value)}</span>
   }
 }
 
-function DocumentValue({ spaceId, value, linksDisabled, mode }: { spaceId: string; value: unknown; linksDisabled: boolean; mode: "cell" | "detail" }) {
+function DocumentValue({ spaceId, value, linksDisabled, whole, className }: { spaceId: string; value: unknown; linksDisabled: boolean; whole: boolean; className: string }) {
   const inputs: unknown[] = typeof value === "string"
     ? [value]
     : Array.isArray(value)
@@ -203,9 +209,9 @@ function DocumentValue({ spaceId, value, linksDisabled, mode }: { spaceId: strin
       error: "must be a document path string",
     })
   })
-  const visible = mode === "cell" ? references.slice(0, 2) : references
+  const visible = whole ? references : references.slice(0, 2)
   return (
-    <span className="flex min-w-0 flex-wrap gap-1">
+    <span className={className}>
       {visible.map((reference, index) => (
         <DocumentChip key={`${reference.storedPath}:${index}`} reference={reference} linksDisabled={linksDisabled} spaceId={spaceId} />
       ))}

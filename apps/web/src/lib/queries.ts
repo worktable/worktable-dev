@@ -184,11 +184,11 @@ export function useRecordCollectionHealth(spaceId: string, collectionId: string)
 export function useRecordGroups(
   spaceId: string,
   collectionId: string,
-  params: RecordPageParams & { groupBy?: string; sums?: string[] }
+  params: RecordPageParams & { groupBy?: string }
 ) {
-  const { groupBy, sums, ...scope } = params
+  const { groupBy, ...scope } = params
   return useQuery({
-    queryKey: [...queryKeys.records(spaceId, collectionId), "groups", { ...scope, groupBy, sums }] as const,
+    queryKey: [...queryKeys.records(spaceId, collectionId), "groups", { ...scope, groupBy }] as const,
     queryFn: () =>
       queryRecords(spaceId, collectionId, {
         ...(scope.search?.trim() ? { search: scope.search.trim() } : {}),
@@ -196,10 +196,7 @@ export function useRecordGroups(
         ...(scope.includeArchived ? { includeArchived: true } : {}),
         aggregate: {
           groupBy: groupBy ?? "",
-          select: {
-            count: { fn: "count" },
-            ...Object.fromEntries((sums ?? []).map((field) => [`sum:${field}`, { fn: "sum" as const, field }])),
-          },
+          select: { count: { fn: "count" } },
         },
       }),
     enabled: Boolean(groupBy),

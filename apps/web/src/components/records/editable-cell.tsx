@@ -1,13 +1,14 @@
 import { useState } from "react"
 import type { RecordFile } from "@worktable/types"
-import { coerceFieldInput, fieldEditorSeed, nextBooleanValue, INLINE_EDITABLE_TYPES, type RecordFieldColumn } from "@/lib/records"
+import { cn } from "@worktable/ui/lib/utils"
+import { coerceFieldInput, nextBooleanValue, INLINE_EDITABLE_TYPES, type RecordFieldColumn, type RowHeight } from "@/lib/records"
 import { FieldValue, type ExpandedRecords } from "./field-value"
-import { DocumentPicker, MultiSelectEditor, SelectEditor, TextishEditor } from "./field-editor"
+import { CellTextEditor, DocumentPicker, MultiSelectEditor, SelectEditor, fieldSurfaceClass, fieldSurfaceRestingClass } from "./field-editor"
 
 /**
- * Grid cell with in-place editing. Scalar types swap to an input on click;
- * select/multi_select/document open a popover; booleans toggle directly.
- * Browse mode bypasses every editor so clicks open the detail rail safely.
+ * Grid cell with in-place editing. Text-like types open a field over the
+ * cell; select/multi_select/document open a popover; booleans toggle
+ * directly. Browse mode bypasses every editor so clicks open the detail rail.
  */
 export function EditableCell({
   column,
@@ -17,6 +18,7 @@ export function EditableCell({
   danglingTargets,
   onCommitField,
   editingEnabled,
+  rowHeight,
 }: {
   column: RecordFieldColumn
   record: RecordFile
@@ -25,6 +27,7 @@ export function EditableCell({
   danglingTargets?: ReadonlySet<string>
   onCommitField: (recordId: string, key: string, value: unknown) => void | Promise<void>
   editingEnabled: boolean
+  rowHeight: RowHeight
 }) {
   const [editing, setEditing] = useState(false)
   const value = record.data[column.key]
@@ -35,6 +38,7 @@ export function EditableCell({
       spaceId={spaceId}
       expanded={expanded}
       danglingTargets={danglingTargets}
+      rowHeight={rowHeight}
       linksDisabled={editingEnabled && (column.type === "url" || column.type === "email" || column.type === "document")}
     />
   )
@@ -59,7 +63,8 @@ export function EditableCell({
     return (
       <button
         type="button"
-        className="flex min-h-6 w-full items-center"
+        data-field-editor=""
+        className={cn(fieldSurfaceClass, fieldSurfaceRestingClass, "cursor-pointer")}
         onClick={(e) => {
           e.stopPropagation()
           void Promise.resolve(onCommitField(record.id, column.key, nextBooleanValue(value, column.field?.required ?? false))).catch(() => { /* Mutation reports the failure. */ })
@@ -98,35 +103,10 @@ export function EditableCell({
 
   // Text-like (string, text, number, date, datetime, url, email, person, and
   // optionless select/multi_select which accept free entry).
-  if (editing) {
-    return (
-      <TextishEditor
-        column={column}
-        initial={fieldEditorSeed(column, value)}
-        onCommit={commitRaw}
-        onDone={() => setEditing(false)}
-      />
-    )
-  }
   return (
-    <span
-      className="block min-h-6 w-full cursor-text"
-      onClick={(e) => {
-        e.stopPropagation()
-        setEditing(true)
-      }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.stopPropagation()
-          setEditing(true)
-        }
-      }}
-      aria-label={`Edit ${column.key}`}
-    >
+    <CellTextEditor column={column} value={value} open={editing} onOpenChange={setEditing} onCommit={commitRaw}>
       {display}
-    </span>
+    </CellTextEditor>
   )
 }
 

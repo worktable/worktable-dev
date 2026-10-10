@@ -247,9 +247,24 @@ ownerSurface.post("/", async (c) => {
     scopes?: unknown;
     target?: unknown;
     access?: unknown;
+    icon?: unknown;
   } | null;
 
   const access = parseAccess(body?.access);
+  // An icon chosen before the agent connects; it applies to the new agent.
+  if (
+    body?.icon !== undefined &&
+    body.icon !== null &&
+    (typeof body.icon !== "string" ||
+      body.icon.length > 64 ||
+      !ICON_NAME.test(body.icon))
+  ) {
+    return c.json(
+      { error: "icon must be an icon name or null", code: "BAD_REQUEST" },
+      400
+    );
+  }
+  const icon = typeof body?.icon === "string" ? { icon: body.icon } : {};
   if (access === false) {
     return c.json(
       {
@@ -387,11 +402,14 @@ ownerSurface.post("/", async (c) => {
   const { origin, originSource, mcpUrl } = agentEndpoint(c);
   const { code, session } = await createPairingSession({
     client,
-    target: target ?? {
-      kind: "mcp-client",
-      client,
-      ...(displayName ? { displayName } : {}),
-    },
+    target: target
+      ? { ...target, ...icon }
+      : {
+          kind: "mcp-client",
+          client,
+          ...(displayName ? { displayName } : {}),
+          ...icon,
+        },
     scopes,
     mcpUrl,
   });

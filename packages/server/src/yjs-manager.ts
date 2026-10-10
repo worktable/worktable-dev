@@ -158,6 +158,9 @@ interface LiveDoc {
   // What the portable file held when a save last looked at it. Valid while
   // the file keeps the same fingerprint.
   diskObservation: DiskObservation | null;
+  // The contentGeneration of state restored ahead of the document: edits
+  // this server accepted before it stopped, not a client's cached state.
+  restoredGeneration: number | null;
   // While set, client frames accepted after this sequence wait (an agent
   // write is committing against the room's current blocks).
   frameHoldCutoff: number | null;
@@ -613,6 +616,7 @@ export class YjsDocManager {
             canonicalHash: null,
           }
         : null,
+      restoredGeneration: restoredAhead ? contentGeneration : null,
       frameHoldCutoff: null,
     };
 
@@ -1464,13 +1468,17 @@ export class YjsDocManager {
       this.sendIntentAck(liveDoc);
     }
     try {
-      // The room holds exactly the normalized disk blocks.
-      await writeYjsStateFile(
-        yjsStatePath(spaceId, docPath),
-        Y.encodeStateAsUpdate(ydoc),
-        provenance,
-        { mermaidNormalized: true, matchesDocument: true }
-      );
+      // The room holds exactly the normalized disk blocks. Store it only
+      // under the version that holds them: a write that landed after the
+      // blocks were read has newer provenance, and its next sync stores it.
+      if (provenance?.contentHash === liveDoc.diskContentHash) {
+        await writeYjsStateFile(
+          yjsStatePath(spaceId, docPath),
+          Y.encodeStateAsUpdate(ydoc),
+          provenance,
+          { mermaidNormalized: true, matchesDocument: true }
+        );
+      }
     } catch (error) {
       console.warn(
         `[YjsManager] failed to refresh derived Yjs state for ${spaceId}/${docPath}:`,
@@ -2377,7 +2385,8 @@ export class YjsDocManager {
           {
             mermaidNormalized:
               asExported && !normalizeMermaidBlocks(blocks).changed,
-            matchesDocument: asExported,
+            matchesDocument:
+              asExported && provenance?.contentHash === observation.contentHash,
           }
         );
         liveDoc.lastPersistMs = fileStat.updatedAt;
@@ -2409,7 +2418,14 @@ export class YjsDocManager {
     // version with a reconnecting browser's possibly-stale cached state. Only
     // applies to a genuine content change with no human edit signaled — a
     // genuine local edit must never be discarded, and a no-op needs no sync.
-    if (protectedSource && !hadIntent && Date.now() < liveDoc.protectedUntilMs) {
+    // Restored state that no client has changed since is this server's own
+    // accepted edits, never a stale cache.
+    if (
+      protectedSource &&
+      !hadIntent &&
+      Date.now() < liveDoc.protectedUntilMs &&
+      exportedGeneration !== liveDoc.restoredGeneration
+    ) {
       console.log(
         `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${docPath}`
       );
@@ -2466,7 +2482,8 @@ export class YjsDocManager {
         updatedProvenance,
         {
           mermaidNormalized: mermaidNormalized && asExported,
-          matchesDocument: asExported,
+          matchesDocument:
+            asExported && updatedProvenance?.contentHash === writtenHash,
         }
       );
       liveDoc.lastPersistMs = updatedStat?.updatedAt ?? Date.now();

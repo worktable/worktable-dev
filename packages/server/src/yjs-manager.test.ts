@@ -2061,9 +2061,11 @@ describe("YjsDocManager sync persistence", () => {
   it("saves restored state that is newer than the document file", async () => {
     // An edit that arrived while the last save was writing is in the room's
     // state file but not in the document file, and the process then stopped.
+    // The document version is an agent's, which a stale browser cache may
+    // not overwrite right after opening; restored edits are not a cache.
     await writeDoc("test-space", "restored", [para("saved text")], {
-      updatedBy: "user",
-      source: "browser-yjs",
+      updatedBy: "worktable-agent",
+      source: "mcp",
     });
     await writeStateFile(
       "restored",
@@ -2086,6 +2088,32 @@ describe("YjsDocManager sync persistence", () => {
       );
     } finally {
       await manager.shutdown();
+    }
+  });
+
+  it("never stores room state under a document version it does not hold", async () => {
+    await writeDoc("test-space", "racing", [para("first version")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const firstBlocks = (await readDoc("test-space", "racing")).data as unknown[];
+    await yjsManager.getOrCreateDoc("test-space", "racing");
+    // A newer version lands while a sync still holds the first version's blocks.
+    await writeDoc("test-space", "racing", [para("second version")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    await yjsManager.replaceContent("test-space", "racing", firstBlocks);
+
+    const restarted = new YjsDocManager();
+    try {
+      const ydoc = await restarted.getOrCreateDoc("test-space", "racing");
+      const editor = await getServerEditor();
+      expect(JSON.stringify(editor.yDocToBlocks(ydoc, "document-store"))).toContain(
+        "second version"
+      );
+    } finally {
+      await restarted.shutdown();
     }
   });
 

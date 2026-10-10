@@ -70,3 +70,23 @@ def test_keeps_waiting_through_a_brief_outage_but_not_past_a_refusal(monkeypatch
     with pytest.raises(pairing.PairingError) as error:
         pairing.request_approval("http://w", "hci_test_install", "studio", None, lambda *_: None, sleep=lambda _: None)
     assert error.value.code == "NOT_FOUND"
+
+
+def test_a_connection_cut_mid_answer_is_retryable(monkeypatch):
+    import http.client
+
+    class Cut:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            raise http.client.IncompleteRead(b"{")
+
+    monkeypatch.setattr(pairing.urllib.request, "urlopen", lambda *_, **__: Cut())
+    with pytest.raises(pairing.PairingError) as error:
+        pairing._request("http://w/api/pairing/requests/poll", {"pollToken": "x"})
+    assert error.value.code == "UNREACHABLE"
+    assert error.value.status is None

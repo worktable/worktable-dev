@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 from datetime import datetime
@@ -71,7 +72,8 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
             payload.get("code") or f"HTTP_{error.code}",
             error.code,
         ) from None
-    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+    except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, OSError) as error:
+        # Includes a connection cut partway through the answer.
         raise PairingError(f"Could not reach Worktable at {url}: {error}", "UNREACHABLE") from None
 
 

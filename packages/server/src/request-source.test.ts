@@ -31,6 +31,17 @@ describe("who sent a request", () => {
     )
     expect(requestSource(from("::1"))).toBe("::1")
   })
+
+  it("on Cloud, cannot tell senders apart without the gateway's address", () => {
+    const saved = process.env["WORKTABLE_HOSTED"]
+    process.env["WORKTABLE_HOSTED"] = "1"
+    try {
+      expect(requestSource(from("10.0.0.2"))).toBeNull()
+    } finally {
+      if (saved === undefined) delete process.env["WORKTABLE_HOSTED"]
+      else process.env["WORKTABLE_HOSTED"] = saved
+    }
+  })
 })
 
 describe("waiting connection requests", () => {
@@ -45,7 +56,7 @@ describe("waiting connection requests", () => {
   })
 
   it("lets one sender hold only a few, so it cannot crowd out others", async () => {
-    const ask = (source: string) =>
+    const ask = (source: string | null) =>
       createConnectionRequest({
         target: { kind: "mcp-client", client: null },
         hostname: null,
@@ -60,5 +71,16 @@ describe("waiting connection requests", () => {
     await expect(ask("198.51.100.1")).resolves.toMatchObject({
       userCode: expect.any(String),
     })
+  })
+
+  it("keeps only the overall limit when senders cannot be told apart", async () => {
+    for (let i = 0; i < 4; i++) {
+      await createConnectionRequest({
+        target: { kind: "mcp-client", client: null },
+        hostname: null,
+        suggestedName: null,
+        source: null,
+      })
+    }
   })
 })

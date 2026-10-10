@@ -1,4 +1,4 @@
-import { hostedClientAddress } from "./hosted.ts"
+import { hostedClientAddress, isHosted } from "./hosted.ts"
 
 // Who sent a request, for limits that must not let one sender crowd out
 // everyone else. Bun knows the connecting address only at the listener, so it
@@ -21,13 +21,17 @@ function isLoopback(address: string): boolean {
 
 /**
  * The sender of a request: on Cloud, the address the gateway saw; otherwise
- * the connecting address. A forwarded address counts only when the
+ * the connecting address, and null on Cloud when the gateway did not say. A
+ * forwarded address counts only when the
  * connection comes from this computer, as from a local proxy or tunnel, and
  * then only the one that proxy added last, which a sender cannot forge.
  */
-export function requestSource(req: Request): string {
+export function requestSource(req: Request): string | null {
   const hosted = hostedClientAddress(req)
   if (hosted) return hosted
+  // On Cloud every request arrives from the gateway, so without the address
+  // it saw, senders cannot be told apart: null, and no per-sender limit.
+  if (isHosted()) return null
   const peer = peers.get(req)
   if (!peer) return "unknown"
   if (isLoopback(peer)) {

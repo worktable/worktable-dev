@@ -2193,8 +2193,18 @@ export class YjsDocManager {
 
   /** Persist every currently loaded room without disconnecting its clients. */
   async flushAllPersists(): Promise<void> {
-    if (this.initializingDocs.size > 0) {
-      await Promise.allSettled([...this.initializingDocs.values()]);
+    // A connection waiting on a cold room applies the frames it queued only
+    // after its own setup. Those frames were accepted before any pause's
+    // cutoff, so the saves below must include them: wait for the connections
+    // as well as the rooms.
+    const settling = [
+      ...this.initializingDocs.values(),
+      ...[...this.pendingConnections.values()].flatMap((pending) =>
+        pending.task ? [pending.task] : []
+      ),
+    ];
+    if (settling.length > 0) {
+      await Promise.allSettled(settling);
     }
     const results = await Promise.allSettled(
       [...this.docs.entries()].map(async ([key, liveDoc]) => {

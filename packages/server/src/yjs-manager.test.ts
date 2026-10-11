@@ -1909,11 +1909,15 @@ describe("YjsDocManager sync persistence", () => {
       source: "browser-yjs",
     });
     const versionsBefore = (await listDocVersions("test-space", "typing")).length;
+    const startVersionId = (await getDocProvenance("test-space", "typing"))!.versionId;
     const manager = new YjsDocManager({
       timing: { persistDebounceMs: 200, persistMaxWaitMs: 600 },
     });
     const ws = new FakeWs();
-    const saves: Array<{ contentHash: string; provenance: { contentHash: string } }> = [];
+    const saves: Array<{
+      contentHash: string;
+      provenance: { contentHash: string; versionId: string };
+    }> = [];
     const spaceSocket = {
       send: (message: string) => {
         const event = JSON.parse(message);
@@ -1937,23 +1941,27 @@ describe("YjsDocManager sync persistence", () => {
         await sleep(50);
       }
       // Every save keeps the provenance describing what it wrote, which the
-      // outside-edit detection and collaboration guards compare with.
+      // outside-edit detection and collaboration guards compare with, and
+      // still names the version typing started from: no save recorded one.
       for (const save of saves) {
         expect(save.provenance.contentHash).toBe(save.contentHash);
+        expect(save.provenance.versionId).toBe(startVersionId);
       }
       expect(JSON.stringify(await stored())).toContain("kk");
-      expect(await listDocVersions("test-space", "typing")).toHaveLength(versionsBefore);
 
-      // The session ends after a quiet period: one version with the final text.
+      // The session ends after a quiet period: one version with the final
+      // text. A version is listed before the provenance names it, so wait
+      // for the provenance, which moves last.
       await waitFor(
         async () =>
-          (await listDocVersions("test-space", "typing")).length === versionsBefore + 1
+          (await getDocProvenance("test-space", "typing"))?.versionId !== startVersionId
       );
       const provenance = await getDocProvenance("test-space", "typing");
-      const [latest] = await listDocVersions("test-space", "typing");
-      expect(latest!.id).toBe(provenance!.versionId);
-      expect(latest!.createdBy).toBe("user");
-      expect(latest!.after.contentHash).toBe(stableHash(await stored()));
+      const versions = await listDocVersions("test-space", "typing");
+      expect(versions).toHaveLength(versionsBefore + 1);
+      expect(versions[0]!.id).toBe(provenance!.versionId);
+      expect(versions[0]!.createdBy).toBe("user");
+      expect(versions[0]!.after.contentHash).toBe(stableHash(await stored()));
     } finally {
       wsManager.unsubscribe(spaceSocket);
       await manager.shutdown();

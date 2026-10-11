@@ -106,7 +106,11 @@ async function bridgeClient(
   return client
 }
 
-async function postToAtlas(): Promise<{ threadId: string; cursor: number }> {
+async function postToAtlas(): Promise<{
+  threadId: string
+  cursor: number
+  activityRevision: number
+}> {
   const finnClient = await inMemoryAgent("claude-code@work", finn, [
     "threads:read",
     "threads:write",
@@ -121,6 +125,7 @@ async function postToAtlas(): Promise<{ threadId: string; cursor: number }> {
   return {
     threadId: posted.threadId as string,
     cursor: posted.cursor as number,
+    activityRevision: (posted.activity as { revision: number }).revision,
   }
 }
 
@@ -162,18 +167,35 @@ afterEach(async () => {
 
 describe("MCP bridge over HTTP", () => {
   it("streams progress while a thread wait is open", async () => {
-    const { threadId, cursor } = await postToAtlas()
+    const { threadId, cursor, activityRevision } = await postToAtlas()
     const bridge = await bridgeClient([])
     const progress: Array<{ progress: number; message?: string }> = []
+    let progressed!: () => void
+    const firstProgress = new Promise<void>((resolve) => {
+      progressed = resolve
+    })
+    // From the activity the post returned, so the wait reports Atlas's work
+    // however late it starts.
     const waiting = bridge.callTool(
       {
         name: "worktable_threads_read",
         arguments: {
-          request: { action: "wait", threadId, after: cursor, waitSeconds: 10 },
+          request: {
+            action: "wait",
+            threadId,
+            after: cursor,
+            activityRevision,
+            waitSeconds: 10,
+          },
         },
       },
       CallToolResultSchema,
-      { onprogress: (update) => void progress.push(update) }
+      {
+        onprogress: (update) => {
+          progress.push(update)
+          progressed()
+        },
+      }
     )
 
     const atlasClient = await inMemoryAgent("openclaw@personal", atlas, [
@@ -198,6 +220,8 @@ describe("MCP bridge over HTTP", () => {
       phase: "receiving",
       receivedCharacters: 42,
     })
+    // A reply that lands first ends the wait before it reports anything.
+    await Promise.race([firstProgress, waiting])
     await call(atlasClient, "worktable_threads_write", {
       action: "post",
       threadId,

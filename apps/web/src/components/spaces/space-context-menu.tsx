@@ -38,7 +38,6 @@ import {
   GripVertical,
 } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
-import { ALL_ICON_NAMES } from "@/lib/icons"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useSpaces } from "@/lib/queries"
 import type { DocSortMode } from "@/lib/tree"
@@ -401,8 +400,7 @@ function IconPickerDialog({
           </div>
           <ResponsiveDialogTitle>Change Icon</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Search {ALL_ICON_NAMES.length.toLocaleString()} icons or pick from
-            popular ones below.
+            Search icons or pick from popular ones below.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 

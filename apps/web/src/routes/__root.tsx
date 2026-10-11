@@ -61,7 +61,11 @@ const AppSidebar = lazy(() =>
     default: memo(module.AppSidebar),
   }))
 )
-import { SettingsDialog } from "@/components/settings/settings-dialog"
+const SettingsDialog = lazy(() =>
+  import("@/components/settings/settings-dialog").then((module) => ({
+    default: module.SettingsDialog,
+  }))
+)
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
 import { UpdateNudge } from "@/components/update-nudge"
@@ -389,6 +393,8 @@ function RootLayout() {
       window.removeEventListener("worktable:workspace-changed", reset)
   }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Kept mounted after the first open so closing can animate.
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>()
   const router = useRouter()
   const { theme } = useTheme()
@@ -399,11 +405,13 @@ function RootLayout() {
   useMobileVisualViewport(isMobile)
 
   // Settings actions can arrive before the deferred sidebar mounts. The shell
-  // owns their state and lightweight dialog; tab contents load on first visit.
+  // owns their state; the dialog loads on first open and each tab's contents
+  // on its first visit.
   useEffect(
     () =>
       onOpenSettings((requested) => {
         setSettingsSection(requested)
+        setSettingsLoaded(true)
         setSettingsOpen(true)
       }),
     []
@@ -655,11 +663,15 @@ function RootLayout() {
             </main>
           </div>
         </div>
-        <SettingsDialog
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          initialSection={settingsSection}
-        />
+        {settingsLoaded ? (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              open={settingsOpen}
+              onOpenChange={setSettingsOpen}
+              initialSection={settingsSection}
+            />
+          </Suspense>
+        ) : null}
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />

@@ -28,6 +28,9 @@ import {
   SideMenuExtension,
 } from "@blocknote/core/extensions"
 import { BlockNoteView } from "@blocknote/shadcn"
+// Editor-only styles load with this chunk, not the app's root stylesheet.
+import "@blocknote/shadcn/style.css"
+import "@/styles/blocknote.css"
 import { codeBlockOptions, syntaxHighlighter } from "@blocknote/code-block"
 import type { Block } from "@blocknote/core"
 import type * as Y from "yjs"

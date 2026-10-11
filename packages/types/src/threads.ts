@@ -685,12 +685,6 @@ export function upgradeThreadToV3(thread: PortableThread): ThreadV3 {
   })
 }
 
-export function threadLocationKey(location: ThreadLocation): string {
-  return location.kind === "worktable"
-    ? "worktable"
-    : `space:${location.spaceId}`
-}
-
 export interface ThreadSummary {
   id: string
   version: 3

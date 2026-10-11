@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RECORD_PREDICATE_OPS } from "./constants";
 import { ArchiveInfoSchemaV1, CanonicalIdSchema, CanonicalMetadataSchema, IsoTimestampSchema } from "./widgets";
 
 // The version-1 field types. Schemas that use only these stay stamped
@@ -96,7 +97,7 @@ export const RECORD_QUERY_MAX_LIMIT = 1000;
 // may be a one-hop relation path ("project.status"). `has` is EXACT
 // membership for array-valued fields (multi_select values, many-relation id
 // lists) and strict equality for scalars — `contains` stays substring.
-export const RecordPredicateOpSchema = z.enum(["eq", "neq", "in", "contains", "has", "gt", "gte", "lt", "lte", "isEmpty"]);
+export const RecordPredicateOpSchema = z.enum(RECORD_PREDICATE_OPS);
 
 export const RecordAggregateFnSchema = z.enum(["count", "sum", "avg", "min", "max", "unique"]);
 

@@ -328,7 +328,8 @@ async function inventoryClaims(
   spaceId: string,
   legacyClaims: DocumentSourceClaim[],
   aliases: DocAliases,
-  registry: DocumentFormatRegistry
+  registry: DocumentFormatRegistry,
+  signal?: AbortSignal
 ): Promise<{
   claims: Array<
     DocumentSourceClaim & {
@@ -347,6 +348,7 @@ async function inventoryClaims(
   const provenCoreBundleIdentities = new Set<string>()
   const provenCoreBundleUpdatedAt = new Map<DocumentId, string>()
   for (const entry of inventory.entries.values()) {
+    signal?.throwIfAborted()
     const snapshot = await provenCoreBundleSnapshot(spaceRoot, entry)
     if (snapshot) {
       provenCoreBundleIds.add(entry.documentId)
@@ -358,6 +360,7 @@ async function inventoryClaims(
   }
   const visibleLegacyClaims: DocumentSourceClaim[] = []
   for (const claim of legacyClaims) {
+    signal?.throwIfAborted()
     const inspected = await inspectSourceOwnership(
       spaceRoot,
       claim.source,
@@ -419,6 +422,7 @@ async function inventoryClaims(
   }
 
   for (const entry of inventory.entries.values()) {
+    signal?.throwIfAborted()
     if (consumed.has(entry.documentId)) continue
     const legacyPath = registeredFileLogicalPath(entry, registry)
     if (legacyPath && reservedByAliasIn(aliases, legacyPath)) continue
@@ -581,6 +585,8 @@ type DocumentCatalogOptions = {
   workspaceRoot: string
   spaceId: string
   registry?: DocumentFormatRegistry
+  /** Stops discovery between phases once the caller no longer needs it. */
+  signal?: AbortSignal
 }
 
 export function buildDocumentCatalog(
@@ -601,21 +607,25 @@ async function buildDocumentCatalogFromFiles(
   if (!aliasResult.aliases) {
     throw new Error(aliasResult.error ?? "Document aliases are unavailable")
   }
+  options.signal?.throwIfAborted()
   const legacyClaims = await listLegacyDocumentClaims(
     spaceRoot,
     aliasResult.aliases,
     registry
   )
+  options.signal?.throwIfAborted()
   const merged = await inventoryClaims(
     spaceRoot,
     spaceId,
     legacyClaims,
     aliasResult.aliases,
-    registry
+    registry,
+    options.signal
   )
   const grouped = new Map<string, typeof merged.claims>()
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   for (const claim of merged.claims) {
+    options.signal?.throwIfAborted()
     if (
       claim.identity === "durable" &&
       claim.format.id === "worktable.html" &&

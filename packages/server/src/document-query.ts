@@ -327,7 +327,8 @@ function classifyEntry(
 }
 
 async function documentQueryContext(
-  spaceId: string
+  spaceId: string,
+  signal?: AbortSignal
 ): Promise<DocumentQueryContext> {
   const { data: space, error } = await readSpace(spaceId)
   if (error || !space) throw new DocumentSpaceNotFoundError(spaceId)
@@ -337,7 +338,9 @@ async function documentQueryContext(
     workspaceRoot: getWorkspaceRoot(),
     spaceId,
     registry,
+    ...(signal ? { signal } : {}),
   })
+  signal?.throwIfAborted()
   const allClaims = catalog.entries.flatMap(claimsFor)
   const metadataPaths = allClaims.flatMap((claim) =>
     claim.kind === "document" &&
@@ -731,8 +734,9 @@ async function prepareDocumentReadResult(options: {
   spaceId: string
   path: string
   includeArchived?: boolean
+  signal?: AbortSignal
 }): Promise<PreparedDocumentReadResult> {
-  const context = await documentQueryContext(options.spaceId)
+  const context = await documentQueryContext(options.spaceId, options.signal)
   let entry = findEntry(context.catalog, options.path)
   let classified = entry
     ? classifyEntry(entry, context, options.includeArchived ?? false)
@@ -954,6 +958,11 @@ export async function useResolvedDocumentHandle<T>(
     materializeIdentity?: boolean
     /** Internal callers already serializing a namespace mutation must not relock it. */
     namespaceLockHeld?: boolean
+    /**
+     * Abandon the read once the caller gives up: stop waiting for the Space
+     * lock, stop catalog discovery, and never invoke the callback.
+     */
+    signal?: AbortSignal
   },
   use: (handle: ResolvedDocumentHandle) => Promise<T> | T
 ): Promise<T | Exclude<DocumentHandleResolution, { kind: "document" }>> {
@@ -961,11 +970,14 @@ export async function useResolvedDocumentHandle<T>(
     const read = async () => {
       const result = await prepareDocumentReadResult(options)
       if (result.kind !== "prepared") return result
+      options.signal?.throwIfAborted()
       return (
         (await usePreparedDocumentTransactionally(
           options,
           result.prepared,
           async (current) => {
+            // A legacy HTML read may have waited for its widget lock.
+            options.signal?.throwIfAborted()
             const resolution = handleForPrepared(current)
             if (resolution.kind !== "document") return resolution
             if (
@@ -994,7 +1006,9 @@ export async function useResolvedDocumentHandle<T>(
         )) ?? { kind: "not-found" }
       )
     }
-    return await (options.namespaceLockHeld ? read() : withDocPathLock(options.spaceId, read))
+    return await (options.namespaceLockHeld
+      ? read()
+      : withDocPathLock(options.spaceId, read, options.signal))
   } catch (error) {
     if (error instanceof DocumentSpaceNotFoundError) {
       return { kind: "not-found" }

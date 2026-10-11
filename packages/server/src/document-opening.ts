@@ -28,8 +28,10 @@ opening.get("/spaces/:spaceId/documents/*", async (c) => {
   if (!match) return c.body(null, 204)
   const spaceId = decodeURIComponent(match[1])
   const path = decodeURIComponent(match[2])
+  // Past the budget, the request's signal releases the Space: a queued lock
+  // wait or catalog build stops instead of finishing for nobody.
   const result = await useResolvedDocumentHandle(
-    { spaceId, path, includeArchived: true },
+    { spaceId, path, includeArchived: true, signal: c.req.raw.signal },
     async (handle) => {
       if (c.req.raw.signal.aborted) return null
       // Never project aliases, conflicts, unsupported formats or unvalidated paths.
@@ -71,6 +73,7 @@ opening.get("/spaces/:spaceId/documents/*", async (c) => {
         maxBytes: 2 * 1024 * 1024,
         signal: c.req.raw.signal,
       })
+      if (c.req.raw.signal.aborted) return null
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
       const content =
         format === BUILTIN_DOCUMENT_FORMATS.richText ? JSON.parse(text) : text

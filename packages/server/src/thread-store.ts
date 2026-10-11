@@ -4,10 +4,10 @@ import {
   readdir,
   readFile,
   rename,
+  stat,
   writeFile,
 } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
-import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { nanoid } from "nanoid"
 import type {
@@ -15,6 +15,7 @@ import type {
   Thread,
   ThreadLocation,
   ThreadMessage,
+  ThreadResponseRequest,
   ThreadSummary,
 } from "@worktable/types"
 import {
@@ -29,7 +30,12 @@ import {
   upgradeThreadToV3,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
+import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import {
+  readFileFingerprint,
+  type FileFingerprint,
+} from "./file-fingerprint.ts"
 import {
   getSpacesBaseDir,
   prepareSuppressedPathReplay,
@@ -37,7 +43,7 @@ import {
   unsuppressPath,
   withStoreWriteLock,
 } from "./store.ts"
-import { listSpaces } from "./store.ts"
+import { listSpaces, readSpace } from "./store.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 
@@ -235,68 +241,262 @@ export async function readThread(
   }
 }
 
-export interface ThreadScanResult {
-  threads: Thread[]
-  complete: boolean
+/** A message that asks one conversation identity for a response. */
+export interface ThreadRequestDigest {
+  messageId: string
+  authorMemberId: string
+  createdAt: string
+  responseRequest: ThreadResponseRequest
+  /** When the message that answered the request is in the thread. */
+  repliedAt?: string
+  /** The whole message while its request is open, for Pending. */
+  openMessage?: ThreadMessage
 }
 
-export async function scanThreads(
+/**
+ * What lists, Pending, participant lookups and delivery reconciliation need
+ * from one thread file, derived once per version of the file.
+ */
+export interface ThreadDigest {
+  summary: ThreadSummary
+  /** Messages with a response request, oldest first. */
+  requests: ThreadRequestDigest[]
+  /** `idempotencyMatchKey` of every message. */
+  idempotencyKeys: ReadonlySet<string>
+}
+
+export interface ThreadDigestScan {
+  /** Newest first. */
+  threads: ThreadDigest[]
+  /** False when a thread file could not be read. */
+  complete: boolean
+  /**
+   * Names the exact file versions the scan used: two scans with equal stamps
+   * returned equal digests.
+   */
+  stamp: string
+}
+
+interface CachedThreadFile {
+  /** Fingerprint of the file when it was read. */
+  key: string
+  /** Changed too recently for an equal fingerprint to prove equal content. */
+  racy: boolean
+  /** Unique per read, so a stamp changes whenever any file is read again. */
+  read: number
+  digest: ThreadDigest | null
+}
+
+// Parsed thread files, per threads directory, kept while their fingerprints
+// match. Lists and Pending then cost a stat per file and a parse per changed
+// file, and writes from any process are seen on the next read. The cache is
+// disposable: dropping it only costs the next scan a full read.
+// WORKTABLE_MODEL=0 turns it off.
+const threadFiles = new Map<string, Map<string, CachedThreadFile>>()
+let threadFilesRoot: string | undefined
+let threadFileReads = 0
+
+function threadFilesTrusted(): boolean {
+  return process.env["WORKTABLE_MODEL"] !== "0"
+}
+
+function idempotencyMatchKey(authorMemberId: string, key: string): string {
+  return `${authorMemberId}\0${key}`
+}
+
+function digestThread(thread: Thread): ThreadDigest {
+  const byId = new Map(thread.messages.map((message) => [message.id, message]))
+  const requests: ThreadRequestDigest[] = []
+  for (const message of thread.messages) {
+    const responseRequest = message.responseRequest
+    if (!responseRequest) continue
+    const reply = responseRequest.respondedBy
+      ? byId.get(responseRequest.respondedBy)
+      : undefined
+    requests.push({
+      messageId: message.id,
+      authorMemberId: message.authorMemberId,
+      createdAt: message.createdAt,
+      responseRequest,
+      ...(reply ? { repliedAt: reply.createdAt } : {}),
+      ...(responseRequest.status === "open" ? { openMessage: message } : {}),
+    })
+  }
+  return {
+    summary: summarizeThread(thread),
+    requests,
+    idempotencyKeys: new Set(
+      thread.messages.map((message) =>
+        idempotencyMatchKey(message.authorMemberId, message.idempotencyKey)
+      )
+    ),
+  }
+}
+
+function newestFirst(a: ThreadDigest, b: ThreadDigest): number {
+  return b.summary.updatedAt.localeCompare(a.summary.updatedAt)
+}
+
+/** Digests of every thread in one location. */
+export async function scanThreadDigests(
   locationInput: ThreadLocation | string
-): Promise<ThreadScanResult> {
+): Promise<ThreadDigestScan> {
   const location = normalizeThreadLocation(locationInput)
   const dir = threadsDir(location)
-  if (!existsSync(dir)) return { threads: [], complete: true }
-  const threads: Thread[] = []
-  let complete = true
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) continue
-    const threadId = entry.name.slice(0, -".json".length)
+  const root = getWorkspaceRoot()
+  if (threadFilesRoot !== root) {
+    threadFiles.clear()
+    threadFilesRoot = root
+  }
+  let names: string[]
+  try {
+    names = (await readdir(dir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => entry.name)
+      .sort()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error
+    threadFiles.delete(dir)
+    return { threads: [], complete: true, stamp: `${dir}:` }
+  }
+  const previous = threadFiles.get(dir)
+  // An entry that could not be read is never trusted, and its new read
+  // number keeps a scan that missed it from sharing a stamp with any other.
+  const unreadable = (): CachedThreadFile => ({
+    key: "",
+    racy: true,
+    read: (threadFileReads += 1),
+    digest: null,
+  })
+  const files = await mapWithConcurrency(names, 8, async (name) => {
+    const threadId = name.slice(0, -".json".length)
+    // Stat before reading: a write that lands in between leaves an older
+    // fingerprint, so the next scan reads the file again.
+    let fingerprint: FileFingerprint | null
     try {
-      threads.push(await readThread(location, threadId))
+      fingerprint = await readFileFingerprint(join(dir, name))
     } catch (error) {
-      complete = false
       console.error(`[threads] skipping unreadable thread ${threadId}:`, error)
+      return [name, unreadable()] as const
     }
+    // Removed since the listing.
+    if (!fingerprint) return [name, unreadable()] as const
+    const cached = previous?.get(name)
+    if (
+      cached &&
+      !cached.racy &&
+      cached.key === fingerprint.key &&
+      threadFilesTrusted()
+    ) {
+      return [name, cached] as const
+    }
+    let digest: ThreadDigest | null = null
+    try {
+      digest = digestThread(await readThread(location, threadId))
+    } catch (error) {
+      // Report each version of an unreadable file once.
+      if (cached?.digest !== null || cached.key !== fingerprint.key) {
+        console.error(
+          `[threads] skipping unreadable thread ${threadId}:`,
+          error
+        )
+      }
+    }
+    const read: CachedThreadFile = {
+      key: fingerprint.key,
+      racy: fingerprint.racy,
+      read: (threadFileReads += 1),
+      digest,
+    }
+    return [name, read] as const
+  })
+  const current = new Map(files)
+  threadFiles.set(dir, current)
+  const threads: ThreadDigest[] = []
+  const reads: number[] = []
+  for (const file of current.values()) {
+    reads.push(file.read)
+    if (file.digest) threads.push(file.digest)
   }
   return {
-    threads: threads.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    complete,
+    threads: threads.sort(newestFirst),
+    complete: threads.length === names.length,
+    stamp: `${dir}:${reads.join(",")}`,
   }
 }
 
-export async function listThreads(
-  location: ThreadLocation | string
-): Promise<Thread[]> {
-  return (await scanThreads(location)).threads
-}
-
-/** Every thread, in the given Spaces (default: all of them) and the root. */
-export async function scanAllThreads(
+/**
+ * Digests of every thread, in the root and every Space. `spaces` is the
+ * current Space list; directories of Spaces no longer in it leave the cache.
+ */
+export async function scanAllThreadDigests(
   spaces?: Array<{ id: string }>
-): Promise<ThreadScanResult> {
-  const scans = await Promise.all([
-    scanThreads({ kind: "worktable" }),
-    ...(spaces ?? (await listSpaces())).map((space) => scanThreads(space.id)),
-  ])
+): Promise<ThreadDigestScan> {
+  const locations: ThreadLocation[] = [
+    { kind: "worktable" },
+    ...(spaces ?? (await listSpaces())).map(
+      (space): ThreadLocation => ({ kind: "space", spaceId: space.id })
+    ),
+  ]
+  const scans = await Promise.all(
+    locations.map((location) => scanThreadDigests(location))
+  )
+  const scanned = new Set(locations.map((location) => threadsDir(location)))
+  for (const dir of threadFiles.keys()) {
+    if (!scanned.has(dir)) threadFiles.delete(dir)
+  }
   return {
-    threads: scans
-      .flatMap((scan) => scan.threads)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    threads: scans.flatMap((scan) => scan.threads).sort(newestFirst),
     complete: scans.every((scan) => scan.complete),
+    stamp: scans.map((scan) => scan.stamp).join("\n"),
   }
 }
 
-async function scanThreadsForIdempotency(
-  location: ThreadLocation | string
+/** Threads in a location with a message by this author under this key. */
+async function threadsWithIdempotencyKey(
+  location: ThreadLocation | string,
+  authorMemberId: string,
+  idempotencyKey: string
 ): Promise<Thread[]> {
-  const scan = await scanThreads(location)
+  const scan = await scanThreadDigests(location)
   if (!scan.complete) {
     throw new ThreadError(
       "THREAD_STORE_INCOMPLETE",
       "Thread creation is temporarily unavailable while a portable thread file is unreadable; retry after the file write completes"
     )
   }
-  return scan.threads
+  const key = idempotencyMatchKey(authorMemberId, idempotencyKey)
+  const threads: Thread[] = []
+  for (const digest of scan.threads) {
+    if (!digest.idempotencyKeys.has(key)) continue
+    try {
+      threads.push(await readThread(location, digest.summary.id))
+    } catch (error) {
+      if (error instanceof ThreadError && error.code === "THREAD_NOT_FOUND") {
+        continue
+      }
+      throw error
+    }
+  }
+  return threads
+}
+
+async function threadFileExists(
+  location: ThreadLocation,
+  threadId: string
+): Promise<boolean> {
+  try {
+    await stat(threadPath(location, threadId))
+    return true
+  } catch (error) {
+    if (error instanceof ThreadError && error.code === "THREAD_NOT_FOUND") {
+      return false
+    }
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "ENOENT" || code === "ENOTDIR") return false
+    throw error
+  }
 }
 
 export async function findThread(
@@ -305,12 +505,34 @@ export async function findThread(
 ): Promise<Thread> {
   if (preferredLocation) return readThread(preferredLocation, threadId)
   let match: Thread | undefined
-  const locations: ThreadLocation[] = [
+  // A stat per location finds the file; only a Space that has it is checked
+  // the way listSpaces would, and only its thread file is read.
+  let spaceIds: string[] = []
+  try {
+    spaceIds = (await readdir(getSpacesBaseDir(), { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+  }
+  const candidates: ThreadLocation[] = [
     { kind: "worktable" },
-    ...(await listSpaces()).map(
-      (space): ThreadLocation => ({ kind: "space", spaceId: space.id })
-    ),
+    ...spaceIds.map((spaceId): ThreadLocation => ({ kind: "space", spaceId })),
   ]
+  const present = await Promise.all(
+    candidates.map((location) => threadFileExists(location, threadId))
+  )
+  const locations: ThreadLocation[] = []
+  for (const [index, location] of candidates.entries()) {
+    if (!present[index]) continue
+    if (
+      location.kind === "space" &&
+      (await readSpace(location.spaceId)).data?.id !== location.spaceId
+    ) {
+      continue
+    }
+    locations.push(location)
+  }
   for (const location of locations) {
     try {
       const candidate = await readThread(location, threadId)
@@ -627,7 +849,11 @@ export async function findThreadCreationRetry(
     created: false
   }> = []
   const recipientNeedle = input.to.trim().toLocaleLowerCase()
-  for (const thread of await scanThreadsForIdempotency(location)) {
+  for (const thread of await threadsWithIdempotencyKey(
+    location,
+    input.author.id,
+    input.idempotencyKey
+  )) {
     const existing = thread.messages.find(
       (message) =>
         message.authorMemberId === input.author.id &&
@@ -680,7 +906,11 @@ export async function createThread(
   }
   const recipient = input.recipient
   return withThreadMutationLock({ kind: "worktable" }, "create", async () => {
-    for (const existingThread of await scanThreadsForIdempotency(location)) {
+    for (const existingThread of await threadsWithIdempotencyKey(
+      location,
+      input.author.id,
+      input.idempotencyKey
+    )) {
       const existing = idempotencyMatch(existingThread, input)
       if (existing) {
         return { thread: existingThread, message: existing, created: false }
@@ -966,10 +1196,10 @@ export async function renameThreadMember(
   participantId: string,
   name: string
 ): Promise<void> {
-  const scan = await scanAllThreads()
-  for (const found of scan.threads) {
+  const scan = await scanAllThreadDigests()
+  for (const { summary: found } of scan.threads) {
     if (!found.members.some((member) => member.id === participantId)) continue
-    await renameInThread(threadLocation(found), found.id, (thread, now) => {
+    await renameInThread(found.location, found.id, (thread, now) => {
       const isRenamed = (identity: Thread["identities"][number]) =>
         identity.memberId === participantId && identity.default
       const otherNames = thread.identities
@@ -1166,7 +1396,7 @@ export async function assignThreadMessage(
   return { thread: updated, replacedIdentityId }
 }
 
-export function summarizeThread(thread: Thread): ThreadSummary {
+function summarizeThread(thread: Thread): ThreadSummary {
   const location = threadLocation(thread)
   return {
     id: thread.id,

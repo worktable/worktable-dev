@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import fc from "fast-check"
@@ -299,6 +299,48 @@ describe("thread REST routes", () => {
     expect(row?.lastMessage.excerpt).toEndWith("…")
     expect(row?.lastMessage.excerpt.length).toBeLessThanOrEqual(280)
     expect(row?.lastMessage).not.toHaveProperty("body")
+
+    // A message another process writes into the file shows in the next list,
+    // also once the list trusts what it read, and when the writer keeps the
+    // file's modification time.
+    const threadFile = join(
+      workspaceDir,
+      "spaces",
+      "connected-agents",
+      "threads",
+      `${threadId}.json`
+    )
+    const aMinuteAgo = new Date(Date.now() - 60_000)
+    await utimes(threadFile, aMinuteAgo, aMinuteAgo)
+    await request("GET", "/api/spaces/connected-agents/threads")
+    const portable = JSON.parse(await readFile(threadFile, "utf8"))
+    const previous = portable.messages.at(-1)
+    portable.messages.push({
+      id: "msg_writtenelsewhere",
+      sequence: previous.sequence + 1,
+      authorIdentityId: previous.authorIdentityId,
+      authorMemberId: previous.authorMemberId,
+      notifyIdentityIds: [],
+      body: "Posted by another Worktable process.",
+      idempotencyKey: "route-outside-writer",
+      createdAt: new Date().toISOString(),
+    })
+    portable.revision += 1
+    portable.updatedAt = new Date().toISOString()
+    await writeFile(threadFile, `${JSON.stringify(portable, null, 2)}\n`)
+    await utimes(threadFile, aMinuteAgo, aMinuteAgo)
+    const outside = await request("GET", "/api/spaces/connected-agents/threads")
+    const [outsideRow] = outside.json.threads as Array<{
+      messageCount: number
+      lastMessage: { id: string; excerpt: string }
+    }>
+    expect(outsideRow).toMatchObject({
+      messageCount: portable.messages.length,
+      lastMessage: {
+        id: "msg_writtenelsewhere",
+        excerpt: "Posted by another Worktable process.",
+      },
+    })
   })
 
   it("enforces the operation scopes at the REST boundary", async () => {

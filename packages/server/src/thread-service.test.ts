@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   rm,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { existsSync, mkdirSync, rmdirSync } from "node:fs"
@@ -115,13 +116,27 @@ const owner: TokenIdentity = {
   },
 }
 
-async function expireDeliveryLease(messageId: string): Promise<void> {
+async function deliveryStatePath(): Promise<string> {
   const directory = join(appDir, "thread-deliveries")
   const [name] = (await readdir(directory)).filter((entry) =>
     entry.endsWith(".json")
   )
   if (!name) throw new Error("Missing thread delivery state")
-  const path = join(directory, name)
+  return join(directory, name)
+}
+
+/**
+ * Date files a minute back, as if nothing had changed for a while: a read
+ * then trusts what it already derived from them for as long as their
+ * fingerprints stay the same.
+ */
+async function age(...paths: string[]): Promise<void> {
+  const past = new Date(Date.now() - 60_000)
+  await Promise.all(paths.map((path) => utimes(path, past, past)))
+}
+
+async function expireDeliveryLease(messageId: string): Promise<void> {
+  const path = await deliveryStatePath()
   const file = JSON.parse(await readFile(path, "utf8"))
   const delivery = file.deliveries.find(
     (candidate: { messageId: string }) => candidate.messageId === messageId
@@ -765,6 +780,16 @@ describe("thread service", () => {
     } else {
       copied.location = { kind: "space", spaceId: "second-space" }
     }
+    // Directories that are not Spaces are not locations, even with a copy of
+    // the thread inside.
+    for (const directory of [".staging", "prepared-space"]) {
+      const threads = join(workspaceDir, "spaces", directory, "threads")
+      await mkdir(threads, { recursive: true })
+      await writeFile(join(threads, `${first.threadId}.json`), "{}", "utf8")
+    }
+    expect(
+      (await readThreadMessages(finn, first.threadId)).thread.location
+    ).toEqual({ kind: "space", spaceId: "connected-agents" })
     const copiedPath = threadPath("second-space", first.threadId)
     await mkdir(dirname(copiedPath), { recursive: true })
     await writeFile(copiedPath, `${JSON.stringify(copied, null, 2)}\n`, "utf8")
@@ -867,6 +892,9 @@ describe("thread service", () => {
       defaultSpaceId: "connected-agents",
     })
     const path = threadPath("connected-agents", first.threadId)
+    // Reads that already trust these files still see an edit made elsewhere.
+    await age(path, await deliveryStatePath())
+    await listThreadSummaries(atlas, "connected-agents")
     const portable = JSON.parse(await readFile(path, "utf8"))
     const now = new Date().toISOString()
     const maraIdentityId = `idt_${maraBinding.participant.id.slice(4)}`
@@ -892,6 +920,7 @@ describe("thread service", () => {
     portable.revision += 1
     portable.updatedAt = new Date().toISOString()
     await writeFile(path, `${JSON.stringify(portable, null, 2)}\n`, "utf8")
+    await age(path)
 
     await listThreadSummaries(atlas, "connected-agents")
     expect(

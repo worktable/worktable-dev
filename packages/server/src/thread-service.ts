@@ -48,10 +48,12 @@ import {
   findThread,
   normalizeThreadLocation,
   readThread,
-  scanAllThreads,
-  summarizeThread,
+  scanAllThreadDigests,
+  scanThreadDigests,
   ThreadError,
-  type ThreadScanResult,
+  type ThreadDigest,
+  type ThreadDigestScan,
+  type ThreadRequestDigest,
 } from "./thread-store.ts"
 import {
   listParticipantBindings,
@@ -314,15 +316,15 @@ async function readResult(
 }
 
 function latestThreadSummaryActivity(
-  thread: ThreadReadResult["thread"],
+  threadRequests: ThreadRequestDigest[],
   activities: ThreadActivity[]
 ): ThreadActivity | undefined {
+  if (activities.length === 0) return undefined
   const requests = new Map(
-    thread.messages.flatMap((message) =>
-      message.responseRequest
-        ? [[message.id, message.responseRequest] as const]
-        : []
-    )
+    threadRequests.map((request) => [
+      request.messageId,
+      request.responseRequest,
+    ])
   )
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index]!
@@ -767,7 +769,7 @@ export async function listThreadSummaries(
   // One scan of the threads and one read of the delivery state serve both
   // delivery reconciliation and the list.
   const spaces = await listSpaces()
-  const scan = await scanAllThreads(spaces)
+  const scan = await scanAllThreadDigests(spaces)
   const activities = await reconcileParticipantDeliveries(actor.id, scan)
   const activeSpaceIds = new Set(
     spaces
@@ -775,22 +777,22 @@ export async function listThreadSummaries(
       .map((space) => space.id)
   )
   const locationKey = location ? threadLocationKey(location) : undefined
-  const threads = scan.threads.filter((thread) => {
-    const storedLocation = threadLocation(thread)
+  const threads = scan.threads.filter(({ summary }) => {
+    const storedLocation = summary.location
     return (
       (locationKey !== undefined
         ? threadLocationKey(storedLocation) === locationKey
         : storedLocation.kind === "worktable" ||
           activeSpaceIds.has(storedLocation.spaceId)) &&
       (!participantId ||
-        thread.members.some((member) => member.id === participantId))
+        summary.members.some((member) => member.id === participantId))
     )
   })
-  const summaries = threads.map((thread) => ({
-    ...summarizeThread(thread),
+  const summaries = threads.map(({ summary, requests }) => ({
+    ...summary,
     activity: latestThreadSummaryActivity(
-      thread,
-      activities(threadLocation(thread), thread.id)
+      requests,
+      activities(summary.location, summary.id)
     ),
   }))
   return deliveryState
@@ -841,51 +843,46 @@ export async function listPendingThreadWork(
     spaceId
       ? location.kind === "space" && location.spaceId === spaceId
       : location.kind !== "space" || activeSpaceIds.has(location.spaceId)
-  const { threads } = await scanAllThreads(
-    spaceId ? spaces.filter((space) => space.id === spaceId) : spaces
-  )
-  const scoped = threads.filter((thread) => inScope(threadLocation(thread)))
+  const { threads } = !spaceId
+    ? await scanAllThreadDigests(spaces)
+    : spaces.some((space) => space.id === spaceId)
+      ? await scanThreadDigests(spaceId)
+      : { threads: [] }
+  const scoped = threads.filter(({ summary }) => inScope(summary.location))
   const requests = scoped.flatMap((thread) =>
     openRequestsForViewer(thread, viewer.id)
   )
-  const awaitingReply = scoped.flatMap((thread) => {
+  const awaitingReply = scoped.flatMap(({ summary, requests }) => {
     const open = new Map(
-      thread.messages.flatMap((message) =>
-        message.authorMemberId === viewer.id &&
-        message.responseRequest?.status === "open"
-          ? [[message.id, message.responseRequest.identityId] as const]
+      requests.flatMap((request) =>
+        request.authorMemberId === viewer.id &&
+        request.responseRequest.status === "open"
+          ? [[request.messageId, request.responseRequest.identityId] as const]
           : []
       )
     )
-    return open.size > 0 ? [{ thread, open }] : []
+    return open.size > 0 ? [{ thread: summary, open }] : []
   })
   if (awaitingReply.length === 0) return { requests, failures: [] }
   const activities = await readThreadActivities()
   const failures = awaitingReply.flatMap(({ thread, open }) =>
-    failedDeliveries(
-      thread,
-      open,
-      activities(threadLocation(thread), thread.id)
-    )
+    failedDeliveries(thread, open, activities(thread.location, thread.id))
   )
   return { requests, failures }
 }
 
 function openRequestsForViewer(
-  thread: Thread,
+  { summary: thread, requests }: ThreadDigest,
   viewerId: string
 ): ViewerThreadRequest[] {
-  const location = threadLocation(thread)
+  const location = thread.location
   const mine = new Set(
     thread.identities
       .filter((candidate) => candidate.memberId === viewerId)
       .map((candidate) => candidate.id)
   )
-  return thread.messages.flatMap((message) => {
-    const request = message.responseRequest
-    if (request?.status !== "open" || !mine.has(request.identityId)) {
-      return []
-    }
+  return requests.flatMap(({ openMessage: message, responseRequest }) => {
+    if (!message || !mine.has(responseRequest.identityId)) return []
     const member = thread.members.find(
       (candidate) => candidate.id === message.authorMemberId
     )
@@ -910,11 +907,11 @@ function openRequestsForViewer(
 
 /** Failed deliveries of the viewer's messages whose reply request is open. */
 function failedDeliveries(
-  thread: Thread,
+  thread: ThreadSummary,
   openRequests: Map<string, string>,
   activities: ThreadActivity[]
 ): ViewerDeliveryFailure[] {
-  const location = threadLocation(thread)
+  const location = thread.location
   return activities.flatMap((activity) => {
     if (
       activity.state !== "failed" ||
@@ -964,7 +961,8 @@ export async function readThreadMessages(
     threadLocation(thread),
     thread.id,
     { after: options.after, before: options.before },
-    actor.id
+    actor.id,
+    thread
   )
 }
 
@@ -1215,45 +1213,47 @@ export async function waitForThreadReply(
   }
 }
 
+/**
+ * Bring a participant's delivery state in line with the thread files. When
+ * neither a thread file nor the delivery state changed since the last time,
+ * this takes no lock and writes nothing.
+ */
 async function reconcileParticipantDeliveries(
   participantId: string,
-  knownScan?: ThreadScanResult
+  knownScan?: ThreadDigestScan
 ): Promise<ThreadActivityLookup> {
   const deliveries: ReconcileThreadDeliveryInput[] = []
-  const scan = knownScan ?? (await scanAllThreads())
-  for (const thread of scan.threads) {
-    const location = threadLocation(thread)
-    for (const message of thread.messages) {
-      const responseRequest = message.responseRequest
-      if (!responseRequest || responseRequest.status === "withdrawn") continue
+  const scan = knownScan ?? (await scanAllThreadDigests())
+  for (const { summary: thread, requests } of scan.threads) {
+    for (const request of requests) {
+      const responseRequest = request.responseRequest
+      if (responseRequest.status === "withdrawn") continue
       const targetIdentity = thread.identities.find(
         (candidate) => candidate.id === responseRequest.identityId
       )
       if (targetIdentity?.memberId !== participantId) continue
-      const reply = thread.messages.find(
-        (candidate) => candidate.id === responseRequest.respondedBy
-      )
       deliveries.push({
-        messageId: message.id,
+        messageId: request.messageId,
         threadId: thread.id,
-        location,
-        authorId: message.authorMemberId,
+        location: thread.location,
+        authorId: request.authorMemberId,
         participantId,
         identityId: responseRequest.identityId,
-        replied: Boolean(reply),
-        createdAt: message.createdAt,
-        repliedAt: reply?.createdAt,
+        replied: request.repliedAt !== undefined,
+        createdAt: request.createdAt,
+        repliedAt: request.repliedAt,
         threadRevision: thread.revision,
       })
     }
   }
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
-    threads: scan.threads.map((thread) => ({
+    threads: scan.threads.map(({ summary: thread }) => ({
       threadId: thread.id,
-      location: threadLocation(thread),
+      location: thread.location,
       revision: thread.revision,
     })),
+    sourceStamp: scan.stamp,
   })
 }
 

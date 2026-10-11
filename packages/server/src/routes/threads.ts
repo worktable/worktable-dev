@@ -121,6 +121,28 @@ function managementResult(thread: { id: string; revision: number }) {
 
 const LIST_EXCERPT_LENGTH = 280
 
+// Summaries of unchanged threads carry the same message object from one list
+// to the next, so each excerpt is computed once.
+const excerpts = new WeakMap<ThreadSummary["lastMessage"], string>()
+
+function listExcerpt(message: ThreadSummary["lastMessage"]): string {
+  const known = excerpts.get(message)
+  if (known !== undefined) return known
+  // Convert the whole message: cutting Markdown first could split a long link
+  // or image and leave its raw source in the excerpt.
+  const plain = markdownPlainText(message.body).replace(/\s+/g, " ").trim()
+  let excerpt = plain
+  if (plain.length > LIST_EXCERPT_LENGTH) {
+    let end = LIST_EXCERPT_LENGTH - 1
+    // Keep a surrogate pair, such as an emoji, whole.
+    const last = plain.charCodeAt(end - 1)
+    if (last >= 0xd800 && last <= 0xdbff) end -= 1
+    excerpt = `${plain.slice(0, end).trimEnd()}…`
+  }
+  excerpts.set(message, excerpt)
+  return excerpt
+}
+
 /**
  * The app's list shows one line per thread, so rows carry a plain-text
  * excerpt of the last message rather than the message itself. MCP keeps the
@@ -130,18 +152,10 @@ function threadListItem({
   lastMessage,
   ...summary
 }: ThreadSummary): ThreadListItem {
-  // Convert the whole message: cutting Markdown first could split a long link
-  // or image and leave its raw source in the excerpt.
-  const plain = markdownPlainText(lastMessage.body).replace(/\s+/g, " ").trim()
-  if (plain.length <= LIST_EXCERPT_LENGTH) {
-    return { ...summary, lastMessage: { id: lastMessage.id, excerpt: plain } }
+  return {
+    ...summary,
+    lastMessage: { id: lastMessage.id, excerpt: listExcerpt(lastMessage) },
   }
-  let end = LIST_EXCERPT_LENGTH - 1
-  // Keep a surrogate pair, such as an emoji, whole.
-  const last = plain.charCodeAt(end - 1)
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1
-  const excerpt = `${plain.slice(0, end).trimEnd()}…`
-  return { ...summary, lastMessage: { id: lastMessage.id, excerpt } }
 }
 
 threadsRouter.get("/participants", async (c) => {

@@ -8,7 +8,10 @@
 // it from files on every request. Snapshots are published by pointer swap and
 // are safe to drop at any time.
 //
-// Correctness does not rest on any single signal:
+// File fingerprints are the truth; events are hints. Each snapshot records
+// the fingerprint (lstat: type, device, inode, size, change and modification
+// times) of every file it was built from, taken before the build. Signals
+// decide when to look again:
 // - in-process writes advance the Space's generation through workspace
 //   events, document content events and watcher suppression, which brackets
 //   every internal write;
@@ -19,17 +22,27 @@
 //   alias file);
 // - a short maximum age bounds the effect of a missed watcher event.
 //
+// Looking again re-stats every input. When nothing changed, the snapshot is
+// served again without a rebuild; any difference, or an input changed within
+// the racy window of the last look, rebuilds the Space.
+//
 // Writers never read snapshots. They build fresh under the document path lock.
 // WORKTABLE_MODEL=0 turns snapshots off.
 
 import { isAbsolute, relative, sep } from "node:path"
 import { onDocContentChanged } from "./content-events.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
-import { readFileFingerprint } from "./file-fingerprint.ts"
+import {
+  readFileFingerprint,
+  readTreeFingerprints,
+  sameTreeFingerprints,
+  type TreeFingerprints,
+} from "./file-fingerprint.ts"
+import { timing } from "./request-timing.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { assertWorkspaceAvailable } from "./workspace-safety.ts"
 
-/** Longest a snapshot is served without a rebuild, whatever the signals say. */
+/** Longest a snapshot is served without re-checking all of its inputs. */
 export const SPACE_SNAPSHOT_MAX_AGE_MS = 15_000
 
 let clock = 0
@@ -40,8 +53,10 @@ const writesInFlight = new Map<string, number>()
 interface SpaceSnapshot {
   workspaceRoot: string
   generation: number
-  builtAt: number
+  /** When its inputs were last fingerprinted. */
+  checkedAt: number
   sources: ReadonlyArray<readonly [path: string, key: string | null]>
+  inputs: TreeFingerprints
   value: unknown
 }
 
@@ -65,10 +80,10 @@ export function noteWorkspaceActivity(): void {
   clock += 1
 }
 
+/** The Space's snapshot is kept, to be checked against its inputs. */
 export function noteSpaceChanged(spaceId: string): void {
   clock += 1
   spaceChangedAt.set(spaceId, clock)
-  snapshots.delete(spaceId)
 }
 
 export function noteAllSpacesChanged(): void {
@@ -126,10 +141,12 @@ async function sourceKey(path: string): Promise<string | null | undefined> {
   }
 }
 
-function snapshotsEnabled(): boolean {
+/** WORKTABLE_MODEL=0 turns off the read model and the caches built for it. */
+export function readModelEnabled(): boolean {
   return process.env["WORKTABLE_MODEL"] !== "0"
 }
 
+/** Whether the snapshot may be served without re-checking all its inputs. */
 async function isCurrent(
   snapshot: SpaceSnapshot,
   workspaceRoot: string,
@@ -138,7 +155,7 @@ async function isCurrent(
   if (
     snapshot.workspaceRoot !== workspaceRoot ||
     snapshot.generation !== spaceGeneration(spaceId) ||
-    Date.now() - snapshot.builtAt >= SPACE_SNAPSHOT_MAX_AGE_MS
+    Date.now() - snapshot.checkedAt >= SPACE_SNAPSHOT_MAX_AGE_MS
   ) {
     return false
   }
@@ -152,65 +169,105 @@ async function isCurrent(
   )
 }
 
+/** Fingerprints of every input, or null when one cannot be inspected. */
+async function readInputs(
+  sources: readonly string[],
+  trees: () => Promise<readonly string[]>,
+  observedAt: number
+): Promise<TreeFingerprints | null> {
+  try {
+    return await timing.span("revalidate", async () =>
+      readTreeFingerprints({ files: sources, trees: await trees() }, observedAt)
+    )
+  } catch {
+    return null
+  }
+}
+
 /**
- * Read one Space's derived data from its current snapshot, or build and
+ * Read one Space's derived data from its current snapshot, or check and
  * publish a new one. `sources` are the files whose fingerprints identify the
- * snapshot. Builds run under the document path lock, so concurrent readers
- * of a stale Space wait for one build instead of starting their own.
+ * snapshot and are checked on every read. `trees` returns the directories
+ * holding everything else the build reads; with `sources`, they are
+ * re-checked once the snapshot is too old or a signal says the Space
+ * changed. Checks and builds run under the document path lock, so
+ * concurrent readers of a stale Space wait for one instead of starting their
+ * own.
  */
 export async function readSpaceSnapshot<T>(options: {
   workspaceRoot: string
   spaceId: string
   sources: readonly string[]
+  trees: () => Promise<readonly string[]>
   build: () => Promise<T>
   /** The caller already holds this Space's document path lock. */
   lockHeld?: boolean
+  /**
+   * The caller found the snapshot it was served out of date: build and
+   * publish a new one whatever the signals and fingerprints say.
+   */
+  refresh?: boolean
 }): Promise<T> {
   const { workspaceRoot, spaceId } = options
   const locked = <R>(fn: () => Promise<R>) =>
     options.lockHeld ? fn() : withDocPathLock(spaceId, fn)
-  if (!snapshotsEnabled()) return locked(options.build)
+  if (!readModelEnabled()) return locked(options.build)
   // A snapshot hit skips the lock, which is where reads fail closed while a
   // document move awaits recovery.
   assertWorkspaceAvailable()
 
   const seen = snapshots.get(spaceId)
-  if (seen && (await isCurrent(seen, workspaceRoot, spaceId))) {
+  if (
+    !options.refresh &&
+    seen &&
+    (await isCurrent(seen, workspaceRoot, spaceId))
+  ) {
     return seen.value as T
   }
   return locked(async () => {
     const published = snapshots.get(spaceId)
     if (
+      !options.refresh &&
       published &&
       published !== seen &&
       (await isCurrent(published, workspaceRoot, spaceId))
     ) {
       return published.value as T
     }
-    if (published && snapshots.get(spaceId) === published) {
-      snapshots.delete(spaceId)
-    }
     const generation = spaceGeneration(spaceId)
     const publishable = !writesInFlight.has(spaceId)
-    const builtAt = Date.now()
-    // Fingerprints are taken before the build, so a change made while it
-    // runs leaves the snapshot already stale. A same-size rewrite within one
-    // timestamp tick would not change them; the watcher and maximum age cover
-    // that case for these small identity files.
+    const checkedAt = Date.now()
+    // Fingerprints are taken before any build, so a change made while it
+    // runs leaves the snapshot already stale. An input changed within the
+    // racy window could change again without a new fingerprint, so a
+    // snapshot that saw one is rebuilt, not reused, at its next check.
     const keys = await Promise.all(options.sources.map(sourceKey))
-    const value = await options.build()
+    const inputs = await readInputs(options.sources, options.trees, checkedAt)
+    const unchanged =
+      !options.refresh &&
+      published !== undefined &&
+      published.workspaceRoot === workspaceRoot &&
+      !published.inputs.racy &&
+      inputs !== null &&
+      sameTreeFingerprints(published.inputs, inputs)
+    if (!unchanged && published && snapshots.get(spaceId) === published) {
+      snapshots.delete(spaceId)
+    }
+    const value = unchanged ? (published.value as T) : await options.build()
     if (
       publishable &&
+      inputs !== null &&
       spaceGeneration(spaceId) === generation &&
       !keys.includes(undefined)
     ) {
       snapshots.set(spaceId, {
         workspaceRoot,
         generation,
-        builtAt,
+        checkedAt,
         sources: options.sources.map(
           (path, index) => [path, keys[index] ?? null] as const
         ),
+        inputs,
         value,
       })
     }

@@ -16,6 +16,7 @@ import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
 import { annotationsRouter } from "./routes/annotations.ts";
 import { parseChangedPath } from "./watcher.ts";
+import { notifyWorkspaceChange } from "./workspace-events.ts";
 import { readDocumentPage } from "./document-page-service.ts";
 import { readDocumentInventory } from "./document-inventory.ts";
 import { readDocumentAnnotationsV2, readDocumentPortableStateV2 } from "./document-data-v2.ts";
@@ -131,6 +132,9 @@ describe("path-style widget ids", () => {
     expect(unusual.headers.get("content-disposition")).toContain(
       "filename*=UTF-8''download%22name.html"
     )
+    // These files were added outside Worktable; lists follow the watcher's
+    // report of them, and no watcher runs here.
+    notifyWorkspaceChange({ type: "documentCorpus", spaceId: "meta" })
     const listed = await req(app, "GET", "/api/spaces/meta/widgets")
     expect(listed.status).toBe(200)
     expect(

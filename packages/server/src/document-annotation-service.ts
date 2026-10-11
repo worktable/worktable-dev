@@ -23,8 +23,13 @@ import {
   translateLegacyDocumentAnnotationTarget,
   writeDocumentAnnotationsV2,
 } from "./document-data-v2.ts"
-import { useResolvedDocumentHandle } from "./document-query.ts"
+import {
+  readDocumentCatalogSnapshot,
+  useResolvedDocumentHandle,
+} from "./document-query.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
+import { fingerprintOf } from "./file-fingerprint.ts"
+import { readModelEnabled } from "./workspace-read-model.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import {
   documentDataV2RootDirectory,
@@ -98,7 +103,7 @@ async function useDurableDocument<T>(
   spaceId: string,
   path: string,
   use: (document: AnnotationDocument) => Promise<T>,
-  options: { materializeIdentity?: boolean } = {}
+  options: { materializeIdentity?: boolean; snapshot?: boolean } = {}
 ): Promise<T> {
   const resolution = await useResolvedDocumentHandle(
     {
@@ -106,6 +111,7 @@ async function useDurableDocument<T>(
       path,
       includeArchived: true,
       materializeIdentity: options.materializeIdentity,
+      snapshot: options.snapshot,
     },
     (handle) => {
       if (handle.identity !== "durable") {
@@ -159,8 +165,11 @@ async function ownerForPath(
   spaceId: string,
   path: string
 ): Promise<AnnotationOwner> {
-  return useDurableDocument(spaceId, path, (document) =>
-    ownerForDocument(spaceId, document)
+  return useDurableDocument(
+    spaceId,
+    path,
+    (document) => ownerForDocument(spaceId, document),
+    { snapshot: true }
   )
 }
 
@@ -317,8 +326,31 @@ export async function createDocumentAnnotationForPath(options: {
   return { annotation: result.annotation, created: result.created }
 }
 
+interface ParsedAnnotationFile {
+  /** The file's fingerprint key when it was read. */
+  key: string
+  file: Awaited<ReturnType<typeof readDocumentAnnotationsV2>>
+}
+
+/**
+ * Annotation files parsed for read-only listings, by document data root and
+ * document, kept while their fingerprints stay the same. Shared with every
+ * listing: callers must not mutate what they receive.
+ */
+const parsedAnnotationFiles = new Map<
+  string,
+  Map<DocumentId, ParsedAnnotationFile>
+>()
+
+/**
+ * Every document in the Space that has annotations. Writers read every file
+ * and the catalog fresh. A read-only listing takes the catalog from the
+ * Space's read-model snapshot and re-reads only annotation files whose
+ * fingerprint changed, so another process's edit is still seen at once.
+ */
 async function allAnnotationOwners(
-  spaceId: string
+  spaceId: string,
+  options: { snapshot?: boolean; namespaceLockHeld?: boolean } = {}
 ): Promise<AnnotationOwner[]> {
   const workspaceRoot = getWorkspaceRoot()
   const root = documentDataV2RootDirectory(workspaceRoot, spaceId)
@@ -343,39 +375,44 @@ async function allAnnotationOwners(
     const parsed = DocumentIdSchema.safeParse(entry.name)
     if (parsed.success) candidateIds.push(parsed.data)
   }
-  const annotationIds = new Set(
+  const observedAt = Date.now()
+  const annotationFiles = new Map(
     (
       await mapWithConcurrency(
         candidateIds,
         ANNOTATION_OWNER_READ_CONCURRENCY,
-        async (documentId): Promise<DocumentId | null> => {
+        async (documentId) => {
           const path = join(root, documentId, "annotations.json")
           try {
-            const annotationInfo = await lstat(path)
+            const annotationInfo = await lstat(path, { bigint: true })
             if (!annotationInfo.isFile() || annotationInfo.isSymbolicLink()) {
               throw new Error("document annotation V2 file is not a real file")
             }
-            return documentId
+            return [[documentId, fingerprintOf(annotationInfo, observedAt)]] as const
           } catch (error) {
             const code = (error as NodeJS.ErrnoException).code
-            if (code === "ENOENT" || code === "ENOTDIR") return null
+            if (code === "ENOENT" || code === "ENOTDIR") return []
             throw error
           }
         }
       )
-    ).filter((documentId): documentId is DocumentId => documentId !== null)
+    ).flat()
   )
-  if (annotationIds.size === 0) return []
-  const catalog = await buildDocumentCatalog({
-    workspaceRoot,
-    spaceId,
-  })
+  if (annotationFiles.size === 0) {
+    if (options.snapshot) parsedAnnotationFiles.delete(root)
+    return []
+  }
+  const catalog = options.snapshot
+    ? await readDocumentCatalogSnapshot(spaceId, {
+        ...(options.namespaceLockHeld ? { lockHeld: true } : {}),
+      })
+    : await buildDocumentCatalog({ workspaceRoot, spaceId })
   const documents: AnnotationDocument[] = []
   for (const entry of catalog.entries) {
     if (
       entry.kind !== "document" ||
       entry.handle.identity !== "durable" ||
-      !annotationIds.has(entry.handle.documentId)
+      !annotationFiles.has(entry.handle.documentId)
     ) {
       continue
     }
@@ -385,11 +422,43 @@ async function allAnnotationOwners(
       formatId: entry.descriptor.format.id,
     })
   }
-  return mapWithConcurrency(
+  if (!options.snapshot || !readModelEnabled()) {
+    return mapWithConcurrency(
+      documents,
+      ANNOTATION_OWNER_READ_CONCURRENCY,
+      (document) => ownerForDocument(spaceId, document)
+    )
+  }
+  const previous = parsedAnnotationFiles.get(root)
+  const next = new Map<DocumentId, ParsedAnnotationFile>()
+  const owners = await mapWithConcurrency(
     documents,
     ANNOTATION_OWNER_READ_CONCURRENCY,
-    (document) => ownerForDocument(spaceId, document)
+    async (document): Promise<AnnotationOwner> => {
+      const fingerprint = annotationFiles.get(document.documentId)!
+      const cached = previous?.get(document.documentId)
+      // The fingerprint was taken before the read, so a file that changes
+      // while it is read is read again next time.
+      const file =
+        cached?.key === fingerprint.key
+          ? cached.file
+          : await readDocumentAnnotationsV2({
+              workspaceRoot,
+              spaceId,
+              documentId: document.documentId,
+            })
+      if (!fingerprint.racy) {
+        next.set(document.documentId, { key: fingerprint.key, file })
+      }
+      return {
+        document,
+        annotations: file?.annotations ?? [],
+        revision: file?.revision ?? null,
+      }
+    }
   )
+  parsedAnnotationFiles.set(root, next)
+  return owners
 }
 
 async function findAnnotation(
@@ -569,7 +638,11 @@ function legacyAnnotation(
 export async function listLegacyCompatibleAnnotationsV2(
   spaceId: string,
   path?: string,
-  options: { namespaceLockHeld?: boolean } = {}
+  options: {
+    namespaceLockHeld?: boolean
+    /** A read that may use the read-model snapshot. */
+    snapshot?: boolean
+  } = {}
 ): Promise<Annotation[]> {
   let owners: AnnotationOwner[]
   if (path) {
@@ -585,7 +658,9 @@ export async function listLegacyCompatibleAnnotationsV2(
       throw new DocumentAnnotationError(result.kind === "not-found" ? "not-found" : "conflict", "Document path cannot be resolved")
     }
     owners = result
-  } else owners = await allAnnotationOwners(spaceId)
+  } else {
+    owners = await allAnnotationOwners(spaceId, options)
+  }
   return owners.flatMap((owner) =>
     owner.annotations.flatMap((annotation) => {
       const projected = legacyAnnotation(owner, annotation)

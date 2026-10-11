@@ -111,6 +111,17 @@ export interface DocumentCatalog {
    * could not be read.
    */
   htmlProperties: ReadonlyMap<DocumentId, HtmlDocumentPropertiesRead | null>
+  /**
+   * Fingerprints of the files each row came from, taken while building:
+   * file sources by relative path, and HTML Doc properties by document.
+   * Files changed within the racy window are left out.
+   */
+  derivedFrom: {
+    /** The build's place in catalogBuildsStarted(). */
+    build: number
+    sources: ReadonlyMap<string, string>
+    htmlProperties: ReadonlyMap<DocumentId, string>
+  }
 }
 
 function compareStrings(a: string, b: string): number {
@@ -267,7 +278,7 @@ interface HtmlPropertiesView {
 const parsedHtmlProperties = new Map<string, HtmlPropertiesView>()
 
 /** Identify a durable V2 HTML Doc's saved properties without reading them. */
-async function htmlPropertiesKey(input: {
+export async function htmlPropertiesKey(input: {
   workspaceRoot: string
   spaceId: string
   documentId: DocumentId
@@ -845,6 +856,60 @@ type DocumentCatalogOptions = {
   signal?: AbortSignal
 }
 
+/**
+ * Whether one document's own files are as they were when the catalog was
+ * built: its file source and, for an HTML Doc, the portable state its title
+ * came from. False whenever that cannot be shown, including for bundles.
+ */
+export async function catalogDocumentUnchanged(
+  catalog: DocumentCatalog,
+  document: {
+    workspaceRoot: string
+    spaceId: string
+    documentId: DocumentId
+    path: string
+    source: DocumentSource
+  }
+): Promise<boolean> {
+  if (document.source.kind !== "file") return false
+  const recorded = catalog.derivedFrom.sources.get(document.source.relativePath)
+  if (recorded === undefined) return false
+  let current: FileFingerprint
+  try {
+    current = fingerprintOf(
+      await lstat(
+        resolve(
+          document.workspaceRoot,
+          "spaces",
+          document.spaceId,
+          document.source.relativePath
+        ),
+        { bigint: true }
+      )
+    )
+  } catch {
+    return false
+  }
+  // The recorded fingerprint was not racy, so any later change shows.
+  if (current.key !== recorded) return false
+  if (!catalog.htmlProperties.has(document.documentId)) return true
+  const properties = catalog.derivedFrom.htmlProperties.get(document.documentId)
+  return (
+    properties !== undefined &&
+    properties === (await htmlPropertiesKey(document))
+  )
+}
+
+let buildsStarted = 0
+
+/**
+ * How many catalog builds have started. A catalog whose `derivedFrom.build`
+ * is above an earlier reading inspected its files after that reading.
+ */
+export function catalogBuildsStarted(): number {
+  return buildsStarted
+}
+
 export function buildDocumentCatalog(
   options: DocumentCatalogOptions
 ): Promise<DocumentCatalog> {
@@ -857,6 +922,8 @@ async function buildDocumentCatalogFromFiles(
   const spaceId = CanonicalIdSchema.parse(options.spaceId)
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const spaceRoot = resolve(options.workspaceRoot, "spaces", spaceId)
+  const build = ++buildsStarted
+  const startedAt = Date.now()
   const lstatPath = createBuildLstat()
   const aliasResult = await readCatalogAliases(spaceRoot, lstatPath)
   if (!aliasResult.aliases) {
@@ -904,11 +971,31 @@ async function buildDocumentCatalogFromFiles(
       })
     }
   )
+  const htmlKeys = new Map<DocumentId, string>()
   htmlClaims.forEach((claim, index) => {
     const view = htmlReads[index]!
     htmlProperties.set(claim.documentId, view.read)
+    if (view.key !== null) htmlKeys.set(claim.documentId, view.key)
     claim.title = view.title ?? claim.title
   })
+  // What each document's row was derived from, for readers that act on one
+  // document from a snapshot of this catalog.
+  const sourceKeys = new Map<string, string>()
+  await mapWithConcurrency(
+    merged.claims,
+    CATALOG_IO_CONCURRENCY,
+    async (claim) => {
+      if (claim.source.kind !== "file") return
+      const fingerprint = await buildFingerprint(
+        lstatPath,
+        resolve(spaceRoot, claim.source.relativePath),
+        startedAt
+      ).catch(() => null)
+      if (fingerprint && !fingerprint.racy) {
+        sourceKeys.set(claim.source.relativePath, fingerprint.key)
+      }
+    }
+  )
   const grouped = new Map<string, typeof merged.claims>()
   for (const claim of merged.claims) {
     const key = claim.comparisonKey ?? `invalid:${claim.source.relativePath}`
@@ -1006,5 +1093,6 @@ async function buildDocumentCatalogFromFiles(
     inventoryDiagnostics: merged.diagnostics,
     provenCoreBundleIdentities: merged.provenCoreBundleIdentities,
     htmlProperties,
+    derivedFrom: { build, sources: sourceKeys, htmlProperties: htmlKeys },
   }
 }

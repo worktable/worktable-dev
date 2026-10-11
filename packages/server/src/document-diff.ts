@@ -427,7 +427,12 @@ export async function docBlocksAtRevision(options: {
     (await readWorkspaceStorageLayoutAt(getWorkspaceRoot())).kind === "v2"
   try {
     const resolution = await useResolvedDocumentHandle(
-      { spaceId: options.spaceId, path: options.path, includeArchived: true },
+      {
+        spaceId: options.spaceId,
+        path: options.path,
+        includeArchived: true,
+        snapshot: true,
+      },
       async (handle) => ({
         content: await historyFor(options.spaceId, handle, storageV2).find(
           matchesDocRevision(docRef[1]!, docRef[2]!)
@@ -483,7 +488,12 @@ export async function diffDocumentText(options: {
   const storageV2 =
     (await readWorkspaceStorageLayoutAt(getWorkspaceRoot())).kind === "v2"
   const resolution = await useResolvedDocumentHandle(
-    { spaceId: options.spaceId, path: options.path, includeArchived: true },
+    {
+      spaceId: options.spaceId,
+      path: options.path,
+      includeArchived: true,
+      snapshot: true,
+    },
     async (handle) => {
       const formatId = handle.document.format.id
       if (!TEXT_FORMATS.has(formatId)) {

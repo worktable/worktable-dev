@@ -108,3 +108,15 @@ export async function readTreeFingerprints(
   ])
   return { keys, racy }
 }
+
+/** Whether two fingerprint sets describe the same entries, unchanged. */
+export function sameTreeFingerprints(
+  a: TreeFingerprints,
+  b: TreeFingerprints
+): boolean {
+  if (a.keys.size !== b.keys.size) return false
+  for (const [path, key] of a.keys) {
+    if (b.keys.get(path) !== key) return false
+  }
+  return true
+}

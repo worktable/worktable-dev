@@ -234,7 +234,8 @@ export async function listAnnotations(spaceId: string, filters: AnnotationListFi
     try {
       compatible = await listLegacyCompatibleAnnotationsV2(
         spaceId,
-        requestedPath
+        requestedPath,
+        { snapshot: true }
       )
     } catch (error) {
       if (

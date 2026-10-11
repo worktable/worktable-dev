@@ -249,7 +249,9 @@ export async function readDocumentPage(options: {
   annotationsAuthorized: boolean
   sharingAuthorized: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
-  const resolution = await useResolvedDocumentHandle(options, (handle) =>
+  const resolution = await useResolvedDocumentHandle(
+    { ...options, snapshot: true },
+    (handle) =>
     pageForHandle(
       options.spaceId,
       handle,
@@ -283,7 +285,7 @@ export async function readDocumentVersions(options: {
   includeArchived?: boolean
   checkpointsOnly?: boolean
 }): Promise<DocumentVersionsResolution> {
-  return useResolvedDocumentHandle(options, async (handle) => {
+  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
     if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
       const versions = await listCompatibleDocumentVersionsV2({
         workspaceRoot: getWorkspaceRoot(),
@@ -333,7 +335,7 @@ export async function readDocumentAnnotations(options: {
   limit?: number
   offset?: number
 }): Promise<DocumentAnnotationsResolution> {
-  return useResolvedDocumentHandle(options, async (handle) => {
+  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
     if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
       const listed = await listDocumentAnnotationsForHandle({
         spaceId: options.spaceId,
@@ -390,7 +392,7 @@ export async function readRawDocumentSource(options: {
   path: string
   includeArchived?: boolean
 }): Promise<RawDocumentSourceResolution> {
-  return useResolvedDocumentHandle(options, async (handle) => {
+  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
     if (handle.document.health === "invalid") {
       return { kind: "unavailable" } as const
     }

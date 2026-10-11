@@ -16,8 +16,11 @@ import {
   type SpaceFile,
   type StartHerePin,
 } from "@worktable/types"
-import { resolveDocAlias } from "./doc-aliases.ts"
-import { listDocuments } from "./document-query.ts"
+import { createDocAliasResolver, resolveDocAlias } from "./doc-aliases.ts"
+import {
+  listDocuments,
+  listDocumentsWithAliases,
+} from "./document-query.ts"
 import { mutateSpace, readSpace, sanitizeDocPath } from "./store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 
@@ -54,14 +57,19 @@ export async function resolveStartHere(
   if (!spaceFile) return []
   const pins = readStartHere(spaceFile)
   if (pins.length === 0) return []
+  const listed = await listDocumentsWithAliases({
+    spaceId,
+    includeArchived: true,
+  })
   const documents = new Map(
-    (await listDocuments({ spaceId, includeArchived: true })).flatMap((item) =>
+    listed.documents.flatMap((item) =>
       item.kind === "document" ? [[item.path, item] as const] : []
     )
   )
+  const resolveAlias = createDocAliasResolver(listed.aliases)
   const resolved: ResolvedStartHerePin[] = []
   for (const pin of pins) {
-    const path = await currentPath(spaceId, pin.path)
+    const path = resolveAlias(pin.path) ?? pin.path
     const document = documents.get(path)
     resolved.push({
       path,

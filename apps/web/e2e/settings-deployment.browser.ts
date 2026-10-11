@@ -211,13 +211,13 @@ test("Cloud composes relevant sections and saves human preferences", async ({
 
   await settings.getByRole("button", { name: "History", exact: true }).click()
   await settings.getByRole("combobox").click()
-  await page.getByRole("option", { name: "Keep last 50 per doc" }).click()
+  await page.getByRole("option", { name: "Keep last 7 per doc" }).click()
   const confirm = page.getByRole("dialog", { name: "Delete older versions?" })
   await confirm.getByRole("button", { name: "Delete older versions" }).click()
   await expect
     .poll(() => settingsPatches)
     .toContainEqual({
-      history: { retention: { mode: "count", maxPerDoc: 50 } },
+      history: { retention: { mode: "count", maxPerDoc: 7 } },
     })
 
   expect(cachedVersionRequests).toBe(0)

@@ -25,19 +25,46 @@ import { normalizePublicUrl } from "./public-origin.ts";
 // posture fails closed until an explicit settings write clears the marker.
 
 /**
- * Doc version-history retention. `all` keeps every snapshot forever (the
- * historical default); `age` keeps only versions newer than `maxAgeDays`; `count`
- * keeps only the newest `maxPerDoc` versions per doc. The newest version of every
- * doc is always kept regardless of policy — see `version-retention.ts`.
+ * Doc version-history retention. `age` keeps only versions newer than
+ * `maxAgeDays`; `count` keeps only the newest `maxPerDoc` versions per doc. The
+ * newest version of every doc is always kept regardless of policy — see
+ * `version-retention.ts`. The pruning engine still understands `all` (keep
+ * everything), but settings no longer offer or store it: history is bounded at
+ * RETENTION_MAX_AGE_DAYS / RETENTION_MAX_PER_DOC.
  */
 export type RetentionPolicy =
   | { mode: "all" }
   | { mode: "age"; maxAgeDays: number }
   | { mode: "count"; maxPerDoc: number };
 
-/** Sanity caps for the numeric retention fields (strict-write validation). */
-export const RETENTION_MAX_AGE_DAYS = 3650;
-export const RETENTION_MAX_PER_DOC = 10000;
+/** Upper bounds for the numeric retention fields. */
+export const RETENTION_MAX_AGE_DAYS = 180;
+export const RETENTION_MAX_PER_DOC = 7;
+
+/** The policy a new install starts with. */
+export const RETENTION_DEFAULT: RetentionPolicy = { mode: "age", maxAgeDays: 30 };
+
+/**
+ * The policy an install moves to when its stored policy is no longer allowed
+ * (keep everything, or beyond the limits) — the longest history still offered.
+ * Also what an unknown or unsettled policy reads as, so nothing is pruned
+ * before the install's policy is settled at boot (`settleRetentionPolicy`).
+ */
+export const RETENTION_CARRIED_OVER: RetentionPolicy = {
+  mode: "age",
+  maxAgeDays: RETENTION_MAX_AGE_DAYS,
+};
+
+/**
+ * Shown once in Settings after an install's policy was moved to
+ * RETENTION_CARRIED_OVER; cleared when the owner picks a policy or dismisses it.
+ */
+export interface RetentionNotice {
+  /** The policy that was stored before the move. */
+  previous: RetentionPolicy;
+  /** ISO time of the move. */
+  at: string;
+}
 
 export interface ServerSettings {
   version: 1;
@@ -61,6 +88,8 @@ export interface ServerSettings {
   history: {
     /** How long doc version snapshots are retained. */
     retention: RetentionPolicy;
+    /** Set when the policy was moved because the old one is no longer offered. */
+    retentionNotice: RetentionNotice | null;
   };
 }
 
@@ -69,32 +98,72 @@ export const SETTINGS_DEFAULTS: ServerSettings = {
   updates: { autoCheck: true },
   editor: { spellcheck: false },
   network: { publicUrl: null },
-  history: { retention: { mode: "all" } },
+  // Until settleRetentionPolicy runs at boot, an install without a stored
+  // policy reads as the longest one offered, so nothing is pruned early.
+  history: { retention: RETENTION_CARRIED_OVER, retentionNotice: null },
 };
 
+type StoredRetention =
+  | { kind: "allowed"; policy: RetentionPolicy }
+  | { kind: "missing" }
+  | { kind: "outside"; previous: RetentionPolicy };
+
 /**
- * Coerce an arbitrary stored value into a valid RetentionPolicy, tolerantly.
- * Anything unrecognized (bad mode, missing/NaN/non-positive/non-integer numeric
- * field, out-of-cap value) falls back to `{ mode: "all" }` — losing an over-tight
- * or corrupt policy must never delete versions or block a read.
+ * Classify a stored retention value: an allowed policy, nothing stored, or a
+ * policy settings no longer offer (keep everything, beyond the limits, or
+ * unreadable). Never throws.
  */
-function coerceRetention(value: unknown): RetentionPolicy {
-  const all: RetentionPolicy = { mode: "all" };
-  if (!value || typeof value !== "object") return all;
+function classifyRetention(value: unknown): StoredRetention {
+  if (value === undefined) return { kind: "missing" };
+  const outside = (previous: RetentionPolicy): StoredRetention => ({
+    kind: "outside",
+    previous,
+  });
+  if (!value || typeof value !== "object") return outside({ mode: "all" });
   const obj = value as Record<string, unknown>;
   const mode = obj["mode"];
-  if (mode === "all") return all;
-  const posInt = (v: unknown, cap: number): number | null =>
-    typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= cap ? v : null;
+  const posInt = (v: unknown): number | null =>
+    typeof v === "number" && Number.isInteger(v) && v >= 1 ? v : null;
   if (mode === "age") {
-    const days = posInt(obj["maxAgeDays"], RETENTION_MAX_AGE_DAYS);
-    return days === null ? all : { mode: "age", maxAgeDays: days };
+    const days = posInt(obj["maxAgeDays"]);
+    if (days === null) return outside({ mode: "all" });
+    const policy: RetentionPolicy = { mode: "age", maxAgeDays: days };
+    return days <= RETENTION_MAX_AGE_DAYS ? { kind: "allowed", policy } : outside(policy);
   }
   if (mode === "count") {
-    const per = posInt(obj["maxPerDoc"], RETENTION_MAX_PER_DOC);
-    return per === null ? all : { mode: "count", maxPerDoc: per };
+    const per = posInt(obj["maxPerDoc"]);
+    if (per === null) return outside({ mode: "all" });
+    const policy: RetentionPolicy = { mode: "count", maxPerDoc: per };
+    return per <= RETENTION_MAX_PER_DOC ? { kind: "allowed", policy } : outside(policy);
   }
-  return all;
+  return outside({ mode: "all" });
+}
+
+/**
+ * Coerce a stored value into the policy to enforce, tolerantly. Anything that
+ * is not an allowed policy reads as RETENTION_CARRIED_OVER — the longest history
+ * offered — so a missing, corrupt or retired policy never prunes more than an
+ * owner could have chosen.
+ */
+function coerceRetention(value: unknown): RetentionPolicy {
+  const stored = classifyRetention(value);
+  return stored.kind === "allowed" ? stored.policy : RETENTION_CARRIED_OVER;
+}
+
+function coerceRetentionNotice(value: unknown): RetentionNotice | null {
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj["at"] !== "string") return null;
+  const previous = obj["previous"];
+  if (!previous || typeof previous !== "object") return null;
+  const mode = (previous as Record<string, unknown>)["mode"];
+  if (mode === "all") return { previous: { mode: "all" }, at: obj["at"] };
+  const stored = classifyRetention(previous);
+  if (stored.kind === "missing") return null;
+  return {
+    previous: stored.kind === "allowed" ? stored.policy : stored.previous,
+    at: obj["at"],
+  };
 }
 
 // ============================================================
@@ -177,6 +246,7 @@ function coerce(parsed: unknown): ServerSettings {
     },
     history: {
       retention: coerceRetention(history["retention"]),
+      retentionNotice: coerceRetentionNotice(history["retentionNotice"]),
     },
   };
 }
@@ -322,6 +392,7 @@ function assertPositiveInt(value: unknown, field: string, cap: number): number {
  * Strictly validate an inbound retention policy. Unlike the tolerant read, a bad
  * mode, unknown key, or out-of-range numeric field throws (→ 400) rather than
  * silently degrading — a user setting a policy must get an error, not a surprise.
+ * Keeping everything is not offered.
  */
 function assertRetention(value: unknown): RetentionPolicy {
   if (!value || typeof value !== "object") {
@@ -329,14 +400,6 @@ function assertRetention(value: unknown): RetentionPolicy {
   }
   const obj = value as Record<string, unknown>;
   const mode = obj["mode"];
-  if (mode === "all") {
-    for (const key of Object.keys(obj)) {
-      if (key !== "mode") {
-        throw new SettingsValidationError(`Unknown history.retention field: ${key}`);
-      }
-    }
-    return { mode: "all" };
-  }
   if (mode === "age") {
     for (const key of Object.keys(obj)) {
       if (key !== "mode" && key !== "maxAgeDays") {
@@ -360,7 +423,7 @@ function assertRetention(value: unknown): RetentionPolicy {
     };
   }
   throw new SettingsValidationError(
-    `history.retention.mode must be "all", "age", or "count"`,
+    `history.retention.mode must be "age" or "count"`,
   );
 }
 
@@ -491,12 +554,21 @@ async function applyPatchWithResult(
     }
     const group = patch.history as Record<string, unknown>;
     for (const key of Object.keys(group)) {
-      if (key !== "retention") {
+      if (key !== "retention" && key !== "retentionNotice") {
         throw new SettingsValidationError(`Unknown history field: ${key}`);
       }
     }
+    if (group["retentionNotice"] !== undefined) {
+      // The notice can only be dismissed, never set from outside.
+      if (group["retentionNotice"] !== null) {
+        throw new SettingsValidationError("history.retentionNotice can only be cleared (null)");
+      }
+      next.history.retentionNotice = null;
+    }
     if (group["retention"] !== undefined) {
       next.history.retention = assertRetention(group["retention"]);
+      // Choosing a policy answers the notice.
+      next.history.retentionNotice = null;
     }
   }
 
@@ -512,4 +584,87 @@ async function applyPatchWithResult(
     retentionChanged,
     retentionGeneration: _retentionGeneration,
   };
+}
+
+/**
+ * Settle this install's retention policy once at boot, before any sweep:
+ *
+ * - An allowed stored policy is kept.
+ * - A policy settings no longer offer (keep everything, beyond the limits, or
+ *   unreadable) moves to RETENTION_CARRIED_OVER and leaves a notice.
+ * - No stored policy: an install whose workspace already has version history
+ *   predates the limits (it kept everything by default), so it moves to
+ *   RETENTION_CARRIED_OVER with a notice. Otherwise it is new and starts at
+ *   RETENTION_DEFAULT.
+ *
+ * Serialized with settings writes. Returns the settled settings.
+ */
+export function settleRetentionPolicy(options: {
+  hasVersionHistory: () => boolean;
+  now?: () => Date;
+}): Promise<ServerSettings> {
+  const run = _writeChain.then(
+    () => settleRetentionPolicyNow(options),
+    () => settleRetentionPolicyNow(options),
+  );
+  _writeChain = run.catch(() => undefined);
+  return run;
+}
+
+function readStoredRetention(): StoredRetention | null {
+  let raw: string;
+  try {
+    raw = readFileSync(settingsFile(), "utf8");
+  } catch (err) {
+    // Unreadable (not missing) settings are left for an owner to repair.
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? { kind: "missing" } : null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    const history =
+      parsed && typeof parsed === "object" && parsed["history"] && typeof parsed["history"] === "object"
+        ? (parsed["history"] as Record<string, unknown>)
+        : {};
+    return classifyRetention(history["retention"]);
+  } catch {
+    // Corrupt files are quarantined by readFromDisk; treat as unreadable.
+    return { kind: "outside", previous: { mode: "all" } };
+  }
+}
+
+async function settleRetentionPolicyNow(options: {
+  hasVersionHistory: () => boolean;
+  now?: () => Date;
+}): Promise<ServerSettings> {
+  const current = getServerSettings();
+  // Persisting clears the fail-closed marker, which only an explicit owner
+  // write may do. Until then the conservative in-memory policy applies.
+  if (settingsFailClosed()) return current;
+  const stored = readStoredRetention();
+  if (!stored || stored.kind === "allowed") return current;
+
+  const at = (options.now?.() ?? new Date()).toISOString();
+  let retention: RetentionPolicy;
+  let retentionNotice: RetentionNotice | null;
+  if (stored.kind === "outside") {
+    retention = RETENTION_CARRIED_OVER;
+    retentionNotice = { previous: stored.previous, at };
+  } else if (options.hasVersionHistory()) {
+    retention = RETENTION_CARRIED_OVER;
+    retentionNotice = { previous: { mode: "all" }, at };
+  } else {
+    retention = RETENTION_DEFAULT;
+    retentionNotice = null;
+  }
+
+  const next: ServerSettings = {
+    ...current,
+    history: { retention, retentionNotice },
+  };
+  await persist(next);
+  _cache = next;
+  if (JSON.stringify(current.history.retention) !== JSON.stringify(retention)) {
+    _retentionGeneration += 1;
+  }
+  return next;
 }

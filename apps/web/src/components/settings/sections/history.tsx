@@ -1,4 +1,6 @@
 import { useState } from "react"
+import { Button } from "@worktable/ui/components/button"
+import { Callout } from "@worktable/ui/components/callout"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { SettingRow } from "@worktable/ui/components/setting-row"
 import {
@@ -8,14 +10,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
-import type { RetentionPolicy } from "@/lib/system-api"
+import type { RetentionNotice, RetentionPolicy } from "@/lib/system-api"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { useSettingsPatch } from "../use-settings-patch"
 
-// The fixed set of policies the picker offers. Custom values (a hand-edited
-// settings.json) still render a reasonable label but won't match a check mark.
+// The fixed set of policies the picker offers, longest first. History is
+// bounded: keeping everything is not offered, and the server rejects more than
+// 180 days or 7 per doc. Custom values (a hand-edited settings.json) still
+// render a reasonable label but won't match a check mark.
 const OPTIONS: { value: string; label: string; policy: RetentionPolicy }[] = [
-  { value: "all", label: "Keep everything", policy: { mode: "all" } },
+  {
+    value: "age-180",
+    label: "Keep 180 days",
+    policy: { mode: "age", maxAgeDays: 180 },
+  },
   {
     value: "age-90",
     label: "Keep 90 days",
@@ -27,13 +35,15 @@ const OPTIONS: { value: string; label: string; policy: RetentionPolicy }[] = [
     policy: { mode: "age", maxAgeDays: 30 },
   },
   {
-    value: "count-50",
-    label: "Keep last 50 per doc",
-    policy: { mode: "count", maxPerDoc: 50 },
+    value: "count-7",
+    label: "Keep last 7 per doc",
+    policy: { mode: "count", maxPerDoc: 7 },
   },
 ]
 
-const ALL: RetentionPolicy = { mode: "all" }
+// What a settings read shows before it loads; the server always reports a
+// bounded policy.
+const LONGEST: RetentionPolicy = { mode: "age", maxAgeDays: 180 }
 
 function policyToValue(p: RetentionPolicy): string {
   if (p.mode === "all") return "all"
@@ -42,7 +52,7 @@ function policyToValue(p: RetentionPolicy): string {
 }
 
 function valueToPolicy(value: string): RetentionPolicy {
-  return OPTIONS.find((o) => o.value === value)?.policy ?? ALL
+  return OPTIONS.find((o) => o.value === value)?.policy ?? LONGEST
 }
 
 function policyLabel(p: RetentionPolicy): string {
@@ -53,18 +63,30 @@ function policyLabel(p: RetentionPolicy): string {
   return "Keep everything"
 }
 
+function keptAmount(p: RetentionPolicy): string {
+  if (p.mode === "all") return "everything"
+  if (p.mode === "age") return `${p.maxAgeDays} days`
+  return `the last ${p.maxPerDoc} per doc`
+}
+
+/** Why the policy moved: the server retired the previous one. */
+function noticeText(notice: RetentionNotice, current: RetentionPolicy): string {
+  return `Version history now keeps ${keptAmount(current)}. Keeping ${keptAmount(
+    notice.previous
+  )} is no longer available.`
+}
+
 /**
  * True when moving from `current` to `next` can delete existing versions:
- * turning on any limit from "all", tightening the same mode (fewer days / lower
- * count), or switching between age and count (not directly comparable, so treat
- * as potentially destructive). Relaxing or clearing to "all" never confirms.
+ * tightening the same mode (fewer days / lower count), or switching between
+ * age and count (not directly comparable, so treat as potentially
+ * destructive). Relaxing never confirms.
  */
 function needsConfirm(
   next: RetentionPolicy,
   current: RetentionPolicy
 ): boolean {
-  if (next.mode === "all") return false
-  if (current.mode === "all") return true
+  if (current.mode === "all") return next.mode !== "all"
   if (next.mode !== current.mode) return true
   if (next.mode === "age" && current.mode === "age") {
     return next.maxAgeDays < current.maxAgeDays
@@ -84,7 +106,8 @@ export function HistorySection() {
   const patch = useSettingsPatch()
   const settings = settingsQuery.data
 
-  const currentPolicy = settings?.history.retention ?? ALL
+  const currentPolicy = settings?.history.retention ?? LONGEST
+  const notice = settings?.history.retentionNotice ?? null
   const currentValue = policyToValue(currentPolicy)
   // The pending destructive choice awaiting confirmation. Until confirmed the
   // Select stays bound to `currentValue`, so Cancel simply leaves it as-is.
@@ -106,6 +129,23 @@ export function HistorySection() {
     // The dialog's content header already names the section, and this lone
     // group has no sibling to disambiguate from — no group heading.
     <section className="flex flex-col gap-3">
+      {notice && (
+        <Callout>
+          <span className="flex flex-wrap items-center gap-3">
+            <span>{noticeText(notice, currentPolicy)}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending_}
+              onClick={() =>
+                patch.mutate({ history: { retentionNotice: null } })
+              }
+            >
+              Dismiss
+            </Button>
+          </span>
+        </Callout>
+      )}
       <div className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4">
         {settingsQuery.isError ? (
           <p className="text-sm text-muted-foreground">

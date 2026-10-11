@@ -231,7 +231,7 @@ async function publishFolderMove(
       },
     })
   }
-  invalidateSearchIndex()
+  invalidateSearchIndex({ spaceId })
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 

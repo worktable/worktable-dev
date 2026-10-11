@@ -127,7 +127,11 @@ export const searchQueryOptions = (opts: {
   queryOptions({
     queryKey: queryKeys.search(opts),
     queryFn: () => searchWorkspace(opts),
+    select: (data) => data.results,
     staleTime: 30_000,
+    // The server answers from a partial index while it is still building
+    // it, after a start; ask again until the answer is complete.
+    refetchInterval: (query) => (query.state.data?.indexing ? 2_000 : false),
     enabled: opts.query.trim().length > 0,
   })
 

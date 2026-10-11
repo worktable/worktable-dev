@@ -67,9 +67,8 @@ import {
   tlsTerminatedUpstream,
 } from "./exposure-notice.ts";
 import { WorkspaceWatcher } from "./watcher.ts";
+import { startSearchWarmup } from "./search-index.ts";
 import { DocumentFilesystemCoordinator } from "./document-filesystem-coordinator.ts";
-import { invalidateSearchIndex, noteRecordMutated } from "./search-index.ts";
-import { invalidateLinkGraph } from "./link-graph.ts";
 import { docAliasesRouter } from "./routes/doc-aliases.ts";
 import { docAliasReservationError } from "./doc-aliases.ts";
 import { retireLintAnnotations } from "./lint-retirement.ts";
@@ -105,7 +104,6 @@ import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retenti
 import { settleRetentionPolicy } from "./settings-store.ts";
 import { readLocalWorkspaceRegistry } from "./local-host.ts";
 import {
-  changeEventAffectsContentDerivedState,
   drainWorkspaceChanges,
   notifyWorkspaceChangeAndWait,
   notifyWorkspaceChangeAndWaitOrThrow,
@@ -1326,15 +1324,6 @@ export function startServer(
         );
         if (aliasError) return;
       }
-      // Invalidate derived state on any content change. External edits do not
-      // flow through store.writeDoc, so this is their only notification path.
-      // Record events route through noteRecordMutated: while the record index
-      // serves record search, a record change must not rebuild MiniSearch.
-      if (changeEventAffectsContentDerivedState(event)) {
-        if (event.type === "record" || event.type === "recordCollection" || event.type === "recordCollectionReconcile") noteRecordMutated();
-        else invalidateSearchIndex();
-        invalidateLinkGraph();
-      }
 
       // Keep the record index fresh on external edits (internal writes reach
       // it synchronously via record-events; these ingests are idempotent, so
@@ -1849,6 +1838,11 @@ export function startServer(
   // Process-wide; samples while requests or socket frames arrive, idles otherwise.
   startEventLoopLagSampler();
 
+  // Build the search index while the server is quiet, not on the first search.
+  const stopSearchWarmup = workspaceRejected
+    ? () => Promise.resolve()
+    : startSearchWarmup();
+
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";
   // Print the actual bound port (server.port), not the requested `port` arg:
   // when called with port 0 the OS assigns an ephemeral port, and the old
@@ -1879,6 +1873,7 @@ export function startServer(
     // await stop(). The returned promise drains work that was already running.
     stopWorkspaceSafetyHandler()
     clearInterval(credentialTimer);
+    const searchWarmupStopping = stopSearchWarmup();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator
       .stop()
@@ -1947,6 +1942,7 @@ export function startServer(
         await settle(() => lifetimeStopping);
         await settle(() => transfersStopping);
         await settle(() => updateChecksStopping);
+        await settle(() => searchWarmupStopping);
         await settle(() => recordIndex.whenIdle());
         try {
           recordIndex.stop();

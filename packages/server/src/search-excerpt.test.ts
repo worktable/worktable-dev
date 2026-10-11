@@ -1,16 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { setAppDirOverride } from "./app-storage.ts";
 import { recordIndex } from "./record-index.ts";
 import {
-  COMMON_SEARCH_PROJECTION_BUDGET,
   invalidateSearchIndex,
   makeExcerpt,
   search,
+  searchWithStatus,
   setSearchIndexRebuildHookForTests,
+  setSearchWaitForTests,
+  warmSearchIndex,
 } from "./search-index.ts";
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
 import { spacesRouter } from "./routes/spaces.ts";
@@ -25,6 +36,7 @@ import {
   updateDocumentInventory,
 } from "./document-inventory.ts";
 import { recordDocAlias, retireDocAlias } from "./doc-aliases.ts";
+import { notifyWorkspaceChange } from "./workspace-events.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -84,6 +96,15 @@ async function searchResults(
   return res.json.results as SearchResult[];
 }
 
+function ageDocuments(dir: string): void {
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) ageDocuments(path);
+    else if (entry.isFile()) utimesSync(path, hourAgo, hourAgo);
+  }
+}
+
 let workspaceDir: string;
 let appDir: string;
 let app: Hono;
@@ -138,6 +159,7 @@ describe("search excerpts", () => {
 
   afterEach(() => {
     setSearchIndexRebuildHookForTests(null);
+    setSearchWaitForTests(null);
     recordIndex.stop();
     setWorkspaceRootOverride(null);
     setAppDirOverride(null);
@@ -461,41 +483,188 @@ describe("search excerpts", () => {
     expect(await searchResults(app, "future/live-canvas", common)).toEqual([]);
   });
 
-  it("bounds aggregate text projection while retaining metadata discovery", async () => {
+  it("indexes every document's content and re-reads only what changed", async () => {
     const docsDir = join(workspaceDir, "spaces", "meta", "docs");
-    for (
-      let index = 0;
-      index < COMMON_SEARCH_PROJECTION_BUDGET.maxDocuments;
-      index += 1
-    ) {
+    // More documents than the 128 whose content search once indexed.
+    for (let index = 0; index < 140; index += 1) {
       writeFileSync(
-        join(docsDir, `a-budget-${String(index).padStart(3, "0")}.md`),
-        `# Budget ${index}\n\nProjected body ${index}.`,
+        join(docsDir, `a-bulk-${String(index).padStart(3, "0")}.md`),
+        `# Bulk ${index}\n\nProjected body ${index}.`,
       );
     }
     const created = await req(app, "POST", "/api/spaces", { name: "Zulu" });
     expect(created.status).toBe(201);
     writeFileSync(
-      join(workspaceDir, "spaces", "zulu", "docs", "budget-sentinel.md"),
-      "# Budget sentinel\n\nThis body is beyond the aggregate projection budget.",
+      join(workspaceDir, "spaces", "zulu", "docs", "late-sentinel.md"),
+      "# Late sentinel\n\nThe quetzalcoatl survey sits after every other document.",
+    );
+    // Documents modified moments before a read are read again at each sync
+    // until their timestamps settle. Age them so unchanged ones are trusted.
+    ageDocuments(join(workspaceDir, "spaces"));
+    const reread = new Map<string, number>();
+    setSearchIndexRebuildHookForTests(async ({ spaceId, documents }) => {
+      reread.set(spaceId, (reread.get(spaceId) ?? 0) + documents);
+    });
+    const common = {
+      scopes: ["search:read", "documents:read"],
+      documentMode: "common" as const,
+    };
+
+    expect(await searchResults(app, "quetzalcoatl", common)).toEqual([
+      expect.objectContaining({
+        spaceId: "zulu",
+        path: "late-sentinel",
+        title: "Late sentinel",
+        documentKind: "document",
+        documentView: "doc",
+        format: { id: "worktable.markdown", sourceVersion: 1 },
+        health: "supported",
+        excerpt: expect.stringContaining("quetzalcoatl survey"),
+      }),
+    ]);
+    expect(reread.get("meta")).toBeGreaterThan(140);
+
+    reread.clear();
+    const edited = await req(app, "PUT", "/api/spaces/meta/docs/richdoc", {
+      content: [
+        { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Rich doc", styles: {} }] },
+        { type: "paragraph", content: [{ type: "text", text: "The narwhal census is complete.", styles: {} }] },
+      ],
+    });
+    expect(edited.status).toBe(200);
+    expect(await searchResults(app, "narwhal", common)).toEqual([
+      expect.objectContaining({ spaceId: "meta", path: "richdoc" }),
+    ]);
+    expect(await searchResults(app, "observatory", common)).toEqual([]);
+    expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
+  });
+
+  it("sees an outside edit to a legacy HTML page from a catalog event alone", async () => {
+    const created = await req(app, "POST", "/api/spaces/meta/widgets", {
+      id: "board",
+      name: "Board",
+      html: "<p>The ocelot board.</p>",
+    });
+    expect(created.status).toBe(201);
+    const bundle = join(workspaceDir, "spaces", "meta", "widgets", "board");
+    const metadata = join(bundle, "widget.yaml");
+    writeFileSync(
+      metadata,
+      readFileSync(metadata, "utf8").replace(/^updatedAt: .*$/m, "updatedAt: 2026-01-01T00:00:00.000Z"),
+    );
+    ageDocuments(join(workspaceDir, "spaces"));
+    const common = {
+      scopes: ["search:read", "documents:read"],
+      documentMode: "common" as const,
+    };
+    expect(await searchResults(app, "ocelot", common)).toContainEqual(
+      expect.objectContaining({ path: "board" }),
     );
 
-    const results = await searchResults(app, "budget-sentinel", {
+    // An editor rewrites the page; the watcher's precise event was lost.
+    writeFileSync(join(bundle, "index.html"), "<p>The tapir board.</p>");
+    notifyWorkspaceChange({ type: "documentCorpus", spaceId: "meta" });
+    expect(await searchResults(app, "tapir", common)).toContainEqual(
+      expect.objectContaining({ path: "board" }),
+    );
+  });
+
+  it("answers within its time budget while the index builds, then completes", async () => {
+    expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+    await req(app, "PUT", "/api/spaces/zulu/docs/kestrel", {
+      content: [{ type: "paragraph", content: [{ type: "text", text: "The kestrel nests here.", styles: {} }] }],
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The first Space's sync stalls; the second is not indexed yet.
+    setSearchIndexRebuildHookForTests(async ({ spaceId }) => {
+      if (spaceId === "meta") await held;
+    });
+    setSearchWaitForTests(200);
+
+    const partial = await req(app, "GET", "/api/search?query=kestrel&documentMode=common");
+    expect(partial.status).toBe(200);
+    expect(partial.json).toEqual({ results: [], indexing: true });
+
+    release();
+    setSearchWaitForTests(null);
+    expect(await searchWithStatus("kestrel", { documentAccess: "common" })).toEqual({
+      results: [expect.objectContaining({ spaceId: "zulu", path: "kestrel" })],
+      complete: true,
+    });
+  });
+
+  it("leaves records out while the record index builds, instead of reading their files", async () => {
+    recordIndex.start();
+    await recordIndex.whenReady();
+    const building = [
+      spyOn(recordIndex, "isReady").mockReturnValue(false),
+      spyOn(recordIndex, "whenReady").mockReturnValue(new Promise<void>(() => {})),
+    ];
+    try {
+      for (const documentAccess of ["legacy", "common"] as const) {
+        expect(await searchWithStatus("aqueduct", { documentAccess })).toEqual({
+          results: [],
+          complete: false,
+        });
+      }
+    } finally {
+      for (const spy of building) spy.mockRestore();
+    }
+
+    const ready = await searchWithStatus("aqueduct", { documentAccess: "common" });
+    expect(ready.complete).toBe(true);
+    expect(ready.results).toContainEqual(expect.objectContaining({ type: "record" }));
+  });
+
+  it("warms the index so the first search reads nothing", async () => {
+    let syncs = 0;
+    setSearchIndexRebuildHookForTests(async () => {
+      syncs += 1;
+    });
+    await warmSearchIndex();
+    expect(syncs).toBeGreaterThan(0);
+
+    syncs = 0;
+    expect(await searchResults(app, "observatory", {
       scopes: ["search:read", "documents:read"],
       documentMode: "common",
+    })).toContainEqual(expect.objectContaining({ path: "richdoc" }));
+    expect(syncs).toBe(0);
+  });
+
+  it("answers concurrent searches while a new Space is being listed", async () => {
+    expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+    await req(app, "PUT", "/api/spaces/zulu/docs/kestrel", {
+      content: [{ type: "paragraph", content: [{ type: "text", text: "The kestrel nests here.", styles: {} }] }],
     });
-    const sentinel = results.find(
-      (result) =>
-        result.spaceId === "zulu" && result.path === "budget-sentinel",
-    );
-    expect(sentinel).toMatchObject({
-      documentKind: "document",
-      documentView: "doc",
-      title: "Budget Sentinel",
-      format: { id: "worktable.markdown", sourceVersion: 1 },
-      health: "supported",
-    });
-    expect(sentinel).not.toHaveProperty("excerpt");
+    const results = await Promise.all([
+      search("kestrel", { documentAccess: "common" }),
+      search("kestrel", { documentAccess: "common" }),
+    ]);
+    for (const hits of results) {
+      expect(hits).toContainEqual(
+        expect.objectContaining({ spaceId: "zulu", path: "kestrel" }),
+      );
+    }
+  });
+
+  it("answers while edits keep arriving", async () => {
+    for (const documentAccess of ["legacy", "common"] as const) {
+      let syncs = 0;
+      setSearchIndexRebuildHookForTests(async () => {
+        syncs += 1;
+        // Another save lands during every sync.
+        invalidateSearchIndex({ spaceId: "meta", path: "zeppelin" });
+      });
+      const results = await search("zeppelin", { documentAccess });
+      expect(results).toContainEqual(
+        expect.objectContaining({ spaceId: "meta", path: "zeppelin" }),
+      );
+      expect(syncs).toBeLessThanOrEqual(3);
+    }
   });
 
   it("builds readable record excerpts in both record-search modes", async () => {

@@ -227,7 +227,7 @@ async function publishFolderArchive(
       )
     }
   }
-  invalidateSearchIndex()
+  invalidateSearchIndex({ spaceId })
   await notifyWorkspaceChangeAndWait({ type: "documentCorpus", spaceId })
 }
 

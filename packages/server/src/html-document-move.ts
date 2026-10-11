@@ -77,7 +77,7 @@ export async function moveHtmlDocument(
   if (storageV2) {
     try {
       const moved = await moveRegisteredDocument({ spaceId, path: from, to })
-      invalidateSearchIndex()
+      invalidateSearchIndex({ spaceId })
       const { data: widget } = await readWidget(spaceId, to)
       if (widget) {
         wsManager.broadcast(spaceId, {
@@ -127,7 +127,7 @@ export async function moveHtmlDocument(
             }
           }
           try {
-            invalidateSearchIndex()
+            invalidateSearchIndex({ spaceId })
 
             const { data: widget } = await readWidget(spaceId, to)
             if (widget) {

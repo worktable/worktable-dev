@@ -125,13 +125,6 @@ export function threadEventLocation(
   return { kind: "worktable" }
 }
 
-/** Machine-local collaboration activity does not change searchable content. */
-export function changeEventAffectsContentDerivedState(
-  event: ChangeEvent
-): boolean {
-  return event.type !== "threadActivity" && event.type !== "participants"
-}
-
 const handlers = new Set<ChangeHandler>()
 const pendingHandlers = new Set<Promise<unknown>>()
 

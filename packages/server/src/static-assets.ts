@@ -37,6 +37,19 @@ const CONTENT_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+/**
+ * The id of the web build in a static directory (build-id.txt, written by the
+ * web build), or null when there is none, as in development.
+ */
+export function readBuildId(staticDir: string | null): string | null {
+  if (!staticDir) return null;
+  try {
+    return readFileSync(join(staticDir, "build-id.txt"), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 function shellPathFor(dir: string): string | null {
   const shell = join(dir, "_shell.html");
   if (existsSync(shell)) return shell;

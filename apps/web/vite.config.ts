@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
@@ -6,6 +7,7 @@ import { sharedIconChunk } from "./shared-icon-chunk"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { VitePWA } from "vite-plugin-pwa"
 import type { ManifestOptions } from "vite-plugin-pwa"
+import type { Plugin } from "vite"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import { browserNotices } from "../../scripts/browser-notices"
 
@@ -69,8 +71,33 @@ export const navigateFallbackDenylist = [
   /^\/backups(?:\/|\?|$)/,
 ]
 
+// One id per build. The client compiles it in; the server reports the id of
+// the build it serves (build-id.txt beside the assets), so an open tab can
+// tell when Worktable was updated under it. Release builds use their source
+// commit, so the same source gives the same id; other builds get a fresh one.
+const buildId =
+  process.env["WORKTABLE_BUILD_ID"]?.trim() ||
+  process.env["WORKTABLE_PUBLIC_SOURCE_COMMIT"]?.trim() ||
+  randomUUID()
+
+function buildIdFile(): Plugin {
+  return {
+    name: "worktable-build-id",
+    apply: "build",
+    generateBundle() {
+      if (this.environment?.name !== "client") return
+      this.emitFile({
+        type: "asset",
+        fileName: "build-id.txt",
+        source: buildId,
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: { __WORKTABLE_BUILD_ID__: JSON.stringify(buildId) },
   build: {
     manifest: true,
     rollupOptions: {
@@ -90,6 +117,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     browserNotices(),
+    buildIdFile(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: [

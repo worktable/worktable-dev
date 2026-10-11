@@ -3,6 +3,7 @@ import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { workspaceQueryOptions } from "./lib/queries";
 import { preloadOpeningDocumentRenderer } from "./lib/document-renderers";
+import { reloadWhenChunksAreGone, serverBuildIsNewer } from "./lib/build-version";
 
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -31,6 +32,14 @@ export function getRouter() {
     defaultPreload: "intent",
     scrollRestoration: true,
   });
+
+  if (typeof window !== "undefined") {
+    reloadWhenChunksAreGone();
+    // After an update, the next navigation loads the new build in full.
+    router.subscribe("onBeforeNavigate", ({ toLocation }) => {
+      if (serverBuildIsNewer()) window.location.assign(toLocation.href);
+    });
+  }
 
   return router;
 }

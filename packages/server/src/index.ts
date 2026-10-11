@@ -98,7 +98,7 @@ import {
   updateCheckSupported,
 } from "./update-check.ts";
 import { VERSION } from "./release-info.ts";
-import { createStaticFileResponse, getStaticAssetsInfo } from "./static-assets.ts";
+import { createStaticFileResponse, getStaticAssetsInfo, readBuildId } from "./static-assets.ts";
 import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
@@ -239,6 +239,20 @@ app.use("*", async (c, next) => {
   return wildcardCors(c, next);
 });
 app.use("/api/*", compressApiResponse);
+
+// Report the web build this server serves, so a tab still running an older
+// build loads the new one at its next navigation (apps/web build-version.ts).
+let servedBuildId: string | null | undefined;
+app.use("/api/*", async (c, next) => {
+  await next();
+  servedBuildId ??= readBuildId(getStaticAssetsInfo().staticDir);
+  if (!servedBuildId) return;
+  try {
+    c.res.headers.set("X-Worktable-Build", servedBuildId);
+  } catch {
+    // A response with immutable headers keeps its own.
+  }
+});
 
 // A replacement closes this gate before stopping the listener. Every admitted
 // workspace mutation is held until its complete route lifecycle settles, so a

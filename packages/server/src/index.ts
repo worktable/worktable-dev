@@ -482,6 +482,8 @@ if (HAS_STATIC) {
   app.get("/pwa-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
   app.get("/maskable-icon-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
   app.get("/robots.txt", (c) => staticFile(c.req.path, c.req.raw));
+  // Agent platform logos shown in Settings and onboarding.
+  app.get("/agent-logos/*", (c) => staticFile(c.req.path, c.req.raw));
 
   // SPA fallback: any non-API, non-WS route serves the shell HTML
   // TanStack Start uses _shell.html; older builds use index.html

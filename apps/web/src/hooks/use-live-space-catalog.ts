@@ -35,10 +35,10 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
           exact: true,
         })
       }
-      // Widget events (create/rename/archive/delete) arrive as widget_update /
-      // widget_deleted; the widget list rides on the spaces query.
-      // space_update carries settings changes (manual doc order, sort mode)
-      // written by another client.
+      // HTML Doc events (create/rename/archive/delete) arrive as
+      // widget_update / widget_moved / widget_deleted and change this Space's
+      // document list. space_update carries settings changes (manual doc
+      // order, sort mode) written by another client.
       if (
         msg.type === "space_update" ||
         msg.type === "widget_update" ||
@@ -46,11 +46,14 @@ export function useLiveSpaceCatalog(spaceId: string | undefined) {
         msg.type === "widget_deleted"
       ) {
         refresh({
-          queryKey: queryKeys.spaces,
+          queryKey:
+            msg.type === "space_update"
+              ? queryKeys.spaces
+              : documentQueryKeys.list(spaceId),
           exact: true,
         })
-        // The per-space embed lists this Space's widgets for the overview;
-        // refresh it too so an edit elsewhere shows up live.
+        // The per-space query carries resolved pins, which can name an HTML
+        // Doc; refresh it so an edit elsewhere shows up live.
         refresh({
           queryKey: queryKeys.space(spaceId),
           exact: true,

@@ -38,6 +38,7 @@ import {
   recordCollectionsQueryOptions,
   useWorkspace,
 } from "@/lib/queries"
+import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
 import { createWidget } from "@/lib/widgets-api"
 
@@ -136,8 +137,14 @@ export function SpaceNewMenu({
         metadata: { source: "manual-shell" },
         lifetime,
       })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.space(spaceId) })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.space(spaceId),
+        exact: true,
+      })
+      void queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.list(spaceId),
+        exact: true,
+      })
       onCreated?.()
       void navigate({
         to: "/spaces/$spaceId/documents/$",

@@ -1,5 +1,4 @@
-import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { infiniteQueryOptions, queryOptions, useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import {
   getSpaces,
   getSpace,
@@ -8,7 +7,6 @@ import {
 } from "./api"
 import { getWidget } from "./widgets-api"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
-import { docQueryKeys } from "./docs-queries"
 import type { RecordQuery, SearchResult } from "@worktable/types"
 
 /** Grid-facing query params; a stable subset of RecordQuery used as a cache key. */
@@ -134,24 +132,7 @@ export const searchQueryOptions = (opts: {
   })
 
 export function useSpaces() {
-  const queryClient = useQueryClient()
-  const query = useQuery(spacesQueryOptions())
-
-  useEffect(() => {
-    if (!query.data) return
-    for (const space of query.data) {
-      if (space.docs && queryClient.getQueryData(docQueryKeys.docs(space.id)) === undefined) {
-        // Seed COLD caches only, and stale-at-birth: the all-spaces payload
-        // carries UNDECORATED docs (no backlink counts). Seeding
-        // over existing data would clobber the decorated shape on every
-        // all-spaces refetch; skipping warm caches keeps the instant
-        // first-navigation paint without ever regressing richer data.
-        queryClient.setQueryData(docQueryKeys.docs(space.id), space.docs, { updatedAt: 0 })
-      }
-    }
-  }, [query.data, queryClient])
-
-  return query
+  return useQuery(spacesQueryOptions())
 }
 
 export function useWorkspace() {

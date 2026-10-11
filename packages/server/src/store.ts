@@ -1552,12 +1552,211 @@ async function updateDocProvenance(
 ): Promise<void> {
   const sanitized = sanitizeDocPath(docPath);
   await mutateDocMetaFile(spaceId, (meta) => {
-    meta.docs[sanitized] = {
+    const entry: DocMetaEntry = {
       ...(meta.docs[sanitized] ?? {}),
       provenance,
     };
+    // Recording a version settles any version a session left pending.
+    delete entry[PENDING_VERSION_FIELD];
+    meta.docs[sanitized] = entry;
   });
   noteDocProvenanceChanged();
+}
+
+// ============================================================
+// Editing-session versions
+// ============================================================
+//
+// A collaborative editing session records a version when it starts, at most
+// every SESSION_VERSION_INTERVAL_MS while it continues, and when it ends.
+// Saves in between update the document and its provenance, so outside-edit
+// detection and the collaboration guards keep working, and leave a marker in
+// docs.meta.json: the provenance's content is not yet a version.
+
+const SESSION_VERSION_INTERVAL_MS = 5 * 60_000;
+const PENDING_VERSION_FIELD = "pendingVersion";
+
+interface PendingDocVersion {
+  /** The recorded version the provenance still names. */
+  versionId: string;
+  /** The saved content no version holds yet. */
+  contentHash: string;
+  /** When versionId was recorded. */
+  versionedAt: string;
+}
+
+/** The entry's pending version, while its provenance is the one it describes. */
+function pendingDocVersionOf(
+  entry: DocMetaEntry | undefined
+): PendingDocVersion | null {
+  const pending = entry?.[PENDING_VERSION_FIELD] as
+    | Partial<PendingDocVersion>
+    | undefined;
+  const provenance = entry?.provenance;
+  if (
+    !pending ||
+    !provenance ||
+    pending.versionId !== provenance.versionId ||
+    pending.contentHash !== provenance.contentHash ||
+    typeof pending.versionedAt !== "string"
+  ) {
+    return null;
+  }
+  return pending as PendingDocVersion;
+}
+
+/**
+ * A save that continues an editing session by the author of the current
+ * version, recorded less than SESSION_VERSION_INTERVAL_MS ago, updates the
+ * provenance instead of recording a version. Returns that provenance, or null
+ * when the save must record a version.
+ */
+async function continueEditingSession(
+  spaceId: string,
+  docPath: string,
+  before: DocReadResult | null,
+  written: unknown[] | string,
+  options: DocWriteTransactionOptions | undefined
+): Promise<DocProvenance | null> {
+  if (
+    !options?.continueSession ||
+    !Array.isArray(written) ||
+    !Array.isArray(before?.data)
+  ) {
+    return null;
+  }
+  const beforeHash = stableHash(before.data);
+  const contentHash = stableHash(written);
+  const sanitized = sanitizeDocPath(docPath);
+  const provenance = await mutateDocMetaFile(spaceId, (meta) => {
+    const entry = meta.docs[sanitized];
+    const previous = entry?.provenance;
+    if (
+      !entry ||
+      !previous ||
+      previous.updatedBy !== (options.updatedBy ?? "unknown") ||
+      previous.source !== (options.source ?? "unknown") ||
+      // The replaced content must be the one the provenance describes.
+      previous.contentHash !== beforeHash
+    ) {
+      return null;
+    }
+    const versionedAt =
+      pendingDocVersionOf(entry)?.versionedAt ?? previous.updatedAt;
+    if (!(Date.now() - Date.parse(versionedAt) < SESSION_VERSION_INTERVAL_MS)) {
+      return null;
+    }
+    const next: DocProvenance = {
+      ...previous,
+      updatedAt: new Date().toISOString(),
+      contentHash,
+    };
+    const pending: PendingDocVersion = {
+      versionId: previous.versionId,
+      contentHash,
+      versionedAt,
+    };
+    meta.docs[sanitized] = {
+      ...entry,
+      provenance: next,
+      [PENDING_VERSION_FIELD]: pending,
+    };
+    return next;
+  });
+  if (provenance) noteDocProvenanceChanged();
+  return provenance;
+}
+
+/**
+ * Before another author replaces content an editing session saved without a
+ * version, record that content as the session's version. The session's own
+ * next save supersedes it instead.
+ */
+async function preservePendingDocVersion(
+  spaceId: string,
+  docPath: string,
+  before: DocReadResult | null,
+  after: DocReadResult,
+  context: DocVersionContext | undefined,
+  beforeBytes: Uint8Array | undefined
+): Promise<void> {
+  if (before?.data == null || before.error || after.data == null) return;
+  const entry = (await readDocMetaFile(spaceId)).docs[sanitizeDocPath(docPath)];
+  const pending = pendingDocVersionOf(entry);
+  const provenance = entry?.provenance;
+  if (!pending || !provenance) return;
+  if (
+    (context?.updatedBy ?? "unknown") === provenance.updatedBy &&
+    (context?.source ?? "unknown") === provenance.source
+  ) {
+    return;
+  }
+  if (stableHash(before.data) !== pending.contentHash) return;
+  if (stableHash(after.data) === pending.contentHash) return;
+  await recordDocVersionInner(
+    spaceId,
+    docPath,
+    before,
+    before,
+    { updatedBy: provenance.updatedBy, source: provenance.source },
+    {
+      force: true,
+      ...(beforeBytes
+        ? { sourceBytes: { before: beforeBytes, after: beforeBytes } }
+        : {}),
+    }
+  );
+}
+
+/** Whether an editing session left this document's latest content without a version. */
+export async function docVersionPending(
+  spaceId: string,
+  docPath: string
+): Promise<boolean> {
+  const meta = await readDocMetaFile(spaceId);
+  return pendingDocVersionOf(meta.docs[sanitizeDocPath(docPath)]) !== null;
+}
+
+/**
+ * End an editing session: record the version its saves left pending, if the
+ * document still holds that content. Returns whether a version was recorded.
+ */
+export async function recordPendingDocVersion(
+  spaceId: string,
+  docPath: string
+): Promise<boolean> {
+  return withDocPathLock(spaceId, async () => {
+    const entry = (await readDocMetaFile(spaceId)).docs[
+      sanitizeDocPath(docPath)
+    ];
+    const pending = pendingDocVersionOf(entry);
+    const provenance = entry?.provenance;
+    if (!pending || !provenance) return false;
+    const snapshot = await readDocSourceSnapshot(spaceId, docPath);
+    const current = snapshot.result;
+    // Changed outside the session since: the watcher records that change.
+    if (
+      current.error ||
+      current.data === null ||
+      stableHash(current.data) !== pending.contentHash
+    ) {
+      return false;
+    }
+    const recorded = await recordDocVersion(
+      spaceId,
+      docPath,
+      current,
+      current,
+      { updatedBy: provenance.updatedBy, source: provenance.source },
+      {
+        force: true,
+        ...(snapshot.bytes
+          ? { sourceBytes: { before: snapshot.bytes, after: snapshot.bytes } }
+          : {}),
+      }
+    );
+    return recorded !== undefined;
+  });
 }
 
 /**
@@ -1708,6 +1907,14 @@ async function recordDocVersion(
   context?: DocVersionContext,
   opts?: RecordDocVersionOptions
 ): Promise<DocProvenance | undefined> {
+  await preservePendingDocVersion(
+    spaceId,
+    docPath,
+    before,
+    after,
+    context,
+    opts?.sourceBytes?.before
+  );
   const provenance = await recordDocVersionInner(
     spaceId,
     docPath,
@@ -2234,6 +2441,12 @@ export interface DocWriteOptions {
    * canonicalizing either side again.
    */
   canonical?: boolean;
+  /**
+   * A collaborative save while its editor keeps typing. If the author also
+   * recorded the current version, less than five minutes ago, the save
+   * leaves its version pending (see recordPendingDocVersion).
+   */
+  continueSession?: boolean;
 }
 
 type DocWriteTransactionOptions = DocWriteOptions & {
@@ -2257,6 +2470,8 @@ export interface DocWriteResult {
   content?: unknown[] | string;
   /** Provenance of the version this write recorded, when it recorded one. */
   provenance?: DocProvenance;
+  /** The write continued an editing session and recorded no version yet. */
+  versionPending?: boolean;
   repairs?: import("@worktable/types").MermaidDocumentRepair[];
 }
 
@@ -3094,7 +3309,19 @@ async function writeDocUnlocked(
       error: null,
     };
     let provenance: DocProvenance | undefined;
-    if (options?.recordVersion !== false) {
+    const continued =
+      options?.recordVersion !== false
+        ? await continueEditingSession(
+            spaceId,
+            docPath,
+            before,
+            writtenContent,
+            options
+          )
+        : null;
+    if (continued) {
+      provenance = continued;
+    } else if (options?.recordVersion !== false) {
       provenance = await recordDocVersion(spaceId, docPath, before, after, {
         updatedBy: options?.updatedBy ?? "unknown",
         source: options?.source ?? "unknown",
@@ -3125,6 +3352,7 @@ async function writeDocUnlocked(
       ),
       content: writtenContent,
       ...(provenance ? { provenance } : {}),
+      ...(continued ? { versionPending: true } : {}),
     };
   };
   const unchangedResult = (storedAs: DocFileFormat): DocWriteResult => ({

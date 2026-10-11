@@ -19,7 +19,9 @@ import {
   unsuppressPath,
   getDocPath,
   docStat,
+  docVersionPending,
   getDocProvenance,
+  recordPendingDocVersion,
   sanitizeDocPath,
   stableHash,
 } from "./store.ts";
@@ -136,6 +138,8 @@ interface LiveDoc {
   persistTimer: ReturnType<typeof setTimeout> | null;
   // The debounced save runs by this time even while edits keep arriving.
   persistDeadline: number | null;
+  // A save while typing left its version for the end of the editing session.
+  versionPending: boolean;
   persistPromise: Promise<void> | null;
   persistAgain: boolean;
   unloadTimer: ReturnType<typeof setTimeout> | null;
@@ -205,6 +209,14 @@ interface StoredYjsState {
 interface DocSnapshotIdentity {
   contentHash: string;
   versionId: string;
+}
+
+interface PersistOptions {
+  /**
+   * The save happens while the editor keeps typing, so it may leave its
+   * version for the end of the editing session.
+   */
+  continueSession?: boolean;
 }
 
 interface EditIntentSnapshot {
@@ -586,6 +598,9 @@ export class YjsDocManager {
       portableProvenance.source !== "rest-api";
     const contentGeneration = ++this.nextContentGeneration;
     const restoredAhead = persisted !== null && !persisted.matchesDocument;
+    // A session that stopped before recording its version (the process
+    // ended): this room records it when its own session ends.
+    const versionPending = await docVersionPending(spaceId, docPath);
     const liveDoc: LiveDoc = {
       ydoc,
       spaceId,
@@ -594,6 +609,7 @@ export class YjsDocManager {
       clients: new Set(),
       persistTimer: null,
       persistDeadline: null,
+      versionPending,
       persistPromise: null,
       persistAgain: false,
       unloadTimer: null,
@@ -1110,8 +1126,10 @@ export class YjsDocManager {
       );
       await this.syncFromDisk(spaceId, docPath);
     }
-    if (liveDoc.persistTimer) {
-      clearTimeout(liveDoc.persistTimer);
+    // Typing the session saved without a version becomes a version before
+    // the agent's, attributed to the people who typed it.
+    if (liveDoc.persistTimer || liveDoc.versionPending) {
+      if (liveDoc.persistTimer) clearTimeout(liveDoc.persistTimer);
       liveDoc.persistTimer = null;
       await this.persistDoc(liveDoc.key, spaceId, docPath);
     }
@@ -2161,15 +2179,31 @@ export class YjsDocManager {
 
     // Debounce, but never past the deadline set by the first unsaved edit:
     // continuous typing must still reach the file for agents and readers.
+    // A save at the deadline happens while the editor is still typing.
     const now = Date.now();
     liveDoc.persistDeadline ??= now + this.timing.persistMaxWaitMs;
     const delay = Math.max(
       0,
       Math.min(this.timing.persistDebounceMs, liveDoc.persistDeadline - now)
     );
+    this.armPersistTimer(
+      liveDoc,
+      key,
+      delay,
+      delay < this.timing.persistDebounceMs
+    );
+  }
+
+  private armPersistTimer(
+    liveDoc: LiveDoc,
+    key: string,
+    delay: number,
+    whileTyping: boolean
+  ): void {
+    if (liveDoc.persistTimer) clearTimeout(liveDoc.persistTimer);
     liveDoc.persistTimer = setTimeout(() => {
       liveDoc.persistTimer = null;
-      this.runPersist(key).catch((err) =>
+      this.runPersist(key, { continueSession: whileTyping }).catch((err) =>
         console.error("[YjsManager] persist error:", err)
       );
     }, delay);
@@ -2227,8 +2261,16 @@ export class YjsDocManager {
     }
   }
 
-  /** Serialize persists per room and replay once when an edit arrives mid-write. */
-  private async runPersist(key: string): Promise<void> {
+  /**
+   * Serialize persists per room and replay once when an edit arrives
+   * mid-write. Only a save the debounce timer starts while the editor is
+   * still typing continues the editing session; every other save, including
+   * a replay, ends it.
+   */
+  private async runPersist(
+    key: string,
+    options?: PersistOptions
+  ): Promise<void> {
     const liveDoc = this.docs.get(key);
     if (!liveDoc) return;
     if (liveDoc.persistPromise) {
@@ -2238,13 +2280,16 @@ export class YjsDocManager {
     }
 
     const task = (async () => {
+      let first = true;
       do {
         liveDoc.persistAgain = false;
         await timeOperation("yjs.persist", this.persistDoc(
           liveDoc.key,
           liveDoc.spaceId,
-          liveDoc.docPath
+          liveDoc.docPath,
+          first ? options : undefined
         ));
+        first = false;
       } while (
         liveDoc.persistAgain && this.docs.get(liveDoc.key) === liveDoc
       );
@@ -2260,12 +2305,14 @@ export class YjsDocManager {
   private async persistDoc(
     key: string,
     spaceId: string,
-    docPath: string
+    docPath: string,
+    options?: PersistOptions
   ): Promise<void> {
     const liveDoc = this.docs.get(key);
     if (!liveDoc) return;
     // Edits from here on are not in this save; they start a new wait.
     liveDoc.persistDeadline = null;
+    const continueSession = options?.continueSession === true;
 
     const requiredDiskSync = this.requiredDiskSyncs.get(liveDoc);
     if (requiredDiskSync !== undefined) {
@@ -2299,6 +2346,7 @@ export class YjsDocManager {
       liveDoc.contentGeneration === liveDoc.savedGeneration &&
       !liveDoc.humanEdited
     ) {
+      if (!continueSession) await this.endEditingSession(liveDoc);
       return;
     }
 
@@ -2420,6 +2468,7 @@ export class YjsDocManager {
         // machine drift on this doc would inherit a human attribution and
         // bypass the stale-cache guard.
         spendIntent();
+        if (!continueSession) await this.endEditingSession(liveDoc);
         return;
       }
     }
@@ -2464,9 +2513,21 @@ export class YjsDocManager {
         source,
         managedIdentity: true,
         canonical: mermaidNormalized,
+        continueSession,
       });
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");
+      }
+      // A save while typing may leave its version for the session's end:
+      // after a quiet period, or when the room saves for any other reason.
+      liveDoc.versionPending = writeResult.versionPending === true;
+      if (liveDoc.versionPending && !liveDoc.persistTimer) {
+        this.armPersistTimer(
+          liveDoc,
+          liveDoc.key,
+          this.timing.persistDebounceMs,
+          false
+        );
       }
       // Written as exported unless the store had to normalize it.
       const writtenHash =
@@ -2525,6 +2586,18 @@ export class YjsDocManager {
       });
     } finally {
       setTimeout(() => unsuppressPath(filePath), 150);
+    }
+  }
+
+  /** Record the version a session's saves while typing left pending. */
+  private async endEditingSession(liveDoc: LiveDoc): Promise<void> {
+    if (!liveDoc.versionPending) return;
+    liveDoc.versionPending = false;
+    try {
+      await recordPendingDocVersion(liveDoc.spaceId, liveDoc.docPath);
+    } catch (error) {
+      liveDoc.versionPending = true;
+      throw error;
     }
   }
 

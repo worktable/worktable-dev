@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writ
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
-import { deleteDoc, docExists, getDocPath, getDocProvenance, readDoc, renameDoc, writeSpace } from "./store.ts";
+import { deleteDoc, docExists, getDocPath, getDocProvenance, listDocVersions, readDoc, renameDoc, stableHash, writeSpace } from "./store.ts";
 import { canonicalizeBlocksForWrite, getServerEditor } from "./blocknote.ts";
 import { MermaidDocumentValidationError } from "./mermaid-document.ts";
 import {
@@ -1903,26 +1903,131 @@ describe("YjsDocManager sync persistence", () => {
     expect(existsSync(statePath)).toBe(false);
   });
 
-  it("saves while typing continues instead of waiting for a pause", async () => {
+  it("saves while typing continues, and records one version for the editing session", async () => {
     await writeDoc("test-space", "typing", [para("start")], {
       updatedBy: "user",
       source: "browser-yjs",
     });
+    const versionsBefore = (await listDocVersions("test-space", "typing")).length;
     const manager = new YjsDocManager({
       timing: { persistDebounceMs: 200, persistMaxWaitMs: 600 },
     });
+    const ws = new FakeWs();
+    const saves: Array<{ contentHash: string; provenance: { contentHash: string } }> = [];
+    const spaceSocket = {
+      send: (message: string) => {
+        const event = JSON.parse(message);
+        if (event.type === "doc_update" && event.docPath === "typing") saves.push(event.data);
+      },
+      close() {},
+      data: { spaceId: "test-space", canReadDocs: true },
+    };
+    wsManager.subscribe(spaceSocket, "test-space");
     try {
+      await manager.handleConnection(ws, "test-space", "typing");
       const ydoc = await manager.getOrCreateDoc("test-space", "typing");
       const text = firstText(ydoc);
-      const saved = async () =>
-        JSON.stringify((await readDoc("test-space", "typing")).data).includes("kk");
+      const stored = async () => (await readDoc("test-space", "typing")).data;
       const started = Date.now();
       // A keystroke every 50 ms never leaves the 200 ms quiet period.
-      while (!(await saved())) {
+      while (saves.length < 2) {
         if (Date.now() - started > 10_000) throw new Error("typing was never saved");
+        manager.handleMessage(ws, "test-space", "typing", intentMessage());
         ydoc.transact(() => text.insert(0, "k"), "test-client");
         await sleep(50);
       }
+      // Every save keeps the provenance describing what it wrote, which the
+      // outside-edit detection and collaboration guards compare with.
+      for (const save of saves) {
+        expect(save.provenance.contentHash).toBe(save.contentHash);
+      }
+      expect(JSON.stringify(await stored())).toContain("kk");
+      expect(await listDocVersions("test-space", "typing")).toHaveLength(versionsBefore);
+
+      // The session ends after a quiet period: one version with the final text.
+      await waitFor(
+        async () =>
+          (await listDocVersions("test-space", "typing")).length === versionsBefore + 1
+      );
+      const provenance = await getDocProvenance("test-space", "typing");
+      const [latest] = await listDocVersions("test-space", "typing");
+      expect(latest!.id).toBe(provenance!.versionId);
+      expect(latest!.createdBy).toBe("user");
+      expect(latest!.after.contentHash).toBe(stableHash(await stored()));
+    } finally {
+      wsManager.unsubscribe(spaceSocket);
+      await manager.shutdown();
+    }
+  });
+
+  it("records the session's version after a quiet period that follows its last save", async () => {
+    await writeDoc("test-space", "quiet-end", [para("start")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    const versionsBefore = (await listDocVersions("test-space", "quiet-end")).length;
+    // The maximum wait runs out before the quiet period, so the only save
+    // happens while typing and holds the session's final text.
+    const manager = new YjsDocManager({
+      timing: { persistDebounceMs: 400, persistMaxWaitMs: 150 },
+    });
+    const ws = new FakeWs();
+    try {
+      await manager.handleConnection(ws, "test-space", "quiet-end");
+      const ydoc = await manager.getOrCreateDoc("test-space", "quiet-end");
+      manager.handleMessage(ws, "test-space", "quiet-end", intentMessage());
+      ydoc.transact(() => firstText(ydoc).insert(0, "last words "), "test-client");
+
+      await waitFor(
+        async () =>
+          (await listDocVersions("test-space", "quiet-end")).length === versionsBefore + 1
+      );
+      const [latest] = await listDocVersions("test-space", "quiet-end");
+      expect(latest!.after.contentHash).toBe(
+        stableHash((await readDoc("test-space", "quiet-end")).data)
+      );
+      expect(JSON.stringify((await readDoc("test-space", "quiet-end")).data)).toContain(
+        "last words"
+      );
+    } finally {
+      await manager.shutdown();
+    }
+  });
+
+  it("keeps a session's unversioned typing in history when another author writes", async () => {
+    await writeDoc("test-space", "interrupted", [para("start")], {
+      updatedBy: "user",
+      source: "browser-yjs",
+    });
+    // The session would end only after a minute of quiet.
+    const manager = new YjsDocManager({
+      timing: { persistDebounceMs: 60_000, persistMaxWaitMs: 300 },
+    });
+    const ws = new FakeWs();
+    try {
+      await manager.handleConnection(ws, "test-space", "interrupted");
+      const ydoc = await manager.getOrCreateDoc("test-space", "interrupted");
+      const text = firstText(ydoc);
+      manager.handleMessage(ws, "test-space", "interrupted", intentMessage());
+      ydoc.transact(() => text.insert(0, "typed "), "test-client");
+      await waitFor(async () =>
+        JSON.stringify((await readDoc("test-space", "interrupted")).data).includes("typed")
+      );
+      const typedHash = stableHash((await readDoc("test-space", "interrupted")).data);
+
+      // Another author replaces the document outside the room.
+      await writeDoc("test-space", "interrupted", [para("agent rewrite")], {
+        updatedBy: "worktable-agent",
+        source: "mcp",
+      });
+
+      const versions = await listDocVersions("test-space", "interrupted");
+      expect(versions[0]!.createdBy).toBe("worktable-agent");
+      expect(versions[1]).toMatchObject({
+        createdBy: "user",
+        source: "browser-yjs",
+        after: { contentHash: typedHash },
+      });
     } finally {
       await manager.shutdown();
     }

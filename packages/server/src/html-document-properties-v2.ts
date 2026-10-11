@@ -89,23 +89,45 @@ export function parsePropertiesEnvelope(
   }
 }
 
+/**
+ * An HTML Doc's saved properties as one read of its portable state found
+ * them: no state yet, state that does not belong to this document, or the
+ * properties entry (absent when the state has none).
+ */
+export type HtmlDocumentPropertiesRead =
+  | { kind: "none" }
+  | { kind: "mismatch" }
+  | { kind: "read"; entry: DocumentGenerationPayloadEntry | undefined }
+
 /** Read saved display metadata without resolving the catalog again. */
-export async function readHtmlDocumentTitleV2(input: {
+export async function readHtmlDocumentPropertiesV2(input: {
   workspaceRoot: string
   spaceId: string
   documentId: DocumentId
   path: string
-}): Promise<string | undefined> {
+}): Promise<HtmlDocumentPropertiesRead> {
   const state = await readDocumentPortableStateV2(input)
+  if (!state) return { kind: "none" }
   if (
-    !state ||
     state.manifest.logicalPath !== input.path ||
     state.manifest.format.id !== "worktable.html" ||
     state.manifest.format.sourceVersion !== 1
-  ) return undefined
-  return parsePropertiesEnvelope(
-    state.entries.find((entry) => entry.path === HTML_DOCUMENT_PROPERTIES_ENTRY),
-    input.path,
-    null
-  )?.widget.name
+  ) {
+    return { kind: "mismatch" }
+  }
+  return {
+    kind: "read",
+    entry: state.entries.find(
+      (entry) => entry.path === HTML_DOCUMENT_PROPERTIES_ENTRY
+    ),
+  }
+}
+
+export function htmlDocumentTitleFromProperties(
+  read: HtmlDocumentPropertiesRead,
+  path: string
+): string | undefined {
+  return read.kind === "read"
+    ? parsePropertiesEnvelope(read.entry, path, null)?.widget.name
+    : undefined
 }

@@ -110,6 +110,7 @@ import {
   listDocumentLifetimeTargetsLocked,
   listDocuments,
   readDocument,
+  readDocumentCatalogSnapshot,
   type DocumentLifetimeTarget,
 } from "../document-query.ts"
 import { readDocumentVersions } from "../document-page-service.ts"
@@ -1313,8 +1314,14 @@ async function _dispatchOperationInner(
       if (error || !space) throw new Error(error ?? "Space not found")
       // List HTML Docs and their lifetimes from one namespace snapshot.
       return withDocPathLock(spaceId, async () => {
-        const widgets = await listWidgets(spaceId, { includeArchived })
-        const lifetimes = await listDocumentLifetimeTargetsLocked(spaceId)
+        const widgets = await listWidgets(spaceId, {
+          includeArchived,
+          catalog: () =>
+            readDocumentCatalogSnapshot(spaceId, { lockHeld: true }),
+        })
+        const lifetimes = await listDocumentLifetimeTargetsLocked(spaceId, {
+          snapshot: true,
+        })
         return {
           widgets: widgets.map((widget) => ({
             ...widget,

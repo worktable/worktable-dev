@@ -18,6 +18,11 @@ import {
   type ChangeHandler,
   threadEventLocation,
 } from "./workspace-events.ts"
+import {
+  documentSpaceForPath,
+  noteSpaceChanged,
+  noteWorkspaceActivity,
+} from "./workspace-read-model.ts"
 
 export {
   notifyWorkspaceChange,
@@ -410,6 +415,12 @@ export class WorkspaceWatcher {
       // file. A 60-record agent batch should cause one bounded scan, not 60.
       const parsed = parse(changedPath)
       const fullPath = join(dir, changedPath)
+      // Any activity, including the server's own suppressed writes and
+      // temporary files, ages the read model before debouncing. Bun 1.3
+      // reports an atomic rename only under its temporary name.
+      const changedSpace = documentSpaceForPath(spacesBase, fullPath)
+      if (changedSpace) noteSpaceChanged(changedSpace)
+      else noteWorkspaceActivity()
       const rawSuppressed = notePathEventIfSuppressed(fullPath)
       const key = rootThreadParent
         ? "thread-root-parent"

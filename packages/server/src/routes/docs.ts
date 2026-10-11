@@ -18,8 +18,7 @@ import {
   getDocArchiveInfo,
   getDocArchiveInfoMap,
   getDocProvenance,
-  getDocCollaborationCacheEpoch,
-  getDocCollaborationCacheEpochHistory,
+  getDocMetaView,
   setDocArchived,
   setDocsArchivedByPrefix,
   suppressPath,
@@ -815,16 +814,14 @@ docsRouter.get("/*", requireScope("docs:read"), async (c) => {
   }
 
   const statResult = await docStat(spaceId, docPath);
-  const archived = await getDocArchiveInfo(spaceId, docPath);
-  const provenance = await getDocProvenance(spaceId, docPath);
+  const {
+    archived,
+    provenance,
+    collaborationCacheEpoch,
+    collaborationCacheEpochHistory,
+  } = await getDocMetaView(spaceId, docPath);
   const { links, backlinks } = await getDocLinks(spaceId, docPath);
   const collaborationEpoch = await getWorkspaceCollaborationEpoch();
-  const collaborationCacheEpoch = await getDocCollaborationCacheEpoch(
-    spaceId,
-    docPath
-  );
-  const collaborationCacheEpochHistory =
-    await getDocCollaborationCacheEpochHistory(spaceId, docPath);
   // Opening the browser editor does not require a markdown serialize/parse
   // roundtrip. The conversion mutation always rechecks content and annotations.
   // Keep the default response compatible for existing API consumers.

@@ -12,6 +12,7 @@ import { compressApiResponse } from "./http-compression.ts";
 import { serverTiming, timedMiddleware } from "./request-timing.ts";
 import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
 import { debugLogging } from "./debug-log.ts";
+import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
 import { acceptsGzip } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
 import { readDocumentPreloads } from "./document-preloads.ts";
@@ -239,6 +240,7 @@ app.use("*", async (c, next) => {
   return wildcardCors(c, next);
 });
 app.use("/api/*", compressApiResponse);
+app.use("*", advanceGenerationOnWrite);
 
 // Report the web build this server serves, so a tab still running an older
 // build loads the new one at its next navigation (apps/web build-version.ts).
@@ -393,6 +395,7 @@ app.use("/api/*", (c, next) =>
   runAsActivityActor(c.get("identity")?.principal, next)
 );
 app.use("/api/*", requireWorkspaceContentEpoch);
+app.use("/api/*", shareInFlightReads);
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
 // login and status work unauthenticated (the login page must be reachable with

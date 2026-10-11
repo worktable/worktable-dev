@@ -27,7 +27,11 @@ import {
   type DocumentInventoryDiagnostic,
 } from "./document-inventory.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
-import { readHtmlDocumentTitleV2 } from "./html-document-properties-v2.ts"
+import {
+  htmlDocumentTitleFromProperties,
+  readHtmlDocumentPropertiesV2,
+  type HtmlDocumentPropertiesRead,
+} from "./html-document-properties-v2.ts"
 import {
   createBuiltinDocumentFormatRegistry,
   type DocumentFormatRegistry,
@@ -92,6 +96,12 @@ export interface DocumentCatalog {
   aliases: DocAliases
   inventoryDiagnostics: DocumentInventoryDiagnostic[]
   provenCoreBundleIdentities: ReadonlySet<string>
+  /**
+   * Saved properties read for durable V2 HTML Doc titles, so a listing of
+   * the same catalog does not read portable state again. Null when the state
+   * could not be read.
+   */
+  htmlProperties: ReadonlyMap<DocumentId, HtmlDocumentPropertiesRead | null>
 }
 
 function compareStrings(a: string, b: string): number {
@@ -604,6 +614,7 @@ async function buildDocumentCatalogFromFiles(
     registry
   )
   const grouped = new Map<string, typeof merged.claims>()
+  const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
   for (const claim of merged.claims) {
     if (
       claim.identity === "durable" &&
@@ -613,14 +624,18 @@ async function buildDocumentCatalogFromFiles(
       !claim.diagnostics.some((diagnostic) => diagnostic.severity === "error")
     ) {
       try {
-        claim.title = (await readHtmlDocumentTitleV2({
+        const read = await readHtmlDocumentPropertiesV2({
           workspaceRoot: options.workspaceRoot,
           spaceId,
           documentId: claim.documentId,
           path: claim.path,
-        })) ?? claim.title
+        })
+        htmlProperties.set(claim.documentId, read)
+        claim.title =
+          htmlDocumentTitleFromProperties(read, claim.path) ?? claim.title
       } catch {
         // Unavailable optional display metadata must not hide the source.
+        htmlProperties.set(claim.documentId, null)
       }
     }
     const key = claim.comparisonKey ?? `invalid:${claim.source.relativePath}`
@@ -717,5 +732,6 @@ async function buildDocumentCatalogFromFiles(
     aliases: aliasResult.aliases,
     inventoryDiagnostics: merged.diagnostics,
     provenCoreBundleIdentities: merged.provenCoreBundleIdentities,
+    htmlProperties,
   }
 }

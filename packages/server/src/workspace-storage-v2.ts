@@ -7,6 +7,7 @@ import {
   DocumentStorageSha256Schema,
 } from "@worktable/types"
 import { readBoundedRegularFile } from "./bounded-file.ts"
+import { readFileFingerprint } from "./file-fingerprint.ts"
 
 export const WORKSPACE_STORAGE_VERSION_V1 = 1 as const
 export const WORKSPACE_STORAGE_VERSION_V2 = 2 as const
@@ -38,18 +39,38 @@ export class WorkspaceStorageVersionError extends Error {
   }
 }
 
+// Storage-layout checks run on most document reads and writes. The manifest
+// changes only on upgrade or workspace replacement, both of which give it a
+// new fingerprint.
+const layoutCache = new Map<
+  string,
+  { fingerprint: string; layout: WorkspaceStorageLayout }
+>()
+
 export async function readWorkspaceStorageLayoutAt(
   workspaceRoot: string
 ): Promise<WorkspaceStorageLayout> {
-  const raw = await readBoundedRegularFile(
-    join(workspaceRoot, "worktable.workspace.json"),
-    WORKSPACE_MANIFEST_MAX_BYTES
-  )
-  try {
-    return workspaceStorageLayoutFromManifest(JSON.parse(raw))
-  } catch {
-    return { kind: "invalid", reason: "manifest is not valid JSON" }
+  const path = join(workspaceRoot, "worktable.workspace.json")
+  const fingerprint = await readFileFingerprint(path).catch(() => null)
+  const cached = layoutCache.get(path)
+  if (fingerprint && cached?.fingerprint === fingerprint.key) {
+    return structuredClone(cached.layout)
   }
+  layoutCache.delete(path)
+  const raw = await readBoundedRegularFile(path, WORKSPACE_MANIFEST_MAX_BYTES)
+  let layout: WorkspaceStorageLayout
+  try {
+    layout = workspaceStorageLayoutFromManifest(JSON.parse(raw))
+  } catch {
+    layout = { kind: "invalid", reason: "manifest is not valid JSON" }
+  }
+  if (fingerprint && !fingerprint.racy) {
+    layoutCache.set(path, {
+      fingerprint: fingerprint.key,
+      layout: structuredClone(layout),
+    })
+  }
+  return layout
 }
 
 export async function requireWorkspaceStorageVersionAt(

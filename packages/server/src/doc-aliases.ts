@@ -398,7 +398,15 @@ export function resolveDocAliasIn(
   );
 }
 
-function aliasesResolveAcyclically(aliases: DocAliases): boolean {
+/**
+ * Whether every alias resolves without a cycle or hop overflow, including
+ * paths below each alias source. Exported for the equivalence test; the
+ * exhaustive mode probes every source and is the reference behaviour.
+ */
+export function aliasesResolveAcyclically(
+  aliases: DocAliases,
+  options: { exhaustive?: boolean } = {}
+): boolean {
   const index = buildAliasSourceIndex(aliases);
   if (!prefixSourcesArePortableUnique(index)) return false;
   const sources = [
@@ -447,7 +455,19 @@ function aliasesResolveAcyclically(aliases: DocAliases): boolean {
       suffixes.add(segments.slice(index).join("/"));
     }
   }
+  const prefixSources = Object.keys(aliases.prefixes);
+  // A probe below a source can only behave differently from the checks above
+  // once a prefix alias rewrites it at its first step: a probe whose first
+  // step is an exact alias repeats that alias's own check, and a probe no
+  // alias matches resolves to itself. Prefix aliases match lexically, so a
+  // source with no prefix alias at, above or below it cannot reach one
+  // through any suffix. Skipping those sources keeps this check near linear
+  // for workspaces with many renames and few folder moves.
+  const prefixCanReach = (source: string): boolean =>
+    pathAndAncestors(source).some((path) => index.prefixesByPath.has(path)) ||
+    prefixSources.some((prefix) => prefix.startsWith(`${source}/`));
   for (const source of sources) {
+    if (!options.exhaustive && !prefixCanReach(source)) continue;
     for (const suffix of suffixes) {
       if (
         resolveDocAliasInMode(

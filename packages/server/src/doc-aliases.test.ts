@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import fc from "fast-check";
 import { mkdtemp, readFile, rm, truncate, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,7 +9,9 @@ import {
   getDocAliasesPath,
 } from "./workspace.ts";
 import {
+  aliasesResolveAcyclically,
   docAliasReservationError,
+  parseDocAliasesSnapshot,
   DOC_ALIASES_MAX_BYTES,
   prepareDocAliasBatch,
   prepareDocAliasPrefixRetirement,
@@ -476,4 +479,43 @@ describe("document aliases", () => {
     );
     expect(await docExists("space", "final")).toBe(true);
   });
+});
+
+describe("alias cycle validation", () => {
+  // A small vocabulary makes cycles, ancestor moves and suffix-dependent
+  // chains common, which is where skipping probes could go wrong.
+  const segment = fc.constantFrom("a", "b", "c", "A");
+  const path = fc
+    .array(segment, { minLength: 1, maxLength: 3 })
+    .map((segments) => segments.join("/"));
+  const aliasMap = fc
+    .array(fc.tuple(path, path), { maxLength: 6 })
+    .map((entries) => {
+      const map: Record<string, string> = Object.create(null);
+      for (const [from, to] of entries) if (from !== to) map[from] = to;
+      return map;
+    });
+
+  it("rejects exactly the alias files the exhaustive check rejects", () => {
+    // The exhaustive mode is the unchanged earlier algorithm. Reading a file
+    // through the supported parse path must reach the same verdict.
+    let file = 0;
+    fc.assert(
+      fc.property(aliasMap, aliasMap, (exact, prefixes) => {
+        const text = JSON.stringify({
+          type: "worktable.doc-aliases",
+          version: 1,
+          exact,
+          prefixes,
+        });
+        const parsed = parseDocAliasesSnapshot(text, `/aliases-${file++}.json`);
+        // Malformed maps are rejected before any cycle check.
+        fc.pre(!parsed.error?.startsWith("Corrupt document alias file"));
+        expect(parsed.error === null).toBe(
+          aliasesResolveAcyclically({ exact, prefixes }, { exhaustive: true })
+        );
+      }),
+      { numRuns: 1000 }
+    );
+  }, 30_000);
 });

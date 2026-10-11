@@ -129,6 +129,12 @@ async function buildExecutable(
       // `target` only accepts runtime kinds (browser/bun/node/...). Passing the
       // platform at the top level is rejected by Bun 1.2.x.
       compile: { target: target.bunTarget as Bun.Build.CompileTarget, outfile },
+      // Precompiled bytecode roughly halves the time from launch to a
+      // listening server, at about twice the executable size. Bytecode
+      // defaults to CommonJS, which rejects the server's top-level await.
+      bytecode: true,
+      format: "esm",
+      target: "bun",
       metafile: true,
       define: {
         __WORKTABLE_BUILD_VERSION__: JSON.stringify(version),

@@ -479,9 +479,11 @@ async function noteReconciled(
 ): Promise<void> {
   if (sourceStamp === undefined) return
   const path = deliveryPath()
-  const fingerprint = await readFileFingerprint(path)
-  if (fingerprint?.racy) reconciled.delete(participantId)
-  else {
+  // Only a shortcut: a file that cannot be checked is reconciled next time.
+  const fingerprint = await readFileFingerprint(path).catch(() => undefined)
+  if (fingerprint === undefined || fingerprint?.racy) {
+    reconciled.delete(participantId)
+  } else {
     reconciled.set(
       participantId,
       reconciledMark(sourceStamp, path, fingerprint?.key ?? null)

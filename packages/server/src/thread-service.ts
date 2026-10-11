@@ -49,6 +49,7 @@ import {
   normalizeThreadLocation,
   readThread,
   scanAllThreadDigests,
+  scanThreadDigests,
   ThreadError,
   type ThreadDigest,
   type ThreadDigestScan,
@@ -842,9 +843,11 @@ export async function listPendingThreadWork(
     spaceId
       ? location.kind === "space" && location.spaceId === spaceId
       : location.kind !== "space" || activeSpaceIds.has(location.spaceId)
-  const { threads } = await scanAllThreadDigests(
-    spaceId ? spaces.filter((space) => space.id === spaceId) : spaces
-  )
+  const { threads } = !spaceId
+    ? await scanAllThreadDigests(spaces)
+    : spaces.some((space) => space.id === spaceId)
+      ? await scanThreadDigests(spaceId)
+      : { threads: [] }
   const scoped = threads.filter(({ summary }) => inScope(summary.location))
   const requests = scoped.flatMap((thread) =>
     openRequestsForViewer(thread, viewer.id)

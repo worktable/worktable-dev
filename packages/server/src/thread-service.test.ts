@@ -780,6 +780,16 @@ describe("thread service", () => {
     } else {
       copied.location = { kind: "space", spaceId: "second-space" }
     }
+    // Directories that are not Spaces are not locations, even with a copy of
+    // the thread inside.
+    for (const directory of [".staging", "prepared-space"]) {
+      const threads = join(workspaceDir, "spaces", directory, "threads")
+      await mkdir(threads, { recursive: true })
+      await writeFile(join(threads, `${first.threadId}.json`), "{}", "utf8")
+    }
+    expect(
+      (await readThreadMessages(finn, first.threadId)).thread.location
+    ).toEqual({ kind: "space", spaceId: "connected-agents" })
     const copiedPath = threadPath("second-space", first.threadId)
     await mkdir(dirname(copiedPath), { recursive: true })
     await writeFile(copiedPath, `${JSON.stringify(copied, null, 2)}\n`, "utf8")

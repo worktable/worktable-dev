@@ -32,7 +32,10 @@ import {
 import { ensureAppDir } from "./app-storage.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { readFileFingerprint } from "./file-fingerprint.ts"
+import {
+  readFileFingerprint,
+  type FileFingerprint,
+} from "./file-fingerprint.ts"
 import {
   getSpacesBaseDir,
   prepareSuppressedPathReplay,
@@ -358,12 +361,27 @@ export async function scanThreadDigests(
     return { threads: [], complete: true, stamp: `${dir}:` }
   }
   const previous = threadFiles.get(dir)
+  // An entry that could not be read is never trusted, and its new read
+  // number keeps a scan that missed it from sharing a stamp with any other.
+  const unreadable = (): CachedThreadFile => ({
+    key: "",
+    racy: true,
+    read: (threadFileReads += 1),
+    digest: null,
+  })
   const files = await mapWithConcurrency(names, 8, async (name) => {
     const threadId = name.slice(0, -".json".length)
     // Stat before reading: a write that lands in between leaves an older
     // fingerprint, so the next scan reads the file again.
-    const fingerprint = await readFileFingerprint(join(dir, name))
-    if (!fingerprint) return null
+    let fingerprint: FileFingerprint | null
+    try {
+      fingerprint = await readFileFingerprint(join(dir, name))
+    } catch (error) {
+      console.error(`[threads] skipping unreadable thread ${threadId}:`, error)
+      return [name, unreadable()] as const
+    }
+    // Removed since the listing.
+    if (!fingerprint) return [name, unreadable()] as const
     const cached = previous?.get(name)
     if (
       cached &&
@@ -393,8 +411,7 @@ export async function scanThreadDigests(
     }
     return [name, read] as const
   })
-  const current = new Map<string, CachedThreadFile>()
-  for (const file of files) if (file) current.set(file[0], file[1])
+  const current = new Map(files)
   threadFiles.set(dir, current)
   const threads: ThreadDigest[] = []
   const reads: number[] = []
@@ -404,23 +421,31 @@ export async function scanThreadDigests(
   }
   return {
     threads: threads.sort(newestFirst),
-    // A file that vanished after the listing counts as unreadable for this
-    // scan, like one that cannot be parsed.
     complete: threads.length === names.length,
     stamp: `${dir}:${reads.join(",")}`,
   }
 }
 
-/** Digests of every thread, in the given Spaces (default: all of them) and the root. */
+/**
+ * Digests of every thread, in the root and every Space. `spaces` is the
+ * current Space list; directories of Spaces no longer in it leave the cache.
+ */
 export async function scanAllThreadDigests(
   spaces?: Array<{ id: string }>
 ): Promise<ThreadDigestScan> {
-  const scans = await Promise.all([
-    scanThreadDigests({ kind: "worktable" }),
-    ...(spaces ?? (await listSpaces())).map((space) =>
-      scanThreadDigests(space.id)
+  const locations: ThreadLocation[] = [
+    { kind: "worktable" },
+    ...(spaces ?? (await listSpaces())).map(
+      (space): ThreadLocation => ({ kind: "space", spaceId: space.id })
     ),
-  ])
+  ]
+  const scans = await Promise.all(
+    locations.map((location) => scanThreadDigests(location))
+  )
+  const scanned = new Set(locations.map((location) => threadsDir(location)))
+  for (const dir of threadFiles.keys()) {
+    if (!scanned.has(dir)) threadFiles.delete(dir)
+  }
   return {
     threads: scans.flatMap((scan) => scan.threads).sort(newestFirst),
     complete: scans.every((scan) => scan.complete),

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -18,7 +18,9 @@ import {
   invalidateSearchIndex,
   makeExcerpt,
   search,
+  searchWithStatus,
   setSearchIndexRebuildHookForTests,
+  setSearchWaitForTests,
   warmSearchIndex,
 } from "./search-index.ts";
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts";
@@ -157,6 +159,7 @@ describe("search excerpts", () => {
 
   afterEach(() => {
     setSearchIndexRebuildHookForTests(null);
+    setSearchWaitForTests(null);
     recordIndex.stop();
     setWorkspaceRootOverride(null);
     setAppDirOverride(null);
@@ -564,6 +567,56 @@ describe("search excerpts", () => {
     expect(await searchResults(app, "tapir", common)).toContainEqual(
       expect.objectContaining({ path: "board" }),
     );
+  });
+
+  it("answers within its time budget while the index builds, then completes", async () => {
+    expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+    await req(app, "PUT", "/api/spaces/zulu/docs/kestrel", {
+      content: [{ type: "paragraph", content: [{ type: "text", text: "The kestrel nests here.", styles: {} }] }],
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The first Space's sync stalls; the second is not indexed yet.
+    setSearchIndexRebuildHookForTests(async ({ spaceId }) => {
+      if (spaceId === "meta") await held;
+    });
+    setSearchWaitForTests(200);
+
+    const partial = await req(app, "GET", "/api/search?query=kestrel&documentMode=common");
+    expect(partial.status).toBe(200);
+    expect(partial.json).toEqual({ results: [], indexing: true });
+
+    release();
+    setSearchWaitForTests(null);
+    expect(await searchWithStatus("kestrel", { documentAccess: "common" })).toEqual({
+      results: [expect.objectContaining({ spaceId: "zulu", path: "kestrel" })],
+      complete: true,
+    });
+  });
+
+  it("leaves records out while the record index builds, instead of reading their files", async () => {
+    recordIndex.start();
+    await recordIndex.whenReady();
+    const building = [
+      spyOn(recordIndex, "isReady").mockReturnValue(false),
+      spyOn(recordIndex, "whenReady").mockReturnValue(new Promise<void>(() => {})),
+    ];
+    try {
+      for (const documentAccess of ["legacy", "common"] as const) {
+        expect(await searchWithStatus("aqueduct", { documentAccess })).toEqual({
+          results: [],
+          complete: false,
+        });
+      }
+    } finally {
+      for (const spy of building) spy.mockRestore();
+    }
+
+    const ready = await searchWithStatus("aqueduct", { documentAccess: "common" });
+    expect(ready.complete).toBe(true);
+    expect(ready.results).toContainEqual(expect.objectContaining({ type: "record" }));
   });
 
   it("warms the index so the first search reads nothing", async () => {

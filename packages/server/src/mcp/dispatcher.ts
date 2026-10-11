@@ -161,7 +161,7 @@ import {
 } from "./record-practices.ts"
 import { OPERATION_DEFINITIONS, type OperationId } from "./operations.ts"
 import {
-  search as miniSearch,
+  searchWithStatus,
   invalidateSearchIndex,
   noteRecordMutated,
 } from "../search-index.ts"
@@ -1887,7 +1887,7 @@ async function _dispatchOperationInner(
       // folder's best matches are not crowded out before filtering.
       const candidateLimit = pathPrefix ? 500 : limit
       // Ask for one more than needed so `truncated` means more matches exist.
-      const ranked = await miniSearch(query, {
+      const { results: ranked, complete } = await searchWithStatus(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
@@ -1907,7 +1907,11 @@ async function _dispatchOperationInner(
 
       return {
         results,
-        truncated: matching.length > limit || ranked.length > candidateLimit,
+        // While the index is still building, more matches may exist.
+        truncated:
+          !complete ||
+          matching.length > limit ||
+          ranked.length > candidateLimit,
         scope: {
           ...(spaceId ? { spaceId } : {}),
           ...(pathPrefix ? { pathPrefix } : {}),

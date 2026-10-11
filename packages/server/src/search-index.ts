@@ -270,8 +270,33 @@ interface IndexVariant {
 const variants = new Map<string, IndexVariant>();
 let resetEpoch = 0;
 
-function recordSearchViaIndex(): boolean {
-  return recordIndexEnabled() && recordIndex.isReady();
+/**
+ * Where record hits come from. "index": the record index (SQLite FTS).
+ * "building": the record index is building after a start or a format change,
+ * which can take minutes; records are left out of search until it is ready
+ * rather than read from every record file alongside the build. "files":
+ * MiniSearch reads record files, for when the record index is switched off,
+ * not started (a CLI or test process) or failed to build.
+ */
+type RecordSearchMode = "index" | "building" | "files";
+
+let recordBuildWatch: { settled: boolean } | null = null;
+
+function recordSearchMode(): RecordSearchMode {
+  if (!recordIndexEnabled() || !recordIndex.isStarted()) {
+    recordBuildWatch = null;
+    return "files";
+  }
+  if (recordIndex.isReady()) return "index";
+  if (!recordBuildWatch) {
+    const watch = { settled: false };
+    recordBuildWatch = watch;
+    void recordIndex.whenReady().finally(() => {
+      watch.settled = true;
+    });
+  }
+  // A build that settled without becoming ready failed.
+  return recordBuildWatch.settled ? "files" : "building";
 }
 
 function createIndex(): MiniSearch<IndexEntry> {
@@ -427,6 +452,7 @@ onWorkspaceChange((event) => {
     case "workspaceReset":
       resetEpoch += 1;
       variants.clear();
+      recordBuildWatch = null;
       break;
   }
 });
@@ -458,6 +484,26 @@ function retireSegment(variant: IndexVariant, spaceId: string, segment: SpaceSeg
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * Searches waiting on a sync. Without one, a sync is background work: the
+ * warm-up, or a build that outlived a search's time budget. Background work
+ * projects in smaller slices and then pauses at least as long, so it takes at
+ * most about half of the request loop.
+ */
+let waitingSearches = 0;
+const BACKGROUND_SLICE_MS = 100;
+
+function sliceMs(): number {
+  return waitingSearches > 0 ? PROJECTION_SLICE_MS : BACKGROUND_SLICE_MS;
+}
+
+function betweenSlices(sliceTookMs: number): Promise<void> {
+  if (waitingSearches > 0) return yieldToEventLoop();
+  return new Promise((resolve) =>
+    setTimeout(resolve, Math.max(BACKGROUND_SLICE_MS, sliceTookMs)),
+  );
 }
 
 async function addRecordsToIndex(
@@ -617,10 +663,11 @@ async function syncCommonDocuments(
   const projected = new Map<string, string>();
   for (;;) {
     const readAt = Date.now();
+    const sliceStarted = performance.now();
     const pass = await projectDocumentsForSearch({
       spaceId,
       includeArchived: variant.includeArchived,
-      projectionMs: PROJECTION_SLICE_MS,
+      projectionMs: sliceMs(),
       shouldProject: (candidate) =>
         !projected.has(candidate.key) &&
         (forced.has(candidate.key) ||
@@ -653,7 +700,7 @@ async function syncCommonDocuments(
       if (transient) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
     }
     if (!pass.complete) {
-      await yieldToEventLoop();
+      await betweenSlices(performance.now() - sliceStarted);
       continue;
     }
 
@@ -896,23 +943,27 @@ const WARMUP_QUIET_CPU = 0.05;
 
 /**
  * Build the index the app and agents search (common documents, archive
- * hidden), one Space at a time with the same sliced, yielding syncs a search
- * runs. A search that arrives meanwhile joins the Space being synced.
+ * hidden), one Space at a time, as background work: small slices with pauses
+ * between them. A search that arrives meanwhile joins the Space being synced.
  */
 export async function warmSearchIndex(stopped: () => boolean = () => false): Promise<void> {
-  const variant = variantFor("common", false, !recordSearchViaIndex());
+  const variant = variantFor("common", false, recordSearchMode() === "files");
   if (!variant.spacesListed || variant.listing) await listVariantSpaces(variant);
   for (const [id, segment] of [...variant.segments]) {
     if (stopped()) return;
-    if (segmentNeedsSync(segment)) await syncSegment(variant, id, segment);
+    if (!segmentNeedsSync(segment)) continue;
+    const started = performance.now();
+    await syncSegment(variant, id, segment);
+    await betweenSlices(performance.now() - started);
   }
 }
 
 /**
  * Warm the index in the background once the process has been quiet for a
  * few seconds, or 30 s after start, so the first search after a start or a
- * Cloud wake does not wait for the whole build. The returned stop function
- * settles once a Space sync already under way has finished.
+ * Cloud wake does not wait for the whole build. While the record index is
+ * building, the warm-up waits for it rather than compete with it. The
+ * returned stop function settles once a Space sync under way has finished.
  */
 export function startSearchWarmup(): () => Promise<void> {
   const startedAt = Date.now();
@@ -931,6 +982,7 @@ export function startSearchWarmup(): () => Promise<void> {
     if (now - quietSince < WARMUP_IDLE_MS && now - startedAt < WARMUP_LATEST_MS) {
       return;
     }
+    if (recordSearchMode() === "building") return;
     clearInterval(timer);
     warming = warmSearchIndex(() => stopped).catch((error: unknown) => {
       console.warn(
@@ -947,7 +999,66 @@ export function startSearchWarmup(): () => Promise<void> {
   };
 }
 
+// ── Search ───────────────────────────────────────────────────
+
+/** How long a search waits for the index before answering from what it has. */
+const SEARCH_WAIT_MS = 3_000;
+let searchWaitMs = SEARCH_WAIT_MS;
+
+export function setSearchWaitForTests(ms: number | null): void {
+  searchWaitMs = ms ?? SEARCH_WAIT_MS;
+}
+
+/**
+ * The index for a search, waiting at most `searchWaitMs` for its syncs. A
+ * cold build, such as after a start, can take much longer; the search then
+ * answers from what is indexed so far while the build continues.
+ */
+async function indexForSearch(
+  documentAccess: DocumentSearchAccess,
+  includeArchived: boolean,
+  includesRecords: boolean,
+  spaceId: string | undefined,
+): Promise<{ variant: IndexVariant; complete: boolean }> {
+  const syncing = freshVariant(documentAccess, includeArchived, includesRecords, spaceId);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  waitingSearches += 1;
+  try {
+    const fresh = await Promise.race([
+      syncing,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), searchWaitMs);
+      }),
+    ]);
+    if (fresh) return { variant: fresh, complete: true };
+  } finally {
+    clearTimeout(timer);
+    waitingSearches -= 1;
+  }
+  syncing.catch((error: unknown) => {
+    console.warn(
+      "[search] background build stopped:",
+      error instanceof Error ? error.message : error,
+    );
+  });
+  return {
+    variant: variantFor(documentAccess, includeArchived, includesRecords),
+    complete: false,
+  };
+}
+
 export async function search(
+  query: string,
+  opts?: Parameters<typeof searchWithStatus>[1],
+): Promise<SearchResult[]> {
+  return (await searchWithStatus(query, opts)).results;
+}
+
+/**
+ * Search, saying whether the answer is complete: false while the index or
+ * the record index is still building, when more matches may exist.
+ */
+export async function searchWithStatus(
   query: string,
   opts?: {
     spaceId?: string;
@@ -957,19 +1068,23 @@ export async function search(
     /** Select only after caller authorization; common projection needs documents:read. */
     documentAccess?: DocumentSearchAccess;
   }
-): Promise<SearchResult[]> {
+): Promise<{ results: SearchResult[]; complete: boolean }> {
   // Snapshot the record-search mode once per call: MiniSearch is built for
   // this mode and the record-hit append below uses the same decision, so a
   // mode flip mid-call (record index becoming ready) can't serve records
   // from both engines in one response.
-  const recordsViaIndex = recordSearchViaIndex();
+  const recordMode = recordSearchMode();
+  const recordsViaIndex = recordMode === "index";
   const maxResults = opts?.maxResults ?? 50;
   const includeArchived = opts?.includeArchived ?? false;
   const documentAccess = opts?.documentAccess ?? "legacy";
-  const { idx, displayBodies } = await freshVariant(
+  const {
+    variant: { idx, displayBodies },
+    complete: indexComplete,
+  } = await indexForSearch(
     documentAccess,
     includeArchived,
-    !recordsViaIndex,
+    recordMode === "files",
     opts?.spaceId,
   );
 
@@ -1080,5 +1195,5 @@ export async function search(
     }
   }
 
-  return results;
+  return { results, complete: indexComplete && recordMode !== "building" };
 }

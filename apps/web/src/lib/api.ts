@@ -136,9 +136,9 @@ export function searchWorkspace(opts: {
     params.set("includeArchived", String(opts.includeArchived))
   if (opts.maxResults !== undefined)
     params.set("maxResults", String(opts.maxResults))
-  return fetchJSON<{ results: SearchResult[] }>(
+  return fetchJSON<{ results: SearchResult[]; indexing?: boolean }>(
     `/api/search?${params.toString()}`
-  ).then((r) => r.results)
+  ).then((r) => ({ results: r.results, indexing: r.indexing === true }))
 }
 
 export async function deleteSpace(spaceId: string): Promise<void> {

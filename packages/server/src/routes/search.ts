@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { requireScope } from "../auth.ts";
-import { search } from "../search-index.ts";
+import { searchWithStatus } from "../search-index.ts";
 import { hasScope } from "../token-store.ts";
 
 export const searchRouter = new Hono();
@@ -27,7 +27,7 @@ searchRouter.get("/", async (c) => {
   const maxResultsRaw = c.req.query("maxResults");
   const maxResults = maxResultsRaw ? Math.max(1, Math.min(100, Number(maxResultsRaw) || 20)) : 20;
 
-  const results = await search(query, {
+  const { results, complete } = await searchWithStatus(query, {
     spaceId,
     searchBlocks,
     includeArchived,
@@ -35,5 +35,7 @@ searchRouter.get("/", async (c) => {
     documentAccess: commonDocuments ? "common" : "legacy",
   });
 
-  return c.json({ results });
+  // While the index is still building, more matches may exist; the client
+  // asks again shortly.
+  return c.json({ results, ...(complete ? {} : { indexing: true }) });
 });

@@ -43,9 +43,10 @@ The web app proxies API requests to the first terminal. Stop both processes with
 Ctrl+C. `.local-dev/` is ignored by Git; do not put real secrets in demo content.
 If a port is occupied, choose another and keep the API port and URL consistent.
 
-The development web app loads General Sans from Fontshare. Raw General Sans
-font files are not included in this repository. See the
-[font setup notes](../apps/desktop/ui/fonts/README.md) for Desktop.
+The web app loads General Sans from the Worktable server, which serves a
+provisioned local file. Raw General Sans font files are not included in this
+repository; without one, the app uses fallback fonts. See the
+[font setup notes](../apps/desktop/ui/fonts/README.md).
 
 ## Repository map
 
@@ -86,8 +87,10 @@ paths select every lane; unavailable history also falls back conservatively.
 
 Before relying on full verification, install Chromium with
 `bunx playwright@1.61.1 install --with-deps chromium` and the Rust/native
-dependencies listed in CI. `bun run verify:full` also builds release-lab artifacts;
-follow the source-identity setup in [Building](building.md) first.
+dependencies listed in CI, and run `bun scripts/provision-product-font.ts` so
+browser journeys render with General Sans as releases do. `bun run verify:full`
+also builds release-lab artifacts; follow the source-identity setup in
+[Building](building.md) first.
 No test requires a production Cloud deployment.
 
 Boot the affected runtime path and exercise the behavior as well as running

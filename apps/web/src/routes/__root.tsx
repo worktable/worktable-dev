@@ -45,7 +45,11 @@ import {
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
-import { fontBootstrapScript } from "@worktable/ui/lib/fonts"
+import {
+  PRODUCT_FONT_PATH,
+  PRODUCT_FONT_STYLE_ID,
+  productFontFaceCss,
+} from "@worktable/ui/lib/fonts"
 import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import {
@@ -170,6 +174,14 @@ function InitialLoader() {
   )
 }
 
+// The server versions this face, or empties it when no font is installed.
+// Hydrate the face it served, as DocumentOpeningData does for its snapshot.
+const productFontCss =
+  (typeof document === "undefined"
+    ? undefined
+    : document.getElementById(PRODUCT_FONT_STYLE_ID)?.textContent) ??
+  productFontFaceCss(PRODUCT_FONT_PATH)
+
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -177,7 +189,10 @@ function RootShell({ children }: { children: ReactNode }) {
         <DocumentOpeningData />
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
-        <script dangerouslySetInnerHTML={{ __html: fontBootstrapScript }} />
+        <style
+          id={PRODUCT_FONT_STYLE_ID}
+          dangerouslySetInnerHTML={{ __html: productFontCss }}
+        />
         <script
           dangerouslySetInnerHTML={{ __html: documentOpeningLayoutScript }}
         />

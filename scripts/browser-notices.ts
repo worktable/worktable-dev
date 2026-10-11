@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto"
-import { createRequire } from "node:module"
 import { posix } from "node:path"
 import type { Plugin } from "vite"
 import {
@@ -33,8 +32,6 @@ export function browserNotices(): Plugin {
           inputs.push(
             ...this.getWatchFiles().filter((id) => id.endsWith(".css"))
           )
-          // The configured PWA plugin generates registerSW.js from its template.
-          inputs.push(createRequire(import.meta.url).resolve("vite-plugin-pwa"))
           const packages = contributingPackages(inputs, process.cwd())
           const keys = packages.map((entry) => entry.key)
           const notices = renderDependencyNotices(keys, packages)
@@ -62,14 +59,12 @@ export function browserNotices(): Plugin {
     generateBundle: {
       order: "post",
       handler(_options, bundle) {
+        // Scripts emitted as assets bypass the chunk notices above.
         for (const item of Object.values(bundle)) {
-          if (item.type !== "asset" || !item.fileName.endsWith(".js")) continue
-          if (item.fileName !== "registerSW.js" || !noticePath)
+          if (item.type === "asset" && item.fileName.endsWith(".js"))
             throw new Error(
               `Review notices for generated browser script: ${item.fileName}`
             )
-          item.source =
-            Buffer.from(item.source).toString("utf8") + link(item.fileName)
         }
       },
     },

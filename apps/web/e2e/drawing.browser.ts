@@ -52,7 +52,6 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   request,
 }) => {
   // A failed optional font must not block opening or the existing save journey.
-  await page.route("https://api.fontshare.com/**", (route) => route.abort())
   await page.route("**/worktable-preview/fonts/**", (route) => route.abort())
   const space = await request.post(`${harness.apiUrl}/api/spaces`, {
     data: { name: "Drawing input", id: "drawing-input" },
@@ -443,7 +442,6 @@ test("agent saves refresh an idle canvas and preserve active local ink", async (
     releaseFonts = resolve
   })
   const fontRequests = new Set<string>()
-  await page.route("https://api.fontshare.com/**", (route) => route.abort())
   await page.route("**/worktable-preview/fonts/**", async (route) => {
     fontRequests.add(route.request().url())
     await pendingFonts

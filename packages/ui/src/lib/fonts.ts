@@ -1,11 +1,12 @@
-// Remote font CSS must not be an @import in the render-blocking app stylesheet.
-// System fallbacks render first; the existing licensed providers still supply
-// the fonts. Keep these URLs centralized alongside the shared font tokens.
-const fontStylesheets = [
-  "https://api.fontshare.com/v2/css?f[]=general-sans@1&display=swap",
-  "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=JetBrains+Mono:wght@400;500;600&display=swap",
-]
+// Worktable serves its own fonts; no page loads one from a third party.
+// Fraunces and JetBrains Mono are hashed build assets (apps/web styles).
+// General Sans is provisioned for builds and served by the Worktable server
+// (apps/desktop/ui/fonts/README.md). The server versions and preloads this
+// URL when it serves the page, and drops it when the font is not installed.
+export const PRODUCT_FONT_PATH =
+  "/worktable-preview/fonts/general-sans-variable.woff2"
+export const PRODUCT_FONT_STYLE_ID = "worktable-product-font"
 
-// Runs from the static shell, independently of app hydration. Nonmatching media
-// keeps a stalled provider out of the rendering path even after discovery.
-export const fontBootstrapScript = `requestAnimationFrame(()=>requestAnimationFrame(()=>{for(const href of ${JSON.stringify(fontStylesheets)}){const link=document.createElement("link");link.rel="stylesheet";link.href=href;link.media="print";link.fetchPriority="low";link.onload=()=>{link.media="all"};document.head.appendChild(link)}}))`
+export function productFontFaceCss(url: string): string {
+  return `@font-face{font-family:"General Sans";src:url(${JSON.stringify(url)}) format("woff2");font-style:normal;font-weight:200 700;font-display:swap}`
+}

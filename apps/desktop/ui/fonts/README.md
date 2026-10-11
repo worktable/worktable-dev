@@ -9,6 +9,11 @@ Packaged Desktop builds use local fonts for offline startup. Before building fro
 
 Font files retain their own licenses and are not relicensed by the application.
 
+The web app uses the same files and loads no font from a third party. Its
+build bundles Fraunces and JetBrains Mono as hashed assets, and the Worktable
+server serves it the supplied General Sans, versioned and preloaded. Without
+the file, the web app uses fallback fonts.
+
 The same supplied General Sans file is packaged under `preview-runtime/fonts/`
 for the drawing editor, authored HTML previews, and agent captures. The server
 serves it from a trusted same-origin endpoint; preview jobs never fetch Fontshare.

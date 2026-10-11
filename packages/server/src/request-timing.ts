@@ -23,6 +23,7 @@ const SPANS = [
   "db",
   "wait",
   "serialize",
+  "br",
   "gzip",
 ] as const
 export type TimingSpan = (typeof SPANS)[number]

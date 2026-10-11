@@ -32,7 +32,7 @@ import {
   sanitizeDocPath,
   type DocProvenance,
 } from "../store.ts";
-import { decorateDocsWithBacklinkCounts, getDocLinks } from "../link-graph.ts";
+import { getDocLinks } from "../link-graph.ts";
 import { wsManager } from "../ws.ts";
 import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts";
 import { invalidateSearchIndex } from "../search-index.ts";
@@ -139,7 +139,9 @@ function extractDocPath(rawPath: string, spaceId: string, stripSuffix?: string):
   return decodeURIComponent(docPath);
 }
 
-// GET /api/spaces/:spaceId/docs — list all doc paths
+// GET /api/spaces/:spaceId/docs — list all doc paths. Unlike the agents' list,
+// it carries no backlink counts: the app does not show them, and they would
+// rebuild the Space's link graph after every edit.
 docsRouter.get("/", requireScope("docs:read"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const includeArchived = c.req.query("includeArchived") === "true";
@@ -147,10 +149,7 @@ docsRouter.get("/", requireScope("docs:read"), async (c) => {
     return c.json({ error: "Missing spaceId", code: "BAD_REQUEST" }, 400);
   }
 
-  const docs = await decorateDocsWithBacklinkCounts(
-    spaceId,
-    await listDocsDetailed(spaceId, { includeArchived })
-  );
+  const docs = await listDocsDetailed(spaceId, { includeArchived });
   return c.json({ docs });
 });
 

@@ -38,9 +38,9 @@ import {
 } from "./version-retention.ts";
 import { notifyDocContentChanged } from "./content-events.ts";
 import {
+  createDocAliasReservationLookup,
   docAliasReservationError,
   readDocAliases,
-  reservedByAliasIn,
 } from "./doc-aliases.ts";
 import { withDocPathLock } from "./doc-path-lock.ts";
 import { withDocGenerationLock } from "./doc-generation-lock.ts";
@@ -55,6 +55,7 @@ import {
   noteWorkspaceActivity,
 } from "./workspace-read-model.ts";
 import { readFileFingerprint } from "./file-fingerprint.ts";
+import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { noteDocumentEdited } from "./activity-log.ts";
 import {
   invalidateHostedDocumentShares,
@@ -1499,31 +1500,40 @@ export async function setDocsArchivedByPrefix(
 // Doc operations
 // ============================================================
 
-async function walkDir(dir: string, basePath: string, paths: string[]): Promise<void> {
+/** A Doc file the docs walk found, under the path that names the Doc. */
+interface DocFile {
+  path: string;
+  format: DocFileFormat;
+  file: string;
+}
+
+async function walkDir(dir: string, relDir: string, files: DocFile[]): Promise<void> {
+  // Entry names never contain a separator, so joining them by hand gives the
+  // same paths as join() and relative(), at less cost per entry.
+  const below = (name: string) => (relDir ? `${relDir}${sep}${name}` : name);
   try {
     const entries = await readdir(dir, { withFileTypes: true });
     // Track seen paths to avoid duplicates if both .json and .md exist (prefer .json)
     const seen = new Set<string>();
     // Process .json first (takes priority)
     for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        await walkDir(fullPath, basePath, paths);
+        await walkDir(`${dir}${sep}${entry.name}`, below(entry.name), files);
       } else if (entry.name.endsWith(".json")) {
-        const relPath = relative(basePath, fullPath).replace(/\.json$/, "");
+        const relPath = below(entry.name.slice(0, -".json".length));
         if (!seen.has(relPath)) {
           seen.add(relPath);
-          paths.push(relPath);
+          files.push({ path: relPath, format: "json", file: `${dir}${sep}${entry.name}` });
         }
       }
     }
     // Then .md files (only if no .json for same path)
     for (const entry of entries) {
       if (!entry.isDirectory() && entry.name.endsWith(".md")) {
-        const relPath = relative(basePath, join(dir, entry.name)).replace(/\.md$/, "");
+        const relPath = below(entry.name.slice(0, -".md".length));
         if (!seen.has(relPath)) {
           seen.add(relPath);
-          paths.push(relPath);
+          files.push({ path: relPath, format: "md", file: `${dir}${sep}${entry.name}` });
         }
       }
     }
@@ -1533,16 +1543,20 @@ async function walkDir(dir: string, basePath: string, paths: string[]): Promise<
   }
 }
 
-export async function listDocs(spaceId: string): Promise<string[]> {
-  const dir = docsDir(spaceId);
-  const paths: string[] = [];
-  await walkDir(dir, dir, paths);
+async function listDocFiles(spaceId: string): Promise<DocFile[]> {
+  const files: DocFile[] = [];
+  await walkDir(docsDir(spaceId), "", files);
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) throw new Error(error ?? "Document aliases are unavailable");
   // A sync may recreate a physical file at a reserved old path. Keep that
   // conflict hidden from every enumeration consumer until the alias is
   // explicitly retired; reads still resolve to the canonical document.
-  return paths.filter((path) => reservedByAliasIn(aliases, path) === null);
+  const reserved = createDocAliasReservationLookup(aliases);
+  return files.filter((file) => reserved(file.path) === null);
+}
+
+export async function listDocs(spaceId: string): Promise<string[]> {
+  return (await listDocFiles(spaceId)).map((file) => file.path);
 }
 
 async function updateDocProvenance(
@@ -2162,50 +2176,99 @@ export async function recordRecoveredDocFormatTransition(
   });
 }
 
+/** What a Doc list reports about each Doc's content. */
+interface DocBodySummary {
+  headings: string[];
+  blockCount: number | null;
+  containsMermaid: boolean;
+  richBlockTypes: string[];
+}
+
+function summarizeDocBody(data: DocReadResult["data"]): DocBodySummary {
+  if (Array.isArray(data)) {
+    return {
+      headings: extractHeadings(data),
+      blockCount: data.length,
+      containsMermaid: containsMermaidBlock(data),
+      richBlockTypes: getRichBlockTypes(data),
+    };
+  }
+  if (typeof data === "string") {
+    return {
+      headings: extractMarkdownHeadings(data),
+      blockCount: null,
+      containsMermaid: extractMarkdownMermaid(data).length > 0,
+      richBlockTypes: [],
+    };
+  }
+  return { headings: [], blockCount: null, containsMermaid: false, richBlockTypes: [] };
+}
+
+// Each Doc's body summary by the source revision it was read from, per docs
+// directory. Reading and parsing every Doc made each list cost hundreds of
+// milliseconds per Space. The file fingerprint decides reuse, not change
+// events, so writes from other processes (stdio MCP, the CLI, git, sync
+// clients) are seen on the next list; see derived-revision.ts for the rule.
+type CachedDocBodySummary = DocBodySummary & DerivedRevision;
+const docBodySummaries = new Map<string, Map<string, CachedDocBodySummary>>();
+
 export async function listDocsDetailed(
   spaceId: string,
   opts?: { includeArchived?: boolean }
 ): Promise<DocListEntry[]> {
   const includeArchived = opts?.includeArchived ?? true;
-  const paths = await listDocs(spaceId);
+  const files = await listDocFiles(spaceId);
   const meta = await readDocMetaFile(spaceId);
-  const docs = await Promise.all(paths.map(async (path) => {
-    const statResult = await docStat(spaceId, path);
-    const readResult = await readDoc(spaceId, path);
-    const storedAs = statResult?.format;
-    let headings: string[] = [];
-    let blockCount: number | null = null;
-    let containsMermaid = false;
-    let richBlockTypes: string[] = [];
-
-    if (Array.isArray(readResult.data)) {
-      headings = extractHeadings(readResult.data);
-      blockCount = readResult.data.length;
-      containsMermaid = containsMermaidBlock(readResult.data);
-      richBlockTypes = getRichBlockTypes(readResult.data);
-    } else if (typeof readResult.data === "string") {
-      headings = extractMarkdownHeadings(readResult.data);
-      blockCount = null;
-      containsMermaid = extractMarkdownMermaid(readResult.data).length > 0;
-      richBlockTypes = [];
+  const summariesKey = docsDir(spaceId);
+  const previous = docBodySummaries.get(summariesKey);
+  const summaries = new Map<string, CachedDocBodySummary>();
+  const docs = await Promise.all(files.map(async ({ path, format, file }) => {
+    const readAt = Date.now();
+    // The walk found the file docStat would resolve, so stat it directly.
+    // Paths that sanitizing changes, and files gone since the walk, keep
+    // docStat's own resolution.
+    const statResult =
+      sanitizeDocPath(path) === path
+        ? ((await statDocFile(file, format)) ?? (await docStat(spaceId, path)))
+        : await docStat(spaceId, path);
+    const revision = statResult
+      ? `${statResult.format}:${statResult.fingerprint}`
+      : "";
+    const cached = previous?.get(path);
+    let body: DocBodySummary;
+    if (
+      cached &&
+      statResult &&
+      canReuseDerived(cached, revision, statResult.updatedAt)
+    ) {
+      body = cached;
+      summaries.set(path, cached);
+    } else {
+      const readResult = await readDoc(spaceId, path);
+      body = summarizeDocBody(readResult.data);
+      // A failed read may be transient; read it again next time.
+      if (statResult && !readResult.error) {
+        summaries.set(path, { ...body, revision, readAt });
+      }
     }
 
     return {
       path,
       format: statResult?.format === "md" ? "markdown" as const : "blocknote" as const,
-      storedAs,
+      storedAs: statResult?.format,
       // File mtime (ms) — the "last updated" fallback for docs that predate
       // provenance tracking.
       updatedAt: statResult?.updatedAt,
-      headings,
-      blockCount,
-      containsMermaid,
-      richBlockTypes,
+      headings: [...body.headings],
+      blockCount: body.blockCount,
+      containsMermaid: body.containsMermaid,
+      richBlockTypes: [...body.richBlockTypes],
       archived: ownedCopy(meta.docs[path]?.archived),
       ...lifetimeListFields(meta.docs[path], statResult?.updatedAt),
       provenance: ownedCopy(meta.docs[path]?.provenance),
     };
   }));
+  docBodySummaries.set(summariesKey, summaries);
 
   return docs.filter((doc) => includeArchived || !doc.archived);
 }
@@ -3831,10 +3894,7 @@ export async function docExists(spaceId: string, docPath: string): Promise<boole
   return resolveDocFile(spaceId, docPath) !== null;
 }
 
-export async function docStat(
-  spaceId: string,
-  docPath: string
-): Promise<{
+export interface DocFileStat {
   updatedAt: number;
   format: DocFileFormat;
   /**
@@ -3842,19 +3902,30 @@ export async function docStat(
    * time, which tools that restore modification times cannot set back.
    */
   fingerprint: string;
-} | null> {
-  const resolved = resolveDocFile(spaceId, docPath);
-  if (!resolved) return null;
+}
+
+async function statDocFile(
+  file: string,
+  format: DocFileFormat
+): Promise<DocFileStat | null> {
   try {
-    const s = await stat(resolved.path);
+    const s = await stat(file);
     return {
       updatedAt: s.mtimeMs,
-      format: resolved.format,
+      format,
       fingerprint: `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`,
     };
   } catch {
     return null;
   }
+}
+
+export async function docStat(
+  spaceId: string,
+  docPath: string
+): Promise<DocFileStat | null> {
+  const resolved = resolveDocFile(spaceId, docPath);
+  return resolved ? statDocFile(resolved.path, resolved.format) : null;
 }
 
 export async function renameDoc(

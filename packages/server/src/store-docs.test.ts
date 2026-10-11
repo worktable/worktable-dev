@@ -6,7 +6,9 @@ import {
   rmSync,
   existsSync,
   readFileSync,
+  renameSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -549,6 +551,28 @@ describe("doc store", () => {
       expect(diagramDoc?.richBlockTypes).toEqual(["mermaid"])
       expect(diagramDoc?.headings).toEqual(["Architecture"])
       expect(diagramDoc?.blockCount).toBe(2)
+    })
+
+    it("lists an outside edit that keeps the file's size and modification time", async () => {
+      // Sync clients and git replace files and can restore their timestamps.
+      const docsDir = join(spacesDir, "test-space", "docs")
+      const file = join(docsDir, "notes.md")
+      const replace = (content: string, at: Date) => {
+        const staged = join(docsDir, ".notes.md.sync")
+        writeFileSync(staged, content)
+        utimesSync(staged, at, at)
+        renameSync(staged, file)
+      }
+      const headings = async () =>
+        (await listDocsDetailed("test-space")).find((doc) => doc.path === "notes")
+          ?.headings
+      const longAgo = new Date(Date.now() - 60_000)
+      mkdirSync(docsDir, { recursive: true })
+      replace("# Before\n", longAgo)
+      expect(await headings()).toEqual(["Before"])
+
+      replace("# Change\n", longAgo)
+      expect(await headings()).toEqual(["Change"])
     })
   })
 

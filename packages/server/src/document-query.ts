@@ -1,5 +1,5 @@
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
-import { lstat, readdir } from "node:fs/promises"
+import { lstat, opendir } from "node:fs/promises"
 import { resolve } from "node:path"
 import type {
   DocumentConflictItem,
@@ -58,6 +58,7 @@ import {
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { withWidgetWriteLock } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { FINGERPRINT_TREE_MAX_ENTRIES } from "./file-fingerprint.ts"
 import { readSpaceSnapshot } from "./workspace-read-model.ts"
 
 const DOCUMENT_READ_BUDGET: DocumentOperationBudget = {
@@ -392,9 +393,14 @@ function snapshotDocumentQueryContext(
  */
 async function documentQueryInputTrees(spaceRoot: string): Promise<string[]> {
   const dataRoot = resolve(spaceRoot, "document-data")
-  let documentIds: string[] = []
+  const documentIds: string[] = []
   try {
-    documentIds = await readdir(dataRoot)
+    for await (const entry of await opendir(dataRoot)) {
+      if (documentIds.length >= FINGERPRINT_TREE_MAX_ENTRIES) {
+        throw new Error("document data exceeds the fingerprint entry limit")
+      }
+      documentIds.push(entry.name)
+    }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code !== "ENOENT" && code !== "ENOTDIR") throw error

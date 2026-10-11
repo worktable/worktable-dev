@@ -1,5 +1,5 @@
 import type { BigIntStats } from "node:fs"
-import { lstat, readdir, stat } from "node:fs/promises"
+import { lstat, opendir, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { createConcurrencyLimit } from "./bounded-concurrency.ts"
 
@@ -99,7 +99,7 @@ export interface TreeFingerprints {
   racy: boolean
 }
 
-const TREE_MAX_ENTRIES = 100_000
+export const FINGERPRINT_TREE_MAX_ENTRIES = 100_000
 const TREE_CONCURRENCY = 64
 
 /**
@@ -115,6 +115,9 @@ export async function readTreeFingerprints(
   const keys = new Map<string, string>()
   let racy = false
   const limited = createConcurrencyLimit(TREE_CONCURRENCY)
+  // Every name is counted as it is listed, so no listing grows past the
+  // limit before it fails.
+  let listed = paths.files.length + paths.trees.length
   const visit = async (path: string, descend: boolean): Promise<void> => {
     let info: BigIntStats
     try {
@@ -123,22 +126,33 @@ export async function readTreeFingerprints(
       if (isMissing(error)) return
       throw error
     }
-    if (keys.size >= TREE_MAX_ENTRIES) {
-      throw new Error("fingerprinted trees exceed their entry limit")
-    }
     const fingerprint = fingerprintOf(info, observedAt)
     keys.set(path, fingerprint.key)
     racy ||= fingerprint.racy
     if (!descend || !info.isDirectory()) return
     let names: string[]
     try {
-      names = await limited(() => readdir(path))
+      // The directory is closed before its children are visited.
+      names = await limited(async () => {
+        const found: string[] = []
+        for await (const entry of await opendir(path)) {
+          listed += 1
+          if (listed > FINGERPRINT_TREE_MAX_ENTRIES) {
+            throw new Error("fingerprinted trees exceed their entry limit")
+          }
+          found.push(entry.name)
+        }
+        return found
+      })
     } catch (error) {
       // Removed or replaced since its lstat: its key already differs.
       if (isMissing(error)) return
       throw error
     }
     await Promise.all(names.map((name) => visit(join(path, name), true)))
+  }
+  if (listed > FINGERPRINT_TREE_MAX_ENTRIES) {
+    throw new Error("fingerprinted trees exceed their entry limit")
   }
   await Promise.all([
     ...paths.files.map((path) => visit(path, false)),

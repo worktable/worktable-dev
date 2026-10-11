@@ -1,4 +1,4 @@
-import { lstat, readdir } from "node:fs/promises"
+import { lstat, opendir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
   WidgetFileSchema,
@@ -99,19 +99,22 @@ async function readLegacyDirectory(
   directory: string,
   budget: LegacyCatalogBudget
 ) {
-  let entries
   try {
-    entries = await readdir(directory, { withFileTypes: true })
+    // Counted as listed, so an oversized directory fails before it is held.
+    const entries = []
+    for await (const entry of await opendir(directory)) {
+      budget.entries += 1
+      if (budget.entries > LEGACY_CATALOG_MAX_ENTRIES) {
+        throw new Error("document catalog exceeds its entry limit")
+      }
+      entries.push(entry)
+    }
+    return entries
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === "ENOENT" || code === "ENOTDIR") return []
     throw error
   }
-  budget.entries += entries.length
-  if (budget.entries > LEGACY_CATALOG_MAX_ENTRIES) {
-    throw new Error("document catalog exceeds its entry limit")
-  }
-  return entries
 }
 
 /** Directories of one scan read concurrently, at most this many at once. */

@@ -1,3 +1,5 @@
+import { memo } from "react"
+import { Link } from "@tanstack/react-router"
 import {
   CircleAlertIcon,
   LoaderCircleIcon,
@@ -37,6 +39,23 @@ import { RelativeTime } from "@/lib/time"
 import { deliveryPresentation } from "@/lib/thread-presentation"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 
+/** Where a thread opens: the workspace list (keeping its filter) or a Space's. */
+export type ThreadLinkTarget =
+  | {
+      to: "/threads/$"
+      params: { _splat: string }
+      search: { location: "all" | "worktable" | "space"; spaceId?: string }
+    }
+  | {
+      to: "/spaces/$spaceId/threads/$"
+      params: { spaceId: string; _splat: string }
+    }
+
+export type ThreadLink = (
+  location: ThreadLocation,
+  threadId: string
+) => ThreadLinkTarget
+
 interface ThreadListProps {
   threads: ThreadListItem[]
   activeThreadId: string
@@ -45,7 +64,7 @@ interface ThreadListProps {
   error: boolean
   showLocations: boolean
   locationLabel: (location: ThreadLocation) => string
-  onNavigate: (location: ThreadLocation, threadId: string) => void
+  threadLink: ThreadLink
   onNew: () => void
   onRetry: () => void
 }
@@ -66,7 +85,7 @@ export function ThreadList({
   error,
   showLocations,
   locationLabel,
-  onNavigate,
+  threadLink,
   onNew,
   onRetry,
 }: ThreadListProps) {
@@ -111,9 +130,10 @@ export function ThreadList({
                       thread.id === activeThreadId &&
                       sameLocation(thread.location, activeLocation)
                     }
-                    showLocation={showLocations}
-                    locationLabel={locationLabel}
-                    onNavigate={onNavigate}
+                    location={
+                      showLocations ? locationLabel(thread.location) : null
+                    }
+                    threadLink={threadLink}
                   />
                 </div>
               ))}
@@ -165,32 +185,40 @@ function ThreadListSkeleton() {
   )
 }
 
-function ThreadListRow({
+/** A link to the thread, so hovering it preloads the thread. */
+function threadLinkElement(target: ThreadLinkTarget, active: boolean) {
+  const current = active ? ("page" as const) : undefined
+  return target.to === "/threads/$" ? (
+    <Link
+      to={target.to}
+      params={target.params}
+      search={target.search}
+      aria-current={current}
+    />
+  ) : (
+    <Link to={target.to} params={target.params} aria-current={current} />
+  )
+}
+
+// Memoized: the view re-renders on every keystroke in the composer.
+const ThreadListRow = memo(function ThreadListRow({
   thread,
   active,
-  showLocation,
-  locationLabel,
-  onNavigate,
+  location,
+  threadLink,
 }: {
   thread: ThreadListItem
   active: boolean
-  showLocation: boolean
-  locationLabel: (location: ThreadLocation) => string
-  onNavigate: (location: ThreadLocation, threadId: string) => void
+  location: string | null
+  threadLink: ThreadLink
 }) {
-  const location = locationLabel(thread.location)
+  const showLocation = location !== null
 
   return (
     <Item
       variant={active ? "muted" : "default"}
-      className="flex-nowrap gap-3 rounded-xl px-3 py-3 hover:bg-muted/60"
-      render={
-        <button
-          type="button"
-          aria-current={active ? "page" : undefined}
-          onClick={() => onNavigate(thread.location, thread.id)}
-        />
-      }
+      className="flex-nowrap gap-3 rounded-xl px-3 py-3 hover:bg-muted/60 [a]:hover:bg-muted/60"
+      render={threadLinkElement(threadLink(thread.location, thread.id), active)}
     >
       <ItemMedia>
         <ThreadAvatar thread={thread} />
@@ -226,7 +254,7 @@ function ThreadListRow({
       </ItemContent>
     </Item>
   )
-}
+})
 
 function ThreadAvatar({ thread }: { thread: ThreadListItem }) {
   const agents = thread.members.filter((member) => member.kind === "agent")

@@ -1,8 +1,22 @@
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
-import { lazy, useState, useEffect, useRef } from "react"
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
+import {
+  lazy,
+  memo,
+  useCallback,
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  type Ref,
+} from "react"
+import {
+  Link,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router"
 import {
   ChevronRight,
   ChevronDown,
@@ -51,6 +65,7 @@ import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useSidebar } from "@/hooks/use-sidebar"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useStableCallback } from "@/hooks/use-stable-callback"
 import { flattenTreeOrder } from "@/lib/tree"
 import type { DocSortMode } from "@/lib/tree"
 import {
@@ -133,18 +148,17 @@ import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
 import {
   documentPathIsAtOrBelow,
   specializedDocumentView,
-  supportsManagedFolderArchive,
-  supportsManagedFolderDelete,
-  supportsManagedFolderMove,
 } from "@/lib/document-views"
 import { canonicalConflictPath, HttpError } from "@/lib/http"
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import {
-  buildSpaceDocumentTrees,
   documentListItemArchived,
   getDocOrder,
   getDocSort,
   isTemporaryDocument,
+  spaceDocumentIndex,
+  spaceDocumentTrees,
+  type SpaceDocumentIndex,
 } from "@/lib/space-document-tree"
 
 // ── Group Definitions ────────────────────────────────────────
@@ -174,6 +188,42 @@ function folderLifecycleError(error: unknown, fallback: string): string {
     ? error.message
     : fallback
 }
+
+// ── Active route ─────────────────────────────────────────────
+// Each row selects only how the current route relates to it, so a navigation
+// re-renders the rows it leaves and enters instead of the whole sidebar.
+
+type RouteRelation = "self" | "inside" | null
+
+function routeRelation(pathname: string, route: string): RouteRelation {
+  if (pathname === route) return "self"
+  return pathname.startsWith(`${route}/`) ? "inside" : null
+}
+
+function useRouteRelation(route: string): RouteRelation {
+  return useRouterState({
+    select: (state) => routeRelation(state.location.pathname, route),
+  })
+}
+
+function useIsCurrentRoute(route: string): boolean {
+  return useRouterState({
+    select: (state) => state.location.pathname === route,
+  })
+}
+
+function documentRoutePrefix(spaceId: string): string {
+  return `/spaces/${spaceId}/documents/`
+}
+
+/** The document path the route opens in this Space, if any. */
+function routeDocumentPath(pathname: string, spaceId: string): string | null {
+  const prefix = documentRoutePrefix(spaceId)
+  return pathname.startsWith(prefix) ? pathname.slice(prefix.length) : null
+}
+
+const NO_DOCS: DocListEntry[] = []
+const NO_DOCUMENTS: DocumentListItem[] = []
 
 async function atCurrentHtmlDocumentPath<T>(
   attemptedPath: string,
@@ -335,20 +385,21 @@ function GroupSwitcher({
 
 // ── Space Section ────────────────────────────────────────────
 
-function SpaceSection({
+const SpaceSection = memo(function SpaceSection({
   space,
-  currentPath,
 }: {
   space: SpaceFile
-  currentPath: string
 }) {
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const router = useRouter()
   const archived = isSpaceArchived(space)
 
-  const isInSpace = currentPath.startsWith(`/spaces/${space.id}`)
+  const spaceRoute = `/spaces/${space.id}`
+  const relation = useRouteRelation(spaceRoute)
+  const isInSpace = relation !== null
   const [expanded, setExpanded] = useState(isInSpace)
   const userCollapsedRef = useRef(false)
 
@@ -369,9 +420,9 @@ function SpaceSection({
     setExpanded(open)
   }
 
-  const handleNavigate = () => {
+  const handleNavigate = useCallback(() => {
     if (isMobile) setOpen(false)
-  }
+  }, [isMobile, setOpen])
 
   const handleRename = async (newName: string) => {
     try {
@@ -407,7 +458,7 @@ function SpaceSection({
         queryKey: queryKeys.spaces,
         exact: true,
       })
-      if (currentPath.startsWith(`/spaces/${space.id}`)) {
+      if (routeRelation(router.state.location.pathname, spaceRoute)) {
         navigate({ to: "/" })
       }
       toast.success("Space moved to trash")
@@ -464,7 +515,8 @@ function SpaceSection({
     setExpanded(true)
     if (isMobile) setOpen(false)
   }
-  const handleNewDoc = useNewDoc(space.id, afterCreate)
+  const newDoc = useNewDoc(space.id, afterCreate)
+  const handleNewDoc = useStableCallback(newDoc)
 
   return (
     <>
@@ -492,7 +544,7 @@ function SpaceSection({
               params={{ spaceId: space.id }}
               onClick={handleNavigate}
               className={`flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3 pl-1 text-sm font-medium ${
-                currentPath === `/spaces/${space.id}`
+                relation === "self"
                   ? "text-sidebar-primary"
                   : "text-sidebar-space-foreground"
               }`}
@@ -548,37 +600,29 @@ function SpaceSection({
         <CollapsibleContent>
           <div className="ml-4 pl-2">
             <SpaceContent
-              spaceId={space.id}
-              currentPath={currentPath}
+              space={space}
               onNavigate={handleNavigate}
               onNewDoc={handleNewDoc}
-              docOrder={getDocOrder(space)}
-              docSort={getDocSort(space)}
             />
           </div>
         </CollapsibleContent>
       </Collapsible>
     </>
   )
-}
+})
 
 // ── Space Content (merged doc + widget tree) ────────────────
 
-function SpaceContent({
-  spaceId,
-  currentPath,
+const SpaceContent = memo(function SpaceContent({
+  space,
   onNavigate,
   onNewDoc,
-  docOrder,
-  docSort,
 }: {
-  spaceId: string
-  currentPath: string
+  space: SpaceFile
   onNavigate: () => void
   onNewDoc: (folder?: string) => void
-  docOrder?: string[]
-  docSort: DocSortMode
 }) {
+  const spaceId = space.id
   const { data: docs, refetch } = useSpaceDocs(spaceId)
   const {
     data: documents,
@@ -589,16 +633,9 @@ function SpaceContent({
   const queryClient = useQueryClient()
   useLiveSpaceCatalog(spaceId)
 
-  const activeDocs = (docs ?? []).filter((doc) => !doc.archived)
-  const archivedDocs = (docs ?? []).filter((doc) => doc.archived)
-  const activeDocuments = (documents ?? []).filter(
-    (document) => !documentListItemArchived(document)
-  )
-  const archivedDocuments = (documents ?? []).filter(documentListItemArchived)
-
   // HTML Docs are listed with the Space's documents; pins come with the
   // Space itself.
-  const refreshWidgets = async (widgetId?: string) => {
+  const refreshWidgets = useStableCallback(async (widgetId?: string) => {
     await Promise.all([
       queryClient.invalidateQueries({
         queryKey: queryKeys.space(spaceId),
@@ -618,55 +655,37 @@ function SpaceContent({
           ]
         : []),
     ])
-  }
+  })
+  const handleRefresh = useStableCallback(async () => {
+    await Promise.all([refetch(), refetchDocuments()])
+  })
 
   return (
     <div className="mt-1 animate-in duration-200 fade-in">
-      <PinnedSidebarSection
-        spaceId={spaceId}
-        currentPath={currentPath}
-        onNavigate={onNavigate}
-      />
+      <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
       <SpaceTreeSection
-        spaceId={spaceId}
-        currentPath={currentPath}
-        activeDocs={activeDocs}
-        archivedDocs={archivedDocs}
-        activeDocuments={activeDocuments}
-        archivedDocuments={archivedDocuments}
+        space={space}
+        documents={documents ?? NO_DOCUMENTS}
+        docs={docs ?? NO_DOCS}
         isLoading={documentsLoading}
         loadFailed={documentsError}
         onNewDoc={onNewDoc}
         onNavigate={onNavigate}
-        onRefresh={async () => {
-          await Promise.all([refetch(), refetchDocuments()])
-        }}
+        onRefresh={handleRefresh}
         onWidgetRefresh={refreshWidgets}
-        docOrder={docOrder}
-        docSort={docSort}
       />
-      <RecordsSidebarSection
-        spaceId={spaceId}
-        currentPath={currentPath}
-        onNavigate={onNavigate}
-      />
-      <ThreadsSidebarEntry
-        spaceId={spaceId}
-        currentPath={currentPath}
-        onNavigate={onNavigate}
-      />
+      <RecordsSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
+      <ThreadsSidebarEntry spaceId={spaceId} onNavigate={onNavigate} />
     </div>
   )
-}
+})
 
 /** A Space's pinned docs, above its tree, with a label separating the two. */
 function PinnedSidebarSection({
   spaceId,
-  currentPath,
   onNavigate,
 }: {
   spaceId: string
-  currentPath: string
   onNavigate: () => void
 }) {
   const { data } = useSpace(spaceId)
@@ -678,29 +697,16 @@ function PinnedSidebarSection({
         Pinned
       </p>
       <nav aria-label="Pinned" className="space-y-0.5">
-        {pins.map((pin) => {
-          const isActive =
-            currentPath === `/spaces/${spaceId}/documents/${pin.path}`
-          return (
-            <Link
-              key={pin.path}
-              to="/spaces/$spaceId/documents/$"
-              params={{ spaceId, _splat: pin.path }}
-              onClick={onNavigate}
-              className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
-                isActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-            >
-              <DocumentFormatIcon
-                formatId={pin.format?.id}
-                className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-              />
-              <span className="min-w-0 truncate">{pin.title ?? pin.path}</span>
-            </Link>
-          )
-        })}
+        {pins.map((pin) => (
+          <PinnedLink
+            key={pin.path}
+            spaceId={spaceId}
+            path={pin.path}
+            title={pin.title ?? pin.path}
+            formatId={pin.format?.id}
+            onNavigate={onNavigate}
+          />
+        ))}
       </nav>
       <p className="mt-2 px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
         Docs
@@ -709,18 +715,48 @@ function PinnedSidebarSection({
   )
 }
 
-function ThreadsSidebarEntry({
+const PinnedLink = memo(function PinnedLink({
   spaceId,
-  currentPath,
+  path,
+  title,
+  formatId,
   onNavigate,
 }: {
   spaceId: string
-  currentPath: string
+  path: string
+  title: string
+  formatId?: string
   onNavigate: () => void
 }) {
-  const basePath = `/spaces/${spaceId}/threads`
-  const isActive =
-    currentPath === basePath || currentPath.startsWith(`${basePath}/`)
+  const isActive = useIsCurrentRoute(`${documentRoutePrefix(spaceId)}${path}`)
+  return (
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId, _splat: path }}
+      onClick={onNavigate}
+      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+        isActive
+          ? "bg-sidebar-accent font-medium text-sidebar-primary"
+          : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+      }`}
+    >
+      <DocumentFormatIcon
+        formatId={formatId}
+        className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+      />
+      <span className="min-w-0 truncate">{title}</span>
+    </Link>
+  )
+})
+
+function ThreadsSidebarEntry({
+  spaceId,
+  onNavigate,
+}: {
+  spaceId: string
+  onNavigate: () => void
+}) {
+  const isActive = useRouteRelation(`/spaces/${spaceId}/threads`) !== null
   return (
     <div className="mt-2">
       <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
@@ -751,11 +787,9 @@ function ThreadsSidebarEntry({
 
 function RecordsSidebarSection({
   spaceId,
-  currentPath,
   onNavigate,
 }: {
   spaceId: string
-  currentPath: string
   onNavigate: () => void
 }) {
   // Only fires for expanded spaces (this component mounts inside the
@@ -769,35 +803,58 @@ function RecordsSidebarSection({
         Records
       </p>
       <nav className="space-y-0.5">
-        {collections.map((collection) => {
-          const collectionPath = `/spaces/${spaceId}/records/${collection.id}`
-          const isActive = currentPath === collectionPath
-          return (
-            <Link
-              key={collection.id}
-              to="/spaces/$spaceId/records/$"
-              params={{ spaceId, _splat: collection.id }}
-              onClick={onNavigate}
-              className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
-                isActive
-                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-            >
-              <Database
-                className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-              />
-              <span className="min-w-0 truncate">{collection.name}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
-                {collection.count}
-              </span>
-            </Link>
-          )
-        })}
+        {collections.map((collection) => (
+          <CollectionLink
+            key={collection.id}
+            spaceId={spaceId}
+            collectionId={collection.id}
+            name={collection.name}
+            count={collection.count}
+            onNavigate={onNavigate}
+          />
+        ))}
       </nav>
     </div>
   )
 }
+
+const CollectionLink = memo(function CollectionLink({
+  spaceId,
+  collectionId,
+  name,
+  count,
+  onNavigate,
+}: {
+  spaceId: string
+  collectionId: string
+  name: string
+  count: number
+  onNavigate: () => void
+}) {
+  const isActive = useIsCurrentRoute(
+    `/spaces/${spaceId}/records/${collectionId}`
+  )
+  return (
+    <Link
+      to="/spaces/$spaceId/records/$"
+      params={{ spaceId, _splat: collectionId }}
+      onClick={onNavigate}
+      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+        isActive
+          ? "bg-sidebar-accent font-medium text-sidebar-primary"
+          : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+      }`}
+    >
+      <Database
+        className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+      />
+      <span className="min-w-0 truncate">{name}</span>
+      <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
+        {count}
+      </span>
+    </Link>
+  )
+})
 
 function WidgetDeleteDialog({
   open,
@@ -870,7 +927,6 @@ function WidgetTreeActions({
   widgetId,
   documentName,
   archived,
-  currentPath,
   onRefresh,
   onNewDoc,
   onRenameFolder,
@@ -883,7 +939,6 @@ function WidgetTreeActions({
   widgetId: string
   documentName: string
   archived: boolean
-  currentPath: string
   onRefresh: (widgetId?: string) => Promise<void>
   onNewDoc?: () => void
   onRenameFolder?: () => void
@@ -893,10 +948,12 @@ function WidgetTreeActions({
   onDeleteFolder?: () => void
 }) {
   const navigate = useNavigate()
+  const router = useRouter()
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const widgetPath = `/spaces/${spaceId}/documents/${widgetId}`
-  const isActive = currentPath === widgetPath
+  const isOpen = () =>
+    router.state.location.pathname ===
+    `${documentRoutePrefix(spaceId)}${widgetId}`
 
   const handleCopyHtml = async () => {
     try {
@@ -911,9 +968,10 @@ function WidgetTreeActions({
 
   const handleRename = async (newPath: string) => {
     try {
+      const wasOpen = isOpen()
       const result = await moveWidget(spaceId, widgetId, newPath)
       await onRefresh()
-      if (isActive) {
+      if (wasOpen) {
         void navigate({
           to: "/spaces/$spaceId/documents/$",
           params: { spaceId, _splat: result.to },
@@ -958,9 +1016,10 @@ function WidgetTreeActions({
 
   const handleDelete = async () => {
     try {
+      const wasOpen = isOpen()
       await deleteWidget(spaceId, widgetId)
       await onRefresh()
-      if (isActive)
+      if (wasOpen)
         void navigate({ to: "/spaces/$spaceId", params: { spaceId } })
       toast.success("HTML doc deleted")
     } catch (err) {
@@ -1006,29 +1065,24 @@ function WidgetTreeActions({
 function WidgetTreeItem({
   node,
   spaceId,
-  currentPath,
+  onNavigate,
   onRefresh,
   reorder,
 }: {
   node: TreeNode
   spaceId: string
-  currentPath: string
+  onNavigate: () => void
   onRefresh: (widgetId?: string) => Promise<void>
   reorder?: DocReorder
 }) {
-  const isMobile = useIsMobile()
-  const { setOpen } = useSidebar()
-  const widgetPath = `/spaces/${spaceId}/documents/${node.path}`
-  const isActive = currentPath === widgetPath
+  const isActive = useIsCurrentRoute(
+    `${documentRoutePrefix(spaceId)}${node.path}`
+  )
   const archived = !!node.archived
   const { dragProps, dropIndicator, isDragging } = treeDragPresentation(
     node,
     reorder
   )
-
-  const handleNavigate = () => {
-    if (isMobile) setOpen(false)
-  }
 
   return (
     <>
@@ -1042,7 +1096,7 @@ function WidgetTreeItem({
         <Link
           to="/spaces/$spaceId/documents/$"
           params={{ spaceId, _splat: node.path }}
-          onClick={handleNavigate}
+          onClick={onNavigate}
           draggable={false}
           className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
             isActive
@@ -1062,7 +1116,6 @@ function WidgetTreeItem({
             widgetId={node.path}
             documentName={node.label}
             archived={archived}
-            currentPath={currentPath}
             onRefresh={onRefresh}
           />
         </div>
@@ -1253,6 +1306,22 @@ function findSiblings(nodes: TreeNode[], parent: string): TreeNode[] | null {
   return null
 }
 
+/** A copy of the tree with `parent`'s children replaced; the tree is shared. */
+function withSiblings(
+  nodes: TreeNode[],
+  parent: string,
+  siblings: TreeNode[]
+): TreeNode[] {
+  if (parent === "") return siblings
+  return nodes.map((n) =>
+    n.path === parent
+      ? { ...n, children: siblings }
+      : parent.startsWith(n.path + "/")
+        ? { ...n, children: withSiblings(n.children, parent, siblings) }
+        : n
+  )
+}
+
 function SpecializedDocumentLink({
   spaceId,
   path,
@@ -1280,37 +1349,30 @@ function SpecializedDocumentLink({
 }
 
 function SpaceTreeSection({
-  spaceId,
-  currentPath,
-  activeDocs,
-  archivedDocs,
-  activeDocuments,
-  archivedDocuments,
+  space,
+  documents,
+  docs,
   isLoading,
   loadFailed,
   onNewDoc,
   onNavigate,
   onRefresh,
   onWidgetRefresh,
-  docOrder,
-  docSort,
 }: {
-  spaceId: string
-  currentPath: string
-  activeDocs: DocListEntry[]
-  archivedDocs: DocListEntry[]
-  activeDocuments: DocumentListItem[]
-  archivedDocuments: DocumentListItem[]
+  space: SpaceFile
+  documents: DocumentListItem[]
+  docs: DocListEntry[]
   isLoading: boolean
   loadFailed: boolean
   onNewDoc: (folder?: string) => void
   onNavigate: () => void
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
-  docOrder?: string[]
-  docSort: DocSortMode
 }) {
+  const spaceId = space.id
   const queryClient = useQueryClient()
+  const docOrder = useMemo(() => getDocOrder(space), [space])
+  const docSort = getDocSort(space)
   // Optimistic overrides: applied on drop, dropped again once the refetched
   // space settings carry the saved values (or on save failure).
   const [localOrder, setLocalOrder] = useState<string[] | null>(null)
@@ -1334,50 +1396,52 @@ function SpaceTreeSection({
   const pendingSaveRef = useRef<string[] | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
-  const allDocuments = [...activeDocuments, ...archivedDocuments]
   // Temporary documents are supporting work: they leave the main tree for
-  // their own section until they are kept or archive on their date.
+  // their own section until they are kept or archive on their date. Both the
+  // trees and the row lookups are built once per catalog read.
   const {
     active: tree,
     temporary: temporaryTree,
     archived: archivedTree,
-  } = buildSpaceDocumentTrees({
-    documents: allDocuments,
-    docs: [...activeDocs, ...archivedDocs],
+  } = spaceDocumentTrees({
+    documents,
+    docs,
     sort: effectiveSort,
     order: effectiveOrder,
     separateTemporary: true,
   })
-  const temporaryDocuments = activeDocuments.filter(isTemporaryDocument)
-  const folderMoveUnavailablePaths = allDocuments.flatMap((item) => {
-    if (item.kind === "conflict") return [item.pathKey]
-    return supportsManagedFolderMove(item) ? [] : [item.path]
-  })
-  const folderArchiveUnavailablePaths = allDocuments.flatMap((item) => {
-    if (item.kind === "conflict") return [item.pathKey]
-    return supportsManagedFolderArchive(item) ? [] : [item.path]
-  })
-  const folderDeleteUnavailablePaths = allDocuments.flatMap((item) => {
-    if (item.kind === "conflict") return [item.pathKey]
-    return supportsManagedFolderDelete(item) ? [] : [item.path]
-  })
-  const htmlDocumentPaths = new Set(
-    allDocuments.flatMap((item) =>
-      item.kind === "document" && specializedDocumentView(item) === "html"
+  const index = spaceDocumentIndex({ documents, docs })
+  const { temporaryCount, temporaryPaths, archivedPaths } = useMemo(() => {
+    const temporary = documents.filter(
+      (item) => !documentListItemArchived(item) && isTemporaryDocument(item)
+    )
+    const archivedDocumentPaths = documents.flatMap((item) =>
+      item.kind === "document" && documentListItemArchived(item)
         ? [item.path]
         : []
     )
+    return {
+      temporaryCount: temporary.length,
+      temporaryPaths: new Set(
+        temporary.flatMap((item) =>
+          item.kind === "document" ? [item.path] : []
+        )
+      ),
+      archivedPaths: new Set(archivedDocumentPaths),
+    }
+  }, [documents])
+
+  const canDrop = useStableCallback(
+    (target: TreeNode) =>
+      drag !== null &&
+      target.path !== drag.path &&
+      parentOf(target.path) === parentOf(drag.path) &&
+      // Folders stay grouped before leaves, so cross-group drops would have no
+      // visible effect. Every common document format otherwise shares ordering.
+      target.isFolder === drag.isFolder
   )
 
-  const canDrop = (target: TreeNode) =>
-    drag !== null &&
-    target.path !== drag.path &&
-    parentOf(target.path) === parentOf(drag.path) &&
-    // Folders stay grouped before leaves, so cross-group drops would have no
-    // visible effect. Every common document format otherwise shares ordering.
-    target.isFolder === drag.isFolder
-
-  const handleDrop = () => {
+  const handleDrop = useStableCallback(() => {
     if (!dragPath || !dropHint) return
     const parent = parentOf(dragPath)
     const siblings = findSiblings(tree, parent)
@@ -1388,14 +1452,13 @@ function SpaceTreeSection({
     const targetIdx = rest.findIndex((n) => n.path === dropHint.path)
     if (targetIdx === -1) return
     rest.splice(targetIdx + (dropHint.after ? 1 : 0), 0, moved)
-    siblings.splice(0, siblings.length, ...rest)
 
     // A drag always lands in custom mode: the captured order is exactly the
     // display order the user just arranged, whatever mode produced it.
     // Entries not in the visible active tree (archived docs) keep their
     // original positions: walk the previous order, emitting untouched
     // entries as-is and active entries in their newly dragged sequence.
-    const activeOrder = flattenTreeOrder(tree)
+    const activeOrder = flattenTreeOrder(withSiblings(tree, parent, rest))
     const activeSet = new Set(activeOrder)
     const prevOrder = effectiveOrder ?? []
     const merged: string[] = []
@@ -1439,40 +1502,46 @@ function SpaceTreeSection({
         setLocalSort(null)
       }
     })
-  }
+  })
 
-  const reorder: DocReorder = {
-    dragPath,
-    dropHint,
-    canDrop,
-    onDragStart: (node) =>
-      setDrag({ path: node.path, isFolder: node.isFolder }),
-    onDragOver: (node, after) => {
-      setDropHint((prev) =>
-        prev?.path === node.path && prev.after === after
-          ? prev
-          : { path: node.path, after }
-      )
-    },
-    onClearHint: () => setDropHint(null),
-    onDrop: handleDrop,
-    onEnd: () => {
-      setDrag(null)
-      setDropHint(null)
-    },
-  }
+  // Stable while nothing is being dragged, so rows skip re-rendering.
+  const reorder = useMemo<DocReorder>(
+    () => ({
+      dragPath,
+      dropHint,
+      canDrop,
+      onDragStart: (node) =>
+        setDrag({ path: node.path, isFolder: node.isFolder }),
+      onDragOver: (node, after) => {
+        setDropHint((prev) =>
+          prev?.path === node.path && prev.after === after
+            ? prev
+            : { path: node.path, after }
+        )
+      },
+      onClearHint: () => setDropHint(null),
+      onDrop: handleDrop,
+      onEnd: () => {
+        setDrag(null)
+        setDropHint(null)
+      },
+    }),
+    [dragPath, dropHint, canDrop, handleDrop]
+  )
   // Use the common catalog so every archived format keeps its current row visible.
-  const hasArchivedCurrent = archivedDocuments.some(
-    (item) =>
-      item.kind === "document" &&
-      currentPath === `/spaces/${spaceId}/documents/${item.path}`
-  )
+  const hasArchivedCurrent = useRouterState({
+    select: (state) =>
+      archivedPaths.has(
+        routeDocumentPath(state.location.pathname, spaceId) ?? ""
+      ),
+  })
   const [archivedOpen, setArchivedOpen] = useState(hasArchivedCurrent)
-  const hasTemporaryCurrent = temporaryDocuments.some(
-    (item) =>
-      item.kind === "document" &&
-      currentPath === `/spaces/${spaceId}/documents/${item.path}`
-  )
+  const hasTemporaryCurrent = useRouterState({
+    select: (state) =>
+      temporaryPaths.has(
+        routeDocumentPath(state.location.pathname, spaceId) ?? ""
+      ),
+  })
   const [temporaryOpen, setTemporaryOpen] = useState(hasTemporaryCurrent)
 
   useEffect(() => {
@@ -1488,6 +1557,14 @@ function SpaceTreeSection({
   const hasContent =
     !isLoading &&
     (tree.length > 0 || temporaryTree.length > 0 || archivedTree.length > 0)
+  const rowProps = {
+    spaceId,
+    index,
+    onNewDoc,
+    onNavigate,
+    onRefresh,
+    onWidgetRefresh,
+  }
 
   return (
     <>
@@ -1510,17 +1587,7 @@ function SpaceTreeSection({
                 <TreeItem
                   key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
                   node={node}
-                  spaceId={spaceId}
-                  currentPath={currentPath}
-                  onNewDoc={onNewDoc}
-                  onNavigate={onNavigate}
-                  onRefresh={onRefresh}
-                  onWidgetRefresh={onWidgetRefresh}
-                  docs={activeDocs}
-                  htmlDocumentPaths={htmlDocumentPaths}
-                  folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-                  folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
-                  folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
+                  {...rowProps}
                   folderArchived={false}
                   reorder={reorder}
                 />
@@ -1540,9 +1607,7 @@ function SpaceTreeSection({
                   />
                   <Clock3 className="size-3 shrink-0" />
                   <span>Temporary</span>
-                  <span className="font-normal">
-                    {temporaryDocuments.length}
-                  </span>
+                  <span className="font-normal">{temporaryCount}</span>
                 </CollapsibleTrigger>
               </div>
               <CollapsibleContent>
@@ -1551,21 +1616,7 @@ function SpaceTreeSection({
                     <TreeItem
                       key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
                       node={node}
-                      spaceId={spaceId}
-                      currentPath={currentPath}
-                      onNewDoc={onNewDoc}
-                      onNavigate={onNavigate}
-                      onRefresh={onRefresh}
-                      onWidgetRefresh={onWidgetRefresh}
-                      docs={activeDocs}
-                      htmlDocumentPaths={htmlDocumentPaths}
-                      folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-                      folderArchiveUnavailablePaths={
-                        folderArchiveUnavailablePaths
-                      }
-                      folderDeleteUnavailablePaths={
-                        folderDeleteUnavailablePaths
-                      }
+                      {...rowProps}
                       folderArchived={false}
                     />
                   ))}
@@ -1594,21 +1645,7 @@ function SpaceTreeSection({
                     <TreeItem
                       key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
                       node={node}
-                      spaceId={spaceId}
-                      currentPath={currentPath}
-                      onNewDoc={onNewDoc}
-                      onNavigate={onNavigate}
-                      onRefresh={onRefresh}
-                      onWidgetRefresh={onWidgetRefresh}
-                      docs={archivedDocs}
-                      htmlDocumentPaths={htmlDocumentPaths}
-                      folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-                      folderArchiveUnavailablePaths={
-                        folderArchiveUnavailablePaths
-                      }
-                      folderDeleteUnavailablePaths={
-                        folderDeleteUnavailablePaths
-                      }
+                      {...rowProps}
                       folderArchived
                     />
                   ))}
@@ -1628,77 +1665,39 @@ function SpaceTreeSection({
 
 // ── Tree Item dispatcher (doc/folder vs widget leaf) ────────
 
-function TreeItem({
-  node,
-  spaceId,
-  currentPath,
-  depth,
-  onNewDoc,
-  onNavigate,
-  onRefresh,
-  onWidgetRefresh,
-  docs,
-  htmlDocumentPaths,
-  folderMoveUnavailablePaths,
-  folderArchiveUnavailablePaths,
-  folderDeleteUnavailablePaths,
-  folderArchived,
-  reorder,
-}: {
+interface TreeRowProps {
   node: TreeNode
   spaceId: string
-  currentPath: string
+  index: SpaceDocumentIndex
   depth?: number
   onNewDoc?: (folder?: string) => void
   onNavigate: () => void
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
-  docs: DocListEntry[]
-  htmlDocumentPaths: ReadonlySet<string>
-  folderMoveUnavailablePaths: string[]
-  folderArchiveUnavailablePaths: string[]
-  folderDeleteUnavailablePaths: string[]
   folderArchived: boolean
   reorder?: DocReorder
-}) {
+}
+
+/**
+ * One tree row. Memoized with stable props, so a row re-renders only when its
+ * own node, the catalog, a drag, or its relation to the route changes.
+ */
+const TreeItem = memo(function TreeItem(props: TreeRowProps) {
+  const { node, spaceId, index, onNavigate, onWidgetRefresh, reorder } = props
   const view = specializedDocumentView(node)
   if (view === "html" && !node.isFolder) {
     return (
       <WidgetTreeItem
         node={node}
         spaceId={spaceId}
-        currentPath={currentPath}
+        onNavigate={onNavigate}
         onRefresh={onWidgetRefresh}
         reorder={reorder}
       />
     )
   }
-  if (view === "doc" && !node.isFolder) {
-    const doc = docs.find(
-      (entry) =>
-        entry.path === node.path && !!entry.archived === !!node.archived
-    )
-    if (doc) {
-      return (
-        <DocTreeItem
-          node={node}
-          spaceId={spaceId}
-          currentPath={currentPath}
-          depth={depth}
-          onNewDoc={onNewDoc}
-          onNavigate={onNavigate}
-          onRefresh={onRefresh}
-          onWidgetRefresh={onWidgetRefresh}
-          docs={docs}
-          htmlDocumentPaths={htmlDocumentPaths}
-          folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-          folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
-          folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
-          folderArchived={folderArchived}
-          reorder={reorder}
-        />
-      )
-    }
+  if (view === "doc" && !node.isFolder && index.doc(node.path, node.archived)) {
+    return <DocTreeItem {...props} />
   }
   if (
     !node.isFolder &&
@@ -1708,43 +1707,22 @@ function TreeItem({
       <UnavailableDocumentTreeItem
         node={node}
         spaceId={spaceId}
-        currentPath={currentPath}
         onNavigate={onNavigate}
         reorder={reorder}
       />
     )
   }
-  return (
-    <DocTreeItem
-      node={node}
-      spaceId={spaceId}
-      currentPath={currentPath}
-      depth={depth}
-      onNewDoc={onNewDoc}
-      onNavigate={onNavigate}
-      onRefresh={onRefresh}
-      onWidgetRefresh={onWidgetRefresh}
-      docs={docs}
-      htmlDocumentPaths={htmlDocumentPaths}
-      folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-      folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
-      folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
-      folderArchived={folderArchived}
-      reorder={reorder}
-    />
-  )
-}
+  return <DocTreeItem {...props} />
+})
 
 function UnavailableDocumentTreeItem({
   node,
   spaceId,
-  currentPath,
   onNavigate,
   reorder,
 }: {
   node: TreeNode
   spaceId: string
-  currentPath: string
   onNavigate: () => void
   reorder?: DocReorder
 }) {
@@ -1754,7 +1732,9 @@ function UnavailableDocumentTreeItem({
   )
   // An entry without a working view reads as a plain file, whatever its format.
   const StateIcon = node.kind === "conflict" ? AlertTriangle : File
-  const isActive = currentPath === `/spaces/${spaceId}/documents/${node.path}`
+  const isActive = useIsCurrentRoute(
+    `${documentRoutePrefix(spaceId)}${node.path}`
+  )
   return (
     <div
       className={`relative rounded-md transition-colors ${
@@ -1788,82 +1768,43 @@ function UnavailableDocumentTreeItem({
 function DocTreeItem({
   node,
   spaceId,
-  currentPath,
+  index,
   depth = 0,
   onNewDoc,
   onNavigate,
   onRefresh,
   onWidgetRefresh,
-  docs,
-  htmlDocumentPaths,
-  folderMoveUnavailablePaths,
-  folderArchiveUnavailablePaths,
-  folderDeleteUnavailablePaths,
   folderArchived,
   reorder,
-}: {
-  node: TreeNode
-  spaceId: string
-  currentPath: string
-  depth?: number
-  onNewDoc?: (folder?: string) => void
-  onNavigate: () => void
-  onRefresh: () => Promise<void>
-  onWidgetRefresh: (widgetId?: string) => Promise<void>
-  docs: DocListEntry[]
-  htmlDocumentPaths: ReadonlySet<string>
-  folderMoveUnavailablePaths: string[]
-  folderArchiveUnavailablePaths: string[]
-  folderDeleteUnavailablePaths: string[]
-  folderArchived: boolean
-  reorder?: DocReorder
-}) {
-  const isMobile = useIsMobile()
-  const { setOpen } = useSidebar()
+}: TreeRowProps) {
   const navigate = useNavigate()
+  const router = useRouter()
 
   const view = specializedDocumentView(node)
   const docEntry =
-    view === "doc"
-      ? docs.find(
-          (doc) => doc.path === node.path && !!doc.archived === !!node.archived
-        )
-      : undefined
-  const documentRoutePrefix = `/spaces/${spaceId}/documents/`
-  const documentFullPath = `${documentRoutePrefix}${node.path}`
-  const isActive = currentPath === documentFullPath
+    view === "doc" ? index.doc(node.path, node.archived) : undefined
+  const documentFullPath = `${documentRoutePrefix(spaceId)}${node.path}`
   // A folder auto-expands when the current route lives under it — the active
   // item may be a doc OR a widget nested inside this folder.
-  const containsCurrent = currentPath.startsWith(`${documentFullPath}/`)
-  const currentDocumentPath = currentPath.startsWith(documentRoutePrefix)
-    ? currentPath.slice(documentRoutePrefix.length)
-    : undefined
-  const currentWidgetId =
-    currentDocumentPath && htmlDocumentPaths.has(currentDocumentPath)
-      ? currentDocumentPath
+  const relation = useRouteRelation(documentFullPath)
+  const isActive = relation === "self"
+  const containsCurrent = relation === "inside"
+  // An HTML doc open below this folder, read when a folder action needs it.
+  const openWidgetUnderNode = () => {
+    const openPath = routeDocumentPath(router.state.location.pathname, spaceId)
+    return openPath !== null &&
+      index.isHtmlDocument(openPath) &&
+      documentPathIsAtOrBelow(openPath, node.path)
+      ? openPath
       : undefined
-  const currentWidgetUnderNode =
-    currentWidgetId && documentPathIsAtOrBelow(currentWidgetId, node.path)
-      ? currentWidgetId
-      : undefined
-  const folderHasUnmovableDocuments =
-    node.isFolder &&
-    folderMoveUnavailablePaths.some((path) =>
-      documentPathIsAtOrBelow(path, node.path)
-    )
+  }
   const hasDocumentAtFolder = node.isFolder && node.kind !== "folder"
-  const folderMoveUnavailable = folderHasUnmovableDocuments
-  const folderHasUnarchivableDocuments =
-    node.isFolder &&
-    folderArchiveUnavailablePaths.some((path) =>
-      documentPathIsAtOrBelow(path, node.path)
-    )
-  const folderArchiveUnavailable = folderHasUnarchivableDocuments
+  const folderMoveUnavailable =
+    node.isFolder && !index.folderSupports(node.path, "move")
+  const folderArchiveUnavailable =
+    node.isFolder && !index.folderSupports(node.path, "archive")
   const folderDeleteUnavailable =
-    node.isFolder &&
-    folderDeleteUnavailablePaths.some((path) =>
-      documentPathIsAtOrBelow(path, node.path)
-    )
+    node.isFolder && !index.folderSupports(node.path, "delete")
   const exactDocumentArchived = (docEntry?.archived ?? node.archived) === true
   const archived = node.isFolder ? folderArchived : exactDocumentArchived
   const [open, setOpenState] = useState(containsCurrent || isActive)
@@ -1873,6 +1814,7 @@ function DocTreeItem({
 
   useEffect(() => {
     if (
+      node.isFolder &&
       (containsCurrent || isActive) &&
       !open &&
       !userCollapsedNodeRef.current
@@ -1882,7 +1824,7 @@ function DocTreeItem({
     if (!containsCurrent && !isActive) {
       userCollapsedNodeRef.current = false
     }
-  }, [containsCurrent, isActive, open])
+  }, [containsCurrent, isActive, open, node.isFolder])
 
   const handleToggleNode = (nextOpen: boolean) => {
     if (!nextOpen && (containsCurrent || isActive)) {
@@ -1891,11 +1833,8 @@ function DocTreeItem({
     setOpenState(nextOpen)
   }
 
-  const handleNavigate = () => {
-    if (isMobile) setOpen(false)
-  }
-
   const handleRename = async (newPath: string) => {
+    const openPath = router.state.location.pathname
     try {
       // The server slugifies the target, so follow its from→to mapping rather
       // than the human-typed newPath when re-navigating an open document.
@@ -1912,8 +1851,8 @@ function DocTreeItem({
         onRefresh(),
         ...(node.isFolder ? [onWidgetRefresh()] : []),
       ])
-      if (isActive || containsCurrent) {
-        const oldOpenPath = `${node.path}${currentPath.slice(documentFullPath.length)}`
+      if (routeRelation(openPath, documentFullPath)) {
+        const oldOpenPath = `${node.path}${openPath.slice(documentFullPath.length)}`
         const target = result.renamed?.find((r) => r.from === oldOpenPath)?.to
         if (target) {
           void navigate({
@@ -1938,9 +1877,13 @@ function DocTreeItem({
 
   const handleDelete = async (): Promise<boolean> => {
     try {
-      const navigateAfterDelete =
-        (node.isFolder && (isActive || containsCurrent)) ||
-        (!node.isFolder && currentPath === documentFullPath)
+      const openRelation = routeRelation(
+        router.state.location.pathname,
+        documentFullPath
+      )
+      const navigateAfterDelete = node.isFolder
+        ? openRelation !== null
+        : openRelation === "self"
       if (node.isFolder) {
         await deleteDocumentFolder(spaceId, node.path)
       } else {
@@ -1993,9 +1936,10 @@ function DocTreeItem({
   }
 
   const handleArchiveFolder = async () => {
+    const openWidget = openWidgetUnderNode()
     try {
       await archiveDocumentFolder(spaceId, node.path)
-      await Promise.all([onRefresh(), onWidgetRefresh(currentWidgetUnderNode)])
+      await Promise.all([onRefresh(), onWidgetRefresh(openWidget)])
       toast.success("Folder archived")
     } catch (error) {
       toast.error(folderLifecycleError(error, "Failed to archive folder"))
@@ -2003,9 +1947,10 @@ function DocTreeItem({
   }
 
   const handleRestoreFolder = async () => {
+    const openWidget = openWidgetUnderNode()
     try {
       await restoreDocumentFolder(spaceId, node.path)
-      await Promise.all([onRefresh(), onWidgetRefresh(currentWidgetUnderNode)])
+      await Promise.all([onRefresh(), onWidgetRefresh(openWidget)])
       toast.success("Folder restored")
     } catch (error) {
       toast.error(folderLifecycleError(error, "Failed to restore folder"))
@@ -2102,7 +2047,6 @@ function DocTreeItem({
                   widgetId={node.path}
                   documentName={node.label}
                   archived={exactDocumentArchived}
-                  currentPath={currentPath}
                   onRefresh={onWidgetRefresh}
                   onNewDoc={onNewDoc ? () => onNewDoc(node.path) : undefined}
                   onRenameFolder={
@@ -2158,17 +2102,12 @@ function DocTreeItem({
                   key={`${child.kind}:${child.isFolder ? "f" : "l"}:${child.path}`}
                   node={child}
                   spaceId={spaceId}
-                  currentPath={currentPath}
+                  index={index}
                   depth={depth + 1}
                   onNewDoc={onNewDoc}
                   onNavigate={onNavigate}
                   onRefresh={onRefresh}
                   onWidgetRefresh={onWidgetRefresh}
-                  docs={docs}
-                  htmlDocumentPaths={htmlDocumentPaths}
-                  folderMoveUnavailablePaths={folderMoveUnavailablePaths}
-                  folderArchiveUnavailablePaths={folderArchiveUnavailablePaths}
-                  folderDeleteUnavailablePaths={folderDeleteUnavailablePaths}
                   folderArchived={folderArchived}
                   reorder={reorder}
                 />
@@ -2206,7 +2145,7 @@ function DocTreeItem({
         <Link
           to="/spaces/$spaceId/documents/$"
           params={{ spaceId, _splat: node.path }}
-          onClick={handleNavigate}
+          onClick={onNavigate}
           draggable={false}
           className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm sm:min-h-0 ${
             isActive
@@ -2262,10 +2201,76 @@ function DocTreeItem({
 
 const STORAGE_KEY = "worktable-active-group"
 
+type ShellSection = "home" | "threads" | "activity" | null
+
+function shellSection(pathname: string): ShellSection {
+  if (pathname === "/") return "home"
+  if (pathname.startsWith("/threads")) return "threads"
+  return pathname === "/activity" ? "activity" : null
+}
+
+/**
+ * Auto-switch group when navigating to a space in a different group.
+ * Only triggers on path changes (not manual group switches) by tracking
+ * the previous path. This prevents the effect from fighting the user
+ * when they switch groups while viewing a doc in the old group. Its own
+ * component, so following the route does not re-render the sidebar.
+ */
+function FollowSpaceGroup({
+  spaces,
+  activeGroup,
+  onGroupChange,
+}: {
+  spaces: SpaceFile[] | undefined
+  activeGroup: string | null
+  onGroupChange: (group: string) => void
+}) {
+  const currentPath = useRouterState({ select: (s) => s.location.pathname })
+  const prevPathRef = useRef(currentPath)
+  useEffect(() => {
+    if (currentPath === prevPathRef.current) return
+    prevPathRef.current = currentPath
+    if (!spaces || !activeGroup) return
+    const match = currentPath.match(/^\/spaces\/([^/]+)/)
+    if (!match) return
+    const spaceId = match[1]
+    const space = spaces.find((s) => s.id === spaceId)
+    if (space?.group && space.group !== activeGroup) {
+      onGroupChange(space.group)
+    }
+  }, [currentPath, spaces, activeGroup, onGroupChange])
+  return null
+}
+
+function SidebarSearchPanel({
+  query,
+  onNavigate,
+  ref,
+}: {
+  query: string
+  onNavigate: () => void
+  ref?: Ref<SidebarSearchResultsHandle>
+}) {
+  const currentPath = useRouterState({ select: (s) => s.location.pathname })
+  return (
+    <SidebarSearchResults
+      ref={ref}
+      query={query}
+      currentPath={currentPath}
+      onNavigate={onNavigate}
+    />
+  )
+}
+
 export function AppSidebar() {
   const { data: spaces, isLoading: spacesLoading } = useSpaces()
-  const currentPath = useRouterState({
-    select: (s) => s.location.pathname,
+  // Select only what the shell shows, so navigating between documents does
+  // not re-render the sidebar: rows follow the route themselves.
+  const section = useRouterState({
+    select: (s) => shellSection(s.location.pathname),
+  })
+  const currentSpaceId = useRouterState({
+    select: (s) => s.location.pathname.match(/^\/spaces\/([^/]+)/)?.[1] ?? null,
   })
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
@@ -2277,7 +2282,6 @@ export function AppSidebar() {
   const [searchQuery, setSearchQuery] = useState("")
   const searching = searchQuery.trim().length > 0
   const searchResultsRef = useRef<SidebarSearchResultsHandle>(null)
-  const currentSpaceId = currentPath.match(/^\/spaces\/([^/]+)/)?.[1] ?? null
 
   // Active group filter (persisted in localStorage)
   const [activeGroup, setActiveGroup] = useState<string | null>(() => {
@@ -2288,7 +2292,7 @@ export function AppSidebar() {
     }
   })
 
-  const handleGroupChange = (group: string | null) => {
+  const handleGroupChange = useCallback((group: string | null) => {
     setActiveGroup(group)
     try {
       if (group) {
@@ -2299,25 +2303,7 @@ export function AppSidebar() {
     } catch {
       // localStorage unavailable
     }
-  }
-
-  // Auto-switch group when navigating to a space in a different group.
-  // Only triggers on path changes (not manual group switches) by tracking
-  // the previous path. This prevents the effect from fighting the user
-  // when they switch groups while viewing a doc in the old group.
-  const prevPathRef = useRef(currentPath)
-  useEffect(() => {
-    if (currentPath === prevPathRef.current) return
-    prevPathRef.current = currentPath
-    if (!spaces || !activeGroup) return
-    const match = currentPath.match(/^\/spaces\/([^/]+)/)
-    if (!match) return
-    const spaceId = match[1]
-    const space = spaces.find((s) => s.id === spaceId)
-    if (space?.group && space.group !== activeGroup) {
-      handleGroupChange(space.group)
-    }
-  }, [currentPath, spaces, activeGroup])
+  }, [])
 
   // Every Space socket hears spaces_changed; keeping the first Space's socket
   // open lets the shared socket refresh the Spaces list when any Space changes.
@@ -2382,6 +2368,11 @@ export function AppSidebar() {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
+      <FollowSpaceGroup
+        spaces={spaces}
+        activeGroup={activeGroup}
+        onGroupChange={handleGroupChange}
+      />
       {/* Header */}
       <div
         data-tauri-drag-region="deep"
@@ -2417,10 +2408,9 @@ export function AppSidebar() {
       >
         {searching ? (
           <div className="px-2 py-3">
-            <SidebarSearchResults
+            <SidebarSearchPanel
               ref={searchResultsRef}
               query={searchQuery}
-              currentPath={currentPath}
               onNavigate={() => {
                 if (isMobile) setOpen(false)
               }}
@@ -2433,7 +2423,7 @@ export function AppSidebar() {
               to="/"
               onClick={handleNavigateHome}
               className={`mx-1 mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
-                currentPath === "/"
+                section === "home"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
               }`}
@@ -2450,7 +2440,7 @@ export function AppSidebar() {
                 if (isMobile) setOpen(false)
               }}
               className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
-                currentPath.startsWith("/threads")
+                section === "threads"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
               }`}
@@ -2465,7 +2455,7 @@ export function AppSidebar() {
                 if (isMobile) setOpen(false)
               }}
               className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
-                currentPath === "/activity"
+                section === "activity"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
               }`}
@@ -2518,11 +2508,7 @@ export function AppSidebar() {
                 {activeSpaces.length > 0 && (
                   <div className="space-y-0.5">
                     {activeSpaces.map((space) => (
-                      <SpaceSection
-                        key={space.id}
-                        space={space}
-                        currentPath={currentPath}
-                      />
+                      <SpaceSection key={space.id} space={space} />
                     ))}
                   </div>
                 )}
@@ -2547,11 +2533,7 @@ export function AppSidebar() {
                     <CollapsibleContent>
                       <div className="space-y-0.5">
                         {archivedSpaces.map((space) => (
-                          <SpaceSection
-                            key={space.id}
-                            space={space}
-                            currentPath={currentPath}
-                          />
+                          <SpaceSection key={space.id} space={space} />
                         ))}
                       </div>
                     </CollapsibleContent>

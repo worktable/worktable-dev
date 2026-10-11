@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
 import {
   abandonableRead,
   authenticatedFetch,
+  CSRF_WAIT_MS,
   fetchJSON,
   getFreshBrowserCsrfToken,
+  prefetchBrowserCsrfToken,
 } from "./http.ts"
 
 const realFetch = globalThis.fetch
@@ -20,7 +22,42 @@ async function forgetCachedCsrfToken() {
 
 beforeEach(forgetCachedCsrfToken)
 
+/**
+ * A Cloud gateway whose session read answers `token` only when released, and
+ * which refuses a change without that token.
+ */
+function slowCloudSession(token: string) {
+  const requests: Request[] = []
+  let releaseSession!: () => void
+  const sessionReleased = new Promise<void>((resolve) => {
+    releaseSession = resolve
+  })
+  globalThis.fetch = (async (input, init) => {
+    const request = new Request(
+      input instanceof Request
+        ? input
+        : new URL(String(input), "https://app.worktable.cloud"),
+      init
+    )
+    requests.push(request)
+    if (new URL(request.url).pathname === "/gateway/session") {
+      await sessionReleased
+      return Response.json({ authenticated: true, csrfToken: token })
+    }
+    return request.headers.get("X-Worktable-CSRF") === token
+      ? Response.json({ ok: true })
+      : Response.json({ code: "CSRF_REQUIRED" }, { status: 403 })
+  }) as typeof fetch
+  const changes = () => requests.filter((request) => request.method === "POST")
+  return { requests, changes, releaseSession }
+}
+
+async function settle(done: () => boolean) {
+  for (let turn = 0; turn < 100 && !done(); turn++) await Promise.resolve()
+}
+
 afterEach(() => {
+  jest.useRealTimers()
   globalThis.fetch = realFetch
 })
 
@@ -61,6 +98,72 @@ describe("authenticatedFetch", () => {
     expect(requests[2]?.headers.get("X-Worktable-CSRF")).toBe(
       "csrf-from-session"
     )
+  })
+
+  it("sends the first change on Cloud with the token read at boot", async () => {
+    const { requests, releaseSession } = slowCloudSession("csrf-boot")
+
+    prefetchBrowserCsrfToken()
+    // A change made while the session read is still in flight waits for it.
+    const change = authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}" }
+    )
+    releaseSession()
+    expect((await change).status).toBe(200)
+    expect(
+      (
+        await authenticatedFetch("https://app.worktable.cloud/api/spaces", {
+          method: "POST",
+          body: "{}",
+        })
+      ).status
+    ).toBe(200)
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+      "/gateway/session",
+      "/api/spaces",
+      "/api/spaces",
+    ])
+  })
+
+  it("sends a change without the token when the session read stalls, then retries", async () => {
+    jest.useFakeTimers()
+    const { changes, releaseSession } = slowCloudSession("csrf-late")
+    void getFreshBrowserCsrfToken()
+
+    const change = authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}" }
+    )
+    jest.advanceTimersByTime(CSRF_WAIT_MS - 1)
+    await settle(() => changes().length > 0)
+    expect(changes()).toHaveLength(0)
+    jest.advanceTimersByTime(1)
+    await settle(() => changes().length > 0)
+    expect(changes()[0]?.headers.get("X-Worktable-CSRF")).toBeNull()
+
+    releaseSession()
+    expect((await change).status).toBe(200)
+    expect(changes().map((c) => c.headers.get("X-Worktable-CSRF"))).toEqual([
+      null,
+      "csrf-late",
+    ])
+  })
+
+  it("stops waiting for the session read when the change is abandoned", async () => {
+    const { changes, releaseSession } = slowCloudSession("csrf-unused")
+    const session = getFreshBrowserCsrfToken()
+    const controller = new AbortController()
+
+    const change = authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}", signal: controller.signal }
+    )
+    controller.abort()
+    await expect(change).rejects.toThrow()
+    releaseSession()
+    await session
+    expect(changes()).toHaveLength(0)
   })
 
   it("does not involve Cloud CSRF for safe requests", async () => {

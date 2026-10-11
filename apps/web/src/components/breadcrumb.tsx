@@ -30,7 +30,7 @@ const crumbActionClass =
 
 export function Breadcrumb() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { pageMeta } = usePageMeta()
+  const pageMeta = usePageMeta()
   const crumbs = useBreadcrumbs()
   if (crumbs.length === 0) return null
 

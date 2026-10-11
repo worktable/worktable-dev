@@ -4,6 +4,7 @@ import { routeTree } from "./routeTree.gen";
 import { workspaceQueryOptions } from "./lib/queries";
 import { preloadOpeningDocumentRenderer } from "./lib/document-renderers";
 import { reloadWhenChunksAreGone, serverBuildIsNewer } from "./lib/build-version";
+import { installTrace } from "./lib/trace";
 
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -32,6 +33,10 @@ export function getRouter() {
     defaultPreload: "intent",
     scrollRestoration: true,
   });
+  installTrace(
+    queryClient,
+    () => router.state.matches.at(-1)?.routeId ?? "unknown"
+  );
 
   if (typeof window !== "undefined") {
     reloadWhenChunksAreGone();

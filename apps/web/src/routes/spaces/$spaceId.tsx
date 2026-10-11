@@ -5,7 +5,7 @@ import {
   useMatchRoute,
   useRouter,
 } from "@tanstack/react-router"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Archive, Database, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import type {
@@ -381,13 +381,11 @@ function SpaceDetailPage() {
   const matchRoute = useMatchRoute()
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const reconcileRouteAfterReconnect = useCallback(
     () => router.invalidate(),
     [router]
   )
 
-  useEffect(() => setMounted(true), [])
   useSpaceSubscription(spaceId, {
     reconcileRoute: reconcileRouteAfterReconnect,
   })
@@ -457,7 +455,7 @@ function SpaceDetailPage() {
     )
   }
 
-  if (!mounted || isLoading) {
+  if (isLoading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 lg:py-10">
         <div className="space-y-3">

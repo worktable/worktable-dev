@@ -65,6 +65,16 @@ export function buildTree(
   options?: TreeBuildOptions
 ): TreeNode[] {
   const root: TreeNode[] = [];
+  // Each level's nodes by name, so placing a path costs one lookup per segment.
+  const levels = new Map<TreeNode[], Map<string, TreeNode>>();
+  const namesAt = (level: TreeNode[]) => {
+    let names = levels.get(level);
+    if (!names) {
+      names = new Map();
+      levels.set(level, names);
+    }
+    return names;
+  };
 
   for (const item of items) {
     const path = typeof item === "string" ? item : item.path;
@@ -90,7 +100,8 @@ export function buildTree(
 
       // The catalog has already resolved the common namespace: one logical
       // path becomes one document, one inert conflict, or one implicit folder.
-      let node = current.find((n) => n.name === part);
+      const names = namesAt(current);
+      let node = names.get(part);
       if (!node) {
         node = {
           name: part,
@@ -107,6 +118,7 @@ export function buildTree(
           children: [],
         };
         current.push(node);
+        names.set(part, node);
       } else {
         if (!isLast || options?.folderPaths?.has(currentPath)) {
           // This path has children here or in another projected cohort.

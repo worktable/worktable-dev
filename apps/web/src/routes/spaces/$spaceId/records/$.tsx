@@ -58,7 +58,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@workt
 import { CanonicalIdSchema, RecordPredicateOpSchema, type RecordFile, type RecordQuery } from "@worktable/types"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useRecordFieldColumns } from "@/hooks/use-record-field-columns"
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta } from "@/hooks/use-page-meta"
 import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
@@ -1583,7 +1583,7 @@ function persistTableState(spaceId: string, collectionId: string, state: Persist
 }
 
 function RecordsPageMeta({ name, collectionId, updatedAt }: { name: string; collectionId: string; updatedAt?: string }) {
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
 
   useEffect(() => {
     setPageMeta({

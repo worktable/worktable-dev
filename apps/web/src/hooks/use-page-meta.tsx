@@ -80,19 +80,24 @@ export function narrowHeaderAction(
   return null
 }
 
-export interface PageMetaContextValue {
-  pageMeta: PageMeta | null
-  setPageMeta: (meta: PageMeta | null) => void
+// Pages set their meta; the shell header reads it. Separate contexts keep a
+// page that only sets meta from re-rendering whenever the header changes.
+export const PageMetaContext = createContext<PageMeta | null>(null)
+
+export const SetPageMetaContext = createContext<
+  ((meta: PageMeta | null) => void) | undefined
+>(undefined)
+
+/** The open page's header meta. */
+export function usePageMeta(): PageMeta | null {
+  return useContext(PageMetaContext)
 }
 
-export const PageMetaContext = createContext<PageMetaContextValue | undefined>(
-  undefined
-)
-
-export function usePageMeta() {
-  const context = useContext(PageMetaContext)
-  if (!context) {
-    throw new Error("usePageMeta must be used within PageMetaContext")
+/** Set the open page's header meta, without subscribing to it. */
+export function useSetPageMeta(): (meta: PageMeta | null) => void {
+  const setPageMeta = useContext(SetPageMetaContext)
+  if (!setPageMeta) {
+    throw new Error("useSetPageMeta must be used within SetPageMetaContext")
   }
-  return context
+  return setPageMeta
 }

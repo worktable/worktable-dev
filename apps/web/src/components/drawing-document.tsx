@@ -16,7 +16,7 @@ import {
 } from "@worktable/types"
 import { useTheme } from "@/components/theme-provider"
 import { useSpaceEvents } from "@/hooks/use-space-events"
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta } from "@/hooks/use-page-meta"
 import {
   readEditableDocument,
   writeDocumentSource,
@@ -75,7 +75,7 @@ function DrawingEditor({
   const [conflictError, setConflictError] = useState(false)
   const { resolvedTheme } = useTheme()
   const initialTheme = useRef(resolvedTheme)
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
   const { subscribe } = useSpaceEvents(spaceId)
   const queryClient = useQueryClient()
   const navigate = useNavigate()

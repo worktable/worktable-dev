@@ -3,7 +3,13 @@ import type {
   DocumentListItem,
   SpaceFile,
 } from "@worktable/types"
-import { documentPathKey } from "./document-views"
+import {
+  documentPathKey,
+  specializedDocumentView,
+  supportsManagedFolderArchive,
+  supportsManagedFolderDelete,
+  supportsManagedFolderMove,
+} from "./document-views"
 import { buildTree } from "./tree"
 import type { DocSortMode, TreeInput, TreeNode } from "./tree"
 
@@ -49,13 +55,12 @@ export function documentFolderPaths(items: DocumentListItem[]): Set<string> {
 export function documentTreeInputResolver(
   docs: DocListEntry[]
 ): (item: DocumentListItem) => TreeInput {
-  const docDetails = new Map(docs.map((doc) => [doc.path, doc]))
+  const index = buildSpaceDocumentIndex({ documents: [], docs })
   const legacyDocFor = (
     item: Extract<DocumentListItem, { kind: "document" }>
   ) => {
-    const candidate = docDetails.get(item.path)
+    const candidate = index.doc(item.path, item.archived)
     return candidate &&
-      !!candidate.archived === !!item.archived &&
       ((item.format.id === "worktable.markdown" &&
         candidate.format === "markdown") ||
         (item.format.id === "worktable.rich-text" &&
@@ -132,6 +137,143 @@ export function buildSpaceDocumentTrees({
       : [],
     archived: build(documents.filter(documentListItemArchived)),
   }
+}
+
+export type FolderOperation = "move" | "archive" | "delete"
+
+const FOLDER_OPERATIONS: Record<
+  FolderOperation,
+  (item: DocumentListItem) => boolean
+> = {
+  move: supportsManagedFolderMove,
+  archive: supportsManagedFolderArchive,
+  delete: supportsManagedFolderDelete,
+}
+
+/** Lookups a tree row needs, built once per catalog read. */
+export interface SpaceDocumentIndex {
+  /** The legacy list entry for a Markdown or rich-text document. */
+  doc(path: string, archived: boolean | undefined): DocListEntry | undefined
+  /** Whether the catalog has an HTML document at this exact path. */
+  isHtmlDocument(path: string): boolean
+  /** Whether everything at or below the path supports the folder operation. */
+  folderSupports(path: string, operation: FolderOperation): boolean
+}
+
+function archiveKey(path: string, archived: unknown): string {
+  return `${archived ? "archived" : "active"}:${path}`
+}
+
+/** The path's key and each of its ancestors' keys. */
+function pathKeyAndAncestors(path: string): string[] {
+  const segments = documentPathKey(path).split("/")
+  return segments.map((_, index) => segments.slice(0, index + 1).join("/"))
+}
+
+export function buildSpaceDocumentIndex({
+  documents,
+  docs,
+}: {
+  documents: DocumentListItem[]
+  docs: DocListEntry[]
+}): SpaceDocumentIndex {
+  const docEntries = new Map<string, DocListEntry>()
+  for (const doc of docs) {
+    const key = archiveKey(doc.path, doc.archived)
+    if (!docEntries.has(key)) docEntries.set(key, doc)
+  }
+  const htmlPaths = new Set(
+    documents.flatMap((item) =>
+      item.kind === "document" && specializedDocumentView(item) === "html"
+        ? [item.path]
+        : []
+    )
+  )
+  // A folder operation is unavailable when any entry at or below the folder
+  // cannot take part: record each such entry's path and all its ancestors.
+  const unavailable: Record<FolderOperation, Set<string>> = {
+    move: new Set(),
+    archive: new Set(),
+    delete: new Set(),
+  }
+  for (const item of documents) {
+    const path = item.kind === "conflict" ? item.pathKey : item.path
+    for (const operation of ["move", "archive", "delete"] as const) {
+      if (item.kind === "conflict" || !FOLDER_OPERATIONS[operation](item)) {
+        for (const key of pathKeyAndAncestors(path)) {
+          unavailable[operation].add(key)
+        }
+      }
+    }
+  }
+  return {
+    doc: (path, archived) => docEntries.get(archiveKey(path, archived)),
+    isHtmlDocument: (path) => htmlPaths.has(path),
+    folderSupports: (path, operation) =>
+      !unavailable[operation].has(documentPathKey(path)),
+  }
+}
+
+// The sidebar and the header both present a Space's catalog. Each reads the
+// same cached query results, so build once per read and share the result
+// across components and renders instead of rebuilding per render.
+interface CachedBuild<T> {
+  docs: DocListEntry[]
+  variant: string
+  value: T
+}
+
+function cachedBuild<T>(
+  cache: WeakMap<DocumentListItem[], CachedBuild<T>[]>,
+  input: { documents: DocumentListItem[]; docs: DocListEntry[] },
+  variant: string,
+  build: () => T
+): T {
+  const entries = cache.get(input.documents) ?? []
+  const hit = entries.find(
+    (entry) => entry.docs === input.docs && entry.variant === variant
+  )
+  if (hit) return hit.value
+  const value = build()
+  // A few variants per read: the sidebar's and the header's trees, and a
+  // pending custom order while a drag saves.
+  cache.set(input.documents, [
+    { docs: input.docs, variant, value },
+    ...entries.slice(0, 3),
+  ])
+  return value
+}
+
+const treeCache = new WeakMap<
+  DocumentListItem[],
+  CachedBuild<SpaceDocumentTrees>[]
+>()
+const indexCache = new WeakMap<
+  DocumentListItem[],
+  CachedBuild<SpaceDocumentIndex>[]
+>()
+
+/** `buildSpaceDocumentTrees`, shared while its inputs are the same reads. */
+export function spaceDocumentTrees(
+  input: Parameters<typeof buildSpaceDocumentTrees>[0]
+): SpaceDocumentTrees {
+  const variant = [
+    input.sort,
+    input.separateTemporary ? "separate" : "together",
+    ...(input.order ?? []),
+  ].join("\n")
+  return cachedBuild(treeCache, input, variant, () =>
+    buildSpaceDocumentTrees(input)
+  )
+}
+
+/** `buildSpaceDocumentIndex`, shared while its inputs are the same reads. */
+export function spaceDocumentIndex(
+  input: Parameters<typeof buildSpaceDocumentIndex>[0]
+): SpaceDocumentIndex {
+  return cachedBuild(indexCache, input, "", () =>
+    buildSpaceDocumentIndex(input)
+  )
 }
 
 export function findTreeNode(

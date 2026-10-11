@@ -77,13 +77,19 @@ import { themeBootstrapScript } from "@/lib/theme"
 import { ThemeProvider, useTheme } from "@/components/theme-provider"
 import {
   usePageLifecyclePersistence,
-  useDiscardRecovery,
-  ReconnectingOverlay,
+  DiscardRecoveryOverlay,
+  useRestoreDiscardedPage,
 } from "@/hooks/use-page-lifecycle"
-import { PageMetaContext, narrowHeaderAction } from "@/hooks/use-page-meta"
+import {
+  PageMetaContext,
+  SetPageMetaContext,
+  narrowHeaderAction,
+  usePageMeta,
+} from "@/hooks/use-page-meta"
 import { Breadcrumb } from "@/components/breadcrumb"
 import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
+import { TraceProfiler } from "@/components/trace-profiler"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 const Onboarding = lazy(() =>
@@ -269,7 +275,9 @@ function MobileSidebarOverlay({
         }`}
       >
         <Suspense fallback={null}>
-          <AppSidebar />
+          <TraceProfiler id="sidebar">
+            <AppSidebar />
+          </TraceProfiler>
         </Suspense>
       </div>
     </>
@@ -317,6 +325,7 @@ function RootLayoutWithProviders() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <WorkspaceTitle />
       <ThemeProvider>
         <WorkspaceStorageGate>
           <RootLayout />
@@ -328,8 +337,48 @@ function RootLayoutWithProviders() {
 
 // ── Root Layout ──────────────────────────────────────────────
 
-function RootLayout() {
+/**
+ * Holds the open page's header meta. A change re-renders only the header
+ * parts that read it, not the shell or the page that set it.
+ */
+function PageMetaProvider({ children }: { children: ReactNode }) {
+  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
+  return (
+    <SetPageMetaContext.Provider value={setPageMeta}>
+      <PageMetaContext.Provider value={pageMeta}>
+        {children}
+      </PageMetaContext.Provider>
+    </SetPageMetaContext.Provider>
+  )
+}
+
+/**
+ * Tab-title prefix for non-daily workspaces (cheapest unmistakable signal),
+ * on every screen including onboarding and loading. Re-applied after each
+ * navigation, where TanStack's HeadContent resets the document title to the
+ * static root "Worktable".
+ */
+function WorkspaceTitle() {
+  const mode = useWorkspace().data?.mode
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  useEffect(() => {
+    const prefix =
+      mode === "sandbox"
+        ? "Sandbox · "
+        : mode === "staging"
+          ? "Staging · "
+          : mode === "fixture"
+            ? "Fixture · "
+            : ""
+    document.title = `${prefix}Worktable`
+  }, [mode, pathname])
+  return null
+}
+
+function RootLayout() {
+  const isLoginPage = useRouterState({
+    select: (s) => s.location.pathname === "/login",
+  })
   const isMobile = useIsMobile()
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
   const [workspaceChanged, setWorkspaceChanged] = useState(false)
@@ -339,7 +388,6 @@ function RootLayout() {
     return () =>
       window.removeEventListener("worktable:workspace-changed", reset)
   }, [])
-  const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>()
   const router = useRouter()
@@ -347,7 +395,7 @@ function RootLayout() {
 
   // Phase 4: Page lifecycle persistence
   usePageLifecyclePersistence(router)
-  const { reconnecting } = useDiscardRecovery()
+  const discarded = useRestoreDiscardedPage()
   useMobileVisualViewport(isMobile)
 
   // Settings actions can arrive before the deferred sidebar mounts. The shell
@@ -375,23 +423,8 @@ function RootLayout() {
     []
   )
 
-  // Tab-title prefix for non-daily workspaces (cheapest unmistakable signal). Keyed on
-  // pathname too so it re-applies after navigation, where TanStack's HeadContent resets
-  // the document title to the static root "Worktable".
   const workspaceQuery = useWorkspace()
   const workspace = workspaceQuery.data
-  const titlePathname = useRouterState({ select: (s) => s.location.pathname })
-  useEffect(() => {
-    const prefix =
-      workspace?.mode === "sandbox"
-        ? "Sandbox · "
-        : workspace?.mode === "staging"
-          ? "Staging · "
-          : workspace?.mode === "fixture"
-            ? "Fixture · "
-            : ""
-    document.title = `${prefix}Worktable`
-  }, [workspace?.mode, titlePathname])
 
   // Close sidebar on mobile when route changes
   useEffect(() => {
@@ -473,10 +506,6 @@ function RootLayout() {
   }, [])
 
   const mainScrollRef = useScrollFade<HTMLElement>(8, { top: false })
-  const primaryAction = pageMeta?.primaryAction
-  const PrimaryActionIcon = primaryAction?.icon ?? Pencil
-  const secondaryAction = pageMeta?.secondaryAction
-  const SecondaryActionIcon = secondaryAction?.icon
 
   // Document metadata updates the header repeatedly during opening. It should
   // not rebuild the whole navigation tree or invalidate its sidebar context.
@@ -487,7 +516,7 @@ function RootLayout() {
 
   // The login page renders bare, outside the sidebar/header chrome. Keep all
   // hooks above this branch so hook order stays stable across renders.
-  if (pathname === "/login") {
+  if (isLoginPage) {
     return <Outlet />
   }
 
@@ -505,10 +534,9 @@ function RootLayout() {
   }
 
   return (
-    <PageMetaContext.Provider value={{ pageMeta, setPageMeta }}>
+    <PageMetaProvider>
       <SidebarContext.Provider value={sidebarCtx}>
         <WorkspaceOperationObserver />
-        <ReconnectingOverlay show={reconnecting} />
         <div
           data-worktable-app-shell
           data-worktable-sidebar-open={sidebarOpen ? "true" : "false"}
@@ -536,7 +564,9 @@ function RootLayout() {
                 style={{ width: sidebarResize.size }}
               >
                 <Suspense fallback={null}>
-                  <AppSidebar />
+                  <TraceProfiler id="sidebar">
+                    <AppSidebar />
+                  </TraceProfiler>
                 </Suspense>
               </div>
             </aside>
@@ -566,180 +596,52 @@ function RootLayout() {
           {/* Main column */}
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Header */}
-            <header
-              data-tauri-drag-region="deep"
-              data-worktable-app-header
-              className="glass sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-border/60 px-3 transition-[padding-left] duration-300 ease-in-out select-none sm:pr-4 print:hidden"
-              style={{
-                background: "oklch(from var(--background) l c h / 0.75)",
-                paddingTop: "env(safe-area-inset-top, 0px)",
-                minHeight: "calc(3rem + env(safe-area-inset-top, 0px))",
-              }}
-            >
-              {/* Desktop sidebar toggle */}
-              {!isMobile && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={toggle}
-                  aria-label="Toggle sidebar"
-                  className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  <PanelLeft className="size-4" />
-                </Button>
-              )}
-
-              {/* Logo icon (mobile only) */}
-              {isMobile && (
-                <Link
-                  to="/"
-                  aria-label="Worktable home"
-                  className="flex items-center"
-                >
-                  <WorktableAppIcon className="size-7" />
-                </Link>
-              )}
-
-              {/* Breadcrumb */}
-              <div className="min-w-0 flex-1">
-                {isMobile ? <PageMenu /> : <Breadcrumb />}
-              </div>
-
-              {/* Narrow screens keep one action; the page menu holds the rest. */}
-              {secondaryAction &&
-                SecondaryActionIcon &&
-                (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
+            <TraceProfiler id="header">
+              <header
+                data-tauri-drag-region="deep"
+                data-worktable-app-header
+                className="glass sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-border/60 px-3 transition-[padding-left] duration-300 ease-in-out select-none sm:pr-4 print:hidden"
+                style={{
+                  background: "oklch(from var(--background) l c h / 0.75)",
+                  paddingTop: "env(safe-area-inset-top, 0px)",
+                  minHeight: "calc(3rem + env(safe-area-inset-top, 0px))",
+                }}
+              >
+                {/* Desktop sidebar toggle */}
+                {!isMobile && (
                   <Button
-                    variant={secondaryAction.displayLabel ? "outline" : "ghost"}
-                    size={secondaryAction.displayLabel ? "sm" : "icon"}
-                    className={
-                      secondaryAction.displayLabel
-                        ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
-                        : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                    }
-                    onClick={secondaryAction.onClick}
-                    aria-label={secondaryAction.label}
-                    title={secondaryAction.label}
-                    disabled={
-                      secondaryAction.disabled || secondaryAction.pending
-                    }
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggle}
+                    aria-label="Toggle sidebar"
+                    className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
                   >
-                    {secondaryAction.pending ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <SecondaryActionIcon className="size-4" />
-                    )}
-                    {secondaryAction.displayLabel ? (
-                      <span className="hidden sm:inline">
-                        {secondaryAction.displayLabel}
-                      </span>
-                    ) : null}
+                    <PanelLeft className="size-4" />
                   </Button>
                 )}
 
-              {!isMobile && pageMeta?.annotations && (
-                <Button
-                  variant={pageMeta.annotations.open ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={pageMeta.annotations.onToggle}
-                  aria-label={`${pageMeta.annotations.count} open annotations`}
-                  aria-pressed={pageMeta.annotations.open}
-                  className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
-                >
-                  <MessageSquareText className="size-4" />
-                  <span className="text-xs tabular-nums">
-                    {pageMeta.annotations.count}
-                  </span>
-                </Button>
-              )}
-
-              {primaryAction && (
-                <Button
-                  size="sm"
-                  className="h-8 shrink-0 gap-1.5 px-2.5"
-                  onClick={primaryAction.onClick}
-                  aria-label={primaryAction.label}
-                  title={primaryAction.label}
-                  disabled={primaryAction.disabled || primaryAction.pending}
-                >
-                  <PrimaryActionIcon className="size-3.5" />
-                  <span className="hidden sm:inline">
-                    {primaryAction.pending
-                      ? (primaryAction.pendingLabel ?? primaryAction.label)
-                      : primaryAction.label}
-                  </span>
-                </Button>
-              )}
-
-              {!isMobile && pageMeta?.document && (
-                <DocumentLifetimeChip
-                  key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
-                  spaceId={pageMeta.document.spaceId}
-                  path={pageMeta.document.path}
-                />
-              )}
-
-              {!isMobile && pageMeta?.shareTarget && (
-                <ShareDocumentAction
-                  key={`${pageMeta.shareTarget.kind}:${pageMeta.shareTarget.spaceId}:${pageMeta.shareTarget.artifactKey}`}
-                  target={pageMeta.shareTarget}
-                />
-              )}
-
-              {!isMobile &&
-              (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    aria-label="More actions"
-                    title="More actions"
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    render={<button type="button" />}
+                {/* Logo icon (mobile only) */}
+                {isMobile && (
+                  <Link
+                    to="/"
+                    aria-label="Worktable home"
+                    className="flex items-center"
                   >
-                    <MoreHorizontal className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    sideOffset={4}
-                    className="min-w-44"
-                  >
-                    {(pageMeta.overflowActions ?? []).map((action) => {
-                      const ActionIcon = action.icon
-                      return (
-                        <Fragment key={action.id}>
-                          {action.separatorBefore ? (
-                            <DropdownMenuSeparator />
-                          ) : null}
-                          <DropdownMenuItem
-                            disabled={action.disabled}
-                            variant={
-                              action.tone === "destructive"
-                                ? "destructive"
-                                : undefined
-                            }
-                            onClick={action.onSelect}
-                          >
-                            <ActionIcon className="mr-2 size-4" />
-                            {action.label}
-                          </DropdownMenuItem>
-                        </Fragment>
-                      )
-                    })}
-                    {pageMeta.document && (
-                      <DocumentOrganizeMenuItems
-                        spaceId={pageMeta.document.spaceId}
-                        path={pageMeta.document.path}
-                        separatorBefore={Boolean(
-                          pageMeta.overflowActions?.length
-                        )}
-                      />
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
+                    <WorktableAppIcon className="size-7" />
+                  </Link>
+                )}
 
-              {/* Mobile hamburger on the right */}
-              {isMobile && <MobileSidebarToggle onClick={toggle} />}
-            </header>
+                {/* Breadcrumb */}
+                <div className="min-w-0 flex-1">
+                  {isMobile ? <PageMenu /> : <Breadcrumb />}
+                </div>
+
+                <PageHeaderActions isMobile={isMobile} />
+
+                {/* Mobile hamburger on the right */}
+                {isMobile && <MobileSidebarToggle onClick={toggle} />}
+              </header>
+            </TraceProfiler>
 
             {/* Main content */}
             <main
@@ -747,7 +649,9 @@ function RootLayout() {
               className="scroll-fade flex-1 overflow-y-auto"
               style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
             >
-              <Outlet />
+              <TraceProfiler id="outlet">
+                <Outlet />
+              </TraceProfiler>
             </main>
           </div>
         </div>
@@ -759,7 +663,146 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
+        {/* Last, so a socket the page opens on mount counts as reconnecting. */}
+        <DiscardRecoveryOverlay discarded={discarded} />
       </SidebarContext.Provider>
-    </PageMetaContext.Provider>
+    </PageMetaProvider>
   )
 }
+
+/** The open page's header actions, from the meta it set. */
+const PageHeaderActions = memo(function PageHeaderActions({
+  isMobile,
+}: {
+  isMobile: boolean
+}) {
+  const pageMeta = usePageMeta()
+  const primaryAction = pageMeta?.primaryAction
+  const PrimaryActionIcon = primaryAction?.icon ?? Pencil
+  const secondaryAction = pageMeta?.secondaryAction
+  const SecondaryActionIcon = secondaryAction?.icon
+
+  return (
+    <>
+      {/* Narrow screens keep one action; the page menu holds the rest. */}
+      {secondaryAction &&
+        SecondaryActionIcon &&
+        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") && (
+          <Button
+            variant={secondaryAction.displayLabel ? "outline" : "ghost"}
+            size={secondaryAction.displayLabel ? "sm" : "icon"}
+            className={
+              secondaryAction.displayLabel
+                ? "h-8 shrink-0 gap-1.5 px-2.5 max-sm:size-8 max-sm:px-0"
+                : "size-8 shrink-0 text-muted-foreground hover:text-foreground"
+            }
+            onClick={secondaryAction.onClick}
+            aria-label={secondaryAction.label}
+            title={secondaryAction.label}
+            disabled={secondaryAction.disabled || secondaryAction.pending}
+          >
+            {secondaryAction.pending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <SecondaryActionIcon className="size-4" />
+            )}
+            {secondaryAction.displayLabel ? (
+              <span className="hidden sm:inline">
+                {secondaryAction.displayLabel}
+              </span>
+            ) : null}
+          </Button>
+        )}
+
+      {!isMobile && pageMeta?.annotations && (
+        <Button
+          variant={pageMeta.annotations.open ? "secondary" : "ghost"}
+          size="sm"
+          onClick={pageMeta.annotations.onToggle}
+          aria-label={`${pageMeta.annotations.count} open annotations`}
+          aria-pressed={pageMeta.annotations.open}
+          className="h-8 shrink-0 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+        >
+          <MessageSquareText className="size-4" />
+          <span className="text-xs tabular-nums">
+            {pageMeta.annotations.count}
+          </span>
+        </Button>
+      )}
+
+      {primaryAction && (
+        <Button
+          size="sm"
+          className="h-8 shrink-0 gap-1.5 px-2.5"
+          onClick={primaryAction.onClick}
+          aria-label={primaryAction.label}
+          title={primaryAction.label}
+          disabled={primaryAction.disabled || primaryAction.pending}
+        >
+          <PrimaryActionIcon className="size-3.5" />
+          <span className="hidden sm:inline">
+            {primaryAction.pending
+              ? (primaryAction.pendingLabel ?? primaryAction.label)
+              : primaryAction.label}
+          </span>
+        </Button>
+      )}
+
+      {!isMobile && pageMeta?.document && (
+        <DocumentLifetimeChip
+          key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
+          spaceId={pageMeta.document.spaceId}
+          path={pageMeta.document.path}
+        />
+      )}
+
+      {!isMobile && pageMeta?.shareTarget && (
+        <ShareDocumentAction
+          key={`${pageMeta.shareTarget.kind}:${pageMeta.shareTarget.spaceId}:${pageMeta.shareTarget.artifactKey}`}
+          target={pageMeta.shareTarget}
+        />
+      )}
+
+      {!isMobile &&
+      (pageMeta?.overflowActions?.length || pageMeta?.document) ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="More actions"
+            title="More actions"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            render={<button type="button" />}
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" sideOffset={4} className="min-w-44">
+            {(pageMeta.overflowActions ?? []).map((action) => {
+              const ActionIcon = action.icon
+              return (
+                <Fragment key={action.id}>
+                  {action.separatorBefore ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem
+                    disabled={action.disabled}
+                    variant={
+                      action.tone === "destructive" ? "destructive" : undefined
+                    }
+                    onClick={action.onSelect}
+                  >
+                    <ActionIcon className="mr-2 size-4" />
+                    {action.label}
+                  </DropdownMenuItem>
+                </Fragment>
+              )
+            })}
+            {pageMeta.document && (
+              <DocumentOrganizeMenuItems
+                spaceId={pageMeta.document.spaceId}
+                path={pageMeta.document.path}
+                separatorBefore={Boolean(pageMeta.overflowActions?.length)}
+              />
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </>
+  )
+})

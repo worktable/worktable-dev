@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react"
+import { useNavigate } from "@tanstack/react-router"
 import {
   ArrowLeftIcon,
   CircleAlertIcon,
@@ -47,7 +48,7 @@ import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import { toast } from "@worktable/ui/components/sonner"
 
-import { usePageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta } from "@/hooks/use-page-meta"
 import type { ThreadListScope } from "@/lib/threads-api"
 import {
   useThread,
@@ -84,7 +85,7 @@ import {
 } from "@/lib/thread-submission"
 import { NewThreadPanel } from "./new-thread-panel"
 import { ThreadComposer } from "./thread-composer"
-import { ThreadList } from "./thread-list"
+import { ThreadList, type ThreadLink } from "./thread-list"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 import { ThreadTimeline } from "./thread-timeline"
 
@@ -97,7 +98,8 @@ export interface ThreadsViewProps {
   headerControl?: ReactNode
   locationControl?: ReactNode
   locationLabel: (location: ThreadLocation) => string
-  onNavigateThread: (location: ThreadLocation, threadId: string) => void
+  /** Where each thread opens; rows link there, so hovering preloads it. */
+  threadLink: ThreadLink
   onNavigateNew: () => void
 }
 
@@ -144,7 +146,7 @@ function WorkspaceThreadsView({
   headerControl,
   locationControl,
   locationLabel,
-  onNavigateThread,
+  threadLink,
   onNavigateNew,
   workspaceId,
   mobileNewOpen,
@@ -168,7 +170,8 @@ function WorkspaceThreadsView({
   const [sendFailure, setSendFailure] = useState<SendFailure>()
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const onNavigateNewRef = useRef(onNavigateNew)
-  const { setPageMeta } = usePageMeta()
+  const setPageMeta = useSetPageMeta()
+  const navigate = useNavigate()
   const threadListResize = useResizable({
     edge: "right",
     defaultSize: 360,
@@ -456,7 +459,14 @@ function WorkspaceThreadsView({
           body,
           idempotencyKey: submission.idempotencyKey,
         })
-        onNavigateThread(result.location, result.threadId)
+        const target = threadLink(result.location, result.threadId)
+        void (target.to === "/threads/$"
+          ? navigate({
+              to: target.to,
+              params: target.params,
+              search: target.search,
+            })
+          : navigate({ to: target.to, params: target.params }))
       }
 
       commitDrafts((current) => {
@@ -604,7 +614,7 @@ function WorkspaceThreadsView({
           error={threadsQuery.isError}
           showLocations={showLocations}
           locationLabel={locationLabel}
-          onNavigate={onNavigateThread}
+          threadLink={threadLink}
           onNew={() => navigateNew(true)}
           onRetry={() => void threadsQuery.refetch()}
         />

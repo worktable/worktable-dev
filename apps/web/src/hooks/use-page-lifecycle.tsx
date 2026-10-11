@@ -5,12 +5,18 @@
  * and restores it on page load if the page was discarded by the browser.
  *
  * This makes mobile page-discard/reload seamless: the user returns
- * to the same page they were on, with a brief "Reconnecting..." state
- * instead of the full loading screen.
+ * to the same page they were on, with a "Reconnecting..." state while its
+ * live connection comes back, instead of the full loading screen.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { AnyRouter } from "@tanstack/react-router";
+import {
+  connectionSummary,
+  subscribeConnectionSummary,
+  waitForConnectionRecovery,
+  type ConnectionSummary,
+} from "@/lib/connection-status";
 
 const LIFECYCLE_KEY = "worktable-page-lifecycle";
 
@@ -59,60 +65,70 @@ export function usePageLifecyclePersistence(router: AnyRouter) {
   }, [router]);
 }
 
+const NO_CONNECTIONS = (): ConnectionSummary => "idle";
+
 /**
- * On page load, check if the page was discarded and restore the route.
- * Returns { wasDiscarded, restoredRoute } so the UI can show appropriate state.
+ * On page load, check whether the browser discarded the page, and if so
+ * restore the route it was on. Call once, in the root layout.
  */
-export function useDiscardRecovery(): {
-  wasDiscarded: boolean;
-  reconnecting: boolean;
-} {
-  const [reconnecting, setReconnecting] = useState(false);
+export function useRestoreDiscardedPage(): boolean {
+  const [discarded] = useState(restoreDiscardedPage);
+  return discarded;
+}
 
-  // Check once on mount
-  const [wasDiscarded] = useState(() => {
-    // SSR guard — document doesn't exist on the server
-    if (typeof document === "undefined") return false;
-    // document.wasDiscarded is true if the browser discarded the page
-    const discarded = (document as unknown as { wasDiscarded?: boolean }).wasDiscarded === true;
+function restoreDiscardedPage(): boolean {
+  // SSR guard — document doesn't exist on the server
+  if (typeof document === "undefined") return false;
+  // document.wasDiscarded is true if the browser discarded the page
+  const discarded =
+    (document as unknown as { wasDiscarded?: boolean }).wasDiscarded === true;
 
-    if (discarded) {
-      try {
-        const raw = sessionStorage.getItem(LIFECYCLE_KEY);
-        if (raw) {
-          const state: LifecycleState = JSON.parse(raw);
-          const age = Date.now() - state.timestamp;
-          // Only restore if saved within last 30 minutes
-          if (age < 30 * 60 * 1000 && state.route !== window.location.pathname) {
-            // Navigate to the saved route
-            window.history.replaceState(null, "", state.route);
-          }
+  if (discarded) {
+    try {
+      const raw = sessionStorage.getItem(LIFECYCLE_KEY);
+      if (raw) {
+        const state: LifecycleState = JSON.parse(raw);
+        const age = Date.now() - state.timestamp;
+        // Only restore if saved within last 30 minutes
+        if (age < 30 * 60 * 1000 && state.route !== window.location.pathname) {
+          // Navigate to the saved route
+          window.history.replaceState(null, "", state.route);
         }
-      } catch {
-        // Ignore parse errors
       }
+    } catch {
+      // Ignore parse errors
     }
+  }
 
-    return discarded;
-  });
+  return discarded;
+}
 
-  useEffect(() => {
-    if (wasDiscarded) {
-      setReconnecting(true);
-      // Auto-clear reconnecting state after connections are likely restored
-      const timer = setTimeout(() => setReconnecting(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [wasDiscarded]);
+/**
+ * After the browser discarded the page, shows "Reconnecting..." while its
+ * live connection comes back, for at most a few seconds. Other page loads
+ * render nothing and subscribe to nothing.
+ */
+export function DiscardRecoveryOverlay({ discarded }: { discarded: boolean }) {
+  const [recovering, setRecovering] = useState(discarded);
+  const recovered = useCallback(() => setRecovering(false), []);
+  return recovering ? <ConnectionRecovery onRecovered={recovered} /> : null;
+}
 
-  return { wasDiscarded, reconnecting };
+function ConnectionRecovery({ onRecovered }: { onRecovered: () => void }) {
+  const connection = useSyncExternalStore(
+    subscribeConnectionSummary,
+    connectionSummary,
+    NO_CONNECTIONS
+  );
+  useEffect(() => waitForConnectionRecovery(onRecovered), [onRecovered]);
+  return <ReconnectingOverlay show={connection === "connecting"} />;
 }
 
 /**
  * Reconnecting overlay component for use in root layout.
  * Shows a subtle overlay when the page was discarded and is recovering.
  */
-export function ReconnectingOverlay({ show }: { show: boolean }) {
+function ReconnectingOverlay({ show }: { show: boolean }) {
   if (!show) return null;
 
   return (

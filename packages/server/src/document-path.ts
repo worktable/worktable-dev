@@ -86,8 +86,34 @@ export function remapDocumentPathPrefix(
   return [replacementPath, ...suffix].join("/")
 }
 
+const UNSAFE_CODES: ReadonlySet<DocumentPathDiagnosticCode> = new Set([
+  "empty",
+  "absolute",
+  "backslash",
+  "empty-segment",
+  "dot-segment",
+  "traversal",
+  "encoded-separator",
+  "nul",
+  "segment-too-long",
+  "ill-formed-unicode",
+  "inspection-limit",
+  "encoding-depth",
+])
+
+const PORTABILITY_CODES: ReadonlySet<DocumentPathDiagnosticCode> = new Set([
+  ...UNSAFE_CODES,
+  "path-too-long",
+  "windows-reserved",
+  "windows-invalid-character",
+  "trailing-dot-or-space",
+  "registered-extension",
+])
+
+const utf8 = new TextEncoder()
+
 function byteLength(value: string): number {
-  return new TextEncoder().encode(value).byteLength
+  return utf8.encode(value).byteLength
 }
 
 function isWellFormedUnicode(value: string): boolean {
@@ -141,7 +167,35 @@ function pushOnce(
   diagnostics.push(diagnostic)
 }
 
+const ANALYSIS_MEMO_MAX_ENTRIES = 10_000
+const analyses = new Map<string, DocumentPathAnalysis>()
+
+/**
+ * Analyze a logical path. The result depends only on the arguments, and
+ * lists ask about the same paths many times, so recent results are kept;
+ * every caller still receives its own copy.
+ */
 export function analyzeDocumentPath(
+  input: string,
+  options?: { enforceNewPathGrammar?: boolean }
+): DocumentPathAnalysis {
+  if (input.length > DOCUMENT_PATH_MAX_BYTES) {
+    return analyzeDocumentPathUncached(input, options)
+  }
+  const key = `${options?.enforceNewPathGrammar ? 1 : 0}${input}`
+  let analysis = analyses.get(key)
+  if (!analysis) {
+    analysis = analyzeDocumentPathUncached(input, options)
+    if (analyses.size >= ANALYSIS_MEMO_MAX_ENTRIES) analyses.clear()
+    analyses.set(key, analysis)
+  }
+  return {
+    ...analysis,
+    diagnostics: analysis.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+  }
+}
+
+function analyzeDocumentPathUncached(
   input: string,
   options?: { enforceNewPathGrammar?: boolean }
 ): DocumentPathAnalysis {
@@ -244,33 +298,11 @@ export function analyzeDocumentPath(
     }
   }
 
-  const unsafeCodes = new Set<DocumentPathDiagnosticCode>([
-    "empty",
-    "absolute",
-    "backslash",
-    "empty-segment",
-    "dot-segment",
-    "traversal",
-    "encoded-separator",
-    "nul",
-    "segment-too-long",
-    "ill-formed-unicode",
-    "inspection-limit",
-    "encoding-depth",
-  ])
-  const portabilityCodes = new Set<DocumentPathDiagnosticCode>([
-    ...unsafeCodes,
-    "path-too-long",
-    "windows-reserved",
-    "windows-invalid-character",
-    "trailing-dot-or-space",
-    "registered-extension",
-  ])
   const safe = !diagnostics.some((diagnostic) =>
-    unsafeCodes.has(diagnostic.code)
+    UNSAFE_CODES.has(diagnostic.code)
   )
   const portable = !diagnostics.some((diagnostic) =>
-    portabilityCodes.has(diagnostic.code)
+    PORTABILITY_CODES.has(diagnostic.code)
   )
 
   return {

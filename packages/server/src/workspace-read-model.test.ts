@@ -19,6 +19,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import { ownerIdentity } from "./auth.ts"
+import { readDocumentPage } from "./document-page-service.ts"
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
 import { createRegisteredDocument } from "./document-write-service.ts"
 import { listDocuments } from "./document-query.ts"
@@ -75,6 +76,17 @@ async function listed(
         : []
     )
   )
+}
+
+function openPage(path: string) {
+  return readDocumentPage({
+    spaceId,
+    path,
+    includeArchived: true,
+    rawSourceAuthorized: false,
+    annotationsAuthorized: false,
+    sharingAuthorized: false,
+  })
 }
 
 async function eventually(check: () => Promise<boolean>): Promise<void> {
@@ -198,6 +210,9 @@ describe("workspace read model", () => {
   it("follows other processes' edits to metadata and layout files at once", async () => {
     const metaPath = spacePath(spaceId, "docs.meta.json")
     const manifestPath = join(root, "worktable.workspace.json")
+    const aliasPath = spacePath(spaceId, "doc-aliases.json")
+    const aliases = (exact: Record<string, string>) =>
+      JSON.stringify({ type: "worktable.doc-aliases", version: 1, exact, prefixes: {} })
     await writeFile(
       metaPath,
       JSON.stringify({
@@ -205,10 +220,20 @@ describe("workspace read model", () => {
         docs: { "notes/a": { createdAt: "2026-01-01T00:00:00.000Z" } },
       })
     )
-    await settle(metaPath)
-    await settle(manifestPath)
+    await writeFile(aliasPath, aliases({}))
+    // Past the racy window, parsed files are kept while their fingerprints
+    // hold, so only the fingerprints can show these edits.
+    setSystemTime(new Date(Date.now() + 60_000))
     expect([...(await listed()).keys()]).toEqual(["notes/a"])
     expect(await usesDocumentVersionStoreV2()).toBe(true)
+    expect(await openPage("notes/old")).toBeNull()
+
+    // git brings in a rename made on another machine.
+    await writeFile(aliasPath, aliases({ "notes/old": "notes/a" }))
+    expect(await openPage("notes/old")).toMatchObject({
+      kind: "document",
+      resolvedFrom: "notes/old",
+    })
 
     // The CLI or a stdio agent archives the document by editing the file in
     // place; no watcher is running to report it.

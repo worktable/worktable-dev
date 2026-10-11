@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import type { BigIntStats, Stats } from "node:fs"
 import { lstat } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import type {
@@ -15,9 +16,9 @@ import {
   type SourceClaimDiagnostic,
 } from "./document-adapters.ts"
 import {
+  createDocAliasReservationLookup,
+  createDocAliasResolver,
   readDocAliasesAt,
-  reservedByAliasIn,
-  resolveDocAliasIn,
   type DocAliases,
 } from "./doc-aliases.ts"
 import {
@@ -25,7 +26,14 @@ import {
   readDocumentInventoryAt,
   inspectDocumentSource,
   type DocumentInventoryDiagnostic,
+  type DocumentInventoryEntry,
 } from "./document-inventory.ts"
+import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import {
+  fingerprintOf,
+  readTreeFingerprints,
+  type FileFingerprint,
+} from "./file-fingerprint.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import {
   htmlDocumentTitleFromProperties,
@@ -42,6 +50,7 @@ import {
   type DocumentStorageProfileId,
 } from "./document-storage-profile.ts"
 import { timing } from "./request-timing.ts"
+import { documentPortableStateV2Directory } from "./workspace-storage-v2.ts"
 
 export interface DocumentHandle {
   documentId: DocumentId
@@ -94,7 +103,7 @@ export type DocumentCatalogEntry = CatalogDocumentEntry | CatalogConflictEntry
 export interface DocumentCatalog {
   entries: DocumentCatalogEntry[]
   aliases: DocAliases
-  inventoryDiagnostics: DocumentInventoryDiagnostic[]
+  inventoryDiagnostics: readonly DocumentInventoryDiagnostic[]
   provenCoreBundleIdentities: ReadonlySet<string>
   /**
    * Saved properties read for durable V2 HTML Doc titles, so a listing of
@@ -106,6 +115,224 @@ export interface DocumentCatalog {
 
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
+}
+
+// ============================================================
+// Reading files once
+// ============================================================
+//
+// A build asks the filesystem about each path at most once, and its
+// independent per-document questions run concurrently. Files that are parsed
+// (the inventory, the alias file, HTML Doc portable state) are kept parsed
+// while their full fingerprint (lstat: type, device, inode, size, change and
+// modification times) stays the same; a file changed within the racy window
+// is always read again. Each build still inspects every file, so a cached
+// parse is exactly what reading the file now would return. That makes the
+// caches safe for writers too: unlike a read-model snapshot, nothing here is
+// trusted because of a signal or an age.
+
+const CATALOG_IO_CONCURRENCY = 32
+
+type BuildLstat = (path: string) => Promise<BigIntStats>
+
+/** An lstat that answers each path once for the rest of one build. */
+function createBuildLstat(): BuildLstat {
+  const answers = new Map<string, Promise<BigIntStats>>()
+  return (path) => {
+    let answer = answers.get(path)
+    if (!answer) {
+      answer = lstat(path, { bigint: true })
+      // Each caller awaits its answer; a shared rejection is not unhandled.
+      answer.catch(() => undefined)
+      answers.set(path, answer)
+    }
+    return answer
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+/** The file's fingerprint, or null when it does not exist. */
+async function buildFingerprint(
+  lstatPath: BuildLstat,
+  path: string,
+  observedAt: number
+): Promise<FileFingerprint | null> {
+  try {
+    return fingerprintOf(await lstatPath(path), observedAt)
+  } catch (error) {
+    if (isMissing(error)) return null
+    throw error
+  }
+}
+
+interface ParsedFile<T> {
+  key: string
+  value: T
+}
+
+/**
+ * Reuse a parse of `path` while its fingerprint is unchanged. Values are
+ * frozen by `parse` and shared by every build that reads the same file.
+ */
+async function readParsed<T>(
+  cache: Map<string, ParsedFile<T>>,
+  lstatPath: BuildLstat,
+  path: string,
+  parse: () => Promise<T>
+): Promise<T> {
+  const fingerprint = await buildFingerprint(lstatPath, path, Date.now())
+  const cached = cache.get(path)
+  if (fingerprint && cached?.key === fingerprint.key) return cached.value
+  cache.delete(path)
+  const value = await parse()
+  if (fingerprint && !fingerprint.racy) {
+    cache.set(path, { key: fingerprint.key, value })
+  }
+  return value
+}
+
+type InventoryClaimEntry = Readonly<Omit<DocumentInventoryEntry, "raw">>
+
+interface CatalogInventory {
+  entries: readonly InventoryClaimEntry[]
+  diagnostics: readonly DocumentInventoryDiagnostic[]
+}
+
+const parsedInventories = new Map<string, ParsedFile<CatalogInventory>>()
+const parsedAliases = new Map<
+  string,
+  ParsedFile<Awaited<ReturnType<typeof readDocAliasesAt>>>
+>()
+
+async function readCatalogInventory(
+  spaceRoot: string,
+  lstatPath: BuildLstat
+): Promise<CatalogInventory> {
+  const path = resolve(spaceRoot, "documents.meta.json")
+  return readParsed(parsedInventories, lstatPath, path, async () => {
+    const inventory = await readDocumentInventoryAt(path, spaceRoot)
+    return Object.freeze({
+      entries: Object.freeze(
+        [...inventory.entries.values()].map(
+          ({ documentId, path, format, source }) =>
+            Object.freeze({
+              documentId,
+              path,
+              format: Object.freeze({ ...format }),
+              source: Object.freeze({ ...source }),
+            })
+        )
+      ),
+      diagnostics: Object.freeze(
+        inventory.diagnostics.map((diagnostic) =>
+          Object.freeze({ ...diagnostic })
+        )
+      ),
+    })
+  })
+}
+
+async function readCatalogAliases(
+  spaceRoot: string,
+  lstatPath: BuildLstat
+): Promise<Awaited<ReturnType<typeof readDocAliasesAt>>> {
+  const path = resolve(spaceRoot, "doc-aliases.json")
+  return readParsed(parsedAliases, lstatPath, path, async () => {
+    const result = await readDocAliasesAt(path)
+    if (result.aliases) {
+      Object.freeze(result.aliases.exact)
+      Object.freeze(result.aliases.prefixes)
+      Object.freeze(result.aliases)
+    }
+    return Object.freeze(result)
+  })
+}
+
+interface HtmlPropertiesView {
+  /** Null when the saved properties are unavailable. */
+  read: HtmlDocumentPropertiesRead | null
+  /** The title they give the Doc, if any. */
+  title: string | undefined
+  /**
+   * The logical path and every portable state file's fingerprint, or null
+   * when they changed too recently to identify the properties.
+   */
+  key: string | null
+}
+
+const parsedHtmlProperties = new Map<string, HtmlPropertiesView>()
+
+/** Identify a durable V2 HTML Doc's saved properties without reading them. */
+async function htmlPropertiesKey(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  path: string
+}): Promise<string | null> {
+  const stateRoot = documentPortableStateV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  try {
+    const state = await readTreeFingerprints({ files: [], trees: [stateRoot] })
+    return state.racy
+      ? null
+      : JSON.stringify([input.path, [...state.keys].sort()])
+  } catch {
+    // Read them fresh; the reader reports what is wrong.
+    return null
+  }
+}
+
+/**
+ * Saved properties of a durable V2 HTML Doc and the title they give it,
+ * re-read only when its logical path or any file of its portable state
+ * changed.
+ */
+async function readCatalogHtmlProperties(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  path: string
+}): Promise<HtmlPropertiesView> {
+  const stateRoot = documentPortableStateV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  const key = await htmlPropertiesKey(input)
+  const cached = parsedHtmlProperties.get(stateRoot)
+  if (key !== null && cached?.key === key) return cached
+  parsedHtmlProperties.delete(stateRoot)
+  let view: HtmlPropertiesView
+  try {
+    const read = deepFreeze(await readHtmlDocumentPropertiesV2(input))
+    view = { read, title: htmlDocumentTitleFromProperties(read, input.path), key }
+  } catch {
+    // Unavailable optional display metadata must not hide the source.
+    view = { read: null, title: undefined, key }
+  }
+  if (key !== null) parsedHtmlProperties.set(stateRoot, view)
+  return view
+}
+
+/** Freeze a parsed value; binary views cannot be frozen and are left as is. */
+function deepFreeze<T>(value: T): T {
+  if (
+    value &&
+    typeof value === "object" &&
+    !ArrayBuffer.isView(value) &&
+    !Object.isFrozen(value)
+  ) {
+    Object.freeze(value)
+    for (const nested of Object.values(value)) deepFreeze(nested)
+  }
+  return value
 }
 
 function provisionalDocumentId(
@@ -170,29 +397,32 @@ function registeredFileLogicalPath(
   )
 }
 
-function filesystemIdentity(info: Awaited<ReturnType<typeof lstat>>): string {
+function filesystemIdentity(info: Stats | BigIntStats): string {
   return `${info.dev}:${info.ino}`
 }
 
 async function inspectSourceOwnership(
   spaceRoot: string,
   source: DocumentSource,
-  identities: ReadonlySet<string>
+  identities: ReadonlySet<string>,
+  lstatPath: BuildLstat
 ): Promise<{ ownedByCoreBundle: boolean; updatedAt?: string }> {
   let current: string | null = source.relativePath
   let updatedAt: string | undefined
   while (current) {
     try {
-      const info = await lstat(resolve(spaceRoot, current))
+      const info = await lstatPath(resolve(spaceRoot, current))
       if (
         current === source.relativePath &&
         source.kind === "file" &&
         info.isFile() &&
-        !info.isSymbolicLink() &&
-        Number.isFinite(info.mtimeMs)
+        !info.isSymbolicLink()
       ) {
         updatedAt = info.mtime.toISOString()
       }
+      // Only a proven core bundle can own a source; without one, its
+      // ancestors need no inspection.
+      if (identities.size === 0) break
       if (!info.isSymbolicLink() && identities.has(filesystemIdentity(info))) {
         return {
           ownedByCoreBundle: true,
@@ -200,8 +430,8 @@ async function inspectSourceOwnership(
         }
       }
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error
+      if (!isMissing(error)) throw error
+      if (identities.size === 0) break
     }
     const separator = current.lastIndexOf("/")
     current = separator === -1 ? null : current.slice(0, separator)
@@ -297,13 +527,14 @@ async function provenCoreBundleSnapshot(
 async function isLegacyHtmlBundle(
   spaceRoot: string,
   relativePath: string,
-  bundleRoot: string
+  bundleRoot: string,
+  lstatPath: BuildLstat
 ): Promise<boolean> {
   let ancestor = resolve(spaceRoot, "widgets")
   for (const segment of relativePath.split("/").slice(1, -1)) {
     ancestor = join(ancestor, segment)
     try {
-      await lstat(join(ancestor, "widget.yaml"))
+      await lstatPath(join(ancestor, "widget.yaml"))
       return false
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
@@ -312,7 +543,7 @@ async function isLegacyHtmlBundle(
   }
   for (const name of ["widget.yaml", "index.html"]) {
     try {
-      const info = await lstat(join(bundleRoot, name))
+      const info = await lstatPath(join(bundleRoot, name))
       if (!info.isFile() || info.isSymbolicLink()) return false
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code
@@ -327,8 +558,9 @@ async function inventoryClaims(
   spaceRoot: string,
   spaceId: string,
   legacyClaims: DocumentSourceClaim[],
-  aliases: DocAliases,
+  reservedByAlias: (path: string) => unknown,
   registry: DocumentFormatRegistry,
+  lstatPath: BuildLstat,
   signal?: AbortSignal
 ): Promise<{
   claims: Array<
@@ -337,19 +569,23 @@ async function inventoryClaims(
       identity: "durable" | "provisional"
     }
   >
-  diagnostics: DocumentInventoryDiagnostic[]
+  diagnostics: readonly DocumentInventoryDiagnostic[]
   provenCoreBundleIdentities: ReadonlySet<string>
 }> {
-  const inventory = await readDocumentInventoryAt(
-    resolve(spaceRoot, "documents.meta.json"),
-    spaceRoot
-  )
+  const inventory = await readCatalogInventory(spaceRoot, lstatPath)
   const provenCoreBundleIds = new Set<DocumentId>()
   const provenCoreBundleIdentities = new Set<string>()
   const provenCoreBundleUpdatedAt = new Map<DocumentId, string>()
-  for (const entry of inventory.entries.values()) {
-    signal?.throwIfAborted()
-    const snapshot = await provenCoreBundleSnapshot(spaceRoot, entry)
+  const snapshots = await mapWithConcurrency(
+    inventory.entries,
+    CATALOG_IO_CONCURRENCY,
+    (entry) => {
+      signal?.throwIfAborted()
+      return provenCoreBundleSnapshot(spaceRoot, entry)
+    }
+  )
+  inventory.entries.forEach((entry, index) => {
+    const snapshot = snapshots[index]
     if (snapshot) {
       provenCoreBundleIds.add(entry.documentId)
       provenCoreBundleIdentities.add(snapshot.identity)
@@ -357,15 +593,23 @@ async function inventoryClaims(
         provenCoreBundleUpdatedAt.set(entry.documentId, snapshot.updatedAt)
       }
     }
-  }
+  })
+  const ownership = await mapWithConcurrency(
+    legacyClaims,
+    CATALOG_IO_CONCURRENCY,
+    (claim) => {
+      signal?.throwIfAborted()
+      return inspectSourceOwnership(
+        spaceRoot,
+        claim.source,
+        provenCoreBundleIdentities,
+        lstatPath
+      )
+    }
+  )
   const visibleLegacyClaims: DocumentSourceClaim[] = []
-  for (const claim of legacyClaims) {
-    signal?.throwIfAborted()
-    const inspected = await inspectSourceOwnership(
-      spaceRoot,
-      claim.source,
-      provenCoreBundleIdentities
-    )
+  legacyClaims.forEach((claim, index) => {
+    const inspected = ownership[index]!
     if (!inspected.ownedByCoreBundle) {
       visibleLegacyClaims.push(
         claim.updatedAt || !inspected.updatedAt
@@ -373,9 +617,9 @@ async function inventoryClaims(
           : { ...claim, updatedAt: inspected.updatedAt }
       )
     }
-  }
+  })
   const bySource = new Map(
-    [...inventory.entries.values()].map((entry) => [
+    inventory.entries.map((entry) => [
       `${entry.source.kind}:${sourcePathKey(entry.source.relativePath)}`,
       entry,
     ])
@@ -421,99 +665,106 @@ async function inventoryClaims(
     })
   }
 
-  for (const entry of inventory.entries.values()) {
-    signal?.throwIfAborted()
-    if (consumed.has(entry.documentId)) continue
+  const unconsumed = inventory.entries.filter((entry) => {
+    if (consumed.has(entry.documentId)) return false
     const legacyPath = registeredFileLogicalPath(entry, registry)
-    if (legacyPath && reservedByAliasIn(aliases, legacyPath)) continue
-    const diagnostics: SourceClaimDiagnostic[] = []
-    const sourceValidation = await inspectDocumentSource(
-      spaceRoot,
-      entry.source
-    )
-    const sourceExists = sourceValidation.safe
-    let updatedAt = provenCoreBundleUpdatedAt.get(entry.documentId)
-    if (sourceValidation.safe && entry.source.kind === "file") {
-      const info = await lstat(sourceValidation.absolutePath).catch(() => null)
+    return !(legacyPath && reservedByAlias(legacyPath))
+  })
+  const inventoryOnly = await mapWithConcurrency(
+    unconsumed,
+    CATALOG_IO_CONCURRENCY,
+    async (entry) => {
+      signal?.throwIfAborted()
+      const diagnostics: SourceClaimDiagnostic[] = []
+      const sourceValidation = await inspectDocumentSource(
+        spaceRoot,
+        entry.source,
+        lstatPath
+      )
+      const sourceExists = sourceValidation.safe
+      let updatedAt = provenCoreBundleUpdatedAt.get(entry.documentId)
+      if (sourceValidation.safe && entry.source.kind === "file") {
+        const info = await lstatPath(sourceValidation.absolutePath).catch(
+          () => null
+        )
+        if (info?.isFile() && !info.isSymbolicLink()) {
+          updatedAt = info.mtime.toISOString()
+        }
+      }
+      if (!sourceValidation.safe) {
+        diagnostics.push({
+          severity: "error",
+          code: sourceValidation.message.includes("symbolic link")
+            ? "source-symlink"
+            : "inventory-source-missing",
+          message: sourceValidation.message,
+        })
+      }
       if (
-        info?.isFile() &&
-        !info.isSymbolicLink() &&
-        Number.isFinite(info.mtimeMs)
+        sourceExists &&
+        entry.source.kind === "bundle" &&
+        entry.source.relativePath.endsWith(".wtdoc") &&
+        !provenCoreBundleIds.has(entry.documentId)
       ) {
-        updatedAt = info.mtime.toISOString()
+        diagnostics.push({
+          severity: "error",
+          code: "bundle-manifest-mismatch",
+          message: "bundle manifest is invalid or disagrees with inventory",
+        })
+      }
+      if (
+        sourceExists &&
+        entry.source.kind === "bundle" &&
+        !entry.source.relativePath.endsWith(".wtdoc") &&
+        !(
+          entry.source.relativePath.startsWith("widgets/") &&
+          (await isLegacyHtmlBundle(
+            spaceRoot,
+            entry.source.relativePath,
+            sourceValidation.absolutePath,
+            lstatPath
+          ))
+        )
+      ) {
+        diagnostics.push({
+          severity: "error",
+          code: "bundle-manifest-mismatch",
+          message:
+            "inventory bundle must satisfy the core manifest or legacy HTML contract",
+        })
+      }
+      const analyzed = analyzeDocumentPath(entry.path)
+      if (!analyzed.safe) {
+        diagnostics.push({
+          severity: "error",
+          code: "unsafe-logical-path",
+          message: "inventory source has an unsafe logical path",
+        })
+      } else if (!analyzed.portable) {
+        diagnostics.push({
+          severity: "warning",
+          code: "nonportable-logical-path",
+          message: "inventory source has a nonportable logical path",
+        })
+      }
+      return {
+        origin: "inventory" as const,
+        path: entry.path,
+        comparisonKey: analyzed.comparisonKey,
+        format: entry.format,
+        source: entry.source,
+        title: humanizePath(entry.path),
+        ...(updatedAt ? { updatedAt } : {}),
+        ...(usesLegacyDocArchiveMetadata(entry, registry)
+          ? { archiveProvider: "legacy-doc-metadata" as const }
+          : {}),
+        diagnostics,
+        documentId: entry.documentId,
+        identity: "durable" as const,
       }
     }
-    if (!sourceValidation.safe) {
-      diagnostics.push({
-        severity: "error",
-        code: sourceValidation.message.includes("symbolic link")
-          ? "source-symlink"
-          : "inventory-source-missing",
-        message: sourceValidation.message,
-      })
-    }
-    if (
-      sourceExists &&
-      entry.source.kind === "bundle" &&
-      entry.source.relativePath.endsWith(".wtdoc") &&
-      !provenCoreBundleIds.has(entry.documentId)
-    ) {
-      diagnostics.push({
-        severity: "error",
-        code: "bundle-manifest-mismatch",
-        message: "bundle manifest is invalid or disagrees with inventory",
-      })
-    }
-    if (
-      sourceExists &&
-      entry.source.kind === "bundle" &&
-      !entry.source.relativePath.endsWith(".wtdoc") &&
-      !(
-        entry.source.relativePath.startsWith("widgets/") &&
-        (await isLegacyHtmlBundle(
-          spaceRoot,
-          entry.source.relativePath,
-          sourceValidation.absolutePath
-        ))
-      )
-    ) {
-      diagnostics.push({
-        severity: "error",
-        code: "bundle-manifest-mismatch",
-        message:
-          "inventory bundle must satisfy the core manifest or legacy HTML contract",
-      })
-    }
-    const analyzed = analyzeDocumentPath(entry.path)
-    if (!analyzed.safe) {
-      diagnostics.push({
-        severity: "error",
-        code: "unsafe-logical-path",
-        message: "inventory source has an unsafe logical path",
-      })
-    } else if (!analyzed.portable) {
-      diagnostics.push({
-        severity: "warning",
-        code: "nonportable-logical-path",
-        message: "inventory source has a nonportable logical path",
-      })
-    }
-    claims.push({
-      origin: "inventory",
-      path: entry.path,
-      comparisonKey: analyzed.comparisonKey,
-      format: entry.format,
-      source: entry.source,
-      title: humanizePath(entry.path),
-      ...(updatedAt ? { updatedAt } : {}),
-      ...(usesLegacyDocArchiveMetadata(entry, registry)
-        ? { archiveProvider: "legacy-doc-metadata" as const }
-        : {}),
-      diagnostics,
-      documentId: entry.documentId,
-      identity: "durable",
-    })
-  }
+  )
+  claims.push(...inventoryOnly)
   markSourceOwnershipOverlaps(claims)
   return {
     claims,
@@ -561,9 +812,14 @@ function catalogDocumentClaim(
   }
 }
 
+interface AliasLookups {
+  reserved: (path: string) => unknown
+  resolve: (path: string) => string | null
+}
+
 function aliasClaimsFor(
   entry: DocumentCatalogEntry,
-  aliases: DocAliases
+  aliases: AliasLookups
 ): CatalogAliasClaim[] {
   const paths =
     entry.kind === "document"
@@ -572,8 +828,8 @@ function aliasClaimsFor(
           claim.kind === "document" ? [claim.path] : []
         )
   return [...new Set(paths)].flatMap((path) => {
-    if (!reservedByAliasIn(aliases, path)) return []
-    const targetPath = resolveDocAliasIn(aliases, path)
+    if (!aliases.reserved(path)) return []
+    const targetPath = aliases.resolve(path)
     if (!targetPath) {
       throw new Error(`Document alias could not be resolved: ${path}`)
     }
@@ -601,11 +857,14 @@ async function buildDocumentCatalogFromFiles(
   const spaceId = CanonicalIdSchema.parse(options.spaceId)
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const spaceRoot = resolve(options.workspaceRoot, "spaces", spaceId)
-  const aliasResult = await readDocAliasesAt(
-    resolve(spaceRoot, "doc-aliases.json")
-  )
+  const lstatPath = createBuildLstat()
+  const aliasResult = await readCatalogAliases(spaceRoot, lstatPath)
   if (!aliasResult.aliases) {
     throw new Error(aliasResult.error ?? "Document aliases are unavailable")
+  }
+  const aliases: AliasLookups = {
+    reserved: createDocAliasReservationLookup(aliasResult.aliases),
+    resolve: createDocAliasResolver(aliasResult.aliases),
   }
   options.signal?.throwIfAborted()
   const legacyClaims = await listLegacyDocumentClaims(
@@ -618,36 +877,40 @@ async function buildDocumentCatalogFromFiles(
     spaceRoot,
     spaceId,
     legacyClaims,
-    aliasResult.aliases,
+    aliases.reserved,
     registry,
+    lstatPath,
     options.signal
   )
-  const grouped = new Map<string, typeof merged.claims>()
   const htmlProperties = new Map<DocumentId, HtmlDocumentPropertiesRead | null>()
-  for (const claim of merged.claims) {
-    options.signal?.throwIfAborted()
-    if (
+  const htmlClaims = merged.claims.filter(
+    (claim) =>
       claim.identity === "durable" &&
       claim.format.id === "worktable.html" &&
       claim.format.sourceVersion === 1 &&
       claim.source.kind === "file" &&
       !claim.diagnostics.some((diagnostic) => diagnostic.severity === "error")
-    ) {
-      try {
-        const read = await readHtmlDocumentPropertiesV2({
-          workspaceRoot: options.workspaceRoot,
-          spaceId,
-          documentId: claim.documentId,
-          path: claim.path,
-        })
-        htmlProperties.set(claim.documentId, read)
-        claim.title =
-          htmlDocumentTitleFromProperties(read, claim.path) ?? claim.title
-      } catch {
-        // Unavailable optional display metadata must not hide the source.
-        htmlProperties.set(claim.documentId, null)
-      }
+  )
+  const htmlReads = await mapWithConcurrency(
+    htmlClaims,
+    CATALOG_IO_CONCURRENCY,
+    (claim) => {
+      options.signal?.throwIfAborted()
+      return readCatalogHtmlProperties({
+        workspaceRoot: options.workspaceRoot,
+        spaceId,
+        documentId: claim.documentId,
+        path: claim.path,
+      })
     }
+  )
+  htmlClaims.forEach((claim, index) => {
+    const view = htmlReads[index]!
+    htmlProperties.set(claim.documentId, view.read)
+    claim.title = view.title ?? claim.title
+  })
+  const grouped = new Map<string, typeof merged.claims>()
+  for (const claim of merged.claims) {
     const key = claim.comparisonKey ?? `invalid:${claim.source.relativePath}`
     const group = grouped.get(key) ?? []
     group.push(claim)
@@ -698,7 +961,7 @@ async function buildDocumentCatalogFromFiles(
   }
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index]!
-    const aliasClaims = aliasClaimsFor(entry, aliasResult.aliases)
+    const aliasClaims = aliasClaimsFor(entry, aliases)
     if (aliasClaims.length === 0) continue
     entries[index] = {
       kind: "conflict",

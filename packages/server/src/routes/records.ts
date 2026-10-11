@@ -96,17 +96,18 @@ recordsRouter.get("/:collectionId", requireScope("records:read"), async (c) => {
   if (error) return c.json({ error, code: "NOT_FOUND" }, 404);
   const includeArchived = c.req.query("includeArchived") === "true";
   // includeRecords=false is the metadata read (schema + health) for clients
-  // that page rows through /query — it must not ship the whole collection.
-  // listRecords still runs either way: with the index off, it is the file
-  // scan that refreshes the diagnostics cache, and a warm-but-stale cache
-  // would otherwise keep reporting an old clean state after a file on disk
-  // turned unreadable. Only the response payload is dropped.
+  // that page rows through /query — it must not list or hash the collection.
+  // With the record index ready, diagnostics, integrity and health all come
+  // from the projection. Without it, listRecords is the file scan that
+  // refreshes the diagnostics cache, so it still runs.
   const includeRecords = c.req.query("includeRecords") !== "false";
-  const records = await listRecords(spaceId, collectionId, { includeArchived });
+  const records = includeRecords || !recordIndexEnabled() || !recordIndex.isReady()
+    ? await listRecords(spaceId, collectionId, { includeArchived })
+    : null;
   const schema = await readRecordCollectionSchema(spaceId, collectionId);
   const diagnostics = await getRecordDiagnostics(spaceId, collectionId);
   const integrity = await listIntegrityWarnings(spaceId, collectionId);
-  const projection = await recordIndex.collectionHealth(spaceId, collectionId);
+  const projection = await recordIndex.projectionHealth(spaceId, collectionId);
   return c.json({
     ...(includeRecords ? { records } : {}),
     schema: schema.data,

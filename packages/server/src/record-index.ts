@@ -16,6 +16,14 @@
 //   2. Watcher events — external edits (agents writing files, git).
 //   3. A background full build at boot / on format mismatch.
 //
+// Each row also remembers the fingerprint (size, mtime, change time, inode)
+// of the file whose bytes it was verified against. Builds, reconciliation
+// and health checks re-read only files whose fingerprint changed. The change
+// time moves on every write even when a tool restores the mtime. A
+// fingerprint is recorded only once the file's change time is older than
+// RACY_FINGERPRINT_MS, so a same-size rewrite within one timestamp tick can
+// never hide behind it.
+//
 // Invalid YAML is indexed as an invalid row (never silently dropped),
 // so diagnostics can come from the index once reads flip to it.
 //
@@ -25,7 +33,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, RecordCollectionSchemaSchema, RecordFileSchema, SpaceFileSchema, type RecordCollectionProjectionHealth, type RecordCollectionReconcileResult, type RecordField, type RecordFile, type RecordProjectionState } from "@worktable/types";
 import { getAppDir } from "./app-storage.ts";
@@ -36,8 +44,21 @@ import { workspaceCacheKey, getWorkspaceRoot } from "./workspace.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 
 // Bump when the table layout or row semantics change; a mismatch wipes and
-// rebuilds the file (it is a cache — rebuild is always safe).
+// rebuilds the file (it is a cache — rebuild is always safe). Additive,
+// nullable columns migrate in place instead (see open()): a full rebuild of a
+// large workspace takes minutes.
 const RECORD_INDEX_FORMAT = 3;
+
+// Coarse filesystem clocks (one or two seconds on some volumes) let a rewrite
+// keep the same timestamps. Fingerprints of files changed more recently than
+// this are not trusted, so those files are hashed again on the next check.
+const RACY_FINGERPRINT_MS = 3_000;
+let racyFingerprintMs = RACY_FINGERPRINT_MS;
+
+/** Tests trust fingerprints of just-written files; null restores the default. */
+export function setRacyFingerprintWindowForTests(ms: number | null): void {
+  racyFingerprintMs = ms ?? RACY_FINGERPRINT_MS;
+}
 
 export interface RecordSearchHit {
   spaceId: string;
@@ -71,6 +92,20 @@ function hashText(text: string): string {
 
 function isCanonicalId(id: string): boolean {
   return CanonicalIdSchema.safeParse(id).success;
+}
+
+/** size:mtimeNs:ctimeNs:inode of a file, or null when it cannot be read. */
+async function currentFingerprint(path: string): Promise<{ value: string; stable: boolean } | null> {
+  try {
+    const stats = await stat(path, { bigint: true });
+    const changedMs = Math.max(Number(stats.mtimeMs), Number(stats.ctimeMs));
+    return {
+      value: `${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.ino}`,
+      stable: Date.now() - changedMs >= racyFingerprintMs,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Mirrors search-index.ts recordTitle so record search results keep their
@@ -117,8 +152,11 @@ class RecordIndex {
   private lastReconciledAt = new Map<string, string>();
   // Query responses may include a previously detected drift warning, but they
   // must never rescan and hash an entire collection on the request hot path.
-  // The explicit health endpoint and reconciliation refresh this cache.
+  // Builds, reconciliation and schema refreshes refresh this cache.
   private healthCache = new Map<string, RecordCollectionProjectionHealth>();
+  // Bumped whenever a collection's projected rows or schema change, so the
+  // periodic sweep can tell which collections it actually changed.
+  private collectionRevisions = new Map<string, { spaceId: string; collectionId: string; revision: number }>();
 
   start(): void {
     if (this.started) return;
@@ -161,6 +199,7 @@ class RecordIndex {
     this.buildCollectionsSeen = null;
     this.lastReconciledAt.clear();
     this.healthCache.clear();
+    this.collectionRevisions.clear();
   }
 
   isStarted(): boolean {
@@ -220,15 +259,25 @@ class RecordIndex {
       db = new Database(path, { create: true });
     }
     db.run("PRAGMA journal_mode = WAL");
+    // A disposable cache: in WAL mode NORMAL still commits atomically but
+    // skips the fsync on every commit, which made a build wait on the disk
+    // once per record.
+    db.run("PRAGMA synchronous = NORMAL");
     db.run("PRAGMA busy_timeout = 5000");
     db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     db.run(
       "CREATE TABLE IF NOT EXISTS records (" +
         "space_id TEXT NOT NULL, collection_id TEXT NOT NULL, record_id TEXT NOT NULL, " +
         "json TEXT, archived INTEGER NOT NULL DEFAULT 0, valid INTEGER NOT NULL DEFAULT 1, " +
-        "error TEXT, file_hash TEXT NOT NULL, " +
+        "error TEXT, file_hash TEXT NOT NULL, file_fingerprint TEXT, " +
         "PRIMARY KEY (space_id, collection_id, record_id))",
     );
+    // An index from before fingerprints keeps its rows. The column starts
+    // empty, and the next build fills it while reading each file once.
+    const recordColumns = db.query("PRAGMA table_info(records)").all() as { name: string }[];
+    if (!recordColumns.some((column) => column.name === "file_fingerprint")) {
+      db.run("ALTER TABLE records ADD COLUMN file_fingerprint TEXT");
+    }
     db.run("CREATE TABLE IF NOT EXISTS collections (space_id TEXT NOT NULL, collection_id TEXT NOT NULL, name TEXT NOT NULL, fields_json TEXT, schema_hash TEXT, PRIMARY KEY (space_id, collection_id))");
     // Relation edges, stored once per (record, field, target). Backlinks,
     // delete-policy checks, and dangling-reference warnings all read this.
@@ -356,20 +405,50 @@ class RecordIndex {
     }
   }
 
-  private upsertValid(spaceId: string, record: RecordFile, fileHash: string): void {
+  private bumpRevision(spaceId: string, collectionId: string): void {
+    const key = `${spaceId}/${collectionId}`;
+    const previous = this.collectionRevisions.get(key);
+    this.collectionRevisions.set(key, { spaceId, collectionId, revision: (previous?.revision ?? 0) + 1 });
+  }
+
+  /** A collection's projected rows or schema changed. */
+  private noteCollectionChanged(spaceId: string, collectionId: string): void {
+    this.bumpRevision(spaceId, collectionId);
+    // A drift verdict may no longer hold; the next health read checks again.
+    const key = `${spaceId}/${collectionId}`;
+    if (this.healthCache.get(key)?.state === "drifted") this.healthCache.delete(key);
+  }
+
+  // Any row written while a rebuild scans is alive by definition — register
+  // it so the end-of-build prune can't delete it (the scan's directory
+  // listing may predate this write).
+  private markSeen(spaceId: string, collectionId: string, recordId: string): void {
+    this.buildSeen?.add(rowKey(spaceId, collectionId, recordId));
+    this.buildCollectionsSeen?.add(`${spaceId}/${collectionId}`);
+  }
+
+  /** Remember the file fingerprint a row's bytes were verified against. */
+  private recordFingerprint(spaceId: string, collectionId: string, recordId: string, fileHash: string, fingerprint: string): void {
+    this.db?.run(
+      "UPDATE records SET file_fingerprint = ? WHERE space_id = ? AND collection_id = ? AND record_id = ? AND file_hash = ?",
+      [fingerprint, spaceId, collectionId, recordId, fileHash],
+    );
+  }
+
+  private upsertValid(spaceId: string, record: RecordFile, fileHash: string, fingerprint: string | null = null): void {
     if (!this.db) return;
-    // Any row written while a rebuild scans is alive by definition — register
-    // it so the end-of-build prune can't delete it (the scan's directory
-    // listing may predate this write). Registered even on the hash-unchanged
-    // fast path: the row exists on disk either way.
-    this.buildSeen?.add(rowKey(spaceId, record.collectionId, record.id));
-    this.buildCollectionsSeen?.add(`${spaceId}/${record.collectionId}`);
+    // Registered even on the hash-unchanged fast path: the row exists on disk
+    // either way.
+    this.markSeen(spaceId, record.collectionId, record.id);
     const existing = this.db.query("SELECT file_hash FROM records WHERE space_id = ? AND collection_id = ? AND record_id = ?").get(spaceId, record.collectionId, record.id) as { file_hash: string } | null;
-    if (existing?.file_hash === fileHash) return;
+    if (existing?.file_hash === fileHash) {
+      if (fingerprint) this.recordFingerprint(spaceId, record.collectionId, record.id, fileHash, fingerprint);
+      return;
+    }
     const apply = this.db.transaction(() => {
       this.db!.run(
-        "INSERT OR REPLACE INTO records (space_id, collection_id, record_id, json, archived, valid, error, file_hash) VALUES (?, ?, ?, ?, ?, 1, NULL, ?)",
-        [spaceId, record.collectionId, record.id, JSON.stringify(record), record.archive ? 1 : 0, fileHash],
+        "INSERT OR REPLACE INTO records (space_id, collection_id, record_id, json, archived, valid, error, file_hash, file_fingerprint) VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?)",
+        [spaceId, record.collectionId, record.id, JSON.stringify(record), record.archive ? 1 : 0, fileHash, fingerprint],
       );
       this.replaceRefs(spaceId, record.collectionId, record.id, record);
       if (this.ftsAvailable) {
@@ -389,16 +468,16 @@ class RecordIndex {
       }
     });
     apply();
+    this.noteCollectionChanged(spaceId, record.collectionId);
   }
 
-  private upsertInvalid(spaceId: string, collectionId: string, recordId: string, error: string, fileHash: string): void {
+  private upsertInvalid(spaceId: string, collectionId: string, recordId: string, error: string, fileHash: string, fingerprint: string | null): void {
     if (!this.db) return;
-    this.buildSeen?.add(rowKey(spaceId, collectionId, recordId));
-    this.buildCollectionsSeen?.add(`${spaceId}/${collectionId}`);
+    this.markSeen(spaceId, collectionId, recordId);
     const apply = this.db.transaction(() => {
       this.db!.run(
-        "INSERT OR REPLACE INTO records (space_id, collection_id, record_id, json, archived, valid, error, file_hash) VALUES (?, ?, ?, NULL, 0, 0, ?, ?)",
-        [spaceId, collectionId, recordId, error, fileHash],
+        "INSERT OR REPLACE INTO records (space_id, collection_id, record_id, json, archived, valid, error, file_hash, file_fingerprint) VALUES (?, ?, ?, NULL, 0, 0, ?, ?, ?)",
+        [spaceId, collectionId, recordId, error, fileHash, fingerprint],
       );
       this.replaceRefs(spaceId, collectionId, recordId, null);
       if (this.ftsAvailable) {
@@ -406,18 +485,21 @@ class RecordIndex {
       }
     });
     apply();
+    this.noteCollectionChanged(spaceId, collectionId);
   }
 
   private deleteRow(spaceId: string, collectionId: string, recordId: string): void {
     if (!this.db) return;
+    let removed = false;
     const apply = this.db.transaction(() => {
-      this.db!.run("DELETE FROM records WHERE space_id = ? AND collection_id = ? AND record_id = ?", [spaceId, collectionId, recordId]);
+      removed = this.db!.run("DELETE FROM records WHERE space_id = ? AND collection_id = ? AND record_id = ?", [spaceId, collectionId, recordId]).changes > 0;
       this.replaceRefs(spaceId, collectionId, recordId, null);
       if (this.ftsAvailable) {
         this.db!.run("DELETE FROM records_fts WHERE space_id = ? AND collection_id = ? AND record_id = ?", [spaceId, collectionId, recordId]);
       }
     });
     apply();
+    if (removed) this.noteCollectionChanged(spaceId, collectionId);
   }
 
   // Watcher feed: an external edit touched a record file. Re-read it from disk
@@ -430,6 +512,10 @@ class RecordIndex {
     if (!this.db || !isCanonicalId(spaceId) || !isCanonicalId(collectionId) || !isCanonicalId(recordId)) return;
     const path = join(getSpacesBaseDir(), spaceId, "records", collectionId, `${recordId}.yaml`);
     await withStoreWriteLock(path, async () => {
+      // Stat before reading: a later write changes the fingerprint, so a stale
+      // fingerprint can only cause another read, never hide a change.
+      const current = await currentFingerprint(path);
+      const fingerprint = current?.stable ? current.value : null;
       let text: string;
       try {
         text = await Bun.file(path).text();
@@ -438,6 +524,13 @@ class RecordIndex {
         return;
       }
       const fileHash = hashText(text);
+      // The same bytes always project to the same row: skip the parse.
+      const existing = this.db?.query("SELECT file_hash FROM records WHERE space_id = ? AND collection_id = ? AND record_id = ?").get(spaceId, collectionId, recordId) as { file_hash: string } | null;
+      if (existing?.file_hash === fileHash) {
+        this.markSeen(spaceId, collectionId, recordId);
+        if (fingerprint) this.recordFingerprint(spaceId, collectionId, recordId, fileHash, fingerprint);
+        return;
+      }
       try {
         const record = RecordFileSchema.parse(parseCanonicalYaml(text));
         if (record.id !== recordId || record.collectionId !== collectionId) {
@@ -447,14 +540,33 @@ class RecordIndex {
             recordId,
             `Record identity does not match its canonical path (expected ${collectionId}/${recordId}, found ${record.collectionId}/${record.id})`,
             fileHash,
+            fingerprint,
           );
           return;
         }
-        this.upsertValid(spaceId, record, fileHash);
+        this.upsertValid(spaceId, record, fileHash, fingerprint);
       } catch (error) {
-        this.upsertInvalid(spaceId, collectionId, recordId, error instanceof Error ? error.message : String(error), fileHash);
+        this.upsertInvalid(spaceId, collectionId, recordId, error instanceof Error ? error.message : String(error), fileHash, fingerprint);
       }
     });
+  }
+
+  /** Fingerprints of a collection's rows, for rows verified against their file. */
+  private storedFingerprints(spaceId: string, collectionId: string): Map<string, string> {
+    if (!this.db) return new Map();
+    const rows = this.db.query(
+      "SELECT record_id, file_fingerprint FROM records WHERE space_id = ? AND collection_id = ? AND file_fingerprint IS NOT NULL",
+    ).all(spaceId, collectionId) as { record_id: string; file_fingerprint: string }[];
+    return new Map(rows.map((row) => [row.record_id, row.file_fingerprint]));
+  }
+
+  /** Ingest a canonical file unless its fingerprint shows the row already matches. */
+  private async ingestIfChanged(spaceId: string, collectionId: string, recordId: string, stored: string | undefined): Promise<void> {
+    if (stored) {
+      const path = join(getSpacesBaseDir(), spaceId, "records", collectionId, `${recordId}.yaml`);
+      if ((await currentFingerprint(path))?.value === stored) return;
+    }
+    await this.ingestFile(spaceId, collectionId, recordId);
   }
 
   // Watcher/store feed: a collection schema changed. Refresh the cached name
@@ -472,12 +584,18 @@ class RecordIndex {
       // the collection's diagnostics. A MISSING schema (deleted on purpose)
       // still clears fields and edges below — that collection genuinely
       // declares no relations anymore.
-      if (!previous) this.db.run("INSERT OR REPLACE INTO collections (space_id, collection_id, name, fields_json, schema_hash) VALUES (?, ?, ?, NULL, NULL)", [spaceId, collectionId, name]);
+      if (!previous) {
+        this.db.run("INSERT OR REPLACE INTO collections (space_id, collection_id, name, fields_json, schema_hash) VALUES (?, ?, ?, NULL, NULL)", [spaceId, collectionId, name]);
+        this.noteCollectionChanged(spaceId, collectionId);
+      }
       if (this.isReady() && this.pendingDuringBuild === null) await this.collectionHealth(spaceId, collectionId);
       return;
     }
     const fieldsJson = fields ? JSON.stringify(fields) : null;
     this.db.run("INSERT OR REPLACE INTO collections (space_id, collection_id, name, fields_json, schema_hash) VALUES (?, ?, ?, ?, ?)", [spaceId, collectionId, name, fieldsJson, schemaHash]);
+    if (!previous || previous.name !== name || previous.fields_json !== fieldsJson || previous.schema_hash !== schemaHash) {
+      this.noteCollectionChanged(spaceId, collectionId);
+    }
     // Relation declarations changed: re-derive every row's edges under the new
     // schema (adding a relation field must index existing values).
     if ((previous?.fields_json ?? null) !== fieldsJson) {
@@ -579,12 +697,13 @@ class RecordIndex {
             const collectionId = collEntry.name;
             seenCollections.add(`${spaceId}/${collectionId}`);
             await this.refreshCollection(spaceId, collectionId);
+            const fingerprints = this.storedFingerprints(spaceId, collectionId);
             for (const fileEntry of await readdir(join(recordsDir, collectionId), { withFileTypes: true })) {
               if (gen !== this.generation || !this.db) return;
               if (!fileEntry.isFile() || !fileEntry.name.endsWith(".yaml") || fileEntry.name === "schema.yaml") continue;
               const recordId = fileEntry.name.replace(/\.yaml$/, "");
               if (!isCanonicalId(recordId)) continue;
-              await this.ingestFile(spaceId, collectionId, recordId);
+              await this.ingestIfChanged(spaceId, collectionId, recordId, fingerprints.get(recordId));
               seen.add(rowKey(spaceId, collectionId, recordId));
             }
             this.lastReconciledAt.set(`${spaceId}/${collectionId}`, new Date().toISOString());
@@ -685,12 +804,13 @@ class RecordIndex {
         this.dropCollection(spaceId, collectionId);
       } else {
         await this.refreshCollection(spaceId, collectionId);
+        const fingerprints = this.storedFingerprints(spaceId, collectionId);
         for (const entry of await readdir(dir, { withFileTypes: true })) {
           if (!entry.isFile() || !entry.name.endsWith(".yaml") || entry.name === "schema.yaml") continue;
           const recordId = entry.name.replace(/\.yaml$/, "");
           if (!isCanonicalId(recordId)) continue;
           seen.add(rowKey(spaceId, collectionId, recordId));
-          await this.ingestFile(spaceId, collectionId, recordId);
+          await this.ingestIfChanged(spaceId, collectionId, recordId, fingerprints.get(recordId));
         }
 
         const projected = this.db.query("SELECT record_id FROM records WHERE space_id = ? AND collection_id = ?").all(spaceId, collectionId) as { record_id: string }[];
@@ -741,22 +861,35 @@ class RecordIndex {
         canonicalSchemaHash = "unreadable";
       }
     }
+    const projected = this.db.query(
+      "SELECT record_id, file_hash, valid, file_fingerprint FROM records WHERE space_id = ? AND collection_id = ?",
+    ).all(spaceId, collectionId) as { record_id: string; file_hash: string; valid: number; file_fingerprint: string | null }[];
+    const projectedRows = new Map(projected.map((row) => [row.record_id, row]));
     const canonical = new Map<string, string | null>();
     if (existsSync(dir)) {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".yaml") || entry.name === "schema.yaml") continue;
         const recordId = entry.name.replace(/\.yaml$/, "");
         if (!isCanonicalId(recordId)) continue;
+        const path = join(dir, entry.name);
+        const row = projectedRows.get(recordId);
+        const fingerprint = await currentFingerprint(path);
+        // An unchanged fingerprint proves the bytes this row was verified against.
+        if (row?.file_fingerprint && fingerprint?.value === row.file_fingerprint) {
+          canonical.set(recordId, row.file_hash);
+          continue;
+        }
         try {
-          canonical.set(recordId, hashText(await Bun.file(join(dir, entry.name)).text()));
+          const fileHash = hashText(await Bun.file(path).text());
+          canonical.set(recordId, fileHash);
+          if (row?.file_hash === fileHash && fingerprint?.stable) {
+            this.recordFingerprint(spaceId, collectionId, recordId, fileHash, fingerprint.value);
+          }
         } catch {
           canonical.set(recordId, null);
         }
       }
     }
-    const projected = this.db.query(
-      "SELECT record_id, file_hash, valid FROM records WHERE space_id = ? AND collection_id = ?",
-    ).all(spaceId, collectionId) as { record_id: string; file_hash: string; valid: number }[];
     const projectedCollection = this.db.query(
       "SELECT schema_hash FROM collections WHERE space_id = ? AND collection_id = ?",
     ).get(spaceId, collectionId) as { schema_hash: string | null } | null;
@@ -783,6 +916,10 @@ class RecordIndex {
       invalidRecordCount,
       lastReconciledAt: this.lastReconciledAt.get(`${spaceId}/${collectionId}`) ?? null,
     };
+    // A changed verdict is news for open grids even when no row changed, such
+    // as a schema file that stopped parsing behind the watcher's back.
+    const previous = this.healthCache.get(`${spaceId}/${collectionId}`);
+    if (previous && previous.state !== state) this.bumpRevision(spaceId, collectionId);
     this.healthCache.set(`${spaceId}/${collectionId}`, health);
     return health;
   }
@@ -791,6 +928,53 @@ class RecordIndex {
   cachedCollectionHealth(spaceId: string, collectionId: string): RecordCollectionProjectionHealth | null {
     if (!isCanonicalId(spaceId) || !isCanonicalId(collectionId)) return null;
     return this.healthCache.get(`${spaceId}/${collectionId}`) ?? null;
+  }
+
+  /**
+   * Health for request paths: the verdict of the last full comparison, without
+   * rescanning files. Only a collection with no verdict yet is compared now.
+   * Changes since then reached the projection through the store or the
+   * watcher, so a matching verdict reports the projection's current counts.
+   */
+  async projectionHealth(spaceId: string, collectionId: string): Promise<RecordCollectionProjectionHealth> {
+    const cached = this.cachedCollectionHealth(spaceId, collectionId);
+    if (!cached || !this.db || (cached.state === "indexing" && this.isReady())) {
+      return this.collectionHealth(spaceId, collectionId);
+    }
+    if (cached.state !== "ready" && cached.state !== "degraded") return cached;
+    const counts = this.db.query(
+      "SELECT COUNT(*) AS indexed, COALESCE(SUM(valid), 0) AS valid FROM records WHERE space_id = ? AND collection_id = ?",
+    ).get(spaceId, collectionId) as { indexed: number; valid: number };
+    const invalidRecordCount = counts.indexed - counts.valid;
+    return {
+      state: invalidRecordCount > 0 ? "degraded" : "ready",
+      canonicalFileCount: counts.indexed,
+      indexedFileCount: counts.indexed,
+      validRecordCount: counts.valid,
+      invalidRecordCount,
+      lastReconciledAt: this.lastReconciledAt.get(`${spaceId}/${collectionId}`) ?? null,
+    };
+  }
+
+  /** Valid, unarchived records in a collection; null until the index is ready. */
+  countCollection(spaceId: string, collectionId: string): number | null {
+    if (!this.isReady()) return null;
+    const row = this.db!.query(
+      "SELECT COUNT(*) AS count FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1 AND archived = 0",
+    ).get(spaceId, collectionId) as { count: number };
+    return row.count;
+  }
+
+  /** Change counters per collection, to compare against a later snapshot. */
+  collectionRevisionSnapshot(): Map<string, number> {
+    return new Map([...this.collectionRevisions].map(([key, entry]) => [key, entry.revision]));
+  }
+
+  /** Collections whose projected rows or schema changed since the snapshot. */
+  collectionsChangedSince(snapshot: Map<string, number>): { spaceId: string; collectionId: string }[] {
+    return [...this.collectionRevisions]
+      .filter(([key, entry]) => snapshot.get(key) !== entry.revision)
+      .map(([, { spaceId, collectionId }]) => ({ spaceId, collectionId }));
   }
 
   /** Collection identities currently represented by the machine projection. */
@@ -852,15 +1036,18 @@ class RecordIndex {
   // rebuild.
   dropCollection(spaceId: string, collectionId: string): void {
     if (!this.db) return;
+    let removed = false;
     const apply = this.db.transaction(() => {
-      this.db!.run("DELETE FROM records WHERE space_id = ? AND collection_id = ?", [spaceId, collectionId]);
-      this.db!.run("DELETE FROM collections WHERE space_id = ? AND collection_id = ?", [spaceId, collectionId]);
+      const records = this.db!.run("DELETE FROM records WHERE space_id = ? AND collection_id = ?", [spaceId, collectionId]);
+      const collections = this.db!.run("DELETE FROM collections WHERE space_id = ? AND collection_id = ?", [spaceId, collectionId]);
+      removed = records.changes + collections.changes > 0;
       this.db!.run("DELETE FROM record_refs WHERE space_id = ? AND from_collection = ?", [spaceId, collectionId]);
       if (this.ftsAvailable) {
         this.db!.run("DELETE FROM records_fts WHERE space_id = ? AND collection_id = ?", [spaceId, collectionId]);
       }
     });
     apply();
+    if (removed) this.noteCollectionChanged(spaceId, collectionId);
     this.lastReconciledAt.delete(`${spaceId}/${collectionId}`);
     this.healthCache.delete(`${spaceId}/${collectionId}`);
   }

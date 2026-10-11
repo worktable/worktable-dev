@@ -6,13 +6,19 @@
 // their messages that could not be delivered. Each source is read only when
 // the reader has the scope that would let them open it.
 
-import type { Annotation, PendingItem, PendingResult } from "@worktable/types"
+import type {
+  Annotation,
+  PendingItem,
+  PendingResult,
+  SpaceFile,
+} from "@worktable/types"
 import { listAnnotations } from "./annotation-store.ts"
 import { listDocuments } from "./document-query.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import {
-  listFailedDeliveriesForViewer,
-  listOpenRequestsForViewer,
+  listPendingThreadWork,
+  type ViewerDeliveryFailure,
+  type ViewerThreadRequest,
 } from "./thread-service.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 
@@ -34,58 +40,55 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  const [requests, failures, replies] = await Promise.all([
-    canReadThreads ? threadRequests(identity, spaceId) : [],
-    canReadThreads ? failedDeliveries(identity, spaceId) : [],
-    canReadAnnotations ? commentReplies(spaceId) : [],
+  if (!canReadThreads && !canReadAnnotations) return { items: [] }
+  const spaces = await listSpaces()
+  const [threadWork, replies] = await Promise.all([
+    canReadThreads
+      ? listPendingThreadWork(identity, spaces, spaceId)
+      : { requests: [], failures: [] },
+    canReadAnnotations ? commentReplies(spaces, spaceId) : [],
   ])
-  const items = [...requests, ...failures, ...replies]
+  const items = [
+    ...threadRequests(threadWork.requests),
+    ...failedDeliveries(threadWork.failures),
+    ...replies,
+  ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, PENDING_LIMIT)
   return { items }
 }
 
-async function threadRequests(
-  identity: TokenIdentity,
-  spaceId?: string
-): Promise<PendingItem[]> {
-  return (await listOpenRequestsForViewer(identity, spaceId)).map(
-    (request) => ({
-      kind: "threadRequest",
-      id: `thread:${request.threadId}:${request.message.id}`,
-      at: request.message.createdAt,
-      spaceId:
-        request.location.kind === "space" ? request.location.spaceId : null,
-      threadId: request.threadId,
-      threadTitle: request.threadTitle,
-      messageId: request.message.id,
-      from: {
-        kind: request.author.kind === "human" ? "person" : request.author.kind,
-        id: request.author.id,
-        name: request.author.name,
-      },
-      excerpt: excerpt(request.message.body),
-    })
-  )
+function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {
+  return requests.map((request) => ({
+    kind: "threadRequest",
+    id: `thread:${request.threadId}:${request.message.id}`,
+    at: request.message.createdAt,
+    spaceId:
+      request.location.kind === "space" ? request.location.spaceId : null,
+    threadId: request.threadId,
+    threadTitle: request.threadTitle,
+    messageId: request.message.id,
+    from: {
+      kind: request.author.kind === "human" ? "person" : request.author.kind,
+      id: request.author.id,
+      name: request.author.name,
+    },
+    excerpt: excerpt(request.message.body),
+  }))
 }
 
-async function failedDeliveries(
-  identity: TokenIdentity,
-  spaceId?: string
-): Promise<PendingItem[]> {
-  return (await listFailedDeliveriesForViewer(identity, spaceId)).map(
-    (failure) => ({
-      kind: "deliveryFailed",
-      id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
-      at: failure.activity.updatedAt,
-      spaceId:
-        failure.location.kind === "space" ? failure.location.spaceId : null,
-      threadId: failure.threadId,
-      threadTitle: failure.threadTitle,
-      agentName: failure.recipientName ?? "the agent",
-    })
-  )
+function failedDeliveries(failures: ViewerDeliveryFailure[]): PendingItem[] {
+  return failures.map((failure) => ({
+    kind: "deliveryFailed",
+    id: `delivery:${failure.threadId}:${failure.activity.messageId}`,
+    at: failure.activity.updatedAt,
+    spaceId:
+      failure.location.kind === "space" ? failure.location.spaceId : null,
+    threadId: failure.threadId,
+    threadTitle: failure.threadTitle,
+    agentName: failure.recipientName ?? "the agent",
+  }))
 }
 
 /** Every open annotation in a Space, a page at a time. */
@@ -105,8 +108,11 @@ async function openAnnotations(spaceId: string): Promise<Annotation[]> {
 }
 
 /** An agent answered a comment you left, and the comment is still open. */
-async function commentReplies(spaceId?: string): Promise<PendingItem[]> {
-  const spaces = (await listSpaces()).filter((space) =>
+async function commentReplies(
+  allSpaces: SpaceFile[],
+  spaceId?: string
+): Promise<PendingItem[]> {
+  const spaces = allSpaces.filter((space) =>
     spaceId ? space.id === spaceId : !getSpaceArchiveInfo(space)
   )
   const perSpace = await Promise.all(

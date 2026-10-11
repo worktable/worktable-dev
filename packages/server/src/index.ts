@@ -82,7 +82,6 @@ import {
   listSpaces,
   readDoc } from "./store.ts";
 import { syncExternalDocChange } from "./external-doc-sync.ts"
-import { listRecordCollections } from "./record-store.ts";
 import { recordExternalWidgetChange } from "./widget-version-store.ts";
 import { getWidgetPath, withWidgetWriteLock } from "./widget-store.ts";
 import { withVersionKeyLock } from "./version-store.ts";
@@ -881,19 +880,30 @@ export async function stopActiveServer(): Promise<void> {
 }
 
 export async function runRecordReconcileSweep(): Promise<void> {
-  const projectedBefore = recordIndex.projectedCollections();
+  const before = recordIndex.collectionRevisionSnapshot();
+  // The rebuild re-reads only files whose fingerprint changed.
   await recordIndex.rebuild();
-  // A sweep can repair drift without a corresponding watcher event.
-  // Invalidate the union of before/after collection identities so a
-  // collection removed by the rebuild cannot remain cached in browsers.
-  const changed = new Map(projectedBefore.map((entry) => [`${entry.spaceId}/${entry.collectionId}`, entry]));
-  for (const space of await listSpaces()) {
-    for (const collection of await listRecordCollections(space.id)) {
-      changed.set(`${space.id}/${collection.id}`, { spaceId: space.id, collectionId: collection.id });
-    }
-  }
-  for (const { spaceId, collectionId } of changed.values()) {
+  // A sweep can repair drift without a corresponding watcher event. Tell
+  // browsers about every collection it changed, including removed ones.
+  for (const { spaceId, collectionId } of recordIndex.collectionsChangedSince(before)) {
     wsManager.broadcast(spaceId, { type: "record_collection_update", spaceId, collectionId });
+  }
+}
+
+// Spaces as seen by the last space sweep, or null before the first one.
+let sweptSpaces: Map<string, string> | null = null;
+
+/**
+ * Watcher space events announce created, removed and edited Spaces as they
+ * happen. Filesystem events are not a durable queue, so the periodic sweep
+ * also compares the Spaces and announces a change the watcher missed.
+ */
+export async function runSpaceListSweep(): Promise<void> {
+  const spaces = new Map((await listSpaces()).map((space) => [space.id, JSON.stringify(space)]));
+  const previous = sweptSpaces;
+  sweptSpaces = spaces;
+  if (previous && (previous.size !== spaces.size || [...spaces].some(([id, space]) => previous.get(id) !== space))) {
+    wsManager.broadcastAll({ type: "spaces_changed" });
   }
 }
 
@@ -1189,15 +1199,19 @@ export function startServer(
   }
   if (recordReconcileSweepTimer) clearInterval(recordReconcileSweepTimer);
   recordReconcileSweepTimer = null;
-  if (!workspaceRejected && recordIndexEnabled() && process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] !== "1") {
+  sweptSpaces = null;
+  if (!workspaceRejected && process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] !== "1") {
     recordReconcileSweepTimer = setInterval(() => {
-      void runRecordReconcileSweep().catch((err) => console.error("[record-index] periodic reconciliation failed:", err));
+      void runSpaceListSweep().catch((err) => console.error("[Worktable] periodic space sweep failed:", err));
+      if (recordIndexEnabled()) {
+        void runRecordReconcileSweep().catch((err) => console.error("[record-index] periodic reconciliation failed:", err));
+      }
     }, RECORD_RECONCILE_SWEEP_INTERVAL_MS);
     recordReconcileSweepTimer.unref?.();
   }
 
   // When the workspace folder was rejected, do not start the watcher (which
-  // would create spaces/ inside a foreign folder) or the periodic space scan.
+  // would create spaces/ inside a foreign folder).
   // The server still serves /health so the operator can see it is alive and
   // read the refusal reason in the logs.
   const documentFilesystemCoordinator = new DocumentFilesystemCoordinator({
@@ -1215,7 +1229,6 @@ export function startServer(
   let recoveredDocumentTask: Promise<void> | null = null;
   let startupDiscarded = false;
   let stopWorkspaceChangeHandler: (() => void) | null = null;
-  let spaceScanTimer: ReturnType<typeof setInterval> | null = null;
 
   const trackServerTask = (task: Promise<unknown>): void => {
     pendingServerTasks.add(task);
@@ -1285,8 +1298,6 @@ export function startServer(
           stopErr
         )
       );
-    if (spaceScanTimer) clearInterval(spaceScanTimer);
-    spaceScanTimer = null;
     for (const { timer } of widgetChangeCoalescer.values()) clearTimeout(timer);
     widgetChangeCoalescer.clear();
     if (retentionBootTimer) clearTimeout(retentionBootTimer);
@@ -1465,35 +1476,13 @@ export function startServer(
       });
     }
 
-    // Periodic space scan: detect new spaces created on disk
-    let knownSpaceIds = new Set<string>();
-    // Initialize known spaces
-    trackServerTask(listSpaces().then((spaces) => {
-      knownSpaceIds = new Set(spaces.map((s) => s.id));
-    }).catch((err) => console.error("[Worktable] initial space scan error:", err)));
-
-    spaceScanTimer = setInterval(() => {
-      trackServerTask((async () => {
-        try {
-          const spaces = await listSpaces();
-          const currentIds = new Set(spaces.map((s) => s.id));
-          let hasNew = false;
-          for (const id of currentIds) {
-            if (!knownSpaceIds.has(id)) {
-              hasNew = true;
-              console.log(`[Worktable] new space detected on disk: ${id}`);
-            }
-          }
-          knownSpaceIds = currentIds;
-          if (hasNew) {
-            wsManager.broadcastAll({ type: "spaces_changed" });
-          }
-        } catch (err) {
-          console.error("[Worktable] periodic space scan error:", err);
-        }
-      })());
-    }, 5000);
-    spaceScanTimer.unref?.();
+    // Watcher space events announce new, removed and edited Spaces. Record the
+    // Spaces present now so the periodic sweep can catch one it missed.
+    if (recordReconcileSweepTimer) {
+      trackServerTask(runSpaceListSweep().catch((err) =>
+        console.error("[Worktable] initial space sweep failed:", err)
+      ));
+    }
   }
 
   const stopWorkspaceSafetyHandler = onWorkspaceRecoveryRequired(() => {
@@ -1897,8 +1886,6 @@ export function startServer(
         stopWorkspaceChangeHandler?.();
         stopWorkspaceChangeHandler = null;
       });
-    if (spaceScanTimer) clearInterval(spaceScanTimer);
-    spaceScanTimer = null;
     flushWidgetChangeCoalescer();
     const stopUpdateChecks = stopUpdateCheckScheduler;
     const updateChecksStopping = stopUpdateChecks?.() ?? Promise.resolve();

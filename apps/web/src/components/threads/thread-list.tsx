@@ -7,7 +7,7 @@ import {
   UserRoundIcon,
   UsersRoundIcon,
 } from "lucide-react"
-import type { ThreadLocation, ThreadSummary } from "@worktable/types"
+import type { ThreadLocation, ThreadListItem } from "@worktable/types"
 import { Avatar, AvatarFallback } from "@worktable/ui/components/avatar"
 import { Button } from "@worktable/ui/components/button"
 import {
@@ -34,11 +34,11 @@ import {
 
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { RelativeTime } from "@/lib/time"
-import { deliveryPresentation, threadExcerpt } from "@/lib/thread-presentation"
+import { deliveryPresentation } from "@/lib/thread-presentation"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 
 interface ThreadListProps {
-  threads: ThreadSummary[]
+  threads: ThreadListItem[]
   activeThreadId: string
   activeLocation: ThreadLocation
   loading: boolean
@@ -172,7 +172,7 @@ function ThreadListRow({
   locationLabel,
   onNavigate,
 }: {
-  thread: ThreadSummary
+  thread: ThreadListItem
   active: boolean
   showLocation: boolean
   locationLabel: (location: ThreadLocation) => string
@@ -219,7 +219,7 @@ function ThreadListRow({
           ) : null}
           {showLocation ? <span aria-hidden="true">·</span> : null}
           <span className="min-w-0 flex-1 truncate text-muted-foreground/80">
-            {threadExcerpt(thread.lastMessage.body, 140) || "No readable text"}
+            {thread.lastMessage.excerpt || "No readable text"}
           </span>
           <ThreadListActivity thread={thread} />
         </div>
@@ -228,7 +228,7 @@ function ThreadListRow({
   )
 }
 
-function ThreadAvatar({ thread }: { thread: ThreadSummary }) {
+function ThreadAvatar({ thread }: { thread: ThreadListItem }) {
   const agents = thread.members.filter((member) => member.kind === "agent")
   const nonAgents = thread.members.filter((member) => member.kind !== "agent")
   const participant =
@@ -262,7 +262,7 @@ function ThreadAvatar({ thread }: { thread: ThreadSummary }) {
   )
 }
 
-function ThreadListActivity({ thread }: { thread: ThreadSummary }) {
+function ThreadListActivity({ thread }: { thread: ThreadListItem }) {
   const activity = thread.activity
   if (!activity || activity.state === "replied") {
     return <span className="size-5 shrink-0" aria-hidden="true" />

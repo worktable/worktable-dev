@@ -655,12 +655,23 @@ export function localProcessAlive(pid: number): boolean {
   }
 }
 
+let currentProcessIdentity: string | null = null
+
 /**
  * Return an OS-provided process-start identity that changes when a PID is
  * recycled. A failed identity query is intentionally inconclusive: callers
  * keep treating an otherwise-live PID as live rather than evicting its state.
  */
 export function localProcessIdentity(pid: number): string | null {
+  if (pid !== process.pid) return queryProcessIdentity(pid)
+  // This process's own start identity never changes. Keep the first answer
+  // so runtime writes and exit cleanup do not query the OS again. This stays
+  // synchronous: the runtime file lock and the exit handler cannot await.
+  currentProcessIdentity ??= queryProcessIdentity(pid)
+  return currentProcessIdentity
+}
+
+function queryProcessIdentity(pid: number): string | null {
   if (!Number.isInteger(pid) || pid <= 0) return null
   if (process.platform === "linux") {
     try {

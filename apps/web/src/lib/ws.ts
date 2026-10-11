@@ -13,7 +13,7 @@ import type {
   ThreadActivity,
   ThreadLocation,
   ThreadReadResult,
-  ThreadSummary,
+  ThreadListItem,
 } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 
@@ -92,7 +92,7 @@ export function pruneInvisibleThreadDetails(
   spaceId: string
 ): string[] {
   const location = { kind: "space", spaceId } as const
-  const visible = queryClient.getQueryData<{ threads: ThreadSummary[] }>(
+  const visible = queryClient.getQueryData<{ threads: ThreadListItem[] }>(
     threadQueryKeys.list(location)
   )
   if (!visible) return []
@@ -218,7 +218,7 @@ export function applyThreadActivityToQueries(
   })
   const detail = queryClient.getQueryData<ThreadReadResult>(detailKey)
   for (const queryKey of listKeys) {
-    queryClient.setQueryData<{ threads: ThreadSummary[] }>(
+    queryClient.setQueryData<{ threads: ThreadListItem[] }>(
       queryKey,
       (current) =>
         current

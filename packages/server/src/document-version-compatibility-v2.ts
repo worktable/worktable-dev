@@ -17,7 +17,7 @@ import {
 } from "./document-format-registry.ts"
 import { updateDocumentInventory } from "./document-inventory.ts"
 import {
-  listCompatibleDocumentVersionsV2,
+  hasCompatibleDocumentVersionV2,
   listDocumentGenerationsV2,
   markDocumentGenerationCheckpointV2,
   readDocumentGenerationV2,
@@ -373,13 +373,12 @@ async function hasCompatibleHistory(input: {
   path: string
   legacyKind: LegacyKind
 }): Promise<boolean> {
-  const versions = await listCompatibleDocumentVersionsV2({
+  return hasCompatibleDocumentVersionV2({
     workspaceRoot: getWorkspaceRoot(),
     spaceId: input.spaceId,
     documentId: input.documentId,
     legacy: { kind: input.legacyKind, key: input.path },
   })
-  return versions.length > 0
 }
 
 async function writeGeneration(input: {

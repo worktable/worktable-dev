@@ -241,10 +241,10 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     .poll(async () => {
       const response = await fetch(`${harness.apiUrl}/api/threads`)
       const payload = (await response.json()) as {
-        threads: Array<{ lastMessage: { body: string } }>
+        threads: Array<{ lastMessage: { excerpt: string } }>
       }
       return payload.threads.filter(
-        (thread) => thread.lastMessage.body === ALWAYS_ON_FIRST_MESSAGE
+        (thread) => thread.lastMessage.excerpt === ALWAYS_ON_FIRST_MESSAGE
       ).length
     })
     .toBe(2)

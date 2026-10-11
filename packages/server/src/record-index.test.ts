@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import fc from "fast-check"
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
-import { recordIndex } from "./record-index.ts"
+import {
+  recordIndex,
+  setRacyFingerprintWindowForTests,
+} from "./record-index.ts"
 import {
   buildRecordFile,
   createRecord,
@@ -82,6 +92,7 @@ describe("record index", () => {
   afterEach(async () => {
     await recordIndex.whenIdle()
     recordIndex.stop()
+    setRacyFingerprintWindowForTests(null)
     setWorkspaceRootOverride(null)
     setAppDirOverride(null)
     for (const dir of [workspaceDir, appDir]) {
@@ -601,6 +612,71 @@ describe("record index", () => {
     }
   })
 
+  it("the periodic sweep re-reads changed files and announces only the collections it changed", async () => {
+    // Trust fingerprints of files written moments ago.
+    setRacyFingerprintWindowForTests(0)
+    for (const [collectionId, recordId] of [
+      ["notes", "unchanged"],
+      ["ideas", "edited"],
+      ["plans", "kept"],
+    ] as const) {
+      await writeRecordCollectionSchema(
+        "meta",
+        buildRecordCollectionSchema({ id: collectionId, name: collectionId })
+      )
+      await createRecord("meta", collectionId, {
+        id: recordId,
+        data: { title: "Before" },
+      })
+    }
+    await runRecordReconcileSweep()
+    // Changes the watcher never reported: an edited record and a schema
+    // file that no longer parses.
+    writeRecordFileDirectly("meta", "ideas", "edited", { title: "After" })
+    writeFileSync(
+      join(workspaceDir, "spaces", "meta", "records", "plans", "schema.yaml"),
+      "fields: [broken\n"
+    )
+
+    const broadcasts: { spaceId: string; collectionId?: string }[] = []
+    const originalBroadcast = wsManager.broadcast.bind(wsManager)
+    wsManager.broadcast = ((spaceId, message) => {
+      broadcasts.push({
+        spaceId,
+        collectionId:
+          "collectionId" in message ? message.collectionId : undefined,
+      })
+    }) as typeof wsManager.broadcast
+    try {
+      await runRecordReconcileSweep()
+    } finally {
+      wsManager.broadcast = originalBroadcast
+    }
+    expect(
+      broadcasts.map((broadcast) => broadcast.collectionId).sort()
+    ).toEqual(["ideas", "plans"])
+    expect(
+      recordIndex.listCollection("meta", "ideas", true)?.[0]?.data["title"]
+    ).toBe("After")
+  })
+
+  it("re-reads a same-size rewrite that restores the file's mtime", async () => {
+    setRacyFingerprintWindowForTests(0)
+    const path = recordFilePath("meta", "tasks", "alpha")
+    const past = new Date(Date.now() - 60_000)
+    writeRecordFileDirectly("meta", "tasks", "alpha", { title: "Alpha" })
+    utimesSync(path, past, past)
+    await recordIndex.ingestFile("meta", "tasks", "alpha")
+
+    // Copy and sync tools can keep the size, inode and mtime of a rewrite.
+    writeFileSync(path, readFileSync(path, "utf8").replace("Alpha", "Omega"))
+    utimesSync(path, past, past)
+    await recordIndex.rebuild()
+    expect(
+      recordIndex.listCollection("meta", "tasks", true)?.[0]?.data["title"]
+    ).toBe("Omega")
+  })
+
   it("the periodic sweep invalidates a collection removed from canonical files", async () => {
     await writeRecordCollectionSchema(
       "meta",
@@ -682,6 +758,31 @@ describe("record index", () => {
     ).text()
     expect(onDisk).toContain(`title: "${row?.data["title"]}"`)
     expect(row?.data["title"]).toBe("v10")
+  })
+
+  it("upgrades an index from before fingerprints in place", async () => {
+    await createRecord("meta", "tasks", {
+      id: "alpha",
+      data: { title: "Fix the bridge" },
+    })
+    const before = normalizedRows()
+    recordIndex.stop()
+    // The layout an older Worktable wrote, without the fingerprint column.
+    const { Database } = await import("bun:sqlite")
+    const dbPath = join(appDir, "records-index")
+    const dirs = (await import("node:fs")).readdirSync(dbPath)
+    const db = new Database(join(dbPath, dirs[0]!, "index.db"))
+    db.run("ALTER TABLE records DROP COLUMN file_fingerprint")
+    db.close()
+
+    // Rows and search are kept rather than rebuilt from scratch.
+    recordIndex.start()
+    expect(normalizedRows()).toEqual(before)
+    await recordIndex.whenReady()
+    expect(normalizedRows()).toEqual(before)
+    expect(
+      recordIndex.searchRecords("bridge", 10)?.map((h) => h.recordId)
+    ).toEqual(["alpha"])
   })
 
   it("rebuilds search rows when FTS becomes available after a no-FTS run", async () => {

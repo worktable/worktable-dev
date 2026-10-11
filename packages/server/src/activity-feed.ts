@@ -12,9 +12,13 @@ import type {
 } from "@worktable/types"
 import { listActivity, listActivityAgents } from "./activity-log.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
-import { resolveDocAlias } from "./doc-aliases.ts"
+import {
+  readDocAliases,
+  resolveDocAliasIn,
+  type DocAliases,
+} from "./doc-aliases.ts"
 import { listDocuments } from "./document-query.ts"
-import { listRecordCollections } from "./record-store.ts"
+import { listRecordCollectionNames } from "./record-store.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
 import { hasScope } from "./token-store.ts"
 
@@ -106,6 +110,7 @@ async function withCurrentNames(
     namedDocuments(spaceIds),
     namedCollections(spaceIds),
   ])
+  const movedPath = movedPathResolver()
   return Promise.all(
     entries.map(async (entry) => {
       const actor =
@@ -118,12 +123,10 @@ async function withCurrentNames(
         let current = byPath?.get(target.path)
         let path = target.path
         if (!current) {
-          const moved = await resolveDocAlias(entry.spaceId, target.path).catch(
-            () => ({ path: null })
-          )
-          if (moved.path) {
-            path = moved.path
-            current = byPath?.get(moved.path)
+          const moved = await movedPath(entry.spaceId, target.path)
+          if (moved) {
+            path = moved
+            current = byPath?.get(moved)
           }
         }
         return {
@@ -172,19 +175,39 @@ async function namedDocuments(
   return new Map(pairs)
 }
 
+/** Where a moved doc lives now, reading each Space's aliases at most once. */
+function movedPathResolver(): (
+  spaceId: string,
+  path: string
+) => Promise<string | null> {
+  const aliasesBySpace = new Map<string, Promise<DocAliases | null>>()
+  return async (spaceId, path) => {
+    let aliases = aliasesBySpace.get(spaceId)
+    if (!aliases) {
+      aliases = readDocAliases(spaceId).then(
+        (result) => result.aliases,
+        () => null
+      )
+      aliasesBySpace.set(spaceId, aliases)
+    }
+    const loaded = await aliases
+    return loaded ? resolveDocAliasIn(loaded, path) : null
+  }
+}
+
 async function namedCollections(
   spaceIds: string[]
 ): Promise<Map<string, Map<string, string>>> {
   const pairs = await Promise.all(
-    spaceIds.map(async (spaceId) => {
-      const collections = await listRecordCollections(spaceId).catch(() => [])
-      return [
-        spaceId,
-        new Map(
-          collections.map((collection) => [collection.id, collection.name])
-        ),
-      ] as const
-    })
+    spaceIds.map(
+      async (spaceId) =>
+        [
+          spaceId,
+          await listRecordCollectionNames(spaceId).catch(
+            () => new Map<string, string>()
+          ),
+        ] as const
+    )
   )
   return new Map(pairs)
 }

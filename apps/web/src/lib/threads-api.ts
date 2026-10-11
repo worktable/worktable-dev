@@ -5,7 +5,7 @@ import type {
   ThreadMessage,
   ThreadPostResult,
   ThreadReadResult,
-  ThreadSummary,
+  ThreadListItem,
   ThreadWaitResult,
 } from "@worktable/types"
 import { fetchJSON } from "./http"
@@ -53,7 +53,7 @@ export function listThreadParticipants(
 
 export function listThreads(
   scope: ThreadListScope
-): Promise<{ threads: ThreadSummary[] }> {
+): Promise<{ threads: ThreadListItem[] }> {
   if (scope.kind === "all") return fetchJSON("/api/threads")
   if (scope.kind === "worktable") {
     return fetchJSON("/api/threads?location=worktable")

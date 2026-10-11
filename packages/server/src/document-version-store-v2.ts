@@ -1233,6 +1233,61 @@ export async function listLegacyDocumentVersionsV1(input: {
   return summaries.sort(compareCreatedAtNewestFirst)
 }
 
+/**
+ * Whether listCompatibleDocumentVersionsV2 would return any version. Stops at
+ * the first readable version instead of reading the whole history.
+ */
+export async function hasCompatibleDocumentVersionV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  legacy?: LegacyDocumentVersionLocator
+}): Promise<boolean> {
+  if (CanonicalIdSchema.safeParse(input.spaceId).success) {
+    const root = documentVersionsV2Directory(
+      input.workspaceRoot,
+      input.spaceId,
+      input.documentId
+    )
+    if (await pathExists(root)) {
+      await requireRealDocumentStorageDirectory(input.workspaceRoot, root)
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) continue
+        const manifest = await readGenerationManifestAt(
+          documentGenerationV2Directory(
+            input.workspaceRoot,
+            input.spaceId,
+            input.documentId,
+            entry.name
+          )
+        )
+        if (
+          manifest.id !== entry.name ||
+          manifest.spaceId !== input.spaceId ||
+          manifest.documentId !== input.documentId
+        ) {
+          throw new Error("document generation identity mismatch")
+        }
+        return true
+      }
+    }
+  }
+  if (!input.legacy) return false
+  const directory = legacyVersionDirectory({ ...input, locator: input.legacy })
+  if (!(await pathExists(directory))) return false
+  await requireRealDocumentStorageDirectory(input.workspaceRoot, directory)
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue
+    const version = await readLegacyDocumentVersionAt({
+      ...input,
+      locator: input.legacy,
+      versionId: entry.name.slice(0, -".json".length),
+    }).catch(() => null)
+    if (version) return true
+  }
+  return false
+}
+
 export async function listCompatibleDocumentVersionsV2(input: {
   workspaceRoot: string
   spaceId: string

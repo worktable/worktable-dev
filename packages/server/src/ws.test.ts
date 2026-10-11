@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createThread, threadPath } from "./thread-store.ts"
@@ -22,6 +22,60 @@ describe("WsManager", () => {
     await manager.handleChange({ type: "docAliases", spaceId: "space" })
 
     expect(messages).toEqual([{ type: "doc_update", spaceId: "space" }])
+  })
+
+  it("tells every client about Space changes, including ones the watcher missed", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "worktable-ws-spaces-"))
+    setWorkspaceRootOverride(workspaceDir)
+    const { runSpaceListSweep } = await import("./index.ts")
+    const { wsManager } = await import("./ws.ts")
+    const messages: unknown[] = []
+    const client = {
+      data: { spaceId: "elsewhere", canReadDocs: true },
+      send(value: string) {
+        messages.push(JSON.parse(value))
+      },
+      close() {},
+    }
+    wsManager.subscribe(client, "elsewhere")
+    try {
+      // The watcher's event for a Space reaches clients of every Space.
+      await wsManager.handleChange({ type: "space", spaceId: "outside" })
+      expect(messages).toEqual([{ type: "spaces_changed" }])
+
+      // The periodic sweep catches a Space whose watcher event was lost.
+      await runSpaceListSweep()
+      messages.length = 0
+      const now = new Date().toISOString()
+      const writeOutside = (name: string) =>
+        writeFile(
+          join(workspaceDir, "spaces", "outside", "space.json"),
+          JSON.stringify({
+            type: "worktable.space",
+            version: 1,
+            id: "outside",
+            name,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: "test",
+            settings: {},
+          })
+        )
+      await mkdir(join(workspaceDir, "spaces", "outside"), { recursive: true })
+      await writeOutside("Outside")
+      await runSpaceListSweep()
+      await runSpaceListSweep()
+      expect(messages).toEqual([{ type: "spaces_changed" }])
+
+      // So does an edit to an existing Space.
+      await writeOutside("Renamed outside")
+      await runSpaceListSweep()
+      expect(messages).toHaveLength(2)
+    } finally {
+      wsManager.unsubscribe(client)
+      setWorkspaceRootOverride(null)
+      await rm(workspaceDir, { recursive: true, force: true })
+    }
   })
 
   it("broadcasts participant-list invalidation", async () => {
@@ -238,7 +292,11 @@ describe("WsManager", () => {
         },
         {
           target: received.revoked,
-          data: { spaceId: "space", canReadThreads: true, credentialRevoked: true },
+          data: {
+            spaceId: "space",
+            canReadThreads: true,
+            credentialRevoked: true,
+          },
         },
         {
           target: received.noScope,

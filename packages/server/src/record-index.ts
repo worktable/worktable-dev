@@ -44,8 +44,10 @@ import { workspaceCacheKey, getWorkspaceRoot } from "./workspace.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 
 // Bump when the table layout or row semantics change; a mismatch wipes and
-// rebuilds the file (it is a cache — rebuild is always safe).
-const RECORD_INDEX_FORMAT = 4;
+// rebuilds the file (it is a cache — rebuild is always safe). Additive,
+// nullable columns migrate in place instead (see open()): a full rebuild of a
+// large workspace takes minutes.
+const RECORD_INDEX_FORMAT = 3;
 
 // Coarse filesystem clocks (one or two seconds on some volumes) let a rewrite
 // keep the same timestamps. Fingerprints of files changed more recently than
@@ -257,6 +259,10 @@ class RecordIndex {
       db = new Database(path, { create: true });
     }
     db.run("PRAGMA journal_mode = WAL");
+    // A disposable cache: in WAL mode NORMAL still commits atomically but
+    // skips the fsync on every commit, which made a build wait on the disk
+    // once per record.
+    db.run("PRAGMA synchronous = NORMAL");
     db.run("PRAGMA busy_timeout = 5000");
     db.run("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     db.run(
@@ -266,6 +272,12 @@ class RecordIndex {
         "error TEXT, file_hash TEXT NOT NULL, file_fingerprint TEXT, " +
         "PRIMARY KEY (space_id, collection_id, record_id))",
     );
+    // An index from before fingerprints keeps its rows. The column starts
+    // empty, and the next build fills it while reading each file once.
+    const recordColumns = db.query("PRAGMA table_info(records)").all() as { name: string }[];
+    if (!recordColumns.some((column) => column.name === "file_fingerprint")) {
+      db.run("ALTER TABLE records ADD COLUMN file_fingerprint TEXT");
+    }
     db.run("CREATE TABLE IF NOT EXISTS collections (space_id TEXT NOT NULL, collection_id TEXT NOT NULL, name TEXT NOT NULL, fields_json TEXT, schema_hash TEXT, PRIMARY KEY (space_id, collection_id))");
     // Relation edges, stored once per (record, field, target). Backlinks,
     // delete-policy checks, and dangling-reference warnings all read this.

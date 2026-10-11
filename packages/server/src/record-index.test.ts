@@ -760,6 +760,31 @@ describe("record index", () => {
     expect(row?.data["title"]).toBe("v10")
   })
 
+  it("upgrades an index from before fingerprints in place", async () => {
+    await createRecord("meta", "tasks", {
+      id: "alpha",
+      data: { title: "Fix the bridge" },
+    })
+    const before = normalizedRows()
+    recordIndex.stop()
+    // The layout an older Worktable wrote, without the fingerprint column.
+    const { Database } = await import("bun:sqlite")
+    const dbPath = join(appDir, "records-index")
+    const dirs = (await import("node:fs")).readdirSync(dbPath)
+    const db = new Database(join(dbPath, dirs[0]!, "index.db"))
+    db.run("ALTER TABLE records DROP COLUMN file_fingerprint")
+    db.close()
+
+    // Rows and search are kept rather than rebuilt from scratch.
+    recordIndex.start()
+    expect(normalizedRows()).toEqual(before)
+    await recordIndex.whenReady()
+    expect(normalizedRows()).toEqual(before)
+    expect(
+      recordIndex.searchRecords("bridge", 10)?.map((h) => h.recordId)
+    ).toEqual(["alpha"])
+  })
+
   it("rebuilds search rows when FTS becomes available after a no-FTS run", async () => {
     await createRecord("meta", "tasks", {
       id: "alpha",

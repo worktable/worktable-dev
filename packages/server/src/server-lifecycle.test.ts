@@ -504,6 +504,32 @@ describe("server lifecycle", () => {
     server = null
   })
 
+  it("tells a supervising Desktop where its instance is listening", async () => {
+    const previous = process.env["WORKTABLE_HOST_INSTANCE_TOKEN"]
+    process.env["WORKTABLE_HOST_INSTANCE_TOKEN"] = "desktop-instance-1"
+    const log = spyOn(console, "log")
+    try {
+      server = startServer(0, "127.0.0.1")
+      const ready = log.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.startsWith("WORKTABLE_READY "))
+      expect(ready).toHaveLength(1)
+      expect(JSON.parse(ready[0]!.slice("WORKTABLE_READY ".length))).toEqual({
+        port: server.port,
+        instance: "desktop-instance-1",
+      })
+      const health = await fetch(`http://127.0.0.1:${server.port}/health`)
+      expect(health.headers.get("X-Worktable-Host-Instance")).toBe(
+        "desktop-instance-1"
+      )
+    } finally {
+      log.mockRestore()
+      if (previous === undefined)
+        delete process.env["WORKTABLE_HOST_INSTANCE_TOKEN"]
+      else process.env["WORKTABLE_HOST_INSTANCE_TOKEN"] = previous
+    }
+  })
+
   it("removes startup listeners when Bun rejects the bind", async () => {
     const occupied = Bun.serve({
       port: 0,

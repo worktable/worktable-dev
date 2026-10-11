@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, RecordCollectionSchemaSchema, RecordFileSchema, SpaceFileSchema, type RecordCollectionProjectionHealth, type RecordCollectionReconcileResult, type RecordField, type RecordFile, type RecordProjectionState } from "@worktable/types";
 import { getAppDir } from "./app-storage.ts";
 import { onRecordChanged, type RecordChangeEvent } from "./record-events.ts";
+import { timing } from "./request-timing.ts";
 import { getSpacesBaseDir, withStoreWriteLock } from "./store.ts";
 import { workspaceCacheKey, getWorkspaceRoot } from "./workspace.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
@@ -809,7 +810,7 @@ class RecordIndex {
     const sql = includeArchived
       ? "SELECT json FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1"
       : "SELECT json FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1 AND archived = 0";
-    const rows = this.db!.query(sql).all(spaceId, collectionId) as { json: string }[];
+    const rows = timing.span("db", () => this.db!.query(sql).all(spaceId, collectionId)) as { json: string }[];
     return rows.map((row) => JSON.parse(row.json) as RecordFile);
   }
 

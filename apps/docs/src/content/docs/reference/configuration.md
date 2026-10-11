@@ -21,6 +21,7 @@ These environment variables and the Workspace URL control apply to local and sel
 | `WORKTABLE_APP_DIR` | Machine-private app data folder | macOS Application Support, or `~/.config/worktable` |
 | `WORKTABLE_MCP_TOKEN` | Explicit owner bearer credential for MCP; leaving it unset does not disable other authentication requirements | unset |
 | `WORKTABLE_OWNER_PASSWORD` | Owner password for reachable mode, set non-interactively | unset |
+| `WORKTABLE_DEBUG` | Set to `1` to log every request and file change. Otherwise the server logs only requests that fail or take longer than 500 ms | unset |
 | `WORKTABLE_NO_UPDATE_CHECK` | Disable update checks — `status`, `update --check`, and the CLI's and web app's passive update nudges | unset |
 | `WORKTABLE_PUBLIC_URL` | The origin agents and links should use when a tunnel or reverse proxy fronts a local or self-hosted install (an absolute `http(s)://host` origin, no path). Requires an owner password, same as reachable mode. Same setting as Settings → General → Workspace URL in the web app; the env var wins when both are set | unset |
 

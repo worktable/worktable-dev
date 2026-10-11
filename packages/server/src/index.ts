@@ -8,8 +8,10 @@ import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
 import { startLinkedRuntime } from "./linked-runtime.ts";
 import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
 import { compressApiResponse } from "./http-compression.ts";
+import { serverTiming, timedMiddleware } from "./request-timing.ts";
+import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
+import { debugLogging } from "./debug-log.ts";
 import { acceptsGzip } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
 import { readDocumentPreloads } from "./document-preloads.ts";
@@ -42,6 +44,7 @@ import { systemRouter } from "./routes/system.ts";
 import { integrationsRouter } from "./routes/integrations.ts";
 import { authSessionRouter } from "./routes/auth-session.ts";
 import { profileRouter } from "./routes/profile.ts";
+import { diagnosticsRouter } from "./routes/diagnostics.ts";
 import {
   authRequired,
   implicitLoopbackRequestAllowed,
@@ -219,6 +222,11 @@ function isCookieSurface(pathname: string): boolean {
   return pathname.startsWith("/api/") || pathname.startsWith("/auth/");
 }
 
+// Server-Timing, route latency and slow-request logging. Registered first so
+// CORS preflights are counted, and before compression so the header and total
+// include it.
+app.use("*", serverTiming);
+
 app.use("*", async (c, next) => {
   const bearerPreflight = c.req.method === "OPTIONS" &&
     c.req.header("Access-Control-Request-Headers")?.toLowerCase().split(",").some((header) => header.trim() === "authorization");
@@ -228,10 +236,6 @@ app.use("*", async (c, next) => {
   }
   return wildcardCors(c, next);
 });
-const requestLogger = logger();
-app.use("*", (c, next) =>
-  c.req.path === "/api/linked/account/callback" ? next() : requestLogger(c, next)
-);
 app.use("/api/*", compressApiResponse);
 
 // A replacement closes this gate before stopping the listener. Every admitted
@@ -368,7 +372,7 @@ app.get("/worktable-preview/fonts/*", async (c) => {
   });
 });
 
-app.use("/api/*", trustedLocalIdentity());
+app.use("/api/*", timedMiddleware("auth", trustedLocalIdentity()));
 app.use("/api/*", (c, next) =>
   runAsActivityActor(c.get("identity")?.principal, next)
 );
@@ -385,6 +389,7 @@ app.route("/internal/operator", operatorRouter);
 app.route("/public/share", publicSharesRouter);
 app.route("/api/workspace", workspaceRouter);
 app.route("/api/profile", profileRouter);
+app.route("/api/diagnostics", diagnosticsRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
 app.route("/api/linked", linkedRouter);
@@ -1364,7 +1369,7 @@ export function startServer(
 
       // Sync external doc changes into Yjs in-memory state
       if (event.type === "doc") {
-        console.log(`[Worktable] watcher doc change event: spaceId=${event.spaceId}, docPath=${event.docPath}`);
+        if (debugLogging) console.debug(`[Worktable] watcher doc change event: spaceId=${event.spaceId}, docPath=${event.docPath}`);
         try {
           await syncExternalDocChange(event.spaceId, event.docPath);
         } catch (err) {
@@ -1733,6 +1738,7 @@ export function startServer(
         }
       },
       message(ws, message) {
+        noteServerActivity();
         if (ws.data.credentialRevoked) return;
         if (ws.data.type === "yjs") {
           if (workspaceRecoveryRequired()) {
@@ -1806,6 +1812,8 @@ export function startServer(
   if (updateCheckSupported() && !updateCheckDisabled()) {
     stopUpdateCheckScheduler = startBackgroundUpdateCheckScheduler();
   }
+  // Process-wide; samples while requests or socket frames arrive, idles otherwise.
+  startEventLoopLagSampler();
 
   const displayHost = hostname && hostname !== "0.0.0.0" ? hostname : "localhost";
   // Print the actual bound port (server.port), not the requested `port` arg:

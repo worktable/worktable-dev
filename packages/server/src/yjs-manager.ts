@@ -21,6 +21,7 @@ import {
   stableHash,
 } from "./store.ts";
 import { wsManager } from "./ws.ts";
+import { timeOperation } from "./perf-diagnostics.ts";
 import { rebaseRegions, type BlockRegion } from "./block-regions.ts";
 import {
   requireWorkspaceRecovery,
@@ -390,7 +391,7 @@ export class YjsDocManager {
     let task!: Promise<LiveDoc>;
     task = (async () => {
       try {
-        return await this.loadLiveDoc(spaceId, docPath, key);
+        return await timeOperation("yjs.load", this.loadLiveDoc(spaceId, docPath, key));
       } finally {
         if (this.initializingDocs.get(key) === task) {
           this.initializingDocs.delete(key);
@@ -2061,11 +2062,11 @@ export class YjsDocManager {
     const task = (async () => {
       do {
         liveDoc.persistAgain = false;
-        await this.persistDoc(
+        await timeOperation("yjs.persist", this.persistDoc(
           liveDoc.key,
           liveDoc.spaceId,
           liveDoc.docPath
-        );
+        ));
       } while (
         liveDoc.persistAgain && this.docs.get(liveDoc.key) === liveDoc
       );

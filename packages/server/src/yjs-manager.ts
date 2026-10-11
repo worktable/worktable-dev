@@ -2,7 +2,10 @@ import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
-import { normalizeMermaidBlocks } from "@worktable/types";
+import {
+  MERMAID_BLOCK_NORMALIZER_VERSION,
+  normalizeMermaidBlocks,
+} from "@worktable/types";
 import { canonicalizeBlocks, getServerEditor, inheritBlockIds } from "./blocknote.ts";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -16,7 +19,9 @@ import {
   unsuppressPath,
   getDocPath,
   docStat,
+  docVersionPending,
   getDocProvenance,
+  recordPendingDocVersion,
   sanitizeDocPath,
   stableHash,
 } from "./store.ts";
@@ -45,9 +50,26 @@ const SOURCE_BROWSER_SYNC = "browser-yjs-sync";
 function isBrowserSource(source: string): boolean {
   return source === SOURCE_BROWSER_HUMAN || source === SOURCE_BROWSER_SYNC;
 }
-const PERSIST_DEBOUNCE_MS = 2000;
-const UNLOAD_DELAY_MS = 30_000;
-const PING_INTERVAL_MS = 15_000; // Must be < y-websocket's 30s messageReconnectTimeout
+export interface YjsRoomTiming {
+  /** Save after this much quiet. */
+  persistDebounceMs: number;
+  /** Save at least this often while edits keep arriving. */
+  persistMaxWaitMs: number;
+  /** Keep a room without clients loaded this long, so reopening is cheap. */
+  emptyRoomTtlMs: number;
+  /** Rooms without clients beyond this many are saved and unloaded, oldest first. */
+  maxEmptyRooms: number;
+  /** Must be < y-websocket's 30s messageReconnectTimeout. */
+  pingIntervalMs: number;
+}
+
+const DEFAULT_ROOM_TIMING: YjsRoomTiming = {
+  persistDebounceMs: 2000,
+  persistMaxWaitMs: 10_000,
+  emptyRoomTtlMs: 10 * 60_000,
+  maxEmptyRooms: 20,
+  pingIntervalMs: 15_000,
+};
 const MAX_PENDING_CONNECTION_FRAMES = 64;
 const MAX_PENDING_CONNECTION_BYTES = 8 * 1024 * 1024;
 const MAX_DOC_PATH_MOVE_TRANSITIONS = 128;
@@ -56,12 +78,20 @@ const ORIGIN_INITIAL_LOAD = "initial-load";
 // An agent write already committed to disk, applied by block. Not persisted again.
 const ORIGIN_AGENT_WRITE = "agent-write";
 const YJS_STATE_FILE_TYPE = "worktable.yjs-state";
-const YJS_STATE_FILE_VERSION = 1;
+// Version 2 records which Mermaid normalizer checked the stored blocks.
+// Version 1 files still load; their blocks are checked on load.
+const YJS_STATE_FILE_VERSION = 2;
 const YJS_STATE_MAGIC = "WTYJS1\n";
 const MAX_YJS_STATE_HEADER_BYTES = 64 * 1024;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+
+const PING_FRAME = (() => {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, MESSAGE_PING);
+  return encoding.toUint8Array(encoder);
+})();
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -106,9 +136,14 @@ interface LiveDoc {
   docPath: string;
   clients: Set<WsClient>;
   persistTimer: ReturnType<typeof setTimeout> | null;
+  // The debounced save runs by this time even while edits keep arriving.
+  persistDeadline: number | null;
+  // A save while typing left its version for the end of the editing session.
+  versionPending: boolean;
   persistPromise: Promise<void> | null;
   persistAgain: boolean;
   unloadTimer: ReturnType<typeof setTimeout> | null;
+  emptySince: number | null; // when the room last lost its final client
   lastPersistMs: number; // disk mtime (ms) the in-memory Y.Doc is based on
   protectedUntilMs: number; // briefly block browser persists over agent/filesystem versions
   humanEdited: boolean; // a connected client has signaled a genuine local edit this session
@@ -121,22 +156,67 @@ interface LiveDoc {
   // Hash of the portable blocks the room was last loaded from, synced with or
   // saved as. A different hash on disk is a change the room has not seen.
   diskContentHash: string;
+  // The contentGeneration whose content the portable file is known to hold.
+  // A save of a room still at this generation has nothing to write.
+  savedGeneration: number;
+  // What the portable file held when a save last looked at it. Valid while
+  // the file keeps the same fingerprint.
+  diskObservation: DiskObservation | null;
+  // The contentGeneration of state restored ahead of the document: edits
+  // this server accepted before it stopped, not a client's cached state.
+  restoredGeneration: number | null;
   // While set, client frames accepted after this sequence wait (an agent
   // write is committing against the room's current blocks).
   frameHoldCutoff: number | null;
 }
 
+interface DiskObservation {
+  fingerprint: string;
+  // stableHash of the stored blocks.
+  contentHash: string;
+  // stableHash of the stored blocks in the canonical form a room exports.
+  // Null until a save needs it.
+  canonicalHash: string | null;
+}
+
 interface YjsStateHeader {
   type: typeof YJS_STATE_FILE_TYPE;
-  version: typeof YJS_STATE_FILE_VERSION;
+  version: 1 | typeof YJS_STATE_FILE_VERSION;
   docContentHash: string;
   docVersionId: string;
   storedAt: string;
+  // Version 2: the Mermaid normalizer version the stored blocks were checked
+  // with and needed no change; null when they were not checked.
+  mermaidNormalizer?: number | null;
+  // Version 2: the stored state holds exactly the content of the document
+  // version it names. False when it may hold edits the document lacks, such
+  // as one that arrived while that version was being saved.
+  matchesDocument?: boolean;
+}
+
+/** What a state file says about the room it stores. */
+interface StoredYjsStateFacts {
+  mermaidNormalized: boolean;
+  matchesDocument: boolean;
+}
+
+interface StoredYjsState {
+  update: Uint8Array;
+  mermaidNormalizer: number | null;
+  matchesDocument: boolean;
 }
 
 interface DocSnapshotIdentity {
   contentHash: string;
   versionId: string;
+}
+
+interface PersistOptions {
+  /**
+   * The save happens while the editor keeps typing, so it may leave its
+   * version for the end of the editing session.
+   */
+  continueSession?: boolean;
 }
 
 interface EditIntentSnapshot {
@@ -240,9 +320,13 @@ async function removeFileIfExists(path: string): Promise<void> {
 function isYjsStateHeader(value: unknown): value is YjsStateHeader {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
+  const normalizer = candidate["mermaidNormalizer"];
   return (
     candidate["type"] === YJS_STATE_FILE_TYPE &&
-    candidate["version"] === YJS_STATE_FILE_VERSION &&
+    (candidate["version"] === 1 ||
+      (candidate["version"] === YJS_STATE_FILE_VERSION &&
+        (normalizer === null || typeof normalizer === "number") &&
+        typeof candidate["matchesDocument"] === "boolean")) &&
     typeof candidate["docContentHash"] === "string" &&
     typeof candidate["docVersionId"] === "string" &&
     typeof candidate["storedAt"] === "string"
@@ -251,7 +335,8 @@ function isYjsStateHeader(value: unknown): value is YjsStateHeader {
 
 function encodeYjsStateFile(
   update: Uint8Array,
-  identity: DocSnapshotIdentity
+  identity: DocSnapshotIdentity,
+  facts: StoredYjsStateFacts
 ): Uint8Array {
   const header: YjsStateHeader = {
     type: YJS_STATE_FILE_TYPE,
@@ -259,6 +344,10 @@ function encodeYjsStateFile(
     docContentHash: identity.contentHash,
     docVersionId: identity.versionId,
     storedAt: new Date().toISOString(),
+    mermaidNormalizer: facts.mermaidNormalized
+      ? MERMAID_BLOCK_NORMALIZER_VERSION
+      : null,
+    matchesDocument: facts.matchesDocument,
   };
   const magic = textEncoder.encode(YJS_STATE_MAGIC);
   const headerBytes = textEncoder.encode(JSON.stringify(header));
@@ -309,10 +398,10 @@ function decodeYjsStateFile(
   }
 }
 
-async function readCurrentYjsStateUpdate(
+async function readCurrentYjsState(
   path: string,
   identity: DocSnapshotIdentity | undefined
-): Promise<Uint8Array | null> {
+): Promise<StoredYjsState | null> {
   if (!identity) return null;
   try {
     const decoded = decodeYjsStateFile(await readFile(path));
@@ -323,19 +412,30 @@ async function readCurrentYjsStateUpdate(
     ) {
       return null;
     }
-    return decoded.update;
+    return {
+      update: decoded.update,
+      mermaidNormalizer: decoded.header.mermaidNormalizer ?? null,
+      matchesDocument: decoded.header.matchesDocument ?? false,
+    };
   } catch {
     return null;
   }
 }
 
+/**
+ * Store the room's machine-local state for the portable version `identity`,
+ * with what is known about it: blocks that need no Mermaid normalization let
+ * the next cold load skip checking them, and state that matches the document
+ * lets it start as saved.
+ */
 async function writeYjsStateFile(
   path: string,
   update: Uint8Array,
-  identity: DocSnapshotIdentity | undefined
+  identity: DocSnapshotIdentity | undefined,
+  facts: StoredYjsStateFacts
 ): Promise<void> {
   if (!identity) return;
-  await writeFileAtomic(path, encodeYjsStateFile(update, identity));
+  await writeFileAtomic(path, encodeYjsStateFile(update, identity, facts));
 }
 
 // ── YjsDocManager ────────────────────────────────────────────
@@ -347,7 +447,8 @@ export class YjsDocManager {
   private initializingDocs: Map<string, Promise<LiveDoc>> = new Map();
   private pendingConnections: Map<WsClient, PendingConnection> = new Map();
   private connectionTasks: Set<Promise<void>> = new Set();
-  private pingTimers: Map<WsClient, ReturnType<typeof setInterval>> = new Map();
+  // One keepalive timer for every attached client, running while any is.
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
   private clientFreshness: Map<WsClient, ClientFreshness> = new Map();
   // The upgrade URL is immutable transport metadata. A live room can move to
   // a new doc path while its sockets stay connected, so message/disconnect
@@ -363,13 +464,21 @@ export class YjsDocManager {
   private mutationPauseCutoff = 0;
   private pausedClientFrames: Map<WsClient, PausedClientFrames> = new Map();
   private readonly beforePersistWrite?: () => Promise<void>;
+  private readonly timing: YjsRoomTiming;
 
-  constructor(opts?: { beforePersistWrite?: () => Promise<void> }) {
+  constructor(opts?: {
+    beforePersistWrite?: () => Promise<void>;
+    timing?: Partial<YjsRoomTiming>;
+  }) {
     this.beforePersistWrite = opts?.beforePersistWrite;
+    this.timing = { ...DEFAULT_ROOM_TIMING, ...opts?.timing };
   }
 
+  /** Load a room without attaching a client; it unloads like any empty room. */
   async getOrCreateDoc(spaceId: string, docPath: string): Promise<Y.Doc> {
-    return (await this.getOrCreateLiveDoc(spaceId, docPath)).ydoc;
+    const liveDoc = await this.getOrCreateLiveDoc(spaceId, docPath);
+    this.scheduleUnloadIfEmpty(liveDoc);
+    return liveDoc.ydoc;
   }
 
   private getOrCreateLiveDoc(
@@ -411,6 +520,9 @@ export class YjsDocManager {
     // JSON docs are exported snapshots for agents/search/version history and are
     // imported when no fresh local Yjs state exists.
     const persistedYjsPath = yjsStatePath(spaceId, docPath);
+    // Stat before reading: if the file changes in between, the fingerprint
+    // is the older one and the next save reads the file again.
+    const fileStat = await docStat(spaceId, docPath);
     const current = await readDoc(spaceId, docPath);
     if (current.error || current.data === null) {
       await removeFileIfExists(persistedYjsPath);
@@ -422,34 +534,37 @@ export class YjsDocManager {
     }
     let ydoc = new Y.Doc();
     const editor = await getEditor();
-    const fileStat = await docStat(spaceId, docPath);
     const provenance = await getDocProvenance(spaceId, docPath);
+    const diskContentHash = stableHash(current.data);
     // Provenance and cache headers can agree with each other while both lag a
     // portable source that was published before its version transaction
     // failed. Never admit machine-local state unless provenance also describes
     // the bytes currently on disk.
     const portableProvenance =
-      provenance?.contentHash === stableHash(current.data)
+      provenance?.contentHash === diskContentHash
         ? provenance
         : undefined
-    const persistedUpdate = existsSync(persistedYjsPath)
-      ? await readCurrentYjsStateUpdate(
+    const persisted = existsSync(persistedYjsPath)
+      ? await readCurrentYjsState(
           persistedYjsPath,
           portableProvenance
         )
       : null;
 
-    if (persistedUpdate) {
-      Y.applyUpdate(ydoc, persistedUpdate, ORIGIN_INITIAL_LOAD);
-      const currentBlocks = editor.yDocToBlocks(ydoc, FRAGMENT_NAME);
-      const normalized = normalizeMermaidBlocks(currentBlocks);
-      if (normalized.changed) {
-        const imported = editor.blocksToYDoc(
-          normalized.blocks as Parameters<typeof editor.blocksToYDoc>[0],
-          FRAGMENT_NAME
-        );
-        ydoc.destroy();
-        ydoc = imported;
+    if (persisted) {
+      Y.applyUpdate(ydoc, persisted.update, ORIGIN_INITIAL_LOAD);
+      // State stored after this normalizer checked it needs no export here.
+      if (persisted.mermaidNormalizer !== MERMAID_BLOCK_NORMALIZER_VERSION) {
+        const currentBlocks = editor.yDocToBlocks(ydoc, FRAGMENT_NAME);
+        const normalized = normalizeMermaidBlocks(currentBlocks);
+        if (normalized.changed) {
+          const imported = editor.blocksToYDoc(
+            normalized.blocks as Parameters<typeof editor.blocksToYDoc>[0],
+            FRAGMENT_NAME
+          );
+          ydoc.destroy();
+          ydoc = imported;
+        }
       }
     } else {
       if (Array.isArray(current.data)) {
@@ -467,7 +582,8 @@ export class YjsDocManager {
           await writeYjsStateFile(
             persistedYjsPath,
             Y.encodeStateAsUpdate(ydoc),
-            portableProvenance
+            portableProvenance,
+            { mermaidNormalized: true, matchesDocument: true }
           );
           if (!portableProvenance) {
             await removeFileIfExists(persistedYjsPath)
@@ -480,6 +596,11 @@ export class YjsDocManager {
       portableProvenance?.source &&
       !isBrowserSource(portableProvenance.source) &&
       portableProvenance.source !== "rest-api";
+    const contentGeneration = ++this.nextContentGeneration;
+    const restoredAhead = persisted !== null && !persisted.matchesDocument;
+    // A session that stopped before recording its version (the process
+    // ended): this room records it when its own session ends.
+    const versionPending = await docVersionPending(spaceId, docPath);
     const liveDoc: LiveDoc = {
       ydoc,
       spaceId,
@@ -487,15 +608,31 @@ export class YjsDocManager {
       docPath,
       clients: new Set(),
       persistTimer: null,
+      persistDeadline: null,
+      versionPending,
       persistPromise: null,
       persistAgain: false,
       unloadTimer: null,
+      emptySince: null,
       lastPersistMs: fileStat?.updatedAt ?? Date.now(),
       protectedUntilMs: protectedSource ? Date.now() + 15_000 : 0,
       humanEdited: false,
-      contentGeneration: ++this.nextContentGeneration,
+      contentGeneration,
       intentGeneration: 0,
-      diskContentHash: stableHash(current.data),
+      diskContentHash,
+      // A room imported from the file holds the file's content; a normalized
+      // legacy shape is written by the next genuine edit, not by opening.
+      // Restored state can be newer than the file (an edit that arrived
+      // while the last save was writing, then a crash) and is saved soon.
+      savedGeneration: restoredAhead ? 0 : contentGeneration,
+      diskObservation: fileStat
+        ? {
+            fingerprint: fileStat.fingerprint,
+            contentHash: diskContentHash,
+            canonicalHash: null,
+          }
+        : null,
+      restoredGeneration: restoredAhead ? contentGeneration : null,
       frameHoldCutoff: null,
     };
 
@@ -531,6 +668,7 @@ export class YjsDocManager {
     });
 
     this.docs.set(key, liveDoc);
+    if (restoredAhead) this.schedulePersist(key, spaceId, docPath);
     return liveDoc;
   }
 
@@ -614,22 +752,14 @@ export class YjsDocManager {
         clearTimeout(liveDoc.unloadTimer);
         liveDoc.unloadTimer = null;
       }
+      liveDoc.emptySince = null;
 
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, MESSAGE_SYNC);
       syncProtocol.writeSyncStep1(encoder, liveDoc.ydoc);
       ws.send(encoding.toUint8Array(encoder));
 
-      const pingTimer = setInterval(() => {
-        try {
-          const pingEncoder = encoding.createEncoder();
-          encoding.writeVarUint(pingEncoder, MESSAGE_PING);
-          ws.send(encoding.toUint8Array(pingEncoder));
-        } catch {
-          // Client gone; the transport's close callback performs cleanup.
-        }
-      }, PING_INTERVAL_MS);
-      this.pingTimers.set(ws, pingTimer);
+      this.startPings();
 
       const queuedFrames = pending.frames;
       pending.frames = [];
@@ -996,8 +1126,10 @@ export class YjsDocManager {
       );
       await this.syncFromDisk(spaceId, docPath);
     }
-    if (liveDoc.persistTimer) {
-      clearTimeout(liveDoc.persistTimer);
+    // Typing the session saved without a version becomes a version before
+    // the agent's, attributed to the people who typed it.
+    if (liveDoc.persistTimer || liveDoc.versionPending) {
+      if (liveDoc.persistTimer) clearTimeout(liveDoc.persistTimer);
       liveDoc.persistTimer = null;
       await this.persistDoc(liveDoc.key, spaceId, docPath);
     }
@@ -1102,11 +1234,14 @@ export class YjsDocManager {
     liveDoc.lastPersistMs = fileStat?.updatedAt ?? Date.now();
     liveDoc.protectedUntilMs = protectedSource ? Date.now() + 15_000 : 0;
     liveDoc.diskContentHash = stableHash(written);
+    // The next save reads the file again rather than assume what it holds.
+    liveDoc.diskObservation = null;
     try {
       await writeYjsStateFile(
         yjsStatePath(spaceId, docPath),
         Y.encodeStateAsUpdate(liveDoc.ydoc),
-        provenance
+        provenance,
+        { mermaidNormalized: false, matchesDocument: false }
       );
     } catch (error) {
       console.warn(
@@ -1334,6 +1469,9 @@ export class YjsDocManager {
     liveDoc.lastPersistMs = fileStat?.updatedAt ?? Date.now();
     liveDoc.protectedUntilMs = protectedSource ? Date.now() + 15_000 : 0;
     liveDoc.diskContentHash = stableHash(blocks);
+    liveDoc.savedGeneration = liveDoc.contentGeneration;
+    // The next save reads the file again rather than assume what it holds.
+    liveDoc.diskObservation = null;
     // Disk content just replaced the doc: an earlier edit signal referred to
     // content that is now persisted or superseded, so spend it AND acknowledge
     // it — clearing without the ack would leave the client's replay marker
@@ -1348,11 +1486,17 @@ export class YjsDocManager {
       this.sendIntentAck(liveDoc);
     }
     try {
-      await writeYjsStateFile(
-        yjsStatePath(spaceId, docPath),
-        Y.encodeStateAsUpdate(ydoc),
-        provenance
-      );
+      // The room holds exactly the normalized disk blocks. Store it only
+      // under the version that holds them: a write that landed after the
+      // blocks were read has newer provenance, and its next sync stores it.
+      if (provenance?.contentHash === liveDoc.diskContentHash) {
+        await writeYjsStateFile(
+          yjsStatePath(spaceId, docPath),
+          Y.encodeStateAsUpdate(ydoc),
+          provenance,
+          { mermaidNormalized: true, matchesDocument: true }
+        );
+      }
     } catch (error) {
       console.warn(
         `[YjsManager] failed to refresh derived Yjs state for ${spaceId}/${docPath}:`,
@@ -1926,16 +2070,11 @@ export class YjsDocManager {
       if (!options.keepPending) this.pendingConnections.delete(ws);
     }
 
-    const pingTimer = this.pingTimers.get(ws);
-    if (pingTimer) {
-      clearInterval(pingTimer);
-      this.pingTimers.delete(ws);
-    }
-
     this.clientFreshness.delete(ws);
     this.pausedClientFrames.delete(ws);
     const liveDoc = this.clientDocs.get(ws);
     this.clientDocs.delete(ws);
+    if (this.clientDocs.size === 0) this.stopPings();
     if (liveDoc) {
       liveDoc.clients.delete(ws);
       if (options.scheduleUnload) this.scheduleUnloadIfEmpty(liveDoc);
@@ -1959,12 +2098,51 @@ export class YjsDocManager {
       return;
     }
 
-    const key = liveDoc.key;
-    const spaceId = liveDoc.spaceId;
-    const docPath = liveDoc.docPath;
+    liveDoc.emptySince = Date.now();
+    // Read the identity when the timer fires: a rename can rekey the room.
     liveDoc.unloadTimer = setTimeout(() => {
-      void this.unloadDoc(key, spaceId, docPath);
-    }, UNLOAD_DELAY_MS);
+      void this.unloadDoc(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
+    }, this.timing.emptyRoomTtlMs);
+    // An idle room never keeps the process alive; shutdown saves it.
+    liveDoc.unloadTimer.unref?.();
+    this.evictExcessEmptyRooms();
+  }
+
+  /** Save and unload the longest-empty rooms beyond the empty-room limit. */
+  private evictExcessEmptyRooms(): void {
+    const empty = [...this.docs.values()].filter(
+      (room) =>
+        room.clients.size === 0 &&
+        room.unloadTimer !== null &&
+        room.emptySince !== null
+    );
+    const excess = empty.length - this.timing.maxEmptyRooms;
+    if (excess <= 0) return;
+    empty.sort((a, b) => a.emptySince! - b.emptySince!);
+    for (const room of empty.slice(0, excess)) {
+      clearTimeout(room.unloadTimer!);
+      room.unloadTimer = null;
+      void this.unloadDoc(room.key, room.spaceId, room.docPath);
+    }
+  }
+
+  private startPings(): void {
+    if (this.pingTimer || this.clientDocs.size === 0) return;
+    this.pingTimer = setInterval(() => {
+      for (const client of this.clientDocs.keys()) {
+        try {
+          client.send(PING_FRAME);
+        } catch {
+          // Client gone; the transport's close callback performs cleanup.
+        }
+      }
+    }, this.timing.pingIntervalMs);
+  }
+
+  private stopPings(): void {
+    if (!this.pingTimer) return;
+    clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 
   /**
@@ -1999,18 +2177,42 @@ export class YjsDocManager {
       clearTimeout(liveDoc.persistTimer);
     }
 
+    // Debounce, but never past the deadline set by the first unsaved edit:
+    // continuous typing must still reach the file for agents and readers.
+    // A save at the deadline happens while the editor is still typing.
+    const now = Date.now();
+    liveDoc.persistDeadline ??= now + this.timing.persistMaxWaitMs;
+    const delay = Math.max(
+      0,
+      Math.min(this.timing.persistDebounceMs, liveDoc.persistDeadline - now)
+    );
+    this.armPersistTimer(
+      liveDoc,
+      key,
+      delay,
+      delay < this.timing.persistDebounceMs
+    );
+  }
+
+  private armPersistTimer(
+    liveDoc: LiveDoc,
+    key: string,
+    delay: number,
+    whileTyping: boolean
+  ): void {
+    if (liveDoc.persistTimer) clearTimeout(liveDoc.persistTimer);
     liveDoc.persistTimer = setTimeout(() => {
       liveDoc.persistTimer = null;
-      this.runPersist(key).catch((err) =>
+      this.runPersist(key, { continueSession: whileTyping }).catch((err) =>
         console.error("[YjsManager] persist error:", err)
       );
-    }, PERSIST_DEBOUNCE_MS);
+    }, delay);
   }
 
   /**
    * Run any pending persist for a loaded doc immediately, cancelling the
    * debounce. Used to flush deterministically (e.g. in tests, or a graceful
-   * save) instead of waiting out PERSIST_DEBOUNCE_MS. No-op if not loaded.
+   * save) instead of waiting out the debounce. No-op if not loaded.
    */
   async flushPersist(spaceId: string, docPath: string): Promise<void> {
     const key = docKey(spaceId, docPath);
@@ -2025,8 +2227,18 @@ export class YjsDocManager {
 
   /** Persist every currently loaded room without disconnecting its clients. */
   async flushAllPersists(): Promise<void> {
-    if (this.initializingDocs.size > 0) {
-      await Promise.allSettled([...this.initializingDocs.values()]);
+    // A connection waiting on a cold room applies the frames it queued only
+    // after its own setup. Those frames were accepted before any pause's
+    // cutoff, so the saves below must include them: wait for the connections
+    // as well as the rooms.
+    const settling = [
+      ...this.initializingDocs.values(),
+      ...[...this.pendingConnections.values()].flatMap((pending) =>
+        pending.task ? [pending.task] : []
+      ),
+    ];
+    if (settling.length > 0) {
+      await Promise.allSettled(settling);
     }
     const results = await Promise.allSettled(
       [...this.docs.entries()].map(async ([key, liveDoc]) => {
@@ -2049,8 +2261,16 @@ export class YjsDocManager {
     }
   }
 
-  /** Serialize persists per room and replay once when an edit arrives mid-write. */
-  private async runPersist(key: string): Promise<void> {
+  /**
+   * Serialize persists per room and replay once when an edit arrives
+   * mid-write. Only a save the debounce timer starts while the editor is
+   * still typing continues the editing session; every other save, including
+   * a replay, ends it.
+   */
+  private async runPersist(
+    key: string,
+    options?: PersistOptions
+  ): Promise<void> {
     const liveDoc = this.docs.get(key);
     if (!liveDoc) return;
     if (liveDoc.persistPromise) {
@@ -2060,13 +2280,16 @@ export class YjsDocManager {
     }
 
     const task = (async () => {
+      let first = true;
       do {
         liveDoc.persistAgain = false;
         await timeOperation("yjs.persist", this.persistDoc(
           liveDoc.key,
           liveDoc.spaceId,
-          liveDoc.docPath
+          liveDoc.docPath,
+          first ? options : undefined
         ));
+        first = false;
       } while (
         liveDoc.persistAgain && this.docs.get(liveDoc.key) === liveDoc
       );
@@ -2082,10 +2305,14 @@ export class YjsDocManager {
   private async persistDoc(
     key: string,
     spaceId: string,
-    docPath: string
+    docPath: string,
+    options?: PersistOptions
   ): Promise<void> {
     const liveDoc = this.docs.get(key);
     if (!liveDoc) return;
+    // Edits from here on are not in this save; they start a new wait.
+    liveDoc.persistDeadline = null;
+    const continueSession = options?.continueSession === true;
 
     const requiredDiskSync = this.requiredDiskSyncs.get(liveDoc);
     if (requiredDiskSync !== undefined) {
@@ -2113,10 +2340,21 @@ export class YjsDocManager {
       return;
     }
 
+    // Nothing changed since the room last matched the file. A pending edit
+    // signal still needs the export below, which spends and acknowledges it.
+    if (
+      liveDoc.contentGeneration === liveDoc.savedGeneration &&
+      !liveDoc.humanEdited
+    ) {
+      if (!continueSession) await this.endEditingSession(liveDoc);
+      return;
+    }
+
     const provenance = await getDocProvenance(spaceId, docPath);
     const protectedSource = provenance?.source && !isBrowserSource(provenance.source) && provenance.source !== "rest-api";
 
     const editor = await getEditor();
+    const exportedGeneration = liveDoc.contentGeneration;
     const blocks = editor.yDocToBlocks(liveDoc.ydoc, FRAGMENT_NAME);
     // Snapshot the edit signal WITH the content it describes. Awaits below
     // yield; an intent arriving mid-persist belongs to an edit that is not in
@@ -2138,8 +2376,19 @@ export class YjsDocManager {
     // this persist carries no new content — refresh only the Yjs state cache
     // and record no version, so opening a doc never launders provenance. This
     // also covers legacy docs whose on-disk bytes predate canonical-on-write.
+    //
+    // The file is read and canonicalized only when the room has not seen it
+    // at its current fingerprint: after the room's own save the file holds
+    // exactly the exported blocks, which are already canonical.
     const exportedHash = stableHash(blocks);
-    const current = await readDoc(spaceId, docPath);
+    const observed =
+      fileStat && liveDoc.diskObservation?.fingerprint === fileStat.fingerprint
+        ? liveDoc.diskObservation
+        : null;
+    const readFile =
+      !observed ||
+      (observed.contentHash !== exportedHash && observed.canonicalHash === null);
+    const current = readFile ? await readDoc(spaceId, docPath) : null;
     await this.beforePersistWrite?.();
     // A rename can complete while the reads/conversion above are awaiting.
     // Never recreate the old path; ask the serialized loop to persist the
@@ -2150,31 +2399,59 @@ export class YjsDocManager {
     }
     // Markdown is an explicit read-only format in the browser, and a missing
     // canonical file must never be recreated from stale in-memory state.
-    if (current.error || current.data === null || current.storedAs === "md") {
+    if (!fileStat || fileStat.format === "md") return;
+    if (current && (current.error || current.data === null || current.storedAs === "md")) {
       return;
     }
-    if (Array.isArray(current.data)) {
-      let onDiskCanonicalHash: string;
-      try {
-        // Legacy files can hold id-less blocks; canonicalizing them standalone
-        // would mint ids that can never match the ids the Y.Doc import minted,
-        // so unchanged content would hash differently and record a phantom
-        // version. Let the disk blocks adopt the live ids for matching content
-        // first — identical content then hashes identically.
-        onDiskCanonicalHash = stableHash(
-          await canonicalizeBlocks(inheritBlockIds(current.data, blocks))
-        );
-      } catch {
-        onDiskCanonicalHash = stableHash(current.data);
+    // The stat preceded the read, so a file replaced in between gets a new
+    // fingerprint and is read again by the next save.
+    const observation: DiskObservation | null =
+      current && Array.isArray(current.data)
+        ? {
+            fingerprint: fileStat.fingerprint,
+            contentHash: stableHash(current.data),
+            canonicalHash: null,
+          }
+        : observed;
+    if (observation) {
+      let unchanged = observation.contentHash === exportedHash;
+      if (!unchanged && observation.canonicalHash === null && current) {
+        const stored = current.data as unknown[];
+        try {
+          // Legacy files can hold id-less blocks; canonicalizing them standalone
+          // would mint ids that can never match the ids the Y.Doc import minted,
+          // so unchanged content would hash differently and record a phantom
+          // version. Let the disk blocks adopt the live ids for matching content
+          // first — identical content then hashes identically.
+          observation.canonicalHash = stableHash(
+            await canonicalizeBlocks(inheritBlockIds(stored, blocks))
+          );
+        } catch {
+          observation.canonicalHash = observation.contentHash;
+        }
       }
-      if (onDiskCanonicalHash === exportedHash) {
+      if (!unchanged) unchanged = observation.canonicalHash === exportedHash;
+      liveDoc.diskObservation = observation;
+      if (unchanged) {
+        // Edits that arrived since the export are in the state but not in
+        // the document.
+        const asExported = liveDoc.contentGeneration === exportedGeneration;
         await writeYjsStateFile(
           yjsStatePath(spaceId, docPath),
           Y.encodeStateAsUpdate(liveDoc.ydoc),
-          provenance
+          provenance,
+          {
+            mermaidNormalized:
+              asExported && !normalizeMermaidBlocks(blocks).changed,
+            matchesDocument:
+              asExported && provenance?.contentHash === observation.contentHash,
+          }
         );
-        liveDoc.lastPersistMs = fileStat?.updatedAt ?? liveDoc.lastPersistMs;
-        liveDoc.diskContentHash = stableHash(current.data);
+        liveDoc.lastPersistMs = fileStat.updatedAt;
+        liveDoc.diskContentHash = observation.contentHash;
+        if (liveDoc.savedGeneration < exportedGeneration) {
+          liveDoc.savedGeneration = exportedGeneration;
+        }
         // Belt to replaceContent's synchronous arming: if a no-op persist
         // observes a fresh protected version (e.g. the open-echo of an agent
         // doc), arm the stale-cache window here too — anchored at the file
@@ -2191,6 +2468,7 @@ export class YjsDocManager {
         // machine drift on this doc would inherit a human attribution and
         // bypass the stale-cache guard.
         spendIntent();
+        if (!continueSession) await this.endEditingSession(liveDoc);
         return;
       }
     }
@@ -2199,7 +2477,14 @@ export class YjsDocManager {
     // version with a reconnecting browser's possibly-stale cached state. Only
     // applies to a genuine content change with no human edit signaled — a
     // genuine local edit must never be discarded, and a no-op needs no sync.
-    if (protectedSource && !hadIntent && Date.now() < liveDoc.protectedUntilMs) {
+    // Restored state that no client has changed since is this server's own
+    // accepted edits, never a stale cache.
+    if (
+      protectedSource &&
+      !hadIntent &&
+      Date.now() < liveDoc.protectedUntilMs &&
+      exportedGeneration !== liveDoc.restoredGeneration
+    ) {
       console.log(
         `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${docPath}`
       );
@@ -2214,6 +2499,12 @@ export class YjsDocManager {
     const source = hadIntent ? SOURCE_BROWSER_HUMAN : SOURCE_BROWSER_SYNC;
     const updatedBy = hadIntent ? "user" : "system";
 
+    // A room's export is already in canonical form, so the store writes it
+    // as is. The exception is a Mermaid code block the room still holds:
+    // the store's normalization turns it into a Mermaid block, which then
+    // needs the full canonical round trip.
+    const mermaidNormalized = !normalizeMermaidBlocks(blocks).changed;
+
     const filePath = getDocPath(spaceId, docPath);
     suppressPath(filePath);
     try {
@@ -2221,11 +2512,29 @@ export class YjsDocManager {
         updatedBy,
         source,
         managedIdentity: true,
+        canonical: mermaidNormalized,
+        continueSession,
       });
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");
       }
-      liveDoc.diskContentHash = stableHash(writeResult.content ?? blocks);
+      // A save while typing may leave its version for the session's end:
+      // after a quiet period, or when the room saves for any other reason.
+      liveDoc.versionPending = writeResult.versionPending === true;
+      if (liveDoc.versionPending && !liveDoc.persistTimer) {
+        this.armPersistTimer(
+          liveDoc,
+          liveDoc.key,
+          this.timing.persistDebounceMs,
+          false
+        );
+      }
+      // Written as exported unless the store had to normalize it.
+      const writtenHash =
+        mermaidNormalized || !writeResult.content
+          ? exportedHash
+          : stableHash(writeResult.content);
+      liveDoc.diskContentHash = writtenHash;
       // The edit signal is spent by the persist it attributed, and the
       // consumption is acknowledged so clients drop their replay markers. A
       // live client re-asserts on every local edit, so only content that
@@ -2233,16 +2542,36 @@ export class YjsDocManager {
       // editor normalization) is left to fall back to the system source.
       spendIntent();
       const updatedStat = await docStat(spaceId, docPath);
-      const updatedProvenance = await getDocProvenance(spaceId, docPath);
+      const updatedProvenance =
+        writeResult.provenance ?? (await getDocProvenance(spaceId, docPath));
+      // Edits that arrived while the document was written are in the state
+      // but not in the document.
+      const asExported = liveDoc.contentGeneration === exportedGeneration;
       await writeYjsStateFile(
         yjsStatePath(spaceId, docPath),
         Y.encodeStateAsUpdate(liveDoc.ydoc),
-        updatedProvenance
+        updatedProvenance,
+        {
+          mermaidNormalized: mermaidNormalized && asExported,
+          matchesDocument:
+            asExported && updatedProvenance?.contentHash === writtenHash,
+        }
       );
       liveDoc.lastPersistMs = updatedStat?.updatedAt ?? Date.now();
+      liveDoc.diskObservation = updatedStat
+        ? {
+            fingerprint: updatedStat.fingerprint,
+            contentHash: writtenHash,
+            canonicalHash: writtenHash,
+          }
+        : null;
+      if (liveDoc.savedGeneration < exportedGeneration) {
+        liveDoc.savedGeneration = exportedGeneration;
+      }
       // The watcher is suppressed for this self-write, so without an explicit
       // event no doc-list consumer (sidebar labels derive from headings)
-      // would ever hear about a browser edit.
+      // would ever hear about a browser edit. The origin and content hash
+      // let the editing tab recognize its own save.
       wsManager.broadcast(spaceId, {
         type: "doc_update",
         spaceId,
@@ -2251,10 +2580,24 @@ export class YjsDocManager {
           path: docPath,
           updatedAt: liveDoc.lastPersistMs,
           provenance: updatedProvenance,
+          origin: "yjs",
+          contentHash: writtenHash,
         },
       });
     } finally {
       setTimeout(() => unsuppressPath(filePath), 150);
+    }
+  }
+
+  /** Record the version a session's saves while typing left pending. */
+  private async endEditingSession(liveDoc: LiveDoc): Promise<void> {
+    if (!liveDoc.versionPending) return;
+    liveDoc.versionPending = false;
+    try {
+      await recordPendingDocVersion(liveDoc.spaceId, liveDoc.docPath);
+    } catch (error) {
+      liveDoc.versionPending = true;
+      throw error;
     }
   }
 
@@ -2373,9 +2716,8 @@ export class YjsDocManager {
       }
       liveDoc.ydoc.destroy();
     }
-    for (const ping of this.pingTimers.values()) clearInterval(ping);
+    this.stopPings();
     this.docs.clear();
-    this.pingTimers.clear();
     this.clientFreshness.clear();
     this.clientDocs.clear();
     this.frozenDocs.clear();

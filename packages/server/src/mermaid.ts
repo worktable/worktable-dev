@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import mermaidPackage from "mermaid/package.json" with { type: "json" };
+
 export type MermaidPreviewTheme = "light" | "dark";
 
 export interface MermaidValidationResult {
@@ -133,27 +136,64 @@ async function ensureDomPurify(): Promise<void> {
   (globalThis as Record<string, unknown>).DOMPurify = domPurifyExport;
 }
 
+// Every save of a document validates each of its diagrams. Parse outcomes
+// depend only on the Mermaid version and the source, so unchanged diagrams
+// are looked up instead of parsed again.
+const VALIDATION_CACHE_LIMIT = 256;
+const validationCache = new Map<string, MermaidValidationResult>();
+
+function validationCacheKey(source: string): string {
+  const digest = createHash("sha256").update(source).digest("hex");
+  return `${mermaidPackage.version}:${digest}`;
+}
+
 export async function validateMermaid(source: string): Promise<MermaidValidationResult> {
   const trimmed = source.trim();
   if (!trimmed) {
     return { ok: false, diagramType: null, error: "Mermaid source is empty" };
   }
 
+  const key = validationCacheKey(trimmed);
+  const cached = validationCache.get(key);
+  if (cached) {
+    validationCache.delete(key);
+    validationCache.set(key, cached);
+    return { ...cached };
+  }
+
+  let mermaid: MermaidModule;
   try {
-    const mermaid = await loadMermaid();
-    const parseResult = await mermaid.parse(trimmed);
-    const diagramType =
-      parseResult && typeof parseResult === "object" && "diagramType" in parseResult
-        ? String((parseResult as { diagramType?: unknown }).diagramType ?? "") || null
-        : null;
-    return { ok: true, diagramType };
+    mermaid = await loadMermaid();
   } catch (error) {
+    // Not a parse outcome: loading can succeed on a later attempt.
     return {
       ok: false,
       diagramType: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
+
+  let result: MermaidValidationResult;
+  try {
+    const parseResult = await mermaid.parse(trimmed);
+    const diagramType =
+      parseResult && typeof parseResult === "object" && "diagramType" in parseResult
+        ? String((parseResult as { diagramType?: unknown }).diagramType ?? "") || null
+        : null;
+    result = { ok: true, diagramType };
+  } catch (error) {
+    result = {
+      ok: false,
+      diagramType: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  validationCache.set(key, result);
+  if (validationCache.size > VALIDATION_CACHE_LIMIT) {
+    const oldest = validationCache.keys().next().value;
+    if (oldest !== undefined) validationCache.delete(oldest);
+  }
+  return { ...result };
 }
 
 export async function previewMermaid(

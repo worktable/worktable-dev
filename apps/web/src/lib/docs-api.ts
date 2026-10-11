@@ -96,7 +96,7 @@ export async function resolveDocumentReferences(spaceId: string, paths: unknown[
 
 export function readDoc(spaceId: string, docPath: string): Promise<DocMeta> {
   return fetchJSON<DocMeta>(
-    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}?conversionCheck=skip`
+    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`
   );
 }
 

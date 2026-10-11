@@ -77,9 +77,9 @@ import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { THREADS_SCOPE, wsManager } from "./ws.ts";
 import { yjsManager } from "./yjs-manager.ts";
 import {
+  docStat,
   getDocCollaborationCacheEpoch,
-  listSpaces,
-  readDoc } from "./store.ts";
+  listSpaces } from "./store.ts";
 import { syncExternalDocChange } from "./external-doc-sync.ts"
 import { recordExternalWidgetChange } from "./widget-version-store.ts";
 import { getWidgetPath, withWidgetWriteLock } from "./widget-store.ts";
@@ -1630,11 +1630,13 @@ export function startServer(
         }
         const access = await realtimeAccess(identity);
 
-        const roomDoc = await readDoc(spaceId, docPath);
-        if (roomDoc.error || roomDoc.data === null) {
+        // Existence and format only: opening the room reads the content, and
+        // a live room already holds it.
+        const roomDoc = await docStat(spaceId, docPath);
+        if (!roomDoc) {
           return new Response("Document not found", { status: 404 });
         }
-        if (roomDoc.storedAs === "md") {
+        if (roomDoc.format === "md") {
           return new Response("Markdown documents are read-only", {
             status: 409,
           });

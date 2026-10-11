@@ -5,6 +5,7 @@ import type { ThreadActivity, ThreadLocation } from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import { readFileFingerprint } from "./file-fingerprint.ts"
 import { notifyWorkspaceChange, onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 
@@ -172,6 +173,47 @@ async function loadFile(): Promise<DeliveryFile> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyFile()
     throw error
   }
+}
+
+interface DeliveryReadState {
+  path: string
+  /** The file's fingerprint when it was read; null when it did not exist. */
+  key: string | null
+  racy: boolean
+  deliveries: readonly DeliveryRecord[]
+  lookup: ThreadActivityLookup
+}
+
+let readState: DeliveryReadState | undefined
+
+/**
+ * The delivery state for reads, parsed again only when the file's
+ * fingerprint changes. Callers must not modify it; writers load their own
+ * copy under the lock.
+ */
+async function readDeliveryState(): Promise<DeliveryReadState> {
+  const path = deliveryPath()
+  // Stat before reading: a write that lands in between leaves an older
+  // fingerprint, so the next read parses the file again.
+  const fingerprint = await readFileFingerprint(path)
+  const key = fingerprint?.key ?? null
+  if (
+    readState &&
+    readState.path === path &&
+    readState.key === key &&
+    !readState.racy
+  ) {
+    return readState
+  }
+  const { deliveries } = await loadFile()
+  readState = {
+    path,
+    key,
+    racy: fingerprint?.racy ?? false,
+    deliveries,
+    lookup: activityLookup(deliveries),
+  }
+  return readState
 }
 
 async function saveFile(file: DeliveryFile): Promise<void> {
@@ -390,7 +432,9 @@ export type ThreadActivityLookup = (
   threadId: string
 ) => ThreadActivity[]
 
-function activityLookup(deliveries: DeliveryRecord[]): ThreadActivityLookup {
+function activityLookup(
+  deliveries: readonly DeliveryRecord[]
+): ThreadActivityLookup {
   const byThread = new Map<string, ThreadActivity[]>()
   const sorted = [...deliveries].sort((a, b) =>
     a.createdAt.localeCompare(b.createdAt)
@@ -407,12 +451,46 @@ function activityLookup(deliveries: DeliveryRecord[]): ThreadActivityLookup {
 
 /** Every thread's activities from a single read of the delivery state. */
 export async function readThreadActivities(): Promise<ThreadActivityLookup> {
-  return activityLookup((await loadFile()).deliveries)
+  return (await readDeliveryState()).lookup
+}
+
+// Per participant: the thread file versions and the delivery file that its
+// last reconciliation left consistent.
+const reconciled = new Map<string, string>()
+
+function reconciledMark(
+  sourceStamp: string,
+  path: string,
+  key: string | null
+): string {
+  return `${sourceStamp}\0${path}\0${key ?? ""}`
+}
+
+/** Remember the delivery file this reconciliation left, while still locked. */
+async function noteReconciled(
+  participantId: string,
+  sourceStamp: string | undefined
+): Promise<void> {
+  if (sourceStamp === undefined) return
+  const path = deliveryPath()
+  const fingerprint = await readFileFingerprint(path)
+  if (fingerprint?.racy) reconciled.delete(participantId)
+  else {
+    reconciled.set(
+      participantId,
+      reconciledMark(sourceStamp, path, fingerprint?.key ?? null)
+    )
+  }
 }
 
 /**
  * Bring one participant's deliveries in line with the canonical threads.
  * Returns every thread's activities as of the reconciled state.
+ *
+ * `sourceStamp` names the thread file versions the inputs came from. When
+ * neither they nor the delivery file changed since this participant's last
+ * reconciliation there is nothing to do, and the cached state is returned
+ * without taking the cross-process lock.
  */
 export async function reconcileThreadDeliveries(
   participantId: string,
@@ -420,8 +498,19 @@ export async function reconcileThreadDeliveries(
   options: {
     retireMissing?: boolean
     threads?: ReconcileThreadSnapshot[]
+    sourceStamp?: string
   } = {}
 ): Promise<ThreadActivityLookup> {
+  if (options.sourceStamp !== undefined) {
+    const state = await readDeliveryState()
+    if (
+      !state.racy &&
+      reconciled.get(participantId) ===
+        reconciledMark(options.sourceStamp, state.path, state.key)
+    ) {
+      return state.lookup
+    }
+  }
   return serialized(async () => {
     const retireMissing = options.retireMissing !== false
     const file = await loadFile()
@@ -634,9 +723,11 @@ export async function reconcileThreadDeliveries(
       removedTerminal.length === 0 &&
       !metadataChanged
     ) {
+      await noteReconciled(participantId, options.sourceStamp)
       return activityLookup(file.deliveries)
     }
     await saveFile(file)
+    await noteReconciled(participantId, options.sourceStamp)
     for (const record of changed) notify(record)
     for (const record of removedTerminal) notify(record)
     return activityLookup(file.deliveries)
@@ -650,7 +741,7 @@ export async function getThreadActivity(
   identityId?: string
 ): Promise<ThreadActivity | undefined> {
   const location = normalizeDeliveryLocation(locationInput)
-  const records = (await loadFile()).deliveries.filter(
+  const records = (await readDeliveryState()).deliveries.filter(
     (delivery) =>
       threadLocationKey(delivery.location) === threadLocationKey(location) &&
       delivery.threadId === threadId &&
@@ -676,14 +767,7 @@ export async function getThreadActivities(
   threadId: string
 ): Promise<ThreadActivity[]> {
   const location = normalizeDeliveryLocation(locationInput)
-  return (await loadFile()).deliveries
-    .filter(
-      (delivery) =>
-        threadLocationKey(delivery.location) === threadLocationKey(location) &&
-        delivery.threadId === threadId
-    )
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .map(activityFor)
+  return [...(await readDeliveryState()).lookup(location, threadId)]
 }
 
 export async function nextThreadDeliveryEligibleAt(
@@ -695,7 +779,7 @@ export async function nextThreadDeliveryEligibleAt(
   const now = Date.now()
   let next: number | undefined
   const blockedThreads = new Set<string>()
-  for (const record of (await loadFile()).deliveries) {
+  for (const record of (await readDeliveryState()).deliveries) {
     if (
       record.participantId !== participantId ||
       (!options.allowWorktable && record.location.kind === "worktable") ||

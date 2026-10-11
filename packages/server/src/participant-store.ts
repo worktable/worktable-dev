@@ -9,7 +9,7 @@ import {
 import { ensureAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
-import { renameThreadMember, scanAllThreads } from "./thread-store.ts"
+import { renameThreadMember, scanAllThreadDigests } from "./thread-store.ts"
 import {
   listTokens,
   type RequestPrincipal,
@@ -181,15 +181,15 @@ async function recoverPortableParticipant(
 ): Promise<ParticipantRef | undefined> {
   const fingerprint = participantIdentityFingerprint(identity)
   const matches = new Map<string, ParticipantRef>()
-  const scan = await scanAllThreads()
+  const scan = await scanAllThreadDigests()
   if (!scan.complete) {
     throw new ThreadParticipantError(
       "THREAD_STORE_INCOMPLETE",
       "Participant recovery is temporarily unavailable while a portable thread file is unreadable"
     )
   }
-  for (const thread of scan.threads) {
-    for (const member of thread.members) {
+  for (const { summary } of scan.threads) {
+    for (const member of summary.members) {
       if (member.identityFingerprint === fingerprint) {
         matches.set(member.id, member)
       }
@@ -206,6 +206,39 @@ async function recoverPortableParticipant(
   return recovered ? { ...recovered, ...(name ? { name } : {}) } : undefined
 }
 
+/**
+ * The identity's existing binding when resolving it would change nothing, so
+ * the lookup needs no lock: bindings are replaced atomically, and every
+ * change goes through the locked path below.
+ */
+function unchangedBinding(
+  file: ParticipantBindingsFile,
+  identity: Pick<TokenIdentity, "agent" | "principal">,
+  options: ResolveParticipantOptions
+): ParticipantBinding | undefined {
+  // A rename also brings the participant's threads in line.
+  if (options.name?.trim()) return undefined
+  const key = participantKey(identity)
+  const existing = file.bindings.find((binding) => binding.key === key)
+  if (
+    !existing ||
+    existing.participant.identityFingerprint !==
+      participantIdentityFingerprint(identity)
+  ) {
+    return undefined
+  }
+  const nextDefault =
+    options.defaultSpaceId === null
+      ? undefined
+      : (options.defaultSpaceId ?? existing.defaultSpaceId)
+  const nextThreadLocationVersion =
+    options.threadLocationVersion ?? existing.threadLocationVersion
+  return nextDefault === existing.defaultSpaceId &&
+    nextThreadLocationVersion === existing.threadLocationVersion
+    ? existing
+    : undefined
+}
+
 export async function resolveParticipant(
   identity: Pick<TokenIdentity, "agent" | "principal">,
   options: ResolveParticipantOptions = {}
@@ -214,6 +247,14 @@ export async function resolveParticipant(
   defaultSpaceId?: string
   threadLocationVersion?: 2
 }> {
+  const unchanged = unchangedBinding(await loadBindings(), identity, options)
+  if (unchanged) {
+    return {
+      participant: unchanged.participant,
+      defaultSpaceId: unchanged.defaultSpaceId,
+      threadLocationVersion: unchanged.threadLocationVersion,
+    }
+  }
   let renamed: ParticipantRef | undefined
   const resolved = await serialized(async () => {
     const file = await loadBindings()

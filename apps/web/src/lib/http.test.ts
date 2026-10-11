@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { authenticatedFetch, getFreshBrowserCsrfToken } from "./http.ts"
+import {
+  abandonableRead,
+  authenticatedFetch,
+  fetchJSON,
+  getFreshBrowserCsrfToken,
+} from "./http.ts"
 
 const realFetch = globalThis.fetch
 
@@ -66,5 +71,65 @@ describe("authenticatedFetch", () => {
     }) as typeof fetch
     await authenticatedFetch("https://app.worktable.cloud/api/spaces")
     expect(calls).toBe(1)
+  })
+})
+
+describe("fetchJSON", () => {
+  it("sends reads as plain GETs that a cancelled query can abort", async () => {
+    const requests: Array<{ init?: RequestInit }> = []
+    globalThis.fetch = (async (_input, init) => {
+      requests.push({ init })
+      if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError")
+      return Response.json({ ok: true })
+    }) as typeof fetch
+
+    await fetchJSON("/api/spaces")
+    await fetchJSON("/api/spaces", { method: "POST", body: "{}" })
+    expect(new Headers(requests[0]?.init?.headers).has("Content-Type")).toBe(
+      false
+    )
+    expect(new Headers(requests[1]?.init?.headers).get("Content-Type")).toBe(
+      "application/json"
+    )
+
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      fetchJSON("/api/spaces", { signal: controller.signal })
+    ).rejects.toThrow()
+    expect(requests[2]?.init?.signal).toBe(controller.signal)
+  })
+})
+
+describe("abandonableRead", () => {
+  it("lets a read survive a remount and aborts one abandoned after its grace period", async () => {
+    const query = new AbortController()
+    let taken = 0
+    const context = {
+      get signal() {
+        taken++
+        return query.signal
+      },
+    }
+
+    // A quick read never takes the query's signal, so an unmount meanwhile
+    // does not cancel it.
+    expect(await abandonableRead(context, async () => "read", 60_000)).toBe(
+      "read"
+    )
+    expect(taken).toBe(0)
+
+    const slow = abandonableRead(
+      context,
+      ({ signal }) =>
+        new Promise((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(new Error("aborted")))
+        ),
+      0
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(taken).toBe(1)
+    query.abort()
+    await expect(slow).rejects.toThrow("aborted")
   })
 })

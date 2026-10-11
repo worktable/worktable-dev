@@ -8,7 +8,7 @@ import type {
   RecordQuery,
   RecordQueryResult,
 } from "@worktable/types"
-import { fetchJSON } from "./http.ts"
+import { fetchJSON, type ReadOptions } from "./http.ts"
 
 /** Dangling-relation warning from the server's integrity sweep. */
 export interface RecordIntegrityWarning {
@@ -29,8 +29,8 @@ export interface RecordListResponse extends RecordCollectionHealth {
   records: RecordFile[]
 }
 
-export function listRecordCollections(spaceId: string) {
-  return fetchJSON<{ collections: RecordCollectionSummary[] }>(`/api/spaces/${spaceId}/records`).then((r) => r.collections)
+export function listRecordCollections(spaceId: string, options?: ReadOptions) {
+  return fetchJSON<{ collections: RecordCollectionSummary[] }>(`/api/spaces/${spaceId}/records`, options).then((r) => r.collections)
 }
 
 export function listRecords(spaceId: string, collectionId: string, opts?: { includeArchived?: boolean }) {
@@ -42,8 +42,8 @@ export function listRecords(spaceId: string, collectionId: string, opts?: { incl
 
 /** Schema + health (diagnostics, integrity warnings) WITHOUT the records
  *  payload — the metadata read for surfaces that page rows through /query. */
-export function getRecordCollectionHealth(spaceId: string, collectionId: string) {
-  return fetchJSON<RecordCollectionHealth>(`/api/spaces/${spaceId}/records/${collectionId}?includeRecords=false`)
+export function getRecordCollectionHealth(spaceId: string, collectionId: string, options?: ReadOptions) {
+  return fetchJSON<RecordCollectionHealth>(`/api/spaces/${spaceId}/records/${collectionId}?includeRecords=false`, options)
 }
 
 export function reconcileRecordCollection(spaceId: string, collectionId: string) {
@@ -54,10 +54,11 @@ export function reconcileRecordCollection(spaceId: string, collectionId: string)
 }
 
 /** Run the shared record query grammar (filters, search, multi-sort, expand, cursors). */
-export function queryRecords(spaceId: string, collectionId: string, query: RecordQuery) {
+export function queryRecords(spaceId: string, collectionId: string, query: RecordQuery, options?: ReadOptions) {
   return fetchJSON<RecordQueryResult>(`/api/spaces/${spaceId}/records/${collectionId}/query`, {
     method: "POST",
     body: JSON.stringify(query),
+    ...options,
   })
 }
 

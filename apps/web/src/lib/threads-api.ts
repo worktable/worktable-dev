@@ -3,12 +3,12 @@ import type {
   ParticipantRef,
   ThreadLocation,
   ThreadMessage,
-  ThreadPostResult,
+  ThreadPostResponse,
   ThreadReadResult,
   ThreadListItem,
   ThreadWaitResult,
 } from "@worktable/types"
-import { fetchJSON } from "./http"
+import { fetchJSON, type ReadOptions } from "./http"
 
 export type ThreadListScope = { kind: "all" } | ThreadLocation
 export type ThreadParticipant = ParticipantRef & {
@@ -52,26 +52,28 @@ export function listThreadParticipants(
 }
 
 export function listThreads(
-  scope: ThreadListScope
+  scope: ThreadListScope,
+  options?: ReadOptions
 ): Promise<{ threads: ThreadListItem[] }> {
-  if (scope.kind === "all") return fetchJSON("/api/threads")
+  if (scope.kind === "all") return fetchJSON("/api/threads", options)
   if (scope.kind === "worktable") {
-    return fetchJSON("/api/threads?location=worktable")
+    return fetchJSON("/api/threads?location=worktable", options)
   }
-  return fetchJSON(threadBase(scope))
+  return fetchJSON(threadBase(scope), options)
 }
 
 export function readThread(
   location: ThreadLocation,
   threadId: string,
-  options: { after?: number; before?: number } = {}
+  options: { after?: number; before?: number } & ReadOptions = {}
 ): Promise<ThreadReadResult> {
   const query = new URLSearchParams()
   if (options.after !== undefined) query.set("after", String(options.after))
   if (options.before !== undefined) query.set("before", String(options.before))
   const suffix = query.size > 0 ? `?${query}` : ""
   return fetchJSON(
-    `${threadBase(location)}/${encodeURIComponent(threadId)}${suffix}`
+    `${threadBase(location)}/${encodeURIComponent(threadId)}${suffix}`,
+    { signal: options.signal }
   )
 }
 
@@ -93,7 +95,7 @@ export function createThread(
     idempotencyKey: string
     waitSeconds?: number
   }
-): Promise<ThreadPostResult> {
+): Promise<ThreadPostResponse> {
   return fetchJSON(threadBase(location), {
     method: "POST",
     body: JSON.stringify(input),
@@ -112,7 +114,7 @@ export function postThreadReply(
     responseTo?: string | null
     waitSeconds?: number
   }
-): Promise<ThreadPostResult> {
+): Promise<ThreadPostResponse> {
   return fetchJSON(
     `${threadBase(location)}/${encodeURIComponent(threadId)}/messages`,
     {

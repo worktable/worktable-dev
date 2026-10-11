@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { subscribeToSpaceEvents, type WsMessage } from "@/lib/ws"
 
 export interface SpaceWsMessage {
@@ -36,19 +37,26 @@ type SpaceEventHandler = (msg: SpaceWsMessage) => void
 
 /**
  * Subscribe to space-level WebSocket events (doc list changes, view updates, etc.).
- * Shares the existing /ws?spaceId=xxx connection with query invalidation.
+ * Shares the Space's one connection, which also keeps the query cache current,
+ * so handlers here act on the page and leave cached queries to it.
  */
 export function useSpaceEvents(spaceId: string | undefined) {
   const handlersRef = useRef<Set<SpaceEventHandler>>(new Set())
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     if (!spaceId) return
-    return subscribeToSpaceEvents(spaceId, (message: WsMessage) => {
-      handlersRef.current.forEach((handler) =>
-        handler(message as SpaceWsMessage)
-      )
-    })
-  }, [spaceId])
+    return subscribeToSpaceEvents(
+      spaceId,
+      (message: WsMessage) => {
+        handlersRef.current.forEach((handler) =>
+          handler(message as SpaceWsMessage)
+        )
+      },
+      undefined,
+      queryClient
+    )
+  }, [spaceId, queryClient])
 
   const subscribe = useCallback((handler: SpaceEventHandler) => {
     handlersRef.current.add(handler)

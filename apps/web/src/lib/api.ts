@@ -4,7 +4,7 @@ import type {
   SearchResult,
   SpaceFile,
 } from "@worktable/types"
-import { fetchJSON, fetchVoid } from "./http.ts"
+import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
 
@@ -62,11 +62,11 @@ export function getSpaces() {
   )
 }
 
-export function getSpace(spaceId: string) {
+export function getSpace(spaceId: string, options?: ReadOptions) {
   return fetchJSON<{
     space: SpaceFile
     pins?: ResolvedStartHerePin[]
-  }>(`/api/spaces/${spaceId}`)
+  }>(`/api/spaces/${spaceId}`, options)
 }
 
 export function createSpace(data: {
@@ -123,12 +123,15 @@ export function restoreSpace(spaceId: string) {
   )
 }
 
-export function searchWorkspace(opts: {
-  query: string
-  spaceId?: string
-  includeArchived?: boolean
-  maxResults?: number
-}) {
+export function searchWorkspace(
+  opts: {
+    query: string
+    spaceId?: string
+    includeArchived?: boolean
+    maxResults?: number
+  },
+  options?: ReadOptions
+) {
   const params = new URLSearchParams({ query: opts.query })
   params.set("documentMode", "common")
   if (opts.spaceId) params.set("spaceId", opts.spaceId)
@@ -137,7 +140,8 @@ export function searchWorkspace(opts: {
   if (opts.maxResults !== undefined)
     params.set("maxResults", String(opts.maxResults))
   return fetchJSON<{ results: SearchResult[]; indexing?: boolean }>(
-    `/api/search?${params.toString()}`
+    `/api/search?${params.toString()}`,
+    options
   ).then((r) => ({ results: r.results, indexing: r.indexing === true }))
 }
 

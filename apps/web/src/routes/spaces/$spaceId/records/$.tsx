@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import {
   flexRender,
@@ -34,7 +34,7 @@ import {
   Trash,
   X,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
@@ -143,8 +143,40 @@ export const Route = createFileRoute("/spaces/$spaceId/records/$")({
       ...(sort ? { sort } : {}),
     }
   },
+  // Opening a collection from a bare link applies the table state last used
+  // here before the grid reads, so it opens with one request. A link that
+  // names a record is not bare: this machine's filters could hide it.
+  beforeLoad: ({ cause, params, search }) => {
+    if (cause !== "enter" || typeof window === "undefined") return
+    if (search.filters || search.groupBy || search.sort || search.record) return
+    const restored = restoredTableSearch(params.spaceId, params._splat ?? "")
+    if (restored) {
+      throw redirect({
+        to: "/spaces/$spaceId/records/$",
+        params,
+        search: restored,
+        replace: true,
+      })
+    }
+  },
   component: RecordsPage,
 })
+
+function restoredTableSearch(
+  spaceId: string,
+  collectionId: string
+): RecordsSearch | null {
+  const saved = loadPersistedTableState(spaceId, collectionId)
+  if (!saved) return null
+  const filters = sanitizeFilters(saved.filters)
+  const sort = sanitizeSort(saved.sort)
+  const search: RecordsSearch = {
+    ...(filters ? { filters } : {}),
+    ...(typeof saved.groupBy === "string" && saved.groupBy ? { groupBy: saved.groupBy } : {}),
+    ...(sort ? { sort } : {}),
+  }
+  return Object.keys(search).length > 0 ? search : null
+}
 
 function RecordsPage() {
   const { spaceId, _splat } = Route.useParams()
@@ -175,8 +207,8 @@ function RecordsPage() {
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
   }
 
-  // Live updates ride the parent SpaceDetailPage's space subscription, which
-  // already invalidates the record query prefix on record_* events.
+  // Live updates ride the Space's shared socket, which patches cached pages
+  // from record_* payloads and reads again only what a payload cannot settle.
 
   const { data: collections, isLoading: collectionsLoading } = useRecordCollections(spaceId)
   const collection = collections?.find((entry) => entry.id === collectionId)
@@ -185,8 +217,13 @@ function RecordsPage() {
   // the records payload (rows come from the paged query below). Once loaded
   // it is the schema authority — the summary cache can be up to 30s stale
   // after an external schema.yaml edit; the summary only bridges the load.
-  const { data: health } = useRecordCollectionHealth(spaceId, collectionId)
+  const healthQuery = useRecordCollectionHealth(spaceId, collectionId)
+  const health = healthQuery.data
   const schema = health !== undefined ? health.schema : collection?.schema
+  // Relation fields decide what each page expands, so the grid reads once the
+  // schema is known (from the summary or the health read) rather than again
+  // when it arrives.
+  const schemaKnown = health !== undefined || collection !== undefined || healthQuery.isError
 
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -229,23 +266,7 @@ function RecordsPage() {
     setColPrefsState(prefs)
   }
 
-  // With a bare URL, apply the last-used table state for this collection. A
-  // record-only deep link counts as NOT bare: rewriting a shared ?record=
-  // link with this machine's saved filters could hide the linked record.
-  useEffect(() => {
-    if (filters.length > 0 || groupBy || urlSort || rawPeekId) return
-    const saved = loadPersistedTableState(spaceId, collectionId)
-    if (!saved) return
-    const patch: Partial<RecordsSearch> = {}
-    if (sanitizeFilters(saved.filters)) patch.filters = sanitizeFilters(saved.filters)
-    if (typeof saved.groupBy === "string" && saved.groupBy) patch.groupBy = saved.groupBy
-    if (sanitizeSort(saved.sort)) patch.sort = sanitizeSort(saved.sort)
-    if (Object.keys(patch).length > 0) {
-      tableStateTouchedRef.current = true
-      void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true, resetScroll: false })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once per collection
-  }, [spaceId, collectionId])
+  // The route restores the last-used table state before this renders.
 
   // Persist the current table state as this collection's default. The first flush
   // after a collection switch is SKIPPED: it runs before the restore
@@ -299,11 +320,16 @@ function RecordsPage() {
     [search, where, includeArchived]
   )
 
-  const pagesQuery = useRecordPages(spaceId, collectionId, {
-    ...scopeParams,
-    ...(orderBy.length > 0 ? { orderBy } : {}),
-    ...(expand ? { expand } : {}),
-  })
+  const pagesQuery = useRecordPages(
+    spaceId,
+    collectionId,
+    {
+      ...scopeParams,
+      ...(orderBy.length > 0 ? { orderBy } : {}),
+      ...(expand ? { expand } : {}),
+    },
+    schemaKnown
+  )
 
   const rows = useMemo(() => pagesQuery.data?.pages.flatMap((page) => page.records) ?? [], [pagesQuery.data])
   // Derive the footer from the displayed pages too: the query's hasNextPage
@@ -602,6 +628,43 @@ function RecordsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- table row model derives from rows
   }, [groupBy, rows, table, groupsQuery.data, fieldColumns, documentGroupIdentities])
 
+  const visibleRecordIds = (groupedRows
+    ? groupedRows.flatMap(([key, group]) => (collapsedGroups.has(key) ? [] : group.rows))
+    : table.getRowModel().rows
+  ).map((row) => row.original.id)
+  // Rows call the latest handlers through stable functions, so a row renders
+  // again only when its own record, selection or columns change.
+  const rowHandlersRef = useRef<RecordRowActions | null>(null)
+  useLayoutEffect(() => {
+    rowHandlersRef.current = {
+      open: (recordId) => openPeek(recordId),
+      step: (recordId, offset) => {
+        const index = visibleRecordIds.indexOf(recordId)
+        const next = index < 0 ? undefined : visibleRecordIds[index + offset]
+        if (!next) return
+        openPeek(next)
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${next}"]`)?.focus())
+      },
+      commitField: (recordId, key, value) => peekActions.onCommitField(recordId, key, value),
+      duplicate: (record) => void duplicateRecord(record),
+      archive: (recordId) => mutations.archive.mutate(recordId),
+      restore: (recordId) => mutations.restore.mutate(recordId),
+      remove: (record) => setDeleteTarget(record),
+    }
+  })
+  const rowActions = useMemo<RecordRowActions>(
+    () => ({
+      open: (recordId) => rowHandlersRef.current?.open(recordId),
+      step: (recordId, offset) => rowHandlersRef.current?.step(recordId, offset),
+      commitField: (recordId, key, value) => rowHandlersRef.current?.commitField(recordId, key, value),
+      duplicate: (record) => rowHandlersRef.current?.duplicate(record),
+      archive: (recordId) => rowHandlersRef.current?.archive(recordId),
+      restore: (recordId) => rowHandlersRef.current?.restore(recordId),
+      remove: (record) => rowHandlersRef.current?.remove(record),
+    }),
+    []
+  )
+
   // Not-found requires ALL evidence in: summary absent, no schema on disk,
   // and zero loaded rows — a schemaless collection created by an agent or a
   // file edit (stale summary cache, no schema.yaml) must not 404 while its
@@ -636,10 +699,6 @@ function RecordsPage() {
     collection !== undefined && !includeArchived && !scoped
       ? `${collection.count} ${collection.count === 1 ? "record" : "records"}`
       : `${rows.length}${hasMoreRows ? "+" : ""} loaded`
-  const visibleRecordIds = (groupedRows
-    ? groupedRows.flatMap(([key, group]) => (collapsedGroups.has(key) ? [] : group.rows))
-    : table.getRowModel().rows
-  ).map((row) => row.original.id)
   const peekPosition = peekRecordId ? visibleRecordIds.indexOf(peekRecordId) : -1
   const peekNavigation: RecordPeekNavigation | undefined = peekPosition >= 0
     ? {
@@ -967,7 +1026,7 @@ function RecordsPage() {
                   ))}
                 </TableHeader>
                 <TableBody className="[&_td]:border-b [&_td]:border-border/60 [&_tr[data-folded]_td]:border-b-0 [&_tr[data-folded]_td]:border-transparent [&_tr[data-group-heading]_td]:border-transparent [&_tr[data-group-heading][data-collapsed]_td]:border-card [&_tr:has(+tr[data-group-heading])_td]:border-transparent [&_tr:last-child_td]:border-b-0">
-                  {(pagesQuery.isLoading || collectionsLoading) && rows.length === 0 && (
+                  {(pagesQuery.isLoading || collectionsLoading || !schemaKnown) && rows.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={columns.length + 1}>
                         <div className="space-y-2 py-2">
@@ -984,71 +1043,21 @@ function RecordsPage() {
                       ? groupedRows.flatMap(([key, group]) => (collapsedGroups.has(key) ? [] : group.rows))
                       : table.getRowModel().rows
                     const renderRow = (row: Row<RecordFile>, folded = false) => (
-                      <TableRow
+                      <RecordTableRow
                         key={row.original.id}
-                        // Folded group rows stay mounted so they can animate; inert
-                        // keeps them out of focus order and the accessibility tree.
-                        inert={folded || undefined}
-                        data-folded={folded ? "" : undefined}
-                        onClick={() => openPeek(row.original.id)}
-                        tabIndex={0}
-                        data-record-id={row.original.id}
-                        onKeyDown={(event) => {
-                          if (event.target !== event.currentTarget) return
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault()
-                            openPeek(row.original.id)
-                            return
-                          }
-                          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
-                          event.preventDefault()
-                          const index = renderedRows.findIndex((entry) => entry.original.id === row.original.id)
-                          const next = renderedRows[index + (event.key === "ArrowDown" ? 1 : -1)]
-                          if (!next) return
-                          openPeek(next.original.id)
-                          requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-record-id="${next.original.id}"]`)?.focus())
-                        }}
-                        data-state={peekRecordId === row.original.id ? "selected" : undefined}
-                        className={`group/row cursor-pointer border-0 outline-none hover:bg-muted/15 dark:hover:bg-muted/35 data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${row.original.archive ? "opacity-55" : ""}`}
-                      >
-                        {row.getVisibleCells().map((cell, cellIndex) => {
-                          const column = visibleColumns.find((column) => column.key === cell.column.id)
-                          // Render the stable editor type directly: a column callback
-                          // recreated on query updates would remount it and lose drafts.
-                          return (
-                            <TableCell
-                              key={cell.id}
-                              className={`overflow-hidden px-3 ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} ${groupedRows && cellIndex === 0 ? "pl-9" : ""} ${rowHeight === "full" ? "align-top" : "align-middle"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}
-                              style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
-                            >
-                              <Fold enabled={Boolean(groupedRows)} folded={folded}>
-                              {column ? <EditableCell
-                                column={column}
-                                record={row.original}
-                                spaceId={spaceId}
-                                expanded={expanded}
-                                danglingTargets={danglingByRecordField.get(`${row.original.id}:${column.key}`)}
-                                onCommitField={peekActions.onCommitField}
-                                editingEnabled={editCells}
-                                rowHeight={rowHeight}
-                              /> : <span className="font-mono text-xs">{row.original.id}</span>}
-                              </Fold>
-                            </TableCell>
-                          )
-                        })}
-                        <TableCell className={`w-9 overflow-hidden px-1 align-middle ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}>
-                          <Fold enabled={Boolean(groupedRows)} folded={folded}>
-                          <RecordRowMenu
-                            record={row.original}
-                            onOpen={() => openPeek(row.original.id)}
-                            onDuplicate={() => void duplicateRecord(row.original)}
-                            onArchive={() => mutations.archive.mutate(row.original.id)}
-                            onRestore={() => mutations.restore.mutate(row.original.id)}
-                            onDelete={() => setDeleteTarget(row.original)}
-                          />
-                          </Fold>
-                        </TableCell>
-                      </TableRow>
+                        row={row}
+                        selected={peekRecordId === row.original.id}
+                        folded={folded}
+                        grouped={Boolean(groupedRows)}
+                        rowHeight={rowHeight}
+                        columns={visibleColumns}
+                        columnSizing={colPrefs.widths}
+                        spaceId={spaceId}
+                        expanded={expanded}
+                        dangling={danglingByRecordField}
+                        editing={editCells}
+                        actions={rowActions}
+                      />
                     )
                     if (!groupedRows) return renderedRows.map((row) => renderRow(row))
                     return groupedRows.map(([key, group]) => {
@@ -1208,6 +1217,110 @@ function ColumnHeaderLabel({ column }: { column: RecordFieldColumn }) {
 /** Hover-revealed row actions. With every scalar cell owning its click for
  *  inline editing, "Open Details" here is the explicit path to the peek
  *  (row clicks on non-editable areas still open it too). */
+interface RecordRowActions {
+  open: (recordId: string) => void
+  /** Move the peek to the next (1) or previous (-1) visible record. */
+  step: (recordId: string, offset: 1 | -1) => void
+  commitField: (recordId: string, key: string, value: unknown) => void | Promise<void>
+  duplicate: (record: RecordFile) => void
+  archive: (recordId: string) => void
+  restore: (recordId: string) => void
+  remove: (record: RecordFile) => void
+}
+
+const RecordTableRow = memo(function RecordTableRow({
+  row,
+  selected,
+  folded,
+  grouped,
+  rowHeight,
+  columns,
+  spaceId,
+  expanded,
+  dangling,
+  editing,
+  actions,
+}: {
+  row: Row<RecordFile>
+  selected: boolean
+  /** In a collapsed group: kept mounted so it can animate. */
+  folded: boolean
+  grouped: boolean
+  rowHeight: RowHeight
+  columns: RecordFieldColumn[]
+  /** Column widths: a resize renders the rows again. */
+  columnSizing: ColumnSizingState
+  spaceId: string
+  expanded: ExpandedRecords
+  dangling: Map<string, ReadonlySet<string>>
+  editing: boolean
+  actions: RecordRowActions
+}) {
+  const record = row.original
+  return (
+    <TableRow
+      // Folded group rows stay mounted so they can animate; inert
+      // keeps them out of focus order and the accessibility tree.
+      inert={folded || undefined}
+      data-folded={folded ? "" : undefined}
+      onClick={() => actions.open(record.id)}
+      tabIndex={0}
+      data-record-id={record.id}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          actions.open(record.id)
+          return
+        }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+        event.preventDefault()
+        actions.step(record.id, event.key === "ArrowDown" ? 1 : -1)
+      }}
+      data-state={selected ? "selected" : undefined}
+      className={`group/row cursor-pointer border-0 outline-none hover:bg-muted/15 dark:hover:bg-muted/35 data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${record.archive ? "opacity-55" : ""}`}
+    >
+      {row.getVisibleCells().map((cell, cellIndex) => {
+        const column = columns.find((column) => column.key === cell.column.id)
+        // Render the stable editor type directly: a column callback
+        // recreated on query updates would remount it and lose drafts.
+        return (
+          <TableCell
+            key={cell.id}
+            className={`overflow-hidden px-3 ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} ${grouped && cellIndex === 0 ? "pl-9" : ""} ${rowHeight === "full" ? "align-top" : "align-middle"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}
+            style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
+          >
+            <Fold enabled={grouped} folded={folded}>
+            {column ? <EditableCell
+              column={column}
+              record={record}
+              spaceId={spaceId}
+              expanded={expanded}
+              danglingTargets={dangling.get(`${record.id}:${column.key}`)}
+              onCommitField={actions.commitField}
+              editingEnabled={editing}
+              rowHeight={rowHeight}
+            /> : <span className="font-mono text-xs">{record.id}</span>}
+            </Fold>
+          </TableCell>
+        )
+      })}
+      <TableCell className={`w-9 overflow-hidden px-1 align-middle ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}>
+        <Fold enabled={grouped} folded={folded}>
+        <RecordRowMenu
+          record={record}
+          onOpen={() => actions.open(record.id)}
+          onDuplicate={() => actions.duplicate(record)}
+          onArchive={() => actions.archive(record.id)}
+          onRestore={() => actions.restore(record.id)}
+          onDelete={() => actions.remove(record)}
+        />
+        </Fold>
+      </TableCell>
+    </TableRow>
+  )
+})
+
 function RecordRowMenu({
   record,
   onOpen,

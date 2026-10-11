@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import { useWorkspace } from "@/lib/queries"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { anyStreamLive } from "@/lib/space-observation"
 import {
   getCurrentWorkspaceExportJob,
   getCurrentWorkspaceImportJob,
@@ -25,40 +26,43 @@ export function WorkspaceOperationObserver() {
   const enabled = workspace.data?.canManage === true
   const seen = useRef(new Map<string, string>())
   const preparing = useRef(new Set<string>())
+  // Jobs are polled only while one runs. Starting a job in Settings writes
+  // these queries, which starts the polling; a job started in another tab is
+  // announced there, and this tab follows the workspace identity below.
   const exported = useQuery({
     queryKey: exportJobKey,
     queryFn: getCurrentWorkspaceExportJob,
     enabled,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["queued", "running"].includes(q.state.data?.state ?? "")
-          ? 750
-          : 15_000,
+      ["queued", "running"].includes(q.state.data?.state ?? "")
+        ? q.state.error
+          ? 3000
+          : 750
+        : false,
   })
   const imported = useQuery({
     queryKey: importJobKey,
     queryFn: getCurrentWorkspaceImportJob,
     enabled,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["verifying", "uploaded", "preparing", "replacing"].includes(
-              q.state.data?.state ?? ""
-            )
-          ? 1000
-          : 15_000,
+      ["verifying", "uploaded", "preparing", "replacing"].includes(
+        q.state.data?.state ?? ""
+      )
+        ? q.state.error
+          ? 3000
+          : 1000
+        : false,
   })
   const cleared = useQuery({
     queryKey: clearJobKey,
     queryFn: getCurrentWorkspaceClearJob,
     enabled: enabled && deployment.data?.capabilities.workspaceClear === true,
     refetchInterval: (q) =>
-      q.state.error
-        ? 3000
-        : ["preparing", "replacing"].includes(q.state.data?.state ?? "")
-          ? 1000
-          : 15_000,
+      ["preparing", "replacing"].includes(q.state.data?.state ?? "")
+        ? q.state.error
+          ? 3000
+          : 1000
+        : false,
   })
 
   useEffect(() => {
@@ -120,6 +124,17 @@ export function WorkspaceOperationObserver() {
         )
     }
   }, [exported.data, imported.data, cleared.data, workspace.data?.id, client])
+
+  // Sockets tell a tab when another tab replaces the workspace (they close
+  // and reconnect). A tab with none open, such as Home in an empty
+  // workspace, checks the workspace identity on a slow timer instead.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.hidden || anyStreamLive()) return
+      void client.invalidateQueries({ queryKey: ["workspace"], exact: true })
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [client])
 
   useEffect(() => {
     const refresh = () => {

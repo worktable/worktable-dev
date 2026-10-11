@@ -32,7 +32,16 @@ export async function listRecentDocuments(options: {
   /** Only temporary documents, soonest to archive first. */
   onlyTemporary?: boolean
   limit?: number
-}): Promise<{ items: RecentDocument[]; spaces: SpaceActivity[] }> {
+  /**
+   * Also list up to this many temporary documents, soonest to archive first,
+   * from the same pass, so Home needs one request for both lists.
+   */
+  temporaryLimit?: number
+}): Promise<{
+  items: RecentDocument[]
+  temporary?: RecentDocument[]
+  spaces: SpaceActivity[]
+}> {
   const sort = options.sort ?? "updated"
   const limit = options.limit ?? 30
   const spaces = (await listSpaces()).filter(
@@ -47,33 +56,49 @@ export async function listRecentDocuments(options: {
       try {
         let newest: string | undefined
         const spaceItems: RecentDocument[] = []
+        const spaceTemporary: RecentDocument[] = []
         for (const item of await listDocuments({ spaceId: space.id })) {
           if (item.kind !== "document") continue
           if (item.updatedAt && (!newest || item.updatedAt > newest)) {
             newest = item.updatedAt
           }
           const temporary = item.lifetime === "temporary"
+          const entry = { spaceId: space.id, spaceName: space.name, document: item }
+          if (temporary) spaceTemporary.push(entry)
           if (options.onlyTemporary ? !temporary : !options.includeTemporary && temporary) {
             continue
           }
-          spaceItems.push({ spaceId: space.id, spaceName: space.name, document: item })
+          spaceItems.push(entry)
         }
         return {
           items: spaceItems,
+          temporary: spaceTemporary,
           activity: { spaceId: space.id, ...(newest ? { lastActivityAt: newest } : {}) },
         }
       } catch (error) {
         console.error(`[recent-documents] could not list ${space.id}:`, error)
-        return { items: [], activity: { spaceId: space.id } }
+        return { items: [], temporary: [], activity: { spaceId: space.id } }
       }
     })
   )
   const items = perSpace.flatMap((entry) => entry.items)
   const activity: SpaceActivity[] = perSpace.map((entry) => entry.activity)
+  const archiveOn = (item: RecentDocument) => item.document.archiveOn ?? "\uffff"
+  const soonestToArchive = (list: RecentDocument[]) =>
+    list.sort((a, b) => archiveOn(a).localeCompare(archiveOn(b)))
+  const temporary = options.temporaryLimit
+    ? {
+        temporary: soonestToArchive(
+          perSpace.flatMap((entry) => entry.temporary)
+        ).slice(0, options.temporaryLimit),
+      }
+    : {}
   if (options.onlyTemporary) {
-    const archiveOn = (item: RecentDocument) => item.document.archiveOn ?? "\uffff"
-    const soonest = items.sort((a, b) => archiveOn(a).localeCompare(archiveOn(b)))
-    return { items: soonest.slice(0, limit), spaces: activity }
+    return {
+      items: soonestToArchive(items).slice(0, limit),
+      ...temporary,
+      spaces: activity,
+    }
   }
   const key = (item: RecentDocument) =>
     sort === "created" ? item.document.createdAt : item.document.updatedAt
@@ -82,5 +107,5 @@ export async function listRecentDocuments(options: {
   const sorted = items
     .filter((item) => key(item) !== undefined)
     .sort((a, b) => key(b)!.localeCompare(key(a)!))
-  return { items: sorted.slice(0, limit), spaces: activity }
+  return { items: sorted.slice(0, limit), ...temporary, spaces: activity }
 }

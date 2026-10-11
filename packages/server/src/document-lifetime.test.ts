@@ -301,6 +301,12 @@ describe("document lifetime", () => {
     // Asking for temporary documents alone is not crowded out by newer durable ones.
     const temporary = await listRecentDocuments({ sort: "updated", onlyTemporary: true, limit: 1 })
     expect(temporary.items.map((item) => item.document.path)).toEqual(["notes/scratch"])
+    // Home reads both lists from one request.
+    const home = await listRecentDocuments({ sort: "updated", temporaryLimit: 100 })
+    expect(home.items.map((item) => item.document.path)).toEqual(
+      updated.items.map((item) => item.document.path)
+    )
+    expect(home.temporary?.map((item) => item.document.path)).toEqual(["notes/scratch"])
 
     // Created order uses recorded creation times; unknown ones are left out.
     const created = await listRecentDocuments({ sort: "created" })

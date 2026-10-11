@@ -5,11 +5,15 @@ import type {
   ThreadReadResult,
 } from "@worktable/types"
 
+import { QueryClient } from "@tanstack/react-query"
 import {
+  applyPostedThreadMessage,
   applyThreadAssignment,
   mergeThreadPage,
   refreshThreadWindow,
+  threadQueryKeys,
 } from "./threads-queries"
+import { applyThreadPayload } from "./ws"
 
 const createdAt = "2026-08-15T10:00:00.000Z"
 
@@ -209,5 +213,64 @@ describe("thread query refresh", () => {
     })
 
     expect(mergeThreadPage(current, distantReplyPage)).toBe(current)
+  })
+
+  test("shows a posted reply from the response once, and asks for a read across a gap", () => {
+    const current = result([message(1), message(2)], {
+      revision: 2,
+      oldestCursor: 1,
+      hasOlder: false,
+    })
+    const posted = (sequence: number) => ({
+      threadId: current.thread.id,
+      location: current.location,
+      messageId: message(sequence).id,
+      cursor: sequence,
+      createdThread: false,
+      replies: [],
+      timedOut: false,
+      message: message(sequence, "My reply"),
+    })
+
+    const shown = applyPostedThreadMessage(current, posted(3))
+    expect(shown.complete).toBe(true)
+    expect(shown.thread?.messages.map((entry) => entry.sequence)).toEqual([
+      1, 2, 3,
+    ])
+    expect(shown.thread?.thread.messages).toEqual(shown.thread?.messages)
+    expect(shown.thread?.cursor).toBe(3)
+    // The thread's own update may have shown it first.
+    expect(applyPostedThreadMessage(shown.thread, posted(3)).thread).toBe(
+      shown.thread
+    )
+    // Messages this tab has not seen sit between: read the thread.
+    expect(applyPostedThreadMessage(current, posted(5)).complete).toBe(false)
+  })
+
+  test("extends the open window from a thread update without reading it", () => {
+    const queryClient = new QueryClient()
+    const current = result([message(2), message(3)], {
+      revision: 3,
+      oldestCursor: 2,
+      hasOlder: true,
+    })
+    const key = threadQueryKeys.detail(current.location, current.thread.id)
+    queryClient.setQueryData(key, current)
+    const updated = {
+      ...current.thread,
+      revision: 4,
+      messages: [message(1), message(2), message(3), message(4, "New")],
+    }
+
+    applyThreadPayload(queryClient, current.location, updated)
+    const applied = queryClient.getQueryData<ThreadReadResult>(key)!
+    expect(applied.messages.map((entry) => entry.sequence)).toEqual([2, 3, 4])
+    expect(applied.thread.revision).toBe(4)
+    expect(applied.cursor).toBe(4)
+    expect(applied.hasOlder).toBe(true)
+
+    // A late, older update never rolls the thread back.
+    applyThreadPayload(queryClient, current.location, current.thread)
+    expect(queryClient.getQueryData(key)).toBe(applied)
   })
 })

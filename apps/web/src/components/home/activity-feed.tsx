@@ -10,7 +10,8 @@ import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
 import { useSpaces } from "@/lib/queries"
-import { useThreads } from "@/lib/threads-queries"
+import { useQuery } from "@tanstack/react-query"
+import { threadsQueryOptions } from "@/lib/threads-queries"
 
 // ── Actor badge ────────────────────────────────────────────
 
@@ -327,11 +328,20 @@ export function ActivityItem({
 
 // ── Live work ──────────────────────────────────────────────
 
-/** Agents replying right now, from the threads' delivery state. */
-function useLiveReplies(spaceId?: string): ThreadListItem[] {
-  const { data } = useThreads(
-    spaceId ? { kind: "space", spaceId } : { kind: "all" }
-  )
+/**
+ * Agents replying right now, from the threads' delivery state. Only the
+ * placement on screen reads the thread list.
+ */
+function useLiveReplies(
+  spaceId: string | undefined,
+  enabled: boolean
+): ThreadListItem[] {
+  const { data } = useQuery({
+    ...threadsQueryOptions(
+      spaceId ? { kind: "space", spaceId } : { kind: "all" }
+    ),
+    enabled,
+  })
   return (data?.threads ?? []).filter(
     (thread) =>
       thread.activity?.state === "working" ||
@@ -403,7 +413,7 @@ export function ActivityPanel({
     enabled
   )
   const { data: spaces } = useSpaces()
-  const live = useLiveReplies(spaceId)
+  const live = useLiveReplies(spaceId, enabled)
   const scrollRef = useScrollFade<HTMLDivElement>()
   const headingId = useId()
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))

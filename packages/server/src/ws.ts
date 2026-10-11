@@ -277,9 +277,13 @@ export class WsManager {
       this.broadcastThread(key, message, thread)
       if (event.type === "thread") {
         // Detail subscribers receive the payload above. The payload-free event
-        // also invalidates list queries whose ordering or excerpt may change.
+        // names the thread so clients refresh only the lists whose ordering or
+        // excerpt may change; one without a thread asks for a full reconcile.
         this.broadcast(key, {
           type: "thread_update",
+          location,
+          spaceId,
+          threadId: event.threadId,
         })
       }
     }

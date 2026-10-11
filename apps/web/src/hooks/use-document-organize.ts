@@ -78,6 +78,7 @@ export function useDocumentOrganizeActions(
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: spaceQueryOptions(spaceId).queryKey,
+          exact: true,
         }),
         queryClient.invalidateQueries({ queryKey: activityQueryKeys.all }),
       ])

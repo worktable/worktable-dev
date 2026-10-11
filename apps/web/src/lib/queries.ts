@@ -6,6 +6,7 @@ import {
   searchWorkspace,
 } from "./api"
 import { getWidget } from "./widgets-api"
+import { abandonableRead } from "./http"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
 import type { RecordQuery, SearchResult } from "@worktable/types"
 
@@ -38,14 +39,16 @@ export const queryKeys = {
   }) => ["search", opts] as const,
 }
 
+// Every Space socket hears spaces_changed, and the sidebar keeps one open, so
+// the list refreshes on change and on reconnect instead of on a timer. With no
+// Space to subscribe to yet, a slow check notices the first one.
 export const spacesQueryOptions = () =>
   queryOptions({
     queryKey: queryKeys.spaces,
     queryFn: getSpaces,
-    staleTime: 10_000,
-    refetchInterval: 15_000,
-    refetchOnWindowFocus: "always",
-    refetchOnReconnect: "always",
+    staleTime: 5 * 60_000,
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.length > 0 ? false : 60_000,
   })
 
 export const workspaceQueryOptions = () =>
@@ -65,7 +68,8 @@ export const spaceQueryOptions = (spaceId: string) =>
 export const widgetQueryOptions = (spaceId: string, widgetId: string) =>
   queryOptions({
     queryKey: queryKeys.widget(spaceId, widgetId),
-    queryFn: () => getWidget(spaceId, widgetId),
+    queryFn: (context) =>
+      abandonableRead(context, (read) => getWidget(spaceId, widgetId, read)),
     staleTime: 2 * 60_000,
   })
 
@@ -87,7 +91,10 @@ export const recordsQueryOptions = (spaceId: string, collectionId: string) =>
 export const recordHealthQueryOptions = (spaceId: string, collectionId: string) =>
   queryOptions({
     queryKey: [...queryKeys.records(spaceId, collectionId), "health"] as const,
-    queryFn: () => getRecordCollectionHealth(spaceId, collectionId),
+    queryFn: (context) =>
+      abandonableRead(context, (read) =>
+        getRecordCollectionHealth(spaceId, collectionId, read)
+      ),
     staleTime: 30_000,
   })
 
@@ -102,8 +109,8 @@ export const recordPagesQueryOptions = (
 ) =>
   infiniteQueryOptions({
     queryKey: queryKeys.recordPages(spaceId, collectionId, params),
-    queryFn: ({ pageParam }) =>
-      queryRecords(spaceId, collectionId, {
+    queryFn: (context) =>
+      abandonableRead(context, (read) => queryRecords(spaceId, collectionId, {
         ...(params.search?.trim() ? { search: params.search.trim() } : {}),
         ...(params.where ? { where: params.where } : {}),
         // Cursor pagination needs a total order; record id breaks ties server-side.
@@ -111,8 +118,8 @@ export const recordPagesQueryOptions = (
         ...(params.includeArchived ? { includeArchived: true } : {}),
         ...(params.expand && Object.keys(params.expand).length > 0 ? { expand: params.expand } : {}),
         limit: RECORD_PAGE_SIZE,
-        ...(pageParam ? { cursor: pageParam } : {}),
-      }),
+        ...(context.pageParam ? { cursor: context.pageParam } : {}),
+      }, read)),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: 30_000,
@@ -126,7 +133,8 @@ export const searchQueryOptions = (opts: {
 }) =>
   queryOptions({
     queryKey: queryKeys.search(opts),
-    queryFn: () => searchWorkspace(opts),
+    queryFn: (context) =>
+      abandonableRead(context, (read) => searchWorkspace(opts, read)),
     select: (data) => data.results,
     staleTime: 30_000,
     // The server answers from a partial index while it is still building
@@ -174,8 +182,8 @@ export function useRecordGroups(
   const { groupBy, ...scope } = params
   return useQuery({
     queryKey: [...queryKeys.records(spaceId, collectionId), "groups", { ...scope, groupBy }] as const,
-    queryFn: () =>
-      queryRecords(spaceId, collectionId, {
+    queryFn: (context) =>
+      abandonableRead(context, (read) => queryRecords(spaceId, collectionId, {
         ...(scope.search?.trim() ? { search: scope.search.trim() } : {}),
         ...(scope.where ? { where: scope.where } : {}),
         ...(scope.includeArchived ? { includeArchived: true } : {}),
@@ -183,7 +191,7 @@ export function useRecordGroups(
           groupBy: groupBy ?? "",
           select: { count: { fn: "count" } },
         },
-      }),
+      }, read)),
     enabled: Boolean(groupBy),
     staleTime: 30_000,
   })
@@ -192,10 +200,12 @@ export function useRecordGroups(
 export function useRecordPages(
   spaceId: string,
   collectionId: string,
-  params: RecordPageParams
+  params: RecordPageParams,
+  enabled = true
 ) {
   return useInfiniteQuery({
     ...recordPagesQueryOptions(spaceId, collectionId, params),
+    enabled,
     // Keep the current grid while a new view resolves, but never show rows
     // from a different collection (or a same-named collection in another space).
     placeholderData: (previousData, previousQuery) =>

@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
-import type { RecordFile, RecordQueryResult } from "@worktable/types"
+import type { RecordFile } from "@worktable/types"
 import { queryKeys } from "./queries"
 import {
   archiveRecord,
@@ -11,22 +11,35 @@ import {
   updateRecord,
 } from "./records-api"
 import { toastRecordError } from "./records"
+import {
+  applyRecordChange,
+  patchRecordInPages,
+  recordPagesKey,
+  relationFieldsAmong,
+  relationGridsShowing,
+} from "./record-cache"
+import { isSpaceLive } from "./space-observation"
 
 /**
- * Record mutations for one collection, shaped like the annotations module:
- * every mutation invalidates the record prefix on settle (the WS echo does
- * too, so this is belt and braces). Field updates additionally patch the
+ * Record mutations for one collection, shaped like the annotations module.
+ * Each response is applied to the cached grids at once; what still needs the
+ * server is refreshed by the Space's socket when it is live (its echo of this
+ * change arrives there), or here when it is not. Field updates also patch the
  * cached grid pages optimistically — inline editing must not flicker through
  * a refetch round-trip.
  */
 export function useRecordMutations(spaceId: string, collectionId: string) {
   const queryClient = useQueryClient()
   const recordsKey = queryKeys.records(spaceId, collectionId)
+  const applyChange = (recordId: string, record: RecordFile | null) => {
+    const refresh = applyRecordChange(queryClient, spaceId, collectionId, recordId, record)
+    if (isSpaceLive(spaceId)) return
+    for (const filters of refresh) void queryClient.invalidateQueries(filters)
+  }
   // recordCollections(spaceId) is ["spaces", spaceId, "records"] — the PREFIX
   // of every record query key (summaries, grid pages, point reads, health).
-  // React Query invalidation is prefix-matched, so this one call refetches
-  // them all; the WS echo is belt and braces, not the only invalidator.
-  const invalidate = () => {
+  // After a failure the cache may hold an optimistic edit, so read it all.
+  const resync = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.recordCollections(spaceId) })
   }
 
@@ -45,14 +58,26 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
     onError: (err, _vars, context) => {
       restorePages(queryClient, context?.snapshots)
       toastRecordError(err, "Failed to update record")
+      resync()
     },
-    onSettled: invalidate,
+    onSuccess: (record, { recordId, data }) => {
+      applyChange(recordId, record)
+      // The optimistic patch already holds the new links, so neither this
+      // response nor its echo looks like a change: read their titles, and the
+      // integrity check for dangling links, now.
+      const relations = relationFieldsAmong(queryClient, spaceId, collectionId, Object.keys(data))
+      if (relations.length === 0) return
+      void queryClient.invalidateQueries({ queryKey: [...recordsKey, "health"], exact: true })
+      for (const filters of relationGridsShowing(queryClient, spaceId, collectionId, relations)) {
+        void queryClient.invalidateQueries(filters)
+      }
+    },
   })
 
   const create = useMutation({
     mutationFn: (data: Record<string, unknown>) => createRecord(spaceId, collectionId, { data }),
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (result) => {
+      applyChange(result.recordId, result.record)
       toast.success("Record created")
     },
     onError: (err) => toastRecordError(err, "Failed to create record"),
@@ -60,8 +85,8 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
 
   const duplicate = useMutation({
     mutationFn: (record: RecordFile) => createRecord(spaceId, collectionId, { data: record.data }),
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (result) => {
+      applyChange(result.recordId, result.record)
       toast.success("Record duplicated")
     },
     onError: (err) => toastRecordError(err, "Failed to duplicate record"),
@@ -69,8 +94,8 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
 
   const archive = useMutation({
     mutationFn: (recordId: string) => archiveRecord(spaceId, collectionId, recordId),
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (record, recordId) => {
+      applyChange(recordId, record)
       toast.success("Record archived")
     },
     onError: (err) => toastRecordError(err, "Failed to archive record"),
@@ -78,8 +103,8 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
 
   const restore = useMutation({
     mutationFn: (recordId: string) => restoreRecord(spaceId, collectionId, recordId),
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (record, recordId) => {
+      applyChange(recordId, record)
       toast.success("Record restored")
     },
     onError: (err) => toastRecordError(err, "Failed to restore record"),
@@ -87,8 +112,8 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
 
   const remove = useMutation({
     mutationFn: (recordId: string) => deleteRecord(spaceId, collectionId, recordId),
-    onSuccess: () => {
-      invalidate()
+    onSuccess: (_result, recordId) => {
+      applyChange(recordId, null)
       toast.success("Record deleted")
     },
     // The 409 message lists the restricting referrers — surface it verbatim.
@@ -98,7 +123,7 @@ export function useRecordMutations(spaceId: string, collectionId: string) {
   const reconcile = useMutation({
     mutationFn: () => reconcileRecordCollection(spaceId, collectionId),
     onSuccess: (projection) => {
-      invalidate()
+      resync()
       toast.success(
         projection.changedRecordCount > 0
           ? `Reconciled ${projection.changedRecordCount} ${projection.changedRecordCount === 1 ? "record" : "records"}`
@@ -117,7 +142,7 @@ function snapshotPages(queryClient: QueryClient, spaceId: string, collectionId: 
   // Both caches an optimistic patch touches: the grid pages AND the peek's
   // single-record point reads — a failed edit must roll back everywhere.
   return [
-    ...queryClient.getQueriesData({ queryKey: [...queryKeys.records(spaceId, collectionId), "pages"] }),
+    ...queryClient.getQueriesData({ queryKey: recordPagesKey(spaceId, collectionId) }),
     ...queryClient.getQueriesData({ queryKey: [...queryKeys.records(spaceId, collectionId), "record"] }),
   ]
 }
@@ -126,32 +151,4 @@ function restorePages(queryClient: QueryClient, snapshots: PageSnapshot | undefi
   for (const [key, data] of snapshots ?? []) {
     queryClient.setQueryData(key, data)
   }
-}
-
-/** Apply `patch` to the record wherever it appears in cached grid pages and
- *  the peek's single-record cache. */
-function patchRecordInPages(
-  queryClient: QueryClient,
-  spaceId: string,
-  collectionId: string,
-  recordId: string,
-  patch: (record: RecordFile) => RecordFile
-) {
-  queryClient.setQueriesData<InfiniteData<RecordQueryResult>>(
-    { queryKey: [...queryKeys.records(spaceId, collectionId), "pages"] },
-    (data) =>
-      data
-        ? {
-            ...data,
-            pages: data.pages.map((page) => ({
-              ...page,
-              records: page.records.map((record) => (record.id === recordId ? patch(record) : record)),
-            })),
-          }
-        : data
-  )
-  queryClient.setQueriesData<RecordFile>(
-    { queryKey: [...queryKeys.records(spaceId, collectionId), "record", recordId] },
-    (record) => (record ? patch(record) : record)
-  )
 }

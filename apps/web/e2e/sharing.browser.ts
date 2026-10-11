@@ -153,7 +153,12 @@ test("creates, copies, and stops one Doc link from the persistent header action"
     timeout: 30_000,
   })
   await expect(shareButton).toBeHidden()
+  // Linked sharing that becomes available while the person is away shows when
+  // they return to the tab; nothing polls for it meanwhile.
   sharingEnabled = true
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+  )
   await expect(shareButton).toBeVisible({ timeout: 30_000 })
   await shareButton.click()
 
@@ -202,6 +207,9 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await expect(shareButton).toHaveAttribute("title", "Share document")
 
   sharingEnabled = false
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }))
+  )
   await expect(shareButton).toBeHidden({ timeout: 10_000 })
 
   expect(mutations).toEqual([

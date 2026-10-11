@@ -6,6 +6,7 @@ import {
   fetchJSON,
   redirectToLogin,
   UnauthorizedError,
+  type ReadOptions,
 } from "./http.ts";
 import { htmlDocumentApiPath } from "./html-document-api-path.ts";
 
@@ -46,9 +47,14 @@ export type WidgetProvenance = { updatedAt: string; updatedBy: string; source: s
 
 export type WidgetRead = WidgetFile & { provenance?: WidgetProvenance };
 
-export function getWidget(spaceId: string, widgetId: string): Promise<WidgetRead> {
+export function getWidget(
+  spaceId: string,
+  widgetId: string,
+  options?: ReadOptions
+): Promise<WidgetRead> {
   return fetchJSON<{ widget: WidgetFile; provenance?: WidgetProvenance }>(
-    htmlDocumentApiPath(spaceId, widgetId)
+    htmlDocumentApiPath(spaceId, widgetId),
+    options
   ).then((r) => ({ ...r.widget, ...(r.provenance ? { provenance: r.provenance } : {}) }));
 }
 

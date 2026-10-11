@@ -4,6 +4,7 @@ import {
   fetchJSON,
   redirectToLogin,
   UnauthorizedError,
+  type ReadOptions,
 } from "./http.ts"
 
 // Client for the /api/system control surface that backs the Settings drawer.
@@ -219,8 +220,8 @@ export async function getSystemVersion() {
 }
 
 /** Authoritative product/deployment capabilities for this server process. */
-export function getDeploymentInfo() {
-  return fetchJSON<DeploymentInfo>("/api/system/deployment")
+export function getDeploymentInfo(options?: ReadOptions) {
+  return fetchJSON<DeploymentInfo>("/api/system/deployment", options)
 }
 
 /**

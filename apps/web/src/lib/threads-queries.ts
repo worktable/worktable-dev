@@ -4,8 +4,14 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import type { ThreadLocation, ThreadReadResult } from "@worktable/types"
+import type {
+  ThreadLocation,
+  ThreadPostResponse,
+  ThreadReadResult,
+} from "@worktable/types"
 import { threadLocationKey } from "@worktable/types"
+import { abandonableRead } from "./http"
+import { isSpaceLive, THREAD_STREAM } from "./space-observation"
 import {
   assignThreadMessage,
   createThread,
@@ -43,7 +49,8 @@ export const threadQueryOptions = (
 ) =>
   queryOptions({
     queryKey: threadQueryKeys.detail(location, threadId),
-    queryFn: () => readThread(location, threadId),
+    queryFn: (context) =>
+      abandonableRead(context, (read) => readThread(location, threadId, read)),
     enabled: Boolean(threadId),
   })
 
@@ -56,15 +63,17 @@ export function useThread(location: ThreadLocation, threadId: string) {
   const options = threadQueryOptions(location, threadId)
   return useQuery({
     ...options,
-    queryFn: () =>
-      refreshThreadWindow(
-        queryClient.getQueryData(options.queryKey),
-        (before) =>
-          readThread(
-            location,
-            threadId,
-            before === undefined ? undefined : { before }
-          )
+    queryFn: (context) =>
+      abandonableRead(context, (read) =>
+        refreshThreadWindow(
+          queryClient.getQueryData(options.queryKey),
+          (before) =>
+            readThread(
+              location,
+              threadId,
+              before === undefined ? read : { before, ...read }
+            )
+        )
       ),
   })
 }
@@ -77,22 +86,83 @@ export function useThreadParticipants() {
   })
 }
 
+/** Whether this tab hears changes to threads at the location as they happen. */
+function threadChangesLive(location: ThreadLocation): boolean {
+  return (
+    isSpaceLive(THREAD_STREAM) ||
+    (location.kind === "space" && isSpaceLive(location.spaceId))
+  )
+}
+
+/**
+ * Show a posted message in the open thread from the post response. A gap
+ * before it, from messages this tab has not seen, is filled by a read.
+ */
+export function applyPostedThreadMessage(
+  current: ThreadReadResult | undefined,
+  posted: ThreadPostResponse
+): { thread: ThreadReadResult | undefined; complete: boolean } {
+  const message = posted.message
+  if (!current || !message) return { thread: current, complete: !current }
+  if (current.messages.some((candidate) => candidate.id === message.id)) {
+    return { thread: current, complete: true }
+  }
+  const messages = [...current.messages, message].sort(
+    (left, right) => left.sequence - right.sequence
+  )
+  const activity = posted.activity
+  const activities = activity
+    ? current.activities
+        .filter(
+          (candidate) =>
+            candidate.messageId !== activity.messageId ||
+            candidate.identityId !== activity.identityId
+        )
+        .concat(activity)
+    : current.activities
+  return {
+    thread: {
+      ...current,
+      thread: { ...current.thread, messages },
+      messages,
+      cursor: Math.max(current.cursor, message.sequence),
+      activities,
+      activity: activities.at(-1),
+    },
+    complete: message.sequence <= current.cursor + 1,
+  }
+}
+
 export function useThreadMutations(location: ThreadLocation) {
   const queryClient = useQueryClient()
-  const invalidate = (threadId?: string) =>
-    Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: threadQueryKeys.root,
-      }),
-      ...(threadId
-        ? [
-            queryClient.invalidateQueries({
-              queryKey: threadQueryKeys.detail(location, threadId),
-              exact: true,
-            }),
-          ]
-        : []),
-    ])
+  // The server announces every thread change; while this tab hears them, it
+  // applies them as they arrive. Otherwise read the affected queries now.
+  const refresh = (target: ThreadLocation, threadId?: string) => {
+    if (threadChangesLive(target)) return
+    for (const queryKey of [
+      threadQueryKeys.list({ kind: "all" }),
+      threadQueryKeys.list(target),
+      ...(threadId ? [threadQueryKeys.detail(target, threadId)] : []),
+    ]) {
+      void queryClient.invalidateQueries({ queryKey, exact: true })
+    }
+  }
+  const showPosted = async (posted: ThreadPostResponse) => {
+    const queryKey = threadQueryKeys.detail(posted.location, posted.threadId)
+    // A read that began before the post would land without the message.
+    await queryClient.cancelQueries({ queryKey, exact: true })
+    const { thread, complete } = applyPostedThreadMessage(
+      queryClient.getQueryData<ThreadReadResult>(queryKey),
+      posted
+    )
+    if (thread) queryClient.setQueryData(queryKey, thread)
+    if (!complete) {
+      void queryClient.invalidateQueries({ queryKey, exact: true })
+    }
+    // The thread's own update also carries what the post changed elsewhere,
+    // such as the request it answered; without the stream, read the thread.
+    refresh(posted.location, posted.threadId)
+  }
 
   return {
     assignMessage: useMutation({
@@ -114,8 +184,13 @@ export function useThreadMutations(location: ThreadLocation) {
           applyThreadAssignment(current, input.messageId, input.identityId)
         )
       },
-      onError: (_error, input) => invalidate(input.threadId),
-      onSuccess: (_result, input) => invalidate(input.threadId),
+      onError: (_error, input) => {
+        void queryClient.invalidateQueries({
+          queryKey: threadQueryKeys.detail(location, input.threadId),
+          exact: true,
+        })
+      },
+      onSuccess: (_result, input) => refresh(location, input.threadId),
     }),
     loadOlder: useMutation({
       mutationFn: (input: { threadId: string; before: number }) =>
@@ -169,7 +244,7 @@ export function useThreadMutations(location: ThreadLocation) {
         body: string
         idempotencyKey: string
       }) => createThread(location, input),
-      onSuccess: (result) => invalidate(result.threadId),
+      onSuccess: showPosted,
     }),
     reply: useMutation({
       mutationFn: (input: {
@@ -189,7 +264,8 @@ export function useThreadMutations(location: ThreadLocation) {
           inReplyTo: input.inReplyTo,
           responseTo: input.responseTo,
         }),
-      onSuccess: (result) => invalidate(result.threadId),
+      // The composer clears as soon as the post succeeds; nothing is reread.
+      onSuccess: showPosted,
     }),
   }
 }

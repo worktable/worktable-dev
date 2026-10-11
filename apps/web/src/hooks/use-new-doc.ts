@@ -28,12 +28,16 @@ export function useNewDocIn(onCreated?: () => void) {
           undefined,
           lifetime
         )
-        await queryClient.invalidateQueries({
-          queryKey: docQueryKeys.docs(spaceId),
-        })
-        await queryClient.invalidateQueries({
-          queryKey: documentQueryKeys.list(spaceId),
-        })
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: docQueryKeys.docs(spaceId),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: documentQueryKeys.list(spaceId),
+            exact: true,
+          }),
+        ])
         onCreated?.()
         void navigate({
           to: "/spaces/$spaceId/documents/$",

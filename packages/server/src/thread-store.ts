@@ -288,9 +288,14 @@ interface CachedThreadFile {
 // match. Lists and Pending then cost a stat per file and a parse per changed
 // file, and writes from any process are seen on the next read. The cache is
 // disposable: dropping it only costs the next scan a full read.
+// WORKTABLE_MODEL=0 turns it off.
 const threadFiles = new Map<string, Map<string, CachedThreadFile>>()
 let threadFilesRoot: string | undefined
 let threadFileReads = 0
+
+function threadFilesTrusted(): boolean {
+  return process.env["WORKTABLE_MODEL"] !== "0"
+}
 
 function idempotencyMatchKey(authorMemberId: string, key: string): string {
   return `${authorMemberId}\0${key}`
@@ -360,7 +365,12 @@ export async function scanThreadDigests(
     const fingerprint = await readFileFingerprint(join(dir, name))
     if (!fingerprint) return null
     const cached = previous?.get(name)
-    if (cached && !cached.racy && cached.key === fingerprint.key) {
+    if (
+      cached &&
+      !cached.racy &&
+      cached.key === fingerprint.key &&
+      threadFilesTrusted()
+    ) {
       return [name, cached] as const
     }
     let digest: ThreadDigest | null = null

@@ -1212,7 +1212,7 @@ export async function waitForThreadReply(
 
 /**
  * Bring a participant's delivery state in line with the thread files. When
- * no thread file and not the delivery state changed since the last time,
+ * neither a thread file nor the delivery state changed since the last time,
  * this takes no lock and writes nothing.
  */
 async function reconcileParticipantDeliveries(

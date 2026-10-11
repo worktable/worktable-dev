@@ -186,6 +186,11 @@ interface DeliveryReadState {
 
 let readState: DeliveryReadState | undefined
 
+/** WORKTABLE_MODEL=0 turns off reuse of state derived from the file. */
+function readStateTrusted(): boolean {
+  return process.env["WORKTABLE_MODEL"] !== "0"
+}
+
 /**
  * The delivery state for reads, parsed again only when the file's
  * fingerprint changes. Callers must not modify it; writers load their own
@@ -201,7 +206,8 @@ async function readDeliveryState(): Promise<DeliveryReadState> {
     readState &&
     readState.path === path &&
     readState.key === key &&
-    !readState.racy
+    !readState.racy &&
+    readStateTrusted()
   ) {
     return readState
   }
@@ -501,7 +507,7 @@ export async function reconcileThreadDeliveries(
     sourceStamp?: string
   } = {}
 ): Promise<ThreadActivityLookup> {
-  if (options.sourceStamp !== undefined) {
+  if (options.sourceStamp !== undefined && readStateTrusted()) {
     const state = await readDeliveryState()
     if (
       !state.racy &&

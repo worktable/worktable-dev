@@ -140,7 +140,7 @@ export function DocumentLifetimeControls({
   const changeDateRef = useRef<HTMLButtonElement>(null)
   const restoreDateFocus = useRef(false)
   useEffect(() => {
-    // A failed preload is retried when the calendar renders.
+    // A failed preload is retried when someone chooses Change date.
     calendar.preload().catch(() => {})
   }, [])
   // A save can outlive these controls (the page changed); its completion
@@ -242,11 +242,15 @@ export function DocumentLifetimeControls({
           // Start from the date as it is now; activity may have moved it.
           setDate(currentDate)
           // Step in once the picker has loaded, so the step never shows
-          // without it. After a failed load, rendering tries again.
-          const open = () => {
-            if (mounted.current) setEditingDate(true)
-          }
-          calendar.preload().then(open, open)
+          // without it. If it fails to load, stay here: a failed chunk would
+          // otherwise reach the route's error boundary, and the next click
+          // loads it again.
+          calendar
+            .preload()
+            .then(() => {
+              if (mounted.current) setEditingDate(true)
+            })
+            .catch(() => {})
         }}
       >
         <CalendarDays />

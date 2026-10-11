@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
+import type { ComponentProps, ReactNode } from "react"
 import {
   Archive,
   ArrowLeft,
@@ -9,7 +9,7 @@ import {
   Infinity as InfinityIcon,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { Calendar } from "@worktable/ui/components/calendar"
+import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
   Popover,
   PopoverContent,
@@ -27,6 +27,19 @@ import {
   useTemporaryArchiveLabel,
 } from "@/hooks/use-document-organize"
 import { useDocumentSummary } from "@/lib/lifetime"
+
+// The date picker (react-day-picker and date-fns) loads on demand. It starts
+// loading when the lifetime controls open, so it is ready by the time someone
+// chooses to change the date.
+type CalendarProps = ComponentProps<
+  typeof import("@worktable/ui/components/calendar").Calendar
+>
+const calendar = preloadableComponent<CalendarProps>(() =>
+  import("@worktable/ui/components/calendar").then((module) => ({
+    default: module.Calendar,
+  }))
+)
+const Calendar = calendar.Component
 
 /** Compare calendar days in the person's local timezone. */
 function localDay(iso: string): Date {
@@ -126,6 +139,10 @@ export function DocumentLifetimeControls({
   )
   const changeDateRef = useRef<HTMLButtonElement>(null)
   const restoreDateFocus = useRef(false)
+  useEffect(() => {
+    // A failed preload is retried when someone chooses Change date.
+    calendar.preload().catch(() => {})
+  }, [])
   // A save can outlive these controls (the page changed); its completion
   // must not close whatever surface is open by then.
   const mounted = useRef(true)
@@ -165,16 +182,18 @@ export function DocumentLifetimeControls({
     return (
       <>
         {heading?.("date")}
-        <Calendar
-          mode="single"
-          required
-          autoFocus
-          selected={date}
-          defaultMonth={date}
-          onSelect={setDate}
-          disabled={pending !== null ? true : { before: tomorrow }}
-          startMonth={tomorrow}
-        />
+        <Suspense fallback={null}>
+          <Calendar
+            mode="single"
+            required
+            autoFocus
+            selected={date}
+            defaultMonth={date}
+            onSelect={setDate}
+            disabled={pending !== null ? true : { before: tomorrow }}
+            startMonth={tomorrow}
+          />
+        </Suspense>
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <Button
             variant="ghost"
@@ -222,7 +241,16 @@ export function DocumentLifetimeControls({
         onClick={() => {
           // Start from the date as it is now; activity may have moved it.
           setDate(currentDate)
-          setEditingDate(true)
+          // Step in once the picker has loaded, so the step never shows
+          // without it. If it fails to load, stay here: a failed chunk would
+          // otherwise reach the route's error boundary, and the next click
+          // loads it again.
+          calendar
+            .preload()
+            .then(() => {
+              if (mounted.current) setEditingDate(true)
+            })
+            .catch(() => {})
         }}
       >
         <CalendarDays />

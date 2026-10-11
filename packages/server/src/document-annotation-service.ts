@@ -28,7 +28,7 @@ import {
   useResolvedDocumentHandle,
 } from "./document-query.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
-import { fingerprintOf } from "./file-fingerprint.ts"
+import { FingerprintCache, fingerprintOf } from "./file-fingerprint.ts"
 import { readModelEnabled } from "./workspace-read-model.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import {
@@ -326,21 +326,14 @@ export async function createDocumentAnnotationForPath(options: {
   return { annotation: result.annotation, created: result.created }
 }
 
-interface ParsedAnnotationFile {
-  /** The file's fingerprint key when it was read. */
-  key: string
-  file: Awaited<ReturnType<typeof readDocumentAnnotationsV2>>
-}
-
 /**
- * Annotation files parsed for read-only listings, by document data root and
- * document, kept while their fingerprints stay the same. Shared with every
- * listing: callers must not mutate what they receive.
+ * Annotation files parsed for read-only listings, by path, kept while their
+ * fingerprints stay the same. Shared with every listing: callers must not
+ * mutate what they receive.
  */
-const parsedAnnotationFiles = new Map<
-  string,
-  Map<DocumentId, ParsedAnnotationFile>
->()
+const parsedAnnotationFiles = new FingerprintCache<
+  Awaited<ReturnType<typeof readDocumentAnnotationsV2>>
+>(20_000)
 
 /**
  * Every document in the Space that has annotations. Writers read every file
@@ -388,7 +381,12 @@ async function allAnnotationOwners(
             if (!annotationInfo.isFile() || annotationInfo.isSymbolicLink()) {
               throw new Error("document annotation V2 file is not a real file")
             }
-            return [[documentId, fingerprintOf(annotationInfo, observedAt)]] as const
+            return [
+              [
+                documentId,
+                { path, ...fingerprintOf(annotationInfo, observedAt) },
+              ],
+            ] as const
           } catch (error) {
             const code = (error as NodeJS.ErrnoException).code
             if (code === "ENOENT" || code === "ENOTDIR") return []
@@ -398,10 +396,7 @@ async function allAnnotationOwners(
       )
     ).flat()
   )
-  if (annotationFiles.size === 0) {
-    if (options.snapshot) parsedAnnotationFiles.delete(root)
-    return []
-  }
+  if (annotationFiles.size === 0) return []
   const catalog = options.snapshot
     ? await readDocumentCatalogSnapshot(spaceId, {
         ...(options.namespaceLockHeld ? { lockHeld: true } : {}),
@@ -429,26 +424,22 @@ async function allAnnotationOwners(
       (document) => ownerForDocument(spaceId, document)
     )
   }
-  const previous = parsedAnnotationFiles.get(root)
-  const next = new Map<DocumentId, ParsedAnnotationFile>()
-  const owners = await mapWithConcurrency(
+  return mapWithConcurrency(
     documents,
     ANNOTATION_OWNER_READ_CONCURRENCY,
     async (document): Promise<AnnotationOwner> => {
-      const fingerprint = annotationFiles.get(document.documentId)!
-      const cached = previous?.get(document.documentId)
+      const { path, key, racy } = annotationFiles.get(document.documentId)!
       // The fingerprint was taken before the read, so a file that changes
       // while it is read is read again next time.
-      const file =
-        cached?.key === fingerprint.key
-          ? cached.file
-          : await readDocumentAnnotationsV2({
-              workspaceRoot,
-              spaceId,
-              documentId: document.documentId,
-            })
-      if (!fingerprint.racy) {
-        next.set(document.documentId, { key: fingerprint.key, file })
+      let file = parsedAnnotationFiles.get(path, key)
+      if (file === undefined) {
+        file = await readDocumentAnnotationsV2({
+          workspaceRoot,
+          spaceId,
+          documentId: document.documentId,
+        })
+        if (racy) parsedAnnotationFiles.delete(path)
+        else parsedAnnotationFiles.set(path, key, file)
       }
       return {
         document,
@@ -457,8 +448,6 @@ async function allAnnotationOwners(
       }
     }
   )
-  parsedAnnotationFiles.set(root, next)
-  return owners
 }
 
 async function findAnnotation(

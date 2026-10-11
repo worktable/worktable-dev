@@ -30,6 +30,7 @@ import {
 } from "./document-inventory.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import {
+  FingerprintCache,
   fingerprintOf,
   readTreeFingerprints,
   type FileFingerprint,
@@ -180,28 +181,28 @@ async function buildFingerprint(
   }
 }
 
-interface ParsedFile<T> {
-  key: string
-  value: T
-}
+/** One entry per Space for its inventory and alias file. */
+const SPACE_FILE_CACHE_LIMIT = 1_024
+/** One entry per durable V2 HTML Doc. */
+const HTML_PROPERTIES_CACHE_LIMIT = 10_000
 
 /**
  * Reuse a parse of `path` while its fingerprint is unchanged. Values are
  * frozen by `parse` and shared by every build that reads the same file.
  */
 async function readParsed<T>(
-  cache: Map<string, ParsedFile<T>>,
+  cache: FingerprintCache<T>,
   lstatPath: BuildLstat,
   path: string,
   parse: () => Promise<T>
 ): Promise<T> {
   const fingerprint = await buildFingerprint(lstatPath, path, Date.now())
-  const cached = cache.get(path)
-  if (fingerprint && cached?.key === fingerprint.key) return cached.value
+  const cached = fingerprint ? cache.get(path, fingerprint.key) : undefined
+  if (cached !== undefined) return cached
   cache.delete(path)
   const value = await parse()
   if (fingerprint && !fingerprint.racy) {
-    cache.set(path, { key: fingerprint.key, value })
+    cache.set(path, fingerprint.key, value)
   }
   return value
 }
@@ -213,11 +214,12 @@ interface CatalogInventory {
   diagnostics: readonly DocumentInventoryDiagnostic[]
 }
 
-const parsedInventories = new Map<string, ParsedFile<CatalogInventory>>()
-const parsedAliases = new Map<
-  string,
-  ParsedFile<Awaited<ReturnType<typeof readDocAliasesAt>>>
->()
+const parsedInventories = new FingerprintCache<CatalogInventory>(
+  SPACE_FILE_CACHE_LIMIT
+)
+const parsedAliases = new FingerprintCache<
+  Awaited<ReturnType<typeof readDocAliasesAt>>
+>(SPACE_FILE_CACHE_LIMIT)
 
 async function readCatalogInventory(
   spaceRoot: string,
@@ -275,7 +277,9 @@ interface HtmlPropertiesView {
   key: string | null
 }
 
-const parsedHtmlProperties = new Map<string, HtmlPropertiesView>()
+const parsedHtmlProperties = new FingerprintCache<HtmlPropertiesView>(
+  HTML_PROPERTIES_CACHE_LIMIT
+)
 
 /** Identify a durable V2 HTML Doc's saved properties without reading them. */
 export async function htmlPropertiesKey(input: {
@@ -317,8 +321,8 @@ async function readCatalogHtmlProperties(input: {
     input.documentId
   )
   const key = await htmlPropertiesKey(input)
-  const cached = parsedHtmlProperties.get(stateRoot)
-  if (key !== null && cached?.key === key) return cached
+  const cached = key !== null ? parsedHtmlProperties.get(stateRoot, key) : undefined
+  if (cached !== undefined) return cached
   parsedHtmlProperties.delete(stateRoot)
   let view: HtmlPropertiesView
   try {
@@ -328,7 +332,7 @@ async function readCatalogHtmlProperties(input: {
     // Unavailable optional display metadata must not hide the source.
     view = { read: null, title: undefined, key }
   }
-  if (key !== null) parsedHtmlProperties.set(stateRoot, view)
+  if (key !== null) parsedHtmlProperties.set(stateRoot, key, view)
   return view
 }
 

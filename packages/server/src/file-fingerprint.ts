@@ -54,6 +54,44 @@ export async function readFileFingerprint(
   }
 }
 
+/**
+ * Values derived from files, each kept with the fingerprint key it was read
+ * at. Holds at most `limit` entries and lets the least recently used go
+ * first, so entries for files no longer read, such as a deleted Space's,
+ * do not accumulate.
+ */
+export class FingerprintCache<V> {
+  readonly #entries = new Map<string, { key: string; value: V }>()
+  readonly limit: number
+
+  constructor(limit: number) {
+    this.limit = limit
+  }
+
+  /** The value read at this fingerprint key, or undefined. */
+  get(path: string, key: string): V | undefined {
+    const entry = this.#entries.get(path)
+    if (!entry) return undefined
+    this.#entries.delete(path)
+    if (entry.key !== key) return undefined
+    this.#entries.set(path, entry)
+    return entry.value
+  }
+
+  set(path: string, key: string, value: V): void {
+    this.#entries.delete(path)
+    this.#entries.set(path, { key, value })
+    for (const oldest of this.#entries.keys()) {
+      if (this.#entries.size <= this.limit) break
+      this.#entries.delete(oldest)
+    }
+  }
+
+  delete(path: string): void {
+    this.#entries.delete(path)
+  }
+}
+
 export interface TreeFingerprints {
   /** The fingerprint key of every file and directory found, by path. */
   keys: ReadonlyMap<string, string>

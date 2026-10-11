@@ -33,6 +33,7 @@ import { isAbsolute, relative, sep } from "node:path"
 import { onDocContentChanged } from "./content-events.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
+  RACY_FINGERPRINT_WINDOW_MS,
   readFileFingerprint,
   readTreeFingerprints,
   sameTreeFingerprints,
@@ -60,7 +61,21 @@ interface SpaceSnapshot {
   value: unknown
 }
 
+/**
+ * Most recently read first out. Signals keep a snapshot for its next check,
+ * so a deleted Space's snapshot is let go only by this bound.
+ */
+const SNAPSHOT_LIMIT = 1_024
 const snapshots = new Map<string, SpaceSnapshot>()
+
+function publish(spaceId: string, snapshot: SpaceSnapshot): void {
+  snapshots.delete(spaceId)
+  snapshots.set(spaceId, snapshot)
+  for (const oldest of snapshots.keys()) {
+    if (snapshots.size <= SNAPSHOT_LIMIT) break
+    snapshots.delete(oldest)
+  }
+}
 
 /**
  * Advances whenever anything in the workspace may have changed. A read that
@@ -152,10 +167,15 @@ async function isCurrent(
   workspaceRoot: string,
   spaceId: string
 ): Promise<boolean> {
+  // Inputs changed within the racy window could change again unseen, so a
+  // snapshot built from them is checked again once that window has passed.
+  const maxAge = snapshot.inputs.racy
+    ? RACY_FINGERPRINT_WINDOW_MS
+    : SPACE_SNAPSHOT_MAX_AGE_MS
   if (
     snapshot.workspaceRoot !== workspaceRoot ||
     snapshot.generation !== spaceGeneration(spaceId) ||
-    Date.now() - snapshot.checkedAt >= SPACE_SNAPSHOT_MAX_AGE_MS
+    Date.now() - snapshot.checkedAt >= maxAge
   ) {
     return false
   }
@@ -222,6 +242,7 @@ export async function readSpaceSnapshot<T>(options: {
     seen &&
     (await isCurrent(seen, workspaceRoot, spaceId))
   ) {
+    if (snapshots.get(spaceId) === seen) publish(spaceId, seen)
     return seen.value as T
   }
   return locked(async () => {
@@ -241,6 +262,8 @@ export async function readSpaceSnapshot<T>(options: {
     // runs leaves the snapshot already stale. An input changed within the
     // racy window could change again without a new fingerprint, so a
     // snapshot that saw one is rebuilt, not reused, at its next check.
+    // An edit the watcher misses during a build is, like any missed event,
+    // seen at the next check, within the maximum age.
     const keys = await Promise.all(options.sources.map(sourceKey))
     const inputs = await readInputs(options.sources, options.trees, checkedAt)
     const unchanged =
@@ -260,7 +283,7 @@ export async function readSpaceSnapshot<T>(options: {
       spaceGeneration(spaceId) === generation &&
       !keys.includes(undefined)
     ) {
-      snapshots.set(spaceId, {
+      publish(spaceId, {
         workspaceRoot,
         generation,
         checkedAt,

@@ -361,7 +361,7 @@ async function documentQueryContext(
  */
 function snapshotDocumentQueryContext(
   spaceId: string,
-  options: { lockHeld?: boolean; refresh?: boolean } = {}
+  options: { lockHeld?: boolean; refresh?: boolean; signal?: AbortSignal } = {}
 ): Promise<DocumentQueryContext> {
   if (!CanonicalIdSchema.safeParse(spaceId).success) {
     return Promise.reject(new DocumentSpaceNotFoundError(spaceId))
@@ -378,7 +378,8 @@ function snapshotDocumentQueryContext(
       "doc-aliases.json",
     ].map((name) => resolve(spaceRoot, name)),
     trees: () => documentQueryInputTrees(spaceRoot),
-    build: () => documentQueryContext(spaceId),
+    // An abandoned request stops its build and releases the Space.
+    build: () => documentQueryContext(spaceId, options.signal),
     ...(options.lockHeld ? { lockHeld: true } : {}),
     ...(options.refresh ? { refresh: true } : {}),
   })
@@ -792,6 +793,7 @@ async function prepareDocumentReadResult(
   const buildsBefore = catalogBuildsStarted()
   const context = await snapshotDocumentQueryContext(options.spaceId, {
     lockHeld: true,
+    ...(options.signal ? { signal: options.signal } : {}),
   })
   const snapshot = prepareFromContext(context, options)
   options.signal?.throwIfAborted()
@@ -816,6 +818,7 @@ async function prepareDocumentReadResult(
     await snapshotDocumentQueryContext(options.spaceId, {
       lockHeld: true,
       refresh: true,
+      ...(options.signal ? { signal: options.signal } : {}),
     }),
     options
   )

@@ -54,7 +54,7 @@ import {
   endSpaceWrite,
   noteWorkspaceActivity,
 } from "./workspace-read-model.ts";
-import { readFileFingerprint } from "./file-fingerprint.ts";
+import { FingerprintCache, readFileFingerprint } from "./file-fingerprint.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
 import { noteDocumentEdited } from "./activity-log.ts";
 import {
@@ -999,7 +999,7 @@ export async function deleteSpace(spaceId: string): Promise<void> {
 // epochs make this file large and every list, open and save reads it, while it
 // changes far less often. An outside edit or replacement changes the
 // fingerprint; a file modified too recently to trust is parsed every time.
-const docMetaCache = new Map<string, { fingerprint: string; meta: DocMetaFile }>();
+const docMetaCache = new FingerprintCache<DocMetaFile>(1_024);
 
 /** Shared parsed docs.meta.json. Callers must not mutate it or its entries. */
 async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
@@ -1011,11 +1011,11 @@ async function readDocMetaFile(spaceId: string): Promise<DocMetaFile> {
     docMetaCache.delete(path);
     return { ...EMPTY_DOC_META, docs: {} };
   }
-  const cached = docMetaCache.get(path);
-  if (fingerprint && cached?.fingerprint === fingerprint.key) return cached.meta;
+  const cached = fingerprint ? docMetaCache.get(path, fingerprint.key) : undefined;
+  if (cached) return cached;
   const parsed = await parseDocMetaFile(path);
   if (parsed && fingerprint && !fingerprint.racy) {
-    docMetaCache.set(path, { fingerprint: fingerprint.key, meta: parsed });
+    docMetaCache.set(path, fingerprint.key, parsed);
   } else {
     docMetaCache.delete(path);
   }
@@ -2209,7 +2209,10 @@ function summarizeDocBody(data: DocReadResult["data"]): DocBodySummary {
 // milliseconds per Space. The file fingerprint decides reuse, not change
 // events, so writes from other processes (stdio MCP, the CLI, git, sync
 // clients) are seen on the next list; see derived-revision.ts for the rule.
+// Spaces listed least recently are let go first, so a deleted Space's
+// summaries do not stay.
 type CachedDocBodySummary = DocBodySummary & DerivedRevision;
+const DOC_BODY_SUMMARY_SPACES = 1_024;
 const docBodySummaries = new Map<string, Map<string, CachedDocBodySummary>>();
 
 export async function listDocsDetailed(
@@ -2268,7 +2271,12 @@ export async function listDocsDetailed(
       provenance: ownedCopy(meta.docs[path]?.provenance),
     };
   }));
+  docBodySummaries.delete(summariesKey);
   docBodySummaries.set(summariesKey, summaries);
+  for (const oldest of docBodySummaries.keys()) {
+    if (docBodySummaries.size <= DOC_BODY_SUMMARY_SPACES) break;
+    docBodySummaries.delete(oldest);
+  }
 
   return docs.filter((doc) => includeArchived || !doc.archived);
 }

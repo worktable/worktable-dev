@@ -33,6 +33,12 @@ function isLocalNetwork(address: string): boolean {
   )
 }
 
+/** Whether this request arrived over a loopback connection on this computer. */
+export function isLoopbackPeer(req: Request): boolean {
+  const peer = peers.get(req)?.toLowerCase().replace(/^::ffff:/, "")
+  return peer === "::1" || /^127\.\d+\.\d+\.\d+$/.test(peer ?? "")
+}
+
 /**
  * The sender of a request: on Cloud, the address the gateway saw; otherwise
  * the connecting address when it is public. A connection from this computer

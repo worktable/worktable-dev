@@ -13,7 +13,7 @@ import { serverTiming, timedMiddleware } from "./request-timing.ts";
 import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
 import { debugLogging } from "./debug-log.ts";
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
-import { acceptsGzip, gzipAsync } from "./http-compression.ts";
+import { acceptsGzip, gzipAsync, isLocalBrowserRequest } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
 import { readDocumentPreloads } from "./document-preloads.ts";
 import { readFileSync } from "node:fs";
@@ -508,7 +508,9 @@ if (HAS_STATIC) {
   app.get("*", async (c) => {
     const opening = await injectDocumentOpening(c.req.raw, shellTemplate, documentPreloads);
     if (opening) {
-      const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "");
+      const compressed =
+        acceptsGzip(c.req.header("Accept-Encoding") ?? "") &&
+        !isLocalBrowserRequest(c.req.raw);
       return new Response(compressed ? await gzipAsync(opening) : opening, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

@@ -2,6 +2,8 @@ import type { MiddlewareHandler } from "hono"
 import { promisify } from "node:util"
 import { gzip } from "node:zlib"
 import { timing } from "./request-timing.ts"
+import { publicSurfaceAuthRequired } from "./auth.ts"
+import { isLoopbackPeer } from "./request-source.ts"
 
 /** Compress off the request loop, on libuv's thread pool. */
 export const gzipAsync = promisify(gzip)
@@ -19,6 +21,15 @@ export function acceptsGzip(value: string): boolean {
       })
   )
   return (codings.get("gzip") ?? codings.get("*") ?? 0) > 0
+}
+
+/**
+ * A browser on this computer talking straight to an unexposed server, as with
+ * a local install or Desktop. Compressing for it spends CPU to save no time.
+ * Behind a tunnel, a proxy or the Cloud gateway, peers look local but are not.
+ */
+export function isLocalBrowserRequest(request: Request): boolean {
+  return isLoopbackPeer(request) && !publicSurfaceAuthRequired()
 }
 
 // Buffered JSON and HTML API responses participate. SSE, MCP, downloads, static

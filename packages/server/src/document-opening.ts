@@ -31,7 +31,13 @@ opening.get("/spaces/:spaceId/documents/*", async (c) => {
   // Past the budget, the request's signal releases the Space: a queued lock
   // wait or catalog build stops instead of finishing for nobody.
   const result = await useResolvedDocumentHandle(
-    { spaceId, path, includeArchived: true, signal: c.req.raw.signal },
+    {
+      spaceId,
+      path,
+      includeArchived: true,
+      signal: c.req.raw.signal,
+      snapshot: true,
+    },
     async (handle) => {
       if (c.req.raw.signal.aborted) return null
       // Never project aliases, conflicts, unsupported formats or unvalidated paths.

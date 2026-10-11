@@ -27,3 +27,26 @@ export async function mapWithConcurrency<T, R>(
   if (failed) throw failure
   return results
 }
+
+/**
+ * Run operations, including ones started from inside others, with at most
+ * `concurrency` in flight. An operation waiting for a slot holds none.
+ */
+export function createConcurrencyLimit(
+  concurrency: number
+): <T>(operation: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const waiting: Array<() => void> = []
+  return async (operation) => {
+    if (active >= concurrency) {
+      await new Promise<void>((resolve) => waiting.push(resolve))
+    }
+    active += 1
+    try {
+      return await operation()
+    } finally {
+      active -= 1
+      waiting.shift()?.()
+    }
+  }
+}

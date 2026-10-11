@@ -18,10 +18,18 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
+import { listAnnotations } from "./annotation-store.ts"
 import { ownerIdentity } from "./auth.ts"
+import { createDocumentAnnotationForPath } from "./document-annotation-service.ts"
+import {
+  readDocumentAnnotationsV2,
+  writeDocumentAnnotationsV2,
+} from "./document-data-v2.ts"
+import { readDocumentPage } from "./document-page-service.ts"
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
 import { createRegisteredDocument } from "./document-write-service.ts"
 import { listDocuments } from "./document-query.ts"
+import { listPending } from "./pending.ts"
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import { updateWidgetMetadata } from "./widget-store.ts"
@@ -75,6 +83,17 @@ async function listed(
         : []
     )
   )
+}
+
+function openPage(path: string) {
+  return readDocumentPage({
+    spaceId,
+    path,
+    includeArchived: true,
+    rawSourceAuthorized: false,
+    annotationsAuthorized: false,
+    sharingAuthorized: false,
+  })
 }
 
 async function eventually(check: () => Promise<boolean>): Promise<void> {
@@ -198,6 +217,9 @@ describe("workspace read model", () => {
   it("follows other processes' edits to metadata and layout files at once", async () => {
     const metaPath = spacePath(spaceId, "docs.meta.json")
     const manifestPath = join(root, "worktable.workspace.json")
+    const aliasPath = spacePath(spaceId, "doc-aliases.json")
+    const aliases = (exact: Record<string, string>) =>
+      JSON.stringify({ type: "worktable.doc-aliases", version: 1, exact, prefixes: {} })
     await writeFile(
       metaPath,
       JSON.stringify({
@@ -205,10 +227,20 @@ describe("workspace read model", () => {
         docs: { "notes/a": { createdAt: "2026-01-01T00:00:00.000Z" } },
       })
     )
-    await settle(metaPath)
-    await settle(manifestPath)
+    await writeFile(aliasPath, aliases({}))
+    // Past the racy window, parsed files are kept while their fingerprints
+    // hold, so only the fingerprints can show these edits.
+    setSystemTime(new Date(Date.now() + 60_000))
     expect([...(await listed()).keys()]).toEqual(["notes/a"])
     expect(await usesDocumentVersionStoreV2()).toBe(true)
+    expect(await openPage("notes/old")).toBeNull()
+
+    // git brings in a rename made on another machine.
+    await writeFile(aliasPath, aliases({ "notes/old": "notes/a" }))
+    expect(await openPage("notes/old")).toMatchObject({
+      kind: "document",
+      resolvedFrom: "notes/old",
+    })
 
     // The CLI or a stdio agent archives the document by editing the file in
     // place; no watcher is running to report it.
@@ -244,15 +276,135 @@ describe("workspace read model", () => {
     )
   })
 
-  it("rebuilds a snapshot older than its maximum age without any signal", async () => {
-    expect([...(await listed()).keys()]).toEqual(["notes/a"])
-    await writeFile(
-      spacePath(spaceId, "docs", "notes", "unseen.md"),
-      "# Unseen\n"
+  it("checks an expired snapshot against edits nothing reported", async () => {
+    const note = (name: string) => spacePath(spaceId, "docs", "notes", name)
+    await writeFile(note("b.md"), "# B\n")
+    // Past the racy window an unchanged fingerprint is trusted, so only the
+    // files themselves can show what changed. No watcher is running.
+    let now = Date.now() + 60_000
+    setSystemTime(new Date(now))
+    expect([...(await listed()).keys()]).toEqual(["notes/a", "notes/b"])
+
+    // An editor saves one file in place.
+    await appendFile(note("a.md"), "\nEdited elsewhere.\n")
+    const edited = new Date("2020-01-02T03:04:05.000Z")
+    await utimes(note("a.md"), edited, edited)
+    now += SPACE_SNAPSHOT_MAX_AGE_MS
+    setSystemTime(new Date(now))
+    expect((await listed()).get("notes/a")?.updatedAt).toBe(
+      edited.toISOString()
     )
 
-    setSystemTime(new Date(Date.now() + SPACE_SNAPSHOT_MAX_AGE_MS))
+    // A sync client adds one file and removes another.
+    await writeFile(note("unseen.md"), "# Unseen\n")
+    await rm(note("b.md"))
+    now += SPACE_SNAPSHOT_MAX_AGE_MS
+    setSystemTime(new Date(now))
     expect([...(await listed()).keys()]).toEqual(["notes/a", "notes/unseen"])
+  })
+
+  it("lists an HTML Doc renamed only in its saved properties", async () => {
+    const now = new Date().toISOString()
+    const created = await writeManagedFixtureHtml(
+      spaceId,
+      {
+        version: 1,
+        kind: "worktable.widget",
+        id: "boards/status",
+        name: "Status",
+        createdAt: now,
+        updatedAt: now,
+        createdBy: "test",
+        metadata: {},
+        runtime: { type: "html", entry: "index.html" },
+        permissions: {
+          network: false,
+          records: {},
+          state: { read: true, write: true },
+        },
+      },
+      "<h1>Status</h1>"
+    )
+    created.release?.()
+    const rename = async (name: string) =>
+      (await updateWidgetMetadata(spaceId, "boards/status", { name })).release?.()
+    // The first rename also gives the Doc its durable identity.
+    await rename("Renamed once")
+    setSystemTime(new Date(Date.now() + 60_000))
+    expect((await listed()).get("boards/status")?.title).toBe("Renamed once")
+
+    await rename("Renamed twice")
+    expect((await listed()).get("boards/status")?.title).toBe("Renamed twice")
+  })
+
+  it("opens a document as its file is now, not as the list last saw it", async () => {
+    const page = () => openPage("notes/a")
+    setSystemTime(new Date(Date.now() + 60_000))
+    expect([...(await listed()).keys()]).toEqual(["notes/a"])
+
+    const source = spacePath(spaceId, "docs", "notes", "a.md")
+    await appendFile(source, "\nEdited elsewhere.\n")
+    const edited = new Date("2020-01-02T03:04:05.000Z")
+    await utimes(source, edited, edited)
+    const opened = await page()
+    expect(opened?.kind === "document" && opened.document.updatedAt).toBe(
+      edited.toISOString()
+    )
+    expect((await listed()).get("notes/a")?.updatedAt).toBe(
+      edited.toISOString()
+    )
+
+    await rm(source)
+    expect(await page()).toBeNull()
+  })
+
+  it("shows annotation replies another process wrote", async () => {
+    const { annotation } = await createDocumentAnnotationForPath({
+      spaceId,
+      path: "notes/a",
+      input: {
+        category: "comment",
+        body: "Is this right?",
+        author: { type: "user", id: "owner" },
+      },
+    })
+    setSystemTime(new Date(Date.now() + 60_000))
+    const pending = async () =>
+      (await listPending(ownerIdentity())).items.map((item) => item.kind)
+    expect(await pending()).toEqual([])
+
+    // stdio MCP or the CLI answers from its own process.
+    const documentId = annotation.target.documentId
+    const file = await readDocumentAnnotationsV2({
+      workspaceRoot: root,
+      spaceId,
+      documentId,
+    })
+    await writeDocumentAnnotationsV2({
+      workspaceRoot: root,
+      spaceId,
+      documentId,
+      logicalPath: "notes/a",
+      annotations: [
+        {
+          ...annotation,
+          thread: [
+            {
+              id: "msg_outside",
+              author: { type: "agent", id: "agent-1" },
+              body: "Yes.",
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+      expectedRevision: file?.revision ?? null,
+    })
+    const listed = await listAnnotations(spaceId, { status: ["open"] })
+    expect(listed.annotations[0]?.thread.map((reply) => reply.body)).toEqual([
+      "Yes.",
+    ])
+    expect(await pending()).toEqual(["commentReply"])
   })
 })
 

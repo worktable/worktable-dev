@@ -426,14 +426,20 @@ export function resolveDocAliasIn(
   aliases: DocAliases,
   path: string
 ): string | null {
+  return createDocAliasResolver(aliases)(path);
+}
+
+/**
+ * resolveDocAliasIn for many paths over aliases that do not change while it
+ * is used: the alias index is built once.
+ */
+export function createDocAliasResolver(
+  aliases: DocAliases
+): (path: string) => string | null {
   const index = buildAliasSourceIndex(aliases);
-  if (!prefixSourcesArePortableUnique(index)) return null;
-  return resolveDocAliasInMode(
-    aliases,
-    path,
-    true,
-    index
-  );
+  const unique = prefixSourcesArePortableUnique(index);
+  return (path) =>
+    unique ? resolveDocAliasInMode(aliases, path, true, index) : null;
 }
 
 /**

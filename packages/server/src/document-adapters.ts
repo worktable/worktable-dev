@@ -6,6 +6,7 @@ import {
   type DocumentSource,
 } from "@worktable/types"
 import { BoundedFileReadError, readBoundedRegularFile } from "./bounded-file.ts"
+import { createConcurrencyLimit } from "./bounded-concurrency.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import {
   BUILTIN_DOCUMENT_FORMATS,
@@ -15,8 +16,8 @@ import {
 import { inspectDocumentSource } from "./document-inventory.ts"
 import { parseCanonicalYaml } from "./yaml.ts"
 import {
+  createDocAliasReservationLookup,
   readDocAliasesAt,
-  reservedByAliasIn,
   type DocAliases,
 } from "./doc-aliases.ts"
 
@@ -99,9 +100,9 @@ async function readLegacyDirectory(
   budget: LegacyCatalogBudget
 ) {
   try {
+    // Counted as listed, so an oversized directory fails before it is held.
     const entries = []
-    const handle = await opendir(directory)
-    for await (const entry of handle) {
+    for await (const entry of await opendir(directory)) {
       budget.entries += 1
       if (budget.entries > LEGACY_CATALOG_MAX_ENTRIES) {
         throw new Error("document catalog exceeds its entry limit")
@@ -116,59 +117,67 @@ async function readLegacyDirectory(
   }
 }
 
+/** Directories of one scan read concurrently, at most this many at once. */
+const LEGACY_SCAN_CONCURRENCY = 16
+
+/** Claims below one directory, in name order, depth first. */
 async function scanLegacyDocDirectory(
   root: string,
   relativeSegments: string[],
-  claims: DocumentSourceClaim[],
-  aliases: DocAliases,
+  reserved: (path: string) => unknown,
   budget: LegacyCatalogBudget,
-  registry: DocumentFormatRegistry
-): Promise<void> {
+  registry: DocumentFormatRegistry,
+  limit: ReturnType<typeof createConcurrencyLimit>
+): Promise<DocumentSourceClaim[]> {
   const directory = join(root, ...relativeSegments)
-  const entries = await readLegacyDirectory(directory, budget)
+  const entries = await limit(() => readLegacyDirectory(directory, budget))
   entries.sort((a, b) => compareStrings(a.name, b.name))
-  for (const entry of entries) {
-    const segments = [...relativeSegments, entry.name]
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory()) {
-      await scanLegacyDocDirectory(
-        root,
-        segments,
-        claims,
-        aliases,
-        budget,
-        registry
-      )
-      continue
-    }
-    if (!entry.isFile()) continue
-    const registration = registry.fileSourceForFilename(entry.name)
-    if (!registration) continue
-    const { registration: format, source } = registration
-    const logicalSegments = [
-      ...relativeSegments,
-      entry.name.slice(0, -source.extension.length),
-    ]
-    const path = logicalSegments.join("/")
-    if (reservedByAliasIn(aliases, path)) continue
-    const analyzed = pathDiagnostics(path)
-    claims.push({
-      origin: "legacy-doc",
-      path,
-      comparisonKey: analyzed.comparisonKey,
-      format: {
-        id: format.id,
-        sourceVersion: source.discoveryVersion,
-      },
-      source: {
-        kind: "file",
-        relativePath: ["docs", ...segments].join("/"),
-      },
-      title: humanizePath(path),
-      archiveProvider: "legacy-doc-metadata",
-      diagnostics: analyzed.diagnostics,
+  const claims = await Promise.all(
+    entries.map(async (entry): Promise<DocumentSourceClaim[]> => {
+      const segments = [...relativeSegments, entry.name]
+      if (entry.isSymbolicLink()) return []
+      if (entry.isDirectory()) {
+        return scanLegacyDocDirectory(
+          root,
+          segments,
+          reserved,
+          budget,
+          registry,
+          limit
+        )
+      }
+      if (!entry.isFile()) return []
+      const registration = registry.fileSourceForFilename(entry.name)
+      if (!registration) return []
+      const { registration: format, source } = registration
+      const logicalSegments = [
+        ...relativeSegments,
+        entry.name.slice(0, -source.extension.length),
+      ]
+      const path = logicalSegments.join("/")
+      if (reserved(path)) return []
+      const analyzed = pathDiagnostics(path)
+      return [
+        {
+          origin: "legacy-doc",
+          path,
+          comparisonKey: analyzed.comparisonKey,
+          format: {
+            id: format.id,
+            sourceVersion: source.discoveryVersion,
+          },
+          source: {
+            kind: "file",
+            relativePath: ["docs", ...segments].join("/"),
+          },
+          title: humanizePath(path),
+          archiveProvider: "legacy-doc-metadata",
+          diagnostics: analyzed.diagnostics,
+        },
+      ]
     })
-  }
+  )
+  return claims.flat()
 }
 
 export async function listLegacyDocClaims(
@@ -195,16 +204,14 @@ export async function listLegacyDocClaims(
     throw error
   }
   if (!info.isDirectory() || info.isSymbolicLink()) return []
-  const claims: DocumentSourceClaim[] = []
-  await scanLegacyDocDirectory(
+  return scanLegacyDocDirectory(
     docsRoot,
     [],
-    claims,
-    aliases,
+    createDocAliasReservationLookup(aliases),
     { entries: 0 },
-    registry
+    registry,
+    createConcurrencyLimit(LEGACY_SCAN_CONCURRENCY)
   )
-  return claims
 }
 
 async function legacyHtmlClaimForDirectory(

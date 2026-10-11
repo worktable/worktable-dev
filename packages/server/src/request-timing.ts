@@ -20,6 +20,7 @@ const SPANS = [
   "auth",
   "lock-wait",
   "catalog",
+  "revalidate",
   "db",
   "wait",
   "serialize",

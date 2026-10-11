@@ -1,5 +1,5 @@
 import { usesDocumentVersionStoreV2 } from "./document-version-compatibility-v2.ts"
-import { lstat } from "node:fs/promises"
+import { lstat, opendir } from "node:fs/promises"
 import { resolve } from "node:path"
 import type {
   DocumentConflictItem,
@@ -17,6 +17,8 @@ import type {
 import { CanonicalIdSchema } from "@worktable/types"
 import {
   buildDocumentCatalog,
+  catalogBuildsStarted,
+  catalogDocumentUnchanged,
   type DocumentCatalog,
   type DocumentCatalogEntry,
 } from "./document-catalog.ts"
@@ -45,7 +47,7 @@ import {
   DocumentSourceReadError,
   readDocumentSource,
 } from "./document-source-reader.ts"
-import { resolveDocAliasIn } from "./doc-aliases.ts"
+import { resolveDocAliasIn, type DocAliases } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   getDocMetaFactsMaps,
@@ -56,6 +58,7 @@ import {
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { withWidgetWriteLock } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
+import { FINGERPRINT_TREE_MAX_ENTRIES } from "./file-fingerprint.ts"
 import { readSpaceSnapshot } from "./workspace-read-model.ts"
 
 const DOCUMENT_READ_BUDGET: DocumentOperationBudget = {
@@ -359,7 +362,7 @@ async function documentQueryContext(
  */
 function snapshotDocumentQueryContext(
   spaceId: string,
-  options: { lockHeld?: boolean } = {}
+  options: { lockHeld?: boolean; refresh?: boolean; signal?: AbortSignal } = {}
 ): Promise<DocumentQueryContext> {
   if (!CanonicalIdSchema.safeParse(spaceId).success) {
     return Promise.reject(new DocumentSpaceNotFoundError(spaceId))
@@ -375,9 +378,38 @@ function snapshotDocumentQueryContext(
       "docs.meta.json",
       "doc-aliases.json",
     ].map((name) => resolve(spaceRoot, name)),
-    build: () => documentQueryContext(spaceId),
+    trees: () => documentQueryInputTrees(spaceRoot),
+    // An abandoned request stops its build and releases the Space.
+    build: () => documentQueryContext(spaceId, options.signal),
     ...(options.lockHeld ? { lockHeld: true } : {}),
+    ...(options.refresh ? { refresh: true } : {}),
   })
+}
+
+/**
+ * Directories holding the rest of what the query context reads: sources
+ * under docs and widgets, and the portable state that HTML Doc titles come
+ * from. Annotations and version history beside that state are not read.
+ */
+async function documentQueryInputTrees(spaceRoot: string): Promise<string[]> {
+  const dataRoot = resolve(spaceRoot, "document-data")
+  const documentIds: string[] = []
+  try {
+    for await (const entry of await opendir(dataRoot)) {
+      if (documentIds.length >= FINGERPRINT_TREE_MAX_ENTRIES) {
+        throw new Error("document data exceeds the fingerprint entry limit")
+      }
+      documentIds.push(entry.name)
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error
+  }
+  return [
+    resolve(spaceRoot, "docs"),
+    resolve(spaceRoot, "widgets"),
+    ...documentIds.map((documentId) => resolve(dataRoot, documentId, "state")),
+  ]
 }
 
 /** The Space's document catalog from its read-model snapshot, for reads. */
@@ -415,18 +447,29 @@ export async function listDocuments(options: {
   spaceId: string
   includeArchived?: boolean
 }): Promise<DocumentListItem[]> {
+  return (await listDocumentsWithAliases(options)).documents
+}
+
+/** listDocuments, with the document aliases of the same snapshot. */
+export async function listDocumentsWithAliases(options: {
+  spaceId: string
+  includeArchived?: boolean
+}): Promise<{ documents: DocumentListItem[]; aliases: DocAliases }> {
   // Legacy Doc writes can replace one storage extension with another. The
   // snapshot is built under the namespace lock, so catalog discovery and its
   // resulting view describe the same namespace state.
   const context = await snapshotDocumentQueryContext(options.spaceId)
-  return context.catalog.entries.flatMap((entry) => {
-    const classified = classifyEntry(
-      entry,
-      context,
-      options.includeArchived ?? false
-    )
-    return classified ? [classified.item] : []
-  })
+  return {
+    documents: context.catalog.entries.flatMap((entry) => {
+      const classified = classifyEntry(
+        entry,
+        context,
+        options.includeArchived ?? false
+      )
+      return classified ? [classified.item] : []
+    }),
+    aliases: context.catalog.aliases,
+  }
 }
 
 export interface DocumentLifetimeTarget {
@@ -730,13 +773,67 @@ export async function projectDocumentsForSearch(options: {
   })
 }
 
-async function prepareDocumentReadResult(options: {
+interface DocumentReadOptions {
   spaceId: string
   path: string
   includeArchived?: boolean
   signal?: AbortSignal
-}): Promise<PreparedDocumentReadResult> {
-  const context = await documentQueryContext(options.spaceId, options.signal)
+  /**
+   * Resolve the path through the Space's read-model snapshot. Only for
+   * reads: the document found is checked against its files, and anything
+   * else is decided from a fresh build.
+   */
+  snapshot?: boolean
+}
+
+async function prepareDocumentReadResult(
+  options: DocumentReadOptions
+): Promise<PreparedDocumentReadResult> {
+  if (!options.snapshot) {
+    return prepareFromContext(
+      await documentQueryContext(options.spaceId, options.signal),
+      options
+    )
+  }
+  // Callers hold the Space's document path lock.
+  const buildsBefore = catalogBuildsStarted()
+  const context = await snapshotDocumentQueryContext(options.spaceId, {
+    lockHeld: true,
+    ...(options.signal ? { signal: options.signal } : {}),
+  })
+  const snapshot = prepareFromContext(context, options)
+  options.signal?.throwIfAborted()
+  // A catalog built since this read began already saw the files as they are.
+  if (context.catalog.derivedFrom.build > buildsBefore) return snapshot
+  if (
+    snapshot.kind === "prepared" &&
+    snapshot.prepared.classified.kind === "document" &&
+    (await catalogDocumentUnchanged(snapshot.prepared.context.catalog, {
+      workspaceRoot: getWorkspaceRoot(),
+      spaceId: options.spaceId,
+      documentId: snapshot.prepared.classified.claim.documentId,
+      path: snapshot.prepared.classified.claim.path,
+      source: snapshot.prepared.classified.claim.source,
+    }))
+  ) {
+    return snapshot
+  }
+  // Not found, a conflict, an alias problem, or a document whose files
+  // changed since the snapshot: decide from the files, and publish that.
+  return prepareFromContext(
+    await snapshotDocumentQueryContext(options.spaceId, {
+      lockHeld: true,
+      refresh: true,
+      ...(options.signal ? { signal: options.signal } : {}),
+    }),
+    options
+  )
+}
+
+function prepareFromContext(
+  context: DocumentQueryContext,
+  options: { path: string; includeArchived?: boolean }
+): PreparedDocumentReadResult {
   let entry = findEntry(context.catalog, options.path)
   let classified = entry
     ? classifyEntry(entry, context, options.includeArchived ?? false)
@@ -765,11 +862,9 @@ async function prepareDocumentReadResult(options: {
   }
 }
 
-async function prepareDocumentRead(options: {
-  spaceId: string
-  path: string
-  includeArchived?: boolean
-}): Promise<PreparedDocumentRead> {
+async function prepareDocumentRead(
+  options: DocumentReadOptions
+): Promise<PreparedDocumentRead> {
   const result = await prepareDocumentReadResult(options)
   if (result.kind === "alias-error") {
     throw new Error("Document alias resolution failed")
@@ -959,6 +1054,11 @@ export async function useResolvedDocumentHandle<T>(
     /** Internal callers already serializing a namespace mutation must not relock it. */
     namespaceLockHeld?: boolean
     /**
+     * A read that may resolve the path through the Space's read-model
+     * snapshot. Ignored when an identity may be materialized.
+     */
+    snapshot?: boolean
+    /**
      * Abandon the read once the caller gives up: stop waiting for the Space
      * lock, stop catalog discovery, and never invoke the callback.
      */
@@ -968,7 +1068,10 @@ export async function useResolvedDocumentHandle<T>(
 ): Promise<T | Exclude<DocumentHandleResolution, { kind: "document" }>> {
   try {
     const read = async () => {
-      const result = await prepareDocumentReadResult(options)
+      const result = await prepareDocumentReadResult({
+        ...options,
+        snapshot: Boolean(options.snapshot && !options.materializeIdentity),
+      })
       if (result.kind !== "prepared") return result
       options.signal?.throwIfAborted()
       return (
@@ -1024,7 +1127,10 @@ export async function resolveDocumentNavigation(options: {
   includeArchived?: boolean
 }): Promise<DocumentNavigationResolution> {
   return withDocPathLock(options.spaceId, async () => {
-    const result = await prepareDocumentReadResult(options)
+    const result = await prepareDocumentReadResult({
+      ...options,
+      snapshot: true,
+    })
     if (result.kind === "not-found") return { kind: "not-found" }
     if (result.kind === "alias-error") return { kind: "conflict" }
 
@@ -1051,7 +1157,7 @@ export async function readDocumentWithView(options: {
   // Preparation observes the owning source path, so it belongs in the same
   // transaction as projection rather than outside the Doc namespace lock.
   return withDocPathLock(options.spaceId, async () => {
-    const prepared = await prepareDocumentRead(options)
+    const prepared = await prepareDocumentRead({ ...options, snapshot: true })
     const result = await readPreparedDocumentTransactionally(options, prepared)
     if (!result) throw new Error(`Document not found: ${options.path}`)
     return result

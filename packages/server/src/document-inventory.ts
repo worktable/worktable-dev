@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import type { BigIntStats, Stats } from "node:fs"
 import { lstat } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import {
@@ -210,21 +211,28 @@ async function requireRealInventorySpaceRoot(spaceId: string): Promise<string> {
   return spaceRoot
 }
 
+/**
+ * The `lstat` used to inspect sources. A caller that inspects many sources
+ * may pass one that answers each path once.
+ */
+export type SourceLstat = (path: string) => Promise<Stats | BigIntStats>
+
 async function inspectContainedPath(
   root: string,
-  relativePath: string
+  relativePath: string,
+  lstatPath: SourceLstat = lstat
 ): Promise<
   | {
       safe: true
       absolutePath: string
-      info: Awaited<ReturnType<typeof lstat>>
+      info: Stats | BigIntStats
     }
   | { safe: false; message: string }
 > {
   const resolvedRoot = resolve(root)
   let rootInfo
   try {
-    rootInfo = await lstat(resolvedRoot)
+    rootInfo = await lstatPath(resolvedRoot)
   } catch (error) {
     if (isMissingFilesystemError(error)) {
       return { safe: false, message: "source root does not exist" }
@@ -244,7 +252,7 @@ async function inspectContainedPath(
   for (let index = 0; index < segments.length; index += 1) {
     current = resolve(current, segments[index]!)
     try {
-      info = await lstat(current)
+      info = await lstatPath(current)
     } catch (error) {
       if (isMissingFilesystemError(error)) {
         return { safe: false, message: "source locator does not exist" }
@@ -308,13 +316,18 @@ export function validateDocumentSource(
 
 export async function inspectDocumentSource(
   spaceRoot: string,
-  source: DocumentSource
+  source: DocumentSource,
+  lstatPath?: SourceLstat
 ): Promise<
   { safe: true; absolutePath: string } | { safe: false; message: string }
 > {
   const lexical = validateDocumentSource(spaceRoot, source)
   if (!lexical.safe) return lexical
-  const inspected = await inspectContainedPath(spaceRoot, source.relativePath)
+  const inspected = await inspectContainedPath(
+    spaceRoot,
+    source.relativePath,
+    lstatPath
+  )
   if (!inspected.safe) return inspected
   const correctShape =
     source.kind === "file"

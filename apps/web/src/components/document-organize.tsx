@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import {
   Archive,
@@ -9,6 +9,7 @@ import {
   Infinity as InfinityIcon,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
   Popover,
   PopoverContent,
@@ -30,10 +31,12 @@ import { useDocumentSummary } from "@/lib/lifetime"
 // The date picker (react-day-picker and date-fns) loads on demand. It starts
 // loading when the lifetime controls open, so it is ready by the time someone
 // chooses to change the date.
-const loadCalendar = () => import("@worktable/ui/components/calendar")
-const Calendar = lazy(() =>
-  loadCalendar().then((module) => ({ default: module.Calendar }))
+const calendar = preloadableComponent(() =>
+  import("@worktable/ui/components/calendar").then((module) => ({
+    default: module.Calendar,
+  }))
 )
+const Calendar = calendar.Component
 
 /** Compare calendar days in the person's local timezone. */
 function localDay(iso: string): Date {
@@ -134,7 +137,8 @@ export function DocumentLifetimeControls({
   const changeDateRef = useRef<HTMLButtonElement>(null)
   const restoreDateFocus = useRef(false)
   useEffect(() => {
-    void loadCalendar()
+    // A failed preload is retried when the calendar renders.
+    calendar.preload().catch(() => {})
   }, [])
   // A save can outlive these controls (the page changed); its completion
   // must not close whatever surface is open by then.
@@ -234,7 +238,12 @@ export function DocumentLifetimeControls({
         onClick={() => {
           // Start from the date as it is now; activity may have moved it.
           setDate(currentDate)
-          setEditingDate(true)
+          // Step in once the picker has loaded, so the step never shows
+          // without it. After a failed load, rendering tries again.
+          const open = () => {
+            if (mounted.current) setEditingDate(true)
+          }
+          calendar.preload().then(open, open)
         }}
       >
         <CalendarDays />

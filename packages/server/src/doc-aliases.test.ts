@@ -58,6 +58,12 @@ describe("document aliases", () => {
     expect(resolveDocAliasIn(aliases, "old/special")).toBe("exact-target");
     expect(resolveDocAliasIn(aliases, "old/nested/doc")).toBe("deep/doc");
     expect(resolveDocAliasIn(aliases, "old/other")).toBe("new/other");
+
+    // The same alias set changed in place, as alias updates do.
+    aliases.exact["old/other"] = "renamed";
+    delete aliases.prefixes["old/nested"];
+    expect(resolveDocAliasIn(aliases, "old/other")).toBe("renamed");
+    expect(resolveDocAliasIn(aliases, "old/nested/doc")).toBe("new/nested/doc");
   });
 
   it("compacts chains when a document is renamed repeatedly", async () => {

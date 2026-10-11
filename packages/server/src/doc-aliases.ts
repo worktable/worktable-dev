@@ -175,9 +175,45 @@ interface AliasSourceIndex {
   prefixesByComparisonKey: Map<string, string[]>;
 }
 
+// Per alias set, its index and the source paths it was built from. Callers
+// check one path at a time across all of a Space's Docs, and analyzing every
+// alias source again for each path made those loops quadratic. The index is
+// derived from the source paths alone, so it stays valid while they do, even
+// when a caller adds or removes aliases on the same object.
+const aliasSourceIndexes = new WeakMap<
+  DocAliases,
+  { exact: string[]; prefixes: string[]; index: AliasSourceIndex }
+>();
+
+function samePaths(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((path, index) => path === right[index])
+  );
+}
+
 function buildAliasSourceIndex(aliases: DocAliases): AliasSourceIndex {
+  const exact = Object.keys(aliases.exact);
+  const prefixes = Object.keys(aliases.prefixes);
+  const cached = aliasSourceIndexes.get(aliases);
+  if (
+    cached &&
+    samePaths(cached.exact, exact) &&
+    samePaths(cached.prefixes, prefixes)
+  ) {
+    return cached.index;
+  }
+  const index = indexAliasSources(exact, prefixes);
+  aliasSourceIndexes.set(aliases, { exact, prefixes, index });
+  return index;
+}
+
+function indexAliasSources(
+  exactPaths: string[],
+  prefixPaths: string[]
+): AliasSourceIndex {
   const exactByComparisonKey = new Map<string, string[]>();
-  const exactSources = Object.keys(aliases.exact).map((path) => {
+  const exactSources = exactPaths.map((path) => {
     const comparisonKey = analyzeDocumentPath(path).comparisonKey;
     if (comparisonKey) {
       const sources = exactByComparisonKey.get(comparisonKey) ?? [];
@@ -188,7 +224,7 @@ function buildAliasSourceIndex(aliases: DocAliases): AliasSourceIndex {
   });
   const prefixesByPath = new Map<string, string[]>();
   const prefixesByComparisonKey = new Map<string, string[]>();
-  const prefixSources = Object.keys(aliases.prefixes).map((path) => {
+  const prefixSources = prefixPaths.map((path) => {
     const comparisonKey = analyzeDocumentPath(path).comparisonKey;
     const lexicalSources = prefixesByPath.get(path) ?? [];
     lexicalSources.push(path);
@@ -231,6 +267,7 @@ function exactAliasSources(
   path: string,
   index: AliasSourceIndex
 ): string[] {
+  if (index.exactSources.length === 0) return [];
   const comparisonKey = analyzeDocumentPath(path).comparisonKey;
   if (comparisonKey) return index.exactByComparisonKey.get(comparisonKey) ?? [];
   return Object.hasOwn(aliases.exact, path) ? [path] : [];
@@ -240,6 +277,7 @@ function portablePrefixAliasSources(
   path: string,
   index: AliasSourceIndex
 ): string[] {
+  if (index.prefixSources.length === 0) return [];
   const matchingSources = new Set<string>();
   for (const ancestor of pathAndAncestors(path)) {
     for (const source of index.prefixesByPath.get(ancestor) ?? []) {

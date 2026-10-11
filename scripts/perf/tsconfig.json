@@ -1,0 +1,8 @@
+{
+  "extends": "../../packages/server/tsconfig.json",
+  "include": [
+    "*.ts",
+    "../../packages/server/src/vendor.d.ts",
+    "../../packages/ui/src/font-assets.d.ts"
+  ]
+}

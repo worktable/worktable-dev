@@ -71,6 +71,7 @@ jobs:
           bun run check:previews
           bun run typecheck
           bun run typecheck:lab
+          bun run typecheck:perf
           bun run test:policy
   build:
     needs: plan
@@ -109,6 +110,8 @@ jobs:
           # release:lab is the sole production web build owner; other workspace builds remain.
           bun run build --filter='!@worktable/web'
           bun run release:lab
+      - name: Check bundle budgets
+        run: bun run perf:bundle
   required:
     needs: plan
     if: needs.plan.outputs.required == 'true'

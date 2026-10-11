@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import type { ComponentProps, ReactNode } from "react"
 import {
   Archive,
   ArrowLeft,
@@ -31,7 +31,10 @@ import { useDocumentSummary } from "@/lib/lifetime"
 // The date picker (react-day-picker and date-fns) loads on demand. It starts
 // loading when the lifetime controls open, so it is ready by the time someone
 // chooses to change the date.
-const calendar = preloadableComponent(() =>
+type CalendarProps = ComponentProps<
+  typeof import("@worktable/ui/components/calendar").Calendar
+>
+const calendar = preloadableComponent<CalendarProps>(() =>
   import("@worktable/ui/components/calendar").then((module) => ({
     default: module.Calendar,
   }))

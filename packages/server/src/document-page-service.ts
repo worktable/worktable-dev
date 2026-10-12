@@ -13,6 +13,7 @@ import type {
 import { listAnnotations } from "./annotation-store.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
+  DOC_CONTENT_MAX_BYTES,
   docContentRevision,
   docSourceContentRevision,
   docStoredAs,
@@ -444,8 +445,6 @@ export async function readRawDocumentSource(options: {
   })
 }
 
-const CONTENT_MAX_BYTES = 64 * 1024 * 1024
-
 export type DocumentContentResolution =
   | { kind: "content"; content: DocumentContent }
   | Exclude<DocumentHandleResolution, { kind: "document" }>
@@ -479,7 +478,7 @@ export async function readDocumentContent(options: {
           documentId: handle.documentId,
           format: handle.document.format,
           source: handle.source,
-          maxBytes: CONTENT_MAX_BYTES,
+          maxBytes: DOC_CONTENT_MAX_BYTES,
           signal: AbortSignal.timeout(RAW_SOURCE_TIMEOUT_MS),
         })
       } catch (error) {

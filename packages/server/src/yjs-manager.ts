@@ -26,7 +26,7 @@ import {
   stableHash,
 } from "./store.ts";
 import { wsManager } from "./ws.ts";
-import { currentDocContentRevision } from "./document-content-revision.ts";
+import { docContentRevision } from "./document-content-revision.ts";
 import { timeOperation } from "./perf-diagnostics.ts";
 import { rebaseRegions, type BlockRegion } from "./block-regions.ts";
 import {
@@ -2572,9 +2572,14 @@ export class YjsDocManager {
       // The watcher is suppressed for this self-write, so without an explicit
       // event no doc-list consumer (sidebar labels derive from headings)
       // would ever hear about a browser edit. The origin and content hash
-      // let the editing tab recognize its own save; the revision moves the
-      // document's rows.
-      const revision = await currentDocContentRevision(spaceId, docPath);
+      // let the editing tab recognize its own save; the revision of the
+      // bytes this save committed moves the document's rows.
+      const revision = writeResult.revision
+        ? docContentRevision({
+            storedAs: writeResult.storedAs,
+            sha256: writeResult.revision.sha256,
+          })
+        : undefined;
       wsManager.broadcast(spaceId, {
         type: "doc_update",
         spaceId,

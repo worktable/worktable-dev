@@ -24,7 +24,7 @@
 // changed within the racy window proves nothing, so that file is read again.
 
 import { createHash, randomUUID } from "node:crypto"
-import { readFile } from "node:fs/promises"
+import { readFile, stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
 import type { DocumentSource } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
@@ -33,11 +33,12 @@ import {
   legacySpecializedDocumentView,
   readDocumentCatalogSnapshot,
 } from "./document-query.ts"
-import { FingerprintCache, readFileFingerprint } from "./file-fingerprint.ts"
+import { FingerprintCache, fingerprintOf } from "./file-fingerprint.ts"
 import {
   htmlDocumentFrameInputsStorageV2,
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts"
+import { previewFontVersion } from "./preview-fonts.ts"
 import { servedBuildId } from "./static-assets.ts"
 import { getDocPath } from "./store.ts"
 import {
@@ -75,7 +76,10 @@ export function docContentRevision(input: {
   return revisionOf(["doc", input.storedAs, input.sha256])
 }
 
-/** An HTML Doc frame's revision. */
+/**
+ * An HTML Doc frame's revision. The frame also carries the preview fonts'
+ * CSS, which changes when the product font is provisioned or replaced.
+ */
 export function htmlContentRevision(input: {
   sourceSha256: string
   network: boolean
@@ -83,6 +87,7 @@ export function htmlContentRevision(input: {
   return revisionOf([
     "html",
     input.network ? "network" : "local",
+    previewFontVersion(),
     input.sourceSha256,
   ])
 }
@@ -118,36 +123,38 @@ export function docStoredAs(path: string): "md" | "json" | null {
 
 // ── Hashes kept by fingerprint ───────────────────────────────
 
+/** The largest Doc source served as content, so the largest one hashed. */
+export const DOC_CONTENT_MAX_BYTES = 64 * 1024 * 1024
+
 const SOURCE_DIGEST_LIMIT = 16_384
 const sourceDigests = new FingerprintCache<string>(SOURCE_DIGEST_LIMIT)
 
-function isMissing(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code
-  return code === "ENOENT" || code === "ENOTDIR"
-}
-
-/** The sha256 of a file's bytes, or null when it is missing. */
+/**
+ * The sha256 of a file's bytes, or null when it is missing, unreadable or
+ * larger than the content it could be served as. A revision is then left
+ * out, and the document opens without one.
+ */
 async function sourceSha256(path: string): Promise<string | null> {
-  // Fingerprint first: a change during the read leaves the key stale.
-  const fingerprint = await readFileFingerprint(path)
-  if (!fingerprint) return null
-  if (!fingerprint.racy) {
-    const known = sourceDigests.get(path, fingerprint.key)
-    if (known !== undefined) return known
-  }
-  let bytes: Buffer
   try {
-    bytes = await readFile(path)
-  } catch (error) {
-    if (isMissing(error)) return null
-    throw error
+    // Fingerprint first: a change during the read leaves the key stale.
+    const info = await stat(path, { bigint: true })
+    if (!info.isFile() || info.size > BigInt(DOC_CONTENT_MAX_BYTES)) {
+      return null
+    }
+    const fingerprint = fingerprintOf(info)
+    if (!fingerprint.racy) {
+      const known = sourceDigests.get(path, fingerprint.key)
+      if (known !== undefined) return known
+    }
+    const sha256 = sha256Hex(await readFile(path))
+    if (!fingerprint.racy) sourceDigests.set(path, fingerprint.key, sha256)
+    return sha256
+  } catch {
+    return null
   }
-  const sha256 = sha256Hex(bytes)
-  if (!fingerprint.racy) sourceDigests.set(path, fingerprint.key, sha256)
-  return sha256
 }
 
-/** The revision of the Doc source file at `path`, or null when missing. */
+/** The revision of the Doc source file at `path`, or null without one. */
 async function docSourceRevision(path: string): Promise<string | null> {
   const storedAs = docStoredAs(path)
   if (!storedAs) return null
@@ -160,11 +167,7 @@ export async function currentDocContentRevision(
   spaceId: string,
   docPath: string
 ): Promise<string | undefined> {
-  try {
-    return (await docSourceRevision(getDocPath(spaceId, docPath))) ?? undefined
-  } catch {
-    return undefined
-  }
+  return (await docSourceRevision(getDocPath(spaceId, docPath))) ?? undefined
 }
 
 /** The current revision of the Doc whose source a catalog handle names. */
@@ -191,12 +194,14 @@ async function legacyHtmlRevision(
 ): Promise<string | null> {
   const yamlPath = getWidgetPath(spaceId, widgetId)
   const [settings, source] = await Promise.all([
-    readFileFingerprint(yamlPath),
-    readFileFingerprint(getWidgetContentPath(spaceId, widgetId)),
+    stat(yamlPath, { bigint: true }),
+    stat(getWidgetContentPath(spaceId, widgetId), { bigint: true }),
   ])
-  if (!settings || !source) return null
-  const key = `${settings.key}|${source.key}`
-  const racy = settings.racy || source.racy
+  if (source.size > BigInt(DOC_CONTENT_MAX_BYTES)) return null
+  const settingsKey = fingerprintOf(settings)
+  const sourceKey = fingerprintOf(source)
+  const key = `${settingsKey.key}|${sourceKey.key}|${previewFontVersion()}`
+  const racy = settingsKey.racy || sourceKey.racy
   if (!racy) {
     const known = legacyHtmlRevisions.get(yamlPath, key)
     if (known !== undefined) return known

@@ -100,6 +100,14 @@ describe("document reads proven current by the Space's socket", () => {
     noteDocumentChange("space-open", "notes/plan")
     expect(validated()).toBe(false)
 
+    // A check already on its way when the open began (a tap's preload)
+    // validates it once its answer arrives.
+    const tapped = read()
+    noteDocumentOpen("space-open", "notes/plan")
+    expect(validated()).toBe(false)
+    await tapped
+    expect(validated()).toBe(true)
+
     // On a live socket an earlier check holds until something changes.
     noteSpaceLive("space-open", true)
     await read()

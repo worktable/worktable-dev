@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { useSpace, widgetQueryOptions } from "@/lib/queries"
+import { queryKeys, useSpace } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import {
@@ -26,6 +26,7 @@ import {
   createWidgetCheckpoint,
   deleteWidget,
   exportWidgetHtml,
+  getWidget,
   listWidgetVersions,
   patchWidget,
   readWidgetVersion,
@@ -1244,12 +1245,15 @@ function WidgetDetailsEditor({
   onRename: (name: string, description?: string | null) => Promise<void>
   onClose: () => void
 }) {
+  // Read afresh each time the dialog opens and forget it when it closes, so a
+  // form never starts from details someone has since changed.
   const details = useQuery({
-    ...widgetQueryOptions(spaceId, widgetId),
-    refetchOnMount: "always",
+    queryKey: [...queryKeys.widget(spaceId, widgetId), "details"],
+    queryFn: () => getWidget(spaceId, widgetId),
+    gcTime: 0,
     retry: false,
   })
-  if (details.data && details.isFetchedAfterMount) {
+  if (details.data) {
     return (
       <WidgetRenameDialogForm
         widget={details.data}
@@ -1261,11 +1265,21 @@ function WidgetDetailsEditor({
   return (
     <>
       <ResponsiveDialogBody>
-        <div className="flex min-h-28 items-center justify-center text-sm">
+        <div className="flex min-h-28 flex-col items-center justify-center gap-3 text-center">
           {details.isError ? (
-            <span className="text-destructive">
-              Couldn’t load the details. Try again.
-            </span>
+            <>
+              <p className="text-sm text-muted-foreground" role="status">
+                Couldn’t load the details.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={details.isFetching}
+                onClick={() => void details.refetch()}
+              >
+                Retry
+              </Button>
+            </>
           ) : (
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
           )}

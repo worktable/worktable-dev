@@ -245,7 +245,9 @@ app.use("*", advanceGenerationOnWrite);
 // build loads the new one at its next navigation (apps/web build-version.ts).
 let servedBuildId: string | null | undefined;
 function servedBuild(): string | null {
-  servedBuildId ??= readBuildId(getStaticAssetsInfo().staticDir);
+  if (servedBuildId === undefined) {
+    servedBuildId = readBuildId(getStaticAssetsInfo().staticDir);
+  }
   return servedBuildId;
 }
 app.use("/api/*", async (c, next) => {

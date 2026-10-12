@@ -27,6 +27,10 @@ boot.onError(() => new Response(null, { status: 204 }))
 
 type BootFacts = { build: string | null } & Record<string, unknown>
 
+// The facts are optional: without them the app reads them itself. A slow read
+// must not hold up the shell and the discovery of its assets.
+const BOOT_FACTS_BUDGET_MS = 250
+
 /**
  * The facts this navigation's shell should carry, or null when it gets the
  * plain shell. They are per person and per moment: a page carrying them must
@@ -39,14 +43,19 @@ export async function readBootFacts(
 ): Promise<BootFacts | null> {
   if (request.method !== "GET" || !shell.includes(BOOT_FACTS_MARKER))
     return null
-  try {
+  const read = (async () => {
     const response = await boot.fetch(request)
     if (response.status !== 200) return null
     return { build, ...((await response.json()) as Record<string, unknown>) }
-  } catch {
-    // The facts are optional: the app reads them itself, and the shell must
-    // still be served.
-    return null
+  })().catch(() => null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), BOOT_FACTS_BUDGET_MS)
+  })
+  try {
+    return await Promise.race([read, late])
+  } finally {
+    clearTimeout(timer)
   }
 }
 

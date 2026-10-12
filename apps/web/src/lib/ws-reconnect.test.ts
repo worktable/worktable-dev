@@ -437,13 +437,15 @@ describe("Space events in the query cache", () => {
     const docs = watched(queryClient, docQueryKeys.docs("space-a"), [])
     const recent = watched(queryClient, recentQueryKeys.all, { items: [] })
     const content = watched(queryClient, docQueryKeys.doc("space-a", "notes/plan"), {})
+    // An open HTML doc's frame follows its page check's revision.
+    const page = watched(queryClient, documentQueryKeys.page("space-a", "plans/board"), {})
     const otherDocs = watched(queryClient, docQueryKeys.docs("space-b"), [])
     queryClient.setQueryData(docQueryKeys.doc("space-a", "notes/closed"), {})
 
     revalidateSpaceAfterReconnect(queryClient, "space-a")
     await settle(queryClient)
 
-    expect([spaces.reads, docs.reads, recent.reads]).toEqual([1, 1, 1])
+    expect([spaces.reads, docs.reads, recent.reads, page.reads]).toEqual([1, 1, 1, 1])
     // Open content checks itself; closed content reads again when it opens.
     expect(content.reads).toBe(0)
     expect(
@@ -451,7 +453,7 @@ describe("Space events in the query cache", () => {
     ).toBe(true)
     expect(otherDocs.reads).toBe(0)
     expect(queryClient.getQueryState(docQueryKeys.docs("space-b"))?.isInvalidated).toBe(false)
-    for (const query of [spaces, docs, recent, content, otherDocs]) query.unsubscribe()
+    for (const query of [spaces, docs, recent, content, page, otherDocs]) query.unsubscribe()
   })
 
   it("patches record grids from payloads and reads only what a payload cannot settle", async () => {

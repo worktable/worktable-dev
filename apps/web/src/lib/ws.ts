@@ -601,6 +601,9 @@ export function revalidateSpaceAfterReconnect(
     { queryKey: docQueryKeys.referencesIn(spaceId) },
     // Collection list, open grids and their totals.
     { queryKey: queryKeys.recordCollections(spaceId) },
+    // An open document's page check: an HTML doc reloads its frame only when
+    // the revision there moved. The route's own re-check joins this read.
+    { queryKey: ["spaces", spaceId, "document-page"] },
     { queryKey: ["annotations", spaceId] },
     { queryKey: recentQueryKeys.all },
     { queryKey: activityQueryKeys.all },

@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Faster start:** Worktable shows your workspace sooner when you open or reload it, and HTML Docs open sooner. The difference is largest on phones and slow connections.
+- **Opening documents:** Docs and HTML Docs open sooner from the sidebar, Home, search and pins, and ones you opened before open without waiting for the server. Worktable shows the document right away and checks it in the background; rich-text Docs become editable once that check finishes. Edits made elsewhere, including outside Worktable, still appear.
 
 ## [0.1.22] - 2026-10-12
 

@@ -1,8 +1,11 @@
 import { flushDrawingBeforeMove } from "./drawing-drafts"
 import type {
+  DocumentContent,
+  DocumentContentRevisionChanged,
   DocumentListItem,
   DocumentNavigationTarget,
   DocumentPageResult,
+  WithContentRevision,
 } from "@worktable/types"
 import {
   BASE_URL,
@@ -18,11 +21,38 @@ export function listDocuments(
   spaceId: string,
   includeArchived = false,
   options?: ReadOptions
-): Promise<DocumentListItem[]> {
-  return fetchJSON<{ documents: DocumentListItem[] }>(
+): Promise<WithContentRevision<DocumentListItem>[]> {
+  return fetchJSON<{ documents: WithContentRevision<DocumentListItem>[] }>(
     `/api/spaces/${spaceId}/documents?includeArchived=${includeArchived ? "true" : "false"}`,
     options
   ).then((result) => result.documents)
+}
+
+/** The revision a stale content address was answered with, if that was why. */
+export function changedRevision(error: unknown): string | null {
+  if (!(error instanceof HttpError) || error.status !== 409) return null
+  const body = error.body as Partial<DocumentContentRevisionChanged> | null
+  return body?.code === "REVISION_CHANGED" && typeof body.revision === "string"
+    ? body.revision
+    : null
+}
+
+/**
+ * A Doc's content at one revision. The browser keeps the response; a
+ * revision that is no longer current fails with the current one (see
+ * changedRevision).
+ */
+export function readDocumentContent(
+  spaceId: string,
+  path: string,
+  revision: string,
+  options?: ReadOptions
+): Promise<DocumentContent> {
+  const query = new URLSearchParams({ path, rev: revision })
+  return fetchJSON<DocumentContent>(
+    `/api/spaces/${encodeURIComponent(spaceId)}/documents/content?${query}`,
+    options
+  )
 }
 
 export function resolveDocumentNavigation(

@@ -6,6 +6,7 @@ import type {
   DocumentSummary,
   ResolvedStartHerePin,
   StartHerePin,
+  WithContentRevision,
 } from "@worktable/types"
 import { useDocuments, documentQueryKeys } from "./documents-queries.ts"
 import { fetchJSON } from "./http.ts"
@@ -121,7 +122,8 @@ export function useNewDocumentLifetime(): [DocumentLifetime, (lifetime: Document
 export interface RecentDocument {
   spaceId: string
   spaceName: string
-  document: DocumentSummary
+  /** With the revision of the content it opens (see document-rows.ts). */
+  document: WithContentRevision<DocumentSummary>
 }
 
 export interface RecentDocuments {

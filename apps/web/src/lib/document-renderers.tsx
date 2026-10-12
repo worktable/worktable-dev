@@ -1,13 +1,19 @@
 import { lazy, type ComponentType } from "react"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import type { DocumentPage, DocumentRenderer } from "@worktable/types"
+import type { DocumentOpenHint } from "./document-rows.ts"
 
 export interface DocumentRendererProps {
   spaceId: string
   documentPath: string
   formatId?: string
-  /** The route's check of this path, which opened the renderer. */
-  page: DocumentPage
+  /**
+   * The route's check of this path for this open. Null while the document
+   * opens from what the tab already knew (`preview`): shown read-only, with
+   * editing, collaboration and actions waiting for the check.
+   */
+  page: DocumentPage | null
+  preview?: DocumentOpenHint | null
 }
 
 interface BrowserDocumentRendererRegistration {
@@ -71,6 +77,13 @@ export const rendererPreloads: readonly (() => Promise<unknown>)[] = [
   html.preload,
   () => preloadDocRenderer("worktable.rich-text"),
 ]
+
+/** The renderer that shows a document opened from a hint, before its check. */
+export function previewDocumentRenderer(
+  renderer: DocumentOpenHint["renderer"]
+): BrowserDocumentRendererRegistration {
+  return DOCUMENT_RENDERERS[renderer]!
+}
 
 /** Code hint only: route and renderer requests still validate the live path. */
 export function preloadOpeningDocumentRenderer() {

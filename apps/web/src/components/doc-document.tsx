@@ -7,8 +7,8 @@ import {
   useState,
   type ComponentProps,
 } from "react"
-import { Navigate, useNavigate, useRouter } from "@tanstack/react-router"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useNavigate, useRouter } from "@tanstack/react-router"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Loader2,
   Archive,
@@ -25,14 +25,13 @@ import {
   ChevronsRight,
   ChevronsLeft,
 } from "lucide-react"
+import { docQueryKeys } from "@/lib/docs-queries"
 import {
-  docQueryKeys,
-  docQueryOptions,
-  docReadCurrent,
-  documentOpenStartedAt,
-} from "@/lib/docs-queries"
-import { documentPageQueryOptions } from "@/lib/documents-queries"
-import { refreshLive } from "@/lib/live-refresh"
+  documentQueryKeys,
+  useDocumentContent,
+} from "@/lib/documents-queries"
+import type { DocumentRendererProps } from "@/lib/document-renderers"
+import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
   firstHeadingText,
   isCollaborativeSave,
@@ -44,12 +43,12 @@ import {
   useAnnotationMutations,
   useDocAnnotations,
 } from "@/lib/annotations-queries"
-import type { Annotation } from "@worktable/types"
 import type {
-  DocMeta,
-  DocVersionEntry,
-  DocVersionSnapshot,
-} from "@/lib/docs-api"
+  Annotation,
+  DocumentPage,
+  DocumentPageResult,
+} from "@worktable/types"
+import type { DocVersionEntry, DocVersionSnapshot } from "@/lib/docs-api"
 import {
   convertDoc,
   convertDocToMarkdown,
@@ -126,13 +125,11 @@ export function DocDocumentRenderer({
   spaceId,
   documentPath,
   formatId,
-}: {
-  spaceId: string
-  documentPath: string
-  formatId?: string
-}) {
-  // This is a download hint only. DocEditorPage still validates the actual
-  // path/format after mounting before it creates any collaborative state.
+  page,
+  preview,
+}: DocumentRendererProps) {
+  // This is a download hint only. The editor and its room wait for the
+  // route's check of this path.
   useEffect(() => {
     void preloadDocEditor(formatId).catch(() => {})
   }, [formatId])
@@ -141,6 +138,8 @@ export function DocDocumentRenderer({
       key={`${spaceId}/${documentPath}`}
       spaceId={spaceId}
       docPath={documentPath}
+      page={page}
+      preview={preview ?? null}
     />
   )
 }
@@ -219,11 +218,14 @@ function SyncStatusPill({
 /**
  * Publishes the document's header meta. Takes primitives so a re-read of the
  * same document, or a save that only moves its metadata, does not set it again.
+ * Actions that change the document or its sharing appear once the route's
+ * check has validated the path (`validated`); callers leave them out before.
  */
 function DocPageMeta({
   spaceId,
   docPath,
   archived,
+  validated,
   onVersionHistory,
   onConvertToMarkdown,
   onCopyMarkdown,
@@ -235,6 +237,7 @@ function DocPageMeta({
   spaceId: string
   docPath: string
   archived: boolean
+  validated: boolean
   onVersionHistory?: () => void
   onConvertToMarkdown?: () => void
   onCopyMarkdown?: () => void
@@ -246,7 +249,10 @@ function DocPageMeta({
   const setPageMeta = useSetPageMeta()
   const { data: spaceDetail } = useSpace(spaceId)
   const shareable = Boolean(
-    spaceDetail && !spaceDetail.space.settings["archive"] && !archived
+    validated &&
+      spaceDetail &&
+      !spaceDetail.space.settings["archive"] &&
+      !archived
   )
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
@@ -340,48 +346,25 @@ function DocPageMeta({
 function DocEditorPage({
   spaceId,
   docPath,
+  page,
+  preview,
 }: {
   spaceId: string
   docPath: string
+  /** The route's check of this path; null while it opens as a preview. */
+  page: DocumentPage | null
+  preview: DocumentOpenHint | null
 }) {
   const router = useRouter()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const spaceEvents = useSpaceEvents(spaceId)
-
-  const docOptions = docQueryOptions(spaceId, docPath)
-  // A move can land after the common page resolves but before this legacy
-  // renderer mounts. Do not let a fresh-looking cache entry authorize the
-  // editor or its Yjs room: use only a read made for this open (the route
-  // starts it beside its page check) with no change reported since, or one
-  // the Space's live socket still proves current. Otherwise read again.
-  const [currentAtMount] = useState(
-    () =>
-      queryClient.getQueryState(docOptions.queryKey)?.status === "success" &&
-      docReadCurrent(
-        spaceId,
-        docPath,
-        documentOpenStartedAt(spaceId, docPath) ?? performance.now()
-      )
-  )
-  const {
-    isLoading,
-    isFetchedAfterMount,
-    error,
-    data: docData,
-    dataUpdatedAt: docUpdatedAt,
-  } = useQuery({
-    ...docOptions,
-    staleTime: 0,
-    refetchOnMount: currentAtMount ? false : "always",
-    retry: false,
-  })
-  // The page check runs again on reconnect and when the Space catalog stops
-  // agreeing with it; watch it without reading it here.
-  const { data: page, dataUpdatedAt: pageUpdatedAt } = useQuery({
-    ...documentPageQueryOptions(spaceId, docPath),
-    enabled: false,
-  })
+  const validated = page !== null
+  const formatId = page ? page.document.format.id : preview?.formatId
+  const revision = page ? page.revision : preview?.revision
+  const archived = page
+    ? Boolean(page.document.archived)
+    : Boolean(preview?.archived)
 
   const [converting, setConverting] = useState(false)
   const [convertingToMarkdown, setConvertingToMarkdown] = useState(false)
@@ -393,9 +376,10 @@ function DocEditorPage({
   const [recoveryScanVersion, setRecoveryScanVersion] = useState(0)
 
   // Keyed on the epochs alone: a save that moves only metadata rescans nothing.
-  const collaborationEpoch = docData?.collaborationEpoch
-  const epochHistory = docData?.collaborationCacheEpochHistory
+  const collaborationEpoch = page?.collaboration?.epoch
+  const epochHistory = page?.collaboration?.cacheEpochHistory
   useEffect(() => {
+    if (!collaborationEpoch) return
     let cancelled = false
     const epochs = epochHistory ?? []
     const findRecovery = async () => {
@@ -403,7 +387,7 @@ function DocEditorPage({
         const cacheKey = workspaceCollaborationCacheKey(
           spaceId,
           docPath,
-          collaborationEpoch!,
+          collaborationEpoch,
           epoch
         )
         if (
@@ -498,103 +482,71 @@ function DocEditorPage({
     })
   }, [docPath, offlineRecoveryCacheKey, recoverOfflineEdits, spaceId])
 
-  // Changes to this document. A synced editing session already holds every
-  // collaborative save, including its own, so their echoes only move its
-  // metadata forward. A change without a path while synced reaches this page
-  // through the page check below instead of a full read. Anything else (an
-  // agent writing, a conversion, an archive, a move) reads the document again.
+  // A synced editing session already holds every collaborative save,
+  // including its own, so their echoes only move the check's save marker
+  // (the base a reconnect sends) and revision forward. Any other change to
+  // this document refreshes the check (lib/ws.ts); new content follows its
+  // revision.
   useEffect(() => {
     return spaceEvents.subscribe((msg) => {
-      const synced = isLiveDocumentSynced(spaceId, docPath)
-      if (msg.type === "doc_update" && msg.docPath === docPath && synced && isCollaborativeSave(msg)) {
-        const saved = (msg.data ?? {}) as Pick<DocMeta, "updatedAt" | "provenance">
-        queryClient.setQueryData<DocMeta>(docQueryKeys.doc(spaceId, docPath), (current) =>
-          current
-            ? {
-                ...current,
-                ...(saved.updatedAt ? { updatedAt: saved.updatedAt } : {}),
-                ...(saved.provenance ? { provenance: saved.provenance } : {}),
-              }
-            : current
-        )
+      if (
+        msg.type !== "doc_update" ||
+        msg.docPath !== docPath ||
+        !isLiveDocumentSynced(spaceId, docPath) ||
+        !isCollaborativeSave(msg)
+      ) {
         return
       }
-      if (
-        (msg.type === "doc_update" &&
-          (msg.docPath === docPath || (!msg.docPath && !synced))) ||
-        (msg.type === "doc_deleted" && msg.docPath === docPath)
-      ) {
-        // A read already running may predate this change: follow it once.
-        refreshLive(queryClient, [
-          { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
-        ])
+      const saved = (msg.data ?? {}) as {
+        provenance?: DocumentPage["provenance"]
+        revision?: string
       }
+      queryClient.setQueryData<DocumentPageResult>(
+        documentQueryKeys.page(spaceId, docPath),
+        (current) =>
+          current?.kind === "document"
+            ? {
+                ...current,
+                ...(saved.provenance ? { provenance: saved.provenance } : {}),
+                ...(saved.revision ? { revision: saved.revision } : {}),
+              }
+            : current
+      )
     })
   }, [spaceEvents, queryClient, spaceId, docPath])
 
-  // A newer page check that disagrees with this document (moved, archived,
-  // converted, or Markdown edited while the tab was away) reads it again. For
-  // a rich document only the save marker can lag: Yjs brings the content.
-  useEffect(() => {
-    if (!docData || !page || page.kind === "conflict") return
-    if (pageUpdatedAt <= docUpdatedAt) return
-    const summary = page.document
-    const formatId =
-      docData.format === "markdown" ? "worktable.markdown" : "worktable.rich-text"
-    const contentHash = page.provenance?.contentHash
-    const contentMoved =
-      contentHash !== undefined && contentHash !== docData.provenance?.contentHash
-    if (
-      summary.path !== docData.path ||
-      summary.format.id !== formatId ||
-      !!summary.archived !== !!docData.archived ||
-      (docData.format === "markdown" && contentMoved)
-    ) {
-      refreshLive(queryClient, [
-        { queryKey: docQueryKeys.doc(spaceId, docPath), exact: true },
-      ])
-    } else if (contentMoved && page.provenance) {
-      const provenance = page.provenance
-      queryClient.setQueryData<DocMeta>(docQueryKeys.doc(spaceId, docPath), (current) =>
-        current ? { ...current, provenance } : current
-      )
-    }
-  }, [docData, docPath, docUpdatedAt, page, pageUpdatedAt, queryClient, spaceId])
+  // Converting changes the format and the revision: check the path again.
+  const recheck = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.page(spaceId, docPath),
+        exact: true,
+      }),
+      queryClient.invalidateQueries({
+        queryKey: docQueryKeys.docs(spaceId),
+      }),
+    ])
+    await router.invalidate()
+  }, [docPath, queryClient, router, spaceId])
 
   const handleConvert = useCallback(async () => {
     setConverting(true)
     try {
       await convertDoc(spaceId, docPath)
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: docQueryKeys.doc(spaceId, docPath),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: docQueryKeys.docs(spaceId),
-        }),
-      ])
-      await router.invalidate()
+      await recheck()
     } catch (err) {
       console.error("Conversion failed:", err)
       toast.error("Couldn’t edit this doc. Try again.")
     } finally {
       setConverting(false)
     }
-  }, [spaceId, docPath, queryClient, router])
+  }, [spaceId, docPath, recheck])
 
   const handleConvertToMarkdown = useCallback(async () => {
     setConvertingToMarkdown(true)
     try {
       await convertDocToMarkdown(spaceId, docPath)
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: docQueryKeys.doc(spaceId, docPath),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: docQueryKeys.docs(spaceId),
-        }),
-      ])
-      await router.invalidate()
+      await recheck()
       toast.success("Markdown saved")
     } catch (err) {
       console.error("Saving as Markdown failed:", err)
@@ -606,7 +558,7 @@ function DocEditorPage({
     } finally {
       setConvertingToMarkdown(false)
     }
-  }, [spaceId, docPath, queryClient, router])
+  }, [spaceId, docPath, recheck])
 
   const handleRestore = useCallback(async () => {
     setRestoring(true)
@@ -640,52 +592,18 @@ function DocEditorPage({
     })
   }, [spaceId, docPath])
 
-  if (!(isFetchedAfterMount || currentAtMount) || isLoading) {
-    return <EditorSkeleton />
-  }
+  if (!formatId) return <EditorSkeleton />
 
-  if (error || !docData) {
-    return (
-      <div
-        data-document-state
-        className="flex h-full items-center justify-center"
-      >
-        <div className="text-center">
-          <p className="text-lg font-medium text-muted-foreground">
-            Doc not found
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground/60">
-            The doc &ldquo;{docPath}&rdquo; does not exist in this space.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (docData.path !== docPath) {
-    // Alias reads return the canonical path. Redirect before mounting a
-    // BlockNote editor so an old URL never opens an obsolete Yjs room.
-    return (
-      <Navigate
-        to="/spaces/$spaceId/documents/$"
-        params={{ spaceId, _splat: docData.path }}
-        search={(previous) => previous}
-        hash={(previous) => previous ?? ""}
-        replace
-      />
-    )
-  }
-
-  if (docData.format === "markdown" && typeof docData.content === "string") {
+  if (formatId === "worktable.markdown") {
     return (
       <MarkdownDocPage
         spaceId={spaceId}
         docPath={docPath}
-        archived={Boolean(docData.archived)}
-        doc={docData}
+        archived={archived}
+        validated={validated}
+        revision={revision}
         onRestore={handleRestore}
         restoring={restoring}
-        content={docData.content}
         onConvert={handleConvert}
         converting={converting}
         onCopyMarkdown={handleCopyMarkdown}
@@ -699,15 +617,12 @@ function DocEditorPage({
     <BlockNoteDocPage
       spaceId={spaceId}
       docPath={docPath}
-      archived={Boolean(docData.archived)}
-      doc={docData}
+      archived={archived}
+      page={page}
+      revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
-      onConvertToMarkdown={
-        !docData.archived && docData.markdownCompatible !== false
-          ? handleConvertToMarkdown
-          : undefined
-      }
+      onConvertToMarkdown={!archived ? handleConvertToMarkdown : undefined}
       convertingToMarkdown={convertingToMarkdown}
       onCopyMarkdown={handleCopyMarkdown}
       onDownload={handleDownload}
@@ -716,14 +631,33 @@ function DocEditorPage({
   )
 }
 
+/** Content the server could not serve for a Doc it listed. */
+function DocUnavailable({ docPath }: { docPath: string }) {
+  return (
+    <div data-document-state className="flex h-full items-center justify-center">
+      <div className="text-center">
+        <p className="text-lg font-medium text-muted-foreground">
+          Doc not found
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground/60">
+          The doc &ldquo;{docPath}&rdquo; does not exist in this space.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function ArchivedDocBanner({
   archived,
   onRestore,
   restoring,
+  disabled,
 }: {
   archived: boolean
   onRestore: () => void
   restoring: boolean
+  /** Restoring waits for the route's check of this path. */
+  disabled: boolean
 }) {
   if (!archived) return null
 
@@ -740,7 +674,7 @@ function ArchivedDocBanner({
           size="sm"
           variant="outline"
           onClick={() => void onRestore()}
-          disabled={restoring}
+          disabled={restoring || disabled}
         >
           <RotateCcw className="mr-2 h-4 w-4" />
           {restoring ? "Restoring..." : "Restore"}
@@ -754,10 +688,10 @@ function MarkdownDocPage({
   spaceId,
   docPath,
   archived,
-  doc,
+  validated,
+  revision,
   onRestore,
   restoring,
-  content,
   onConvert,
   converting,
   onCopyMarkdown,
@@ -767,26 +701,31 @@ function MarkdownDocPage({
   spaceId: string
   docPath: string
   archived: boolean
-  doc: DocMeta
+  validated: boolean
+  revision: string | undefined
   onRestore: () => void
   restoring: boolean
-  content: string
   onConvert: () => void
   converting: boolean
   onCopyMarkdown?: () => void
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
-  const secondaryAction = useMemo<PageSecondaryAction>(
-    () => ({
-      label: "Edit",
-      displayLabel: "Edit",
-      icon: Pencil,
-      pending: converting,
-      onClick: onConvert,
-    }),
-    [converting, onConvert]
+  const secondaryAction = useMemo<PageSecondaryAction | undefined>(
+    () =>
+      validated
+        ? {
+            label: "Edit",
+            displayLabel: "Edit",
+            icon: Pencil,
+            pending: converting,
+            onClick: onConvert,
+          }
+        : undefined,
+    [converting, onConvert, validated]
   )
+  const contentQuery = useDocumentContent(spaceId, docPath, revision)
+  const content = contentQuery.data?.content
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
@@ -861,23 +800,33 @@ function MarkdownDocPage({
     }
   }, [spaceId, docPath, compareVersionId])
 
+  if (typeof content !== "string") {
+    return contentQuery.isError ? (
+      <DocUnavailable docPath={docPath} />
+    ) : (
+      <EditorSkeleton />
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
-        docPath={doc.path}
+        docPath={docPath}
         archived={archived}
+        validated={validated}
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
-        onRecoverOfflineEdits={onRecoverOfflineEdits}
+        onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
         secondaryAction={secondaryAction}
         onVersionHistory={openVersions}
-        annotations={annotationsAction}
+        annotations={validated ? annotationsAction : undefined}
       />
       <ArchivedDocBanner
         archived={archived}
         onRestore={onRestore}
         restoring={restoring}
+        disabled={!validated}
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -972,7 +921,7 @@ function MarkdownDocPage({
           onExitCompare={() => setCompareVersionId(null)}
           onRestored={() => {
             void queryClient.invalidateQueries({
-              queryKey: docQueryKeys.doc(spaceId, docPath),
+              queryKey: documentQueryKeys.page(spaceId, docPath),
             })
             setCompareVersionId(null)
           }}
@@ -993,7 +942,7 @@ function MarkdownDocPage({
             }}
             onRestored={() => {
               void queryClient.invalidateQueries({
-                queryKey: docQueryKeys.doc(spaceId, docPath),
+                queryKey: documentQueryKeys.page(spaceId, docPath),
               })
             }}
           />
@@ -1062,7 +1011,8 @@ function BlockNoteDocPage({
   spaceId,
   docPath,
   archived,
-  doc,
+  page,
+  revision,
   onRestore,
   restoring,
   onConvertToMarkdown,
@@ -1074,7 +1024,9 @@ function BlockNoteDocPage({
   spaceId: string
   docPath: string
   archived: boolean
-  doc: DocMeta
+  /** The route's check; the editor and its room wait for it. */
+  page: DocumentPage | null
+  revision: string | undefined
   onRestore: () => void
   restoring: boolean
   onConvertToMarkdown?: () => void
@@ -1083,6 +1035,7 @@ function BlockNoteDocPage({
   onDownload?: () => void
   onRecoverOfflineEdits?: () => void
 }) {
+  const validated = page !== null
   const ydocRef = useRef<Y.Doc | null>(null)
   const idbRef = useRef<IndexeddbPersistence | null>(null)
   const wsProviderRef = useRef<WebsocketProvider | null>(null)
@@ -1095,10 +1048,11 @@ function BlockNoteDocPage({
   // server's stale-cache protection over fresh agent versions.
   const pendingIntentRef = useRef(false)
   // Current known provenance, read at connect time to send the freshness base.
-  const provenanceRef = useRef(doc.provenance)
-  provenanceRef.current = doc.provenance
-  const collaborationEpoch = doc.collaborationEpoch
-  const collaborationCacheEpoch = doc.collaborationCacheEpoch
+  const provenanceRef = useRef(page?.provenance)
+  provenanceRef.current = page?.provenance
+  // The room is joined with the epochs of the validated check only.
+  const collaborationEpoch = page?.collaboration?.epoch
+  const collaborationCacheEpoch = page?.collaboration?.cacheEpoch
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const editorPaneRef = useRef<HTMLDivElement>(null)
   const previewScrollTop = useRef(0)
@@ -1113,6 +1067,16 @@ function BlockNoteDocPage({
   const editorReadable = Boolean(
     provider && readyEditor === provider && readyContent === provider
   )
+  // The saved content shows until the editor is readable, following the
+  // revision until then; after that, the room brings every change.
+  const [previewRevision, setPreviewRevision] = useState(revision)
+  if (!editorReadable && revision !== previewRevision) {
+    setPreviewRevision(revision)
+  }
+  const previewQuery = useDocumentContent(spaceId, docPath, previewRevision)
+  const previewContent = Array.isArray(previewQuery.data?.content)
+    ? previewQuery.data.content
+    : undefined
   useEffect(() => {
     if (!editorReadable || previewScrollTop.current === 0) return
     const scrollRoot = editorPaneRef.current?.querySelector(
@@ -1169,6 +1133,9 @@ function BlockNoteDocPage({
   }, [])
 
   useEffect(() => {
+    // A preview never opens the room or its browser cache: a path the tab
+    // has not checked may now name another document.
+    if (!collaborationEpoch || !collaborationCacheEpoch) return
     const wsUrl =
       import.meta.env.VITE_WS_URL ??
       `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
@@ -1234,6 +1201,19 @@ function BlockNoteDocPage({
       p.on("sync", (synced: boolean) => {
         if (synced) setReadyContent(p)
       })
+      // The room admits only the path's current document and epochs. Refused
+      // before its first sync, the path may have moved or gone since the
+      // check (a move can race it while no Space socket reports changes):
+      // check it once more, and the route follows.
+      let rechecked = false
+      p.on("connection-close", () => {
+        if (rechecked || p.synced) return
+        rechecked = true
+        void queryClient.invalidateQueries({
+          queryKey: documentQueryKeys.page(spaceId, docPath),
+          exact: true,
+        })
+      })
       p.connect()
       wsProviderRef.current = p
 
@@ -1268,7 +1248,7 @@ function BlockNoteDocPage({
       setProvider(null)
       setCollabDoc(null)
     }
-  }, [spaceId, docPath, collaborationEpoch, collaborationCacheEpoch])
+  }, [spaceId, docPath, collaborationEpoch, collaborationCacheEpoch, queryClient])
 
   useEffect(() => {
     let cancelled = false
@@ -1332,21 +1312,23 @@ function BlockNoteDocPage({
     <div className="flex h-full flex-col">
       <DocPageMeta
         spaceId={spaceId}
-        docPath={doc.path}
+        docPath={docPath}
         archived={archived}
+        validated={validated}
         onVersionHistory={openVersions}
         onConvertToMarkdown={
-          convertingToMarkdown ? undefined : onConvertToMarkdown
+          convertingToMarkdown || !validated ? undefined : onConvertToMarkdown
         }
         onCopyMarkdown={onCopyMarkdown}
         onDownload={onDownload}
-        onRecoverOfflineEdits={onRecoverOfflineEdits}
-        annotations={annotationsAction}
+        onRecoverOfflineEdits={validated ? onRecoverOfflineEdits : undefined}
+        annotations={validated ? annotationsAction : undefined}
       />
       <ArchivedDocBanner
         archived={archived}
         onRestore={onRestore}
         restoring={restoring}
+        disabled={!validated}
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -1354,18 +1336,22 @@ function BlockNoteDocPage({
         >
           {!editorReadable && (
             <div className="absolute inset-0 z-10">
-              <DocumentPreview
-                showStatus={false}
-                content={doc.content}
-                onScroll={(top) => {
-                  previewScrollTop.current = top
-                }}
-              />
+              {previewContent ? (
+                <DocumentPreview
+                  showStatus={false}
+                  content={previewContent}
+                  onScroll={(top) => {
+                    previewScrollTop.current = top
+                  }}
+                />
+              ) : (
+                <EditorSkeleton />
+              )}
             </div>
           )}
           <div
             ref={editorPaneRef}
-            className={`h-full ${Array.isArray(doc.content) && doc.content.length > 200 ? "worktable-large-document" : ""} ${editorReadable ? "" : "invisible"}`}
+            className={`h-full ${(previewContent?.length ?? 0) > 200 ? "worktable-large-document" : ""} ${editorReadable ? "" : "invisible"}`}
             inert={!editorReadable}
             aria-hidden={!editorReadable}
           >
@@ -1477,7 +1463,7 @@ function BlockNoteDocPage({
           onExitCompare={() => setCompareVersionId(null)}
           onRestored={() => {
             void queryClient.invalidateQueries({
-              queryKey: docQueryKeys.doc(spaceId, docPath),
+              queryKey: documentQueryKeys.page(spaceId, docPath),
             })
             setCompareVersionId(null)
           }}
@@ -1498,7 +1484,7 @@ function BlockNoteDocPage({
             }}
             onRestored={() => {
               void queryClient.invalidateQueries({
-                queryKey: docQueryKeys.doc(spaceId, docPath),
+                queryKey: documentQueryKeys.page(spaceId, docPath),
               })
             }}
           />

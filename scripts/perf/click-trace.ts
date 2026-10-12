@@ -1386,6 +1386,14 @@ function coldLoads(targets: Targets): ColdLoad[] {
     doc("open rich doc (2,000 blocks)", targets.richLarge),
     doc("open HTML doc", targets.htmlA),
     {
+      journey: "open Threads",
+      target: targets.threadsHref,
+      path: targets.threadsHref,
+      expect: [{ name: "threads", key: "content", args: {} }],
+      contentKey: "content",
+      gate: /\/api\/threads(\?|$)/,
+    },
+    {
       journey: "open a thread",
       target: targets.threadA.id,
       path: targets.threadA.href,
@@ -1608,26 +1616,33 @@ async function setup(
         `/api/spaces/${space.id}/documents?includeArchived=false`
       )
     ).documents.length
-  const docs = (
-    await api<{
-      documents: {
-        kind: string
-        path: string
-        title: string
-        format: { id: string }
-      }[]
-    }>(`/api/spaces/${spaceA}/documents?includeArchived=false`)
-  ).documents.filter(
-    (doc) => doc.kind === "document" && !doc.path.startsWith("perf/")
-  )
-  const rootFirst = (format: string) =>
-    docs
-      .filter((doc) => doc.format.id === format)
-      .sort(
-        (left, right) =>
-          left.path.split("/").length - right.path.split("/").length ||
-          left.path.localeCompare(right.path)
-      )[0]!
+  // The warm pass opens documents not opened before: the shallowest one of
+  // the format in Space A, else in the other fixture Spaces (the HTML Space
+  // always has some), else the probe.
+  const secondDocument = async (
+    format: string,
+    probe: { spaceId: string; path: string }
+  ) => {
+    for (const spaceId of [...fixture.spaces, fixture.htmlSpace]) {
+      const listed = await api<{
+        documents: { kind: string; path: string; format?: { id: string } }[]
+      }>(`/api/spaces/${spaceId}/documents?includeArchived=false`)
+      const found = listed.documents
+        .filter(
+          (doc) =>
+            doc.kind === "document" &&
+            doc.format?.id === format &&
+            !doc.path.startsWith("perf/")
+        )
+        .sort(
+          (left, right) =>
+            left.path.split("/").length - right.path.split("/").length ||
+            left.path.localeCompare(right.path)
+        )[0]
+      if (found) return { spaceId, path: found.path }
+    }
+    return probe
+  }
   const markdownHeading = async (spaceId: string, path: string) => {
     const doc = await api<{ content: unknown }>(
       `/api/spaces/${spaceId}/docs/${path}?conversionCheck=skip`
@@ -1645,8 +1660,11 @@ async function setup(
       .join("")
       .trim()
   }
-  const mdB = rootFirst("worktable.markdown")
-  const htmlB = rootFirst("worktable.html")
+  const mdB = await secondDocument(
+    "worktable.markdown",
+    fixture.probes.markdown
+  )
+  const htmlB = await secondDocument("worktable.html", fixture.probes.html)
   const docTarget = async (
     path: string,
     kind: DocTarget["kind"],
@@ -1666,12 +1684,12 @@ async function setup(
 
   const documentTargets = {
     mdA: await docTarget(fixture.probes.markdown.path, "md"),
-    mdB: await docTarget(mdB.path, "md"),
+    mdB: await docTarget(mdB.path, "md", mdB.spaceId),
     richA: await docTarget("perf/rich-typical", "rich"),
     richB: await docTarget("perf/rich-typical-b", "rich"),
     richLarge: await docTarget(fixture.probes.rich2000.path, "rich"),
     htmlA: await docTarget(fixture.probes.html.path, "html"),
-    htmlB: await docTarget(htmlB.path, "html"),
+    htmlB: await docTarget(htmlB.path, "html", htmlB.spaceId),
   }
 
   // Threads: the sidebar link and the first two rows of the list.
@@ -1904,7 +1922,9 @@ async function main() {
       totalSpaces,
       outDir
     )
-    await waitForIdle(server.pid, 120_000)
+    // Setup's writes start indexing; measure only once the server is quiet.
+    if ((await waitForIdle(server.pid, 120_000)) === "busy")
+      throw new Error("server still busy 2 minutes after setup")
     const idleMs =
       idle === "unknown" ? null : Math.round(performance.now() - idleBefore)
     console.log(

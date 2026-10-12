@@ -345,12 +345,17 @@ export function installInstrumentation(): void {
   }
   ;(wt as Rec)["arm"] = arm
 
-  // A page load is armed by a later init script that sets __wtExpect, so it
-  // starts before the app's own scripts (see click-trace.ts).
+  // A page load is armed by another init script that sets __wtExpect, so it
+  // starts before the app's own scripts (see click-trace.ts). Playwright does
+  // not order init scripts: take a value set before this one ran, and arm on
+  // one set after.
+  type Pending = { expectations: Expectation[]; timeoutMs: number }
+  const pending = w["__wtExpect"] as Pending | undefined
   Object.defineProperty(window, "__wtExpect", {
     configurable: true,
-    set(value: { expectations: Expectation[]; timeoutMs: number }) {
+    set(value: Pending) {
       arm(value.expectations, value.timeoutMs)
     },
   })
+  if (pending) arm(pending.expectations, pending.timeoutMs)
 }

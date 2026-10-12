@@ -707,30 +707,31 @@ function RootLayout() {
   )
 }
 
-// Route code a first visit would otherwise wait on.
-const PRELOADED_ROUTES = [
-  "/spaces/$spaceId",
-  "/spaces/$spaceId/documents/$",
-  "/spaces/$spaceId/threads/$",
-  "/threads/$",
-] as const
-
 /**
  * Once the workspace is open, load the code of the screens people open next
- * while the tab is idle, so a first visit waits only on its data.
+ * while the tab is idle, so a first visit waits only on its data. Documents
+ * come first; a renderer the open screen is already loading is the same
+ * download, so nothing else starts until it arrives.
  */
 function PreloadScreensWhenIdle() {
   const router = useRouter()
   useEffect(() => {
     const { queryClient } = router.options.context
+    const route =
+      (id: keyof typeof router.routesById) => () =>
+        router.loadRouteChunk(router.routesById[id])
     return preloadWhenIdle(
       [
-        ...PRELOADED_ROUTES.map(
-          (id) => () => router.loadRouteChunk(router.routesById[id])
-        ),
+        route("/spaces/$spaceId"),
+        route("/spaces/$spaceId/documents/$"),
         ...rendererPreloads,
+        route("/spaces/$spaceId/threads/$"),
+        route("/threads/$"),
       ],
-      () => router.state.status === "pending" || queryClient.isFetching() > 0
+      () =>
+        router.state.status === "pending" ||
+        queryClient.isFetching() > 0 ||
+        queryClient.isMutating() > 0
     )
   }, [router])
   return null

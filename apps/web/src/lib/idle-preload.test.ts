@@ -10,14 +10,27 @@ function setConnection(connection: object | undefined) {
   })
 }
 
+const originals = {
+  connection: Object.getOwnPropertyDescriptor(navigator, "connection"),
+  requestIdleCallback: Object.getOwnPropertyDescriptor(
+    globalThis,
+    "requestIdleCallback"
+  ),
+}
+
+function restore(target: object, key: string, original?: PropertyDescriptor) {
+  if (original) Object.defineProperty(target, key, original)
+  else Reflect.deleteProperty(target, key)
+}
+
 beforeEach(() => {
   globalThis.requestIdleCallback = ((callback: IdleRequestCallback) =>
     setTimeout(callback, 0)) as unknown as typeof requestIdleCallback
 })
 
 afterEach(() => {
-  setConnection(undefined)
-  delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback
+  restore(navigator, "connection", originals.connection)
+  restore(globalThis, "requestIdleCallback", originals.requestIdleCallback)
 })
 
 test("loads ahead in order once requests finish, past a failure", async () => {
@@ -57,8 +70,21 @@ test("loads nothing ahead when the browser saves data or is on 2G", async () => 
     expect(loaded).toBe(false)
   }
 
+  // Allowed, until the browser starts saving data partway through.
   setConnection({ saveData: false, effectiveType: "3g" })
+  let later = false
   await new Promise<void>((resolve) =>
-    preloadWhenIdle([async () => resolve()], () => false)
+    preloadWhenIdle(
+      [
+        async () => {
+          setConnection({ saveData: true, effectiveType: "3g" })
+          resolve()
+        },
+        async () => (later = true),
+      ],
+      () => false
+    )
   )
+  await wait(50)
+  expect(later).toBe(false)
 })

@@ -51,12 +51,13 @@ export function preloadWhenIdle(
   preloads: readonly Preload[],
   busy: () => boolean
 ): () => void {
-  let stopped = declined()
+  let stopped = false
   void (async () => {
     for (const preload of preloads) {
       await idle(0)
       while (!stopped && busy()) await idle(BUSY_RETRY_MS)
-      if (stopped) return
+      // The connection can change between preloads.
+      if (stopped || declined()) return
       await Promise.resolve()
         .then(preload)
         .catch(() => {})

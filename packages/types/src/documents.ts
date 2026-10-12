@@ -221,6 +221,23 @@ export const DocumentPageCapabilitiesSchema = z.object({
   legacyShareKind: z.enum(["doc", "html"]).optional(),
 })
 
+/**
+ * Names exactly the content the app renders for a document: Markdown and rich
+ * text from `GET …/documents/content?path=&rev=`, an HTML Doc's frame from its
+ * content address with `rev=`. A response for a revision never changes, so
+ * the browser keeps it. Equal sources share a revision.
+ */
+export const DocumentContentRevisionSchema = z.string().min(1).max(64)
+
+/** What a rich-text editing session needs to join the document's room. */
+export const DocumentCollaborationSchema = z.object({
+  /** The workspace's collaboration epoch. */
+  epoch: z.string(),
+  /** The document's browser cache epoch, and the ones it replaced. */
+  cacheEpoch: z.string(),
+  cacheEpochHistory: z.array(z.string()),
+})
+
 export const DocumentPageSchema = z.object({
   kind: z.literal("document"),
   document: DocumentSummarySchema,
@@ -228,6 +245,10 @@ export const DocumentPageSchema = z.object({
   renderer: DocumentRendererSchema.nullable(),
   capabilities: DocumentPageCapabilitiesSchema,
   provenance: DocumentProvenanceSchema.optional(),
+  /** Present when the renderer reads its content by revision. */
+  revision: DocumentContentRevisionSchema.optional(),
+  /** Present for documents the Doc renderer opens. */
+  collaboration: DocumentCollaborationSchema.optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [
@@ -245,6 +266,29 @@ export type DocumentPageCapabilities = z.infer<
 >
 export type DocumentPage = z.infer<typeof DocumentPageSchema>
 export type DocumentPageResult = z.infer<typeof DocumentPageResultSchema>
+export type DocumentCollaboration = z.infer<typeof DocumentCollaborationSchema>
+
+/**
+ * A row the app opens documents from (Space documents, Recent, search and
+ * pins), with the revision of the content it would open when known. Only the
+ * app's REST responses carry it; agent tools return the plain rows.
+ */
+export type WithContentRevision<T> = T & { revision?: string }
+
+/** `GET …/documents/content?path=&rev=`: the content of one revision. */
+export interface DocumentContent {
+  revision: string
+  format: "markdown" | "blocknote"
+  /** Markdown source, or the rich-text document's BlockNote blocks. */
+  content: string | unknown[]
+}
+
+/** The 409 answer when `rev` is no longer the document's revision. */
+export interface DocumentContentRevisionChanged {
+  error: string
+  code: "REVISION_CHANGED"
+  revision: string
+}
 
 export const DocumentVersionSummarySchema = z.object({
   store: z.enum(["v2", "legacy-v1"]).optional(),

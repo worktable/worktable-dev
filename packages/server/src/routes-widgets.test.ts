@@ -10,6 +10,7 @@ import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.t
 import { setAppDirOverride } from "./app-storage.ts";
 import { spacesRouter } from "./routes/spaces.ts";
 import { widgetsRouter } from "./routes/widgets.ts";
+import { documentsRouter } from "./routes/documents.ts";
 import { setDocumentLifecycleStepHookForTests } from "./document-lifecycle-journal.ts";
 import { dispatchOperation } from "./mcp/dispatcher.ts";
 
@@ -23,6 +24,7 @@ function buildTestApp() {
   app.onError((err, c) => c.json({ error: err.message, code: "INTERNAL_ERROR" }, 500));
   app.route("/api/spaces", spacesRouter);
   app.route("/api/spaces/:spaceId/widgets", widgetsRouter);
+  app.route("/api/spaces/:spaceId/documents", documentsRouter);
   return app;
 }
 
@@ -377,15 +379,24 @@ describe("widget REST routes", () => {
       id: "network-data", name: "Network data", html, permissions: { network: true },
     });
     expect(created.status).toBe(201);
-    const enabled = await req(app, "GET", "/api/spaces/meta/widgets/network-data/content");
+    // The browser keeps a frame asked for by its current revision.
+    const revision = async () =>
+      (await req(app, "GET", "/api/spaces/meta/documents/page?path=network-data")).json.page.revision as string;
+    const networkRevision = await revision();
+    const enabled = await req(app, "GET", `/api/spaces/meta/widgets/network-data/content?rev=${networkRevision}`);
     expect(enabled.headers.get("content-security-policy")).toContain("connect-src 'self' ws: wss: https:");
+    expect(enabled.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
 
     const revoked = await req(app, "PUT", "/api/spaces/meta/widgets/network-data", {
       name: "Network data", html, permissions: { network: false },
     });
     expect(revoked.status).toBe(200);
-    const disabled = await req(app, "GET", "/api/spaces/meta/widgets/network-data/content");
+    // Same source, new CSP: a new revision, and the old one is not kept.
+    const localRevision = await revision();
+    expect(localRevision).not.toBe(networkRevision);
+    const disabled = await req(app, "GET", `/api/spaces/meta/widgets/network-data/content?rev=${networkRevision}`);
     expect(disabled.headers.get("content-security-policy")).toContain("connect-src 'self';");
+    expect(disabled.headers.get("cache-control")).toBe("private, no-cache");
 
     for (const external of [
       '<script>import("https://example.com/code.js")</script>',

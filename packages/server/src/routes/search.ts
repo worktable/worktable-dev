@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import type { SearchResult, WithContentRevision } from "@worktable/types";
 import { requireScope } from "../auth.ts";
+import { withContentRevisions } from "../document-content-revision.ts";
 import { searchWithStatus } from "../search-index.ts";
 import { hasScope } from "../token-store.ts";
 
@@ -35,7 +37,20 @@ searchRouter.get("/", async (c) => {
     documentAccess: commonDocuments ? "common" : "legacy",
   });
 
+  // Document results open by content revision.
+  const rows = await withContentRevisions(
+    results,
+    (result) =>
+      result.type === "doc" && result.path && result.documentView
+        ? { spaceId: result.spaceId, path: result.path }
+        : null,
+    (result, revision): WithContentRevision<SearchResult> => ({
+      ...result,
+      revision,
+    })
+  );
+
   // While the index is still building, more matches may exist; the client
   // asks again shortly.
-  return c.json({ results, ...(complete ? {} : { indexing: true }) });
+  return c.json({ results: rows, ...(complete ? {} : { indexing: true }) });
 });

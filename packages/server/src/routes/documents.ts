@@ -4,9 +4,13 @@ import { z } from "zod"
 import {
   DOCUMENT_ARCHIVE_REASON_MAX_LENGTH,
   DocumentAnnotationSelectorSchema,
+  DocumentContentRevisionSchema,
   DocumentFormatClaimSchema,
   DocumentLifetimeSchema,
+  type DocumentListItem,
+  type WithContentRevision,
 } from "@worktable/types"
+import { documentContentRevisions } from "../document-content-revision.ts"
 import {
   canManageUserSettings,
   isHumanWorkspaceOwner,
@@ -18,6 +22,7 @@ import { moveDocumentFolder } from "../document-folder-move.ts"
 import {
   DocumentSourceReadError,
   readDocumentAnnotations,
+  readDocumentContent,
   readDocumentPage,
   readDocumentVersions,
   readRawDocumentSource,
@@ -294,6 +299,57 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
     )
   }
   return c.json({ page })
+})
+
+const ContentQuerySchema = z.object({
+  path: z.string().min(1).max(4096),
+  rev: DocumentContentRevisionSchema,
+})
+
+// GET …/documents/content?path=&rev= — a Doc's content at one revision. The
+// response for a revision never changes, so the browser keeps it. A
+// revision that is no longer current gets 409 with the current one.
+documentsRouter.get("/content", requireScope("documents:read"), async (c) => {
+  const parsed = ContentQuerySchema.safeParse(c.req.query())
+  const path = parsed.success ? exactDocumentPath(parsed.data.path) : null
+  if (!parsed.success || !path) {
+    return c.json(
+      { error: "Enter a valid document path and revision.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  const result = await readDocumentContent({
+    spaceId: c.req.param("spaceId") ?? "",
+    path,
+  })
+  c.header("Cache-Control", "private, no-store")
+  if (result.kind === "not-found") {
+    return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)
+  }
+  if (result.kind !== "content") {
+    return c.json(
+      {
+        error: "This document has no content to show here.",
+        code:
+          result.kind === "unavailable" ? "SOURCE_UNAVAILABLE" : "CONFLICT",
+      },
+      409
+    )
+  }
+  if (result.content.revision !== parsed.data.rev) {
+    return c.json(
+      {
+        error: "This document changed.",
+        code: "REVISION_CHANGED",
+        revision: result.content.revision,
+      },
+      409
+    )
+  }
+  c.header("Cache-Control", "private, max-age=31536000, immutable")
+  // Another sign-in on this browser must not reuse the response.
+  c.header("Vary", "Cookie, Authorization")
+  return c.json(result.content)
 })
 
 documentsRouter.get("/versions", requireScope("documents:read"), async (c) => {
@@ -1001,7 +1057,16 @@ documentsRouter.get("/", requireScope("documents:read"), async (c) => {
     spaceId,
     includeArchived: c.req.query("includeArchived") === "true",
   })
-  return c.json({ documents })
+  const revisions = await documentContentRevisions(spaceId)
+  return c.json({
+    documents: documents.map(
+      (item): WithContentRevision<DocumentListItem> => {
+        const revision =
+          item.kind === "document" ? revisions.get(item.path) : undefined
+        return revision ? { ...item, revision } : item
+      }
+    ),
+  })
 })
 
 const MoveFolderSchema = z.strictObject({

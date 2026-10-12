@@ -185,6 +185,7 @@ import { moveDocumentFolder } from "../document-folder-move.ts"
 import { setDocumentFolderArchived } from "../document-folder-archive.ts"
 import { deleteDocumentFolder } from "../document-folder-delete.ts"
 import { wsManager } from "../ws.ts"
+import { docSnapshotRevision } from "../document-content-revision.ts"
 import { FORMAT_SPEC } from "./format-spec.ts"
 import {
   isMarkdownSafe,
@@ -703,18 +704,22 @@ async function syncDocAfterToolWrite(
 ): Promise<void> {
   invalidateSearchIndex({ spaceId, path: docPath })
 
-  const doc = await readDoc(spaceId, docPath)
+  const snapshot = await readDocSourceSnapshot(spaceId, docPath)
   const statResult = await docStat(spaceId, docPath)
   const provenance = await getDocProvenance(spaceId, docPath)
+  // The app keeps this content under its revision.
+  const revision = docSnapshotRevision(snapshot)
   wsManager.broadcast(spaceId, {
     type: "doc_update",
     spaceId,
     docPath,
     data: {
       path: docPath,
-      content: doc.data,
+      content: snapshot.result.data,
+      format: snapshot.result.format,
       updatedAt: statResult?.updatedAt ?? Date.now(),
       provenance,
+      ...(revision ? { revision } : {}),
     },
   })
 }

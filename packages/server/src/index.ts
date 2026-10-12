@@ -99,7 +99,7 @@ import {
   updateCheckSupported,
 } from "./update-check.ts";
 import { VERSION } from "./release-info.ts";
-import { createStaticFileResponse, getStaticAssetsInfo, indexStaticAssets, readBuildId } from "./static-assets.ts";
+import { createStaticFileResponse, getStaticAssetsInfo, indexStaticAssets, servedBuildId } from "./static-assets.ts";
 import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
 import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
 import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
@@ -243,16 +243,9 @@ app.use("*", advanceGenerationOnWrite);
 
 // Report the web build this server serves, so a tab still running an older
 // build loads the new one at its next navigation (apps/web build-version.ts).
-let servedBuildId: string | null | undefined;
-function servedBuild(): string | null {
-  if (servedBuildId === undefined) {
-    servedBuildId = readBuildId(getStaticAssetsInfo().staticDir);
-  }
-  return servedBuildId;
-}
 app.use("/api/*", async (c, next) => {
   await next();
-  const build = servedBuild();
+  const build = servedBuildId();
   if (!build) return;
   try {
     c.res.headers.set("X-Worktable-Build", build);
@@ -517,7 +510,7 @@ if (HAS_STATIC) {
     const html = shell.html(pathname);
     const [opening, facts] = await Promise.all([
       injectDocumentOpening(c.req.raw, html, shell.documentPreloads()),
-      readBootFacts(c.req.raw, html, servedBuild()),
+      readBootFacts(c.req.raw, html, servedBuildId()),
     ]);
     const page = facts ? withBootFacts(opening ?? html, facts) : opening;
     if (page) {

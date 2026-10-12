@@ -35,6 +35,7 @@ import {
 } from "./store.ts"
 import { readWidget, setWidgetArchived} from "./widget-store.ts"
 import { yjsManager } from "./yjs-manager.ts"
+import { WsManager } from "./ws.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -549,6 +550,117 @@ describe("format-neutral document route", () => {
     const conflict = await resolve("notes/readme")
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toMatchObject({ code: "CONFLICT" })
+  }, 15_000)
+
+  it("serves content by revision, refusing a revision an outside edit or a move replaced", async () => {
+    const instance = app()
+    const read = (path: string) =>
+      instance.request(`/api/spaces/${spaceId}/documents${path}`, {
+        headers: { "x-test-scopes": "documents:read" },
+      })
+    const page = async (path: string) =>
+      (await (await read(`/page?path=${encodeURIComponent(path)}`)).json())
+        .page
+    const rows = async () =>
+      new Map(
+        (
+          (await (await read("?includeArchived=true")).json()).documents as {
+            path: string
+            revision?: string
+          }[]
+        ).map((row) => [row.path, row.revision])
+      )
+    const content = (path: string, revision: string) =>
+      read(
+        `/content?path=${encodeURIComponent(path)}&rev=${encodeURIComponent(revision)}`
+      )
+    const write = (path: string, body: unknown) =>
+      instance.request(`/api/spaces/${spaceId}/documents/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+    // Rows and the page check name the revision; its content is kept.
+    const opened = await page("notes/readme")
+    const html = await page("notes/status")
+    expect(opened.renderer.key).toBe("doc")
+    expect(typeof opened.revision).toBe("string")
+    expect(typeof html.revision).toBe("string")
+    expect(opened.collaboration.cacheEpoch).toBe("legacy")
+    expect(typeof opened.collaboration.epoch).toBe("string")
+    const listed = await rows()
+    expect(listed.get("notes/readme")).toBe(opened.revision)
+    expect(listed.get("notes/status")).toBe(html.revision)
+    const kept = await content("notes/readme", opened.revision)
+    expect(kept.status).toBe(200)
+    expect(kept.headers.get("cache-control")).toBe(
+      "private, max-age=31536000, immutable"
+    )
+    expect(await kept.json()).toEqual({
+      revision: opened.revision,
+      format: "markdown",
+      content: "# Readme",
+    })
+
+    // Another process edits the file. The page check, the row and the
+    // socket's change name a new revision, and the old one is refused with
+    // it, never served again.
+    const edited = "# Readme\n\nEdited outside.\n"
+    await writeFile(
+      join(root, "spaces", spaceId, "docs", "notes", "readme.md"),
+      edited
+    )
+    const outside = await page("notes/readme")
+    expect(outside.revision).not.toBe(opened.revision)
+    expect((await rows()).get("notes/readme")).toBe(outside.revision)
+    const messages: unknown[] = []
+    const sockets = new WsManager()
+    sockets.subscribe(
+      {
+        data: { spaceId, canReadDocs: true },
+        send: (value: string) => messages.push(JSON.parse(value)),
+        close() {},
+      },
+      spaceId
+    )
+    await sockets.handleChange({ type: "doc", spaceId, docPath: "notes/readme" })
+    expect(messages).toMatchObject([
+      {
+        type: "doc_update",
+        docPath: "notes/readme",
+        data: { content: edited, revision: outside.revision },
+      },
+    ])
+    const stale = await content("notes/readme", opened.revision)
+    expect(stale.status).toBe(409)
+    expect(stale.headers.get("cache-control")).toBe("private, no-store")
+    expect(await stale.json()).toEqual({
+      error: expect.any(String),
+      code: "REVISION_CHANGED",
+      revision: outside.revision,
+    })
+    expect(await (await content("notes/readme", outside.revision)).json())
+      .toMatchObject({ content: edited })
+
+    // Another document takes the path: its content is never served for
+    // the revision the path had.
+    await writeDoc(spaceId, "notes/other", "# Other", {
+      updatedBy: "test",
+      source: "rest-api",
+    })
+    expect((await write("delete", { path: "notes/readme" })).status).toBe(200)
+    expect(
+      (await write("move", { path: "notes/other", to: "notes/readme" })).status
+    ).toBe(200)
+    const replaced = await page("notes/readme")
+    expect(replaced.revision).not.toBe(outside.revision)
+    const refused = await content("notes/readme", outside.revision)
+    expect(refused.status).toBe(409)
+    expect((await refused.json()).revision).toBe(replaced.revision)
+    expect(await (await content("notes/readme", replaced.revision)).json())
+      .toMatchObject({ content: "# Other" })
+    expect((await content("notes/readme", "")).status).toBe(400)
   }, 15_000)
 
   it("moves mixed folders with common write authority", async () => {

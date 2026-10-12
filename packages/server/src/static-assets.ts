@@ -48,6 +48,20 @@ export function readBuildId(staticDir: string | null): string | null {
   }
 }
 
+let servedBuild: string | null | undefined;
+
+/**
+ * The web build this server serves, read once: the build its responses name
+ * (X-Worktable-Build) and that content revisions depend on. Null in
+ * development.
+ */
+export function servedBuildId(): string | null {
+  if (servedBuild === undefined) {
+    servedBuild = readBuildId(getStaticAssetsInfo().staticDir);
+  }
+  return servedBuild;
+}
+
 function shellPathFor(dir: string): string | null {
   const shell = join(dir, "_shell.html");
   if (existsSync(shell)) return shell;

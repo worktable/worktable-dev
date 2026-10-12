@@ -16,6 +16,7 @@ import { applyWidgetTheme, buildWidgetFile, getBlockingWidgetIssue, injectWidget
 import { captureWidgetContentForOverwrite, captureWidgetVersionContent, getWidgetProvenance, getWidgetVersion, listWidgetVersions, recordWidgetVersion } from "../widget-version-store.ts";
 import { invalidateSearchIndex, noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
+import { htmlContentRevisionOf } from "../document-content-revision.ts";
 import { deleteHtmlDocument } from "../html-document-delete.ts";
 import { moveHtmlDocument } from "../html-document-move.ts";
 import { createHtmlDocument } from "../html-document-create.ts";
@@ -355,11 +356,18 @@ async function handleGetContent(c: Context, spaceId: string, widgetId: string) {
     });
   }
   const themedHtml = injectWidgetRuntime(applyWidgetTheme(data, c.req.query("theme")), spaceId, widgetId);
+  // A frame asked for by its current revision never changes: the browser
+  // keeps it. Any other request revalidates, so it never holds old content.
+  const current = c.req.query("rev") === htmlContentRevisionOf(document);
   return new Response(themedHtml, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": buildWidgetCsp(widget.permissions?.network ?? false, new URL(c.req.url).origin),
       "X-Content-Type-Options": "nosniff",
+      "Cache-Control": current
+        ? "private, max-age=31536000, immutable"
+        : "private, no-cache",
+      ...(current ? { Vary: "Cookie, Authorization" } : {}),
     },
   });
 }

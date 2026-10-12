@@ -101,6 +101,8 @@ import { PageMenu } from "@/components/page-menu"
 import type { PageMeta } from "@/hooks/use-page-meta"
 import { TraceProfiler } from "@/components/trace-profiler"
 import { onBrowserLogout } from "@/lib/auth-events"
+import { rendererPreloads } from "@/lib/document-renderers"
+import { preloadWhenIdle } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 const Onboarding = lazy(() =>
   import("@/components/onboarding/onboarding").then((module) => ({
@@ -697,11 +699,41 @@ function RootLayout() {
         <Toaster theme={theme} />
         {/* After the login guard above, so an unauthenticated page never polls. */}
         <UpdateNudge />
+        {workspace ? <PreloadScreensWhenIdle /> : null}
         {/* Last, so a socket the page opens on mount counts as reconnecting. */}
         <DiscardRecoveryOverlay discarded={discarded} />
       </SidebarContext.Provider>
     </PageMetaProvider>
   )
+}
+
+// Route code a first visit would otherwise wait on.
+const PRELOADED_ROUTES = [
+  "/spaces/$spaceId",
+  "/spaces/$spaceId/documents/$",
+  "/spaces/$spaceId/threads/$",
+  "/threads/$",
+] as const
+
+/**
+ * Once the workspace is open, load the code of the screens people open next
+ * while the tab is idle, so a first visit waits only on its data.
+ */
+function PreloadScreensWhenIdle() {
+  const router = useRouter()
+  useEffect(() => {
+    const { queryClient } = router.options.context
+    return preloadWhenIdle(
+      [
+        ...PRELOADED_ROUTES.map(
+          (id) => () => router.loadRouteChunk(router.routesById[id])
+        ),
+        ...rendererPreloads,
+      ],
+      () => router.state.status === "pending" || queryClient.isFetching() > 0
+    )
+  }, [router])
+  return null
 }
 
 /** The open page's header actions, from the meta it set. */

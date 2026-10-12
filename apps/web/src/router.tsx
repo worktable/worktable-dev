@@ -3,7 +3,7 @@ import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { startWorkspaceQueries } from "./lib/boot-facts";
 import { preloadOpeningDocumentRenderer } from "./lib/document-renderers";
-import { reloadWhenChunksAreGone, serverBuildIsNewer } from "./lib/build-version";
+import { claimServerBuildReload, reloadWhenChunksAreGone } from "./lib/build-version";
 import { installTrace } from "./lib/trace";
 
 export function getRouter() {
@@ -43,7 +43,7 @@ export function getRouter() {
     reloadWhenChunksAreGone();
     // After an update, the next navigation loads the new build in full.
     router.subscribe("onBeforeNavigate", ({ toLocation }) => {
-      if (serverBuildIsNewer()) window.location.assign(toLocation.href);
+      if (claimServerBuildReload()) window.location.assign(toLocation.href);
     });
   }
 

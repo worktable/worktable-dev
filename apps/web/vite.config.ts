@@ -79,10 +79,14 @@ function webAppManifest(): Plugin {
 // the build it serves (build-id.txt beside the assets), so an open tab can
 // tell when Worktable was updated under it. Release builds use their source
 // commit, so the same source gives the same id; other builds get a fresh one.
+// Vite evaluates this file again for each environment it builds. Each build
+// takes its define from its own evaluation but shares the plugins of the
+// first, so the id is kept in process.env for every later evaluation to reuse.
 const buildId =
   process.env["WORKTABLE_BUILD_ID"]?.trim() ||
   process.env["WORKTABLE_PUBLIC_SOURCE_COMMIT"]?.trim() ||
   randomUUID()
+process.env["WORKTABLE_BUILD_ID"] = buildId
 
 function buildIdFile(): Plugin {
   return {

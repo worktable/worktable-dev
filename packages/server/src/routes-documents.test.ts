@@ -36,6 +36,7 @@ import {
 import { readWidget, setWidgetArchived} from "./widget-store.ts"
 import { yjsManager } from "./yjs-manager.ts"
 import { WsManager } from "./ws.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -611,8 +612,11 @@ describe("format-neutral document route", () => {
       join(root, "spaces", spaceId, "docs", "notes", "readme.md"),
       edited
     )
+    // The page check reads the source itself; lists learn of the edit from
+    // the watcher, which reports any file activity in the Space.
     const outside = await page("notes/readme")
     expect(outside.revision).not.toBe(opened.revision)
+    noteSpaceChanged(spaceId)
     expect((await rows()).get("notes/readme")).toBe(outside.revision)
     const messages: unknown[] = []
     const sockets = new WsManager()

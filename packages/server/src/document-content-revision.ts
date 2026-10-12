@@ -217,6 +217,15 @@ async function legacyHtmlRevision(
 
 const ROW_CONCURRENCY = 16
 
+// The read model publishes the same catalog again while nothing it was built
+// from changed, every source's fingerprint included, and builds a new one
+// when anything did. A Space's revisions are therefore listed once per
+// catalog, and again only when the fonts HTML frames carry change.
+const listedRevisions = new WeakMap<
+  DocumentCatalog,
+  { fonts: string; htmlFiles: boolean; revisions: Promise<Map<string, string>> }
+>()
+
 /**
  * Content revisions of documents the app opens by revision (Markdown, rich
  * text and HTML Docs), by path, from the Space's catalog snapshot. Limited to
@@ -228,15 +237,42 @@ export async function documentContentRevisions(
   paths?: Iterable<string>
 ): Promise<Map<string, string>> {
   const wanted = paths ? new Set(paths) : undefined
-  const revisions = new Map<string, string>()
-  if (wanted?.size === 0) return revisions
+  if (wanted?.size === 0) return new Map()
   let catalog: DocumentCatalog
   try {
     catalog = await readDocumentCatalogSnapshot(spaceId)
   } catch {
-    return revisions
+    return new Map()
   }
   const htmlFiles = await usesHtmlDocumentStorageV2()
+  const fonts = previewFontVersion()
+  const listed = listedRevisions.get(catalog)
+  if (listed?.fonts === fonts && listed.htmlFiles === htmlFiles) {
+    const all = await listed.revisions
+    return wanted
+      ? new Map(
+          [...wanted].flatMap((path) => {
+            const revision = all.get(path)
+            return revision ? [[path, revision] as const] : []
+          })
+        )
+      : all
+  }
+  // A few rows (Recent, search, pins) read only theirs; a whole list keeps
+  // what it read for the next one.
+  if (wanted) return catalogRevisions(spaceId, catalog, htmlFiles, wanted)
+  const revisions = catalogRevisions(spaceId, catalog, htmlFiles)
+  listedRevisions.set(catalog, { fonts, htmlFiles, revisions })
+  return revisions
+}
+
+async function catalogRevisions(
+  spaceId: string,
+  catalog: DocumentCatalog,
+  htmlFiles: boolean,
+  wanted?: ReadonlySet<string>
+): Promise<Map<string, string>> {
+  const revisions = new Map<string, string>()
   const spaceRoot = resolve(getWorkspaceRoot(), "spaces", spaceId)
   const candidates: Array<{
     path: string

@@ -87,8 +87,10 @@ function networkMs(steps: ClickRecord["chain"], content: number): number {
 }
 
 /**
- * Network time on the chain, split into its parts, plus the main thread in
- * its gaps (with a trace). Null when the click never reached its content.
+ * Network time on the chain, the parts of the requests that started after
+ * the click (a hover-started request's server time cannot be split at the
+ * click), and the main thread in the chain's gaps (with a trace). Null when
+ * the click never reached its content.
  */
 function parts(click: ClickRecord, latencyMs: number) {
   const content = click.contentMs
@@ -101,10 +103,9 @@ function parts(click: ClickRecord, latencyMs: number) {
   let server = 0
   let transfer = 0
   let queue = 0
-  for (const step of steps) {
+  for (const step of steps.filter((item) => item.start >= 0)) {
     const duration = step.end - Math.max(0, step.start)
     const ownQueue = Math.min(step.queue, duration)
-    // A request the hover started counts only after the click.
     const ownServer = Math.min(step.server ?? 0, duration - ownQueue)
     const ownRtt = Math.min(
       latencyMs,

@@ -888,13 +888,17 @@ async function measure(
   const content = results[action.contentKey]
   const editable = action.editableKey ? results[action.editableKey] : null
   // An HTML document's frame fires load for an error page too: content
-  // needs the frame request to have succeeded.
-  const frameFailed = requests.some(
-    (request) =>
-      request.kind === "frame" &&
-      request.start >= -1 &&
-      (Boolean(request.failed) || (request.status ?? 0) >= 400)
-  )
+  // needs the expected frame request to have succeeded.
+  const frame = action.expect.find((item) => item.name === "html")?.args[
+    "srcPart"
+  ] as string | undefined
+  const frameFailed =
+    frame !== undefined &&
+    requests.some(
+      (request) =>
+        request.label.includes(frame) &&
+        (Boolean(request.failed) || (request.status ?? 0) >= 400)
+    )
   const contentMs = content && !frameFailed ? round1(content.at - t0) : null
   const lastEnd = Math.max(
     0,

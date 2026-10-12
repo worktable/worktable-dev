@@ -155,8 +155,11 @@ const OPENING_SCREENS = 2
 const OPENING_MESSAGES = 10
 const EARLIER_SCREENS = 1.5
 const EARLIER_MESSAGES = 5
-/** Messages rendered above one the reader jumps to. */
-const JUMP_CONTEXT_MESSAGES = 5
+/**
+ * Messages rendered above one the thread opens at or the reader jumps to,
+ * so there is always something to scroll up into.
+ */
+const CONTEXT_MESSAGES = 5
 
 /**
  * A low estimate of a message's rendered height, so a range of messages
@@ -196,10 +199,11 @@ function openingStart(messages: ThreadMessage[]): number {
     OPENING_MESSAGES
   )
   // The thread opens at its last message that asks for a reply when the
-  // messages after it fill more than the screen, so render from there.
+  // messages after it fill more than the screen, so render it and some
+  // context above it.
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index]!.responseRequest !== undefined) {
-      start = Math.min(start, index)
+      start = Math.min(start, Math.max(0, index - CONTEXT_MESSAGES))
       break
     }
   }
@@ -264,7 +268,7 @@ function ThreadConversation({
       const index = messages.findIndex((message) => message.id === messageId)
       if (index < 0 || index >= firstRendered) return
       pendingJump.current = { messageId, options }
-      renderFromIndex(Math.max(0, index - JUMP_CONTEXT_MESSAGES))
+      renderFromIndex(Math.max(0, index - CONTEXT_MESSAGES))
     }
   )
 

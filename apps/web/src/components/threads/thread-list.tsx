@@ -1,6 +1,10 @@
 import { memo, useCallback, useRef, type RefObject } from "react"
 import { Link } from "@tanstack/react-router"
-import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual"
+import {
+  defaultRangeExtractor,
+  measureElement as measureRow,
+  useVirtualizer,
+} from "@tanstack/react-virtual"
 import {
   CircleAlertIcon,
   LoaderCircleIcon,
@@ -213,7 +217,7 @@ function threadKey(thread: ThreadListItem): string {
 
 /**
  * Only the rows in and near view render, so a long list costs what a screen
- * of rows does. A focused row stays rendered while it scrolls out of view.
+ * of rows does.
  */
 function ThreadRows({
   scrollElement,
@@ -249,12 +253,26 @@ function ThreadRows({
       width: 0,
       height: typeof window === "undefined" ? 0 : window.innerHeight,
     },
+    // A focused row and its neighbours stay rendered out of view, so Tab and
+    // Shift+Tab still move to the next row and bring it into view.
     rangeExtractor: (range) => {
-      const indexes = defaultRangeExtractor(range)
+      const indexes = new Set(defaultRangeExtractor(range))
       const focused = focusedIndex.current
-      if (focused === null || focused >= range.count) return indexes
-      if (indexes.includes(focused)) return indexes
-      return [...indexes, focused].sort((left, right) => left - right)
+      if (focused === null) return [...indexes]
+      for (const index of [focused - 1, focused, focused + 1]) {
+        if (index >= 0 && index < range.count) indexes.add(index)
+      }
+      return [...indexes].sort((left, right) => left - right)
+    },
+    // A hidden list (an open thread on narrow screens) measures its rows as
+    // empty; keep the sizes they had.
+    measureElement: (element, entry, instance) => {
+      const size = measureRow(element, entry, instance)
+      if (size > 0) return size
+      const key = instance.options.getItemKey(
+        instance.indexFromElement(element)
+      )
+      return instance.itemSizeCache.get(key) ?? ROW_HEIGHT
     },
   })
 

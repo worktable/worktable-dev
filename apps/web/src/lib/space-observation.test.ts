@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { QueryClient } from "@tanstack/react-query"
+import { QueryClient, QueryObserver } from "@tanstack/react-query"
+import { annotationQueryOptions } from "./annotations-queries"
 import {
   documentContentRevision,
   documentPageQueryOptions,
@@ -104,6 +105,38 @@ describe("document reads proven current by the Space's socket", () => {
     await read()
     noteDocumentOpen("space-open", "notes/plan")
     expect(validated()).toBe(true)
+  })
+})
+
+describe("annotations of an open document", () => {
+  it("are read once while the Space's socket is live, and again without it", async () => {
+    const queryClient = new QueryClient()
+    let reads = 0
+    const pageFetch = globalThis.fetch
+    globalThis.fetch = (async (input, init) => {
+      if (String(input).includes("/annotations")) {
+        reads++
+        return Response.json({ annotations: [], total: 0 })
+      }
+      return pageFetch(input, init)
+    }) as typeof fetch
+    const open = async () => {
+      const observer = new QueryObserver(
+        queryClient,
+        annotationQueryOptions("space-notes", "notes/plan", true)
+      )
+      const unsubscribe = observer.subscribe(() => undefined)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      unsubscribe()
+    }
+
+    noteSpaceLive("space-notes", true)
+    await open()
+    await open()
+    expect(reads).toBe(1)
+    noteSpaceLive("space-notes", false)
+    await open()
+    expect(reads).toBe(2)
   })
 })
 

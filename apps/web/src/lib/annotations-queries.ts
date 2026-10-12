@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AnnotationCategory, AnnotationTarget } from "@worktable/types";
 import { createAnnotation, listAnnotations, replyAnnotation, resolveAnnotation, reopenAnnotation } from "./annotations-api";
+import { isSpaceLive } from "./space-observation";
 
 export const annotationQueryKeys = {
   doc: (spaceId: string, docPath: string, includeResolved = false) => ["annotations", spaceId, docPath, includeResolved] as const,
@@ -51,10 +52,19 @@ export function useSpaceAttention(spaceId: string) {
   );
 }
 
+/**
+ * A document's annotations stay current while the Space's socket is live:
+ * every annotation write reaches it as annotation_update, and a reconnect
+ * marks them stale. Without the socket, opening the document reads them.
+ */
+const freshWhileLive = (spaceId: string) => () =>
+  isSpaceLive(spaceId) ? Infinity : 0;
+
 export function annotationQueryOptions(spaceId: string, docPath: string, includeResolved = false) {
   return queryOptions({
     queryKey: annotationQueryKeys.doc(spaceId, docPath, includeResolved),
     queryFn: () => listAnnotations(spaceId, { docPath, includeResolved }),
+    staleTime: freshWhileLive(spaceId),
   });
 }
 
@@ -66,6 +76,7 @@ export function widgetAnnotationQueryOptions(spaceId: string, widgetId: string, 
   return queryOptions({
     queryKey: annotationQueryKeys.widget(spaceId, widgetId, includeResolved),
     queryFn: () => listAnnotations(spaceId, { widgetId, includeResolved }),
+    staleTime: freshWhileLive(spaceId),
   });
 }
 

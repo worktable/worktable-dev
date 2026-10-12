@@ -21,6 +21,7 @@ import { Button } from "@worktable/ui/components/button"
 import { queryKeys, useSpace } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
+import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
   archiveWidget,
   createWidgetCheckpoint,
@@ -116,6 +117,7 @@ export function HtmlDocumentRenderer({
   spaceId,
   documentPath,
   page,
+  preview,
 }: DocumentRendererProps) {
   return (
     <WidgetDetailPage
@@ -123,22 +125,45 @@ export function HtmlDocumentRenderer({
       spaceId={spaceId}
       widgetId={documentPath}
       page={page}
+      preview={preview ?? null}
     />
   )
+}
+
+/** Settles once the route has checked this path, for requests that need it. */
+function useValidation(validated: boolean): Promise<void> {
+  const [validation] = useState(() => {
+    let resolve = () => {}
+    const promise = new Promise<void>((settle) => {
+      resolve = settle
+    })
+    return { promise, resolve }
+  })
+  useEffect(() => {
+    if (validated) validation.resolve()
+  }, [validated, validation])
+  return validation.promise
 }
 
 function WidgetDetailPage({
   spaceId,
   widgetId,
   page,
+  preview,
 }: {
   spaceId: string
   widgetId: string
-  page: DocumentPage
+  /** The route's check; null while the frame opens from a known revision. */
+  page: DocumentPage | null
+  preview: DocumentOpenHint | null
 }) {
   const navigate = useNavigate()
   const spaceEvents = useSpaceEvents(spaceId)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  // The frame may load from a row's revision before the route's check. Its
+  // records, state and navigation requests wait for the check.
+  const validated = page !== null
+  const validation = useValidation(validated)
   // Collections the widget has subscribed to (via brokered worktable.records.subscribe).
   const subscribedCollections = useRef<Set<string>>(new Set())
   // The Space page already keeps the query cache current from this Space's
@@ -200,9 +225,12 @@ function WidgetDetailPage({
   }, [])
   // The route's page check describes this document as it opens, and the
   // Space's socket refreshes it when the document changes (lib/ws.ts).
-  const title = page.document.title
-  const archived = Boolean(page.document.archived)
-  const revision = page.provenance?.versionId ?? page.document.updatedAt ?? ""
+  const title = page ? page.document.title : (preview?.title ?? "")
+  const archived = page
+    ? Boolean(page.document.archived)
+    : Boolean(preview?.archived)
+  const versionsRevision =
+    page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
   // Check this path again after a change made here, or when the frame shows
   // the check no longer holds. The route follows a move or a deletion.
   const recheckPage = useCallback(
@@ -215,13 +243,16 @@ function WidgetDetailPage({
   )
   const contentUrl = `${widgetContentUrl(spaceId, widgetId)}?theme=${resolvedTheme}`
   const newTabUrl = documentHref(spaceId, widgetId)
-  // Cache-bust the iframe on content changes. Keyed on the provenance
-  // contentHash when available: an external edit touching only index.html
-  // never bumps widget.yaml's updatedAt, but it does mint a new contentHash.
-  // updatedAt stays as the fallback for pre-provenance widgets. Snapshot
-  // compare frames are immutable and need no buster.
-  const frameKey = page.provenance?.contentHash ?? page.document.updatedAt
-  const frameSrc = `${contentUrl}&v=${encodeURIComponent(frameKey ?? "")}`
+  // The frame is addressed by its content revision: the browser keeps it,
+  // and a new revision (an edit here or outside, a permission change, a new
+  // build) loads it again. Before the check, the row's revision is used.
+  // Snapshot compare frames are immutable and need no revision.
+  const frameRevision = page ? page.revision : preview?.revision
+  const frameSrc = frameRevision
+    ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}`
+    : `${contentUrl}&v=${encodeURIComponent(
+        page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
+      )}`
   const [loadedFrameSrc, setLoadedFrameSrc] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<WidgetDiagnostic[]>([])
 
@@ -438,6 +469,16 @@ function WidgetDetailPage({
         subscribedCollections.current.delete(data.collection)
         return
       }
+      if (
+        data?.type === "worktable.navigation.open-document" ||
+        data?.type === "worktable.api.request"
+      ) {
+        // Brokered for this path only once the route has checked it.
+        await validation
+        if (disposed || event.source !== iframeRef.current?.contentWindow) {
+          return
+        }
+      }
       if (data?.type === "worktable.navigation.open-document") {
         if (typeof data.id !== "string") return
         const reply = (payload: {
@@ -563,7 +604,7 @@ function WidgetDetailPage({
       window.removeEventListener("message", handleApiRequest)
       iframeElement?.removeEventListener("load", handleIframeLoad)
     }
-  }, [frameSrc, navigate, recheckPage, spaceId, widgetId])
+  }, [frameSrc, navigate, recheckPage, spaceId, validation, widgetId])
 
   const importantDiagnostics = useMemo(
     () =>
@@ -707,7 +748,11 @@ function WidgetDetailPage({
         label: "Copy HTML",
         icon: Code,
         onSelect: handleCopyHtml,
-      },
+      }
+    )
+    // Changes wait for the route's check of this path.
+    if (!validated) return actions
+    actions.push(
       {
         id: "edit-details",
         label: "Edit Details",
@@ -741,6 +786,7 @@ function WidgetDetailPage({
     handleRestore,
     newTabUrl,
     openVersions,
+    validated,
   ])
 
   return (
@@ -752,15 +798,19 @@ function WidgetDetailPage({
         spaceId={spaceId}
         widgetId={widgetId}
         spaceShareable={Boolean(
-          spaceDetail && !spaceDetail.space.settings["archive"]
+          validated && spaceDetail && !spaceDetail.space.settings["archive"]
         )}
         title={title}
         archived={archived}
-        annotations={annotationsAction}
+        annotations={validated ? annotationsAction : undefined}
         overflowActions={overflowActions}
       />
       {archived ? (
-        <ArchivedWidgetBanner onRestore={handleRestore} restoring={restoring} />
+        <ArchivedWidgetBanner
+          onRestore={handleRestore}
+          restoring={restoring}
+          disabled={!validated}
+        />
       ) : null}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -867,7 +917,7 @@ function WidgetDetailPage({
         <WidgetVersionHistoryPanel
           spaceId={spaceId}
           widgetId={widgetId}
-          revision={revision}
+          revision={versionsRevision}
           open={(versionsOpen || Boolean(compareVersionId)) && !belowXl}
           compact={Boolean(compareVersionId) && !versionsRailExpanded}
           selectedVersionId={compareVersionId}
@@ -903,7 +953,7 @@ function WidgetDetailPage({
             }}
             spaceId={spaceId}
             widgetId={widgetId}
-            revision={revision}
+            revision={versionsRevision}
             onRestored={() => void recheckPage()}
           />
           <Drawer
@@ -1107,9 +1157,12 @@ function WidgetPageMeta({
 function ArchivedWidgetBanner({
   onRestore,
   restoring,
+  disabled = false,
 }: {
   onRestore: () => void
   restoring: boolean
+  /** Restoring waits for the route's check of this path. */
+  disabled?: boolean
 }) {
   return (
     <div className="shrink-0 border-b border-border bg-amber-50/80 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
@@ -1125,7 +1178,7 @@ function ArchivedWidgetBanner({
           size="sm"
           variant="outline"
           onClick={() => void onRestore()}
-          disabled={restoring}
+          disabled={restoring || disabled}
         >
           <RotateCcw className="mr-2 h-4 w-4" />
           {restoring ? "Restoring..." : "Restore"}

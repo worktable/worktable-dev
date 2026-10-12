@@ -270,15 +270,63 @@ test("an internal link settles without hanging or rewriting the document", async
   })
 })
 
-test("document navigation keeps the current page until the next path is verified", async ({
+test("a known document opens read-only until its path is checked, and shows an outside edit", async ({
   page,
 }) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
+  const frames: string[] = []
+  page.on("websocket", (socket) => {
+    socket.on("framereceived", ({ payload }) => {
+      if (typeof payload === "string") frames.push(payload)
+    })
+  })
   await page.goto(appUrl("/spaces/link-regression/documents/source"))
   const sourceLink = page.getByRole("link", { name: "the target" })
+  const targetLink = page.locator(
+    'a[href="/spaces/link-regression/documents/target"]'
+  )
+  await expect(sourceLink).toBeVisible({ timeout: 30_000 })
+  // Open the target once, so this tab knows its revision and content.
+  await targetLink.click()
+  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+    timeout: 30_000,
+  })
+  await page.goBack()
   await expect(sourceLink).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('[contenteditable="true"]')).toBeVisible()
+
+  // Another process rewrites the target's file. Wait until the change has
+  // reached this tab, so its next open must check the path again.
+  const edited = "Target document, edited outside"
+  await writeFile(
+    harness.workspacePath("spaces/link-regression/docs/target.json"),
+    JSON.stringify([
+      {
+        id: "outside-edit",
+        type: "paragraph",
+        props: {
+          textColor: "default",
+          backgroundColor: "default",
+          textAlignment: "left",
+        },
+        content: [{ type: "text", text: edited, styles: {} }],
+        children: [],
+      },
+    ])
+  )
+  await expect
+    .poll(
+      () =>
+        frames.some(
+          (frame) =>
+            frame.includes('"doc_update"') &&
+            frame.includes('"docPath":"target"') &&
+            frame.includes(edited)
+        ),
+      { timeout: 30_000 }
+    )
+    .toBe(true)
 
   let releasePage!: () => void
   const heldPage = new Promise<void>((resolve) => {
@@ -295,24 +343,25 @@ test("document navigation keeps the current page until the next path is verified
     const pageStarted = page.waitForRequest((request) =>
       request.url().endsWith("/documents/page?path=target")
     )
-    await page
-      .locator('a[href="/spaces/link-regression/documents/target"]')
-      .click()
+    await targetLink.click()
     await pageStarted
-    // Advance beyond the router's default pending threshold while metadata is
-    // held. A slow path check must not replace the open document with a pending
-    // route match (which can outlive its load promise during concurrent renders).
+    // While the check is held, past the router's pending threshold, the
+    // target shows what the tab knows, read-only: no editor, no room.
     await page.clock.install()
     await page.clock.runFor(1_500)
-    await expect(sourceLink).toBeVisible()
-    await expect(page.locator('[data-document-loading]')).toHaveCount(0)
+    await expect(page).toHaveURL(/\/documents\/target$/)
+    await expect(page.locator("[data-document-preview]")).toContainText(
+      "Target document"
+    )
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
   } finally {
     releasePage()
   }
-  await expect(page).toHaveURL(/\/documents\/target$/)
-  await expect(page.locator(".bn-editor")).toContainText("Target document", {
+  // The check validates the path; the editor opens with the outside edit.
+  await expect(page.locator(".bn-editor")).toContainText(edited, {
     timeout: 30_000,
   })
+  await expect(page.locator('[contenteditable="true"]')).toBeVisible()
   expect(errors).toEqual([])
 })
 

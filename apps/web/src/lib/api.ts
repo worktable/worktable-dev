@@ -3,6 +3,7 @@ import type {
   ResolvedStartHerePin,
   SearchResult,
   SpaceFile,
+  WithContentRevision,
 } from "@worktable/types"
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
@@ -74,7 +75,7 @@ export function getSpaces() {
 export function getSpace(spaceId: string, options?: ReadOptions) {
   return fetchJSON<{
     space: SpaceFile
-    pins?: ResolvedStartHerePin[]
+    pins?: WithContentRevision<ResolvedStartHerePin>[]
   }>(`/api/spaces/${spaceId}`, options)
 }
 
@@ -148,7 +149,10 @@ export function searchWorkspace(
     params.set("includeArchived", String(opts.includeArchived))
   if (opts.maxResults !== undefined)
     params.set("maxResults", String(opts.maxResults))
-  return fetchJSON<{ results: SearchResult[]; indexing?: boolean }>(
+  return fetchJSON<{
+    results: WithContentRevision<SearchResult>[]
+    indexing?: boolean
+  }>(
     `/api/search?${params.toString()}`,
     options
   ).then((r) => ({ results: r.results, indexing: r.indexing === true }))

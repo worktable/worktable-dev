@@ -1,4 +1,4 @@
-import type { ArchiveInfo, DocListEntry, ResolvedDocumentReference } from "@worktable/types";
+import type { ArchiveInfo, DocListEntry, DocumentProvenance, ResolvedDocumentReference } from "@worktable/types";
 import { fetchJSON, type ReadOptions } from "./http.ts";
 
 /**
@@ -36,25 +36,8 @@ export interface DocVersionSnapshot extends DocVersionEntry {
   after: { format: string | null; storedAs: string; contentHash: string; content: unknown };
 }
 
-export interface DocMeta {
-  path: string;
-  content: unknown[] | string;
-  format: "blocknote" | "markdown";
-  storedAs: "json" | "md";
-  updatedAt: number;
-  collaborationEpoch: string;
-  collaborationCacheEpoch: string;
-  collaborationCacheEpochHistory?: string[];
-  markdownCompatible: boolean | null;
-  archived?: ArchiveInfo;
-  provenance?: {
-    updatedAt: string;
-    updatedBy: string;
-    source: string;
-    versionId: string;
-    contentHash: string;
-  };
-}
+/** Who saved a Doc last, as writes report it. */
+export type DocProvenance = DocumentProvenance;
 
 /** Encode each segment of a doc path for safe use in URLs */
 function encodeDocPath(docPath: string): string {
@@ -99,19 +82,6 @@ export async function resolveDocumentReferences(
     )
   )
   return results.flat()
-}
-
-// ── Read a single doc ───────────────────────────────────────
-
-export function readDoc(
-  spaceId: string,
-  docPath: string,
-  options?: ReadOptions
-): Promise<DocMeta> {
-  return fetchJSON<DocMeta>(
-    `/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`,
-    options
-  );
 }
 
 // ── Export a doc as markdown (server converts BlockNote docs) ──
@@ -159,7 +129,7 @@ export function createDoc(
   title: string,
   content?: unknown[],
   lifetime?: "durable" | "temporary"
-): Promise<{ path: string; updatedAt: number; provenance?: DocMeta["provenance"] }> {
+): Promise<{ path: string; updatedAt: number; provenance?: DocProvenance }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs`, {
     method: "POST",
     body: JSON.stringify({ title, content, ...(lifetime ? { lifetime } : {}) }),
@@ -172,7 +142,7 @@ export function writeDoc(
   spaceId: string,
   docPath: string,
   content: unknown[]
-): Promise<{ path: string; updatedAt: number; provenance?: DocMeta["provenance"] }> {
+): Promise<{ path: string; updatedAt: number; provenance?: DocProvenance }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}`, {
     method: "PUT",
     body: JSON.stringify({ content }),
@@ -270,7 +240,7 @@ export function createDocCheckpoint(
   spaceId: string,
   docPath: string,
   label?: string
-): Promise<{ ok: boolean; provenance?: DocMeta["provenance"] }> {
+): Promise<{ ok: boolean; provenance?: DocProvenance }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions/checkpoint`, {
     method: "POST",
     body: JSON.stringify({ label }),
@@ -281,7 +251,7 @@ export function restoreDocVersion(
   spaceId: string,
   docPath: string,
   versionId: string
-): Promise<{ ok: boolean; provenance?: DocMeta["provenance"]; updatedAt: number }> {
+): Promise<{ ok: boolean; provenance?: DocProvenance; updatedAt: number }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/versions/${encodeURIComponent(versionId)}/restore`, {
     method: "POST",
   });

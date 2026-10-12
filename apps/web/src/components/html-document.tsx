@@ -20,6 +20,7 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { queryKeys, useSpace } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { isSpaceLive } from "@/lib/space-observation"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
@@ -243,16 +244,23 @@ function WidgetDetailPage({
   )
   const contentUrl = `${widgetContentUrl(spaceId, widgetId)}?theme=${resolvedTheme}`
   const newTabUrl = documentHref(spaceId, widgetId)
-  // The frame is addressed by its content revision: the browser keeps it,
-  // and a new revision (an edit here or outside, a permission change, a new
-  // build) loads it again. Before the check, the row's revision is used.
+  // The frame is addressed by its content revision: a new revision (an edit
+  // here or outside, a permission change, a new build) loads it again.
   // Snapshot compare frames are immutable and need no revision.
+  // Before the check, the frame loads from the row's revision only while the
+  // Space's socket is live and would report a move. Without the socket, the
+  // frame's own announcement of the document it was served for, after the
+  // check, is what catches a move during the open, so it waits for the check.
+  const [frameBeforeCheck] = useState(() => isSpaceLive(spaceId))
   const frameRevision = page ? page.revision : preview?.revision
-  const frameSrc = frameRevision
-    ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}`
-    : `${contentUrl}&v=${encodeURIComponent(
-        page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
-      )}`
+  const frameSrc =
+    !page && !frameBeforeCheck
+      ? null
+      : frameRevision
+        ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}`
+        : `${contentUrl}&v=${encodeURIComponent(
+            page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
+          )}`
   const [loadedFrameSrc, setLoadedFrameSrc] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<WidgetDiagnostic[]>([])
 
@@ -791,7 +799,9 @@ function WidgetDetailPage({
 
   return (
     <div
-      data-document-ready={loadedFrameSrc === frameSrc ? "true" : undefined}
+      data-document-ready={
+        frameSrc !== null && loadedFrameSrc === frameSrc ? "true" : undefined
+      }
       className="flex h-full min-h-0 flex-col bg-background"
     >
       <WidgetPageMeta
@@ -836,21 +846,23 @@ function WidgetDetailPage({
               )}
             </Button>
           </div>
-          {loadedFrameSrc !== frameSrc && (
+          {(frameSrc === null || loadedFrameSrc !== frameSrc) && (
             <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden bg-background">
               <EditorSkeleton />
             </div>
           )}
-          <iframe
-            ref={iframeRef}
-            onLoad={() => setLoadedFrameSrc(frameSrc)}
-            title={title}
-            src={frameSrc}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-            data-worktable-widget-frame="true"
-            className="h-full w-full flex-1 border-0 bg-background"
-          />
+          {frameSrc !== null && (
+            <iframe
+              ref={iframeRef}
+              onLoad={() => setLoadedFrameSrc(frameSrc)}
+              title={title}
+              src={frameSrc}
+              sandbox="allow-scripts"
+              referrerPolicy="no-referrer"
+              data-worktable-widget-frame="true"
+              className="h-full w-full flex-1 border-0 bg-background"
+            />
+          )}
         </div>
 
         {compareVersionId && (

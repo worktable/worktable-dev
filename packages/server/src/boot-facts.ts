@@ -39,9 +39,15 @@ export async function readBootFacts(
 ): Promise<BootFacts | null> {
   if (request.method !== "GET" || !shell.includes(BOOT_FACTS_MARKER))
     return null
-  const response = await boot.fetch(request)
-  if (response.status !== 200) return null
-  return { build, ...((await response.json()) as Record<string, unknown>) }
+  try {
+    const response = await boot.fetch(request)
+    if (response.status !== 200) return null
+    return { build, ...((await response.json()) as Record<string, unknown>) }
+  } catch {
+    // The facts are optional: the app reads them itself, and the shell must
+    // still be served.
+    return null
+  }
 }
 
 export function withBootFacts(shell: string, facts: BootFacts): string {

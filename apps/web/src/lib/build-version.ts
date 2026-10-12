@@ -58,9 +58,12 @@ function claimReload(build: string): boolean {
   try {
     const now = Date.now()
     const recent = recentReloads(sessionStorage.getItem(RELOADS_KEY), now)
-    if (Object.hasOwn(recent, build)) return false
-    recent[build] = now
-    sessionStorage.setItem(RELOADS_KEY, JSON.stringify(recent))
+    if (recent.has(build)) return false
+    recent.set(build, now)
+    sessionStorage.setItem(
+      RELOADS_KEY,
+      JSON.stringify(Object.fromEntries(recent))
+    )
     return true
   } catch {
     // Without a record that survives the reload, a reload could repeat.
@@ -68,21 +71,22 @@ function claimReload(build: string): boolean {
   }
 }
 
+/** Reloads claimed within the window, by build id. Ids are opaque strings. */
 function recentReloads(
   stored: string | null,
   now: number
-): Record<string, number> {
+): Map<string, number> {
+  const recent = new Map<string, number>()
   let parsed: unknown
   try {
     parsed = JSON.parse(stored ?? "{}")
   } catch {
-    return {}
+    return recent
   }
-  const recent: Record<string, number> = {}
   if (!parsed || typeof parsed !== "object") return recent
   for (const [build, at] of Object.entries(parsed)) {
     if (typeof at === "number" && Math.abs(now - at) < RELOAD_WINDOW_MS) {
-      recent[build] = at
+      recent.set(build, at)
     }
   }
   return recent

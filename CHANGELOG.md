@@ -9,30 +9,44 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-10-12
+
 ### Added
 
 - **Hermes:** Connect Hermes Agent during onboarding or from **Settings → Agents → Hermes**. Hermes answers thread messages addressed to it and uses Worktable's tools and skills, with a pairing code on local or self-hosted Worktable or a sign-in on Cloud.
-- **Agents in Settings:** Each connected agent shows its platform's logo, its name, and where it runs. Select **Edit** to rename it, pick an icon from the same library as Spaces, or change what it may do. Agents set up with `worktable mcp setup`, the Desktop and manual setup panels, or a token made with an agent name appear there too. On local and self-hosted Worktable for now.
-- **Approve an agent:** On local and self-hosted Worktable, `openclaw worktable connect --server <address>` and `hermes worktable connect <address>` work without a pairing code: they print a link where you check the agent's code and approve it with its name, icon, and access.
-- **Agent access:** Choose an agent's access when you connect it: **Threads**, **Read workspace**, and **Edit workspace**. All three are on by default, for OpenClaw as well.
-- **Row Height:** Choose how much of each value a records table shows from **⋯ → Row Height**: **Single Line**, **Two Lines**, or **Full Text**. Each collection remembers its choice.
-- **Reorder columns:** Drag a column header onto another to move it. The Columns menu still has arrows for keyboard and touch.
+- **Agents in Settings:** Each connected agent shows its platform's logo, its name, and where it runs. Select **Edit** to rename it, pick an icon from the same library as Spaces, or change what it may do. Agents set up with `worktable mcp setup`, the **Claude and ChatGPT** and **Manual setup** panels, or a token made with an agent name appear there too. On local and self-hosted Worktable for now.
+- **Approve an agent:** On local and self-hosted Worktable, `openclaw worktable connect --server <address>` and `hermes worktable connect <address>` work without a pairing code: they print a link where you check the agent's code and approve it with its name, icon, and access. The agent keeps waiting through a dropped connection or a Worktable restart. OpenClaw needs version 0.0.15 of the Worktable plugin.
+- **Agent access:** Choose an agent's access when you connect it: **Threads**, **Read workspace**, and **Edit workspace**. All three are on by default, including for OpenClaw on local and self-hosted Worktable.
+- **Row Height:** Choose how much of each value a records table shows with **Row Height** in the collection's **⋮** menu: **Single Line**, **Two Lines**, or **Full Text**. Each collection remembers its choice.
+- **Reorder columns:** Drag a column header onto another to move it. The column settings still have arrows for keyboard and touch.
 
 ### Changed
 
+- **Version history:** Worktable now keeps 30 days of version history by default. **Settings → History** offers 30, 90 or 180 days, or the last 7 versions of each doc. Keeping everything is no longer offered. Workspaces that kept everything (the previous default) or the last 50 versions of each doc move to 180 days, and **Settings → History** shows a notice. Shortly after the update, versions older than 180 days are deleted, except each doc's newest version. To keep them, export your workspace with **All history** from **Settings → Import & Export** before updating.
+- **Faster on large workspaces:** On workspaces with around a thousand documents, opening a document, the Spaces list, a Space's Docs, Recent, and threads take tens of milliseconds instead of half a second to a few seconds. Pending and Activity load several times faster, and Home and open Docs make far fewer background requests.
+- **Search:** Search looks inside every document. Before, a large workspace searched the content of only some documents and matched the rest by title. Search right after an edit takes a fraction of a second instead of seconds.
+- **Saving while you type:** A Doc saves at least every 10 seconds while you keep typing, so agents read your latest text. Before, it saved only once you paused.
+- **Faster first load:** The app loads about a quarter less code before it first appears and serves its own fonts instead of loading them from Google Fonts and Fontshare. Share links open many times faster after their first view.
+- **New versions:** After Worktable updates, an open tab loads the new version the next time you go to another page.
+- **Local agents:** When Worktable is already running for the same workspace and doesn't require an MCP token, an agent connected with `worktable mcp stdio` works through it, so the open app shows the agent's changes as it makes them.
+- **Desktop updates:** Desktop checks for updates every six hours while it runs, downloads them in the background, and installs them the next time you quit, or right away when you restart to update. If updating the app needs an administrator password, quitting leaves it unchanged, so restart to update instead. With a local workspace open, Worktable tells you when an update is ready, and **Settings → System** shows its progress with **Restart to update**. **Worktable → Check for Updates…** opens that page.
 - **Connecting during onboarding:** Onboarding shows each agent's logo, walks through connecting it step by step, and lets you choose its name and access first.
 - **Names in threads:** Renaming yourself or an agent updates the threads you are already in, so @mentions of the new name reach you or the agent there.
 - **Editing records:** In edit mode, a text cell opens a field over the cell that wraps long values and grows as you type; Tab saves and moves to the next cell. The edit button reads **Done** while editing is on. In record details, text stays in place when you start editing, long values wrap, and every field in the schema is shown.
-- **Grouped tables:** Groups follow the order of the field's options, collapse and expand from their headings, and hide the grouped column, since each heading already names it. Group headings show the record count.
-- **Record details:** The full record page uses its whole width when a record has no long-text or document fields, and **Copy Record ID** is in the record's menu.
+- **Grouped tables:** Groups follow the order of the field's options, collapse and expand from their headings, and hide the grouped column, since each heading already names it. Group headings show the record count and no longer show number totals.
+- **Record details:** On the full record page, a record with no long-text or document fields shows its fields in the main column instead of beside an empty panel. **Copy Record ID** is in the record's menu.
+- **Server logs:** The server logs only requests that fail or take longer than 500 ms. Set `WORKTABLE_DEBUG=1` to log every request.
 
 ### Fixed
 
-- **OpenClaw setup:** Settings and onboarding install the Worktable plugin from ClawHub, matching the documentation, so `openclaw plugins update worktable` keeps it current.
-- **OpenClaw on Worktable Cloud:** Connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
+- **New local workspaces in Desktop:** Creating a local workspace in Desktop finishes setting up the Welcome Space instead of stopping at "Welcome took longer than expected to finish."
+- **Desktop recovery:** When your local data was saved by a newer Worktable, the recovery screen offers **Check for updates**. After a failed or interrupted update, **Try again** comes first, and the download link names the version it installs.
+- **OpenClaw setup:** Settings and onboarding show the ClawHub install command from the documentation, so `openclaw plugins update worktable` keeps the plugin current.
+- **OpenClaw on Worktable Cloud:** With version 0.0.15 of the Worktable plugin, connecting OpenClaw to Worktable Cloud shows the complete sign-in link and accepts the claim code as displayed, so the connection can finish.
 - **ChatGPT desktop:** A token generated for ChatGPT desktop shows ChatGPT in **Settings → Agents** instead of Codex.
 - **Workspace upgrade:** A workspace that still has annotations from deleted documents finishes upgrading instead of stopping at **Workspace upgrade needs attention**, and that screen now shows the Worktable icon.
 - **Records table:** Selecting a row no longer nudges the rows below it.
+- **Phones:** The sidebar no longer flashes open while the app loads.
 
 ## [0.1.21] - 2026-10-09
 

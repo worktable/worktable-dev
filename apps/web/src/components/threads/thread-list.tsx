@@ -236,7 +236,7 @@ function ThreadRows({
   locationLabel: (location: ThreadLocation) => string
   threadLink: ThreadLink
 }) {
-  const focusedIndex = useRef<number | null>(null)
+  const focusedKey = useRef<string | null>(null)
   const getItemKey = useCallback(
     (index: number) => threadKey(threads[index]!),
     [threads]
@@ -257,8 +257,13 @@ function ThreadRows({
     // Shift+Tab still move to the next row and bring it into view.
     rangeExtractor: (range) => {
       const indexes = new Set(defaultRangeExtractor(range))
-      const focused = focusedIndex.current
-      if (focused === null) return [...indexes]
+      // By key: threads can move while a row has focus.
+      const focused = focusedKey.current
+        ? threads.findIndex(
+            (thread) => threadKey(thread) === focusedKey.current
+          )
+        : -1
+      if (focused < 0) return [...indexes]
       for (const index of [focused - 1, focused, focused + 1]) {
         if (index >= 0 && index < range.count) indexes.add(index)
       }
@@ -283,10 +288,11 @@ function ThreadRows({
         const row = (event.target as HTMLElement).closest<HTMLElement>(
           "[data-index]"
         )
-        focusedIndex.current = row ? Number(row.dataset.index) : null
+        const thread = row ? threads[Number(row.dataset.index)] : undefined
+        focusedKey.current = thread ? threadKey(thread) : null
       }}
       onBlur={() => {
-        focusedIndex.current = null
+        focusedKey.current = null
       }}
     >
       <ItemGroup

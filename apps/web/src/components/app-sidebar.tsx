@@ -646,10 +646,15 @@ const SpaceContent = memo(function SpaceContent({
         queryKey: documentQueryKeys.list(spaceId),
         exact: true,
       }),
+      // An open HTML doc shows its name and archive state from its page check.
       ...(widgetId
         ? [
             queryClient.invalidateQueries({
               queryKey: queryKeys.widget(spaceId, widgetId),
+              exact: true,
+            }),
+            queryClient.invalidateQueries({
+              queryKey: documentQueryKeys.page(spaceId, widgetId),
               exact: true,
             }),
           ]

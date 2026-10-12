@@ -788,6 +788,16 @@ test("HTML documents become readable from the runtime ready signal", async ({
     }
   )
   expect(created.ok(), await created.text()).toBe(true)
+  // Changes made elsewhere reach an open document through its Space's socket.
+  const subscribed = page
+    .waitForEvent("websocket", (socket) =>
+      socket.url().includes("spaceId=welcome")
+    )
+    .then((socket) =>
+      socket.waitForEvent("framereceived", (frame) =>
+        String(frame.payload).includes('"subscribed"')
+      )
+    )
   await page.goto(
     new URL("/spaces/welcome/documents/runtime-ready", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
@@ -803,4 +813,19 @@ test("HTML documents become readable from the runtime ready signal", async ({
   await expect(
     page.getByRole("status", { name: "Opening document" })
   ).toBeHidden()
+
+  await subscribed
+  const edited = await page.request.put(
+    `${harness.apiUrl}/api/spaces/welcome/widgets/runtime-ready`,
+    {
+      data: {
+        name: "Runtime ready",
+        html: "<!doctype html><body><h1>Edited elsewhere</h1></body>",
+      },
+    }
+  )
+  expect(edited.ok(), await edited.text()).toBe(true)
+  await expect(
+    frame.getByRole("heading", { name: "Edited elsewhere" })
+  ).toBeVisible({ timeout: 15_000 })
 })

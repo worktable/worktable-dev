@@ -18,7 +18,9 @@ import {
   X,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
-import { useSpace, queryKeys, widgetQueryOptions } from "@/lib/queries"
+import { useSpace, widgetQueryOptions } from "@/lib/queries"
+import { documentQueryKeys } from "@/lib/documents-queries"
+import type { DocumentRendererProps } from "@/lib/document-renderers"
 import {
   archiveWidget,
   createWidgetCheckpoint,
@@ -36,7 +38,6 @@ import type {
   WidgetVersionEntry,
   WidgetVersionSnapshot,
 } from "@/lib/widgets-api"
-import { subscribeToSpaceEvents, type WsStatus } from "@/lib/ws"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
 import {
@@ -48,15 +49,10 @@ import { RelativeTime } from "@/lib/time"
 import { resolveWidgetApiTarget } from "@/lib/widget-broker"
 import { resolveDocumentNavigation } from "@/lib/documents-api"
 import { documentHref, documentRoute } from "@/lib/document-views"
-import {
-  authenticatedFetch,
-  canonicalConflictPath,
-  HttpError,
-  redirectToLogin,
-} from "@/lib/http"
+import { authenticatedFetch, HttpError, redirectToLogin } from "@/lib/http"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { useTheme } from "@/components/theme-provider"
-import { useNavigate, useRouter } from "@tanstack/react-router"
+import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   useCallback,
@@ -102,9 +98,9 @@ import {
 import type {
   Annotation,
   AnnotationCategory,
+  DocumentPage,
   WidgetFile,
 } from "@worktable/types"
-import type { WidgetRead } from "@/lib/widgets-api"
 
 type WidgetDiagnostic = {
   id: string
@@ -118,15 +114,14 @@ type WidgetDiagnostic = {
 export function HtmlDocumentRenderer({
   spaceId,
   documentPath,
-}: {
-  spaceId: string
-  documentPath: string
-}) {
+  page,
+}: DocumentRendererProps) {
   return (
     <WidgetDetailPage
       key={`${spaceId}/${documentPath}`}
       spaceId={spaceId}
       widgetId={documentPath}
+      page={page}
     />
   )
 }
@@ -134,30 +129,21 @@ export function HtmlDocumentRenderer({
 function WidgetDetailPage({
   spaceId,
   widgetId,
+  page,
 }: {
   spaceId: string
   widgetId: string
+  page: DocumentPage
 }) {
   const navigate = useNavigate()
-  const router = useRouter()
   const spaceEvents = useSpaceEvents(spaceId)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  const validatedMountedRouteRef = useRef<string | null>(null)
   // Collections the widget has subscribed to (via brokered worktable.records.subscribe).
   const subscribedCollections = useRef<Set<string>>(new Set())
   // The Space page already keeps the query cache current from this Space's
   // socket. Listen on the same socket only for what this page does itself:
   // relay record changes to the widget iframe, which can't hold its own socket
   // under exposed CORS, and follow a move or deletion of this document.
-  const [spaceSubscriptionStatus, setSpaceSubscriptionStatus] =
-    useState<WsStatus>("connecting")
-  useEffect(
-    () =>
-      subscribeToSpaceEvents(spaceId, () => undefined, (status) =>
-        setSpaceSubscriptionStatus(status)
-      ),
-    [spaceId]
-  )
   useEffect(() => {
     return spaceEvents.subscribe((message) => {
       if (message.type === "widget_deleted" && message.widgetId === widgetId) {
@@ -199,13 +185,6 @@ function WidgetDetailPage({
       }
     })
   }, [navigate, spaceEvents, spaceId, widgetId])
-  useEffect(() => {
-    if (spaceSubscriptionStatus !== "connected") return
-    const routeKey = `${spaceId}\0${widgetId}`
-    if (validatedMountedRouteRef.current === routeKey) return
-    validatedMountedRouteRef.current = routeKey
-    void router.invalidate()
-  }, [router, spaceId, spaceSubscriptionStatus, widgetId])
   const { resolvedTheme } = useTheme()
   const queryClient = useQueryClient()
   // Context rails need enough room to preserve the artifact beside them.
@@ -218,40 +197,21 @@ function WidgetDetailPage({
     mql.addEventListener("change", update)
     return () => mql.removeEventListener("change", update)
   }, [])
-  const widgetOptions = widgetQueryOptions(spaceId, widgetId)
-  // A move can land after the common page resolves but before this legacy
-  // renderer mounts. Do not let a fresh-looking cache entry authorize the
-  // iframe: require success or error evidence produced after this mount.
-  const initialWidgetEvidence = useRef({
-    dataUpdatedAt:
-      queryClient.getQueryState(widgetOptions.queryKey)?.dataUpdatedAt ?? 0,
-    errorUpdatedAt:
-      queryClient.getQueryState(widgetOptions.queryKey)?.errorUpdatedAt ?? 0,
-  })
-  const {
-    data: widget,
-    dataUpdatedAt,
-    error,
-    errorUpdatedAt,
-    isLoading,
-  } = useQuery({
-    ...widgetOptions,
-    staleTime: 0,
-    refetchOnMount: "always",
-    retry: false,
-  })
-  const routeValidated =
-    dataUpdatedAt > initialWidgetEvidence.current.dataUpdatedAt ||
-    errorUpdatedAt > initialWidgetEvidence.current.errorUpdatedAt
-  const canonicalPath = canonicalConflictPath(error, widgetId)
-  useEffect(() => {
-    if (!canonicalPath) return
-    void navigate({
-      to: "/spaces/$spaceId/documents/$",
-      params: { spaceId, _splat: canonicalPath },
-      replace: true,
-    })
-  }, [canonicalPath, navigate, spaceId])
+  // The route's page check describes this document as it opens, and the
+  // Space's socket refreshes it when the document changes (lib/ws.ts).
+  const title = page.document.title
+  const archived = Boolean(page.document.archived)
+  const revision = page.provenance?.versionId ?? page.document.updatedAt ?? ""
+  // Check this path again after a change made here, or when the frame shows
+  // the check no longer holds. The route follows a move or a deletion.
+  const recheckPage = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: documentQueryKeys.page(spaceId, widgetId),
+        exact: true,
+      }),
+    [queryClient, spaceId, widgetId]
+  )
   const contentUrl = `${widgetContentUrl(spaceId, widgetId)}?theme=${resolvedTheme}`
   const newTabUrl = documentHref(spaceId, widgetId)
   // Cache-bust the iframe on content changes. Keyed on the provenance
@@ -259,10 +219,8 @@ function WidgetDetailPage({
   // never bumps widget.yaml's updatedAt, but it does mint a new contentHash.
   // updatedAt stays as the fallback for pre-provenance widgets. Snapshot
   // compare frames are immutable and need no buster.
-  const frameKey = widget?.provenance?.contentHash ?? widget?.updatedAt
-  const frameSrc = widget
-    ? `${contentUrl}&v=${encodeURIComponent(frameKey ?? "")}`
-    : contentUrl
+  const frameKey = page.provenance?.contentHash ?? page.document.updatedAt
+  const frameSrc = `${contentUrl}&v=${encodeURIComponent(frameKey ?? "")}`
   const [loadedFrameSrc, setLoadedFrameSrc] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<WidgetDiagnostic[]>([])
 
@@ -393,8 +351,10 @@ function WidgetDetailPage({
   // the widget's own /records and /state endpoints, and post the result back.
   useLayoutEffect(() => {
     const iframeElement = iframeRef.current
-    // The injected runtime announces a closure-held token before authored code
-    // runs. Raw authored postMessages never receive navigation authority.
+    // The injected runtime announces a closure-held token, with the document
+    // it was served for, before authored code runs. Only that first
+    // announcement counts: raw authored postMessages never receive navigation
+    // authority.
     let navigationToken: string | null = null
     let navigationGeneration = 0
     let acceptingNavigationHandshake = true
@@ -403,6 +363,10 @@ function WidgetDetailPage({
     const handleIframeLoad = () => {
       navigationGeneration += 1
       acceptingNavigationHandshake = false
+      // The runtime announces itself before its frame finishes loading. A
+      // first load without this document's announcement was served for
+      // another path, after a move, or not at all: check this one again.
+      if (!observedInitialLoad && navigationToken === null) void recheckPage()
       if (observedInitialLoad) navigationToken = null
       observedInitialLoad = true
     }
@@ -421,16 +385,15 @@ function WidgetDetailPage({
         navigationToken?: string
       }
       if (data?.type === "worktable.navigation.handshake") {
+        if (!acceptingNavigationHandshake) return
+        acceptingNavigationHandshake = false
         if (
-          acceptingNavigationHandshake &&
-          navigationToken === null &&
           data.spaceId === spaceId &&
           data.widgetId === widgetId &&
           typeof data.navigationToken === "string" &&
           data.navigationToken.length >= 16
         ) {
           navigationToken = data.navigationToken
-          acceptingNavigationHandshake = false
         }
         return
       }
@@ -599,7 +562,7 @@ function WidgetDetailPage({
       window.removeEventListener("message", handleApiRequest)
       iframeElement?.removeEventListener("load", handleIframeLoad)
     }
-  }, [frameSrc, navigate, spaceId, widgetId])
+  }, [frameSrc, navigate, recheckPage, spaceId, widgetId])
 
   const importantDiagnostics = useMemo(
     () =>
@@ -672,7 +635,7 @@ function WidgetDetailPage({
     setRestoring(true)
     try {
       await restoreWidget(spaceId, widgetId)
-      await router.invalidate()
+      await recheckPage()
       toast.success("HTML doc restored")
     } catch (err) {
       console.error("Failed to restore HTML doc:", err)
@@ -680,15 +643,7 @@ function WidgetDetailPage({
     } finally {
       setRestoring(false)
     }
-  }, [spaceId, widgetId, router])
-
-  // Hooks must precede the loading/error returns — a hook after a conditional
-  // return renders in some passes but not others and React throws.
-  const invalidateWidget = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.widget(spaceId, widgetId),
-    })
-  }, [queryClient, spaceId, widgetId])
+  }, [recheckPage, spaceId, widgetId])
 
   // The space-detail embed tells whether the Space is archived (sharing).
   const { data: spaceDetail } = useSpace(spaceId)
@@ -697,26 +652,26 @@ function WidgetDetailPage({
     async (name: string, description?: string | null) => {
       try {
         await patchWidget(spaceId, widgetId, { name, description })
-        await router.invalidate()
+        await recheckPage()
         toast.success("HTML doc details updated")
       } catch (err) {
         console.error("Failed to update HTML doc details:", err)
         toast.error("Failed to update HTML doc details")
       }
     },
-    [router, spaceId, widgetId]
+    [recheckPage, spaceId, widgetId]
   )
 
   const handleArchive = useCallback(async () => {
     try {
       await archiveWidget(spaceId, widgetId)
-      await router.invalidate()
+      await recheckPage()
       toast.success("HTML doc archived")
     } catch (err) {
       console.error("Failed to archive HTML doc:", err)
       toast.error("Failed to archive HTML doc")
     }
-  }, [router, spaceId, widgetId])
+  }, [recheckPage, spaceId, widgetId])
 
   const handleDelete = useCallback(async () => {
     try {
@@ -730,8 +685,6 @@ function WidgetDetailPage({
   }, [navigate, spaceId, widgetId])
 
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
-    if (!widget) return []
-
     const actions: PageOverflowAction[] = [
       {
         id: "version-history",
@@ -762,10 +715,10 @@ function WidgetDetailPage({
         separatorBefore: true,
       },
       {
-        id: widget.archive ? "restore" : "archive",
-        label: widget.archive ? "Restore" : "Archive",
-        icon: widget.archive ? RotateCcw : Archive,
-        onSelect: widget.archive
+        id: archived ? "restore" : "archive",
+        label: archived ? "Restore" : "Archive",
+        icon: archived ? RotateCcw : Archive,
+        onSelect: archived
           ? () => void handleRestore()
           : () => void handleArchive(),
       },
@@ -781,25 +734,13 @@ function WidgetDetailPage({
 
     return actions
   }, [
+    archived,
     handleArchive,
     handleCopyHtml,
     handleRestore,
     newTabUrl,
     openVersions,
-    widget,
   ])
-
-  if (!routeValidated || isLoading || canonicalPath) {
-    return <EditorSkeleton />
-  }
-
-  if (error || !widget) {
-    return (
-      <div data-document-state className="flex h-full items-center justify-center text-sm text-destructive">
-        HTML doc not found.
-      </div>
-    )
-  }
 
   return (
     <div
@@ -812,11 +753,12 @@ function WidgetDetailPage({
         spaceShareable={Boolean(
           spaceDetail && !spaceDetail.space.settings["archive"]
         )}
-        widget={widget}
+        title={title}
+        archived={archived}
         annotations={annotationsAction}
         overflowActions={overflowActions}
       />
-      {widget.archive ? (
+      {archived ? (
         <ArchivedWidgetBanner onRestore={handleRestore} restoring={restoring} />
       ) : null}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -851,7 +793,7 @@ function WidgetDetailPage({
           <iframe
             ref={iframeRef}
             onLoad={() => setLoadedFrameSrc(frameSrc)}
-            title={widget.name}
+            title={title}
             src={frameSrc}
             sandbox="allow-scripts"
             referrerPolicy="no-referrer"
@@ -887,7 +829,7 @@ function WidgetDetailPage({
                 navigation). */}
             <iframe
               key={compareVersionId}
-              title={`${widget.name} · ${compareVersionLabel(compareVersion)}`}
+              title={`${title} · ${compareVersionLabel(compareVersion)}`}
               src={`${widgetVersionContentUrl(spaceId, widgetId, compareVersionId)}?theme=${resolvedTheme}`}
               sandbox=""
               referrerPolicy="no-referrer"
@@ -924,7 +866,7 @@ function WidgetDetailPage({
         <WidgetVersionHistoryPanel
           spaceId={spaceId}
           widgetId={widgetId}
-          revision={widget?.provenance?.versionId ?? widget?.updatedAt ?? ""}
+          revision={revision}
           open={(versionsOpen || Boolean(compareVersionId)) && !belowXl}
           compact={Boolean(compareVersionId) && !versionsRailExpanded}
           selectedVersionId={compareVersionId}
@@ -941,7 +883,7 @@ function WidgetDetailPage({
           onToggleCompact={() => setVersionsRailExpanded((value) => !value)}
           onExitCompare={() => setCompareVersionId(null)}
           onRestored={() => {
-            invalidateWidget()
+            void recheckPage()
             setCompareVersionId(null)
           }}
         />
@@ -960,8 +902,8 @@ function WidgetDetailPage({
             }}
             spaceId={spaceId}
             widgetId={widgetId}
-            revision={widget?.provenance?.versionId ?? widget?.updatedAt ?? ""}
-            onRestored={invalidateWidget}
+            revision={revision}
+            onRestored={() => void recheckPage()}
           />
           <Drawer
             open={annotationsOpen}
@@ -1014,13 +956,14 @@ function WidgetDetailPage({
       <WidgetRenameDialog
         open={renameOpen}
         onClose={() => setRenameOpen(false)}
-        widget={widget}
+        spaceId={spaceId}
+        widgetId={widgetId}
         onRename={handleRename}
       />
       <WidgetDeleteDialog
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
-        widgetName={widget.name}
+        widgetName={title}
         onConfirm={handleDelete}
       />
     </div>
@@ -1119,14 +1062,16 @@ function WidgetPageMeta({
   spaceId,
   widgetId,
   spaceShareable,
-  widget,
+  title,
+  archived,
   annotations,
   overflowActions,
 }: {
   spaceId: string
   widgetId: string
   spaceShareable: boolean
-  widget: WidgetRead
+  title: string
+  archived: boolean
   annotations?: PageAnnotationsAction
   overflowActions?: PageOverflowAction[]
 }) {
@@ -1135,17 +1080,18 @@ function WidgetPageMeta({
   useEffect(() => {
     setPageMeta({
       document: { spaceId, path: widgetId },
-      titleOverride: widget.name,
+      titleOverride: title,
       annotations,
       overflowActions,
       shareTarget:
-        spaceShareable && !widget.archive
+        spaceShareable && !archived
           ? { kind: "html", spaceId, artifactKey: widgetId }
           : undefined,
     })
     return () => setPageMeta(null)
   }, [
-    widget,
+    title,
+    archived,
     annotations,
     overflowActions,
     spaceShareable,
@@ -1256,24 +1202,82 @@ function WidgetDiagnostics({
 function WidgetRenameDialog({
   open,
   onClose,
-  widget,
+  spaceId,
+  widgetId,
   onRename,
 }: {
   open: boolean
   onClose: () => void
-  widget: WidgetFile
+  spaceId: string
+  widgetId: string
   onRename: (name: string, description?: string | null) => Promise<void>
 }) {
   return (
     <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
       <ResponsiveDialogContent>
-        <WidgetRenameDialogForm
-          widget={widget}
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Edit HTML doc details</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
+            Change its name and description.
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
+        <WidgetDetailsEditor
+          spaceId={spaceId}
+          widgetId={widgetId}
           onRename={onRename}
           onClose={onClose}
         />
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  )
+}
+
+/** The page carries only the name, so the details are read when edited. */
+function WidgetDetailsEditor({
+  spaceId,
+  widgetId,
+  onRename,
+  onClose,
+}: {
+  spaceId: string
+  widgetId: string
+  onRename: (name: string, description?: string | null) => Promise<void>
+  onClose: () => void
+}) {
+  const details = useQuery({
+    ...widgetQueryOptions(spaceId, widgetId),
+    refetchOnMount: "always",
+    retry: false,
+  })
+  if (details.data && details.isFetchedAfterMount) {
+    return (
+      <WidgetRenameDialogForm
+        widget={details.data}
+        onRename={onRename}
+        onClose={onClose}
+      />
+    )
+  }
+  return (
+    <>
+      <ResponsiveDialogBody>
+        <div className="flex min-h-28 items-center justify-center text-sm">
+          {details.isError ? (
+            <span className="text-destructive">
+              Couldn’t load the details. Try again.
+            </span>
+          ) : (
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          )}
+        </div>
+      </ResponsiveDialogBody>
+      <ResponsiveDialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button disabled>Save</Button>
+      </ResponsiveDialogFooter>
+    </>
   )
 }
 
@@ -1307,12 +1311,6 @@ function WidgetRenameDialogForm({
 
   return (
     <>
-      <ResponsiveDialogHeader>
-        <ResponsiveDialogTitle>Edit HTML doc details</ResponsiveDialogTitle>
-        <ResponsiveDialogDescription>
-          Change its name and description.
-        </ResponsiveDialogDescription>
-      </ResponsiveDialogHeader>
       <ResponsiveDialogBody>
         <div className="space-y-2">
           <label htmlFor="widget-detail-name" className="text-sm font-medium">

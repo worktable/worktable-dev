@@ -390,7 +390,18 @@ describe("Space events in the query cache", () => {
       space: 0,
       otherDocs: 0,
     })
-    for (const query of [docs, documents, page, content, namedReferences, references, space, otherDocs]) {
+
+    // An open HTML doc reloads its frame from its page check's revision, so
+    // an outside edit to it reads that check again.
+    const htmlPage = watched(queryClient, documentQueryKeys.page("space-a", "plans/board"), {})
+    applySpaceEvent(queryClient, "space-a", {
+      type: "widget_update",
+      spaceId: "space-a",
+      widgetId: "plans/board",
+    })
+    await settle(queryClient)
+    expect([htmlPage.reads, page.reads]).toEqual([1, 1])
+    for (const query of [docs, documents, page, htmlPage, content, namedReferences, references, space, otherDocs]) {
       query.unsubscribe()
     }
   })

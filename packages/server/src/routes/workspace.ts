@@ -113,17 +113,20 @@ function canReadWorkspaceRoot(c: Context): boolean {
  * Read-only workspace identity + provenance. `mode` is normalized (an absent or
  * unrecognized provenance block reports "daily"); `provenance` carries the detail
  * (source label/path, snapshotAt, one-way/disposable flags) for non-daily workspaces.
+ * The served page carries the same summary for its first render (boot-facts.ts).
  */
-workspaceRouter.get("/", async (c) => {
-  return c.json({
+export async function workspaceSummary(c: Context) {
+  return {
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",
-  })
-})
+  }
+}
+
+workspaceRouter.get("/", async (c) => c.json(await workspaceSummary(c)))
 
 function transferView(job: WorkspaceTransferJob) {
   if (job.kind === "clear") {
@@ -211,9 +214,13 @@ workspaceRouter.post("/storage-upgrade/retry", (c) => {
     : c.json({ error: "No workspace upgrade is waiting for retry." }, 409)
 })
 
+export function storageUpgradeStatus(c: Context) {
+  return { state: workspaceStorageUpgradeState(), canRetry: transferOwner(c) === null }
+}
+
 workspaceRouter.get("/storage-upgrade", (c) => {
   c.header("Cache-Control", "no-store")
-  return c.json({ state: workspaceStorageUpgradeState(), canRetry: transferOwner(c) === null })
+  return c.json(storageUpgradeStatus(c))
 })
 
 function workspaceExportReader(c: Context): Response | null {

@@ -211,6 +211,7 @@ function DocumentPageRoute() {
         spaceId={spaceId}
         documentPath={page.document.path}
         formatId={page.document.format.id}
+        page={page}
       />
     </Suspense>
   )

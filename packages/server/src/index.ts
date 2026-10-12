@@ -16,6 +16,7 @@ import { debugLogging } from "./debug-log.ts";
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
 import { acceptsGzip, gzipAsync, isLocalBrowserRequest } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
+import { readBootFacts, withBootFacts } from "./boot-facts.ts";
 import { createAppShell } from "./app-shell.ts";
 import { productFontAssets } from "./product-fonts.ts";
 import { gzipSync } from "node:zlib";
@@ -243,12 +244,16 @@ app.use("*", advanceGenerationOnWrite);
 // Report the web build this server serves, so a tab still running an older
 // build loads the new one at its next navigation (apps/web build-version.ts).
 let servedBuildId: string | null | undefined;
+function servedBuild(): string | null {
+  servedBuildId ??= readBuildId(getStaticAssetsInfo().staticDir);
+  return servedBuildId;
+}
 app.use("/api/*", async (c, next) => {
   await next();
-  servedBuildId ??= readBuildId(getStaticAssetsInfo().staticDir);
-  if (!servedBuildId) return;
+  const build = servedBuild();
+  if (!build) return;
   try {
-    c.res.headers.set("X-Worktable-Build", servedBuildId);
+    c.res.headers.set("X-Worktable-Build", build);
   } catch {
     // A response with immutable headers keeps its own.
   }
@@ -497,19 +502,27 @@ if (HAS_STATIC) {
   app.get("/agent-logos/*", (c) => staticFile(c.req.path, c.req.raw));
 
   // SPA fallback: any non-API, non-WS route serves the shell HTML, with that
-  // route's preloads. TanStack Start uses _shell.html; older builds index.html
+  // route's preloads. TanStack Start uses _shell.html; older builds index.html.
+  // A signed-in navigation's shell also carries the facts the first render
+  // needs, and an opening document's preview; such a page is per request and
+  // never stored. Anyone else gets the shared, revalidated shell.
   const shell = createAppShell(staticDir, STATIC_ASSETS.shellPath!, () =>
     productFontAssets().length ? previewFontVersion() : null
   );
 
   app.get("*", async (c) => {
     const pathname = new URL(c.req.url).pathname;
-    const opening = await injectDocumentOpening(c.req.raw, shell.html(pathname), shell.documentPreloads());
-    if (opening) {
+    const html = shell.html(pathname);
+    const [opening, facts] = await Promise.all([
+      injectDocumentOpening(c.req.raw, html, shell.documentPreloads()),
+      readBootFacts(c.req.raw, html, servedBuild()),
+    ]);
+    const page = facts ? withBootFacts(opening ?? html, facts) : opening;
+    if (page) {
       const compressed =
         acceptsGzip(c.req.header("Accept-Encoding") ?? "") &&
         !isLocalBrowserRequest(c.req.raw);
-      return new Response(compressed ? await gzipAsync(opening) : opening, {
+      return new Response(compressed ? await gzipAsync(page) : page, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "private, no-store",

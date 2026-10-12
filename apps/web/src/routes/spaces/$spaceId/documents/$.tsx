@@ -13,6 +13,8 @@ import {
   documentPageQueryOptions,
   documentPageValidated,
   documentPageValidatedLive,
+  ensureDocumentOpen,
+  forgetDocumentOpen,
   documentQueryKeys,
   documentsQueryOptions,
   noteDocumentOpen,
@@ -149,11 +151,19 @@ function DocumentPageRoute() {
   const queryClient = useQueryClient()
   const pageQuery = useDocumentPage(spaceId, path)
   useRecheckPageAgainstCatalog(spaceId, path, pageQuery.data, pageQuery.dataUpdatedAt)
-  // A check validates this open once it was read after the open began, or
-  // the live socket still proves an earlier one. It then stays validated
+  // A check validates this open once its answer arrived after the open
+  // began, or the live socket still proves an earlier one. The open began at
+  // the navigation, or at the latest when this path first rendered (a
+  // navigation can reuse a preload's route work). It then stays validated
   // while the path is open: later changes refresh the check, and the
   // editing room's own admission stays the final word.
   const openKey = `${spaceId}\0${path}`
+  const [shownOpen, setShownOpen] = useState<string | null>(null)
+  if (shownOpen !== openKey) {
+    ensureDocumentOpen(spaceId, path)
+    setShownOpen(openKey)
+  }
+  useEffect(() => () => forgetDocumentOpen(spaceId, path), [spaceId, path])
   const [validatedOpen, setValidatedOpen] = useState<string | null>(null)
   const validatedNow =
     pageQuery.data !== undefined &&
@@ -162,6 +172,13 @@ function DocumentPageRoute() {
     documentPageValidated(spaceId, path)
   if (validatedNow && validatedOpen !== openKey) setValidatedOpen(openKey)
   const validated = validatedNow || validatedOpen === openKey
+  // No check validates this open yet and none is on its way (a preload's
+  // answered before the open began): ask for one.
+  const { isFetching: checking, isError: checkFailed, refetch } = pageQuery
+  useEffect(() => {
+    if (!path || validated || checking || checkFailed) return
+    void refetch()
+  }, [checkFailed, checking, path, refetch, validated])
 
   if (!path) {
     return <Navigate to="/spaces/$spaceId" params={{ spaceId }} replace />

@@ -101,10 +101,25 @@ export function noteDocumentOpen(spaceId: string, path: string): void {
 }
 
 /**
+ * The document is on screen. A navigation can reuse a preload's route work
+ * without noting an open, so the page notes it then if nothing did.
+ */
+export function ensureDocumentOpen(spaceId: string, path: string): void {
+  const key = pageReadKey(spaceId, path)
+  if (!openStarts.has(key)) openStarts.set(key, performance.now())
+}
+
+/** The document left the screen; its next open starts afresh. */
+export function forgetDocumentOpen(spaceId: string, path: string): void {
+  openStarts.delete(pageReadKey(spaceId, path))
+}
+
+/**
  * The cached page check validates this open: the live socket still proves
- * it, or it was read after the open began with nothing about the document
- * reported since. Until then the document is shown read-only, if at all;
- * editing and collaboration wait for this.
+ * it, or its answer arrived after the open began (it was asked then, or was
+ * already on its way, as a tap's preload is) with nothing about the document
+ * reported since it was asked. Until then the document is shown read-only,
+ * if at all; editing and collaboration wait for this.
  */
 export function documentPageValidated(spaceId: string, path: string): boolean {
   const mark = spaceReadMark(pageReadKey(spaceId, path))
@@ -113,7 +128,7 @@ export function documentPageValidated(spaceId: string, path: string): boolean {
   return (
     spaceValidatedLive(spaceId, mark) ||
     (openedAt !== undefined &&
-      mark.at >= openedAt &&
+      (mark.answeredAt ?? mark.at) >= openedAt &&
       spaceUnchangedSince(spaceId, mark))
   )
 }

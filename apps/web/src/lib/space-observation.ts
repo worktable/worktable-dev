@@ -22,6 +22,8 @@ export interface SpaceMark {
   live: boolean
   /** performance.now() when the request began. */
   at: number
+  /** performance.now() when its answer arrived, for a finished read. */
+  answeredAt?: number
   /** The document the request was about, and its change count then. */
   document?: { key: string; changes: number }
 }
@@ -152,7 +154,7 @@ export async function trackSpaceRead<T>(
 ): Promise<T> {
   const mark = markSpace(spaceId, path)
   const value = await read()
-  readMarks.set(key, mark)
+  readMarks.set(key, { ...mark, answeredAt: performance.now() })
   return value
 }
 

@@ -2,7 +2,7 @@ import {
   createFileRoute,
   Link,
   Outlet,
-  useMatchRoute,
+  useChildMatches,
   useRouter,
 } from "@tanstack/react-router"
 import { useCallback, useMemo, useState } from "react"
@@ -378,7 +378,6 @@ function SpaceOverview({
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
   const { data, isLoading } = useSpace(spaceId)
-  const matchRoute = useMatchRoute()
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
   const reconcileRouteAfterReconnect = useCallback(
@@ -390,37 +389,13 @@ function SpaceDetailPage() {
     reconcileRoute: reconcileRouteAfterReconnect,
   })
 
-  const hasDocRoute = matchRoute({
-    to: "/spaces/$spaceId/docs/$",
-    fuzzy: true,
+  // Decide from the matches being rendered, which arrive together with this
+  // Space's params. Matching the location instead reads the previous one
+  // until a navigation settles, so opening a document in another Space
+  // would first mount that Space's overview.
+  const hasChildRoute = useChildMatches({
+    select: (matches) => matches.length > 0,
   })
-
-  const hasWidgetRoute = matchRoute({
-    to: "/spaces/$spaceId/widgets/$",
-    fuzzy: true,
-  })
-
-  const hasDocumentRoute = matchRoute({
-    to: "/spaces/$spaceId/documents/$",
-    fuzzy: true,
-  })
-
-  const hasRecordsRoute = matchRoute({
-    to: "/spaces/$spaceId/records/$",
-    fuzzy: true,
-  })
-
-  const hasThreadsRoute = matchRoute({
-    to: "/spaces/$spaceId/threads/$",
-    fuzzy: true,
-  })
-
-  const hasChildRoute =
-    hasDocumentRoute ||
-    hasDocRoute ||
-    hasWidgetRoute ||
-    hasRecordsRoute ||
-    hasThreadsRoute
 
   const archiveInfo = data
     ? getSpaceArchiveInfo(data.space.settings)

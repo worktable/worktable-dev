@@ -66,7 +66,28 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
     "You kept Untitled"
   )
 
+  // A document opens straight from Home: its Space's overview, titled with
+  // the Space's name, never mounts on the way.
+  await page.evaluate(() => {
+    const flags = window as unknown as { overviewMounted?: boolean }
+    flags.overviewMounted = false
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          const headings = [
+            ...(node.matches("h1") ? [node] : []),
+            ...node.querySelectorAll("h1"),
+          ]
+          if (headings.some((h1) => h1.textContent?.trim() === "Organize")) {
+            flags.overviewMounted = true
+          }
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true })
+  })
   await recent.getByRole("link", { name: /^Untitled/ }).click()
+  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
   await expect(
     page.getByRole("button", { name: /^Temporary\. Archives / })
   ).toHaveCount(0)
@@ -75,6 +96,12 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("navigation", { name: "Active documents" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+  await expect(page.getByRole("button", { name: "More actions" })).toBeVisible()
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { overviewMounted?: boolean }).overviewMounted
+    )
+  ).toBe(false)
 
   await page.getByRole("button", { name: "More actions" }).click()
   await page.getByRole("menuitem", { name: "Pin", exact: true }).click()

@@ -24,10 +24,11 @@
 // changed within the racy window proves nothing, so that file is read again.
 
 import { createHash, randomUUID } from "node:crypto"
-import { readFile, stat } from "node:fs/promises"
+import { stat } from "node:fs/promises"
 import { extname, resolve } from "node:path"
 import type { DocumentSource } from "@worktable/types"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import { readBoundedRegularFileBytes } from "./bounded-file.ts"
 import type { DocumentCatalog } from "./document-catalog.ts"
 import {
   legacySpecializedDocumentView,
@@ -146,8 +147,17 @@ async function sourceSha256(path: string): Promise<string | null> {
       const known = sourceDigests.get(path, fingerprint.key)
       if (known !== undefined) return known
     }
-    const sha256 = sha256Hex(await readFile(path))
-    if (!fingerprint.racy) sourceDigests.set(path, fingerprint.key, sha256)
+    // Read within the bound from the file opened, and keep the hash only if
+    // the file is still the one fingerprinted.
+    const sha256 = sha256Hex(
+      await readBoundedRegularFileBytes(path, DOC_CONTENT_MAX_BYTES)
+    )
+    if (
+      !fingerprint.racy &&
+      fingerprintOf(await stat(path, { bigint: true })).key === fingerprint.key
+    ) {
+      sourceDigests.set(path, fingerprint.key, sha256)
+    }
     return sha256
   } catch {
     return null

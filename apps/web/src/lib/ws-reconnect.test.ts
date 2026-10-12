@@ -390,7 +390,18 @@ describe("Space events in the query cache", () => {
       space: 0,
       otherDocs: 0,
     })
-    for (const query of [docs, documents, page, content, namedReferences, references, space, otherDocs]) {
+
+    // An open HTML doc reloads its frame from its page check's revision, so
+    // an outside edit to it reads that check again.
+    const htmlPage = watched(queryClient, documentQueryKeys.page("space-a", "plans/board"), {})
+    applySpaceEvent(queryClient, "space-a", {
+      type: "widget_update",
+      spaceId: "space-a",
+      widgetId: "plans/board",
+    })
+    await settle(queryClient)
+    expect([htmlPage.reads, page.reads]).toEqual([1, 1])
+    for (const query of [docs, documents, page, htmlPage, content, namedReferences, references, space, otherDocs]) {
       query.unsubscribe()
     }
   })
@@ -426,13 +437,15 @@ describe("Space events in the query cache", () => {
     const docs = watched(queryClient, docQueryKeys.docs("space-a"), [])
     const recent = watched(queryClient, recentQueryKeys.all, { items: [] })
     const content = watched(queryClient, docQueryKeys.doc("space-a", "notes/plan"), {})
+    // An open HTML doc's frame follows its page check's revision.
+    const page = watched(queryClient, documentQueryKeys.page("space-a", "plans/board"), {})
     const otherDocs = watched(queryClient, docQueryKeys.docs("space-b"), [])
     queryClient.setQueryData(docQueryKeys.doc("space-a", "notes/closed"), {})
 
     revalidateSpaceAfterReconnect(queryClient, "space-a")
     await settle(queryClient)
 
-    expect([spaces.reads, docs.reads, recent.reads]).toEqual([1, 1, 1])
+    expect([spaces.reads, docs.reads, recent.reads, page.reads]).toEqual([1, 1, 1, 1])
     // Open content checks itself; closed content reads again when it opens.
     expect(content.reads).toBe(0)
     expect(
@@ -440,7 +453,7 @@ describe("Space events in the query cache", () => {
     ).toBe(true)
     expect(otherDocs.reads).toBe(0)
     expect(queryClient.getQueryState(docQueryKeys.docs("space-b"))?.isInvalidated).toBe(false)
-    for (const query of [spaces, docs, recent, content, otherDocs]) query.unsubscribe()
+    for (const query of [spaces, docs, recent, content, page, otherDocs]) query.unsubscribe()
   })
 
   it("patches record grids from payloads and reads only what a payload cannot settle", async () => {

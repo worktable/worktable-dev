@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster start:** Worktable shows your workspace sooner when you open or reload it, and HTML Docs open sooner. The difference is largest on phones and slow connections.
+
 ## [0.1.22] - 2026-10-12
 
 ### Added

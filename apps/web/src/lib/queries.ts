@@ -22,6 +22,7 @@ export interface RecordPageParams {
 export const queryKeys = {
   spaces: ["spaces"] as const,
   workspace: ["workspace"] as const,
+  storageUpgrade: ["workspace-storage-upgrade"] as const,
   space: (id: string) => ["spaces", id] as const,
   widget: (spaceId: string, widgetId: string) =>
     ["spaces", spaceId, "widgets", widgetId] as const,

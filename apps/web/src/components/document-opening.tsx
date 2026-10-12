@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { inlineScriptJson } from "@worktable/ui/lib/page-json"
 
 export const documentOpeningLayoutScript = `(()=>{try{const w=Number(localStorage.getItem("worktable-sidebar-width")??288);document.documentElement.style.setProperty("--worktable-opening-sidebar",(Number.isFinite(w)?Math.min(480,Math.max(220,w)):288)+"px")}catch{}})()`
 
@@ -24,15 +25,11 @@ const opening: Opening | null = (() => {
 })()
 
 export function DocumentOpeningData() {
-  const serialized = JSON.stringify(opening)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029")
   return (
     <script
       id="worktable-opening-data"
       type="application/json"
-      dangerouslySetInnerHTML={{ __html: serialized }}
+      dangerouslySetInnerHTML={{ __html: inlineScriptJson(opening) }}
     />
   )
 }

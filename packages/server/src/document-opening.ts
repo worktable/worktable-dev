@@ -4,6 +4,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { DocumentReadingPreview } from "@worktable/ui/document-reading-preview"
 import { DocumentSkeleton } from "@worktable/ui/document-skeleton"
+import { inlineScriptJson } from "@worktable/ui/lib/page-json"
 import { requireScope, trustedLocalIdentity } from "./auth.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { readDocumentSource } from "./document-source-reader.ts"
@@ -134,12 +135,8 @@ export async function injectDocumentOpening(
     preloads?: string[]
   }
   data.preloads = preloads?.[data.preloadKey] ?? []
-  // JSON in a script raw-text element must never contain a literal '<'. React
-  // escapes authored content in the separate preview markup above.
-  const serialized = JSON.stringify(data)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029")
+  // React escapes authored content in the separate preview markup above.
+  const serialized = inlineScriptJson(data)
   return shell
     .replace(
       OPENING_DATA_MARKER,

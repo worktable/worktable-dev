@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
-import { workspaceQueryOptions } from "./lib/queries";
+import { startWorkspaceQueries } from "./lib/boot-facts";
 import { preloadOpeningDocumentRenderer } from "./lib/document-renderers";
 import { reloadWhenChunksAreGone, serverBuildIsNewer } from "./lib/build-version";
 import { installTrace } from "./lib/trace";
@@ -17,9 +17,10 @@ export function getRouter() {
   });
 
   // The prerendered root match can skip beforeLoad during initial hydration.
-  // Start browser workspace discovery here so it overlaps document resolution.
+  // Start browser workspace discovery here so it overlaps document resolution;
+  // a signed-in page already carries it.
   if (typeof window !== "undefined") {
-    void queryClient.prefetchQuery(workspaceQueryOptions());
+    startWorkspaceQueries(queryClient);
     // Execute already-downloading renderer code while path metadata is in
     // flight. Preserve the saved-content paint before scheduling this work.
     requestAnimationFrame(() => requestAnimationFrame(preloadOpeningDocumentRenderer));

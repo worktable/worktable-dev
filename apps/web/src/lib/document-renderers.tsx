@@ -1,11 +1,13 @@
 import { lazy, type ComponentType } from "react"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
-import type { DocumentRenderer } from "@worktable/types"
+import type { DocumentPage, DocumentRenderer } from "@worktable/types"
 
 export interface DocumentRendererProps {
   spaceId: string
   documentPath: string
   formatId?: string
+  /** The route's check of this path, which opened the renderer. */
+  page: DocumentPage
 }
 
 interface BrowserDocumentRendererRegistration {

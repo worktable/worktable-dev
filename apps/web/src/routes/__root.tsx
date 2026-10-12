@@ -81,6 +81,8 @@ import { useMobileVisualViewport } from "@/hooks/use-mobile-visual-viewport"
 import { SidebarContext } from "@/hooks/use-sidebar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
+import { bootFactsJson } from "@/lib/boot-facts"
+import { BOOT_FACTS_ID } from "@worktable/ui/lib/page-json"
 import { themeBootstrapScript } from "@/lib/theme"
 import { ThemeProvider, useTheme } from "@/components/theme-provider"
 import {
@@ -186,6 +188,11 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          id={BOOT_FACTS_ID}
+          type="application/json"
+          dangerouslySetInnerHTML={{ __html: bootFactsJson }}
+        />
         <DocumentOpeningData />
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />

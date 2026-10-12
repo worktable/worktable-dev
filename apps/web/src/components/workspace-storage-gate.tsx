@@ -4,12 +4,9 @@ import { useQuery } from "@tanstack/react-query"
 import { useRouterState } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
 import { WorktableAppIcon } from "./worktable-app-icon"
+import type { WorkspaceStorageUpgrade } from "@/lib/api"
 import { fetchJSON } from "@/lib/http"
-
-interface UpgradeStatus {
-  state: "ready" | "upgrading" | "blocked"
-  canRetry: boolean
-}
+import { queryKeys } from "@/lib/queries"
 
 /** Mount editors only after the server has admitted the workspace storage. */
 export function WorkspaceStorageGate({ children }: { children: ReactNode }) {
@@ -18,13 +15,16 @@ export function WorkspaceStorageGate({ children }: { children: ReactNode }) {
     (path) => pathname === path || pathname.startsWith(`${path}/`)
   )
   const [retryError, setRetryError] = useState(false)
+  // The served page usually carries this state (lib/boot-facts.ts). Ready
+  // stays ready for the server's lifetime; only a pending upgrade is polled.
   const status = useQuery({
-    queryKey: ["workspace-storage-upgrade"],
+    queryKey: queryKeys.storageUpgrade,
     queryFn: () =>
-      fetchJSON<UpgradeStatus>("/api/workspace/storage-upgrade", {
+      fetchJSON<WorkspaceStorageUpgrade>("/api/workspace/storage-upgrade", {
         cache: "no-store",
       }),
     enabled: !publicRoute,
+    staleTime: Infinity,
     refetchInterval: (query) =>
       query.state.data?.state === "ready" ? false : 1500,
     retry: false,

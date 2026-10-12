@@ -33,8 +33,17 @@ export interface WorkspaceInfo {
   }
 }
 
+export interface WorkspaceStorageUpgrade {
+  state: "ready" | "upgrading" | "blocked"
+  canRetry: boolean
+}
+
 export async function getWorkspace() {
-  const workspace = await fetchJSON<WorkspaceInfo>("/api/workspace")
+  return acceptWorkspace(await fetchJSON<WorkspaceInfo>("/api/workspace"))
+}
+
+/** Adopt a workspace summary, read now or carried by the served page. */
+export async function acceptWorkspace(workspace: WorkspaceInfo) {
   await acceptWorkspaceContentEpoch(workspace.id, workspace.contentEpoch)
   return workspace
 }

@@ -18,7 +18,11 @@ function ownBuild(): string | null {
 
 /** Record the build a server response came from. */
 export function noteServerBuild(response: Response): void {
-  const build = response.headers.get(BUILD_HEADER)
+  noteServerBuildId(response.headers.get(BUILD_HEADER))
+}
+
+/** Record the build the server named, in a response or the page it served. */
+export function noteServerBuildId(build: string | null | undefined): void {
   const own = ownBuild()
   if (build && own && build !== own) serverBuildChanged = true
 }

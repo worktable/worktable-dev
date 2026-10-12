@@ -225,12 +225,15 @@ export async function readWidget(spaceId: string, widgetId: string): Promise<{ d
   }
 }
 
-/** Read authored HTML and its source-bound permissions as one V2 snapshot. */
+/**
+ * Read authored HTML and its source-bound permissions as one V2 snapshot,
+ * with the source bytes the HTML was decoded from.
+ */
 export async function readWidgetDocument(
   spaceId: string,
   widgetId: string
 ): Promise<{
-  data: { widget: WidgetFile; html: string } | null;
+  data: { widget: WidgetFile; html: string; sourceBytes: Uint8Array } | null;
   error: string | null;
 }> {
   if (!isCanonicalId(spaceId))
@@ -245,7 +248,11 @@ export async function readWidgetDocument(
       });
       return document
         ? {
-            data: { widget: document.widget, html: document.html },
+            data: {
+              widget: document.widget,
+              html: document.html,
+              sourceBytes: document.sourceBytes,
+            },
             error: null,
           }
         : { data: null, error: `Widget not found: ${widgetId}` };
@@ -256,13 +263,31 @@ export async function readWidgetDocument(
       };
     }
   }
-  const [widget, html] = await Promise.all([
+  if (!isWidgetId(widgetId)) {
+    return { data: null, error: invalidIdError("widget", widgetId) };
+  }
+  const path = widgetContentPath(spaceId, widgetId);
+  const [widget, sourceBytes] = await Promise.all([
     readWidget(spaceId, widgetId),
-    readWidgetHtml(spaceId, widgetId),
+    existsSync(path) ? Bun.file(path).bytes() : Promise.resolve(null),
   ]);
-  return widget.data && html.data !== null
-    ? { data: { widget: widget.data, html: html.data }, error: null }
-    : { data: null, error: widget.error ?? html.error };
+  if (!sourceBytes) {
+    return {
+      data: null,
+      error: widget.error ?? `Widget content not found: ${widgetId}`,
+    };
+  }
+  return widget.data
+    ? {
+        // Decoded as Bun.file().text() would: UTF-8, without a leading BOM.
+        data: {
+          widget: widget.data,
+          html: new TextDecoder().decode(sourceBytes),
+          sourceBytes,
+        },
+        error: null,
+      }
+    : { data: null, error: widget.error };
 }
 
 export async function readWidgetHtml(spaceId: string, widgetId: string): Promise<{ data: string | null; error: string | null }> {

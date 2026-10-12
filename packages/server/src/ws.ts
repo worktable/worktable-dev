@@ -1,6 +1,12 @@
 import type { ThreadLocation } from "@worktable/types"
 import { threadEventLocation, type ChangeEvent } from "./workspace-events.ts"
-import { readSpace, readDoc, docStat, getDocProvenance } from "./store.ts"
+import {
+  readSpace,
+  readDocSourceSnapshot,
+  docStat,
+  getDocProvenance,
+} from "./store.ts"
+import { docSnapshotRevision } from "./document-content-revision.ts"
 import { readWidget } from "./widget-store.ts"
 import { readRecord } from "./record-store.ts"
 import { readThread } from "./thread-store.ts"
@@ -185,8 +191,11 @@ export class WsManager {
           spaceId: event.spaceId,
         })
       } else if (event.type === "doc") {
-        const docResult = await readDoc(event.spaceId, event.docPath)
-        const content = docResult.data
+        const snapshot = await readDocSourceSnapshot(
+          event.spaceId,
+          event.docPath
+        )
+        const content = snapshot.result.data
         if (!content) {
           // File was deleted
           const msg: OutgoingMessage = {
@@ -200,6 +209,8 @@ export class WsManager {
 
         const statResult = await docStat(event.spaceId, event.docPath)
         const provenance = await getDocProvenance(event.spaceId, event.docPath)
+        // The revision of the content sent here, so the app can keep both.
+        const revision = docSnapshotRevision(snapshot)
         const msg: OutgoingMessage = {
           type: "doc_update",
           spaceId: event.spaceId,
@@ -207,8 +218,10 @@ export class WsManager {
           data: {
             path: event.docPath,
             content,
+            format: snapshot.result.format,
             updatedAt: statResult?.updatedAt ?? Date.now(),
             provenance,
+            ...(revision ? { revision } : {}),
           },
         }
         this.broadcast(event.spaceId, msg)

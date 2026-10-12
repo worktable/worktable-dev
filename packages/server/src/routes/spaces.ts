@@ -15,8 +15,11 @@ import { buildSpaceIndex } from "../space-index.ts";
 import {
   START_HERE_LIMIT,
   StartHerePinSchema,
+  type ResolvedStartHerePin,
   type SpaceFile,
+  type WithContentRevision,
 } from "@worktable/types";
+import { withContentRevisions } from "../document-content-revision.ts";
 import { resolveStartHere, setStartHere, StartHereError } from "../space-start-here.ts";
 import { wsManager } from "../ws.ts";
 import { hasScope } from "../token-store.ts";
@@ -139,7 +142,14 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
   }
 
   const pins = hasScope(c.get("identity").scopes, "documents:read")
-    ? await resolveStartHere(spaceId, space)
+    ? await withContentRevisions(
+        await resolveStartHere(spaceId, space),
+        (pin) => (pin.status === "missing" ? null : { spaceId, path: pin.path }),
+        (pin, revision): WithContentRevision<ResolvedStartHerePin> => ({
+          ...pin,
+          revision,
+        })
+      )
     : [];
   return c.json({ space, pins });
 });

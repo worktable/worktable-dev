@@ -18,6 +18,7 @@ import {
 } from "./workspace.ts";
 import { YjsDocManager, yjsManager } from "./yjs-manager.ts";
 import { wsManager } from "./ws.ts";
+import { currentDocContentRevision } from "./document-content-revision.ts";
 import { MERMAID_BLOCK_NORMALIZER_VERSION, type SpaceFile } from "@worktable/types"
 import {
   mintDocumentId,
@@ -2061,6 +2062,9 @@ describe("YjsDocManager sync persistence", () => {
     }
 
     const provenance = await getDocProvenance("test-space", "announced");
+    // The revision names the bytes the save committed, as rows will.
+    const revision = await currentDocContentRevision("test-space", "announced");
+    expect(typeof revision).toBe("string");
     expect(messages).toContainEqual(
       expect.objectContaining({
         type: "doc_update",
@@ -2069,6 +2073,7 @@ describe("YjsDocManager sync persistence", () => {
           origin: "yjs",
           contentHash: provenance!.contentHash,
           provenance,
+          revision,
         }),
       })
     );

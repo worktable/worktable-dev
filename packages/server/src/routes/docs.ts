@@ -34,6 +34,7 @@ import {
 } from "../store.ts";
 import { getDocLinks } from "../link-graph.ts";
 import { wsManager } from "../ws.ts";
+import { currentDocContentRevision } from "../document-content-revision.ts";
 import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts";
 import { invalidateSearchIndex } from "../search-index.ts";
 import { listDocAnnotations } from "../annotation-store.ts";
@@ -290,6 +291,7 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
       path: docPath,
       updatedAt: statResult?.updatedAt ?? Date.now(),
       provenance,
+      revision: await currentDocContentRevision(spaceId, docPath),
     },
   });
 
@@ -487,6 +489,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
         path: docPath,
         updatedAt: restored.updatedAt,
         provenance: restored.provenance,
+        revision: await currentDocContentRevision(spaceId, docPath),
       },
     });
     return c.json(restored);
@@ -600,7 +603,12 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
       type: "doc_update",
       spaceId,
       docPath,
-      data: { path: docPath, updatedAt: statResult?.updatedAt ?? Date.now(), provenance },
+      data: {
+        path: docPath,
+        updatedAt: statResult?.updatedAt ?? Date.now(),
+        provenance,
+        revision: await currentDocContentRevision(spaceId, docPath),
+      },
     });
 
     return c.json({
@@ -682,6 +690,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
                   storedAs: "md",
                   updatedAt: convertedState.updatedAt,
                   provenance,
+                  revision: await currentDocContentRevision(spaceId, docPath),
                 },
               });
             } catch (error) {
@@ -915,6 +924,7 @@ docsRouter.put("/*", requireScope("docs:write"), async (c) => {
       path: docPath,
       updatedAt: statResult?.updatedAt ?? Date.now(),
       provenance,
+      revision: await currentDocContentRevision(spaceId, docPath),
     },
   });
 

@@ -455,6 +455,43 @@ export async function listHtmlDocumentsStorageV2(input: {
   /** Read callers may list from the Space's read-model snapshot. */
   catalog?: () => Promise<DocumentCatalog>
 }): Promise<WidgetFile[]> {
+  const listed = await listedHtmlDocumentsStorageV2(input)
+  const widgets = listed.flatMap(({ widget }) =>
+    Boolean(input.includeArchived) || !widget.archive ? [widget] : []
+  )
+  return widgets.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/**
+ * What each listed HTML Doc's frame is served from: the hash of its source
+ * bytes and whether its effective permissions allow network access, which
+ * sets the frame's CSP. Keyed by path; archived Docs included.
+ */
+export async function htmlDocumentFrameInputsStorageV2(input: {
+  spaceId: string
+  catalog: () => Promise<DocumentCatalog>
+  paths?: ReadonlySet<string>
+}): Promise<Map<string, { sourceSha256: string; network: boolean }>> {
+  const listed = await listedHtmlDocumentsStorageV2(input)
+  return new Map(
+    listed.map(({ path, widget, sourceSha256 }) => [
+      path,
+      { sourceSha256, network: widget.permissions?.network ?? false },
+    ])
+  )
+}
+
+interface ListedHtmlDocument {
+  path: string
+  widget: WidgetFile
+  sourceSha256: string
+}
+
+async function listedHtmlDocumentsStorageV2(input: {
+  spaceId: string
+  catalog?: () => Promise<DocumentCatalog>
+  paths?: ReadonlySet<string>
+}): Promise<ListedHtmlDocument[]> {
   const catalog = input.catalog
     ? await input.catalog()
     : await buildDocumentCatalog({
@@ -464,6 +501,7 @@ export async function listHtmlDocumentsStorageV2(input: {
   const owners = catalog.entries.flatMap((entry) => {
     if (
       entry.kind !== "document" ||
+      (input.paths !== undefined && !input.paths.has(entry.descriptor.path)) ||
       entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.html ||
       entry.descriptor.format.sourceVersion !== 1 ||
       entry.handle.storageProfile !==
@@ -495,32 +533,45 @@ export async function listHtmlDocumentsStorageV2(input: {
     input.spaceId,
     owners.map((owner) => owner.path)
   )
-  const results = await mapWithConcurrency(owners, 4, async (owner) => {
-    try {
-      // The catalog already read each durable Doc's saved properties.
-      const properties = catalog.htmlProperties.get(owner.documentId)
-      if (owner.identity === "durable" && properties === undefined) {
-        return (await readHtmlDocumentStorageV2Owner(input.spaceId, owner))
-          .widget
+  const results = await mapWithConcurrency(
+    owners,
+    4,
+    async (owner): Promise<ListedHtmlDocument | null> => {
+      try {
+        // The catalog already read each durable Doc's saved properties.
+        const properties = catalog.htmlProperties.get(owner.documentId)
+        if (owner.identity === "durable" && properties === undefined) {
+          const read = await readHtmlDocumentStorageV2Owner(
+            input.spaceId,
+            owner
+          )
+          return {
+            path: owner.path,
+            widget: read.widget,
+            sourceSha256: sourceHash(read.sourceBytes),
+          }
+        }
+        if (properties === null || properties?.kind === "mismatch") return null
+        const digest = await sourceDigest(input.spaceId, owner)
+        if (!digest.utf8) return null
+        return {
+          path: owner.path,
+          widget: widgetForOwner(
+            owner,
+            properties?.kind === "read" ? properties.entry : undefined,
+            archives.get(sanitizeDocPath(owner.path)),
+            () => digest.sha256
+          ),
+          sourceSha256: digest.sha256,
+        }
+      } catch {
+        return null
       }
-      if (properties === null || properties?.kind === "mismatch") return null
-      const digest = await sourceDigest(input.spaceId, owner)
-      if (!digest.utf8) return null
-      return widgetForOwner(
-        owner,
-        properties?.kind === "read" ? properties.entry : undefined,
-        archives.get(sanitizeDocPath(owner.path)),
-        () => digest.sha256
-      )
-    } catch {
-      return null
     }
-  })
-  const widgets = results.filter(
-    (widget): widget is WidgetFile =>
-      widget !== null && (Boolean(input.includeArchived) || !widget.archive)
   )
-  return widgets.sort((left, right) => left.name.localeCompare(right.name))
+  return results.filter(
+    (result): result is ListedHtmlDocument => result !== null
+  )
 }
 
 async function writeState(input: {

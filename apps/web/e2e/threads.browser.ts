@@ -61,7 +61,8 @@ async function chooseOption(
 async function postThreadMessage(
   threadId: string,
   body: string,
-  idempotencyKey: string
+  idempotencyKey: string,
+  options: { responseIdentityId?: string; inReplyTo?: string } = {}
 ): Promise<string> {
   const response = await fetch(
     `${harness.apiUrl}/api/threads/${threadId}/messages`,
@@ -73,11 +74,44 @@ async function postThreadMessage(
         idempotencyKey,
         responseIdentityId: null,
         waitSeconds: 0,
+        ...options,
       }),
     }
   )
   expect(response.ok).toBe(true)
   return ((await response.json()) as { messageId: string }).messageId
+}
+
+async function participantId(name: string): Promise<string> {
+  const response = await fetch(`${harness.apiUrl}/api/threads/participants`)
+  expect(response.ok).toBe(true)
+  const { participants } = (await response.json()) as {
+    participants: Array<{ id: string; name: string }>
+  }
+  const participant = participants.find((candidate) => candidate.name === name)
+  expect(participant).toBeDefined()
+  return participant!.id
+}
+
+async function createThread(
+  to: string,
+  body: string,
+  idempotencyKey: string,
+  options: { expectsReply?: boolean } = {}
+): Promise<string> {
+  const response = await fetch(`${harness.apiUrl}/api/threads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to,
+      body,
+      idempotencyKey,
+      waitSeconds: 0,
+      ...options,
+    }),
+  })
+  expect(response.ok).toBe(true)
+  return ((await response.json()) as { threadId: string }).threadId
 }
 
 async function requestOwnerResponse(
@@ -534,4 +568,154 @@ test("mentions, response requests and live messages preserve the reader’s inte
   ).toBeVisible()
 
   expect(consoleErrors).toEqual([])
+})
+
+test("long conversations open at the open request and keep every earlier message reachable in order", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const filler =
+    "Each message carries a few lines of context so the conversation runs well past one screen. ".repeat(
+      2
+    )
+  const threadId = await createThread(
+    await participantId("Atlas"),
+    `Long thread message 1. ${filler}`,
+    "browser-long-thread",
+    { expectsReply: false }
+  )
+  const { thread } = (await fetch(
+    `${harness.apiUrl}/api/threads/${threadId}`
+  ).then((response) => response.json())) as {
+    thread: {
+      messages: Array<{ id: string }>
+      identities: Array<{ id: string; name: string }>
+    }
+  }
+  const firstId = thread.messages[0]!.id
+  const atlasIdentity = thread.identities.find(
+    (identity) => identity.name === "Atlas"
+  )!.id
+  const messageIds = [firstId]
+  for (let index = 2; index <= 60; index += 1) {
+    messageIds.push(
+      await postThreadMessage(
+        threadId,
+        `Long thread message ${index}. ${filler}`,
+        `browser-long-thread-${index}`,
+        // Half way through, the owner asks Atlas for a reply.
+        index === 31 ? { responseIdentityId: atlasIdentity } : {}
+      )
+    )
+  }
+  messageIds.push(
+    await postThreadMessage(
+      threadId,
+      "Back to where this started.",
+      "browser-long-thread-reply",
+      { inReplyTo: firstId }
+    )
+  )
+
+  await page.goto(appUrl(`/threads/worktable/${threadId}`), {
+    waitUntil: "domcontentloaded",
+  })
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
+  const conversation = page.getByRole("region", {
+    name: "Thread conversation",
+  })
+  const message = (index: number) =>
+    page.locator(`[id="thread-message-${messageIds[index - 1]}"]`)
+
+  // The thread opens at its last request for a reply, which has more than a
+  // screen of messages after it.
+  await expect(message(31)).toBeInViewport()
+
+  // Scrolling up reaches the first message, and every message is in order.
+  await conversation.hover()
+  await expect(async () => {
+    await page.mouse.wheel(0, -4_000)
+    await expect(message(1)).toBeInViewport({ timeout: 500 })
+  }).toPass({ timeout: 20_000 })
+  expect(
+    await conversation
+      .locator("[data-message-id]")
+      .evaluateAll((items) =>
+        items.map((item) => (item as HTMLElement).dataset["messageId"])
+      )
+  ).toEqual(messageIds)
+
+  // Opened again, the reply jumps to the message it answers.
+  await page.reload({ waitUntil: "domcontentloaded" })
+  await expect(message(31)).toBeInViewport({ timeout: 30_000 })
+  await conversation
+    .getByRole("button", { name: /^Replying to You: Long thread message 1\./ })
+    .click()
+  await expect(message(1)).toBeInViewport()
+
+  // At the live edge, a new message comes into view.
+  await page
+    .getByRole("button", { name: "Jump to latest", exact: true })
+    .click()
+  await expect(message(61)).toBeInViewport()
+  await postThreadMessage(
+    threadId,
+    "A newer message arrives at the live edge.",
+    "browser-long-thread-live"
+  )
+  await expect(
+    conversation.getByText("A newer message arrives at the live edge.", {
+      exact: true,
+    })
+  ).toBeInViewport({ timeout: 10_000 })
+})
+
+test("a long thread list keeps its order and place when a thread opens", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  const atlas = await participantId("Atlas")
+  for (let index = 1; index <= 80; index += 1) {
+    const title = `List thread ${String(index).padStart(3, "0")}`
+    await createThread(atlas, title, `browser-list-thread-${index}`)
+  }
+
+  await page.goto(appUrl("/threads"), { waitUntil: "domcontentloaded" })
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
+  const list = page.getByRole("navigation", { name: "Threads" })
+  const oldest = list.getByRole("link", { name: /List thread 001/ })
+  await list.hover()
+  await expect(async () => {
+    await page.mouse.wheel(0, 4_000)
+    await expect(oldest).toBeInViewport({ timeout: 500 })
+  }).toPass({ timeout: 20_000 })
+
+  // Newer threads stay above older ones.
+  const shown = (await list.getByRole("listitem").allTextContents())
+    .map((text) => text.match(/List thread (\d{3})/)?.[1])
+    .filter((number): number is string => number !== undefined)
+    .map(Number)
+  expect(shown.length).toBeGreaterThan(3)
+  expect(shown).toEqual([...shown].sort((left, right) => right - left))
+
+  await oldest.click()
+  await expect(
+    page
+      .getByRole("region", { name: "Thread conversation" })
+      .getByText("List thread 001", { exact: true })
+  ).toBeVisible()
+  await expect(oldest).toHaveAttribute("aria-current", "page")
+  await expect(oldest).toBeInViewport()
+
+  // Tab moves from a row to the row below it.
+  await list.getByRole("link", { name: /List thread 002/ }).focus()
+  await page.keyboard.press("Tab")
+  await expect(oldest).toBeFocused()
+
+  // On a phone the open thread replaces the list; going back returns to the
+  // same place in it.
+  await page.setViewportSize({ width: 412, height: 915 })
+  await expect(list).toBeHidden()
+  await page.getByRole("button", { name: "Back to threads" }).click()
+  await expect(oldest).toBeInViewport()
 })

@@ -1,14 +1,13 @@
 import {
-  Children,
-  cloneElement,
-  isValidElement,
+  createContext,
   memo,
+  useContext,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
-import Markdown, { defaultUrlTransform } from "react-markdown"
-import remarkGfm from "remark-gfm"
 import {
   ArrowDownIcon,
   CircleAlertIcon,
@@ -67,12 +66,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { cn } from "@worktable/ui/lib/utils"
 
-import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useStableCallback } from "@/hooks/use-stable-callback"
-import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
-import { BASE_URL } from "@/lib/http"
-import { renderThreadLinkHref } from "@/lib/thread-links"
-import { threadMentionSegments } from "@/lib/thread-mentions"
 import {
   beginsLocalCalendarDate,
   conversationIdentityDescription,
@@ -83,9 +77,19 @@ import {
   visibleNonterminalActivityKeys,
   type ConversationIdentityOption,
 } from "@/lib/thread-presentation"
+import { ThreadMarkdown, ThreadMarkdownProvider } from "./thread-markdown"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 
 const NO_ACTIVITIES: ThreadActivity[] = []
+
+type ScrollToMessageOptions = Parameters<
+  ReturnType<typeof useMessageScroller>["scrollToMessage"]
+>[1]
+
+/** Scrolls to a message, rendering it first when it is not rendered yet. */
+const JumpToMessageContext = createContext<
+  (messageId: string, options?: ScrollToMessageOptions) => void
+>(() => {})
 
 interface ThreadTimelineProps {
   location: ThreadLocation
@@ -107,8 +111,102 @@ interface ThreadTimelineProps {
   onLoadReplyTarget?: (messageId: string) => Promise<void>
 }
 
-export function ThreadTimeline({
-  location,
+export function ThreadTimeline(props: ThreadTimelineProps) {
+  // Links in messages resolve against the thread's location and mentions of
+  // these names are highlighted; stable values keep them from re-rendering.
+  const spaceId =
+    props.location.kind === "space" ? props.location.spaceId : undefined
+  const markdownLocation = useMemo<ThreadLocation>(
+    () =>
+      spaceId === undefined
+        ? { kind: "worktable" }
+        : { kind: "space", spaceId },
+    [spaceId]
+  )
+  const mentionNames = useMemo(
+    () => [...new Set(props.identities.map((identity) => identity.name))],
+    [props.identities]
+  )
+
+  return (
+    <TooltipProvider delay={600}>
+      <ThreadMarkdownProvider
+        location={markdownLocation}
+        mentionNames={mentionNames}
+      >
+        <MessageScrollerProvider
+          autoScroll
+          defaultScrollPosition="last-anchor"
+          scrollPreviousItemPeek={0}
+        >
+          <ThreadConversation {...props} />
+        </MessageScrollerProvider>
+      </ThreadMarkdownProvider>
+    </TooltipProvider>
+  )
+}
+
+/**
+ * A thread opens at its newest messages, so it renders only enough of them
+ * to fill about two screens. Earlier messages render as the reader scrolls
+ * toward them or jumps to one, and then stay rendered.
+ */
+const OPENING_SCREENS = 2
+const OPENING_MESSAGES = 10
+const EARLIER_SCREENS = 1.5
+const EARLIER_MESSAGES = 5
+/** Messages rendered above one the reader jumps to. */
+const JUMP_CONTEXT_MESSAGES = 5
+
+/**
+ * A low estimate of a message's rendered height, so a range of messages
+ * fills at least the screens it is meant to.
+ */
+function estimatedMessageHeight(message: ThreadMessage): number {
+  let lines = 0
+  for (const line of message.body.split("\n")) {
+    lines += Math.max(1, Math.ceil(line.length / 100))
+  }
+  return 56 + 22 * lines
+}
+
+/** The first of the messages before `end` that fill `screens`. */
+function startFilling(
+  messages: ThreadMessage[],
+  end: number,
+  screens: number,
+  minimum: number
+): number {
+  const height =
+    (typeof window === "undefined" ? 900 : window.innerHeight) * screens
+  let start = end
+  let total = 0
+  while (start > 0 && (total < height || end - start < minimum)) {
+    start -= 1
+    total += estimatedMessageHeight(messages[start]!)
+  }
+  return start
+}
+
+function openingStart(messages: ThreadMessage[]): number {
+  let start = startFilling(
+    messages,
+    messages.length,
+    OPENING_SCREENS,
+    OPENING_MESSAGES
+  )
+  // The thread opens at its last message that asks for a reply when the
+  // messages after it fill more than the screen, so render from there.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]!.responseRequest !== undefined) {
+      start = Math.min(start, index)
+      break
+    }
+  }
+  return start
+}
+
+function ThreadConversation({
   messages,
   members,
   identities,
@@ -126,6 +224,73 @@ export function ThreadTimeline({
   onLoadOlder,
   onLoadReplyTarget,
 }: ThreadTimelineProps) {
+  const { scrollToMessage } = useMessageScroller()
+  // The first rendered message, by id so loading earlier pages or receiving
+  // new messages keeps it; null renders every message.
+  const [renderFrom, setRenderFrom] = useState<string | null>(() => {
+    const start = openingStart(messages)
+    return start > 0 ? messages[start]!.id : null
+  })
+  const firstRendered =
+    renderFrom === null
+      ? 0
+      : Math.max(
+          0,
+          messages.findIndex((message) => message.id === renderFrom)
+        )
+  const renderFromIndex = (index: number) =>
+    setRenderFrom(index > 0 ? messages[index]!.id : null)
+
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const showingEarlier = useRef(false)
+  const pendingJump = useRef<{
+    messageId: string
+    options?: ScrollToMessageOptions
+  } | null>(null)
+
+  const showEarlierNearTop = useStableCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport || firstRendered === 0 || showingEarlier.current) return
+    if (viewport.scrollTop > viewport.clientHeight) return
+    showingEarlier.current = true
+    renderFromIndex(
+      startFilling(messages, firstRendered, EARLIER_SCREENS, EARLIER_MESSAGES)
+    )
+  })
+
+  const jumpToMessage = useStableCallback(
+    (messageId: string, options?: ScrollToMessageOptions) => {
+      if (scrollToMessage(messageId, options)) return
+      const index = messages.findIndex((message) => message.id === messageId)
+      if (index < 0 || index >= firstRendered) return
+      pendingJump.current = { messageId, options }
+      renderFromIndex(Math.max(0, index - JUMP_CONTEXT_MESSAGES))
+    }
+  )
+
+  useLayoutEffect(() => {
+    showingEarlier.current = false
+    const viewport = viewportRef.current
+    // Messages that do not fill the screen cannot be scrolled toward the
+    // earlier ones, so render those too, before this paints. The estimates
+    // make this rare.
+    if (
+      viewport &&
+      firstRendered > 0 &&
+      viewport.clientHeight > 0 &&
+      viewport.scrollHeight <= viewport.clientHeight
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- measured layout
+      setRenderFrom(null)
+      return
+    }
+    const jump = pendingJump.current
+    if (!jump) return
+    pendingJump.current = null
+    // After the scroller keeps the reading position for the added messages.
+    requestAnimationFrame(() => scrollToMessage(jump.messageId, jump.options))
+  }, [firstRendered, scrollToMessage])
+
   const activityByMessage = useMemo(() => {
     const grouped = new Map<string, ThreadActivity[]>()
     for (const activity of activities) {
@@ -140,187 +305,192 @@ export function ThreadTimeline({
     () => visibleNonterminalActivityKeys(activities),
     [activities]
   )
-  // Rows are memoized: the view re-renders on every keystroke in the
-  // composer, and each row parses its Markdown. Give them stable props.
-  const spaceId = location.kind === "space" ? location.spaceId : undefined
-  const rowLocation = useMemo<ThreadLocation>(
-    () =>
-      spaceId === undefined
-        ? { kind: "worktable" }
-        : { kind: "space", spaceId },
-    [spaceId]
-  )
   const messagesById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages]
   )
-  const mentionNames = useMemo(
-    () => [...new Set(identities.map((identity) => identity.name))],
-    [identities]
-  )
+  // Rows are memoized and the rendered list is too: the view re-renders on
+  // every keystroke in the composer. Give them stable props.
   const reply = useStableCallback(onReply)
   const respond = useStableCallback(onRespond)
   const assign = useStableCallback(onAssign)
+  const loadOlder = useStableCallback(() => onLoadOlder?.())
+  const canLoadOlder = Boolean(onLoadOlder)
+  const canLoadReplyTarget = Boolean(onLoadReplyTarget)
   const loadReplyTarget = useStableCallback((messageId: string) =>
     onLoadReplyTarget ? onLoadReplyTarget(messageId) : Promise.resolve()
   )
 
-  return (
-    <TooltipProvider delay={600}>
-      <MessageScrollerProvider
-        autoScroll
-        defaultScrollPosition="last-anchor"
-        scrollPreviousItemPeek={0}
-      >
-        <MessageScroller>
-          <MessageScrollerViewport
-            aria-label="Thread conversation"
-            fade="bottom"
-            className="focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:outline-none focus-visible:ring-inset"
+  const items = useMemo(() => {
+    const rows: ReactNode[] = []
+    if (firstRendered === 0 && hasOlder && canLoadOlder) {
+      rows.push(
+        <MessageScrollerItem key="load-older" className="pb-5 text-center">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={loadingOlder}
+            onClick={loadOlder}
           >
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-0 px-4 py-5 sm:px-6 sm:py-7">
-              {hasOlder && onLoadOlder ? (
-                <MessageScrollerItem className="pb-5 text-center">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={loadingOlder}
-                    onClick={onLoadOlder}
-                  >
-                    {loadingOlder ? <Spinner decorative /> : null}
-                    Load earlier messages
-                  </Button>
-                </MessageScrollerItem>
-              ) : null}
-              {messages.flatMap((message, index) => {
-                const previous = messages[index - 1]
-                const startsDate = beginsLocalCalendarDate(
-                  message.createdAt,
-                  previous?.createdAt
-                )
-                const groupedWithPrevious = canGroupMessages(
-                  previous,
-                  message,
-                  startsDate
-                )
-                const continuesPreviousTurn = Boolean(
-                  previous?.responseRequest && message.inReplyTo === previous.id
-                )
-                const messageActivities =
-                  activityByMessage.get(message.id) ?? []
-                const visibleActivities = messageActivities.filter(
-                  (activity) => {
-                    if (!isCurrentAssignmentActivity(message, activity)) {
-                      return false
-                    }
-                    const recipient = members.find(
-                      (member) => member.id === activity.participantId
-                    )
-                    return (
-                      recipient?.kind === "agent" &&
-                      (activity.state === "failed" ||
-                        visibleNonterminalKeys.has(
-                          `${activity.messageId}:${activity.identityId ?? activity.participantId}`
-                        ))
-                    )
-                  }
-                )
-                const rows: ReactNode[] = []
-                if (startsDate) {
-                  rows.push(
-                    <MessageScrollerItem
-                      key={`date:${message.id}`}
-                      className={index === 0 ? "pb-5" : "mt-8 pb-5"}
-                    >
-                      <Marker variant="separator" className="text-xs">
-                        <MarkerContent>
-                          {formatThreadDate(message.createdAt)}
-                        </MarkerContent>
-                      </Marker>
-                    </MessageScrollerItem>
-                  )
-                }
-                rows.push(
-                  <MessageScrollerItem
-                    key={message.id}
-                    id={`thread-message-${message.id}`}
-                    messageId={message.id}
-                    scrollAnchor={message.responseRequest !== undefined}
-                    className={
-                      index === 0 || startsDate
-                        ? undefined
-                        : groupedWithPrevious
-                          ? "mt-1.5"
-                          : continuesPreviousTurn
-                            ? "mt-4"
-                            : "mt-8"
-                    }
-                  >
-                    <ThreadMessageRow
-                      location={rowLocation}
-                      message={message}
-                      replyTarget={
-                        message.inReplyTo
-                          ? messagesById.get(message.inReplyTo)
-                          : undefined
-                      }
-                      members={members}
-                      identities={identities}
-                      mentionNames={mentionNames}
-                      targetMembers={targetMembers}
-                      targetIdentities={targetIdentities}
-                      viewerMemberId={viewerMemberId}
-                      viewerIdentityId={viewerIdentityId}
-                      implicitResponseIdentityId={implicitResponseIdentityId}
-                      activities={
-                        visibleActivities.length > 0
-                          ? visibleActivities
-                          : NO_ACTIVITIES
-                      }
-                      groupedWithPrevious={groupedWithPrevious}
-                      onReply={reply}
-                      onRespond={respond}
-                      onAssign={assign}
-                      onLoadReplyTarget={
-                        onLoadReplyTarget ? loadReplyTarget : undefined
-                      }
-                    />
-                  </MessageScrollerItem>
-                )
-                return rows
-              })}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <MessageScrollerButton
-                  direction="end"
-                  size="icon-lg"
-                  variant="ghost"
-                  className="size-11 rounded-full bg-popover p-0 shadow-[var(--overlay-floating-shadow)]"
-                  aria-label="Jump to latest"
-                />
-              }
-            >
-              <ArrowDownIcon />
-            </TooltipTrigger>
-            <TooltipContent>Jump to latest</TooltipContent>
-          </Tooltip>
-        </MessageScroller>
-      </MessageScrollerProvider>
-    </TooltipProvider>
+            {loadingOlder ? <Spinner decorative /> : null}
+            Load earlier messages
+          </Button>
+        </MessageScrollerItem>
+      )
+    }
+    for (let index = firstRendered; index < messages.length; index += 1) {
+      const message = messages[index]!
+      const previous = messages[index - 1]
+      const startsDate = beginsLocalCalendarDate(
+        message.createdAt,
+        previous?.createdAt
+      )
+      const groupedWithPrevious = canGroupMessages(
+        previous,
+        message,
+        startsDate
+      )
+      const continuesPreviousTurn = Boolean(
+        previous?.responseRequest && message.inReplyTo === previous.id
+      )
+      const messageActivities = activityByMessage.get(message.id) ?? []
+      const visibleActivities = messageActivities.filter((activity) => {
+        if (!isCurrentAssignmentActivity(message, activity)) {
+          return false
+        }
+        const recipient = members.find(
+          (member) => member.id === activity.participantId
+        )
+        return (
+          recipient?.kind === "agent" &&
+          (activity.state === "failed" ||
+            visibleNonterminalKeys.has(
+              `${activity.messageId}:${activity.identityId ?? activity.participantId}`
+            ))
+        )
+      })
+      if (startsDate) {
+        rows.push(
+          <MessageScrollerItem
+            key={`date:${message.id}`}
+            className={index === 0 ? "pb-5" : "mt-8 pb-5"}
+          >
+            <Marker variant="separator" className="text-xs">
+              <MarkerContent>
+                {formatThreadDate(message.createdAt)}
+              </MarkerContent>
+            </Marker>
+          </MessageScrollerItem>
+        )
+      }
+      rows.push(
+        <MessageScrollerItem
+          key={message.id}
+          id={`thread-message-${message.id}`}
+          messageId={message.id}
+          scrollAnchor={message.responseRequest !== undefined}
+          className={
+            index === 0 || startsDate
+              ? undefined
+              : groupedWithPrevious
+                ? "mt-1.5"
+                : continuesPreviousTurn
+                  ? "mt-4"
+                  : "mt-8"
+          }
+        >
+          <ThreadMessageRow
+            message={message}
+            replyTarget={
+              message.inReplyTo
+                ? messagesById.get(message.inReplyTo)
+                : undefined
+            }
+            members={members}
+            identities={identities}
+            targetMembers={targetMembers}
+            targetIdentities={targetIdentities}
+            viewerMemberId={viewerMemberId}
+            viewerIdentityId={viewerIdentityId}
+            implicitResponseIdentityId={implicitResponseIdentityId}
+            activities={
+              visibleActivities.length > 0 ? visibleActivities : NO_ACTIVITIES
+            }
+            groupedWithPrevious={groupedWithPrevious}
+            onReply={reply}
+            onRespond={respond}
+            onAssign={assign}
+            onLoadReplyTarget={canLoadReplyTarget ? loadReplyTarget : undefined}
+          />
+        </MessageScrollerItem>
+      )
+    }
+    return rows
+  }, [
+    activityByMessage,
+    assign,
+    canLoadOlder,
+    canLoadReplyTarget,
+    firstRendered,
+    hasOlder,
+    identities,
+    implicitResponseIdentityId,
+    loadOlder,
+    loadReplyTarget,
+    loadingOlder,
+    members,
+    messages,
+    messagesById,
+    reply,
+    respond,
+    targetIdentities,
+    targetMembers,
+    viewerIdentityId,
+    viewerMemberId,
+    visibleNonterminalKeys,
+  ])
+
+  return (
+    <JumpToMessageContext.Provider value={jumpToMessage}>
+      <MessageScroller>
+        <MessageScrollerViewport
+          ref={viewportRef}
+          aria-label="Thread conversation"
+          fade="bottom"
+          className="focus-visible:ring-3 focus-visible:ring-ring/40 focus-visible:outline-none focus-visible:ring-inset"
+          onScroll={showEarlierNearTop}
+        >
+          <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-0 px-4 py-5 sm:px-6 sm:py-7">
+            {items}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MessageScrollerButton
+                direction="end"
+                size="icon-lg"
+                variant="ghost"
+                className="size-11 rounded-full bg-popover p-0 shadow-[var(--overlay-floating-shadow)]"
+                aria-label="Jump to latest"
+              />
+            }
+          >
+            <ArrowDownIcon />
+          </TooltipTrigger>
+          <TooltipContent>Jump to latest</TooltipContent>
+        </Tooltip>
+      </MessageScroller>
+    </JumpToMessageContext.Provider>
   )
 }
 
 const ThreadMessageRow = memo(function ThreadMessageRow({
-  location,
   message,
   replyTarget,
   members,
   identities,
-  mentionNames,
   targetMembers,
   targetIdentities,
   viewerMemberId,
@@ -333,12 +503,10 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
   onAssign,
   onLoadReplyTarget,
 }: {
-  location: ThreadLocation
   message: ThreadMessage
   replyTarget: ThreadMessage | undefined
   members: ThreadMember[]
   identities: ConversationIdentity[]
-  mentionNames: string[]
   targetMembers: ParticipantRef[]
   targetIdentities: ConversationIdentityOption[]
   viewerMemberId: string
@@ -497,11 +665,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
                 onLoadTarget={onLoadReplyTarget}
               />
             ) : null}
-            <ThreadMarkdown
-              location={location}
-              body={message.body}
-              mentionNames={mentionNames}
-            />
+            <ThreadMarkdown messageId={message.id} body={message.body} />
           </BubbleContent>
         </Bubble>
         {hasStatus ? (
@@ -757,7 +921,7 @@ function ReplyContext({
   own: boolean
   onLoadTarget?: (messageId: string) => Promise<void>
 }) {
-  const { scrollToMessage } = useMessageScroller()
+  const jumpToMessage = useContext(JumpToMessageContext)
   if (!target) {
     return (
       <button
@@ -771,7 +935,7 @@ function ReplyContext({
         onClick={() =>
           void onLoadTarget?.(targetId).then(() =>
             requestAnimationFrame(() =>
-              scrollToMessage(targetId, {
+              jumpToMessage(targetId, {
                 align: "center",
                 behavior: "smooth",
               })
@@ -810,7 +974,7 @@ function ReplyContextButton({
   excerpt: string
   own: boolean
 }) {
-  const { scrollToMessage } = useMessageScroller()
+  const jumpToMessage = useContext(JumpToMessageContext)
   return (
     <Tooltip>
       <TooltipTrigger
@@ -824,7 +988,7 @@ function ReplyContextButton({
                 : "mb-2 block max-w-full border-s-2 border-border ps-2.5 text-left text-xs leading-5 text-muted-foreground/80 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             }
             onClick={() =>
-              scrollToMessage(targetId, {
+              jumpToMessage(targetId, {
                 align: "center",
                 behavior: "smooth",
               })
@@ -912,119 +1076,6 @@ function ThreadActivityMarker({
       live={presentation.live}
       announce
     />
-  )
-}
-
-const ThreadMarkdown = memo(function ThreadMarkdown({
-  location,
-  body,
-  mentionNames,
-}: {
-  location: ThreadLocation
-  body: string
-  mentionNames: string[]
-}) {
-  const worktableOrigins = useMemo(() => {
-    if (typeof window === "undefined") return []
-    return worktableLinkOrigins(window.location.origin, BASE_URL)
-  }, [])
-
-  return (
-    <div className="typeset typeset-thread">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        urlTransform={defaultUrlTransform}
-        components={{
-          p: ({ children, ...props }) => (
-            <p {...props}>
-              {highlightThreadMentionChildren(children, mentionNames)}
-            </p>
-          ),
-          li: ({ children, ...props }) => (
-            <li {...props}>
-              {highlightThreadMentionChildren(children, mentionNames)}
-            </li>
-          ),
-          a: ({ href = "", children, ...props }) => {
-            const renderedHref = renderThreadLinkHref(
-              location,
-              href,
-              worktableOrigins
-            )
-            return renderedHref ? (
-              <a
-                {...props}
-                href={renderedHref}
-                {...externalLinkProps(renderedHref, worktableOrigins)}
-              >
-                {children}
-              </a>
-            ) : (
-              <span title="This Space-relative link has no Worktable location">
-                {children}
-              </span>
-            )
-          },
-          pre: ({ children }) => <ThreadCodeBlock>{children}</ThreadCodeBlock>,
-          table: ({ children }) => <ThreadTable>{children}</ThreadTable>,
-        }}
-      >
-        {body}
-      </Markdown>
-    </div>
-  )
-})
-
-function highlightThreadMentionChildren(
-  children: ReactNode,
-  names: string[]
-): ReactNode {
-  return Children.map(children, (child) => {
-    if (typeof child === "string") {
-      return threadMentionSegments(child, names).map((segment, index) => (
-        <span
-          key={`${index}:${segment.text}`}
-          className={
-            segment.mention
-              ? "rounded-sm bg-primary/10 px-0.5 text-primary-text"
-              : undefined
-          }
-        >
-          {segment.text}
-        </span>
-      ))
-    }
-    if (!isValidElement<{ children?: ReactNode }>(child)) return child
-    if (
-      typeof child.type === "string" &&
-      (child.type === "a" || child.type === "code" || child.type === "pre")
-    ) {
-      return child
-    }
-    if (child.props.children === undefined) return child
-    return cloneElement(
-      child,
-      undefined,
-      highlightThreadMentionChildren(child.props.children, names)
-    )
-  })
-}
-
-function ThreadCodeBlock({ children }: { children: ReactNode }) {
-  const fadeRef = useScrollFadeX<HTMLPreElement>()
-  return (
-    <pre ref={fadeRef} className="scroll-fade-x overflow-x-auto">
-      {children}
-    </pre>
-  )
-}
-
-function ThreadTable({ children }: { children: ReactNode }) {
-  const fadeRef = useScrollFadeX<HTMLDivElement>()
-  return (
-    <div ref={fadeRef} className="typeset-scroll scroll-fade-x overflow-x-auto">
-      <table>{children}</table>
-    </div>
   )
 }
 

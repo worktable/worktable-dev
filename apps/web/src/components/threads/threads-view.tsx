@@ -19,7 +19,9 @@ import {
   threadBodyMentionsIdentity,
   threadLocationKey,
   type ParticipantRef,
+  type ThreadListItem,
   type ThreadLocation,
+  type ThreadMember,
 } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import {
@@ -49,7 +51,7 @@ import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import { toast } from "@worktable/ui/components/sonner"
 
 import { useSetPageMeta } from "@/hooks/use-page-meta"
-import type { ThreadListScope } from "@/lib/threads-api"
+import type { ThreadListScope, ThreadParticipant } from "@/lib/threads-api"
 import {
   useThread,
   useThreadMutations,
@@ -89,6 +91,10 @@ import { ThreadList, type ThreadLink } from "./thread-list"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
 import { ThreadTimeline } from "./thread-timeline"
 
+const NO_THREADS: ThreadListItem[] = []
+const NO_PARTICIPANTS: ThreadParticipant[] = []
+const NO_MEMBERS: ThreadMember[] = []
+
 export interface ThreadsViewProps {
   listScope: ThreadListScope
   threadId: string
@@ -127,8 +133,8 @@ export function ThreadsView({ ...props }: ThreadsViewProps) {
   }
 
   return (
-    <WorkspaceThreadsView
-      key={`${workspaceQuery.data.id}:${threadLocationKey(props.selectedLocation)}:${props.threadId}`}
+    <ThreadsLayout
+      key={workspaceQuery.data.id}
       {...props}
       workspaceId={workspaceQuery.data.id}
       mobileNewOpen={mobileNewOpen}
@@ -137,7 +143,11 @@ export function ThreadsView({ ...props }: ThreadsViewProps) {
   )
 }
 
-function WorkspaceThreadsView({
+/**
+ * The list stays mounted while threads open, keeping its scroll position and
+ * focus; each opened thread gets a fresh detail with its own draft.
+ */
+function ThreadsLayout({
   listScope,
   threadId,
   selectedLocation,
@@ -157,6 +167,108 @@ function WorkspaceThreadsView({
   setMobileNewOpen: (open: boolean) => void
 }) {
   const threadsQuery = useThreads(listScope)
+  const onNavigateNewRef = useRef(onNavigateNew)
+  const threadListResize = useResizable({
+    edge: "right",
+    defaultSize: 360,
+    minSize: 280,
+    maxSize: 480,
+    storageKey: "worktable-thread-list-width",
+  })
+
+  useEffect(() => {
+    onNavigateNewRef.current = onNavigateNew
+  }, [onNavigateNew])
+
+  const navigateNew = useCallback(
+    (showComposer: boolean) => {
+      setMobileNewOpen(showComposer)
+      onNavigateNewRef.current()
+    },
+    [setMobileNewOpen]
+  )
+  const showMobileDetail = Boolean(threadId) || mobileNewOpen
+
+  return (
+    <main className="flex h-full min-h-0 bg-background">
+      <aside
+        className={`relative min-h-0 w-full shrink-0 bg-background md:w-[var(--thread-list-width)] md:border-r md:border-border/60 ${
+          showMobileDetail ? "hidden md:flex" : "flex"
+        } flex-col`}
+        style={
+          {
+            "--thread-list-width": `${threadListResize.size}px`,
+          } as CSSProperties
+        }
+      >
+        {headerControl ? (
+          <div className="shrink-0 px-3 pt-3 pb-2">{headerControl}</div>
+        ) : (
+          <div className="h-3 shrink-0" />
+        )}
+
+        <ThreadList
+          threads={threadsQuery.data?.threads ?? NO_THREADS}
+          activeThreadId={threadId}
+          activeLocation={selectedLocation}
+          loading={threadsQuery.isLoading}
+          error={threadsQuery.isError}
+          showLocations={showLocations}
+          locationLabel={locationLabel}
+          threadLink={threadLink}
+          onNew={() => navigateNew(true)}
+          onRetry={() => void threadsQuery.refetch()}
+        />
+
+        <ResizeHandle
+          {...threadListResize.handleProps}
+          aria-label="Resize thread list"
+          className="-right-1 hidden md:block"
+        />
+      </aside>
+
+      <section
+        className={`min-h-0 min-w-0 flex-1 ${
+          showMobileDetail ? "flex" : "hidden md:flex"
+        } flex-col`}
+      >
+        <ThreadDetail
+          key={`${threadLocationKey(selectedLocation)}:${threadId}`}
+          threadId={threadId}
+          selectedLocation={selectedLocation}
+          createLocation={createLocation}
+          locationControl={locationControl}
+          locationLabel={locationLabel}
+          threadLink={threadLink}
+          workspaceId={workspaceId}
+          navigateNew={navigateNew}
+        />
+      </section>
+    </main>
+  )
+}
+
+function ThreadDetail({
+  threadId,
+  selectedLocation,
+  createLocation,
+  locationControl,
+  locationLabel,
+  threadLink,
+  workspaceId,
+  navigateNew,
+}: Pick<
+  ThreadsViewProps,
+  | "threadId"
+  | "selectedLocation"
+  | "createLocation"
+  | "locationControl"
+  | "locationLabel"
+  | "threadLink"
+> & {
+  workspaceId: string
+  navigateNew: (showComposer: boolean) => void
+}) {
   const threadQuery = useThread(selectedLocation, threadId)
   const participantsQuery = useThreadParticipants()
   const createMutations = useThreadMutations(createLocation)
@@ -169,20 +281,8 @@ function WorkspaceThreadsView({
   const draftsRef = useRef(drafts)
   const [sendFailure, setSendFailure] = useState<SendFailure>()
   const composerRef = useRef<HTMLTextAreaElement>(null)
-  const onNavigateNewRef = useRef(onNavigateNew)
   const setPageMeta = useSetPageMeta()
   const navigate = useNavigate()
-  const threadListResize = useResizable({
-    edge: "right",
-    defaultSize: 360,
-    minSize: 280,
-    maxSize: 480,
-    storageKey: "worktable-thread-list-width",
-  })
-
-  useEffect(() => {
-    onNavigateNewRef.current = onNavigateNew
-  }, [onNavigateNew])
 
   useEffect(
     () =>
@@ -215,15 +315,14 @@ function WorkspaceThreadsView({
   const draft = activeDraft.value
   const replyTo = activeDraft.replyTo
   const responseTo = activeDraft.responseTo
-  const threads = threadsQuery.data?.threads ?? []
-  const participants = participantsQuery.data?.participants ?? []
+  const participants = participantsQuery.data?.participants ?? NO_PARTICIPANTS
   const selectedRecipient = availableParticipantSelection(
     participants,
     activeDraft.recipientId ?? ""
   )
   const thread = threadQuery.data?.thread
   const viewerMemberId = threadQuery.data?.viewerMemberId
-  const threadMembers = thread?.members ?? []
+  const threadMembers = thread?.members ?? NO_MEMBERS
   const targetMembers = useMemo<ParticipantRef[]>(
     () => [
       ...new Map(
@@ -493,14 +592,6 @@ function WorkspaceThreadsView({
 
   const pending =
     createMutations.create.isPending || replyMutations.reply.isPending
-  const showMobileDetail = Boolean(threadId) || mobileNewOpen
-  const navigateNew = useCallback(
-    (showComposer: boolean) => {
-      setMobileNewOpen(showComposer)
-      onNavigateNewRef.current()
-    },
-    [setMobileNewOpen]
-  )
   const selectedLocationLabel = locationLabel(selectedLocation)
   const pageTitle = threadId ? thread?.title : "New thread"
 
@@ -588,229 +679,177 @@ function WorkspaceThreadsView({
     }
   }
 
-  return (
-    <main className="flex h-full min-h-0 bg-background">
-      <aside
-        className={`relative min-h-0 w-full shrink-0 bg-background md:w-[var(--thread-list-width)] md:border-r md:border-border/60 ${
-          showMobileDetail ? "hidden md:flex" : "flex"
-        } flex-col`}
-        style={
-          {
-            "--thread-list-width": `${threadListResize.size}px`,
-          } as CSSProperties
-        }
-      >
-        {headerControl ? (
-          <div className="shrink-0 px-3 pt-3 pb-2">{headerControl}</div>
-        ) : (
-          <div className="h-3 shrink-0" />
-        )}
-
-        <ThreadList
-          threads={threads}
-          activeThreadId={threadId}
-          activeLocation={selectedLocation}
-          loading={threadsQuery.isLoading}
-          error={threadsQuery.isError}
-          showLocations={showLocations}
-          locationLabel={locationLabel}
-          threadLink={threadLink}
-          onNew={() => navigateNew(true)}
-          onRetry={() => void threadsQuery.refetch()}
-        />
-
-        <ResizeHandle
-          {...threadListResize.handleProps}
-          aria-label="Resize thread list"
-          className="-right-1 hidden md:block"
-        />
-      </aside>
-
-      <section
-        className={`min-h-0 min-w-0 flex-1 ${
-          showMobileDetail ? "flex" : "hidden md:flex"
-        } flex-col`}
-      >
-        {threadId ? (
-          threadQuery.isLoading ? (
-            <div className="flex flex-1 items-center justify-center">
-              <Spinner />
+  return threadId ? (
+    threadQuery.isLoading ? (
+      <div className="flex flex-1 items-center justify-center">
+        <Spinner />
+      </div>
+    ) : threadQuery.isError ? (
+      <ThreadDetailError
+        onRetry={() => void threadQuery.refetch()}
+        onBack={() => navigateNew(false)}
+      />
+    ) : threadQuery.data ? (
+      <>
+        <header className="shrink-0 px-4 pt-5 pb-4 sm:px-6 md:hidden">
+          <div className="flex items-start gap-3">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Back to threads"
+              onClick={() => navigateNew(false)}
+            >
+              <ArrowLeftIcon />
+            </Button>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate font-display text-lg font-semibold">
+                {threadQuery.data.thread.title}
+              </h2>
             </div>
-          ) : threadQuery.isError ? (
-            <ThreadDetailError
-              onRetry={() => void threadQuery.refetch()}
-              onBack={() => navigateNew(false)}
-            />
-          ) : threadQuery.data ? (
-            <>
-              <header className="shrink-0 px-4 pt-5 pb-4 sm:px-6 md:hidden">
-                <div className="flex items-start gap-3">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Back to threads"
-                    onClick={() => navigateNew(false)}
-                  >
-                    <ArrowLeftIcon />
-                  </Button>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="truncate font-display text-lg font-semibold">
-                      {threadQuery.data.thread.title}
-                    </h2>
-                  </div>
-                </div>
-              </header>
+          </div>
+        </header>
 
-              <div className="min-h-0 flex-1">
-                <ThreadTimeline
-                  key={`${threadLocationKey(selectedLocation)}:${threadId}`}
-                  location={selectedLocation}
-                  messages={threadQuery.data.thread.messages}
-                  members={threadQuery.data.thread.members}
-                  identities={threadQuery.data.thread.identities}
-                  targetIdentities={targetIdentities}
-                  targetMembers={targetMembers}
-                  activities={threadQuery.data.activities}
-                  viewerMemberId={threadQuery.data.viewerMemberId}
-                  viewerIdentityId={threadQuery.data.viewerIdentityId}
-                  implicitResponseIdentityId={directAgentIdentity?.id}
-                  onReply={(messageId) =>
-                    void selectReplyTarget(messageId, false)
-                  }
-                  onRespond={(messageId) =>
-                    void selectReplyTarget(messageId, true)
-                  }
-                  onAssign={(messageId, identityId) =>
-                    void threadAction(
-                      () =>
-                        replyMutations.assignMessage.mutateAsync({
-                          threadId,
-                          messageId,
-                          identityId,
-                        }),
-                      "Could not update assignment"
-                    )
-                  }
-                  hasOlder={threadQuery.data.hasOlder}
-                  loadingOlder={replyMutations.loadOlder.isPending}
-                  onLoadOlder={() =>
-                    void threadAction(
-                      () =>
-                        replyMutations.loadOlder.mutateAsync({
-                          threadId,
-                          before: threadQuery.data.oldestCursor,
-                        }),
-                      "Could not load earlier messages"
-                    )
-                  }
-                  onLoadReplyTarget={async (messageId) => {
-                    await threadAction(
-                      () =>
-                        replyMutations.loadReplyTarget.mutateAsync({
-                          threadId,
-                          messageId,
-                        }),
-                      "Could not load the replied-to message"
-                    )
-                  }}
-                />
-              </div>
-
-              <ThreadComposer
-                ref={composerRef}
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => void submit()}
-                pending={pending}
-                disabled={Boolean(threadId && participantsQuery.isFetching)}
-                error={activeSendError}
-                placeholder="Reply in this thread…"
-                replyContext={composerReplyContext}
-                onClearReply={clearReplyTarget}
-                mentionTargets={otherIdentities.map((identity) => ({
-                  id: identity.id,
-                  name: identity.name,
-                  description: conversationIdentityDescription(
-                    identity,
-                    targetMembers,
-                    targetIdentities
-                  ),
-                }))}
-                mentionIdentityIds={draftMentionIdentityIds}
-                onMentionIdentityIdsChange={changeMentionIdentityIds}
-                onMentionSelect={(identityId) => {
-                  const identity = targetIdentities.find(
-                    (candidate) => candidate.id === identityId
-                  )
-                  if (
-                    identity &&
-                    threadMentionRequestsResponse(threadMembers, identity) &&
-                    (responseIdentityId === undefined ||
-                      responseIdentityId === null)
-                  ) {
-                    changeResponseIdentityId(identityId)
-                  }
-                }}
-                toolbarActions={
-                  <ThreadIntentToolbar
-                    identities={targetIdentities.filter(
-                      (identity) =>
-                        identity.id !== threadQuery.data.viewerIdentityId
-                    )}
-                    members={targetMembers}
-                    responseIdentityId={
-                      directAgentResponseIsImplicit
-                        ? undefined
-                        : effectiveResponseIdentityId
-                    }
-                    onResponseIdentityIdChange={changeResponseIdentityId}
-                  />
-                }
-              />
-            </>
-          ) : (
-            <Empty className="min-h-full">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <MessageCircleIcon />
-                </EmptyMedia>
-                <EmptyTitle>Thread not found</EmptyTitle>
-                <EmptyDescription>
-                  It may have moved or no longer be available.
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigateNew(false)}
-                >
-                  Back to threads
-                </Button>
-              </EmptyContent>
-            </Empty>
-          )
-        ) : (
-          <NewThreadPanel
-            participants={participants}
-            participantsLoading={participantsQuery.isLoading}
-            participantsError={participantsQuery.isError}
-            recipient={selectedRecipient}
-            onRecipientChange={setRecipient}
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={() => void submit()}
-            pending={pending}
-            error={activeSendError}
-            composerRef={composerRef}
-            locationControl={locationControl}
-            locationLabel={locationLabel(createLocation)}
-            onRetryParticipants={() => void participantsQuery.refetch()}
-            onBack={() => navigateNew(false)}
+        <div className="min-h-0 flex-1">
+          <ThreadTimeline
+            key={`${threadLocationKey(selectedLocation)}:${threadId}`}
+            location={selectedLocation}
+            messages={threadQuery.data.thread.messages}
+            members={threadQuery.data.thread.members}
+            identities={threadQuery.data.thread.identities}
+            targetIdentities={targetIdentities}
+            targetMembers={targetMembers}
+            activities={threadQuery.data.activities}
+            viewerMemberId={threadQuery.data.viewerMemberId}
+            viewerIdentityId={threadQuery.data.viewerIdentityId}
+            implicitResponseIdentityId={directAgentIdentity?.id}
+            onReply={(messageId) => void selectReplyTarget(messageId, false)}
+            onRespond={(messageId) => void selectReplyTarget(messageId, true)}
+            onAssign={(messageId, identityId) =>
+              void threadAction(
+                () =>
+                  replyMutations.assignMessage.mutateAsync({
+                    threadId,
+                    messageId,
+                    identityId,
+                  }),
+                "Could not update assignment"
+              )
+            }
+            hasOlder={threadQuery.data.hasOlder}
+            loadingOlder={replyMutations.loadOlder.isPending}
+            onLoadOlder={() =>
+              void threadAction(
+                () =>
+                  replyMutations.loadOlder.mutateAsync({
+                    threadId,
+                    before: threadQuery.data.oldestCursor,
+                  }),
+                "Could not load earlier messages"
+              )
+            }
+            onLoadReplyTarget={async (messageId) => {
+              await threadAction(
+                () =>
+                  replyMutations.loadReplyTarget.mutateAsync({
+                    threadId,
+                    messageId,
+                  }),
+                "Could not load the replied-to message"
+              )
+            }}
           />
-        )}
-      </section>
-    </main>
+        </div>
+
+        <ThreadComposer
+          ref={composerRef}
+          value={draft}
+          onChange={setDraft}
+          onSubmit={() => void submit()}
+          pending={pending}
+          disabled={Boolean(threadId && participantsQuery.isFetching)}
+          error={activeSendError}
+          placeholder="Reply in this thread…"
+          replyContext={composerReplyContext}
+          onClearReply={clearReplyTarget}
+          mentionTargets={otherIdentities.map((identity) => ({
+            id: identity.id,
+            name: identity.name,
+            description: conversationIdentityDescription(
+              identity,
+              targetMembers,
+              targetIdentities
+            ),
+          }))}
+          mentionIdentityIds={draftMentionIdentityIds}
+          onMentionIdentityIdsChange={changeMentionIdentityIds}
+          onMentionSelect={(identityId) => {
+            const identity = targetIdentities.find(
+              (candidate) => candidate.id === identityId
+            )
+            if (
+              identity &&
+              threadMentionRequestsResponse(threadMembers, identity) &&
+              (responseIdentityId === undefined || responseIdentityId === null)
+            ) {
+              changeResponseIdentityId(identityId)
+            }
+          }}
+          toolbarActions={
+            <ThreadIntentToolbar
+              identities={targetIdentities.filter(
+                (identity) => identity.id !== threadQuery.data.viewerIdentityId
+              )}
+              members={targetMembers}
+              responseIdentityId={
+                directAgentResponseIsImplicit
+                  ? undefined
+                  : effectiveResponseIdentityId
+              }
+              onResponseIdentityIdChange={changeResponseIdentityId}
+            />
+          }
+        />
+      </>
+    ) : (
+      <Empty className="min-h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <MessageCircleIcon />
+          </EmptyMedia>
+          <EmptyTitle>Thread not found</EmptyTitle>
+          <EmptyDescription>
+            It may have moved or no longer be available.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigateNew(false)}
+          >
+            Back to threads
+          </Button>
+        </EmptyContent>
+      </Empty>
+    )
+  ) : (
+    <NewThreadPanel
+      participants={participants}
+      participantsLoading={participantsQuery.isLoading}
+      participantsError={participantsQuery.isError}
+      recipient={selectedRecipient}
+      onRecipientChange={setRecipient}
+      draft={draft}
+      onDraftChange={setDraft}
+      onSubmit={() => void submit()}
+      pending={pending}
+      error={activeSendError}
+      composerRef={composerRef}
+      locationControl={locationControl}
+      locationLabel={locationLabel(createLocation)}
+      onRetryParticipants={() => void participantsQuery.refetch()}
+      onBack={() => navigateNew(false)}
+    />
   )
 }
 

@@ -1,19 +1,21 @@
 # Perf lane
 
-Scripts that measure Worktable's server and web bundles on synthetic
-workspaces, so a performance change can show its numbers before and after.
+Scripts that measure Worktable's server, web bundles and real clicks in a
+browser on synthetic workspaces, so a performance change can show its numbers
+before and after.
 They are tools, not tests: nothing here runs in the required test lanes except
 the bundle gate.
 
 Run them from the repository root after `bun install --frozen-lockfile`.
 Outputs go to `.local-dev/perf/`, which Git ignores.
 
-| Command                                   | What it does                                        |
-| ----------------------------------------- | --------------------------------------------------- |
-| `bun run perf:fixtures --profile 1k`      | Generate a perf workspace                           |
-| `bun run perf:server --profile 1k`        | Boot, request and typing timings for one checkout   |
-| `bun run perf:compare --base origin/main` | Paired runs of a base ref against your working tree |
-| `bun run perf:bundle`                     | Bundle sizes against budgets (after a web build)    |
+| Command                                   | What it does                                          |
+| ----------------------------------------- | ----------------------------------------------------- |
+| `bun run perf:fixtures --profile 1k`      | Generate a perf workspace                             |
+| `bun run perf:server --profile 1k`        | Boot, request and typing timings for one checkout     |
+| `bun run perf:compare --base origin/main` | Paired runs of a base ref against your working tree   |
+| `bun run perf:clicks --profile 1k`        | Clicks in Chromium under desktop and phone conditions |
+| `bun run perf:bundle`                     | Bundle sizes against budgets (after a web build)      |
 
 ## Fixtures
 
@@ -109,6 +111,110 @@ bun install --frozen-lockfile
 bun run perf:compare --base origin/main --profile 1k
 bun run perf:server --profile 5k --samples 10 --typing-minutes 10
 ```
+
+## Clicks in a browser
+
+`click-trace.ts` measures what a person waits for: it drives headless Chromium
+through the app on a copy of a fixture and times each click. It boots the
+server from this checkout with the production web build
+(`WORKTABLE_STATIC_DIR`) and `WORKTABLE_REQUIRE_AUTH=1`, signed in as the
+owner, as an instance behind a tunnel runs: responses are compressed and the
+page carries its boot data. It adds Spaces up to `--spaces` (default 28) and
+two 60-block rich documents under `perf/`.
+
+Network profiles (`--networks`, all by default), applied with the Chrome
+DevTools Protocol:
+
+| Profile    | Round trip | Bandwidth          | CPU | Transport                                 |
+| ---------- | ---------- | ------------------ | --- | ----------------------------------------- |
+| `local`    | none       | unlimited          | 1x  | HTTP/1.1 to the server                    |
+| `desktop`  | 40 ms      | unlimited          | 1x  | HTTP/2 through a local proxy (Cloudflare) |
+| `phone`    | 150 ms     | 10 Mbps down, 3 up | 4x  | HTTP/2 through the proxy, Pixel 7, touch  |
+| `phone-h1` | 150 ms     | 10 Mbps down, 3 up | 4x  | HTTP/1.1 to the server (Tailscale), touch |
+
+The proxy is Caddy (`--caddy <path>`, default `caddy` on `PATH`), needed only
+for `desktop` and `phone`. Over HTTP/1.1 Chromium opens at most six
+connections per host, which queues a cold load's modules.
+
+Per round and profile it runs cold page loads of each screen (new browser
+context), then one tab that clicks through the journeys four times: first
+visit in the tab, warm with new targets, revisit, and revisit after
+`--idle-seconds` (default 20) of idle; and reopens the app with a warm cache.
+The journeys are opening a Space from the sidebar, a Markdown, a rich (60 and
+2,000 blocks) and an HTML document, going back to Home, the Threads list, a
+thread, and a search. Desktop clicks hover 150 ms first; the phone taps.
+
+For each click it records:
+
+- **content**: when the screen's meaningful content is in the DOM (a
+  predicate per screen in `click-trace-page.ts`, such as Recent rows on Home
+  or the document's first heading), and for rich documents when the editor is
+  editable and when the Yjs room connected and synced;
+- **settled**: the last request, DOM change or long task before a second of
+  quiet;
+- every request with its phases, bytes, `Server-Timing` and initiator, the JS
+  and CSS fetched, long tasks and long animation frames;
+- the chain of requests content waited for, and a main-thread breakdown
+  (script, style and layout, paint) from a Chrome trace (`--no-trace` skips
+  it).
+
+`summary.md` has the tables per profile, `waterfalls.md` every round-1 click
+with its requests, and `result.json` the raw records; round 1 also saves a
+screenshot of each settled screen and the phone's Chrome traces. Rewrite the
+Markdown from a `result.json` with
+`bun scripts/perf/click-trace-report.ts <result.json>`.
+
+Two limits of the emulation: Chromium applies the round trip as a minimum,
+not on top of server time, so a slow response looks up to one round trip
+faster than it would be; and it does not throttle an HTML document's frame
+request, so HTML documents look about one round trip faster on emulated
+profiles.
+
+Locally it needs a fixture, a web build and Playwright's Chromium:
+
+```sh
+bun run perf:fixtures --profile 100
+WORKTABLE_BUILD_ID=local bun run --cwd apps/web build
+bunx playwright@1.61.1 install --with-deps chromium
+bun run perf:clicks --profile 100 --rounds 1 --networks local,phone-h1
+```
+
+Set `WORKTABLE_BUILD_ID` for the web build until the build writes the same id
+it compiles into the client; without it the served app reloads on every
+navigation.
+
+### On Namespace
+
+`click-trace-remote.sh` runs it through `ns-verify`. It installs the pinned
+Bun and Node and Caddy under `$HOME/toolchains`, copies the snapshot to a
+stable checkout under `$HOME/perf-click-trace` (the fixture is keyed by its
+path, so it is generated once and reused), builds the web app and writes
+results to `click-results/`. Pass the commit being measured first, then any
+`click-trace.ts` options. A smoke run checks the screens in about eight minutes:
+
+```sh
+ns-verify --repo . --timeout 5400 --collect click-results -- \
+  bash scripts/perf/click-trace-remote.sh "$(git rev-parse --short HEAD)" \
+  --profile 100 --rounds 1 --networks local,phone --idle-seconds 2 \
+  --content-timeout 15
+```
+
+The full run (1k fixture, 3 rounds, all profiles) took 83 minutes on an
+8-vCPU worker, including generating the fixture (5 minutes) the first time:
+
+```sh
+ns-verify --repo . --timeout 10800 --collect click-results -- \
+  bash scripts/perf/click-trace-remote.sh "$(git rev-parse --short HEAD)" \
+  --profile 1k --rounds 3
+```
+
+Namespace stops a devbox it sees as idle, and an instance stopped at that
+deadline comes back "not shut down cleanly" and will not start. The script
+writes a task marker in `$NAMESPACE_DEVBOX_TASKS_DIR` for the whole run and
+runs `sync` before it exits, so the stop that follows finds every write on
+disk. Keep a run inside the `--timeout` you give `ns-verify` (at most
+10,800 s); results are written as each profile finishes, so a run cut short
+still returns its finished rounds.
 
 ## Bundle budgets
 

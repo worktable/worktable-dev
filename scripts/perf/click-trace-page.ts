@@ -22,6 +22,11 @@ export interface Expectation {
   args: Record<string, unknown>
   /** Recorded if it happens before the required ones; never waited for. */
   optional?: boolean
+  /**
+   * Counts only as a change after the action: if the predicate already holds
+   * when armed, it resolves null at once.
+   */
+  edge?: boolean
 }
 
 export interface ArmedResult {
@@ -271,7 +276,7 @@ export function installInstrumentation(): void {
   }
 
   const waitFor = (
-    expectation: { name: string; key: string; args: Rec },
+    expectation: { name: string; key: string; args: Rec; edge?: boolean },
     timeoutMs: number,
     cancelled: () => boolean = () => false
   ) =>
@@ -288,6 +293,7 @@ export function installInstrumentation(): void {
         clearInterval(interval)
         resolve(value)
       }
+      let first = true
       const check = () => {
         if (done) return
         let ok = false
@@ -296,7 +302,10 @@ export function installInstrumentation(): void {
         } catch {
           ok = false
         }
-        if (ok) {
+        const already = first && ok && expectation.edge
+        first = false
+        if (already) finish(null)
+        else if (ok) {
           const at = mark(`wt:${expectation.key}`)
           done = true
           observer?.disconnect()

@@ -887,7 +887,15 @@ async function measure(
   const requests = buildRequests(session, data, from, t0)
   const content = results[action.contentKey]
   const editable = action.editableKey ? results[action.editableKey] : null
-  const contentMs = content ? round1(content.at - t0) : null
+  // An HTML document's frame fires load for an error page too: content
+  // needs the frame request to have succeeded.
+  const frameFailed = requests.some(
+    (request) =>
+      request.kind === "frame" &&
+      request.start >= -1 &&
+      (Boolean(request.failed) || (request.status ?? 0) >= 400)
+  )
+  const contentMs = content && !frameFailed ? round1(content.at - t0) : null
   const lastEnd = Math.max(
     0,
     ...requests
@@ -958,7 +966,7 @@ async function measure(
     target: action.target,
     t0: round1(t0),
     contentMs,
-    paintMs: content ? round1(content.paint - t0) : null,
+    paintMs: content && contentMs !== null ? round1(content.paint - t0) : null,
     editableMs: editable ? round1(editable.at - t0) : null,
     milestones: Object.fromEntries(
       Object.entries(results).map(([key, value]) => [
@@ -1224,6 +1232,7 @@ function openDocument(pass: Pass, journey: string, doc: DocTarget): Action {
             key: "overviewFlash",
             args: { name: doc.spaceName },
             optional: true,
+            edge: true,
           },
         ],
       }

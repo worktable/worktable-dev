@@ -103,8 +103,9 @@ function parts(click: ClickRecord, latencyMs: number) {
   let queue = 0
   for (const step of steps) {
     const duration = step.end - Math.max(0, step.start)
-    const ownServer = step.server ?? 0
     const ownQueue = Math.min(step.queue, duration)
+    // A request the hover started counts only after the click.
+    const ownServer = Math.min(step.server ?? 0, duration - ownQueue)
     const ownRtt = Math.min(
       latencyMs,
       Math.max(0, duration - ownQueue - ownServer)

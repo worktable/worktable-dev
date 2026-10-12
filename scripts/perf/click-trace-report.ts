@@ -71,12 +71,30 @@ function chunks(click: ClickRecord) {
   }
 }
 
-/** Network time on the chain, split into its parts, plus the gaps. */
+/** Time the chain's requests cover between the action and content. */
+function networkMs(steps: ClickRecord["chain"], content: number): number {
+  const spans = steps
+    .map((step) => [Math.max(0, step.start), Math.min(step.end, content)])
+    .filter(([start, end]) => end! > start!)
+    .sort((left, right) => left[0]! - right[0]!)
+  let covered = 0
+  let cursor = 0
+  for (const [start, end] of spans) {
+    covered += Math.max(0, end! - Math.max(start!, cursor))
+    cursor = Math.max(cursor, end!)
+  }
+  return covered
+}
+
+/**
+ * Network time on the chain, split into its parts, plus the main thread in
+ * its gaps (with a trace). Null when the click never reached its content.
+ */
 function parts(click: ClickRecord, latencyMs: number) {
-  const content = click.contentMs ?? click.settledMs
-  const gapMs = click.mainThread?.chainGaps.gapMs ?? null
-  const network = gapMs === null ? null : content - gapMs
+  const content = click.contentMs
+  if (content === null) return null
   const steps = click.chain.filter((step) => step.end > 0)
+  const network = networkMs(steps, content)
   // Chrome's emulated latency lands in the response phases, so split each
   // step's duration: connection queue, server time, one round trip, rest.
   let rtt = 0
@@ -184,8 +202,11 @@ export function summary(result: ClickTraceResult): string {
       for (const journey of JOURNEYS) {
         const clicks = find(name, pass, journey)
         if (clicks.length === 0) continue
-        const split = clicks.map((click) => parts(click, network.latencyMs))
-        const pick = (key: keyof ReturnType<typeof parts>) =>
+        const split = clicks
+          .map((click) => parts(click, network.latencyMs))
+          .filter((item) => item !== null)
+        if (split.length === 0) continue
+        const pick = (key: keyof NonNullable<ReturnType<typeof parts>>) =>
           med(split.map((item) => item[key]))
         rows.push([
           `${pass}: ${journey}`,

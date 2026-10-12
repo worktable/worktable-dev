@@ -59,6 +59,10 @@ if command -v rsync >/dev/null; then
   rsync -a --delete --exclude node_modules --exclude .local-dev \
     --exclude apps/web/dist --exclude .git ./ "$WORK/src/"
 else
+  # Without rsync, empty the checkout first so files deleted since the last
+  # run cannot leak in. Keep the fixture (.local-dev) and root dependencies.
+  find "$WORK/src" -mindepth 1 -maxdepth 1 ! -name node_modules \
+    ! -name .local-dev -exec rm -rf {} +
   tar --exclude=./.git --exclude=./.local-dev --exclude=./apps/web/dist \
     --exclude=node_modules -cf - . | tar -xf - -C "$WORK/src"
 fi
@@ -73,14 +77,17 @@ bun x playwright@1.61.1 install --with-deps chromium ||
 WORKTABLE_BUILD_ID="perf-$COMMIT" bun run --cwd apps/web build
 bun scripts/perf/bundle.ts || true
 
+# Generate the fixture the trace will ask for (click-trace's defaults).
 PROFILE=1k
+SEED=1
 for ((i = 1; i <= $#; i++)); do
-  if [ "${!i}" = "--profile" ]; then
-    next=$((i + 1))
-    PROFILE=${!next}
-  fi
+  next=$((i + 1))
+  case "${!i}" in
+    --profile) PROFILE=${!next} ;;
+    --seed) SEED=${!next} ;;
+  esac
 done
-bun scripts/perf/fixtures.ts --profile "$PROFILE"
+bun scripts/perf/fixtures.ts --profile "$PROFILE" --seed "$SEED"
 
 OUT=$TASK_DIR/click-results/$(date -u +%Y%m%dT%H%M%SZ)-clicks-$PROFILE
 status=0

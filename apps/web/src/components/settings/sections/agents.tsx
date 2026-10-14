@@ -183,9 +183,7 @@ type CloudAgentSetupPanel =
   | "manual"
 
 function CloudAgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(
-    "quick"
-  )
+  const [openPanel, setOpenPanel] = useState<CloudAgentSetupPanel | null>(null)
 
   function panelProps(panel: CloudAgentSetupPanel) {
     return {
@@ -386,7 +384,7 @@ function CloudManualInstallPanel({
 type AgentSetupPanel = "quick" | AlwaysOnAgent["adapter"] | "desktop" | "manual"
 
 function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>("quick")
+  const [openPanel, setOpenPanel] = useState<AgentSetupPanel | null>(null)
 
   function panelProps(panel: AgentSetupPanel) {
     return {
@@ -1549,20 +1547,9 @@ export function AccessTokensGroup() {
     enabled: sectionActive,
   })
   const [newOpen, setNewOpen] = useState(false)
-  const [disclosure, setDisclosure] = useState({ count: 0, open: false })
+  const [open, setOpen] = useState(false)
 
   const active = (tokensQuery.data ?? []).filter((t) => t.revokedAt == null)
-
-  // Existing connections should be visible on first load, and a connection
-  // created while this section is open should reveal itself. A manual collapse
-  // remains respected across ordinary refetches where the count is unchanged.
-  if (active.length !== disclosure.count) {
-    setDisclosure({
-      count: active.length,
-      open: active.length > disclosure.count ? true : disclosure.open,
-    })
-  }
-  const open = disclosure.open
 
   const revoke = useMutation({
     mutationFn: (id: string) => revokeToken(id),
@@ -1589,12 +1576,7 @@ export function AccessTokensGroup() {
       <h3 id="advanced-title" className="text-sm font-medium text-foreground">
         Advanced
       </h3>
-      <Collapsible
-        open={open}
-        onOpenChange={(nextOpen) =>
-          setDisclosure({ count: active.length, open: nextOpen })
-        }
-      >
+      <Collapsible open={open} onOpenChange={setOpen}>
         <Card className="gap-0 py-0">
           <div className="flex min-h-14 items-center gap-2 pr-3">
             <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50">

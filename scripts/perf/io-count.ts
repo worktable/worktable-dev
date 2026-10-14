@@ -34,9 +34,12 @@
  * sockets and with `--sockets` open tabs (a Space socket and the threads
  * socket each).
  *
- * --check fails the run when an endpoint exceeds io-budgets.json (solo: at
- * most 3 stats and 0 SQL per hot GET; team: 4 stats, 1 statement of ours and
- * 2 of Better Auth's). Writes result.json and summary.md to
+ * Budgets are relative to a base run: `--base <result.json>` names an
+ * earlier solo counting run (usually of main), and --check fails the run when
+ * an endpoint costs more than io-budgets.json allows on top of the base's
+ * figure for the same endpoint (solo: 3 more stat-family calls and no more
+ * SQL; team: 4 more stats, 1 more statement of ours, and at most 2 of Better
+ * Auth's). Writes result.json and summary.md to
  * .local-dev/perf/results/<time>-io-<profile>[-team]/ (or --out).
  */
 import { spawnSync } from "node:child_process"
@@ -1033,23 +1036,31 @@ interface Budgets {
   team: { stat: number; sql: number; authSql: number }
 }
 
-function overBudget(
+/** Endpoints over budget: the base run's figure plus the allowance. */
+export function overBudget(
   rows: EndpointCounts[],
+  base: EndpointCounts[],
   budgets: Budgets,
   team: boolean
 ): string[] {
   const failures: string[] = []
   for (const row of rows) {
+    const reference = base.find((item) => item.endpoint === row.endpoint)
+    if (!reference) {
+      failures.push(`${row.role} ${row.endpoint}: not in the base run`)
+      continue
+    }
     const limits = team ? budgets.team : { ...budgets.solo, authSql: 0 }
     const check = (name: keyof Counts, limit: number, label: string) => {
       if (row.counts[name] > limit)
         failures.push(
-          `${row.role} ${row.endpoint}: ${row.counts[name]} ${label} per request (budget ${limit})`
+          `${row.role} ${row.endpoint}: ${row.counts[name]} ${label} per request (base ${reference.counts[name]}, budget ${limit})`
         )
     }
-    check("stat", limits.stat, "stat-family calls")
-    check("sql", limits.sql, "SQL statements")
-    if (team) check("authSql", limits.authSql, "Better Auth statements")
+    check("stat", reference.counts.stat + limits.stat, "stat-family calls")
+    check("sql", reference.counts.sql + limits.sql, "SQL statements")
+    // Better Auth's session statements are new with Teams: an absolute limit.
+    check("authSql", limits.authSql, "Better Auth statements")
   }
   return failures
 }
@@ -1068,6 +1079,9 @@ function writeSummary(out: string, result: Record<string, any>): void {
       "",
       "## Per hot request (workspace and app directory)",
       "",
+      ...(result.base
+        ? [`In brackets: the base run, \`${result.base}\`.`, ""]
+        : []),
       markdownTable(
         [
           "Who",
@@ -1081,18 +1095,28 @@ function writeSummary(out: string, result: Record<string, any>): void {
           "SQL (Better Auth)",
           "Other paths",
         ],
-        result.counting.endpoints.map((row: EndpointCounts) => [
-          row.role,
-          row.endpoint,
-          row.counts.stat,
-          row.counts.open,
-          row.counts.read,
-          row.counts.readdir,
-          row.counts.sqliteRead,
-          row.counts.sql,
-          row.counts.authSql,
-          row.counts.otherPath,
-        ])
+        result.counting.endpoints.map((row: EndpointCounts) => {
+          // With a base run: "this (base)".
+          const base = (result.baseCounts as EndpointCounts[] | null)?.find(
+            (item) => item.endpoint === row.endpoint
+          )
+          const withBase = (name: keyof Counts) =>
+            base
+              ? `${row.counts[name]} (${base.counts[name]})`
+              : row.counts[name]
+          return [
+            row.role,
+            row.endpoint,
+            withBase("stat"),
+            withBase("open"),
+            withBase("read"),
+            withBase("readdir"),
+            row.counts.sqliteRead,
+            withBase("sql"),
+            row.counts.authSql,
+            row.counts.otherPath,
+          ]
+        })
       ),
       ""
     )
@@ -1209,6 +1233,23 @@ async function main() {
   const sockets = numberArg(args, "sockets", 20)
   const useStrace = !args.has("no-strace")
   const check = args.has("check")
+  const basePath = args.get("base")
+  if (check && !basePath)
+    throw new Error(
+      "--check compares against a base run: pass --base <result.json> of a solo counting run"
+    )
+  const baseRows = basePath
+    ? ((
+        JSON.parse(readFileSync(basePath, "utf8")) as {
+          team?: boolean
+          counting?: { endpoints: EndpointCounts[] }
+        }
+      ).counting?.endpoints.filter((row) => row.role === "solo") ?? null)
+    : null
+  if (basePath && !baseRows?.length)
+    throw new Error(
+      `${basePath} has no solo counts (run it without --no-strace)`
+    )
   const budgets = JSON.parse(
     readFileSync(
       args.get("budgets") ?? join(import.meta.dirname, "io-budgets.json"),
@@ -1238,6 +1279,8 @@ async function main() {
     team,
     check,
     budgets,
+    base: basePath ?? null,
+    baseCounts: baseRows,
     startedAt: new Date().toISOString(),
     machine: {
       cpus: cpus().length,
@@ -1264,7 +1307,9 @@ async function main() {
         : [
             `calibration: strace did not show the read of ${result["counting"].calibration.path}`,
           ]),
-      ...overBudget(result["counting"].endpoints, budgets, team),
+      ...(baseRows
+        ? overBudget(result["counting"].endpoints, baseRows, budgets, team)
+        : []),
     ]
   }
   writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2))

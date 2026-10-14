@@ -293,13 +293,19 @@ A second boot without strace records p50 and p95 per endpoint over
 wake-ups and timer callbacks while idle with no sockets and with `--sockets`
 open tabs.
 
-`--check` fails the run when an endpoint is over `io-budgets.json`: at most 3
-stat-family calls and no SQL per hot GET for solo; for a team, 4 stats, 1
-statement of ours and 2 of Better Auth's.
+Budgets are relative to a base run, because `main` itself already does file
+I/O on most of these requests. `--base <result.json>` names a solo counting
+run of the base (usually `main`), and `--check` fails the run when an
+endpoint costs more than the base's figure for the same endpoint plus the
+allowance in `io-budgets.json`: for solo, 3 more stat-family calls and no
+more SQL; for a team, 4 more stats and 1 more statement of ours, and at most
+2 of Better Auth's. `summary.md` shows the base's figures in brackets.
 
 ```sh
 bun run perf:io --profile 100 --requests 10 --samples 10
-bun run perf:io --profile 1k --team --check
+bun run perf:io --profile 1k --checkout ../base --out .local-dev/perf/results/base-io
+bun run perf:io --profile 1k --team \
+  --base .local-dev/perf/results/base-io/result.json --check
 ```
 
 On Namespace, `PERF_TOOL=io-count` makes `click-trace-remote.sh` run it
@@ -309,7 +315,7 @@ missing):
 ```sh
 ns-verify --repo . --timeout 3600 --collect click-results -- \
   env PERF_TOOL=io-count bash scripts/perf/click-trace-remote.sh \
-  "$(git rev-parse --short HEAD)" --profile 1k --check
+  "$(git rev-parse --short HEAD)" --profile 1k
 ```
 
 ## Bundle budgets

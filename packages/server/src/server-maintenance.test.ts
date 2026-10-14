@@ -223,6 +223,20 @@ describe("server maintenance entrypoint", () => {
     ).toBe("# Flushed live edit\n")
   })
 
+  it("reports why the live server refused a capture", async () => {
+    const server = startServer(0, "127.0.0.1")
+    process.env["PORT"] = String(server.port)
+    // An unreadable earlier capture is verified before adoption, and fails.
+    await mkdir(
+      join(await operatorSnapshotDirectory("live-broken-test"), "capture")
+    )
+    await expect(
+      runServerMaintenance(["workspace-snapshot", "live-broken-test"])
+    ).rejects.toThrow(
+      "live snapshot failed: HTTP 422: bounded file read failed (missing)"
+    )
+  })
+
   it("leaves normal server startup alone and rejects malformed commands", async () => {
     await expect(
       runServerMaintenance(["/app/bin/worktable-server"])

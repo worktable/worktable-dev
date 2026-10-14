@@ -5,7 +5,7 @@ import type {
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { basename, join, relative, resolve } from "node:path"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
@@ -27,14 +27,19 @@ export interface WorkerTools {
 const DIGEST = /^[a-f0-9]{64}$/
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
 
-/** Subprocess output is bounded and never included in control-plane errors. */
+/**
+ * Subprocess output is bounded. Stderr is discarded unless `stderrLimit` asks
+ * for its first bytes. Restic stderr is never kept: paths and backend
+ * credentials can appear in it.
+ */
 export async function runBackupCommand(
   command: string[],
   env: NodeJS.ProcessEnv,
   cwd: string,
   signal: AbortSignal,
-  limit = 40 * 1024 * 1024
-): Promise<{ code: number; stdout: string }> {
+  limit = 40 * 1024 * 1024,
+  stderrLimit = 0
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0]!, command.slice(1), {
       cwd,
@@ -42,7 +47,9 @@ export async function runBackupCommand(
       stdio: ["ignore", "pipe", "pipe"],
     })
     const output: Buffer[] = []
+    const errors: Buffer[] = []
     let count = 0
+    let errorCount = 0
     let exceeded = false
     const kill = () => child.kill("SIGKILL")
     signal.addEventListener("abort", kill, { once: true })
@@ -54,8 +61,12 @@ export async function runBackupCommand(
         kill()
       } else output.push(chunk)
     })
-    // Never propagate restic stderr (paths and backend credentials can appear).
-    child.stderr.resume()
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (errorCount >= stderrLimit) return
+      const kept = chunk.subarray(0, stderrLimit - errorCount)
+      errorCount += kept.length
+      errors.push(kept)
+    })
     child.on("error", (error) => {
       signal.removeEventListener("abort", kill)
       reject(error)
@@ -74,9 +85,131 @@ export async function runBackupCommand(
         resolve({
           code: code ?? -1,
           stdout: Buffer.concat(output).toString("utf8"),
+          stderr: Buffer.concat(errors).toString("utf8"),
         })
     })
   })
+}
+
+/** Where a backup job stopped. Recorded in progress.json and failure.json. */
+export type BackupWorkerStep =
+  | "input"
+  | "prepare"
+  | "lock"
+  | "repository-check"
+  | "capture"
+  | "read-manifest"
+  | "inspect"
+  | "parse-manifest"
+  | "upload"
+  | "verify"
+  | "download"
+  | "publish"
+
+/** Secret-free failure description written to failure.json. */
+export interface BackupFailureDetail {
+  step: BackupWorkerStep
+  exitCode?: number
+  errorName: string
+  message: string
+}
+
+interface FailureContext {
+  /** Absolute paths under these roots are reported relative to them. */
+  roots: string[]
+  /** Exact values that must never appear in a message. */
+  secrets: string[]
+}
+
+/** A subprocess exited unsuccessfully. Its message never holds restic output. */
+class BackupCommandError extends Error {
+  readonly exitCode: number
+  constructor(message: string, exitCode: number) {
+    super(message)
+    this.name = "BackupCommandError"
+    this.exitCode = exitCode
+  }
+}
+
+export class BackupWorkerFailure extends Error {
+  readonly detail: BackupFailureDetail
+  constructor(detail: BackupFailureDetail, cause: unknown) {
+    super(`backup job failed during ${detail.step}`, { cause })
+    this.name = "BackupWorkerFailure"
+    this.detail = detail
+  }
+}
+
+const SERVER_ERROR_PREFIX = "[Worktable server] "
+const SERVER_STDERR_LIMIT = 64 * 1024
+const MESSAGE_LIMIT = 200
+
+/** The server CLI's fatal error line (its last prefixed one), or else its first line. */
+function serverErrorLine(stderr: string): string | undefined {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const reported = [...lines]
+    .reverse()
+    .find((line) => line.startsWith(SERVER_ERROR_PREFIX))
+  return reported ? reported.slice(SERVER_ERROR_PREFIX.length) : lines[0]
+}
+
+/**
+ * One line of at most 200 characters. Known secrets and URLs are removed, and
+ * absolute paths become relative to a known root or else their basename.
+ */
+export function sanitizeFailureMessage(
+  text: string,
+  context: FailureContext
+): string {
+  let line = text.split(/\r?\n/, 1)[0] ?? ""
+  for (const secret of context.secrets)
+    if (secret.length >= 4) line = line.split(secret).join("[redacted]")
+  line = line.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]")
+  const roots = context.roots.filter(Boolean).map((root) => resolve(root))
+  line = line.replace(/(?<![\w.~-])\/[^\s'"`,;()<>]+/g, (path) => {
+    const absolute = resolve(path)
+    for (const root of roots) {
+      const inside = relative(root, absolute)
+      if (inside && !inside.startsWith("..") && !inside.startsWith("/"))
+        return inside
+    }
+    return basename(absolute) || "/"
+  })
+  line = Array.from(line, (char) => {
+    const code = char.charCodeAt(0)
+    return code < 0x20 || code === 0x7f ? " " : char
+  }).join("")
+  return line.replace(/\s+/g, " ").trim().slice(0, MESSAGE_LIMIT)
+}
+
+export function describeBackupFailure(
+  step: BackupWorkerStep,
+  error: unknown,
+  context: FailureContext
+): BackupFailureDetail {
+  if (error instanceof BackupWorkerFailure) return error.detail
+  const errorName =
+    error instanceof Error && /^[A-Za-z0-9_]{1,64}$/.test(error.name)
+      ? error.name
+      : "Error"
+  // A JSON parse error can quote the subprocess output it rejected.
+  const raw =
+    error instanceof SyntaxError
+      ? "invalid JSON"
+      : error instanceof Error
+        ? error.message
+        : "non-error failure"
+  return {
+    step,
+    ...(error instanceof BackupCommandError
+      ? { exitCode: error.exitCode }
+      : {}),
+    errorName,
+    message: sanitizeFailureMessage(raw, context) || "no message",
+  }
 }
 
 export async function publishWorkerJson(
@@ -131,12 +264,50 @@ function validateInput(input: BackupWorkerInput) {
     throw new Error("download requires a catalogued snapshot")
 }
 
-/** Same implementation is compiled for the Sprite and exercised with real restic. */
+function backupSecrets(input: BackupWorkerInput): string[] {
+  return [
+    input.repository,
+    input.repositoryPassword,
+    input.credentials?.accessKeyId,
+    input.credentials?.secretAccessKey,
+    input.credentials?.sessionToken,
+  ].filter((value): value is string => typeof value === "string")
+}
+
+/**
+ * Same implementation is compiled for the Sprite and exercised with real restic.
+ * A failure is rethrown as BackupWorkerFailure naming the step that failed.
+ */
 export async function runBackupWorker(
   input: BackupWorkerInput,
   tools: WorkerTools
 ): Promise<BackupWorkerResult> {
+  const tracker = { step: "input" as BackupWorkerStep }
+  try {
+    return await runBackupSteps(input, tools, tracker)
+  } catch (error) {
+    const directory = join(
+      resolve(tools.appDirectory),
+      "operator-snapshots",
+      String(input.jobId)
+    )
+    throw new BackupWorkerFailure(
+      describeBackupFailure(tracker.step, error, {
+        roots: [process.env["WORKTABLE_WORKSPACE"] ?? "", directory],
+        secrets: backupSecrets(input),
+      }),
+      error
+    )
+  }
+}
+
+async function runBackupSteps(
+  input: BackupWorkerInput,
+  tools: WorkerTools,
+  tracker: { step: BackupWorkerStep }
+): Promise<BackupWorkerResult> {
   validateInput(input)
+  tracker.step = "prepare"
   const root = join(resolve(tools.appDirectory), "operator-snapshots")
   const directory = join(root, input.jobId)
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -144,6 +315,17 @@ export async function runBackupWorker(
     const info = await lstat(path)
     if (!info.isDirectory() || info.isSymbolicLink())
       throw new Error("invalid backup job directory")
+  }
+  // The control plane reads `phase`; `step` shows where a lost worker stopped.
+  let phase: "capturing" | "uploading" | "downloading" | undefined
+  const advance = async (step: BackupWorkerStep, nextPhase = phase) => {
+    tracker.step = step
+    phase = nextPhase
+    await publishWorkerJson(directory, "progress.json", {
+      ...(phase ? { phase } : {}),
+      step,
+      at: Date.now(),
+    })
   }
   const signal = AbortSignal.timeout(
     Math.min(input.expiresAt - Date.now(), 30 * 60_000)
@@ -184,33 +366,48 @@ export async function runBackupWorker(
       cwd,
       signal
     )
+  // Server CLI errors are Worktable's own messages, so their line is kept.
   const core = async (args: string[]) => {
     const result = await runBackupCommand(
       [...tools.server, ...args],
       baseEnv,
       directory,
-      signal
+      signal,
+      undefined,
+      SERVER_STDERR_LIMIT
     )
     if (result.code !== 0)
-      throw new Error("workspace snapshot operation failed")
+      throw new BackupCommandError(
+        serverErrorLine(result.stderr) ?? "workspace snapshot operation failed",
+        result.code
+      )
     return result.stdout
   }
+  await advance("lock")
   return withCrossProcessLock(
     join(root, ".worker.lock"),
     { label: "Cloud backup worker", staleMs: 0, timeoutMs: 1000 },
     async () => {
+      await advance("repository-check")
       let repository = await restic(["cat", "config"])
       if (
         repository.code === 10 &&
         input.kind === "backup" &&
         !input.repositoryId
       ) {
-        if ((await restic(["init", "--repository-version", "2"])).code !== 0)
-          throw new Error("backup repository initialization failed")
+        const init = await restic(["init", "--repository-version", "2"])
+        if (init.code !== 0)
+          throw new BackupCommandError(
+            "backup repository initialization failed",
+            init.code
+          )
         repository = await restic(["cat", "config"])
       }
       if (repository.code !== 0)
-        throw new Error("backup repository is unavailable")
+        throw new BackupCommandError(
+          "backup repository is unavailable",
+          repository.code
+        )
       const repositoryId: unknown = JSON.parse(repository.stdout).id
       if (
         typeof repositoryId !== "string" ||
@@ -221,10 +418,7 @@ export async function runBackupWorker(
       let manifest: WorkspaceSnapshotManifest
       let snapshotId: string
       if (input.kind === "backup") {
-        await publishWorkerJson(directory, "progress.json", {
-          phase: "capturing",
-          at: Date.now(),
-        })
+        await advance("capture", "capturing")
         await core([
           "workspace-snapshot",
           input.jobId,
@@ -234,21 +428,20 @@ export async function runBackupWorker(
         ])
         const capture = join(directory, "capture")
         try {
+          await advance("read-manifest")
           const bytes = await readBoundedRegularFile(
             join(capture, "snapshot.json"),
             32 * 1024 * 1024
           )
-          manifest = JSON.parse(
-            await core([
-              "workspace-snapshot-inspect",
-              capture,
-              input.workspaceId,
-            ])
-          )
-          await publishWorkerJson(directory, "progress.json", {
-            phase: "uploading",
-            at: Date.now(),
-          })
+          await advance("inspect")
+          const inspected = await core([
+            "workspace-snapshot-inspect",
+            capture,
+            input.workspaceId,
+          ])
+          await advance("parse-manifest")
+          manifest = JSON.parse(inspected)
+          await advance("upload", "uploading")
           const backup = await restic(
             [
               "backup",
@@ -267,7 +460,10 @@ export async function runBackupWorker(
           )
           // Code 3 can leave a snapshot behind. It must never be advertised.
           if (backup.code !== 0)
-            throw new Error(`backup upload failed (exit ${backup.code})`)
+            throw new BackupCommandError(
+              `backup upload failed (exit ${backup.code})`,
+              backup.code
+            )
           const summary = backup.stdout
             .trim()
             .split("\n")
@@ -275,13 +471,17 @@ export async function runBackupWorker(
             .find((row) => row.message_type === "summary")
           if (!summary || !/^[a-f0-9]{8,64}$/.test(summary.snapshot_id ?? ""))
             throw new Error("backup returned no snapshot")
+          await advance("verify")
           const metadata = await restic([
             "cat",
             "snapshot",
             summary.snapshot_id,
           ])
           if (metadata.code !== 0)
-            throw new Error("backup snapshot verification failed")
+            throw new BackupCommandError(
+              "backup snapshot verification failed",
+              metadata.code
+            )
           const saved = JSON.parse(metadata.stdout)
           if (
             saved.hostname !== input.workspaceId ||
@@ -291,7 +491,10 @@ export async function runBackupWorker(
           // Expand any abbreviated CLI id through the exact snapshot listing.
           const listing = await restic(["snapshots", summary.snapshot_id])
           if (listing.code !== 0)
-            throw new Error("backup snapshot lookup failed")
+            throw new BackupCommandError(
+              "backup snapshot lookup failed",
+              listing.code
+            )
           const matches = JSON.parse(listing.stdout)
           if (
             !Array.isArray(matches) ||
@@ -301,7 +504,12 @@ export async function runBackupWorker(
             throw new Error("backup snapshot lookup is ambiguous")
           snapshotId = matches[0].id
           const remote = await restic(["dump", snapshotId, "/snapshot.json"])
-          if (remote.code !== 0 || sha(remote.stdout) !== sha(bytes))
+          if (remote.code !== 0)
+            throw new BackupCommandError(
+              "backup manifest read-back failed",
+              remote.code
+            )
+          if (sha(remote.stdout) !== sha(bytes))
             throw new Error("backup manifest read-back failed")
         } finally {
           await removeWorkspaceTree(capture)
@@ -310,11 +518,8 @@ export async function runBackupWorker(
         snapshotId = input.snapshotId!
         const temporary = join(directory, "download.partial")
         const download = join(directory, "download")
+        await advance("download", "downloading")
         await removeWorkspaceTree(temporary)
-        await publishWorkerJson(directory, "progress.json", {
-          phase: "downloading",
-          at: Date.now(),
-        })
         try {
           const restored = await restic([
             "restore",
@@ -322,22 +527,30 @@ export async function runBackupWorker(
             "--target",
             temporary,
           ])
-          if (restored.code !== 0) throw new Error("backup download failed")
-          manifest = JSON.parse(
-            await core([
-              "workspace-snapshot-inspect",
-              temporary,
-              input.workspaceId,
-            ])
-          )
+          if (restored.code !== 0)
+            throw new BackupCommandError(
+              "backup download failed",
+              restored.code
+            )
+          await advance("inspect")
+          const inspected = await core([
+            "workspace-snapshot-inspect",
+            temporary,
+            input.workspaceId,
+          ])
+          await advance("parse-manifest")
+          manifest = JSON.parse(inspected)
+          await advance("verify")
           if (manifest.sourceCheckpoint !== input.sourceCheckpoint)
             throw new Error("downloaded checkpoint does not match the catalog")
+          await advance("publish")
           await removeWorkspaceTree(download)
           await rename(temporary, download)
         } finally {
           await removeWorkspaceTree(temporary)
         }
       }
+      if (tracker.step !== "publish") await advance("publish")
       const result: BackupWorkerResult = {
         version: 1,
         jobId: input.jobId,
@@ -360,35 +573,51 @@ export async function runBackupWorker(
   )
 }
 
-if (import.meta.main && process.argv[2] === "--version") {
-  console.log("worktable-backup protocol 1")
-} else if (import.meta.main) {
-  const jobId = process.argv[2] ?? ""
-  if (!/^[A-Za-z0-9_-]{8,80}$/.test(jobId))
-    throw new Error("expected backup job id")
-  const appDirectory = process.env["WORKTABLE_APP_DIR"] ?? "/data/app"
-  const directory = join(appDirectory, "operator-snapshots", jobId)
+/**
+ * The `worktable-backup <job-id>` entry point. Any failure leaves failure.json
+ * with a secret-free `detail`; the credential input is always removed.
+ */
+export async function runBackupWorkerJob(
+  jobId: string,
+  tools: WorkerTools
+): Promise<boolean> {
+  const directory = join(tools.appDirectory, "operator-snapshots", jobId)
   const inputPath = join(directory, "input.json")
   try {
     const input = JSON.parse(
       await readBoundedRegularFile(inputPath, 32 * 1024)
     ) as BackupWorkerInput
     if (input.jobId !== jobId) throw new Error("backup job identity mismatch")
-    await runBackupWorker(input, {
-      appDirectory,
-      restic: "/app/cloud-backup/restic",
-      server: ["/app/bin/worktable-server"],
-    })
-  } catch {
+    await runBackupWorker(input, tools)
+    return true
+  } catch (error) {
     await publishWorkerJson(directory, "failure.json", {
       jobId,
       state: "failed",
       error:
         "The backup job failed. Retry after checking the runtime and backup storage.",
+      detail: describeBackupFailure("input", error, {
+        roots: [directory],
+        secrets: [],
+      }),
       at: Date.now(),
     })
-    process.exitCode = 1
+    return false
   } finally {
     await rm(inputPath, { force: true })
   }
+}
+
+if (import.meta.main && process.argv[2] === "--version") {
+  console.log("worktable-backup protocol 1")
+} else if (import.meta.main) {
+  const jobId = process.argv[2] ?? ""
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(jobId))
+    throw new Error("expected backup job id")
+  const succeeded = await runBackupWorkerJob(jobId, {
+    appDirectory: process.env["WORKTABLE_APP_DIR"] ?? "/data/app",
+    restic: "/app/cloud-backup/restic",
+    server: ["/app/bin/worktable-server"],
+  })
+  if (!succeeded) process.exitCode = 1
 }

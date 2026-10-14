@@ -1,5 +1,10 @@
-import { memo } from "react"
+import { memo, useCallback, useRef, type RefObject } from "react"
 import { Link } from "@tanstack/react-router"
+import {
+  defaultRangeExtractor,
+  measureElement as measureRow,
+  useVirtualizer,
+} from "@tanstack/react-virtual"
 import {
   CircleAlertIcon,
   LoaderCircleIcon,
@@ -89,7 +94,36 @@ export function ThreadList({
   onNew,
   onRetry,
 }: ThreadListProps) {
-  const scrollRef = useScrollFade<HTMLDivElement>()
+  const fadeRef = useScrollFade<HTMLDivElement>()
+  const scrollElement = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollElement.current = node
+      fadeRef(node)
+      if (!node) return
+      // On narrow screens an open thread hides the list, and a hidden
+      // scroller loses its position. Return to it when the list shows again.
+      let kept = 0
+      let hidden = node.clientHeight === 0
+      const keep = () => {
+        if (node.clientHeight > 0) kept = node.scrollTop
+      }
+      const observer = new ResizeObserver(() => {
+        const wasHidden = hidden
+        hidden = node.clientHeight === 0
+        if (wasHidden && !hidden && node.scrollTop === 0) node.scrollTop = kept
+      })
+      node.addEventListener("scroll", keep, { passive: true })
+      observer.observe(node)
+      return () => {
+        node.removeEventListener("scroll", keep)
+        observer.disconnect()
+        scrollElement.current = null
+        fadeRef(null)
+      }
+    },
+    [fadeRef]
+  )
 
   return (
     <div
@@ -117,28 +151,15 @@ export function ThreadList({
         </Empty>
       ) : threads.length > 0 ? (
         <TooltipProvider delay={350}>
-          <nav aria-label="Threads">
-            <ItemGroup className="gap-1">
-              {threads.map((thread) => (
-                <div
-                  role="listitem"
-                  key={`${thread.location.kind === "space" ? thread.location.spaceId : "worktable"}:${thread.id}`}
-                >
-                  <ThreadListRow
-                    thread={thread}
-                    active={
-                      thread.id === activeThreadId &&
-                      sameLocation(thread.location, activeLocation)
-                    }
-                    location={
-                      showLocations ? locationLabel(thread.location) : null
-                    }
-                    threadLink={threadLink}
-                  />
-                </div>
-              ))}
-            </ItemGroup>
-          </nav>
+          <ThreadRows
+            scrollElement={scrollElement}
+            threads={threads}
+            activeThreadId={activeThreadId}
+            activeLocation={activeLocation}
+            showLocations={showLocations}
+            locationLabel={locationLabel}
+            threadLink={threadLink}
+          />
         </TooltipProvider>
       ) : (
         <Empty className="min-h-72">
@@ -182,6 +203,129 @@ function ThreadListSkeleton() {
         </div>
       ))}
     </div>
+  )
+}
+
+/** A row's height before it is measured: the avatar and two lines, padded. */
+const ROW_HEIGHT = 72
+/** The space between rows. */
+const ROW_GAP = 4
+
+function threadKey(thread: ThreadListItem): string {
+  return `${thread.location.kind === "space" ? thread.location.spaceId : "worktable"}:${thread.id}`
+}
+
+/**
+ * Only the rows in and near view render, so a long list costs what a screen
+ * of rows does.
+ */
+function ThreadRows({
+  scrollElement,
+  threads,
+  activeThreadId,
+  activeLocation,
+  showLocations,
+  locationLabel,
+  threadLink,
+}: {
+  scrollElement: RefObject<HTMLDivElement | null>
+  threads: ThreadListItem[]
+  activeThreadId: string
+  activeLocation: ThreadLocation
+  showLocations: boolean
+  locationLabel: (location: ThreadLocation) => string
+  threadLink: ThreadLink
+}) {
+  const focusedKey = useRef<string | null>(null)
+  const getItemKey = useCallback(
+    (index: number) => threadKey(threads[index]!),
+    [threads]
+  )
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: threads.length,
+    getScrollElement: () => scrollElement.current,
+    estimateSize: () => ROW_HEIGHT,
+    gap: ROW_GAP,
+    overscan: 6,
+    getItemKey,
+    // Render a screen of rows before the list has been measured.
+    initialRect: {
+      width: 0,
+      height: typeof window === "undefined" ? 0 : window.innerHeight,
+    },
+    // A focused row and its neighbours stay rendered out of view, so Tab and
+    // Shift+Tab still move to the next row and bring it into view.
+    rangeExtractor: (range) => {
+      const indexes = new Set(defaultRangeExtractor(range))
+      // By key: threads can move while a row has focus.
+      const focused = focusedKey.current
+        ? threads.findIndex(
+            (thread) => threadKey(thread) === focusedKey.current
+          )
+        : -1
+      if (focused < 0) return [...indexes]
+      for (const index of [focused - 1, focused, focused + 1]) {
+        if (index >= 0 && index < range.count) indexes.add(index)
+      }
+      return [...indexes].sort((left, right) => left - right)
+    },
+    // A hidden list (an open thread on narrow screens) measures its rows as
+    // empty; keep the sizes they had.
+    measureElement: (element, entry, instance) => {
+      const size = measureRow(element, entry, instance)
+      if (size > 0) return size
+      const key = instance.options.getItemKey(
+        instance.indexFromElement(element)
+      )
+      return instance.itemSizeCache.get(key) ?? ROW_HEIGHT
+    },
+  })
+
+  return (
+    <nav
+      aria-label="Threads"
+      onFocus={(event) => {
+        const row = (event.target as HTMLElement).closest<HTMLElement>(
+          "[data-index]"
+        )
+        const thread = row ? threads[Number(row.dataset.index)] : undefined
+        focusedKey.current = thread ? threadKey(thread) : null
+      }}
+      onBlur={() => {
+        focusedKey.current = null
+      }}
+    >
+      <ItemGroup
+        className="relative gap-0"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualizer.getVirtualItems().map((item) => {
+          const thread = threads[item.index]!
+          return (
+            <div
+              role="listitem"
+              key={item.key}
+              ref={virtualizer.measureElement}
+              data-index={item.index}
+              aria-setsize={threads.length}
+              aria-posinset={item.index + 1}
+              className="absolute inset-x-0 top-0"
+              style={{ transform: `translateY(${item.start}px)` }}
+            >
+              <ThreadListRow
+                thread={thread}
+                active={
+                  thread.id === activeThreadId &&
+                  sameLocation(thread.location, activeLocation)
+                }
+                location={showLocations ? locationLabel(thread.location) : null}
+                threadLink={threadLink}
+              />
+            </div>
+          )
+        })}
+      </ItemGroup>
+    </nav>
   )
 }
 

@@ -5,6 +5,7 @@
  *   bun scripts/perf/click-trace.ts [--profile 1k] [--seed 1] [--rounds 3]
  *     [--networks local,desktop,phone,phone-h1] [--idle-seconds 20]
  *     [--spaces 28] [--content-timeout 45] [--caddy caddy] [--no-trace]
+ *     [--checkout <dir>] [--as solo|owner|member] [--churn] [--backup]
  *     [--out <dir>]
  *
  * Needs a perf fixture (`bun run perf:fixtures --profile 1k`), a production
@@ -12,11 +13,14 @@
  * (`bunx playwright@1.61.1 install --with-deps chromium`) and, for the
  * desktop and phone profiles, Caddy on PATH (or `--caddy <path>`).
  *
- * Boots the server from this checkout on a fresh copy of the fixture, serving
- * the web build with WORKTABLE_REQUIRE_AUTH=1 and an owner session, as an
- * instance behind a tunnel runs. Adds Spaces up to `--spaces`, then drives
- * headless Chromium through the journeys below under each network profile
- * (Chrome DevTools Protocol network and CPU emulation):
+ * Boots the server from a checkout (`--checkout`, default this one, with its
+ * own web build) on a fresh copy of the fixture, serving the web build with
+ * WORKTABLE_REQUIRE_AUTH=1, as an instance behind a tunnel runs. Adds Spaces
+ * up to `--spaces`. `--as` picks who clicks: the solo owner (default), or,
+ * with Worktable Teams turned on in the copy (team.ts), the team's owner or a
+ * member who can open about half the Spaces. Then drives headless Chromium
+ * through the journeys below under each network profile (Chrome DevTools
+ * Protocol network and CPU emulation):
  *
  * - local: no emulation, HTTP/1.1 straight to the server;
  * - desktop: 40 ms round trip, through a local HTTP/2 proxy (as Cloudflare);
@@ -39,12 +43,30 @@
  * animation frames, WebSockets (for rich documents, the Yjs connect and sync),
  * and with tracing a main-thread breakdown from a Chrome trace.
  *
+ * Two optional passes follow, in the same tab, as revisits:
+ *
+ * - `--churn` (member only): before each click the owner makes an admin
+ *   change, every 5 to 10 s in turn: an invitation, an agent rename, a new
+ *   Space the member cannot see, a grant change for another member, and, as
+ *   the control, a grant change for the member on a Space no journey opens.
+ *   Per change it records the measured tab's full reloads, navigations and
+ *   API requests in the following 3 s.
+ * - `--backup`: live operator snapshots run back to back (the entry point a
+ *   hosted backup uses) while the tab clicks and a second client reads and
+ *   writes; it records failed reads, write waits and the slowest click.
+ *
  * Writes result.json, summary.md and waterfalls.md to
  * .local-dev/perf/results/<time>-clicks-<profile>/ (or --out), with
  * screenshots of round 1.
  */
 import { gzipSync } from "node:zlib"
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { cpus, loadavg, totalmem } from "node:os"
 import { join, resolve } from "node:path"
 import { execFileSync, spawn } from "node:child_process"
@@ -85,6 +107,16 @@ import {
   type Breakdown,
 } from "./trace-breakdown.ts"
 import { writeReport } from "./click-trace-report.ts"
+import {
+  api,
+  enableTeam,
+  setGrant,
+  signInSoloOwner,
+  signInTeam,
+  type Cookie,
+  type Identity,
+  type TeamRoles,
+} from "./team.ts"
 
 // ── Profiles ──────────────────────────────────────────────────────────
 
@@ -244,12 +276,68 @@ export interface ClickRecord {
   screenshot?: string
 }
 
-export type Pass = "cold" | "first" | "warm" | "revisit" | "idle" | "reopen"
+export type Pass =
+  | "cold"
+  | "first"
+  | "warm"
+  | "revisit"
+  | "idle"
+  | "reopen"
+  | "churn"
+  | "backup"
+
+/** One admin change by the owner while the member's tab is open. */
+export interface ChurnRecord {
+  network: Network["name"]
+  round: number
+  kind: ChurnKind
+  /** Whether the change alters what the measured member can open. */
+  affectsMember: boolean
+  /** ms the owner's API calls took. */
+  changeMs: number
+  /** Full page loads of the measured tab in the window after the change. */
+  reloads: number
+  /** Route changes of the measured tab in that window (none were clicked). */
+  navigations: string[]
+  /** API requests the tab made in that window. */
+  requests: string[]
+}
+
+export type ChurnKind =
+  | "invite"
+  | "agent rename"
+  | "hidden Space"
+  | "other's grant"
+  | "own grant"
+
+/** A pass of clicks with live operator snapshots running back to back. */
+export interface BackupRecord {
+  network: Network["name"]
+  round: number
+  snapshots: { startMs: number; ms: number; status: number; error?: string }[]
+  /** The second client's reads and writes while a snapshot ran. */
+  reads: { total: number; failed: number; failures: string[] }
+  writes: { total: number; refused: number; maxMs: number; p50Ms: number }
+  /** Requests of the measured tab that failed or got a 5xx during the pass. */
+  tabFailures: string[]
+  /** Slowest content time of the pass's clicks, and its journey. */
+  maxClickMs: number | null
+  maxClickJourney: string | null
+}
 
 export interface ClickTraceResult {
   commit: string
   profile: ProfileName
   seed: number
+  /** Who clicked: the solo owner, or the team's owner or member. */
+  as: Identity
+  team: {
+    memberSpaces: number
+    hiddenSpaces: number
+    agents: number
+  } | null
+  churn: ChurnRecord[]
+  backup: BackupRecord[]
   startedAt: string
   machine: {
     cpus: number
@@ -273,6 +361,8 @@ export interface ClickTraceResult {
     idleSeconds: number
     trace: boolean
     hoverMs: number
+    churn: boolean
+    backup: boolean
   }
   clicks: ClickRecord[]
 }
@@ -341,6 +431,9 @@ interface Session {
   inflight: Set<string>
   lastNet: number
   base: string
+  /** Main-frame document loads and same-document route changes. */
+  loads: { at: number; url: string }[]
+  routes: { at: number; url: string }[]
 }
 
 function contextOptions(network: Network) {
@@ -382,28 +475,14 @@ function shortUrl(url: string): string {
 }
 
 /**
- * The owner's session. The server runs with WORKTABLE_REQUIRE_AUTH=1, as an
+ * The measured person's session cookies per origin (the server directly, and
+ * the HTTP/2 proxy). The server runs with WORKTABLE_REQUIRE_AUTH=1, as an
  * instance reached through a tunnel does: it then compresses responses to
- * loopback peers too, and writes the boot facts for the signed-in owner.
+ * loopback peers too, and writes the boot facts for the signed-in person.
+ * The solo owner's cookie serves both origins; a team session is signed in
+ * per origin, because its cookie name depends on the scheme.
  */
-let ownerCookie: { name: string; value: string } | null = null
-
-async function signIn(base: string): Promise<void> {
-  const response = await fetch(`${base}/auth/password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: "perf-click-trace-owner" }),
-  })
-  if (!response.ok)
-    throw new Error(
-      `set owner password: ${response.status} ${await response.text()}`
-    )
-  const cookie = response.headers.getSetCookie()[0]
-  const pair = cookie?.split(";")[0]
-  const split = pair?.indexOf("=") ?? -1
-  if (!pair || split < 1) throw new Error(`no session cookie in ${cookie}`)
-  ownerCookie = { name: pair.slice(0, split), value: pair.slice(split + 1) }
-}
+const sessionCookies = new Map<string, Cookie[]>()
 
 async function newContext(
   browser: Browser,
@@ -415,7 +494,11 @@ async function newContext(
     baseURL: base,
     ignoreHTTPSErrors: true,
   })
-  if (ownerCookie) await context.addCookies([{ ...ownerCookie, url: base }])
+  const cookies = sessionCookies.get(base) ?? []
+  if (cookies.length > 0)
+    await context.addCookies(
+      cookies.map((cookie) => ({ ...cookie, url: base }))
+    )
   return context
 }
 
@@ -442,10 +525,23 @@ async function openSession(
     inflight: new Set(),
     lastNet: performance.now(),
     base,
+    loads: [],
+    routes: [],
   }
   const touch = () => {
     session.lastNet = performance.now()
   }
+  let mainFrame: string | null = null
+  cdp.on("Page.frameNavigated", (event) => {
+    if (event.frame.parentId) return
+    mainFrame = event.frame.id
+    session.loads.push({ at: performance.now(), url: event.frame.url })
+  })
+  cdp.on("Page.navigatedWithinDocument", (event) => {
+    if (event.frameId === mainFrame)
+      session.routes.push({ at: performance.now(), url: event.url })
+  })
+  await cdp.send("Page.enable")
   cdp.on("Network.requestWillBeSent", (event) => {
     touch()
     const existing = session.requests.get(event.requestId)
@@ -1467,7 +1563,8 @@ async function runNetwork(
   network: Network,
   base: string,
   targets: Targets,
-  idleSeconds: number
+  idleSeconds: number,
+  extras: Extras
 ): Promise<ClickRecord[]> {
   const records: ClickRecord[] = []
   for (const load of coldLoads(targets))
@@ -1497,10 +1594,361 @@ async function runNetwork(
         })
       )
     }
+    if (extras.churn) {
+      const churn = extras.churn
+      let turn = 0
+      for (const action of clickJourney("churn", targets, false)) {
+        const prepare = action.prepare
+        const kind = CHURN_KINDS[turn++ % CHURN_KINDS.length]!
+        records.push(
+          await measure(run, session, {
+            ...action,
+            prepare: async (current) => {
+              if (prepare) await prepare(current)
+              extras.churnRecords.push(
+                await churnChange(run, current, churn, kind)
+              )
+              // Changes land every 5 to 10 s: the 3 s window, this and a click.
+              await Bun.sleep(1000 + Math.round(Math.random() * 3000))
+            },
+          })
+        )
+      }
+    }
+    if (extras.backup) {
+      const load = startBackupLoad(extras.backup)
+      const first = records.length
+      try {
+        for (const action of clickJourney("backup", targets, false))
+          records.push(await measure(run, session, action))
+      } finally {
+        const result = await load.stop()
+        const clicks = records.slice(first)
+        // A click that never reached content is the slowest of all.
+        const time = (click: ClickRecord) => click.contentMs ?? Infinity
+        const slowest = clicks.reduce<ClickRecord | null>(
+          (worst, click) =>
+            !worst || time(click) > time(worst) ? click : worst,
+          null
+        )
+        extras.backupRecords.push({
+          network: network.name,
+          round: run.round,
+          ...result,
+          tabFailures: clicks.flatMap((click) =>
+            click.requests
+              .filter(
+                (request) =>
+                  Boolean(request.failed) || (request.status ?? 0) >= 500
+              )
+              .map(
+                (request) =>
+                  `${click.journey}: ${request.status ?? request.failed} ${request.label}`
+              )
+          ),
+          maxClickMs: slowest?.contentMs ?? null,
+          maxClickJourney: slowest?.journey ?? null,
+        })
+      }
+    }
   } finally {
     await session.context.close()
   }
   return records
+}
+
+// ── Churn and backup passes ───────────────────────────────────────────
+
+interface Extras {
+  churn: ChurnContext | null
+  backup: BackupContext | null
+  churnRecords: ChurnRecord[]
+  backupRecords: BackupRecord[]
+}
+
+interface ChurnContext {
+  /** The server, directly. */
+  base: string
+  owner: Cookie[]
+  roles: TeamRoles
+  /** A member-visible Space where "other" holds a grant. */
+  otherSpace: string
+  /** A Space no journey opens, for the member's own grant (the control). */
+  spare: string
+  turn: number
+}
+
+const CHURN_KINDS: ChurnKind[] = [
+  "invite",
+  "agent rename",
+  "hidden Space",
+  "other's grant",
+  "own grant",
+]
+
+const CHURN_WINDOW_MS = 3000
+
+async function churnChange(
+  run: RunContext,
+  session: Session,
+  churn: ChurnContext,
+  kind: ChurnKind
+): Promise<ChurnRecord> {
+  await waitSettled(session, 10_000)
+  const turn = (churn.turn += 1)
+  const { base, owner, roles } = churn
+  const wallFrom = Date.now()
+  const from = performance.now()
+  const loads = session.loads.length
+  const routes = session.routes.length
+  let affectsMember = false
+  if (kind === "invite") {
+    await api(base, owner, "/api/team/invitations", {
+      method: "POST",
+      body: { email: `perf-churn-${run.round}-${turn}@example.test` },
+    })
+  } else if (kind === "agent rename") {
+    const agent = roles.agents[turn % roles.agents.length]!
+    await api(base, owner, `/api/team/agents/${agent.id}`, {
+      method: "PATCH",
+      body: { name: `${agent.name} ${turn}` },
+    })
+  } else if (kind === "hidden Space") {
+    // A new Space starts shared; there is no way to create it restricted, so
+    // the member can see it until the second call.
+    affectsMember = true
+    const { spaceId } = await api<{ spaceId: string }>(
+      base,
+      owner,
+      "/api/spaces",
+      { method: "POST", body: { name: `Churn ${run.round} ${turn}` } }
+    )
+    await setGrant(
+      base,
+      owner,
+      spaceId,
+      { subjectType: "member", subjectId: roles.member.memberId },
+      null,
+      "restricted"
+    )
+  } else if (kind === "other's grant") {
+    await setGrant(
+      base,
+      owner,
+      churn.otherSpace,
+      { subjectType: "member", subjectId: roles.other.memberId },
+      turn % 2 === 0 ? "edit" : "read"
+    )
+  } else {
+    affectsMember = true
+    const granted = (
+      await api<{ grants: { subjectId: string }[] }>(
+        base,
+        owner,
+        `/api/team/spaces/${encodeURIComponent(churn.spare)}`
+      )
+    ).grants.some((grant) => grant.subjectId === roles.member.memberId)
+    await setGrant(
+      base,
+      owner,
+      churn.spare,
+      { subjectType: "member", subjectId: roles.member.memberId },
+      granted ? null : "read"
+    )
+  }
+  const changeMs = performance.now() - from
+  await Bun.sleep(CHURN_WINDOW_MS)
+  await waitSettled(session, 10_000)
+  const requests = [...session.requests.values()]
+    .filter(
+      (request) =>
+        request.wallMs >= wallFrom &&
+        !request.url.startsWith("data:") &&
+        ["api", "document", "frame"].includes(kindOf(request.url, request.type))
+    )
+    .map((request) => shortUrl(request.url))
+  const record: ChurnRecord = {
+    network: session.network.name,
+    round: run.round,
+    kind,
+    affectsMember,
+    changeMs: round1(changeMs),
+    reloads: session.loads.length - loads,
+    navigations: session.routes
+      .slice(routes)
+      .map((route) => shortUrl(route.url)),
+    requests,
+  }
+  console.log(
+    `[clicks] r${run.round} ${session.network.name} churn ${kind}: ${record.reloads} reloads, ${record.navigations.length} navigations, ${requests.length} requests ${JSON.stringify(requests)}`
+  )
+  return record
+}
+
+interface BackupContext {
+  /** The server, directly. */
+  base: string
+  /** The measured person's session, for the second client's reads and writes. */
+  cookies: Cookie[]
+  /** The run's app directory, where the operator token is. */
+  app: string
+  spaceId: string
+}
+
+/**
+ * Live operator snapshots back to back (POST /internal/operator/workspace-snapshot
+ * with the process's local operator token, as `worktable-server
+ * workspace-snapshot` and hosted backups do), and a second client reading
+ * every 100 ms and writing every second, until stopped.
+ */
+function startBackupLoad(context: BackupContext): {
+  stop: () => Promise<
+    Omit<
+      BackupRecord,
+      "network" | "round" | "tabFailures" | "maxClickMs" | "maxClickJourney"
+    >
+  >
+} {
+  const token = readFileSync(
+    join(context.app, "operator-runtime", "token"),
+    "utf8"
+  ).trim()
+  const started = performance.now()
+  let running = true
+  const snapshots: BackupRecord["snapshots"] = []
+  const active: [number, number][] = []
+  const reads: { at: number; ok: boolean; label: string }[] = []
+  const writes: { at: number; ms: number; status: number }[] = []
+  const cookie = context.cookies
+    .map((item) => `${item.name}=${item.value}`)
+    .join("; ")
+  const space = `/api/spaces/${encodeURIComponent(context.spaceId)}`
+  const readPaths = [
+    "/api/spaces",
+    `${space}/documents?includeArchived=false`,
+    "/api/recent?sort=updated&includeTemporary=false&limit=30",
+    "/api/workspace",
+  ]
+  const snapshotLoop = (async () => {
+    let index = 0
+    while (running) {
+      const operationId = `perf-backup-${Date.now().toString(36)}-${index++}`
+      const from = performance.now()
+      let status = 0
+      let error: string | undefined
+      try {
+        const response = await fetch(
+          `${context.base}/internal/operator/workspace-snapshot`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-worktable-local-operator": token,
+            },
+            body: JSON.stringify({ operationId }),
+          }
+        )
+        status = response.status
+        if (!response.ok) error = (await response.text()).slice(0, 200)
+        else await response.arrayBuffer()
+      } catch (failure) {
+        error = String(failure)
+      }
+      const to = performance.now()
+      active.push([from, to])
+      snapshots.push({
+        startMs: round1(from - started),
+        ms: round1(to - from),
+        status,
+        ...(error ? { error } : {}),
+      })
+      rmSync(join(context.app, "operator-snapshots", operationId), {
+        recursive: true,
+        force: true,
+      })
+      await Bun.sleep(500)
+    }
+  })()
+  const readLoop = (async () => {
+    let index = 0
+    while (running) {
+      const path = readPaths[index++ % readPaths.length]!
+      const at = performance.now()
+      let ok = false
+      let label = path
+      try {
+        const response = await fetch(context.base + path, {
+          headers: { Cookie: cookie },
+          signal: AbortSignal.timeout(30_000),
+        })
+        await response.arrayBuffer()
+        ok = response.ok
+        label = `${response.status} ${path}`
+      } catch (failure) {
+        label = `${String(failure).slice(0, 80)} ${path}`
+      }
+      reads.push({ at, ok, label })
+      await Bun.sleep(100)
+    }
+  })()
+  const writeLoop = (async () => {
+    let index = 0
+    while (running) {
+      const at = performance.now()
+      let status = 0
+      try {
+        const response = await fetch(
+          `${context.base}${space}/docs/perf/backup-load`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Cookie: cookie },
+            body: JSON.stringify({
+              content: richBlocks(`Backup load ${index++}`, 6, "backup-load"),
+            }),
+            signal: AbortSignal.timeout(60_000),
+          }
+        )
+        await response.arrayBuffer()
+        status = response.status
+      } catch {
+        status = 0
+      }
+      writes.push({ at, ms: performance.now() - at, status })
+      await Bun.sleep(1000)
+    }
+  })()
+  return {
+    stop: async () => {
+      running = false
+      await Promise.all([snapshotLoop, readLoop, writeLoop])
+      // Only requests that overlapped a snapshot count.
+      const during = (at: number, ms = 0) =>
+        active.some(([from, to]) => at <= to && at + ms >= from)
+      const readsDuring = reads.filter((item) => during(item.at))
+      const writesDuring = writes.filter((item) => during(item.at, item.ms))
+      const waits = writesDuring.map((item) => item.ms).sort((a, b) => a - b)
+      return {
+        snapshots,
+        reads: {
+          total: readsDuring.length,
+          failed: readsDuring.filter((item) => !item.ok).length,
+          failures: readsDuring
+            .filter((item) => !item.ok)
+            .slice(0, 20)
+            .map((item) => item.label),
+        },
+        writes: {
+          total: writesDuring.length,
+          // Any write that did not succeed: 503 with Retry-After, 409, 401...
+          refused: writesDuring.filter(
+            (item) => item.status < 200 || item.status >= 300
+          ).length,
+          maxMs: round1(waits.at(-1) ?? 0),
+          p50Ms: round1(waits[Math.floor((waits.length - 1) / 2)] ?? 0),
+        },
+      }
+    },
+  }
 }
 
 // ── Setup: Spaces, documents and targets ──────────────────────────────
@@ -1536,13 +1984,64 @@ function richBlocks(title: string, count: number, prefix: string): unknown[] {
   return blocks
 }
 
+/**
+ * As the solo owner, from this process (as an agent or the CLI would write;
+ * browser writes must carry the tab's content epoch): Spaces up to
+ * `totalSpaces` and two typical rich documents. Returns every Space id.
+ */
+async function populate(
+  base: string,
+  owner: Cookie[],
+  fixture: FixtureManifest,
+  totalSpaces: number
+): Promise<string[]> {
+  const listed = await api<{ spaces: { id: string; name: string }[] }>(
+    base,
+    owner,
+    "/api/spaces"
+  )
+  for (let index = listed.spaces.length; index < totalSpaces; index += 1) {
+    const { spaceId } = await api<{ spaceId: string }>(
+      base,
+      owner,
+      "/api/spaces",
+      { method: "POST", body: { name: `Area ${index + 1}` } }
+    )
+    for (let doc = 0; doc < 2 + (index % 4); doc += 1)
+      await api(base, owner, `/api/spaces/${spaceId}/docs`, {
+        method: "POST",
+        body: {
+          title: `Area ${index + 1} note ${doc + 1}`,
+          content: richBlocks(
+            `Area ${index + 1} note ${doc + 1}`,
+            12,
+            `a${index}n${doc}`
+          ),
+        },
+      })
+  }
+  const spaceA = fixture.spaces[0]!
+  for (const [path, title, count] of [
+    ["perf/rich-typical", "Rich typical", 60],
+    ["perf/rich-typical-b", "Rich typical B", 60],
+  ] as const)
+    await api(base, owner, `/api/spaces/${spaceA}/docs/${path}`, {
+      method: "PUT",
+      body: { content: richBlocks(title, count, path.replace(/\W/g, "")) },
+    })
+  return (
+    await api<{ spaces: { id: string }[] }>(base, owner, "/api/spaces")
+  ).spaces.map((space) => space.id)
+}
+
+/** The click targets, as the person who clicks sees the workspace. */
 async function setup(
   browser: Browser,
   base: string,
   fixture: FixtureManifest,
-  totalSpaces: number,
   outDir: string
 ): Promise<{ targets: Targets; spaces: number; documents: number }> {
+  const cookies = sessionCookies.get(base) ?? []
   const context = await newContext(browser, base)
   const page = await context.newPage()
   // Diagnostics for a setup that never reaches the app.
@@ -1564,68 +2063,17 @@ async function setup(
       note(`console ${message.type()}: ${message.text().slice(0, 200)}`)
   })
   await page.goto(base + "/")
-  // From this process, as an agent or the CLI would write: browser writes
-  // must carry the tab's content epoch.
-  const api = async <T>(
-    path: string,
-    init?: { method: string; body: unknown }
-  ) => {
-    const cookie = ownerCookie ? `${ownerCookie.name}=${ownerCookie.value}` : ""
-    const response = await fetch(base + path, {
-      method: init?.method ?? "GET",
-      headers: {
-        ...(init ? { "Content-Type": "application/json" } : {}),
-        ...(cookie ? { Cookie: cookie } : {}),
-      },
-      body: init ? JSON.stringify(init.body) : undefined,
-    })
-    if (!response.ok)
-      throw new Error(
-        `${init?.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`
-      )
-    return (await response.json()) as T
-  }
-
-  const listed = await api<{ spaces: { id: string; name: string }[] }>(
-    "/api/spaces"
-  )
-  for (let index = listed.spaces.length; index < totalSpaces; index += 1) {
-    const { spaceId } = await api<{ spaceId: string }>("/api/spaces", {
-      method: "POST",
-      body: { name: `Area ${index + 1}` },
-    })
-    for (let doc = 0; doc < 2 + (index % 4); doc += 1)
-      await api(`/api/spaces/${spaceId}/docs`, {
-        method: "POST",
-        body: {
-          title: `Area ${index + 1} note ${doc + 1}`,
-          content: richBlocks(
-            `Area ${index + 1} note ${doc + 1}`,
-            12,
-            `a${index}n${doc}`
-          ),
-        },
-      })
-  }
+  const get = <T>(path: string) => api<T>(base, cookies, path)
   const spaceA = fixture.spaces[0]!
-  for (const [path, title, count] of [
-    ["perf/rich-typical", "Rich typical", 60],
-    ["perf/rich-typical-b", "Rich typical B", 60],
-  ] as const)
-    await api(`/api/spaces/${spaceA}/docs/${path}`, {
-      method: "PUT",
-      body: { content: richBlocks(title, count, path.replace(/\W/g, "")) },
-    })
-
   const spaces = (
-    await api<{ spaces: { id: string; name: string }[] }>("/api/spaces")
+    await get<{ spaces: { id: string; name: string }[] }>("/api/spaces")
   ).spaces
   const nameOf = (id: string) =>
     spaces.find((space) => space.id === id)?.name ?? id
   let documents = 0
   for (const space of spaces)
     documents += (
-      await api<{ documents: { kind: string }[] }>(
+      await get<{ documents: { kind: string }[] }>(
         `/api/spaces/${space.id}/documents?includeArchived=false`
       )
     ).documents.length
@@ -1637,7 +2085,9 @@ async function setup(
     probe: { spaceId: string; path: string }
   ) => {
     for (const spaceId of [...fixture.spaces, fixture.htmlSpace]) {
-      const listed = await api<{
+      // A team member may not see every fixture Space.
+      if (!spaces.some((space) => space.id === spaceId)) continue
+      const listed = await get<{
         documents: { kind: string; path: string; format?: { id: string } }[]
       }>(`/api/spaces/${spaceId}/documents?includeArchived=false`)
       const found = listed.documents
@@ -1657,7 +2107,7 @@ async function setup(
     return probe
   }
   const markdownHeading = async (spaceId: string, path: string) => {
-    const doc = await api<{ content: unknown }>(
+    const doc = await get<{ content: unknown }>(
       `/api/spaces/${spaceId}/docs/${path}?conversionCheck=skip`
     )
     const match =
@@ -1665,7 +2115,7 @@ async function setup(
     return match?.[1]?.trim() ?? ""
   }
   const richHeading = async (spaceId: string, path: string) => {
-    const doc = await api<{ content: { content?: { text?: string }[] }[] }>(
+    const doc = await get<{ content: { content?: { text?: string }[] }[] }>(
       `/api/spaces/${spaceId}/docs/${path}?conversionCheck=skip`
     )
     return (doc.content[0]?.content ?? [])
@@ -1771,12 +2221,12 @@ async function setup(
 
 // ── Main ──────────────────────────────────────────────────────────────
 
-function gitCommit(): string {
+function gitCommit(checkout: string): string {
   // click-trace-remote.sh runs from a copy without its history.
   if (process.env["PERF_COMMIT"]) return process.env["PERF_COMMIT"]
   try {
     return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
-      cwd: REPO_ROOT,
+      cwd: checkout,
       encoding: "utf8",
     }).trim()
   } catch {
@@ -1886,9 +2336,21 @@ async function main() {
     throw new Error(
       `no current fixture at ${dir}; run bun run perf:fixtures --profile ${profile}`
     )
-  const staticDir = join(REPO_ROOT, "apps", "web", "dist", "client")
+  const checkout = resolve(args.get("checkout") ?? REPO_ROOT)
+  const staticDir = join(checkout, "apps", "web", "dist", "client")
   if (!existsSync(join(staticDir, ".vite", "manifest.json")))
-    throw new Error("no web build; run bun run --cwd apps/web build")
+    throw new Error(
+      `no web build in ${checkout}; run bun run --cwd apps/web build there`
+    )
+  const as = (args.get("as") ?? "solo") as Identity
+  if (!["solo", "owner", "member"].includes(as))
+    throw new Error("--as must be solo, owner or member")
+  const churn = args.has("churn")
+  const backup = args.has("backup")
+  if (churn && as !== "member")
+    throw new Error(
+      "--churn measures a member's tab while the owner changes the team; use --as member"
+    )
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-")
   const outDir = resolve(
@@ -1915,7 +2377,7 @@ async function main() {
   let proxy: { base: string; stop: () => Promise<void> } | null = null
   try {
     server = await startServer({
-      checkout: REPO_ROOT,
+      checkout,
       workspace,
       app,
       env: { WORKTABLE_STATIC_DIR: staticDir, WORKTABLE_REQUIRE_AUTH: "1" },
@@ -1925,16 +2387,34 @@ async function main() {
     const idle = await waitForIdle(server.pid, 300_000)
     if (idle === "busy") throw new Error("server still busy after 5 minutes")
     console.log(`[clicks] server ${server.url} listening, idle: ${idle}`)
-    await signIn(server.url)
+    const soloOwner = await signInSoloOwner(server.url)
     if (networks.some((network) => network.via === "proxy"))
       proxy = await startProxy(args.get("caddy") ?? "caddy", server.url, outDir)
-    const prepared = await setup(
-      browser,
+    const bases = [server.url, ...(proxy ? [proxy.base] : [])]
+    const allSpaces = await populate(
       server.url,
+      soloOwner,
       fixture,
-      totalSpaces,
-      outDir
+      totalSpaces
     )
+    let roles: TeamRoles | null = null
+    let ownerCookies: Cookie[] = soloOwner
+    if (as === "solo")
+      for (const base of bases) sessionCookies.set(base, soloOwner)
+    else {
+      roles = await enableTeam(server.url, soloOwner, allSpaces, [
+        fixture.spaces[0]!,
+        fixture.spaces[1] ?? fixture.spaces[0]!,
+        fixture.htmlSpace,
+      ])
+      ownerCookies = await signInTeam(server.url, roles.owner)
+      for (const base of bases)
+        sessionCookies.set(base, await signInTeam(base, roles[as]))
+      console.log(
+        `[clicks] Teams on: ${as} clicks; the member can open ${roles.memberSpaces.length} of ${allSpaces.length} Spaces`
+      )
+    }
+    const prepared = await setup(browser, server.url, fixture, outDir)
     // Setup's writes start indexing; measure only once the server is quiet.
     if ((await waitForIdle(server.pid, 120_000)) === "busy")
       throw new Error("server still busy 2 minutes after setup")
@@ -1944,10 +2424,43 @@ async function main() {
       `[clicks] ${prepared.spaces} Spaces, ${prepared.documents} documents; targets ${JSON.stringify(prepared.targets)}`
     )
 
+    const extras: Extras = {
+      churn:
+        churn && roles
+          ? {
+              base: server.url,
+              owner: ownerCookies,
+              roles,
+              otherSpace: roles.otherSpaces[0]!,
+              spare: roles.hiddenSpaces.at(-1)!,
+              turn: 0,
+            }
+          : null,
+      backup: backup
+        ? {
+            base: server.url,
+            cookies: sessionCookies.get(server.url)!,
+            app,
+            spaceId: fixture.spaces[0]!,
+          }
+        : null,
+      churnRecords: [],
+      backupRecords: [],
+    }
     const result: ClickTraceResult = {
-      commit: gitCommit(),
+      commit: gitCommit(checkout),
       profile,
       seed,
+      as,
+      team: roles
+        ? {
+            memberSpaces: roles.memberSpaces.length,
+            hiddenSpaces: roles.hiddenSpaces.length,
+            agents: roles.agents.length,
+          }
+        : null,
+      churn: extras.churnRecords,
+      backup: extras.backupRecords,
       startedAt: new Date().toISOString(),
       machine: {
         cpus: cpus().length,
@@ -1959,7 +2472,15 @@ async function main() {
         chromium: browser.version(),
       },
       setup: { ...prepared, bootMs, idleMs },
-      options: { rounds, networks, idleSeconds, trace, hoverMs: HOVER_MS },
+      options: {
+        rounds,
+        networks,
+        idleSeconds,
+        trace,
+        hoverMs: HOVER_MS,
+        churn,
+        backup,
+      },
       clicks: [],
     }
     for (let round = 1; round <= rounds; round += 1) {
@@ -1977,7 +2498,8 @@ async function main() {
             network,
             network.via === "proxy" ? proxy!.base : server.url,
             prepared.targets,
-            idleSeconds
+            idleSeconds,
+            extras
           ))
         )
         writeFileSync(join(outDir, "result.json"), JSON.stringify(result))

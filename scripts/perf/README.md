@@ -15,6 +15,7 @@ Outputs go to `.local-dev/perf/`, which Git ignores.
 | `bun run perf:server --profile 1k`        | Boot, request and typing timings for one checkout     |
 | `bun run perf:compare --base origin/main` | Paired runs of a base ref against your working tree   |
 | `bun run perf:clicks --profile 1k`        | Clicks in Chromium under desktop and phone conditions |
+| `bun run perf:io --profile 1k`            | File I/O and SQL per hot request, against budgets     |
 | `bun run perf:bundle`                     | Bundle sizes against budgets (after a web build)      |
 
 ## Fixtures
@@ -49,6 +50,18 @@ the same reason. Generation is slow because every write goes through the
 store: on a busy 6-core machine `100` took 20 seconds and `1k` 21 minutes
 (350 MB), mostly the 200-document HTML space and the records index. Generate
 `5k` on an idle machine.
+
+### Team variant
+
+`team.ts` turns Worktable Teams on in a server running on a fixture copy,
+through the routes Settings uses, so a team run starts from the same
+workspace at the same path as a solo run. The solo owner activates Teams and
+becomes the team's owner; a member is invited and enrolls with edit access to
+about half of the Spaces (always the ones a click trace opens); a second
+member holds grants on a few Spaces; and two team agents are created.
+`click-trace.ts --as owner|member` and `io-count.ts --team` use it. A checkout
+without Teams has no `/api/team` route, and those options fail with an error
+that says so.
 
 ## Server timings
 
@@ -116,11 +129,16 @@ bun run perf:server --profile 5k --samples 10 --typing-minutes 10
 
 `click-trace.ts` measures what a person waits for: it drives headless Chromium
 through the app on a copy of a fixture and times each click. It boots the
-server from this checkout with the production web build
-(`WORKTABLE_STATIC_DIR`) and `WORKTABLE_REQUIRE_AUTH=1`, signed in as the
-owner, as an instance behind a tunnel runs: responses are compressed and the
-page carries its boot data. It adds Spaces up to `--spaces` (default 28) and
-two 60-block rich documents under `perf/`.
+server from this checkout (or `--checkout <dir>`, which needs its own web
+build) with the production web build (`WORKTABLE_STATIC_DIR`) and
+`WORKTABLE_REQUIRE_AUTH=1`, signed in, as an instance behind a tunnel runs:
+responses are compressed and the page carries its boot data. It adds Spaces
+up to `--spaces` (default 28) and two 60-block rich documents under `perf/`.
+
+`--as` picks who clicks: `solo` (the default) is the owner of a Worktable
+without Teams; `owner` and `member` turn Teams on in the copy first (see
+[Team variant](#team-variant)) and click as the team's owner or as the member
+who can open half the Spaces.
 
 Network profiles (`--networks`, all by default), applied with the Chrome
 DevTools Protocol:
@@ -157,6 +175,27 @@ For each click it records:
 - the chain of requests content waited for, and a main-thread breakdown
   (script, style and layout, paint) from a Chrome trace (`--no-trace` skips
   it).
+
+Two optional passes run after the others, in the same tab, as revisits:
+
+- **`--churn`** (with `--as member`): before each click the owner makes one
+  admin change, 5 to 10 s apart, in turn: an invitation, an agent rename, a
+  new Space the member cannot see, a grant change for the other member on a
+  Space the member has open, and, as the control, a grant or revoke for the
+  member on a Space no journey opens. For the 3 s after each change it
+  records the tab's full reloads, route changes and requests. A change that
+  leaves the member's access alone should cause none of them; the control
+  should cause one refetch of the Spaces list. A new Space starts shared, so
+  the member can see it until the owner restricts it a moment later.
+- **`--backup`**: live operator snapshots run back to back, through the local
+  operator entry point that `worktable-server workspace-snapshot` and hosted
+  backups use, while the tab clicks and a second client reads every 100 ms
+  and writes every second. It records the reads and writes that overlapped a
+  snapshot, how many failed or were refused, the longest write wait, the
+  tab's failed requests and its slowest click.
+
+`summary.md` also counts document content requests on revisits, which should
+be zero.
 
 `summary.md` has the tables per profile, `waterfalls.md` every round-1 click
 with its requests, and `result.json` the raw records; round 1 also saves a
@@ -215,6 +254,69 @@ runs `sync` before it exits, so the stop that follows finds every write on
 disk. Keep a run inside the `--timeout` you give `ns-verify` (at most
 10,800 s); results are written as each profile finishes, so a run cut short
 still returns its finished rounds.
+
+## File I/O and SQL per request
+
+`io-count.ts` counts what one hot request costs the server in file system
+calls and SQL. It boots the server from a checkout (`--checkout`, default this
+one) on a fixture copy with `WORKTABLE_REQUIRE_AUTH=1` and a session cookie,
+under `strace -f --seccomp-bpf` from the start, with
+`io-count-preload.ts` (`bun --preload`) logging every SQL statement and timer
+callback. strace is needed because Bun binds `node:fs` imports before a
+preload could wrap them; bun:sqlite statements can be wrapped. Without
+`--team` it measures as the solo owner; with `--team`, as the team's owner and
+as the member (see [Team variant](#team-variant)).
+
+Per endpoint (the Spaces list, a Space, its documents, the document page,
+document content by revision, Recent, Pending, threads, search and
+`/api/workspace`) it sends 3 warm-up requests, then `--requests` (default 20)
+in sequence, then stays idle for as long; the per-request figure is the
+difference over the request count. Each endpoint is measured `--attempts`
+times (default 2) and the attempt with the quietest idle window is kept;
+`idleNoise` in `result.json` shows what was subtracted. Calls count when they
+touch the workspace or the app directory:
+
+- **stat**: stat, lstat, newfstatat, statx, access, and fstat on a file;
+- **open**, **read** and **readdir** (getdents), with reads of SQLite files
+  apart;
+- **SQL**: the server's statements, and Better Auth's own (its session and
+  user lookups) apart.
+
+`summary.md` lists the busiest paths and statements per endpoint, with the
+code site of each statement. A calibration request (a document read through
+the legacy route after its file changed) must show the file's open and read,
+or the run fails.
+
+A second boot without strace records p50 and p95 per endpoint over
+`--samples` (default 50) requests, the time for one Space change to reach
+`--sockets` (default 20) WebSockets, and the server's CPU time, main-thread
+wake-ups and timer callbacks while idle with no sockets and with `--sockets`
+open tabs.
+
+Budgets are relative to a base run, because `main` itself already does file
+I/O on most of these requests. `--base <result.json>` names a solo counting
+run of the base (usually `main`), and `--check` fails the run when an
+endpoint costs more than the base's figure for the same endpoint plus the
+allowance in `io-budgets.json`: for solo, 3 more stat-family calls and no
+more SQL; for a team, 4 more stats and 1 more statement of ours, and at most
+2 of Better Auth's. `summary.md` shows the base's figures in brackets.
+
+```sh
+bun run perf:io --profile 100 --requests 10 --samples 10
+bun run perf:io --profile 1k --checkout ../base --out .local-dev/perf/results/base-io
+bun run perf:io --profile 1k --team \
+  --base .local-dev/perf/results/base-io/result.json --check
+```
+
+On Namespace, `PERF_TOOL=io-count` makes `click-trace-remote.sh` run it
+instead of the click trace (no web build or browser; it installs strace if
+missing):
+
+```sh
+ns-verify --repo . --timeout 3600 --collect click-results -- \
+  env PERF_TOOL=io-count bash scripts/perf/click-trace-remote.sh \
+  "$(git rev-parse --short HEAD)" --profile 1k
+```
 
 ## Bundle budgets
 

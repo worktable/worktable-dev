@@ -1,0 +1,5 @@
+{
+  "why": "Plan 16a review and Plan 17 Speed, relative to a base solo run of the same endpoint: solo may add 3 stat-family calls (the team-state fingerprint) and no SQL; a team may add 4 stats and 1 statement of ours (the policy revision), plus at most 2 of Better Auth's own session statements on cookie requests.",
+  "solo": { "stat": 3, "sql": 0 },
+  "team": { "stat": 4, "sql": 1, "authSql": 2 }
+}

@@ -205,6 +205,37 @@ export async function waitForIdle(
   return "busy"
 }
 
+/** Linux only: the first descendant of `pid` whose command name is `name`. */
+export function descendantNamed(pid: number, name: string): number | null {
+  const queue = [pid]
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    let children: number[] = []
+    try {
+      children = readFileSync(
+        `/proc/${current}/task/${current}/children`,
+        "utf8"
+      )
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(Number)
+    } catch {
+      return null
+    }
+    for (const child of children) {
+      try {
+        if (readFileSync(`/proc/${child}/comm`, "utf8").trim() === name)
+          return child
+      } catch {
+        // Exited.
+      }
+      queue.push(child)
+    }
+  }
+  return null
+}
+
 export async function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
     const server = createServer()
@@ -220,6 +251,7 @@ export async function freePort(): Promise<number> {
 
 export interface ServerProcess {
   url: string
+  /** The Bun server's pid, also when it runs under a wrapper such as strace. */
   pid: number
   /** Milliseconds from spawn until the server printed its listening line. */
   listenMs: number
@@ -238,6 +270,10 @@ export async function startServer(options: {
   app: string
   /** Extra environment, such as WORKTABLE_STATIC_DIR for a web build. */
   env?: Record<string, string>
+  /** Bun options before the entry point, such as `--preload <file>`. */
+  bunArgs?: string[]
+  /** A command that runs the server as its child, such as `strace -f -o …`. */
+  wrapper?: string[]
 }): Promise<ServerProcess> {
   const port = await freePort()
   // Keep the caller's Worktable settings (tokens, auth, paths) out of the run.
@@ -247,7 +283,13 @@ export async function startServer(options: {
     )
   )
   const startedAt = performance.now()
-  const child: ChildProcess = spawn("bun", ["src/index.ts"], {
+  const command = [
+    ...(options.wrapper ?? []),
+    "bun",
+    ...(options.bunArgs ?? []),
+    "src/index.ts",
+  ]
+  const child: ChildProcess = spawn(command[0]!, command.slice(1), {
     cwd: join(options.checkout, "packages", "server"),
     env: {
       ...inherited,
@@ -258,6 +300,7 @@ export async function startServer(options: {
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: Boolean(options.wrapper),
   })
   let output = ""
   let listenMs = -1
@@ -289,27 +332,48 @@ export async function startServer(options: {
       180_000
     ).unref()
   })
+  // A wrapper such as strace detaches on SIGTERM and leaves the server
+  // running. So a wrapped launch gets its own process group: a graceful stop
+  // signals the server itself, and a forced one the whole group.
+  const wrapped = Boolean(options.wrapper)
+  let serverPid: number | null = wrapped ? null : child.pid!
+  const forceStop = () => {
+    try {
+      if (wrapped) process.kill(-child.pid!, "SIGKILL")
+      else child.kill("SIGKILL")
+    } catch {
+      // Already gone.
+    }
+  }
   // Never leave a server behind if this process exits without stop().
-  const kill = () => child.kill("SIGKILL")
-  process.once("exit", kill)
+  process.once("exit", forceStop)
   const stop = async () => {
-    process.off("exit", kill)
+    process.off("exit", forceStop)
     if (child.exitCode !== null || child.signalCode !== null) return
     const exited = new Promise((resolveExit) => child.once("exit", resolveExit))
-    child.kill("SIGTERM")
-    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000)
+    // The wrapper exits after the server, writing out what it traced.
+    if (serverPid === null) forceStop()
+    else process.kill(serverPid, "SIGTERM")
+    const timer = setTimeout(forceStop, 10_000)
     await exited
     clearTimeout(timer)
   }
   try {
     await listening
+    if (serverPid === null) serverPid = descendantNamed(child.pid!, "bun")
+    if (serverPid === null)
+      throw new Error(
+        `no bun process found under ${options.wrapper![0]} (pid ${child.pid})`
+      )
   } catch (error) {
+    if (wrapped && serverPid === null)
+      serverPid = descendantNamed(child.pid!, "bun")
     await stop()
     throw error
   }
   return {
     url: `http://127.0.0.1:${port}`,
-    pid: child.pid!,
+    pid: serverPid,
     listenMs,
     startedAt,
     output: () => output,

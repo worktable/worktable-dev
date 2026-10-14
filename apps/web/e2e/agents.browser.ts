@@ -125,18 +125,20 @@ test("local setup uses one disclosure at a time and separates connection managem
   await page.route("**/api/tokens", (route) =>
     route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify([
-        {
-          id: "123456789abc",
-          user: "owner",
-          agent: "codex@studio-mac",
-          scopes: ["docs:*"],
-          workspace: "/tmp/worktable",
-          createdAt: "2026-01-01T00:00:00Z",
-          revokedAt: null,
-          lastUsedAt: null,
-        },
-      ]),
+      body: JSON.stringify({
+        tokens: [
+          {
+            id: "123456789abc",
+            user: "owner",
+            agent: "codex@studio-mac",
+            scopes: ["docs:*"],
+            workspace: "/tmp/worktable",
+            createdAt: "2026-01-01T00:00:00Z",
+            revokedAt: null,
+            lastUsedAt: null,
+          },
+        ],
+      }),
     })
   )
 

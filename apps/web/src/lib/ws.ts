@@ -8,7 +8,12 @@ import {
 } from "@tanstack/react-query"
 import { queryKeys } from "./queries"
 import { docQueryKeys } from "./docs-queries"
-import { documentQueryKeys } from "./documents-queries"
+import {
+  documentQueryKeys,
+  isDocumentContentQuery,
+  rememberDocumentContent,
+} from "./documents-queries"
+import { patchDocumentRevision } from "./document-rows"
 import { recentQueryKeys } from "./lifetime"
 import { threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
@@ -21,12 +26,14 @@ import {
 } from "./live-documents"
 import {
   isSpaceLive,
+  noteDocumentChange,
   noteSpaceChange,
   noteSpaceLive,
   THREAD_STREAM,
 } from "./space-observation"
 import type {
   DocListEntry,
+  DocumentContent,
   DocumentListItem,
   RecordFile,
   Thread,
@@ -445,14 +452,77 @@ function applyOwnCollaborativeSave(
   }
 }
 
-/** Messages that can change a document's path, identity, or Space. */
-function changesDocuments(message: WsMessage): boolean {
-  return (
-    message.type.startsWith("doc_") ||
-    message.type.startsWith("widget_") ||
-    message.type === "space_update" ||
-    message.type === "spaces_changed"
-  )
+/**
+ * Retire what this message can make stale. A change named by path (a save,
+ * an outside edit, an archive, a deletion, an HTML Doc's update or move)
+ * concerns only that document. One without a path (alias and catalog
+ * changes, which is how renames and folder moves also arrive) and Space
+ * changes concern every document in the Space.
+ */
+export function observeSpaceMessage(stream: string, message: WsMessage): void {
+  const type = message.type
+  if (type === "space_update" || type === "spaces_changed") {
+    noteSpaceChange(stream)
+    return
+  }
+  const paths = type.startsWith("doc_")
+    ? [message.docPath]
+    : type.startsWith("widget_")
+      ? [message.widgetId, message.previousWidgetId]
+      : null
+  if (!paths) return
+  const named = paths.filter((path): path is string => Boolean(path))
+  if (named.length === 0) {
+    noteSpaceChange(stream)
+    return
+  }
+  for (const path of named) noteDocumentChange(stream, path)
+}
+
+/** What a doc_update says about the content it describes. */
+function updatedContent(message: WsMessage): {
+  revision?: string
+  content?: DocumentContent
+} {
+  const data = (message.data ?? {}) as {
+    revision?: unknown
+    format?: unknown
+    content?: unknown
+  }
+  if (typeof data.revision !== "string") return {}
+  const revision = data.revision
+  const format =
+    data.format === "markdown" || data.format === "blocknote"
+      ? data.format
+      : null
+  const content =
+    format === "markdown" && typeof data.content === "string"
+      ? data.content
+      : format === "blocknote" && Array.isArray(data.content)
+        ? data.content
+        : null
+  return {
+    revision,
+    ...(format && content !== null
+      ? { content: { revision, format, content } }
+      : {}),
+  }
+}
+
+/**
+ * A change event names the document's new revision: move its rows there in
+ * place, and keep the content it carried for a document this tab reads.
+ */
+function applyDocumentRevision(
+  queryClient: QueryClient,
+  spaceId: string,
+  message: WsMessage
+): void {
+  const path = message.docPath
+  const { revision, content } = updatedContent(message)
+  if (!path || !revision) return
+  patchDocumentRevision(queryClient, spaceId, path, revision)
+  if (content) rememberDocumentContent(queryClient, spaceId, path, content)
 }
 
 /**
@@ -551,6 +621,11 @@ export function applySpaceEvent(
   }
 
   if (type === "doc_update" || type === "doc_deleted") {
+    // Rows open the new revision at once; the lists still read again for
+    // what else the change moved (a conversion's format, dates, titles).
+    if (type === "doc_update") {
+      applyDocumentRevision(queryClient, spaceId, message)
+    }
     if (isOwnCollaborativeSave({ ...message, spaceId })) {
       applyOwnCollaborativeSave(queryClient, spaceId, message)
     } else {
@@ -586,6 +661,8 @@ export function revalidateSpaceAfterReconnect(
 ): void {
   void queryClient.invalidateQueries({
     queryKey: ["spaces", spaceId],
+    // Content at a revision never changes.
+    predicate: (query) => !isDocumentContentQuery(query.queryKey),
     refetchType: "none",
   })
   // Every live socket hears spaces_changed, so a Spaces list read another
@@ -723,7 +800,7 @@ function connectShared(
       if (reconnected) revalidateAfterReconnect(connection)
       publishStatus(connection, "connected", reconnected)
     } else {
-      if (changesDocuments(message)) noteSpaceChange(connection.stream)
+      observeSpaceMessage(connection.stream, message)
       try {
         applyMessage(connection, message)
       } catch {
@@ -828,6 +905,9 @@ function subscribeShared(
         for (const queryKey of [["spaces", stream], ["annotations", stream]]) {
           void connection.queryClient.invalidateQueries({
             queryKey,
+            // Content at a revision never changes.
+            predicate: (query: { queryKey: QueryKey }) =>
+              !isDocumentContentQuery(query.queryKey),
             refetchType: "none",
           })
         }

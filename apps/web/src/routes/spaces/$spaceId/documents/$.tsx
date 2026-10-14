@@ -6,66 +6,82 @@ import {
   type QueryClient,
 } from "@tanstack/react-query"
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
-import type {
-  DocumentListItem,
-  DocumentPage,
-  DocumentPageResult,
-} from "@worktable/types"
+import type { DocumentPage, DocumentPageResult } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
 import {
-  docQueryOptions,
-  docReadCurrent,
-  documentOpenStartedAt,
-  noteDocumentOpen,
-} from "@/lib/docs-queries"
-import {
   documentPageQueryOptions,
+  documentPageValidated,
   documentPageValidatedLive,
+  ensureDocumentOpen,
+  forgetDocumentOpen,
   documentQueryKeys,
   documentsQueryOptions,
+  noteDocumentOpen,
+  prefetchDocumentContent,
   useDocumentPage,
 } from "@/lib/documents-queries"
 import { downloadDocumentSource } from "@/lib/documents-api"
-import { browserDocumentRenderer } from "@/lib/document-renderers"
+import {
+  browserDocumentRenderer,
+  previewDocumentRenderer,
+} from "@/lib/document-renderers"
+import { documentOpenHint, type DocumentOpenHint } from "@/lib/document-rows"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
 
-/** Formats the Markdown and rich-text renderer opens. */
-const DOC_RENDERED_FORMATS = new Set(["worktable.rich-text", "worktable.markdown"])
-
-/** Whether cached state already says this path opens in the doc renderer. */
-function cachedAsDoc(
+/**
+ * Start what opening this document reads: its content at the revision the
+ * tab knows and its renderer's code. Hints only start reads; what may be
+ * edited is decided by the page check.
+ */
+function startDocumentReads(
   queryClient: QueryClient,
   spaceId: string,
-  path: string
-): boolean {
-  const page = queryClient.getQueryData<DocumentPageResult>(
-    documentQueryKeys.page(spaceId, path)
-  )
-  if (page) return page.kind !== "conflict" && page.renderer?.key === "doc"
-  const listed = queryClient
-    .getQueryData<DocumentListItem[]>(documentQueryKeys.list(spaceId))
-    ?.find((item) => item.kind === "document" && item.path === path)
-  return listed?.kind === "document" && DOC_RENDERED_FORMATS.has(listed.format.id)
+  path: string,
+  hint: DocumentOpenHint
+): void {
+  if (hint.renderer === "doc") {
+    void prefetchDocumentContent(
+      queryClient,
+      spaceId,
+      path,
+      hint.revision
+    ).catch(() => {})
+  }
+  if (typeof window === "undefined") return
+  void previewDocumentRenderer(hint.renderer)
+    .preload(hint.formatId)
+    .catch(() => {})
 }
 
-/**
- * Start reading the document itself for the renderer, unless the copy this
- * tab holds is still proven current. The renderer validates whatever it uses.
- */
-function startDocumentRead(
+function startDocumentReadsForPage(
   queryClient: QueryClient,
   spaceId: string,
-  path: string
+  path: string,
+  page: DocumentPageResult
 ): void {
-  const openedAt = documentOpenStartedAt(spaceId, path) ?? performance.now()
-  if (docReadCurrent(spaceId, path, openedAt)) return
-  void queryClient.prefetchQuery({
-    ...docQueryOptions(spaceId, path),
-    staleTime: 0,
-    retry: false,
-  })
+  if (
+    page.kind === "conflict" ||
+    !page.renderer ||
+    page.document.path !== path
+  ) {
+    return
+  }
+  if (typeof window !== "undefined") {
+    void browserDocumentRenderer(page.renderer)
+      ?.preload(page.document.format.id)
+      .catch(() => {})
+  }
+  if (page.renderer.key === "doc" && page.revision) {
+    void prefetchDocumentContent(
+      queryClient,
+      spaceId,
+      path,
+      page.revision,
+      true
+    ).catch(() => {})
+  }
 }
 
 export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
@@ -74,50 +90,42 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
     const path = params._splat ?? ""
     if (path) {
       const queryClient = context.queryClient
-      const options = documentPageQueryOptions(params.spaceId, path)
+      const spaceId = params.spaceId
+      const options = documentPageQueryOptions(spaceId, path)
       const opening = !preload && cause === "enter"
-      let readStarted = false
-      if (opening) {
-        noteDocumentOpen(params.spaceId, path)
-        // Read the document beside the page check when the cached catalog
-        // already says which renderer it needs.
-        if (cachedAsDoc(queryClient, params.spaceId, path)) {
-          startDocumentRead(queryClient, params.spaceId, path)
-          readStarted = true
-        }
-      }
-      try {
-        // A cached handle must never authorize mounting an editor after a
-        // concurrent move. Reuse the cached page check (a hover preload, say)
-        // only while the Space's live socket proves nothing has changed since
-        // it was read; otherwise check the exact path before the route renders.
-        const page = await queryClient.fetchQuery({
+      if (opening) noteDocumentOpen(spaceId, path)
+      // A hover, a tap and a click all start reading the content at the
+      // revision the tab knows, beside the page check.
+      const hint = documentOpenHint(queryClient, spaceId, path)
+      if (hint) startDocumentReads(queryClient, spaceId, path, hint)
+      // A cached check is reused (a hover preload's, say) only while the
+      // Space's live socket proves nothing about this document changed since.
+      const checkNow = (proven: boolean) =>
+        queryClient.fetchQuery({
           ...options,
-          staleTime: documentPageValidatedLive(params.spaceId, path)
-            ? Infinity
-            : 0,
+          staleTime: proven ? Infinity : 0,
           retry: false,
         })
-        if (
-          opening &&
-          !readStarted &&
-          page.kind !== "conflict" &&
-          page.renderer?.key === "doc" &&
-          page.document.path === path
-        ) {
-          startDocumentRead(queryClient, params.spaceId, path)
-        }
-        // Fetch renderer code while the app shell is still starting up.
-        // This does not mount it or bypass the renderer's fresh path checks.
-        if (
-          typeof window !== "undefined" &&
-          page.kind !== "conflict" &&
-          page.renderer
-        ) {
-          void browserDocumentRenderer(page.renderer)
-            ?.preload(page.document.format.id)
-            .catch(() => {})
-        }
+      let check = checkNow(documentPageValidatedLive(spaceId, path))
+      if (opening) {
+        // A check already running when the open began (a tap's preload, say)
+        // validates it only if the live socket proves it; otherwise check
+        // once more after it.
+        check = check.then((page) =>
+          documentPageValidated(spaceId, path) ? page : checkNow(false)
+        )
+      }
+      if (hint) {
+        // Known content opens read-only at once; the check validates it.
+        void check
+          .then((page) =>
+            startDocumentReadsForPage(queryClient, spaceId, path, page)
+          )
+          .catch(() => {})
+        return
+      }
+      try {
+        startDocumentReadsForPage(queryClient, spaceId, path, await check)
       } catch {
         // fetchQuery preserves prior data on a failed refresh. Remove it so a
         // missing or unreachable path cannot fall through to a stale renderer.
@@ -141,14 +149,53 @@ export const Route = createFileRoute("/spaces/$spaceId/documents/$")({
 function DocumentPageRoute() {
   const { spaceId, _splat } = Route.useParams()
   const path = _splat ?? ""
+  const queryClient = useQueryClient()
   const pageQuery = useDocumentPage(spaceId, path)
   useRecheckPageAgainstCatalog(spaceId, path, pageQuery.data, pageQuery.dataUpdatedAt)
+  // A check validates this open once its answer arrived after the open
+  // began, or the live socket still proves an earlier one. The open began at
+  // the navigation, or at the latest when this path first rendered (a
+  // navigation can reuse a preload's route work). It then stays validated
+  // while the path is open: later changes refresh the check, and the
+  // editing room's own admission stays the final word.
+  const openKey = `${spaceId}\0${path}`
+  // Each open of a path is validated on its own: going A → B → A starts a
+  // new open of A, which an earlier visit's check does not validate.
+  const [open, setOpen] = useState<{ key: string; validated: boolean }>({
+    key: "",
+    validated: false,
+  })
+  if (open.key !== openKey) {
+    ensureDocumentOpen(spaceId, path)
+    setOpen({ key: openKey, validated: false })
+  }
+  useEffect(() => {
+    // A remount for the same path can follow the previous cleanup.
+    ensureDocumentOpen(spaceId, path)
+    return () => forgetDocumentOpen(spaceId, path)
+  }, [spaceId, path])
+  const validatedNow =
+    pageQuery.data !== undefined &&
+    pageQuery.dataUpdatedAt > 0 &&
+    !pageQuery.isError &&
+    documentPageValidated(spaceId, path)
+  const currentOpen = open.key === openKey
+  if (validatedNow && currentOpen && !open.validated) {
+    setOpen({ key: openKey, validated: true })
+  }
+  const validated = validatedNow || (currentOpen && open.validated)
+  // No check validates this open yet and none is on its way (a preload's
+  // answered before the open began): ask for one.
+  const { isFetching: checking, isError: checkFailed, refetch } = pageQuery
+  useEffect(() => {
+    if (!path || validated || checking || checkFailed) return
+    void refetch()
+  }, [checkFailed, checking, path, refetch, validated])
 
   if (!path) {
     return <Navigate to="/spaces/$spaceId" params={{ spaceId }} replace />
   }
-  if (pageQuery.isLoading) return <EditorSkeleton />
-  if (pageQuery.error) {
+  if (pageQuery.error && !pageQuery.isFetching) {
     const status =
       pageQuery.error instanceof HttpError ? pageQuery.error.status : null
     const serverDetail =
@@ -180,9 +227,25 @@ function DocumentPageRoute() {
       />
     )
   }
-  if (!pageQuery.data) return <EditorSkeleton />
+  const page = validated ? pageQuery.data : undefined
+  if (!page) {
+    // Until the check, show what the tab already knows, read-only.
+    const hint = documentOpenHint(queryClient, spaceId, path)
+    if (!hint) return <EditorSkeleton />
+    const Preview = previewDocumentRenderer(hint.renderer).component
+    return (
+      <Suspense fallback={<EditorSkeleton />}>
+        <Preview
+          spaceId={spaceId}
+          documentPath={path}
+          formatId={hint.formatId}
+          page={null}
+          preview={hint}
+        />
+      </Suspense>
+    )
+  }
 
-  const page = pageQuery.data
   if (page.kind === "conflict") {
     return (
       <ConflictDocumentPage claimCount={page.conflict.claims.length} />
@@ -218,10 +281,11 @@ function DocumentPageRoute() {
 }
 
 /**
- * A change the server reports without a path (a move, archive or deletion in
- * the format-neutral store) reaches this page as a newer Space catalog. When
- * the catalog no longer agrees with this page's check, check the path again;
- * otherwise the open document needs nothing.
+ * A change the server reports without a path (a move, archive, deletion or
+ * write in the format-neutral store) reaches this page as a newer Space
+ * catalog. When the catalog no longer agrees with this page's check,
+ * including on the content's revision, check the path again; otherwise the
+ * open document needs nothing.
  */
 function useRecheckPageAgainstCatalog(
   spaceId: string,
@@ -244,7 +308,8 @@ function useRecheckPageAgainstCatalog(
     const agrees =
       listed?.kind === "document" &&
       !!listed.archived === !!page.document.archived &&
-      listed.format.id === page.document.format.id
+      listed.format.id === page.document.format.id &&
+      (listed.revision === undefined || listed.revision === page.revision)
     if (agrees) return
     void queryClient.invalidateQueries(
       { queryKey: documentQueryKeys.page(spaceId, path), exact: true },

@@ -295,12 +295,18 @@ describe("Space events in the query cache", () => {
       { path: "notes/plan", format: "blocknote", updatedAt: 1, headings: ["Plan"] },
     ])
     const documents = watched(queryClient, documentQueryKeys.list("space-echo"), [
-      { kind: "document", path: "notes/plan", updatedAt: "2026-10-01T00:00:00.000Z" },
+      {
+        kind: "document",
+        path: "notes/plan",
+        updatedAt: "2026-10-01T00:00:00.000Z",
+        revision: "rev-1",
+      },
     ])
-    const content = watched(queryClient, docQueryKeys.doc("space-echo", "notes/plan"), {
-      path: "notes/plan",
-      content: [],
-    })
+    const content = watched(
+      queryClient,
+      documentQueryKeys.content("space-echo", "notes/plan", "rev-1"),
+      { revision: "rev-1", format: "blocknote", content: [] }
+    )
     const recent = watched(queryClient, recentQueryKeys.all, { items: [] })
     const save = (origin?: string) => ({
       type: "doc_update",
@@ -317,6 +323,7 @@ describe("Space events in the query cache", () => {
           versionId: "ver_2",
           contentHash: "hash_2",
         },
+        revision: "rev-2",
       },
     })
 
@@ -325,11 +332,12 @@ describe("Space events in the query cache", () => {
     applySpaceEvent(queryClient, "space-echo", save("yjs"))
     await settle(queryClient)
     expect([docs.reads, documents.reads, content.reads, recent.reads]).toEqual([0, 0, 0, 0])
+    // The row moves to the saved revision in place.
     expect(
-      queryClient.getQueryData<Array<{ updatedAt?: string }>>(
+      queryClient.getQueryData<Array<{ updatedAt?: string; revision?: string }>>(
         documentQueryKeys.list("space-echo")
-      )?.[0]?.updatedAt
-    ).toBe("2026-10-02T00:00:00.000Z")
+      )?.[0]
+    ).toMatchObject({ updatedAt: "2026-10-02T00:00:00.000Z", revision: "rev-2" })
     // Lists on other pages read again when they next open.
     expect(queryClient.getQueryState(recentQueryKeys.all)?.isInvalidated).toBe(true)
 
@@ -342,7 +350,8 @@ describe("Space events in the query cache", () => {
     await settle(queryClient)
     expect([docs.reads, documents.reads, content.reads]).toEqual([1, 0, 0])
 
-    // Without a synced session the same save is news to this tab.
+    // Without a synced session the same save is news to this tab: the lists
+    // read again for what else it moved.
     synced = false
     applySpaceEvent(queryClient, "space-echo", save())
     await settle(queryClient)
@@ -356,9 +365,17 @@ describe("Space events in the query cache", () => {
     const docs = watched(queryClient, docQueryKeys.docs("space-a"), [])
     const documents = watched(queryClient, documentQueryKeys.list("space-a"), [])
     const page = watched(queryClient, documentQueryKeys.page("space-a", "notes/plan"), {})
-    const content = watched(queryClient, docQueryKeys.doc("space-a", "notes/plan"), {})
+    const content = watched(
+      queryClient,
+      documentQueryKeys.content("space-a", "notes/plan", "rev-1"),
+      {}
+    )
     // A document named "references" must not answer for reference lookups.
-    const namedReferences = watched(queryClient, docQueryKeys.doc("space-a", "references"), {})
+    const namedReferences = watched(
+      queryClient,
+      documentQueryKeys.content("space-a", "references", "rev-1"),
+      {}
+    )
     const references = watched(queryClient, docQueryKeys.references("space-a", ["notes/plan"]), [])
     const space = watched(queryClient, queryKeys.space("space-a"), {})
     const otherDocs = watched(queryClient, docQueryKeys.docs("space-b"), [])
@@ -406,6 +423,67 @@ describe("Space events in the query cache", () => {
     }
   })
 
+  it("moves an outside edit's rows and content to its revision in place", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listed = (revision: string) => [
+      { kind: "document", path: "notes/plan", revision },
+      { kind: "document", path: "notes/other", revision: "other-1" },
+    ]
+    const documents = watched(queryClient, documentQueryKeys.list("space-a"), listed("rev-1"))
+    const recent = watched(queryClient, recentQueryKeys.list({ sort: "updated", includeTemporary: false }), {
+      items: [{ spaceId: "space-a", spaceName: "A", document: { path: "notes/plan", revision: "rev-1" } }],
+      spaces: [],
+    })
+    const page = watched(queryClient, documentQueryKeys.page("space-a", "notes/plan"), {})
+    // The open document's content at the revision it shows.
+    const shown = watched(
+      queryClient,
+      documentQueryKeys.content("space-a", "notes/plan", "rev-1"),
+      { revision: "rev-1", format: "markdown", content: "# Plan" }
+    )
+
+    // Another process edits the file; the watcher's change names the new
+    // revision and carries its content.
+    applySpaceEvent(queryClient, "space-a", {
+      type: "doc_update",
+      spaceId: "space-a",
+      docPath: "notes/plan",
+      data: {
+        path: "notes/plan",
+        content: "# Plan\n\nEdited outside.",
+        format: "markdown",
+        revision: "rev-2",
+        provenance: { source: "external" },
+      },
+    })
+
+    // Rows open the new revision at once, before the list reads again (for
+    // what else the change moved); the open document checks its path again
+    // and finds that content here.
+    expect(queryClient.getQueryData(documentQueryKeys.list("space-a"))).toEqual(listed("rev-2"))
+    expect(
+      queryClient.getQueryData<{ items: Array<{ document: { revision: string } }> }>(
+        recentQueryKeys.list({ sort: "updated", includeTemporary: false })
+      )?.items[0]?.document.revision
+    ).toBe("rev-2")
+    await settle(queryClient)
+    expect([documents.reads, page.reads, shown.reads]).toEqual([1, 1, 0])
+    expect(
+      queryClient.getQueryData(documentQueryKeys.content("space-a", "notes/plan", "rev-2"))
+    ).toEqual({ revision: "rev-2", format: "markdown", content: "# Plan\n\nEdited outside." })
+    // Content for a document this tab does not read is not kept.
+    applySpaceEvent(queryClient, "space-a", {
+      type: "doc_update",
+      spaceId: "space-a",
+      docPath: "notes/other",
+      data: { path: "notes/other", content: "# Other", format: "markdown", revision: "other-2" },
+    })
+    expect(
+      queryClient.getQueryData(documentQueryKeys.content("space-a", "notes/other", "other-2"))
+    ).toBeUndefined()
+    for (const query of [documents, recent, page, shown]) query.unsubscribe()
+  })
+
   it("joins a read in flight and follows it with one more, however many changes arrive", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const releases: Array<() => void> = []
@@ -436,21 +514,36 @@ describe("Space events in the query cache", () => {
     const spaces = watched(queryClient, queryKeys.spaces, [])
     const docs = watched(queryClient, docQueryKeys.docs("space-a"), [])
     const recent = watched(queryClient, recentQueryKeys.all, { items: [] })
-    const content = watched(queryClient, docQueryKeys.doc("space-a", "notes/plan"), {})
+    const content = watched(
+      queryClient,
+      documentQueryKeys.content("space-a", "notes/plan", "rev-1"),
+      {}
+    )
     // An open HTML doc's frame follows its page check's revision.
     const page = watched(queryClient, documentQueryKeys.page("space-a", "plans/board"), {})
     const otherDocs = watched(queryClient, docQueryKeys.docs("space-b"), [])
-    queryClient.setQueryData(docQueryKeys.doc("space-a", "notes/closed"), {})
+    queryClient.setQueryData(documentQueryKeys.page("space-a", "notes/closed"), {})
+    queryClient.setQueryData(
+      documentQueryKeys.content("space-a", "notes/closed", "rev-1"),
+      {}
+    )
 
     revalidateSpaceAfterReconnect(queryClient, "space-a")
     await settle(queryClient)
 
     expect([spaces.reads, docs.reads, recent.reads, page.reads]).toEqual([1, 1, 1, 1])
-    // Open content checks itself; closed content reads again when it opens.
+    // A closed document's check reads again when it opens; content at a
+    // revision never changes, open or closed.
     expect(content.reads).toBe(0)
     expect(
-      queryClient.getQueryState(docQueryKeys.doc("space-a", "notes/closed"))?.isInvalidated
+      queryClient.getQueryState(documentQueryKeys.page("space-a", "notes/closed"))
+        ?.isInvalidated
     ).toBe(true)
+    expect(
+      queryClient.getQueryState(
+        documentQueryKeys.content("space-a", "notes/closed", "rev-1")
+      )?.isInvalidated
+    ).toBe(false)
     expect(otherDocs.reads).toBe(0)
     expect(queryClient.getQueryState(docQueryKeys.docs("space-b"))?.isInvalidated).toBe(false)
     for (const query of [spaces, docs, recent, content, page, otherDocs]) query.unsubscribe()

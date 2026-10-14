@@ -286,7 +286,7 @@ export function registerCompanyKnowledgeTools(
     {
       title: "Fetch Worktable item",
       description:
-        "Fetch the full text and URL of one Worktable document or record by opaque result ID.",
+        "Fetch the full text and URL of one Worktable document or record by its result ID.",
       inputSchema: FetchInput,
       outputSchema: FetchOutput,
       annotations: {

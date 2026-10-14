@@ -4,6 +4,9 @@
 #   ns-verify --repo . --timeout 10800 --collect click-results -- \
 #     bash scripts/perf/click-trace-remote.sh <commit> [click-trace options]
 #
+# With PERF_TOOL=io-count it runs io-count.ts instead (no browser or web
+# build; strace is installed if missing), passing the options through.
+#
 # ns-verify uploads a fresh snapshot per run. The perf fixture is keyed by its
 # absolute path (the server keys app-local state by workspace path), so this
 # copies the snapshot into a stable checkout under $HOME and runs there: the
@@ -69,13 +72,20 @@ fi
 cd "$WORK/src"
 
 bun install --frozen-lockfile
-bun x playwright@1.61.1 install --with-deps chromium ||
-  bun x playwright@1.61.1 install chromium
-# Workaround: a web build without a fixed id writes a build-id.txt that differs
-# from the id compiled into the client, and the tab reloads itself on every
-# navigation. Remove WORKTABLE_BUILD_ID here once the product fix lands.
-WORKTABLE_BUILD_ID="perf-$COMMIT" bun run --cwd apps/web build
-bun scripts/perf/bundle.ts || true
+TOOL=${PERF_TOOL:-clicks}
+if [ "$TOOL" = io-count ]; then
+  if ! command -v strace >/dev/null; then
+    sudo -n apt-get update -qq && sudo -n apt-get install -y -qq strace
+  fi
+else
+  bun x playwright@1.61.1 install --with-deps chromium ||
+    bun x playwright@1.61.1 install chromium
+  # Workaround: a web build without a fixed id writes a build-id.txt that
+  # differs from the id compiled into the client, and the tab reloads itself
+  # on every navigation. Remove WORKTABLE_BUILD_ID once the product fix lands.
+  WORKTABLE_BUILD_ID="perf-$COMMIT" bun run --cwd apps/web build
+  bun scripts/perf/bundle.ts || true
+fi
 
 # Generate the fixture the trace will ask for (click-trace's defaults).
 PROFILE=1k
@@ -89,9 +99,11 @@ for ((i = 1; i <= $#; i++)); do
 done
 bun scripts/perf/fixtures.ts --profile "$PROFILE" --seed "$SEED"
 
-OUT=$TASK_DIR/click-results/$(date -u +%Y%m%dT%H%M%SZ)-clicks-$PROFILE
+OUT=$TASK_DIR/click-results/$(date -u +%Y%m%dT%H%M%SZ)-$TOOL-$PROFILE
 status=0
-PERF_COMMIT=$COMMIT bun scripts/perf/click-trace.ts --profile "$PROFILE" \
+SCRIPT=scripts/perf/click-trace.ts
+[ "$TOOL" = io-count ] && SCRIPT=scripts/perf/io-count.ts
+PERF_COMMIT=$COMMIT bun "$SCRIPT" --profile "$PROFILE" \
   --out "$OUT" "$@" || status=$?
 cp -r "$OUT" "$WORK/results/" || true
 exit $status

@@ -1,0 +1,5 @@
+{
+  "why": "Plan 16a review and Plan 17 Speed: per hot GET, solo pays at most three stat-family calls and no SQL; team adds one stat (the team-state fingerprint) and one statement of ours (the policy revision), plus Better Auth's own session statements on cookie requests.",
+  "solo": { "stat": 3, "sql": 0 },
+  "team": { "stat": 4, "sql": 1, "authSql": 2 }
+}

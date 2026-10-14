@@ -15,6 +15,8 @@ const PASSES: { pass: Pass; label: string }[] = [
   { pass: "revisit", label: "revisit" },
   { pass: "idle", label: "revisit after idle" },
   { pass: "reopen", label: "reopen app" },
+  { pass: "churn", label: "revisit, team churn" },
+  { pass: "backup", label: "revisit, during backup" },
 ]
 
 const JOURNEYS = [
@@ -134,13 +136,29 @@ function parts(click: ClickRecord, latencyMs: number) {
   }
 }
 
+/** Document content read on a revisit: the page check aside, a cache miss. */
+function contentRequests(click: ClickRecord): string[] {
+  return click.requests
+    .filter(
+      (request) =>
+        !request.cached &&
+        (request.label.includes("/documents/content?") ||
+          /\/api\/spaces\/[^/]+\/docs\//.test(request.label))
+    )
+    .map((request) => request.label)
+}
+
 export function summary(result: ClickTraceResult): string {
   const find = group(result.clicks)
   const lines: string[] = []
+  // Older results have no team fields; the churn and backup passes are optional.
+  const passes = PASSES.filter(({ pass }) =>
+    result.clicks.some((click) => click.pass === pass)
+  )
   lines.push(
     `# Click trace: ${result.profile} fixture, ${result.setup.spaces} Spaces, ${result.setup.documents} documents`,
     "",
-    `Commit ${result.commit}, ${result.startedAt}. ${result.machine.cpus} × ${result.machine.model}, ${result.machine.memoryGb} GB, load ${result.machine.load1.toFixed(2)} at start, Bun ${result.machine.bun}, Chromium ${result.machine.chromium}. ${result.options.rounds} rounds; idle ${result.options.idleSeconds} s; desktop hovers ${result.options.hoverMs} ms before clicking; tracing ${result.options.trace ? "on" : "off"}.`,
+    `Commit ${result.commit}, ${result.startedAt}. Clicked by ${result.as === "member" ? `a team member who can open ${result.team?.memberSpaces} of ${result.setup.spaces + (result.team?.hiddenSpaces ?? 0)} Spaces` : result.as === "owner" ? "the team owner" : "the solo owner"}. ${result.machine.cpus} × ${result.machine.model}, ${result.machine.memoryGb} GB, load ${result.machine.load1.toFixed(2)} at start, Bun ${result.machine.bun}, Chromium ${result.machine.chromium}. ${result.options.rounds} rounds; idle ${result.options.idleSeconds} s; desktop hovers ${result.options.hoverMs} ms before clicking; tracing ${result.options.trace ? "on" : "off"}.`,
     "",
     "Times are medians over rounds, in ms from the click (or navigation start). **Content** is the per-screen predicate in `click-trace-page.ts`; **settled** is the last request, DOM change or long task before 1 s of quiet.",
     ""
@@ -155,10 +173,10 @@ export function summary(result: ClickTraceResult): string {
     )
     lines.push(
       markdownTable(
-        ["Journey", ...PASSES.map((pass) => pass.label)],
+        ["Journey", ...passes.map((pass) => pass.label)],
         JOURNEYS.map((journey) => [
           journey,
-          ...PASSES.map(({ pass }) => {
+          ...passes.map(({ pass }) => {
             const clicks = find(name, pass, journey)
             if (clicks.length === 0) return ""
             const content = med(clicks.map((click) => click.contentMs))
@@ -176,10 +194,10 @@ export function summary(result: ClickTraceResult): string {
     )
     lines.push(
       markdownTable(
-        ["Journey", ...PASSES.map((pass) => pass.label)],
+        ["Journey", ...passes.map((pass) => pass.label)],
         JOURNEYS.map((journey) => [
           journey,
-          ...PASSES.map(({ pass }) => {
+          ...passes.map(({ pass }) => {
             const clicks = find(name, pass, journey)
             if (clicks.length === 0) return ""
             const api = med(clicks.map((click) => apiCount(click)))
@@ -252,7 +270,7 @@ export function summary(result: ClickTraceResult): string {
     )
     const rich = ["open rich doc", "open rich doc (2,000 blocks)"]
     const richRows: (string | number | null)[][] = []
-    for (const { pass, label } of PASSES)
+    for (const { pass, label } of passes)
       for (const journey of rich) {
         const clicks = find(name, pass, journey)
         if (clicks.length === 0) continue
@@ -320,7 +338,158 @@ export function summary(result: ClickTraceResult): string {
       ""
     )
   }
+  lines.push(
+    ...revisitContent(result),
+    ...churnSection(result),
+    ...backupSection(result)
+  )
   return lines.join("\n")
+}
+
+function revisitContent(result: ClickTraceResult): string[] {
+  const revisits = result.clicks.filter((click) =>
+    ["revisit", "idle", "churn", "backup"].includes(click.pass)
+  )
+  if (revisits.length === 0) return []
+  const lines = [
+    "## Document content requests on revisits",
+    "",
+    "Requests for a document's content (`/documents/content`, `/docs/…`) that the browser did not serve from its cache, on clicks to documents already opened in the tab.",
+    "",
+  ]
+  const rows: (string | number)[][] = []
+  for (const network of result.options.networks)
+    for (const pass of ["revisit", "idle", "churn", "backup"] as Pass[]) {
+      const clicks = revisits.filter(
+        (click) =>
+          click.network === network.name &&
+          click.pass === pass &&
+          click.journey.startsWith("open ") &&
+          click.journey.includes(" doc")
+      )
+      if (clicks.length === 0) continue
+      const found = clicks.flatMap(contentRequests)
+      rows.push([
+        network.name,
+        pass,
+        clicks.length,
+        found.length,
+        found.slice(0, 3).join(", "),
+      ])
+    }
+  lines.push(
+    markdownTable(
+      ["Network", "Pass", "Document clicks", "Content requests", "Examples"],
+      rows
+    ),
+    ""
+  )
+  return lines
+}
+
+function churnSection(result: ClickTraceResult): string[] {
+  if (!result.churn?.length) return []
+  const lines = [
+    "## Team churn",
+    "",
+    "The owner makes one change before each click of the churn pass; the window is the 3 s after it, until the tab is quiet. A change that does not alter the member's own access should cause no reload, no navigation and no request.",
+    "",
+  ]
+  const kinds = [...new Set(result.churn.map((item) => item.kind))]
+  lines.push(
+    markdownTable(
+      [
+        "Change",
+        "Affects member",
+        "Changes",
+        "Reloads",
+        "Navigations",
+        "Requests (max per change)",
+        "Requested",
+      ],
+      kinds.map((kind) => {
+        const items = result.churn.filter((item) => item.kind === kind)
+        return [
+          kind,
+          items[0]!.affectsMember ? "yes" : "no",
+          items.length,
+          items.reduce((sum, item) => sum + item.reloads, 0),
+          items.reduce((sum, item) => sum + item.navigations.length, 0),
+          `${items.reduce((sum, item) => sum + item.requests.length, 0)} (${Math.max(...items.map((item) => item.requests.length))})`,
+          [
+            ...new Set(
+              items.flatMap((item) =>
+                item.requests.map((label) => label.split("?")[0]!)
+              )
+            ),
+          ]
+            .slice(0, 4)
+            .join(", "),
+        ]
+      })
+    ),
+    ""
+  )
+  return lines
+}
+
+function backupSection(result: ClickTraceResult): string[] {
+  if (!result.backup?.length) return []
+  const revisitMax = (network: string) => {
+    const values = result.clicks
+      .filter((click) => click.network === network && click.pass === "revisit")
+      .map((click) => click.contentMs ?? 0)
+    return values.length ? Math.max(...values) : null
+  }
+  return [
+    "## Backup during load",
+    "",
+    "Live operator snapshots back to back while the tab clicks through revisits and a second client reads every 100 ms and writes every second. Reads and writes count when they overlap a snapshot.",
+    "",
+    markdownTable(
+      [
+        "Network",
+        "Round",
+        "Snapshots (ok)",
+        "Snapshot ms (max)",
+        "Reads",
+        "Failed reads",
+        "Writes",
+        "Refused writes",
+        "Write wait p50 / max ms",
+        "Tab failures",
+        "Slowest click (revisit max)",
+      ],
+      result.backup.map((item) => [
+        item.network,
+        item.round,
+        `${item.snapshots.length} (${item.snapshots.filter((snapshot) => snapshot.status === 200).length})`,
+        Math.round(
+          Math.max(0, ...item.snapshots.map((snapshot) => snapshot.ms))
+        ),
+        item.reads.total,
+        item.reads.failed,
+        item.writes.total,
+        item.writes.refused,
+        `${item.writes.p50Ms} / ${item.writes.maxMs}`,
+        item.tabFailures.length,
+        `${item.maxClickMs ?? "n/a"} ${item.maxClickJourney ?? ""} (${revisitMax(item.network) ?? "n/a"})`,
+      ])
+    ),
+    "",
+    ...result.backup.flatMap((item) =>
+      [
+        ...item.reads.failures,
+        ...item.tabFailures,
+        ...item.snapshots
+          .filter((snapshot) => snapshot.error)
+          .map((snapshot) => `snapshot ${snapshot.status}: ${snapshot.error}`),
+      ]
+        .slice(0, 10)
+        .map((line) => `- ${item.network} round ${item.round}: ${line}`)
+    ),
+    "",
+  ]
 }
 
 export function waterfalls(result: ClickTraceResult): string {

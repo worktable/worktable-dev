@@ -236,6 +236,8 @@ export async function startServer(options: {
   checkout: string
   workspace: string
   app: string
+  /** Extra environment, such as WORKTABLE_STATIC_DIR for a web build. */
+  env?: Record<string, string>
 }): Promise<ServerProcess> {
   const port = await freePort()
   // Keep the caller's Worktable settings (tokens, auth, paths) out of the run.
@@ -253,6 +255,7 @@ export async function startServer(options: {
       PORT: String(port),
       WORKTABLE_WORKSPACE: options.workspace,
       WORKTABLE_APP_DIR: options.app,
+      ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   })

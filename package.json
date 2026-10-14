@@ -62,6 +62,7 @@
     "perf:server": "bun run scripts/perf/server.ts",
     "perf:compare": "bun run scripts/perf/compare.ts",
     "perf:bundle": "bun run scripts/perf/bundle.ts",
+    "perf:clicks": "bun run scripts/perf/click-trace.ts",
     "typecheck:perf": "tsc -p scripts/perf/tsconfig.json",
     "typecheck:lab": "tsc -p scripts/lab/tsconfig.json",
     "test:lab": "bun run scripts/testing/run.ts required --test-path-prefix scripts/lab/",

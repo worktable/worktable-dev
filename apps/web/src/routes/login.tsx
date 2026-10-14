@@ -1,4 +1,3 @@
-import { SourceCodeLink } from "@/components/source-code-link";
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, Lock } from "lucide-react";
@@ -12,7 +11,6 @@ export const Route = createFileRoute("/login")({
 });
 
 interface AuthStatus {
-  sourceUrl?: string;
   exposed: boolean;
   hasOwnerPassword: boolean;
   authenticated: boolean;
@@ -203,11 +201,6 @@ function LoginPage() {
                 : "Sign in"}
           </Button>
         </form>
-        {status?.sourceUrl ? (
-          <div className="mt-4 text-center">
-            <SourceCodeLink sourceUrl={status.sourceUrl} />
-          </div>
-        ) : null}
       </div>
     </div>
   );

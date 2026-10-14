@@ -1,5 +1,4 @@
 import { sameOriginRequestAllowed } from "../auth.ts";
-import { SOURCE_URL } from "../release-info.ts";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { authRequired } from "../auth.ts";
@@ -94,7 +93,6 @@ authSessionRouter.post("/logout", (c) => {
 // GET /auth/status — unauthenticated-safe surface state for the login page.
 authSessionRouter.get("/status", async (c) => {
   return c.json({
-    sourceUrl: SOURCE_URL,
     exposed: authRequired(),
     hasOwnerPassword: await hasOwnerPassword(),
     authenticated: await verifyOwnerSessionCookie(c),

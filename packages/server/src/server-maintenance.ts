@@ -166,10 +166,13 @@ export async function runServerMaintenance(
         body: JSON.stringify({ operationId, maxCaptureMs }),
       }
     )
-    const value = await response.json()
-    if (!response.ok)
-      throw new Error(`live snapshot failed: HTTP ${response.status}`)
-    writeResult(JSON.stringify(value))
+    if (!response.ok) {
+      // The live server reports why the capture failed; keep it for the worker.
+      const body = await response.json().catch(() => null)
+      const reason = typeof body?.error === "string" ? `: ${body.error}` : ""
+      throw new Error(`live snapshot failed: HTTP ${response.status}${reason}`)
+    }
+    writeResult(JSON.stringify(await response.json()))
     return true
   }
   const inspectIndex = argv.lastIndexOf("workspace-snapshot-inspect")

@@ -418,6 +418,9 @@ async function boot(options: {
       WORKTABLE_REQUIRE_AUTH: "1",
       WORKTABLE_PERF_IO_LOG: options.log,
       WORKTABLE_PERF_IO_ROOT: options.checkout,
+      // The timing run logs timers only: SQL logging would slow the
+      // endpoints that run SQL.
+      ...(options.strace ? {} : { WORKTABLE_PERF_IO_SQL: "0" }),
     },
     bunArgs: ["--preload", PRELOAD],
     ...(options.strace
@@ -1234,6 +1237,8 @@ async function main() {
   const useStrace = !args.has("no-strace")
   const check = args.has("check")
   const basePath = args.get("base")
+  if (check && args.has("no-strace"))
+    throw new Error("--check needs the counting run; drop --no-strace")
   if (check && !basePath)
     throw new Error(
       "--check compares against a base run: pass --base <result.json> of a solo counting run"
@@ -1318,6 +1323,11 @@ async function main() {
   writeSummary(out, result)
   console.log(readFileSync(join(out, "summary.md"), "utf8"))
   console.log(`[io-count] wrote ${out}`)
+  // Without the calibration read the counts mean nothing, --check or not.
+  if (useStrace && !result["counting"].calibration.ok) {
+    console.error("[io-count] strace did not show the calibration read")
+    process.exit(1)
+  }
   if (check && result["failures"]?.length) {
     console.error(`[io-count] over budget:\n${result["failures"].join("\n")}`)
     process.exit(1)

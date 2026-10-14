@@ -473,7 +473,7 @@ function backupSection(result: ClickTraceResult): string[] {
         item.writes.refused,
         `${item.writes.p50Ms} / ${item.writes.maxMs}`,
         item.tabFailures.length,
-        `${item.maxClickMs ?? "n/a"} ${item.maxClickJourney ?? ""} (${revisitMax(item.network) ?? "n/a"})`,
+        `${item.maxClickMs ?? "no content"} ${item.maxClickJourney ?? ""} (${revisitMax(item.network) ?? "n/a"})`,
       ])
     ),
     "",

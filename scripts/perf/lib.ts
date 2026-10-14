@@ -300,6 +300,7 @@ export async function startServer(options: {
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: Boolean(options.wrapper),
   })
   let output = ""
   let listenMs = -1
@@ -332,48 +333,47 @@ export async function startServer(options: {
     ).unref()
   })
   // A wrapper such as strace detaches on SIGTERM and leaves the server
-  // running, so signals go to the server itself once it is known.
-  let serverPid: number | null = options.wrapper ? null : child.pid!
-  const signal = (name: NodeJS.Signals) => {
-    if (serverPid !== null && serverPid !== child.pid) {
-      try {
-        process.kill(serverPid, name)
-      } catch {
-        // Already gone.
-      }
+  // running. So a wrapped launch gets its own process group: a graceful stop
+  // signals the server itself, and a forced one the whole group.
+  const wrapped = Boolean(options.wrapper)
+  let serverPid: number | null = wrapped ? null : child.pid!
+  const forceStop = () => {
+    try {
+      if (wrapped) process.kill(-child.pid!, "SIGKILL")
+      else child.kill("SIGKILL")
+    } catch {
+      // Already gone.
     }
-    child.kill(name)
   }
   // Never leave a server behind if this process exits without stop().
-  const kill = () => signal("SIGKILL")
-  process.once("exit", kill)
+  process.once("exit", forceStop)
   const stop = async () => {
-    process.off("exit", kill)
+    process.off("exit", forceStop)
     if (child.exitCode !== null || child.signalCode !== null) return
     const exited = new Promise((resolveExit) => child.once("exit", resolveExit))
-    if (serverPid !== null && serverPid !== child.pid) {
-      // The wrapper exits after the server; signal only the server first.
-      try {
-        process.kill(serverPid, "SIGTERM")
-      } catch {
-        child.kill("SIGTERM")
-      }
-    } else child.kill("SIGTERM")
-    const timer = setTimeout(() => signal("SIGKILL"), 10_000)
+    // The wrapper exits after the server, writing out what it traced.
+    if (serverPid === null) forceStop()
+    else process.kill(serverPid, "SIGTERM")
+    const timer = setTimeout(forceStop, 10_000)
     await exited
     clearTimeout(timer)
   }
   try {
     await listening
     if (serverPid === null) serverPid = descendantNamed(child.pid!, "bun")
+    if (serverPid === null)
+      throw new Error(
+        `no bun process found under ${options.wrapper![0]} (pid ${child.pid})`
+      )
   } catch (error) {
-    if (serverPid === null) serverPid = descendantNamed(child.pid!, "bun")
+    if (wrapped && serverPid === null)
+      serverPid = descendantNamed(child.pid!, "bun")
     await stop()
     throw error
   }
   return {
     url: `http://127.0.0.1:${port}`,
-    pid: serverPid ?? child.pid!,
+    pid: serverPid,
     listenMs,
     startedAt,
     output: () => output,

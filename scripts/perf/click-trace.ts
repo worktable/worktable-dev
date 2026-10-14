@@ -1624,11 +1624,11 @@ async function runNetwork(
       } finally {
         const result = await load.stop()
         const clicks = records.slice(first)
+        // A click that never reached content is the slowest of all.
+        const time = (click: ClickRecord) => click.contentMs ?? Infinity
         const slowest = clicks.reduce<ClickRecord | null>(
           (worst, click) =>
-            (click.contentMs ?? Infinity) > (worst?.contentMs ?? -1)
-              ? click
-              : worst,
+            !worst || time(click) > time(worst) ? click : worst,
           null
         )
         extras.backupRecords.push({
@@ -1939,8 +1939,9 @@ function startBackupLoad(context: BackupContext): {
         },
         writes: {
           total: writesDuring.length,
+          // Any write that did not succeed: 503 with Retry-After, 409, 401...
           refused: writesDuring.filter(
-            (item) => item.status === 0 || item.status >= 500
+            (item) => item.status < 200 || item.status >= 300
           ).length,
           maxMs: round1(waits.at(-1) ?? 0),
           p50Ms: round1(waits[Math.floor((waits.length - 1) / 2)] ?? 0),

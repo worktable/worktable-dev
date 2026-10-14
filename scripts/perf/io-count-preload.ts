@@ -1,7 +1,8 @@
 /**
  * Preloaded into the server by io-count.ts (`bun --preload`). Logs every SQL
  * statement the process executes and every timer callback of 100 ms or more,
- * one JSON line each, to the file named by WORKTABLE_PERF_IO_LOG.
+ * one JSON line each, to the file named by WORKTABLE_PERF_IO_LOG. With
+ * WORKTABLE_PERF_IO_SQL=0 it logs timers only (io-count's timing run).
  *
  * File I/O is not counted here: Bun binds `node:fs` named imports before a
  * preload can wrap them, so io-count.ts takes file system calls from strace.
@@ -72,7 +73,8 @@ if (target) {
     string,
     (...args: unknown[]) => unknown
   >
-  for (const name of ["query", "prepare"]) {
+  const countSql = process.env["WORKTABLE_PERF_IO_SQL"] !== "0"
+  for (const name of countSql ? ["query", "prepare"] : []) {
     const original = prototype[name]!
     prototype[name] = function (this: unknown, ...args: unknown[]) {
       return wrapStatement(
@@ -81,7 +83,7 @@ if (target) {
       )
     }
   }
-  for (const name of ["run", "exec"]) {
+  for (const name of countSql ? ["run", "exec"] : []) {
     const original = prototype[name]!
     prototype[name] = function (this: unknown, ...args: unknown[]) {
       log({

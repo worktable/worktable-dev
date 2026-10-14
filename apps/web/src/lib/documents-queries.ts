@@ -135,8 +135,11 @@ export function documentPageValidated(spaceId: string, path: string): boolean {
 
 // ── Content by revision ──────────────────────────────────────
 
-// A content address answered with a newer revision points there. Only one
-// step is followed: the page check settles anything later.
+// A content address answered with a newer revision points there, for the
+// rows and earlier checks that still name the old one. Only one step is
+// followed: the page check settles anything later. A revision the page check
+// names is current, so it is read as is and drops its redirect: a hash can
+// become current again (a version restored, say).
 const redirectsGlobal = globalThis as typeof globalThis & {
   __worktableContentRedirects?: Map<string, string>
 }
@@ -146,13 +149,22 @@ const contentRedirects =
 const redirectKey = (spaceId: string, path: string, revision: string) =>
   `${spaceId}\0${path}\0${revision}`
 
-/** The revision to read for `revision`: itself, or the one it was answered with. */
+/**
+ * The revision to read for `revision`: itself, or the one it was answered
+ * with unless the page check names it as current.
+ */
 export function documentContentRevision(
   spaceId: string,
   path: string,
-  revision: string
+  revision: string,
+  current = false
 ): string {
-  return contentRedirects.get(redirectKey(spaceId, path, revision)) ?? revision
+  const key = redirectKey(spaceId, path, revision)
+  if (current) {
+    contentRedirects.delete(key)
+    return revision
+  }
+  return contentRedirects.get(key) ?? revision
 }
 
 export const documentContentQueryOptions = (
@@ -187,9 +199,10 @@ export async function prefetchDocumentContent(
   queryClient: QueryClient,
   spaceId: string,
   path: string,
-  revision: string
+  revision: string,
+  current = false
 ): Promise<void> {
-  const effective = documentContentRevision(spaceId, path, revision)
+  const effective = documentContentRevision(spaceId, path, revision, current)
   await queryClient.prefetchQuery(
     documentContentQueryOptions(spaceId, path, effective)
   )
@@ -209,12 +222,13 @@ export async function prefetchDocumentContent(
 export function useDocumentContent(
   spaceId: string,
   path: string,
-  revision: string | undefined
+  revision: string | undefined,
+  current = false
 ) {
   const effective =
     revision === undefined
       ? undefined
-      : documentContentRevision(spaceId, path, revision)
+      : documentContentRevision(spaceId, path, revision, current)
   return useQuery({
     ...documentContentQueryOptions(spaceId, path, effective ?? ""),
     enabled: effective !== undefined,

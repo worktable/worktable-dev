@@ -78,7 +78,8 @@ function startDocumentReadsForPage(
       queryClient,
       spaceId,
       path,
-      page.revision
+      page.revision,
+      true
     ).catch(() => {})
   }
 }
@@ -158,20 +159,31 @@ function DocumentPageRoute() {
   // while the path is open: later changes refresh the check, and the
   // editing room's own admission stays the final word.
   const openKey = `${spaceId}\0${path}`
-  const [shownOpen, setShownOpen] = useState<string | null>(null)
-  if (shownOpen !== openKey) {
+  // Each open of a path is validated on its own: going A → B → A starts a
+  // new open of A, which an earlier visit's check does not validate.
+  const [open, setOpen] = useState<{ key: string; validated: boolean }>({
+    key: "",
+    validated: false,
+  })
+  if (open.key !== openKey) {
     ensureDocumentOpen(spaceId, path)
-    setShownOpen(openKey)
+    setOpen({ key: openKey, validated: false })
   }
-  useEffect(() => () => forgetDocumentOpen(spaceId, path), [spaceId, path])
-  const [validatedOpen, setValidatedOpen] = useState<string | null>(null)
+  useEffect(() => {
+    // A remount for the same path can follow the previous cleanup.
+    ensureDocumentOpen(spaceId, path)
+    return () => forgetDocumentOpen(spaceId, path)
+  }, [spaceId, path])
   const validatedNow =
     pageQuery.data !== undefined &&
     pageQuery.dataUpdatedAt > 0 &&
     !pageQuery.isError &&
     documentPageValidated(spaceId, path)
-  if (validatedNow && validatedOpen !== openKey) setValidatedOpen(openKey)
-  const validated = validatedNow || validatedOpen === openKey
+  const currentOpen = open.key === openKey
+  if (validatedNow && currentOpen && !open.validated) {
+    setOpen({ key: openKey, validated: true })
+  }
+  const validated = validatedNow || (currentOpen && open.validated)
   // No check validates this open yet and none is on its way (a preload's
   // answered before the open began): ask for one.
   const { isFetching: checking, isError: checkFailed, refetch } = pageQuery

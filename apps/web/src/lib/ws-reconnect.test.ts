@@ -350,12 +350,12 @@ describe("Space events in the query cache", () => {
     await settle(queryClient)
     expect([docs.reads, documents.reads, content.reads]).toEqual([1, 0, 0])
 
-    // Without a synced session the same save is news to this tab. The
-    // documents list already shows its revision; labels come from the docs.
+    // Without a synced session the same save is news to this tab: the lists
+    // read again for what else it moved.
     synced = false
     applySpaceEvent(queryClient, "space-echo", save())
     await settle(queryClient)
-    expect([docs.reads, documents.reads, content.reads]).toEqual([2, 0, 0])
+    expect([docs.reads, documents.reads, content.reads]).toEqual([2, 1, 0])
     for (const query of [docs, documents, content, recent]) query.unsubscribe()
     unregister()
   })
@@ -457,8 +457,9 @@ describe("Space events in the query cache", () => {
       },
     })
 
-    // Rows open the new revision at once, without waiting for a list read;
-    // the open document checks its path again and finds that content here.
+    // Rows open the new revision at once, before the list reads again (for
+    // what else the change moved); the open document checks its path again
+    // and finds that content here.
     expect(queryClient.getQueryData(documentQueryKeys.list("space-a"))).toEqual(listed("rev-2"))
     expect(
       queryClient.getQueryData<{ items: Array<{ document: { revision: string } }> }>(
@@ -466,7 +467,7 @@ describe("Space events in the query cache", () => {
       )?.items[0]?.document.revision
     ).toBe("rev-2")
     await settle(queryClient)
-    expect([documents.reads, page.reads, shown.reads]).toEqual([0, 1, 0])
+    expect([documents.reads, page.reads, shown.reads]).toEqual([1, 1, 0])
     expect(
       queryClient.getQueryData(documentQueryKeys.content("space-a", "notes/plan", "rev-2"))
     ).toEqual({ revision: "rev-2", format: "markdown", content: "# Plan\n\nEdited outside." })

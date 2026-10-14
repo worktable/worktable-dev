@@ -1,7 +1,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AnnotationCategory, AnnotationTarget } from "@worktable/types";
 import { createAnnotation, listAnnotations, replyAnnotation, resolveAnnotation, reopenAnnotation } from "./annotations-api";
-import { isSpaceLive } from "./space-observation";
+import { spaceReadMark, spaceValidatedLive, trackSpaceRead } from "./space-observation";
 
 export const annotationQueryKeys = {
   doc: (spaceId: string, docPath: string, includeResolved = false) => ["annotations", spaceId, docPath, includeResolved] as const,
@@ -55,16 +55,32 @@ export function useSpaceAttention(spaceId: string) {
 /**
  * A document's annotations stay current while the Space's socket is live:
  * every annotation write reaches it as annotation_update, and a reconnect
- * marks them stale. Without the socket, opening the document reads them.
+ * marks them stale. A read counts only if it began on the live socket; one
+ * that began before the subscription could miss a write in between.
+ * Without the socket, opening the document reads them.
  */
-const freshWhileLive = (spaceId: string) => () =>
-  isSpaceLive(spaceId) ? Infinity : 0;
+function liveAnnotationRead(
+  spaceId: string,
+  queryKey: readonly unknown[],
+  read: () => ReturnType<typeof listAnnotations>
+) {
+  const key = `annotations\0${JSON.stringify(queryKey)}`;
+  return {
+    queryFn: () => trackSpaceRead(spaceId, key, read),
+    staleTime: () => {
+      const mark = spaceReadMark(key);
+      return mark && spaceValidatedLive(spaceId, mark) ? Infinity : 0;
+    },
+  };
+}
 
 export function annotationQueryOptions(spaceId: string, docPath: string, includeResolved = false) {
+  const queryKey = annotationQueryKeys.doc(spaceId, docPath, includeResolved);
   return queryOptions({
-    queryKey: annotationQueryKeys.doc(spaceId, docPath, includeResolved),
-    queryFn: () => listAnnotations(spaceId, { docPath, includeResolved }),
-    staleTime: freshWhileLive(spaceId),
+    queryKey,
+    ...liveAnnotationRead(spaceId, queryKey, () =>
+      listAnnotations(spaceId, { docPath, includeResolved })
+    ),
   });
 }
 
@@ -73,10 +89,12 @@ export function useDocAnnotations(spaceId: string, docPath: string, includeResol
 }
 
 export function widgetAnnotationQueryOptions(spaceId: string, widgetId: string, includeResolved = false) {
+  const queryKey = annotationQueryKeys.widget(spaceId, widgetId, includeResolved);
   return queryOptions({
-    queryKey: annotationQueryKeys.widget(spaceId, widgetId, includeResolved),
-    queryFn: () => listAnnotations(spaceId, { widgetId, includeResolved }),
-    staleTime: freshWhileLive(spaceId),
+    queryKey,
+    ...liveAnnotationRead(spaceId, queryKey, () =>
+      listAnnotations(spaceId, { widgetId, includeResolved })
+    ),
   });
 }
 

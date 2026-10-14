@@ -36,7 +36,6 @@ import type {
   DocumentContent,
   DocumentListItem,
   RecordFile,
-  WithContentRevision,
   Thread,
   ThreadActivity,
   ThreadLocation,
@@ -513,30 +512,17 @@ function updatedContent(message: WsMessage): {
 /**
  * A change event names the document's new revision: move its rows there in
  * place, and keep the content it carried for a document this tab reads.
- * Returns whether the Space's documents list already holds the new revision.
  */
 function applyDocumentRevision(
   queryClient: QueryClient,
   spaceId: string,
   message: WsMessage
-): boolean {
+): void {
   const path = message.docPath
   const { revision, content } = updatedContent(message)
-  if (!path || !revision) return false
+  if (!path || !revision) return
   patchDocumentRevision(queryClient, spaceId, path, revision)
   if (content) rememberDocumentContent(queryClient, spaceId, path, content)
-  return Boolean(
-    queryClient
-      .getQueryData<WithContentRevision<DocumentListItem>[]>(
-        documentQueryKeys.list(spaceId)
-      )
-      ?.some(
-        (row) =>
-          row.kind === "document" &&
-          row.path === path &&
-          row.revision === revision
-      )
-  )
 }
 
 /**
@@ -635,16 +621,15 @@ export function applySpaceEvent(
   }
 
   if (type === "doc_update" || type === "doc_deleted") {
-    const listed =
-      type === "doc_update" &&
+    // Rows open the new revision at once; the lists still read again for
+    // what else the change moved (a conversion's format, dates, titles).
+    if (type === "doc_update") {
       applyDocumentRevision(queryClient, spaceId, message)
+    }
     if (isOwnCollaborativeSave({ ...message, spaceId })) {
       applyOwnCollaborativeSave(queryClient, spaceId, message)
     } else {
-      // A content change the documents list already shows needs no read
-      // of it; the other lists still name the document by its content.
-      refresh.push(docs, references, search, recent, activity)
-      if (!listed) refresh.push(documents)
+      refresh.push(docs, documents, references, search, recent, activity)
       if (message.docPath) {
         refresh.push({
           queryKey: documentQueryKeys.page(spaceId, message.docPath),

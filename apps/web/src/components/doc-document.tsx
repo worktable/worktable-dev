@@ -724,7 +724,12 @@ function MarkdownDocPage({
         : undefined,
     [converting, onConvert, validated]
   )
-  const contentQuery = useDocumentContent(spaceId, docPath, revision)
+  const contentQuery = useDocumentContent(
+    spaceId,
+    docPath,
+    revision,
+    validated
+  )
   const content = contentQuery.data?.content
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
@@ -1073,7 +1078,12 @@ function BlockNoteDocPage({
   if (!editorReadable && revision !== previewRevision) {
     setPreviewRevision(revision)
   }
-  const previewQuery = useDocumentContent(spaceId, docPath, previewRevision)
+  const previewQuery = useDocumentContent(
+    spaceId,
+    docPath,
+    previewRevision,
+    validated && previewRevision === revision
+  )
   const previewContent = Array.isArray(previewQuery.data?.content)
     ? previewQuery.data.content
     : undefined

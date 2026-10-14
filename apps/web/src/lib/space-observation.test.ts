@@ -138,13 +138,17 @@ describe("annotations of an open document", () => {
       unsubscribe()
     }
 
+    // A read from before the subscription could miss a write in between.
+    await open()
     noteSpaceLive("space-notes", true)
     await open()
-    await open()
-    expect(reads).toBe(1)
-    noteSpaceLive("space-notes", false)
+    expect(reads).toBe(2)
+    // One read on the live socket holds while it stays live.
     await open()
     expect(reads).toBe(2)
+    noteSpaceLive("space-notes", false)
+    await open()
+    expect(reads).toBe(3)
   })
 })
 
@@ -182,5 +186,14 @@ describe("content by revision", () => {
       "rev-1"
     )
     expect(contentRequests).toEqual(["rev-1", "rev-2"])
+
+    // A hash can be current again (a version restored): once the page check
+    // names it, it is read as is and the redirect is gone.
+    expect(
+      documentContentRevision("space-rev", "notes/plan", "rev-1", true)
+    ).toBe("rev-1")
+    expect(documentContentRevision("space-rev", "notes/plan", "rev-1")).toBe(
+      "rev-1"
+    )
   })
 })

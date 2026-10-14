@@ -76,7 +76,12 @@ bun run typecheck
 bun run typecheck:lab
 bun run test:policy
 bun run test:required
+bun run lint:changed --base origin/main
 ```
+
+`lint:changed` lints the files you changed and fails only on errors your change
+adds, so existing lint debt does not block you. CI runs it on every product
+change.
 
 Use the least expensive canonical test lane that proves the changed behavior
 while developing. `test:required` covers standard, server, CLI, and packaged
@@ -140,6 +145,13 @@ CI source checks and standalone release assembly check preview asset integrity.
 Run `check:previews` locally when changing preview sources or their dependencies;
 ordinary build and test commands do not repeat this check. Regenerate and review
 stale outputs rather than bypassing the check.
+
+The MCP tool surface in `mcp-tools.json` is frozen while directory reviews are
+pending. The `tool-surface` check fails a pull request that changes any tool's
+name, schema, description, title, annotations or security schemes, unless the
+pull request has the `tool-surface-change` label. Compare against another
+revision with `bun run check:tool-surface --base <ref>`; add `--approved` to
+accept a change outside a pull request.
 
 For product docs, use `bun run dev:docs` or `bun run build:docs`. CLI and MCP
 reference pages, runtime references, skill pages, and skill downloads are generated

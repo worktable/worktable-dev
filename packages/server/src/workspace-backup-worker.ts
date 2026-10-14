@@ -166,7 +166,7 @@ export function sanitizeFailureMessage(
 ): string {
   let line = text.split(/\r?\n/, 1)[0] ?? ""
   for (const secret of context.secrets)
-    if (secret.length >= 4) line = line.split(secret).join("[redacted]")
+    if (secret) line = line.split(secret).join("[redacted]")
   line = line.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[url]")
   const roots = context.roots.filter(Boolean).map((root) => resolve(root))
   line = line.replace(/(?<![\w.~-])\/[^\s'"`,;()<>]+/g, (path) => {

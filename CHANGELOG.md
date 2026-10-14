@@ -9,10 +9,20 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-10-14
+
 ### Changed
 
-- **Faster start:** Worktable shows your workspace sooner when you open or reload it, and HTML Docs open sooner. The difference is largest on phones and slow connections.
-- **Opening documents:** Docs and HTML Docs open sooner from the sidebar, Home, search and pins, and ones you opened before open without waiting for the server. Worktable shows the document right away and checks it in the background; rich-text Docs become editable once that check finishes. Edits made elsewhere, including outside Worktable, still appear.
+- **Opening documents:** Docs and HTML Docs you've opened before appear right away, without waiting for the server. Others open sooner from the sidebar, Home, search and pins. Worktable checks the document in the background while showing it, and you can edit it once that check finishes. Edits made elsewhere, including outside Worktable, still appear.
+- **Threads:** Long threads and the Threads list open faster, most of all on phones. A thread shows its newest messages first and adds earlier ones as you scroll up, so your browser's find covers only the messages shown so far. Opening a thread keeps your place in the Threads list, and on phones, going back returns to it.
+- **Screens open sooner:** Once your workspace is open, Worktable loads the code for Spaces, documents, the editor and threads while the app is idle, so the first visit to each waits only for its content. It skips this when your browser asks to save data or the connection is 2G.
+- **Settings → Agents:** Every section starts collapsed, including **Coding agents** and **Access tokens**.
+- **Setup skill:** When Worktable isn't installed yet, the Worktable setup skill links to the install pages and asks you to run the installer yourself. Your agent no longer runs a downloaded script for you. OpenClaw gets this with version 0.0.16 of the Worktable plugin.
+- **Sign-in:** The sign-in screen no longer shows a **Source code** link. It's still in **Settings → System**.
+
+### Fixed
+
+- **Documents in another Space:** Opening a document in another Space, for example from Recent on Home, no longer shows that Space's overview first.
 
 ## [0.1.22] - 2026-10-12
 
@@ -27,6 +37,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Faster start:** Worktable shows your workspace sooner when you open or reload it, and HTML Docs open sooner. The difference is largest on phones and slow connections.
 - **Version history:** Worktable now keeps 30 days of version history by default. **Settings → History** offers 30, 90 or 180 days, or the last 7 versions of each doc. Keeping everything is no longer offered. Workspaces that kept everything (the previous default) or the last 50 versions of each doc move to 180 days, and **Settings → History** shows a notice. Shortly after the update, versions older than 180 days are deleted, except each doc's newest version. To keep them, export your workspace with **All history** from **Settings → Import & Export** before updating.
 - **Faster on large workspaces:** On workspaces with around a thousand documents, opening a document, the Spaces list, a Space's Docs, Recent, and threads take tens of milliseconds instead of half a second to a few seconds. Pending and Activity load several times faster, and Home and open Docs make far fewer background requests.
 - **Search:** Search looks inside every document. Before, a large workspace searched the content of only some documents and matched the rest by title. Search right after an edit takes a fraction of a second instead of seconds.

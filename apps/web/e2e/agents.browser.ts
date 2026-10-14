@@ -157,6 +157,7 @@ test("local setup uses one disclosure at a time and separates connection managem
   const accessTokens = dialog.getByRole("button", {
     name: /^Access tokens/,
   })
+  const tokenRow = dialog.getByRole("row", { name: /studio-mac/ })
 
   await expect(
     dialog.getByRole("heading", { name: "Connected agents" })
@@ -169,7 +170,7 @@ test("local setup uses one disclosure at a time and separates connection managem
     await expect(disclosure).toHaveAttribute("aria-expanded", "false")
   }
   await expect(dialog.getByRole("button", { name: "Connect" })).toBeHidden()
-  await expect(dialog.getByText("studio-mac", { exact: true })).toBeHidden()
+  await expect(tokenRow).toBeHidden()
   await expect(
     dialog.getByRole("link", { name: "Download extension" })
   ).toBeHidden()
@@ -209,10 +210,10 @@ test("local setup uses one disclosure at a time and separates connection managem
     0
   )
   await accessTokens.click()
-  await expect(dialog.getByText("studio-mac", { exact: true })).toBeVisible()
+  await expect(tokenRow).toBeVisible()
   await accessTokens.click()
   await expect(accessTokens).toHaveAttribute("aria-expanded", "false")
-  await expect(dialog.getByText("studio-mac", { exact: true })).toBeHidden()
+  await expect(tokenRow).toBeHidden()
 })
 
 test("local Desktop Settings manages the two skill targets from allowed operations", async ({

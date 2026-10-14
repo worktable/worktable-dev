@@ -90,9 +90,18 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   const originalUrl = page.url()
   const dialog = page.getByRole("dialog")
 
+  const quickConnect = dialog.getByRole("button", { name: /^Coding agents/ })
+  await expect(quickConnect).toBeVisible()
+  for (const disclosure of await dialog
+    .locator('[data-slot="collapsible-trigger"]')
+    .all()) {
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false")
+  }
+  await quickConnect.click()
+  await expect(quickConnect).toHaveAttribute("aria-expanded", "true")
   await expect(
-    dialog.getByRole("button", { name: /^Coding agents/ })
-  ).toHaveAttribute("aria-expanded", "true")
+    dialog.getByRole("combobox", { name: "Cloud quick connect agent" })
+  ).toBeVisible()
   await expect(dialog.getByText("Claude", { exact: true })).toBeVisible()
   await expect(dialog.getByText("Not used yet", { exact: true })).toBeVisible()
   await expect(
@@ -113,6 +122,25 @@ test("local setup uses one disclosure at a time and separates connection managem
       body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
     })
   )
+  await page.route("**/api/tokens", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        tokens: [
+          {
+            id: "123456789abc",
+            user: "owner",
+            agent: "codex@studio-mac",
+            scopes: ["docs:*"],
+            workspace: "/tmp/worktable",
+            createdAt: "2026-01-01T00:00:00Z",
+            revokedAt: null,
+            lastUsedAt: null,
+          },
+        ],
+      }),
+    })
+  )
 
   await openAgents(page)
   const dialog = page.getByRole("dialog")
@@ -126,25 +154,30 @@ test("local setup uses one disclosure at a time and separates connection managem
   const desktopApps = dialog.getByRole("button", {
     name: /^Claude and ChatGPT/,
   })
-  const manualInstall = dialog.getByRole("button", {
-    name: /^Manual setup/,
-  })
   const accessTokens = dialog.getByRole("button", {
     name: /^Access tokens/,
   })
+  const tokenRow = dialog.getByRole("row", { name: /studio-mac/ })
 
   await expect(
     dialog.getByRole("heading", { name: "Connected agents" })
   ).toBeVisible()
   await expect(dialog.getByRole("heading", { name: "Advanced" })).toBeVisible()
-  await expect(quickConnect).toHaveAttribute("aria-expanded", "true")
-  await expect(dialog.getByRole("button", { name: "Connect" })).toBeVisible()
-  await expect(desktopApps).toHaveAttribute("aria-expanded", "false")
-  await expect(alwaysOn).toHaveAttribute("aria-expanded", "false")
-  await expect(manualInstall).toHaveAttribute("aria-expanded", "false")
+  await expect(accessTokens).toContainText("1 active token")
+  for (const disclosure of await dialog
+    .locator('[data-slot="collapsible-trigger"]')
+    .all()) {
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false")
+  }
+  await expect(dialog.getByRole("button", { name: "Connect" })).toBeHidden()
+  await expect(tokenRow).toBeHidden()
   await expect(
     dialog.getByRole("link", { name: "Download extension" })
   ).toBeHidden()
+
+  await quickConnect.click()
+  await expect(quickConnect).toHaveAttribute("aria-expanded", "true")
+  await expect(dialog.getByRole("button", { name: "Connect" })).toBeVisible()
 
   await desktopApps.click()
   await expect(quickConnect).toHaveAttribute("aria-expanded", "false")
@@ -171,15 +204,16 @@ test("local setup uses one disclosure at a time and separates connection managem
   await expect(dialog.getByRole("button", { name: "Connect" })).toBeVisible()
 
   await expect(accessTokens).toHaveAttribute("aria-expanded", "false")
-  await expect(
-    dialog.getByText("No active tokens", { exact: true })
-  ).toBeVisible()
+  await expect(accessTokens).toContainText("1 active token")
   await expect(dialog.getByRole("button", { name: "New token" })).toBeVisible()
   await expect(dialog.getByRole("button", { name: "Disconnect" })).toHaveCount(
     0
   )
   await accessTokens.click()
-  await expect(dialog.getByText("No active access tokens.")).toBeVisible()
+  await expect(tokenRow).toBeVisible()
+  await accessTokens.click()
+  await expect(accessTokens).toHaveAttribute("aria-expanded", "false")
+  await expect(tokenRow).toBeHidden()
 })
 
 test("local Desktop Settings manages the two skill targets from allowed operations", async ({

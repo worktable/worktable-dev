@@ -55,7 +55,7 @@ test("connected identity and disconnect remain available when OAuth inventory is
   }
 })
 
-test("existing access tokens expose their identity and omit revoked credentials", () => {
+test("existing access tokens start collapsed, retain their identity, and omit revoked credentials", () => {
   const client = new QueryClient()
   const token = {
     id: "123456789abc",
@@ -93,7 +93,7 @@ test("existing access tokens expose their identity and omit revoked credentials"
     ])
       expect(html).toContain(label)
     expect(html).not.toContain("RevokedAgent")
-    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('aria-expanded="false"')
   } finally {
     client.clear()
   }

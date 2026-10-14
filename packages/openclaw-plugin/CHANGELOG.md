@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.16
+
+- The bundled setup skill links to the Worktable install pages and asks you to run the installer yourself. The agent no longer pipes a downloaded script into a shell.
+
 ## 0.0.15
 
 - Show the complete sign-in link when connecting to Worktable Cloud. OpenClaw masked part of it, so the link could not be opened.

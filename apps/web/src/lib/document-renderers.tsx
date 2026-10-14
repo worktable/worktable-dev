@@ -61,6 +61,17 @@ export function browserDocumentRenderer(
     : null
 }
 
+/**
+ * Renderer code a first visit to each kind of document waits on, to load
+ * ahead while the tab is idle: Markdown and rich text, HTML, then the
+ * rich-text editor, the largest.
+ */
+export const rendererPreloads: readonly (() => Promise<unknown>)[] = [
+  doc.preload,
+  html.preload,
+  () => preloadDocRenderer("worktable.rich-text"),
+]
+
 /** Code hint only: route and renderer requests still validate the live path. */
 export function preloadOpeningDocumentRenderer() {
   try {

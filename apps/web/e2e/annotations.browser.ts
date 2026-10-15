@@ -138,6 +138,10 @@ for (const mobile of [true, false]) {
         await page
           .getByRole("button", { name: "Close annotations", exact: true })
           .tap()
+        // Closing returns focus, which would clear a selection made mid-close.
+        await expect(
+          page.getByRole("dialog", { name: "Annotations", exact: true })
+        ).toHaveCount(0)
       }
       await selectQuote()
       await expect(composer.getByRole("textbox")).toHaveValue("")

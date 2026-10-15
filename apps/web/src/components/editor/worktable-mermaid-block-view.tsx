@@ -80,7 +80,7 @@ export default function MermaidBlockComponent({
     return (
       <button
         type="button"
-        className="mermaid-block-shell worktable-diagram-collapsed"
+        className="worktable-diagram-collapsed"
         onMouseDown={(event) => event.preventDefault()}
         onClick={toggleCollapse}
         aria-expanded={false}

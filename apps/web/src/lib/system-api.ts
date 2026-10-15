@@ -12,6 +12,8 @@ import {
 export interface SystemVersion {
   /** Source for this running build, when supplied by the release. */
   sourceUrl?: string
+  /** The public commit this build was made from, when supplied by the release. */
+  sourceCommit?: string
   /** The running build's version. */
   current: string
   /** Whether the server can trigger an in-place update (embedded installer + launcher). */
@@ -22,6 +24,10 @@ export interface SystemVersion {
   latest: string | null
   /** True when `latest` is known and strictly newer than `current`. */
   updateAvailable: boolean
+  /** The release channel this install follows; null when it doesn't check. */
+  channel?: "stable" | "beta" | null
+  /** Whether the followed channel is held, so nothing new is offered. */
+  held?: boolean
   /** ISO timestamp of the check that produced `latest`, or null. */
   checkedAt: string | null
   /** ISO timestamp of the most recent network attempt, successful or not. */

@@ -12,29 +12,43 @@ import { Database } from "bun:sqlite"
 import { getAppDir } from "./app-storage.ts"
 import { VERSION } from "./release-info.ts"
 import { getServerSettings } from "./settings-store.ts"
+import {
+  isNewerVersion,
+  isUpdateChannel,
+  normalizeVersion,
+  resolveChannelTarget,
+  type ChannelTarget,
+  type UpdateChannel,
+} from "./release-channels.ts"
 
 // ============================================================
-// Latest-release check
+// Release-channel check
 // ============================================================
 //
-// Single source of truth for "is a newer Worktable published?". The release
-// pipeline uploads a platform-neutral manifest.json next to the tarballs, so
-// <releases>/latest/manifest.json answers with the newest published version
-// without downloading an artifact. Every surface that mentions updates — the
-// CLI's `status` / `update --check` / passive nudge, and the server's
+// Single source of truth for "is a newer Worktable offered?". The team
+// publishes <releases>/channels.json, a small manifest naming the current
+// version of each release channel and whether that channel is held. Every
+// surface that mentions updates — the CLI's `status` / `update --check` /
+// passive nudge, `worktable update` itself, and the server's
 // /api/system/version behind the Settings drawer — reads THIS module, so they
-// can never disagree about what "latest" means.
+// can never disagree about what "latest" means, and holding a channel stops
+// all of them from offering its version.
 //
 // The result is cached in app-private storage (update-check.json) with a TTL.
 // Blocking surfaces (status, update --check) refresh it; passive surfaces (the
 // CLI nudge printed after ordinary commands) only ever read the cache, so they
 // cost zero network and zero latency. The running server keeps the cache warm.
+// Installing always fetches the manifest again: when it is unreachable,
+// Worktable keeps the version it runs.
 
 /**
  * Default release base URL. Paired with the same default in scripts/install.sh
  * (`base_url=${WORKTABLE_RELEASE_BASE_URL:-...}`) — change both together.
  */
 export const DEFAULT_RELEASE_BASE_URL = "https://worktable.dev/releases"
+
+/** The manifest file under the release base URL. */
+export const RELEASE_CHANNELS_FILE = "channels.json"
 
 /** How long a cached answer stays fresh before the next check refetches. */
 export const UPDATE_CHECK_TTL_MS = 6 * 60 * 60_000
@@ -71,40 +85,70 @@ export function updateCheckSupported(): boolean {
   return Boolean(process.env["WORKTABLE_VERSION"]?.trim())
 }
 
+export {
+  compareVersions,
+  isNewerVersion,
+  isUpdateChannel,
+  normalizeVersion,
+  releaseTagForVersion,
+  resolveChannelTarget,
+  UPDATE_CHANNELS,
+  type ChannelTarget,
+  type UpdateChannel,
+} from "./release-channels.ts"
+
+// ── The channel this install follows ────────────────────────────────────────
+
+const CHANNEL_FILE = "release-channel.json"
+
+export function getUpdateChannelPath(): string {
+  return join(getAppDir(), CHANNEL_FILE)
+}
+
 /**
- * Normalize a version string to plain `X.Y.Z` (release tags carry a leading
- * `v`, manifests don't). Null when the input isn't a plain semver triple.
+ * The channel this install follows. Machine-local, read fresh on every check
+ * so a change from the CLI reaches a running server without a restart. Anything
+ * unreadable follows stable.
  */
-export function normalizeVersion(input: string): string | null {
-  const trimmed = input.trim().replace(/^v/i, "")
-  return /^\d+\.\d+\.\d+$/.test(trimmed) ? trimmed : null
-}
-
-/** Numeric segment comparison of two normalized-able versions. 0 when either is invalid. */
-export function compareVersions(a: string, b: string): number {
-  const left = normalizeVersion(a)
-  const right = normalizeVersion(b)
-  if (!left || !right) return 0
-  const ls = left.split(".").map(Number)
-  const rs = right.split(".").map(Number)
-  for (let i = 0; i < 3; i += 1) {
-    if (ls[i]! !== rs[i]!) return ls[i]! < rs[i]! ? -1 : 1
+export function getUpdateChannel(): UpdateChannel {
+  try {
+    const parsed = JSON.parse(readFileSync(getUpdateChannelPath(), "utf8")) as {
+      channel?: unknown
+    }
+    return isUpdateChannel(parsed?.channel) ? parsed.channel : "stable"
+  } catch {
+    return "stable"
   }
-  return 0
 }
 
-/** True when `candidate` is a strictly newer version than `current`. */
-export function isNewerVersion(candidate: string, current: string): boolean {
-  return compareVersions(candidate, current) > 0
+export function setUpdateChannel(channel: UpdateChannel): void {
+  mkdirSync(getAppDir(), { recursive: true })
+  const path = getUpdateChannelPath()
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify({ channel }, null, 2) + "\n", {
+      mode: 0o600,
+    })
+    renameSync(tmp, path)
+  } finally {
+    rmSync(tmp, { force: true })
+  }
 }
 
 export interface UpdateCheckResult {
   /** The running build's version. */
   current: string
-  /** Newest published release version (plain X.Y.Z), or null when unknown. */
+  /**
+   * Newest version the followed channel offers, or null when unknown or when
+   * the channel offers nothing (it is held).
+   */
   latest: string | null
   /** True when `latest` is known and strictly newer than `current`. */
   updateAvailable: boolean
+  /** The release channel this install follows; null when it doesn't check. */
+  channel: UpdateChannel | null
+  /** Whether the followed channel is held, as of the last successful check. */
+  held: boolean
   /** ISO timestamp of the successful check that produced `latest`. */
   checkedAt: string | null
   /** ISO timestamp of the most recent network attempt, successful or not. */
@@ -127,7 +171,10 @@ export type UpdateCheckStatus =
 type UpdateCheckFailure = "timeout" | "network" | "http" | "invalid-manifest"
 
 interface UpdateCheckCacheFile {
+  /** The channel the answer belongs to; answers for another channel are ignored. */
+  channel?: UpdateChannel
   latest?: string
+  held?: boolean
   checkedAt?: string
   lastAttemptAt?: string
   lastFailure?: UpdateCheckFailure
@@ -213,10 +260,15 @@ function readCacheFile(): UpdateCheckCacheFile | null {
     >
     if (!parsed || typeof parsed !== "object") return null
 
+    // An answer for a different channel (or from before channels existed)
+    // says nothing about this one: behave as if never checked.
+    if (parsed["channel"] !== getUpdateChannel()) return null
+    const channel = parsed["channel"] as UpdateChannel
     const latest =
       typeof parsed["latest"] === "string"
         ? normalizeVersion(parsed["latest"])
         : null
+    const held = parsed["held"] === true
     const checkedAt =
       typeof parsed["checkedAt"] === "string" &&
       !Number.isNaN(Date.parse(parsed["checkedAt"]))
@@ -236,11 +288,15 @@ function readCacheFile(): UpdateCheckCacheFile | null {
         ? rawFailure
         : undefined
 
-    // A successful answer is useful only as a version/timestamp pair. Failure
-    // metadata is independently useful for a first check that never succeeded.
-    if ((latest && checkedAt) || lastAttemptAt || lastFailure) {
+    // A successful answer needs its timestamp; it may offer no version (a
+    // held channel). Failure metadata is independently useful for a first
+    // check that never succeeded.
+    if (checkedAt || lastAttemptAt || lastFailure) {
       return {
-        ...(latest && checkedAt ? { latest, checkedAt } : {}),
+        channel,
+        ...(checkedAt
+          ? { ...(latest ? { latest } : {}), held, checkedAt }
+          : {}),
         ...(lastAttemptAt ? { lastAttemptAt } : {}),
         ...(lastFailure ? { lastFailure } : {}),
       }
@@ -294,7 +350,7 @@ function cacheStatus(cache: UpdateCheckCacheFile | null): UpdateCheckStatus {
   ) {
     return "failed"
   }
-  if (cache.latest && cache.checkedAt) {
+  if (cache.checkedAt) {
     return isFresh(cache, UPDATE_CHECK_TTL_MS) ? "fresh" : "stale"
   }
   return cache.lastFailure ? "failed" : "unchecked"
@@ -302,7 +358,8 @@ function cacheStatus(cache: UpdateCheckCacheFile | null): UpdateCheckStatus {
 
 function toResult(
   cache: UpdateCheckCacheFile | null,
-  status: UpdateCheckStatus = cacheStatus(cache)
+  status: UpdateCheckStatus = cacheStatus(cache),
+  channel: UpdateChannel | null = getUpdateChannel()
 ): UpdateCheckResult {
   const current = currentVersion()
   const latest = cache?.latest ? normalizeVersion(cache.latest) : null
@@ -316,6 +373,8 @@ function toResult(
     current,
     latest,
     updateAvailable: Boolean(latest && isNewerVersion(latest, current)),
+    channel,
+    held: Boolean(checkedAt && cache?.held),
     checkedAt,
     lastAttemptAt: cache?.lastAttemptAt ?? cache?.checkedAt ?? null,
     checkTtlRemainingMs,
@@ -333,19 +392,20 @@ function isFresh(cache: UpdateCheckCacheFile, ttlMs: number): boolean {
 }
 
 /**
- * Fetch the newest published version from <releases>/latest/manifest.json.
- * Best-effort: any network/parse failure returns null, never throws.
+ * Fetch <releases>/channels.json and resolve the target for `channel`.
+ * Best-effort: any network/parse failure is returned, never thrown.
  */
-type FetchLatestVersionResult =
-  | { ok: true; latest: string }
+type FetchTargetResult =
+  | { ok: true; target: ChannelTarget }
   | { ok: false; failure: UpdateCheckFailure }
 
-async function fetchLatestVersionResult(
+async function fetchChannelTarget(
+  channel: UpdateChannel,
   timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
-): Promise<FetchLatestVersionResult> {
+): Promise<FetchTargetResult> {
   let response: Response
   try {
-    response = await fetch(`${releaseBaseUrl()}/latest/manifest.json`, {
+    response = await fetch(`${releaseBaseUrl()}/${RELEASE_CHANNELS_FILE}`, {
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
@@ -360,26 +420,17 @@ async function fetchLatestVersionResult(
   }
   if (!response.ok) return { ok: false, failure: "http" }
   try {
-    const body = (await response.json()) as { version?: unknown }
-    const latest =
-      typeof body.version === "string" ? normalizeVersion(body.version) : null
-    return latest
-      ? { ok: true, latest }
+    const target = resolveChannelTarget(await response.json(), channel)
+    return target
+      ? { ok: true, target }
       : { ok: false, failure: "invalid-manifest" }
   } catch {
     return { ok: false, failure: "invalid-manifest" }
   }
 }
 
-export async function fetchLatestVersion(
-  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
-): Promise<string | null> {
-  const result = await fetchLatestVersionResult(timeoutMs)
-  return result.ok ? result.latest : null
-}
-
 interface RefreshOutcome {
-  fetch: FetchLatestVersionResult
+  fetch: FetchTargetResult
   result: UpdateCheckResult
   persisted: boolean
 }
@@ -389,12 +440,15 @@ let inFlightRefresh: Promise<RefreshOutcome> | null = null
 async function refreshUpdateCheck(timeoutMs?: number): Promise<RefreshOutcome> {
   if (inFlightRefresh) return inFlightRefresh
   const run = (async (): Promise<RefreshOutcome> => {
+    const channel = getUpdateChannel()
     const lastKnown = readCacheFile()
     const lastAttemptAt = new Date().toISOString()
-    const fetched = await fetchLatestVersionResult(timeoutMs)
+    const fetched = await fetchChannelTarget(channel, timeoutMs)
     if (fetched.ok) {
       const fresh: UpdateCheckCacheFile = {
-        latest: fetched.latest,
+        channel,
+        ...(fetched.target.version ? { latest: fetched.target.version } : {}),
+        held: fetched.target.held,
         checkedAt: new Date().toISOString(),
         lastAttemptAt,
       }
@@ -423,9 +477,8 @@ async function refreshUpdateCheck(timeoutMs?: number): Promise<RefreshOutcome> {
           (
             cache
           ): cache is UpdateCheckCacheFile & {
-            latest: string
             checkedAt: string
-          } => Boolean(cache?.latest && cache.checkedAt)
+          } => Boolean(cache?.checkedAt)
         )
         .sort(
           (left, right) =>
@@ -444,8 +497,13 @@ async function refreshUpdateCheck(timeoutMs?: number): Promise<RefreshOutcome> {
             Date.parse(right.attemptedAt) - Date.parse(left.attemptedAt)
         )[0]!
       return {
+        channel,
         ...(freshestKnown
-          ? { latest: freshestKnown.latest, checkedAt: freshestKnown.checkedAt }
+          ? {
+              ...(freshestKnown.latest ? { latest: freshestKnown.latest } : {}),
+              held: Boolean(freshestKnown.held),
+              checkedAt: freshestKnown.checkedAt,
+            }
           : {}),
         lastAttemptAt: newestAttempt.attemptedAt,
         ...(newestAttempt.failure
@@ -476,21 +534,35 @@ async function refreshUpdateCheck(timeoutMs?: number): Promise<RefreshOutcome> {
 }
 
 /**
- * Fetch the newest published version fresh (no TTL) and persist it to the
- * cache on success. For surfaces that are about to act on the answer — the
- * `update` command resolving "latest" — where a stale cached value must never
- * be mistaken for the current truth. Honors the same opt-out and
- * installed-build gates as checkForUpdate; null when gated or when the release
- * server is unreachable, and callers then fall back to installing "latest"
- * blind (the installer contacts the release host either way — this gate is
- * about the metadata check, not the download the user explicitly asked for).
+ * What an install should move to right now, from a fresh manifest (no TTL).
+ * For surfaces about to act on the answer — `worktable update` and the in-app
+ * updater — where a cached value must never stand in for the current truth:
+ * a channel held since the last check must stop the install. The result is
+ * persisted to the cache on success.
+ *
+ * Installing fails closed: when the manifest can't be read, callers keep the
+ * running version. This is the update the user asked for, so it is not gated
+ * by the passive-check opt-out; source builds have no installer to run.
  */
-export async function resolveLatestVersion(
+export type UpdateTarget =
+  | { kind: "available"; version: string; channel: UpdateChannel }
+  | { kind: "current"; version: string | null; channel: UpdateChannel }
+  | { kind: "held"; channel: UpdateChannel }
+  | { kind: "unreachable"; channel: UpdateChannel }
+
+export async function resolveUpdateTarget(
   timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
-): Promise<string | null> {
-  if (updateCheckDisabled() || !updateCheckSupported()) return null
+): Promise<UpdateTarget> {
   const outcome = await refreshUpdateCheck(timeoutMs)
-  return outcome.fetch.ok ? outcome.fetch.latest : null
+  const channel = getUpdateChannel()
+  if (!outcome.fetch.ok) return { kind: "unreachable", channel }
+  const { version, held } = outcome.fetch.target
+  if (version && isNewerVersion(version, currentVersion())) {
+    return { kind: "available", version, channel }
+  }
+  return held
+    ? { kind: "held", channel }
+    : { kind: "current", version, channel }
 }
 
 /**
@@ -499,8 +571,10 @@ export async function resolveLatestVersion(
  * not leak into `status` or the passive CLI nudge.
  */
 export function getCachedUpdateCheck(): UpdateCheckResult {
+  // Checks may be off, but `worktable update` still follows the channel, so
+  // keep showing it; source builds have no channel to follow.
   if (updateCheckDisabled()) return toResult(null, "disabled")
-  if (!updateCheckSupported()) return toResult(null, "unsupported")
+  if (!updateCheckSupported()) return toResult(null, "unsupported", null)
   return toResult(readCacheFile())
 }
 
@@ -528,7 +602,7 @@ async function checkForUpdateOutcome(opts?: {
     return { result: toResult(null, "disabled"), persisted: true }
   }
   if (!updateCheckSupported()) {
-    return { result: toResult(null, "unsupported"), persisted: true }
+    return { result: toResult(null, "unsupported", null), persisted: true }
   }
   const cached = readCacheFile()
   const ttlMs = opts?.ttlMs ?? UPDATE_CHECK_TTL_MS

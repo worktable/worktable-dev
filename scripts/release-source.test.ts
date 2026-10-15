@@ -15,6 +15,7 @@ import {
   verifyPublicSourceMetadata,
   verifyReleaseSourceMetadata,
 } from "./release-source.ts"
+import { resolveBuildVersion } from "./release-version.ts"
 import {
   copyReleaseLicenses,
   verifyReleaseLicenses,
@@ -338,6 +339,44 @@ test("public source identity excludes ambient runner tags and version overrides"
           [key]: "https://private.invalid",
         })
       ).toThrow("VITE_")
+  })
+})
+
+test("unreleased builds carry a dev version of their exact commit", () => {
+  withPublicSource(({ git, root, commit, env, publicMetadata }) => {
+    const short = commit.slice(0, 7)
+    const build = (profile: "full" | "lab") =>
+      resolveBuildVersion({ root, profile, packageVersion: "1.2.3", env: {} })
+    // Prepared but unreleased: the dev build leads up to package.json's version.
+    expect(build("lab")).toBe(`1.2.3-dev.1+${short}`)
+    git("tag", "v1.2.3")
+    // Released: the next dev build leads up to the following patch.
+    const dev = build("lab")
+    expect(dev).toBe(`1.2.4-dev.1+${short}`)
+    expect(build("full")).toBe("1.2.3")
+
+    expect(resolveSourceMetadata(root, env, { version: dev })).toEqual({
+      ...publicMetadata,
+      version: dev,
+    })
+    verifyPublicSourceMetadata({ ...publicMetadata, version: dev })
+    // Child builds receive the dev version through WORKTABLE_VERSION.
+    expect(
+      resolveSourceMetadata(root, { ...env, WORKTABLE_VERSION: dev }).version
+    ).toBe(dev)
+    expect(() =>
+      resolveSourceMetadata(root, {
+        ...env,
+        WORKTABLE_VERSION: "1.2.4-dev.1+0000000",
+      })
+    ).toThrow("dev version")
+    expect(() =>
+      verifyPublicSourceMetadata({
+        ...publicMetadata,
+        version: dev,
+        sourceTag: "v1.2.3",
+      })
+    ).toThrow()
   })
 })
 

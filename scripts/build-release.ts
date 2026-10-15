@@ -13,6 +13,7 @@ import { dirname, join } from "node:path"
 import { jsdomBundlePlugin } from "./jsdom-bundle.ts"
 import rootPackage from "../package.json" with { type: "json" }
 import { resolveSourceMetadata } from "./release-source.ts"
+import { resolveBuildVersion } from "./release-version.ts"
 import { WORKTABLE_SKILLS, skillSourcePath } from "./skill-inventory.ts"
 import { copyReleaseLicenses } from "./release-licenses.ts"
 import { writeCompiledJsNotices } from "./compiled-js-notices.ts"
@@ -32,8 +33,14 @@ import {
 // runtimes start the server entry point directly with PORT/HOST and
 // WORKTABLE_HOSTED; they do not use the CLI's local-host launch flow.
 const root = new URL("..", import.meta.url).pathname
-const version = process.env["WORKTABLE_VERSION"] || rootPackage.version
 const profile = parseReleaseProfile(process.argv.slice(2))
+// Release builds carry package.json's version; lab and beta builds are
+// unreleased and say so (scripts/release-version.ts).
+const version = resolveBuildVersion({
+  root,
+  profile,
+  packageVersion: rootPackage.version,
+})
 const selectedTargets = selectReleaseTargets({
   profile,
   platform: process.platform,
@@ -100,7 +107,7 @@ function copySkillPackage(destination: string): void {
   }
 }
 
-const sourceMetadata = resolveSourceMetadata(root)
+const sourceMetadata = resolveSourceMetadata(root, process.env, { version })
 assertReviewedBunRuntime(Bun)
 readProductFontSource(join(root, "apps/desktop/ui/fonts"))
 run([process.execPath, "run", "check:previews"])

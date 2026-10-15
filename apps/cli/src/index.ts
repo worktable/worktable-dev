@@ -139,12 +139,19 @@ import {
 } from "@worktable/types"
 import {
   checkForUpdate,
+  compareVersions,
   getCachedUpdateCheck,
   isNewerVersion,
+  isUpdateChannel,
   normalizeVersion,
-  resolveLatestVersion,
+  releaseTagForVersion,
+  resolveUpdateTarget,
+  setUpdateChannel,
+  UPDATE_CHANNELS,
   updateCheckDisabled,
   updateCheckSupported,
+  type UpdateChannel,
+  type UpdateTarget,
 } from "@worktable/server/runtime"
 import {
   classifyWorkspaceTarget,
@@ -3732,6 +3739,7 @@ async function commandStatus(opts: { json?: boolean }): Promise<void> {
       JSON.stringify(
         {
           version: VERSION,
+          channel: update.channel,
           latestVersion: update.latest,
           updateAvailable: update.updateAvailable,
           server: {
@@ -3797,11 +3805,16 @@ async function commandStatus(opts: { json?: boolean }): Promise<void> {
 function describeUpdateForStatus(update: {
   latest: string | null
   updateAvailable: boolean
+  channel: UpdateChannel | null
 }): string {
-  if (!update.latest) return ""
-  return update.updateAvailable
-    ? ` ${style.yellow(`— update available: ${update.latest} (run \`worktable update\`)`)}`
-    : ` ${style.dim("(up to date)")}`
+  const channel = update.channel === "beta" ? ` ${style.dim("(beta)")}` : ""
+  if (!update.latest) return channel
+  return (
+    channel +
+    (update.updateAvailable
+      ? ` ${style.yellow(`— update available: ${update.latest} (run \`worktable update\`)`)}`
+      : ` ${style.dim("(up to date)")}`)
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -4121,18 +4134,37 @@ async function mcpBridge(opts: {
 
 /**
  * Release URLs are addressed by tag (`releases/v0.0.18/...`), while manifests
- * and the running build carry the plain `0.0.18`. Map a resolved/pinned semver
- * to the tag form install.sh needs; non-semver input passes through untouched.
+ * and the running build carry the plain `0.0.18` (beta builds add `+<commit>`,
+ * which tags omit). Map a resolved/pinned version to the tag form install.sh
+ * needs; anything else passes through untouched.
  */
 export function updateTargetForInstall(target: string): string {
-  const plain = normalizeVersion(target)
-  return plain ? `v${plain}` : target
+  return releaseTagForVersion(target) ?? target
 }
 
-/** True when both are plain semver triples naming the same version. */
+/** True when both are versions of the same release (build metadata aside). */
 export function sameVersion(a: string, b: string): boolean {
-  const left = normalizeVersion(a)
-  return Boolean(left && left === normalizeVersion(b))
+  return Boolean(
+    normalizeVersion(a) && normalizeVersion(b) && compareVersions(a, b) === 0
+  )
+}
+
+function channelLabel(channel: UpdateChannel): string {
+  return channel === "beta" ? "beta" : "stable"
+}
+
+/** Why an install found nothing to do, or couldn't decide. */
+function describeNoUpdate(
+  target: Exclude<UpdateTarget, { kind: "available" }>
+): string {
+  switch (target.kind) {
+    case "current":
+      return `Already up to date (${VERSION}).`
+    case "held":
+      return `Updates on the ${channelLabel(target.channel)} channel are paused. Worktable stays on ${VERSION}.`
+    case "unreachable":
+      return `Couldn't reach the release server, so Worktable stays on ${VERSION}. Try again when you're online.`
+  }
 }
 
 async function commandUpdateCheck(): Promise<void> {
@@ -4150,24 +4182,43 @@ async function commandUpdateCheck(): Promise<void> {
     return
   }
   const check = await checkForUpdate({ force: true })
-  if (!check.latest) {
+  if (check.checkStatus === "failed") {
     fail("Could not reach the release server to check for the latest version.")
     return
   }
-  console.log(`Latest version:  ${check.latest}`)
+  console.log(`Channel:         ${channelLabel(check.channel ?? "stable")}`)
+  if (check.latest) console.log(`Latest version:  ${check.latest}`)
   console.log(
     check.updateAvailable
       ? `Update available. Run \`worktable update\` to install ${check.latest}.`
-      : "You're up to date."
+      : check.held
+        ? "Updates on this channel are paused."
+        : "You're up to date."
   )
 }
 
 async function commandUpdate(opts: {
   check?: boolean
   version?: string
+  channel?: string
   background?: boolean
   statusFile?: string
 }): Promise<void> {
+  if (opts.channel !== undefined) {
+    const channel = opts.channel.trim().toLowerCase()
+    if (!isUpdateChannel(channel)) {
+      throw new UsageError(
+        `Unknown release channel "${opts.channel}". Choose ${UPDATE_CHANNELS.join(" or ")}.`
+      )
+    }
+    if (opts.version?.trim()) {
+      throw new UsageError(
+        "Choose a release channel or a version to install, not both."
+      )
+    }
+    setUpdateChannel(channel)
+    console.log(`Release channel: ${channel}`)
+  }
   if (opts.check) {
     await commandUpdateCheck()
     return
@@ -4198,28 +4249,24 @@ async function commandUpdate(opts: {
     return
   }
 
-  // Resolve "latest" to the concrete published version up front so the update
-  // can say what it's doing (from → to) and skip the whole stop/install/restart
-  // cycle when already current. Resolution is best-effort: offline, we install
-  // "latest" blind exactly as before. A pinned version is honored even when it
-  // equals the current one — that's a deliberate reinstall.
-  const target =
-    version === "latest"
-      ? ((await resolveLatestVersion()) ?? "latest")
-      : (normalizeVersion(version) ?? version)
-  if (
-    version === "latest" &&
-    target !== "latest" &&
-    sameVersion(target, VERSION)
-  ) {
-    console.log(`Already up to date (${VERSION}).`)
-    return
+  // Resolve "latest" from the release channel before touching anything. The
+  // channel decides what to install: a held channel or an unreachable release
+  // server keeps the running version. A pinned version is the operator's
+  // explicit choice and is honored even when it equals the current one (a
+  // deliberate reinstall).
+  let target: string
+  if (version === "latest") {
+    const resolved = await resolveUpdateTarget()
+    if (resolved.kind !== "available") {
+      if (resolved.kind === "unreachable") fail(describeNoUpdate(resolved))
+      else console.log(describeNoUpdate(resolved))
+      return
+    }
+    target = resolved.version
+  } else {
+    target = normalizeVersion(version) ?? version
   }
-  console.log(
-    target === "latest"
-      ? `Updating Worktable ${VERSION} → latest…`
-      : `Updating Worktable ${VERSION} → ${target}…`
-  )
+  console.log(`Updating Worktable ${VERSION} → ${target}…`)
 
   const authorityLock = acquireLocalAuthorityLock()
   try {
@@ -4282,7 +4329,7 @@ async function commandUpdate(opts: {
         "sh",
         installer,
         "--version",
-        target === "latest" ? "latest" : updateTargetForInstall(target),
+        updateTargetForInstall(target),
         "--no-setup",
       ],
       { stdout: "inherit", stderr: "inherit" }
@@ -4310,9 +4357,7 @@ async function commandUpdate(opts: {
     if (!(await restoreRunningService())) return
     // Confirm from the rewritten launcher — the actual artifact of the update —
     // falling back to the resolved target when no launcher is available.
-    const installed =
-      launcherVersion() ??
-      (target !== "latest" ? normalizeVersion(target) : null)
+    const installed = launcherVersion() ?? normalizeVersion(target)
     if (installed && !sameVersion(installed, VERSION)) {
       console.log(`Updated Worktable ${VERSION} → ${installed}.`)
     } else if (installed) {
@@ -4355,14 +4400,20 @@ async function commandUpdateBackground(
   const write = (status: UpdateStatus) => writeUpdateStatus(status, statusFile)
   const releaseDir = getReleaseDir()
   const installer = releaseDir ? `${releaseDir}/install.sh` : null
-  // Resolve "latest" to the concrete published version (best-effort) so the
-  // marker's `to` — which the Settings drawer shows and boot reconcile checks
-  // against the freshly booted VERSION — is a real version whenever the
-  // release server is reachable, not the literal string "latest".
+  // The in-app updater installs only what the release channel offers right
+  // now. Settings names the version it showed; if the channel has since been
+  // held or moved on, or the release server can't be reached, nothing is
+  // installed and the previous version keeps running. The marker's `to` is
+  // what the Settings drawer shows and boot reconcile checks against the
+  // freshly booted VERSION.
+  const resolved = await resolveUpdateTarget()
+  const requested = version === "latest" ? null : normalizeVersion(version)
   const target =
-    version === "latest"
-      ? ((await resolveLatestVersion()) ?? "latest")
-      : (normalizeVersion(version) ?? version)
+    requested ??
+    (resolved.kind === "available" || resolved.kind === "current"
+      ? resolved.version
+      : null) ??
+    version
   // Carry our own PID on every write so the server can tell a slow-but-alive
   // download apart from a dead worker by liveness, not elapsed time.
   const base: UpdateStatus = {
@@ -4386,17 +4437,36 @@ async function commandUpdateBackground(
     return
   }
 
-  // "Update to latest" while already on the latest release: nothing to
-  // download and no reason to bounce the service — record the success verdict
-  // directly, flagged `noop` so the UI reports "already up to date" instead of
-  // celebrating (and reloading onto) an update that never happened. (A pinned
-  // same-version request still reinstalls, as on the interactive path.)
-  if (
-    version === "latest" &&
-    target !== "latest" &&
-    sameVersion(target, VERSION)
-  ) {
+  if (resolved.kind === "unreachable") {
+    write({
+      ...base,
+      state: "failed",
+      finishedAt: now(),
+      error:
+        "Couldn't reach the release server, so Worktable stays on this version. Try again when you're online.",
+    })
+    return
+  }
+  const offered =
+    resolved.kind === "available" || resolved.kind === "current"
+      ? resolved.version
+      : null
+  if (!requested && resolved.kind !== "available") {
+    // Asked for the latest while already on what the channel offers (or the
+    // channel is held): nothing to install.
     write({ ...base, state: "succeeded", noop: true, finishedAt: now() })
+    return
+  }
+  if (requested && !(offered && sameVersion(requested, offered))) {
+    write({
+      ...base,
+      state: "failed",
+      finishedAt: now(),
+      error:
+        resolved.kind === "held"
+          ? "Updates are paused, so Worktable stays on this version."
+          : "That version is no longer offered. Check for updates again.",
+    })
     return
   }
 
@@ -4441,7 +4511,7 @@ async function commandUpdateBackground(
       "sh",
       installer,
       "--version",
-      target === "latest" ? "latest" : updateTargetForInstall(target),
+      updateTargetForInstall(target),
       "--no-setup",
     ],
     { stdout: "inherit", stderr: "inherit" }
@@ -5330,9 +5400,16 @@ export function buildProgram(): Command {
     // Version is a positional, not --version: the global `.version()` option
     // shadows a subcommand `--version`, so `update --version <tag>` would print
     // the CLI version and exit instead of updating.
-    .argument("[version]", "release version to install (default: latest)")
+    .argument(
+      "[version]",
+      "release version to install (default: the newest your channel offers)"
+    )
     .description("Update Worktable to the latest release")
     .option("--check", "check for a newer release without installing anything")
+    .option(
+      "--channel <channel>",
+      "follow a release channel from now on: stable or beta"
+    )
     // Internal: the in-app updater spawns `update --background` detached and
     // tracks progress via the update-status marker the server polls.
     .option(
@@ -5347,6 +5424,7 @@ export function buildProgram(): Command {
       commandUpdate({
         check: opts.check,
         version,
+        channel: opts.channel,
         background: opts.background,
         statusFile: opts.statusFile,
       })

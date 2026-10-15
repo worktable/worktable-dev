@@ -6,8 +6,8 @@
  *
  * Fails when the source adds polling, broad query invalidation or a catalog
  * build on the request path that is not registered in scripts/perf/guards/,
- * when a registered site no longer exists, or when a bundle budget rises
- * without a `why`. With `--base`, the catalog list may only shrink against
+ * when a registered site no longer exists, or when a bundle or perf-smoke budget
+ * rises without a new `why`. With `--base`, the catalog list may only shrink against
  * that commit and budget increases are measured against it; without a base,
  * those two comparisons use the merge base with origin/main when available.
  */
@@ -51,6 +51,7 @@ const POLLING_FILE = "scripts/perf/guards/polling.json"
 const INVALIDATION_FILE = "scripts/perf/guards/invalidation.json"
 const CATALOG_FILE = "scripts/perf/guards/catalog-builders.json"
 const BUDGETS_FILE = "scripts/perf/bundle-budgets.json"
+const SMOKE_BUDGETS_FILE = "scripts/perf/smoke-budgets.json"
 
 // ── Parsing ─────────────────────────────────────────────────
 
@@ -510,6 +511,48 @@ export function compareBudgets(head: Budgets, base: Budgets | null): Problem[] {
   return problems
 }
 
+export interface SmokeBudgets {
+  metrics?: Record<string, { why: string; slack?: number; headroom?: number }>
+  budgets: Record<string, { max: number; why?: string }>
+}
+
+/**
+ * A perf-smoke budget that rises carries a new `why`. New budgets (a new
+ * journey or endpoint) need none: their metric's `why` covers them.
+ */
+export function compareSmokeBudgets(
+  head: SmokeBudgets,
+  base: SmokeBudgets | null
+): Problem[] {
+  if (!base) return []
+  const problems: Problem[] = []
+  // Slack and headroom loosen every budget of a metric at once.
+  for (const [name, metric] of Object.entries(head.metrics ?? {})) {
+    const before = base.metrics?.[name]
+    if (!before) continue
+    const looser = (["slack", "headroom"] as const).filter(
+      (field) => (metric[field] ?? 0) > (before[field] ?? 0)
+    )
+    const why = metric.why.trim()
+    if (looser.length === 0 || (why && why !== before.why.trim())) continue
+    problems.push({
+      guard: "perf-smoke budgets",
+      message: `The "${name}" metric's ${looser.join(" and ")} rises without a new "why". Say why in its "why" in ${SMOKE_BUDGETS_FILE}, or keep the limit.`,
+    })
+  }
+  for (const [name, budget] of Object.entries(head.budgets)) {
+    const before = base.budgets[name]
+    if (!before || budget.max <= before.max) continue
+    const why = budget.why?.trim()
+    if (why && why !== before.why?.trim()) continue
+    problems.push({
+      guard: "perf-smoke budgets",
+      message: `"${name}" rises from ${before.max} to ${budget.max} without a new "why". Add "why": "<what the extra cost buys>" to its entry in ${SMOKE_BUDGETS_FILE}, or fix the regression.`,
+    })
+  }
+  return problems
+}
+
 // ── Running ─────────────────────────────────────────────────
 
 function git(args: string[]): string {
@@ -627,7 +670,11 @@ export function runGuards(base: string | null): {
         )
       )
     problems.push(
-      ...compareBudgets(budgets, readAtBase<Budgets>(base, BUDGETS_FILE))
+      ...compareBudgets(budgets, readAtBase<Budgets>(base, BUDGETS_FILE)),
+      ...compareSmokeBudgets(
+        readJson<SmokeBudgets>(SMOKE_BUDGETS_FILE),
+        readAtBase<SmokeBudgets>(base, SMOKE_BUDGETS_FILE)
+      )
     )
   }
   return {

@@ -41,8 +41,10 @@ Read `docs/performance.md` before changing how the app or server reads data.
 Keep one request per screen where possible and zero content requests on
 revisits. Do not add polling, broad invalidation, per-request catalog rebuilds
 or file scans, or monitoring work on the request hot path.
-`bun run perf:guards` enforces the registered exceptions. Measure speed changes
-on Namespace, never on a shared host.
+`bun run perf:guards` enforces the registered exceptions, and `perf-smoke`
+checks requests, chains and I/O per click against
+`scripts/perf/smoke-budgets.json`; raise a budget only with a `why`. Measure
+speed changes on Namespace, never on a shared host.
 
 ## Code review
 

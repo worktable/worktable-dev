@@ -4,7 +4,8 @@
  *
  *   bun scripts/perf/io-count.ts [--profile 1k] [--seed 1] [--checkout <dir>]
  *     [--team] [--requests 20] [--samples 50] [--idle-seconds 30]
- *     [--sockets 20] [--no-strace] [--check] [--budgets <file>] [--out <dir>]
+ *     [--sockets 20] [--attempts 2] [--no-strace] [--no-timing] [--check]
+ *     [--budgets <file>] [--out <dir>]
  *
  * Boots the server from a checkout (default this one) on a fresh copy of a
  * perf fixture, signed in as an instance behind a tunnel runs
@@ -32,7 +33,7 @@
  * sequential requests; the time for one Space change to reach `--sockets`
  * WebSockets; and server CPU, wake-ups and timer callbacks while idle with no
  * sockets and with `--sockets` open tabs (a Space socket and the threads
- * socket each).
+ * socket each). `--no-timing` skips it.
  *
  * Budgets are relative to a base run: `--base <result.json>` names an
  * earlier solo counting run (usually of main), and --check fails the run when
@@ -639,7 +640,8 @@ async function countingRun(options: {
           await request(server.url, session.cookies, endpoint.path)
         // Background work (a sweep, a watcher echo) can land in either
         // window; each endpoint is measured `attempts` times and the
-        // attempt with the quietest idle window is reported.
+        // attempt with the quietest idle window, then the least request
+        // activity, is reported.
         for (let attempt = 0; attempt < options.attempts; attempt += 1) {
           await Bun.sleep(200)
           const busy: Window = {
@@ -742,7 +744,7 @@ async function countingRun(options: {
     }
     const pairs = new Map<
       string,
-      { busy: Window; idle: Window; noise: number }
+      { busy: Window; idle: Window; noise: number; busyActivity: number }
     >()
     for (let index = 0; index < windows.length; index += 1) {
       const busy = windows[index]!
@@ -750,8 +752,18 @@ async function countingRun(options: {
       if (busy.kind !== "requests" || !idle || idle.kind !== "idle") continue
       const key = `${busy.role} ${busy.name}`
       const noise = activity(idle)
+      // Background work only ever adds to a window. Prefer the quietest
+      // idle window, since its activity is subtracted and could hide the
+      // request's own work; among equally quiet ones, the attempt whose
+      // requests did the least (a scan can land in that window too).
+      const busyActivity = activity(busy)
       const best = pairs.get(key)
-      if (!best || noise < best.noise) pairs.set(key, { busy, idle, noise })
+      if (
+        !best ||
+        noise < best.noise ||
+        (noise === best.noise && busyActivity < best.busyActivity)
+      )
+        pairs.set(key, { busy, idle, noise, busyActivity })
     }
     for (const { busy, idle, noise } of pairs.values()) {
       const { counts, evidence } = perRequest(calls, sql, busy, idle, roots)
@@ -1235,6 +1247,9 @@ async function main() {
   const idleSeconds = numberArg(args, "idle-seconds", 30)
   const sockets = numberArg(args, "sockets", 20)
   const useStrace = !args.has("no-strace")
+  const timing = !args.has("no-timing")
+  if (!useStrace && !timing)
+    throw new Error("--no-strace and --no-timing leave nothing to measure")
   const check = args.has("check")
   const basePath = args.get("base")
   if (check && args.has("no-strace"))
@@ -1301,6 +1316,7 @@ async function main() {
       idleSeconds,
       sockets,
       strace: useStrace,
+      timing,
     },
   }
   const shared = { checkout, fixture, dir, team, out, idleSeconds, sockets }
@@ -1318,8 +1334,10 @@ async function main() {
     ]
   }
   writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2))
-  result["timing"] = await timingRun({ ...shared, samples })
-  writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2))
+  if (timing) {
+    result["timing"] = await timingRun({ ...shared, samples })
+    writeFileSync(join(out, "result.json"), JSON.stringify(result, null, 2))
+  }
   writeSummary(out, result)
   console.log(readFileSync(join(out, "summary.md"), "utf8"))
   console.log(`[io-count] wrote ${out}`)

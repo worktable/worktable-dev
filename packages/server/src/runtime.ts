@@ -83,15 +83,21 @@ export {
 export {
   checkForUpdate,
   compareVersions,
-  fetchLatestVersion,
   getCachedUpdateCheck,
+  getUpdateChannel,
   isNewerVersion,
+  isUpdateChannel,
   normalizeVersion,
-  resolveLatestVersion,
+  releaseTagForVersion,
+  resolveUpdateTarget,
+  setUpdateChannel,
+  UPDATE_CHANNELS,
   updateCheckDisabled,
   updateCheckSupported,
+  type UpdateChannel,
   type UpdateCheckResult,
   type UpdateCheckStatus,
+  type UpdateTarget,
 } from "./update-check.ts"
 export {
   REACHABLE_NETWORK_NOTICE,

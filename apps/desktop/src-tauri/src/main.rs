@@ -4,6 +4,7 @@ mod cloud_auth;
 mod connections;
 mod credential_store;
 mod host_cookie;
+mod release_channel;
 mod remote_connection;
 mod updater;
 
@@ -103,6 +104,13 @@ const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(10);
 /// How often the running app asks whether an automatic check is due.
 #[cfg(all(target_os = "macos", not(feature = "staging")))]
 const AUTOMATIC_UPDATE_POLL_INTERVAL: Duration = Duration::from_secs(15 * 60);
+/// Bound on reading the release channel manifest during a check.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+const RELEASE_CHANNEL_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
+/// Bound on confirming, right before installing, that the update is still
+/// offered. Quitting waits at most this long.
+#[cfg(all(target_os = "macos", not(feature = "staging")))]
+const RELEASE_CHANNEL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -5289,9 +5297,28 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
             "[Worktable Desktop] checking for updates ({})",
             if manual { "manual" } else { "automatic" }
         );
+        // The stable channel decides the version; its signed feed supplies the
+        // update. A held channel offers nothing.
         let result = async {
+            let current = app.package_info().version.clone();
+            let feed_url =
+                match release_channel::fetch_stable_target(&current, RELEASE_CHANNEL_CHECK_TIMEOUT)
+                    .await?
+                {
+                    release_channel::StableTarget::Offer { feed_url, .. } => feed_url,
+                    release_channel::StableTarget::Held => {
+                        eprintln!("[Worktable Desktop] the stable channel is held");
+                        return Ok(None);
+                    }
+                    release_channel::StableTarget::Current => return Ok(None),
+                };
+            let feed_url = feed_url
+                .parse::<tauri::Url>()
+                .map_err(|error| format!("invalid Desktop updater feed URL: {error}"))?;
             let updater = app
-                .updater()
+                .updater_builder()
+                .endpoints(vec![feed_url])
+                .and_then(|builder| builder.build())
                 .map_err(|error| format!("Desktop updater is unavailable: {error}"))?;
             updater
                 .check()
@@ -5464,6 +5491,20 @@ fn install_prepared_update_on_exit<R: Runtime>(app: &AppHandle<R>) {
     if !prepared.installs_on_quit || !bundle_installs_without_authorization() {
         return;
     }
+    // Install only what stable still offers: a held or withdrawn release, or a
+    // manifest that can't be read, leaves the current app in place.
+    let current = app.package_info().version.clone();
+    if !tauri::async_runtime::block_on(release_channel::still_offered(
+        &current,
+        &prepared.version,
+        RELEASE_CHANNEL_CONFIRM_TIMEOUT,
+    )) {
+        eprintln!(
+            "[Worktable Desktop] Worktable {} is no longer offered; not installing it on quit",
+            prepared.version
+        );
+        return;
+    }
     eprintln!(
         "[Worktable Desktop] installing Worktable {} on quit",
         prepared.version
@@ -5535,6 +5576,26 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
             sync_update_menu(&app);
             return Ok(());
         };
+        // Install only what stable still offers. The prepared archive is
+        // dropped either way; a later check downloads whatever is offered then.
+        let current = app.package_info().version.clone();
+        if !release_channel::still_offered(
+            &current,
+            &prepared.version,
+            RELEASE_CHANNEL_CONFIRM_TIMEOUT,
+        )
+        .await
+        {
+            eprintln!(
+                "[Worktable Desktop] Worktable {} is no longer offered; not installing it",
+                prepared.version
+            );
+            updater_state.record_install_failure(
+                "Couldn’t confirm this update is still available. Check for updates again.".into(),
+            )?;
+            sync_update_menu(&app);
+            return Ok(());
+        }
         let bytes = match updater::read_prepared_archive(&prepared) {
             Ok(bytes) => bytes,
             Err(error) => {

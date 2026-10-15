@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   compareAllowlist,
   compareBudgets,
+  compareSmokeBudgets,
   compareShrinkOnly,
   findCatalogBuilders,
   findInvalidation,
@@ -188,5 +189,50 @@ docsRouter.get("/", async (c) => { const docs = await list(spaceId); return c.js
         base
       )
     ).toEqual([])
+  })
+
+  test("a perf-smoke budget rises only with a new why; new and lower budgets need none", () => {
+    const base = {
+      budgets: {
+        "requests, first, open Space": { max: 7 },
+        "io stat, recent": { max: 65, why: "Old reason." },
+      },
+    }
+    expect(
+      compareSmokeBudgets(
+        {
+          budgets: {
+            "requests, first, open Space": { max: 8 },
+            "io stat, recent": { max: 66, why: "Old reason." },
+            "requests, first, open Records": { max: 3 },
+          },
+        },
+        base
+      ).map((problem) => problem.message.split(" rises")[0])
+    ).toEqual(['"requests, first, open Space"', '"io stat, recent"'])
+    expect(
+      compareSmokeBudgets(
+        {
+          budgets: {
+            "requests, first, open Space": {
+              max: 8,
+              why: "The tree loads with the Space.",
+            },
+            "io stat, recent": { max: 60 },
+          },
+        },
+        base
+      )
+    ).toEqual([])
+    const metrics = { "io stat": { why: "Stats per request.", slack: 0.5 } }
+    expect(
+      compareSmokeBudgets(
+        {
+          metrics: { "io stat": { why: "Stats per request.", slack: 1.5 } },
+          budgets: base.budgets,
+        },
+        { metrics, budgets: base.budgets }
+      ).map((problem) => problem.message.split(" metric")[0])
+    ).toEqual(['The "io stat"'])
   })
 })

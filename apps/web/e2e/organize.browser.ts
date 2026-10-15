@@ -139,10 +139,14 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
     .getByRole("link", { name: "Organize", exact: true })
     .click()
   await expect(page).toHaveURL(/\/spaces\/organize$/)
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Organize" })
-  ).toBeVisible()
-  await expect(page.getByRole("region", { name: "Activity" })).toBeVisible()
+  const title = page.getByRole("heading", { level: 1, name: "Organize" })
+  const activity = page.getByRole("region", { name: "Activity" })
+  await expect(title).toBeVisible()
+  await expect(activity).toBeVisible()
+  const titleBox = await title.boundingBox()
+  const activityBox = await activity.boundingBox()
+  expect(titleBox).not.toBeNull()
+  expect(activityBox).not.toBeNull()
   await expect(
     page
       .getByRole("region", { name: "Pinned" })
@@ -154,6 +158,11 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("region", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+  // Positions only: the Activity list may grow as its own entries load.
+  const position = (box: { x: number; y: number } | null) =>
+    box && { x: box.x, y: box.y }
+  expect(position(await title.boundingBox())).toEqual(position(titleBox))
+  expect(position(await activity.boundingBox())).toEqual(position(activityBox))
 })
 
 test.describe("archive date editing", () => {

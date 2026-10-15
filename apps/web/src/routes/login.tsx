@@ -37,6 +37,11 @@ function safeNext(): string {
 function LoginPage() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const invitationId = new URLSearchParams(window.location.search).get("invite");
+  // A password reset link from an owner or the Worktable's machine.
+  const [resetToken, setResetToken] = useState(() =>
+    new URLSearchParams(window.location.search).get("reset")
+  );
+  const [notice, setNotice] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -47,6 +52,8 @@ function LoginPage() {
   const isHttp =
     typeof window !== "undefined" && window.location.protocol !== "https:";
   const needsSetup = status ? !status.teamsEnabled && !status.hasOwnerPassword : false;
+  const resetting = Boolean(resetToken && status?.teamsEnabled);
+  const choosingPassword = needsSetup || resetting;
 
   const redirectNext = useCallback(() => {
     window.location.assign(safeNext());
@@ -62,7 +69,7 @@ function LoginPage() {
         });
         const json = (await res.json()) as AuthStatus;
         if (cancelled) return;
-        if (json.authenticated && !invitationId) {
+        if (json.authenticated && !invitationId && !resetToken) {
           redirectNext();
           return;
         }
@@ -80,14 +87,14 @@ function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [redirectNext, invitationId]);
+  }, [redirectNext, invitationId, resetToken]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
 
-      if (needsSetup) {
+      if (choosingPassword) {
         if (password.length < MIN_PASSWORD_LENGTH) {
           setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
           return;
@@ -103,13 +110,23 @@ function LoginPage() {
 
       setSubmitting(true);
       try {
-        const path = invitationId ? "/auth/team/enroll" : status?.teamsEnabled ? "/auth/team/sign-in/email" : needsSetup ? "/auth/password" : "/auth/login";
+        const path = resetting ? "/auth/team/reset-password" : invitationId ? "/auth/team/enroll" : status?.teamsEnabled ? "/auth/team/sign-in/email" : needsSetup ? "/auth/password" : "/auth/login";
         const res = await fetch(`${BASE_URL}${path}`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(invitationId ? { invitationId, name, password } : status?.teamsEnabled ? { email, password } : { password }),
+          body: JSON.stringify(resetting ? { token: resetToken, newPassword: password } : invitationId ? { invitationId, name, password } : status?.teamsEnabled ? { email, password } : { password }),
         });
+        if (res.ok && resetting) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("reset");
+          window.history.replaceState(null, "", url);
+          setResetToken(null);
+          setPassword("");
+          setConfirmPassword("");
+          setNotice("Password changed. Sign in with your new password.");
+          return;
+        }
         if (res.ok) {
           if (status?.teamsEnabled) {
             notifyBrowserAccountChanged();
@@ -118,7 +135,11 @@ function LoginPage() {
           redirectNext();
           return;
         }
-        if (res.status === 401) {
+        if (resetting && res.status === 400) {
+          setError("This reset link has expired or was already used. Ask an owner for a new one.");
+        } else if (res.status === 401 && invitationId) {
+          setError("This email already has an account here. Use its password, or ask an owner for a reset link.");
+        } else if (res.status === 401) {
           setError("Incorrect password. Try again.");
         } else if (res.status === 409) {
           // Password was set elsewhere in the meantime — fall back to login mode.
@@ -134,7 +155,7 @@ function LoginPage() {
         setSubmitting(false);
       }
     },
-    [needsSetup, password, confirmPassword, redirectNext, status?.teamsEnabled, invitationId, email, name]
+    [needsSetup, choosingPassword, resetting, resetToken, password, confirmPassword, redirectNext, status?.teamsEnabled, invitationId, email, name]
   );
 
   return (
@@ -143,10 +164,10 @@ function LoginPage() {
         <div className="mb-8 flex flex-col items-center text-center">
           <WorktableAppIcon className="mb-4 size-12" />
           <h1 className="text-lg font-semibold">
-            {invitationId ? "Join Worktable" : needsSetup ? "Set your owner password" : "Sign in to Worktable"}
+            {resetting ? "Choose a new password" : invitationId ? "Join Worktable" : needsSetup ? "Set your owner password" : "Sign in to Worktable"}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {invitationId ? "Choose a name and password for your individual account. If you already have an account here, use its password." : status?.teamsEnabled ? "Sign in with your individual account." : needsSetup
+            {resetting ? "This link works once. Choosing a new password signs you out everywhere." : invitationId ? "Choose a name and password for your individual account. If you already have an account here, use its password." : status?.teamsEnabled ? "Sign in with your individual account." : needsSetup
               ? "Create a password to protect this workspace over the network."
               : "Enter your owner password to open this workspace."}
           </p>
@@ -163,13 +184,13 @@ function LoginPage() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-3">
-          {invitationId ? <Input aria-label="Name" autoComplete="name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting || !status} /> : status?.teamsEnabled ? <Input aria-label="Email" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={submitting || !status} /> : null}
+          {resetting ? null : invitationId ? <Input aria-label="Name" autoComplete="name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting || !status} /> : status?.teamsEnabled ? <Input aria-label="Email" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={submitting || !status} /> : null}
           <div className="relative">
             <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="password"
               aria-label="Password"
-              autoComplete={needsSetup || invitationId ? "new-password" : "current-password"}
+              autoComplete={choosingPassword || invitationId ? "new-password" : "current-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
@@ -179,7 +200,7 @@ function LoginPage() {
             />
           </div>
 
-          {needsSetup && (
+          {choosingPassword && (
             <div className="relative">
               <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -194,6 +215,11 @@ function LoginPage() {
             </div>
           )}
 
+          {notice && !error && (
+            <p className="text-sm text-muted-foreground" role="status">
+              {notice}
+            </p>
+          )}
           {error && (
             <p className="text-sm text-destructive" role="alert">
               {error}
@@ -206,10 +232,10 @@ function LoginPage() {
             disabled={submitting || !status}
           >
             {submitting
-              ? needsSetup
+              ? choosingPassword
                 ? "Setting password…"
                 : "Signing in…"
-              : invitationId ? "Join Worktable" : needsSetup
+              : resetting ? "Set new password" : invitationId ? "Join Worktable" : needsSetup
                 ? "Set password"
                 : "Sign in"}
           </Button>

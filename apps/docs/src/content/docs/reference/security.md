@@ -42,6 +42,17 @@ cancels pending invitation links.
 
 Team ownership grants application administration. Operating the underlying
 machine is a separate authority. Machine operators can access its files.
+Operators grant operation to other members from **Settings → Team**, and
+removing a member removes it.
+
+If someone forgets their password, an owner creates a single-use reset link
+in **Settings → Team** and sends it to them. It expires after 24 hours and
+signs them out everywhere. Owners' passwords are reset on the machine:
+
+```sh
+worktable team reset-password owner@example.com
+worktable team operator grant owner@example.com
+```
 
 ## Reachable servers
 

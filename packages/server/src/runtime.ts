@@ -161,3 +161,7 @@ export {
 } from "./workspace-transfer-v2.ts"
 
 export { teamsEnabled } from "./team-database.ts"
+export {
+  issueTeamPasswordReset,
+  setTeamOperator,
+} from "./team-recovery.ts"

@@ -54,6 +54,9 @@ function teamAuthOptions(origin: string) {
       // HTTP signup is not mounted. Bootstrap/enrollment invoke this API only
       // after proving operator authority or a valid invitation capability.
       requireEmailVerification: false,
+      // Reset links are issued by an owner or the machine, never by email.
+      revokeSessionsOnPasswordReset: true,
+      resetPasswordTokenExpiresIn: 60 * 60 * 24,
       password: {
         hash: (password) =>
           Bun.password.hash(password, { algorithm: "argon2id" }),
@@ -61,6 +64,13 @@ function teamAuthOptions(origin: string) {
       },
     },
     session: { cookieCache: { enabled: false }, expiresIn: 60 * 60 * 24 * 7 },
+    // A stolen database copy must not contain usable reset links.
+    verification: {
+      storeIdentifier: {
+        default: "plain",
+        overrides: { "reset-password:": "hashed" },
+      },
+    },
     account: { accountLinking: { enabled: false } },
     advanced: { cookiePrefix: "worktable-team" },
     rateLimit: { enabled: true, storage: "database", window: 60, max: 30 },

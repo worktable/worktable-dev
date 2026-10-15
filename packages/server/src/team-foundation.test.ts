@@ -1312,6 +1312,159 @@ test("re-pairing an installation keeps its agent and retires the previous creden
   expect(await verifyToken(second)).not.toBeNull()
 })
 
+test("an interrupted activation can be retried with another email or password", async () => {
+  const bootstrap: TokenIdentity = {
+    user: "owner",
+    workspace: join(root, "workspace"),
+    credentialClass: "local",
+    scopes: ["*"],
+    agent: null,
+    principal: { id: "local:owner", type: "human", displayName: "Owner" },
+  }
+  setLocalTeamInitializationHookForTests(() => {
+    throw new Error("Interrupted local setup")
+  })
+  try {
+    await expect(
+      activateLocalTeams(
+        origin,
+        { name: "Alice", email: "alice@example.test", password },
+        bootstrap
+      )
+    ).rejects.toThrow("Interrupted local setup")
+  } finally {
+    setLocalTeamInitializationHookForTests(null)
+  }
+  // The same email with a new password, after the first attempt was lost.
+  setLocalTeamInitializationHookForTests(() => {
+    throw new Error("Interrupted again")
+  })
+  try {
+    await expect(
+      activateLocalTeams(
+        origin,
+        { name: "Alice", email: "alice@example.test", password: "Another-password-1" },
+        bootstrap
+      )
+    ).rejects.toThrow("Interrupted again")
+  } finally {
+    setLocalTeamInitializationHookForTests(null)
+  }
+  // A different email replaces the unfinished attempt entirely.
+  const activated = await activateLocalTeams(
+    origin,
+    { name: "Carol", email: "carol@example.test", password },
+    bootstrap
+  )
+  expect(activated.member.email).toBe("carol@example.test")
+  expect(activated.member.role).toBe("owner")
+  expect(
+    requireTeamDatabase()
+      .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM member")
+      .get()!.count
+  ).toBe(1)
+})
+
+test("self-hosted recovery issues single-use reset links and explicit operator grants", async () => {
+  const { owner, member, auth, ownerHeaders, bobHeaders } = await setup()
+  const { issueTeamPasswordReset, setTeamOperator } = await import(
+    "./team-recovery.ts"
+  )
+  const { verifyTeamSession } = await import("./team-session.ts")
+  const { hasTeamOperatorAuthority } = await import("./team-members.ts")
+  const localAuth = new Hono().route("/auth/team", teamAuthRouter)
+  const post = (path: string, body: unknown) =>
+    localAuth.request(`${origin}/auth/team/${path}`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  // Members cannot reset anyone; owners cannot reset another owner.
+  await expect(
+    issueTeamPasswordReset(origin, { memberId: owner.team!.memberId! }, member)
+  ).rejects.toThrow(TeamAccessError)
+  const link = await issueTeamPasswordReset(
+    origin,
+    { memberId: member.team!.memberId! },
+    owner
+  )
+  const token = new URL(link.url).searchParams.get("reset")!
+  // Stored hashed: a copied database holds no usable link.
+  expect(
+    requireTeamDatabase()
+      .query<{ identifier: string }, []>("SELECT identifier FROM verification")
+      .all()
+      .some((row) => row.identifier.includes(token))
+  ).toBe(false)
+  const newPassword = "Chosen-after-reset-456"
+  expect((await post("reset-password", { token, newPassword })).status).toBe(200)
+  expect((await post("reset-password", { token, newPassword })).status).toBe(400)
+  expect(
+    await verifyTeamSession(new Request(origin, { headers: bobHeaders }))
+  ).toBeNull()
+  expect(
+    (await post("sign-in/email", { email: "bob@example.test", password: newPassword }))
+      .status
+  ).toBe(200)
+  // The machine can recover an owner's account.
+  const ownerLink = await issueTeamPasswordReset(
+    origin,
+    { email: "alice@example.test" },
+    "machine"
+  )
+  expect(ownerLink.url).toContain("/login?reset=")
+
+  // Operator authority is granted explicitly and ends with membership.
+  expect(hasTeamOperatorAuthority(member.team!.userId!)).toBe(false)
+  expect(() =>
+    setTeamOperator({ memberId: member.team!.memberId! }, true, member)
+  ).toThrow(TeamAccessError)
+  setTeamOperator({ memberId: member.team!.memberId! }, true, owner)
+  expect(hasTeamOperatorAuthority(member.team!.userId!)).toBe(true)
+  setTeamOperator({ memberId: owner.team!.memberId! }, false, owner)
+  expect(() =>
+    setTeamOperator({ memberId: member.team!.memberId! }, false, member)
+  ).toThrow("keep an operator")
+  await auth.api.removeMember({
+    headers: ownerHeaders,
+    body: {
+      organizationId: currentTeamWorktable()!.organizationId,
+      memberIdOrEmail: member.team!.memberId!,
+    },
+  })
+  const invitation = await auth.api.createInvitation({
+    headers: ownerHeaders,
+    body: {
+      organizationId: currentTeamWorktable()!.organizationId,
+      email: "bob@example.test",
+      role: "member",
+    },
+  })
+  // Invited back with a forgotten password: the invitation names the account.
+  const rejoin = await issueTeamPasswordReset(
+    origin,
+    { invitationId: invitation.id },
+    owner
+  )
+  const rejoinPassword = "Rejoined-with-reset-789"
+  expect(
+    (
+      await post("reset-password", {
+        token: new URL(rejoin.url).searchParams.get("reset"),
+        newPassword: rejoinPassword,
+      })
+    ).status
+  ).toBe(200)
+  expect(
+    (await post("enroll", { invitationId: invitation.id, name: "Bob", password: rejoinPassword }))
+      .status
+  ).toBe(200)
+  expect(hasTeamOperatorAuthority(member.team!.userId!)).toBe(false)
+  // The machine restores an operator when none is left.
+  setTeamOperator({ email: "alice@example.test" }, true, "machine")
+  expect(hasTeamOperatorAuthority(owner.team!.userId!)).toBe(true)
+})
+
 test("Cloud maps provider subjects to the same membership model and keeps browser authentication separate from local sessions", async () => {
   const previous = {
     hosted: process.env.WORKTABLE_HOSTED,

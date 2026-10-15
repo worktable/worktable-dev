@@ -69,17 +69,21 @@ for (const mobile of [true, false]) {
       await expect(paragraph).toHaveText(`${quote} before publishing.`, {
         timeout: 60_000,
       })
+      const composer = page.getByRole("dialog", { name: "Add Annotation" })
       const selectQuote = async () => {
         if (mobile) await paragraph.tap()
         else await paragraph.click()
-        // Native selection handles are OS UI. Set the same DOM range, then use
-        // a real touch tap on mobile to exercise selection/focus preservation.
+        // Native selection handles are OS UI, so select the quote through the
+        // editor, then use a real touch tap on mobile to exercise
+        // selection/focus preservation. A DOM range set this soon after the
+        // tap can lose to ProseMirror's post-focus sync, which puts the tapped
+        // caret back.
         await paragraph.evaluate((node, length) => {
-          const range = document.createRange()
-          range.setStart(node.firstChild!, 0)
-          range.setEnd(node.firstChild!, length)
-          window.getSelection()!.removeAllRanges()
-          window.getSelection()!.addRange(range)
+          const { editor } = node.closest(".bn-editor") as HTMLElement & {
+            editor: import("@tiptap/core").Editor
+          }
+          const from = editor.view.posAtDOM(node.firstChild!, 0)
+          editor.commands.setTextSelection({ from, to: from + length })
         }, quote.length)
         await expect
           .poll(() => page.evaluate(() => window.getSelection()?.toString()))
@@ -90,10 +94,23 @@ for (const mobile of [true, false]) {
         })
         if (mobile) await annotate.tap()
         else await annotate.click()
+        // The composer slides in on mobile, and a tap while it moves can land
+        // beside its target. Wait until it has settled.
+        await expect(composer).toBeVisible()
+        await composer.evaluate((element) =>
+          Promise.all(
+            element
+              .getAnimations({ subtree: true })
+              .filter(
+                (animation) =>
+                  animation.effect?.getComputedTiming().endTime !== Infinity
+              )
+              .map((animation) => animation.finished.catch(() => undefined))
+          )
+        )
       }
 
       await selectQuote()
-      const composer = page.getByRole("dialog", { name: "Add Annotation" })
       await expect(composer.locator("blockquote")).toHaveText(quote)
       if (mobile) await expect(composer.getByRole("textbox")).toBeFocused()
       await composer

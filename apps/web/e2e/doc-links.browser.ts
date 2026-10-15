@@ -545,24 +545,18 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
   for (let i = 0; i < 2; i++) {
     const last = editor.locator('.bn-inline-content').last();
     await last.click();
-    // Use a DOM range: the shared browser's platform key bindings can make
-    // End a no-op, leaving the caret in the middle of the clicked paragraph.
-    await last.evaluate((node) => {
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      range.collapse(false);
-      window.getSelection()!.removeAllRanges();
-      window.getSelection()!.addRange(range);
-    });
-    // DOM selection changes reach ProseMirror asynchronously. Typing before
-    // it observes the range can split the paragraph at the preceding click.
-    await expect.poll(() => last.evaluate((node) => {
-      const element = node.closest(".bn-editor") as HTMLElement & {
+    // Place the caret through the editor. The shared browser's platform key
+    // bindings can make End a no-op, and a DOM range set this soon after the
+    // click can lose to ProseMirror's post-focus sync, which puts the clicked
+    // caret back. Typing there would split the paragraph.
+    expect(await last.evaluate((node) => {
+      const { editor } = node.closest(".bn-editor") as HTMLElement & {
         editor: import("@tiptap/core").Editor
       };
-      const view = element.editor.view;
-      const end = view.posAtDOM(node, node.childNodes.length);
-      return view.state.selection.empty && view.state.selection.from === end;
+      const end = editor.view.posAtDOM(node, node.childNodes.length);
+      editor.commands.setTextSelection(end);
+      const { selection } = editor.state;
+      return editor.view.hasFocus() && selection.empty && selection.from === end;
     })).toBe(true);
     await page.keyboard.press("Enter");
     await editor.evaluate((node, html) => {

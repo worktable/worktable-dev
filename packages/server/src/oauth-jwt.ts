@@ -59,6 +59,16 @@ export function getExpectedAudience(): string | null {
 }
 
 /**
+ * Audiences this instance accepts: its own resource, plus on Cloud the shared
+ * `/api/mcp` resource of existing directory connectors. The gateway forwards
+ * a shared-resource token only to the account's default or only Worktable.
+ */
+function acceptedAudiences(audience: string): string | string[] {
+  const shared = process.env["WORKTABLE_LEGACY_RESOURCE_URL"]?.trim()
+  return isHosted() && shared && shared !== audience ? [audience, shared] : audience
+}
+
+/**
  * What an AS-issued bearer may do: the content surface plus an explicit
  * portable workspace export, and nothing else.
  *
@@ -300,7 +310,7 @@ export async function verifyAuthServerJwt(
     const jwks = await jwksFor(authServer)
     const { payload } = await jwtVerify(raw, jwks, {
       issuer,
-      audience,
+      audience: acceptedAudiences(audience),
       algorithms: ["RS256"],
       // jose validates exp only when present; a token template that omits
       // it would otherwise mint a NEVER-expiring owner bearer. This path

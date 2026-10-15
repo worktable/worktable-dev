@@ -376,7 +376,10 @@ jobs:
     needs:
       - build
       - verify
+    # !cancelled(): without a status function, the implicit success() skips
+    # this job whenever any upstream job (such as docs) was skipped.
     if: >-
+      !cancelled() &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.build.result == 'success' && needs.verify.result == 'success'
     runs-on: ubuntu-24.04

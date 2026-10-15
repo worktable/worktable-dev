@@ -142,7 +142,10 @@ mod tests {
         let held = br#"{"schema":1,"channels":{"stable":{"version":"0.1.24","held":true}}}"#;
         assert_eq!(stable_target(held, &current()).unwrap(), StableTarget::Held);
         let same = br#"{"schema":1,"channels":{"stable":{"version":"0.1.23","held":false}}}"#;
-        assert_eq!(stable_target(same, &current()).unwrap(), StableTarget::Current);
+        assert_eq!(
+            stable_target(same, &current()).unwrap(),
+            StableTarget::Current
+        );
         // A beta Desktop build is newer than stable's release it leads up from.
         let beta = Version::parse("0.1.24-dev.5+abc1234").unwrap();
         let older = br#"{"schema":1,"channels":{"stable":{"version":"0.1.23","held":false}}}"#;

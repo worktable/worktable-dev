@@ -5301,19 +5301,17 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
         // update. A held channel offers nothing.
         let result = async {
             let current = app.package_info().version.clone();
-            let feed_url = match release_channel::fetch_stable_target(
-                &current,
-                RELEASE_CHANNEL_CHECK_TIMEOUT,
-            )
-            .await?
-            {
-                release_channel::StableTarget::Offer { feed_url, .. } => feed_url,
-                release_channel::StableTarget::Held => {
-                    eprintln!("[Worktable Desktop] the stable channel is held");
-                    return Ok(None);
-                }
-                release_channel::StableTarget::Current => return Ok(None),
-            };
+            let feed_url =
+                match release_channel::fetch_stable_target(&current, RELEASE_CHANNEL_CHECK_TIMEOUT)
+                    .await?
+                {
+                    release_channel::StableTarget::Offer { feed_url, .. } => feed_url,
+                    release_channel::StableTarget::Held => {
+                        eprintln!("[Worktable Desktop] the stable channel is held");
+                        return Ok(None);
+                    }
+                    release_channel::StableTarget::Current => return Ok(None),
+                };
             let feed_url = feed_url
                 .parse::<tauri::Url>()
                 .map_err(|error| format!("invalid Desktop updater feed URL: {error}"))?;
@@ -5593,8 +5591,7 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
                 prepared.version
             );
             updater_state.record_install_failure(
-                "Couldn’t confirm this update is still available. Check for updates again."
-                    .into(),
+                "Couldn’t confirm this update is still available. Check for updates again.".into(),
             )?;
             sync_update_menu(&app);
             return Ok(());

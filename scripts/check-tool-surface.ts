@@ -5,7 +5,7 @@
 //   bun run check:tool-surface --base <git-ref> [--approved]
 //
 // In a pull_request run, the `tool-surface-change` label in the event payload
-// approves a change. Elsewhere, --approved does.
+// approves a change, and --approved is ignored. Elsewhere, --approved does.
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { isDeepStrictEqual } from "node:util"
@@ -65,11 +65,12 @@ if (import.meta.main) {
   }
   const eventPath = process.env.GITHUB_EVENT_PATH
   const pullRequest = process.env.GITHUB_EVENT_NAME?.startsWith("pull_request")
-  const approved =
-    args.includes("--approved") ||
-    (pullRequest &&
-      !!eventPath &&
-      labelledForChange(JSON.parse(readFileSync(eventPath, "utf8"))))
+  // In a pull request only the label approves, so the decision is visible
+  // on the pull request rather than in its own workflow edits.
+  const approved = pullRequest
+    ? !!eventPath &&
+      labelledForChange(JSON.parse(readFileSync(eventPath, "utf8")))
+    : args.includes("--approved")
 
   const snapshot = JSON.parse(
     execFileSync("git", ["show", `${base}:mcp-tools.json`], {
@@ -88,9 +89,9 @@ if (import.meta.main) {
   for (const change of changes) console.log(`  ${change}`)
   if (approved) {
     console.log(
-      args.includes("--approved")
-        ? "Accepted by --approved."
-        : `Accepted by the ${approvalLabel} label.`
+      pullRequest
+        ? `Accepted by the ${approvalLabel} label.`
+        : "Accepted by --approved."
     )
     process.exit(0)
   }

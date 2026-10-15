@@ -14,9 +14,12 @@ function run(
     commit,
     clicks: JOURNEYS.map((journey, index) => ({
       network,
+      round: 1,
       pass: "cold",
       journey,
-      contentMs: (1000 + 100 * index) * scale * (1 + (jitter[index] ?? 0)),
+      contentMs: ((1000 + 100 * index) * scale * (1 + (jitter[index] ?? 0))) as
+        | number
+        | null,
     })),
   }
 }
@@ -59,6 +62,27 @@ describe("paired speed gate", () => {
     const base = NOISY.map((jitter) => run("aaaa", 1, jitter))
     const head = NOISY.map((jitter) => run("bbbb", 1.4, jitter))
     expect(ids([...base, ...head])).toEqual(["pass:phone:cold"])
+  })
+
+  test("a timeout ranks as the slowest run, and rounds inside one result count apart", () => {
+    const base = QUIET.map((jitter) => run("aaaa", 1, jitter))
+    const head = QUIET.map((jitter) => run("bbbb", 1, jitter))
+    head[0]!.clicks[0]!.contentMs = null
+    head[1]!.clicks[0]!.contentMs = null
+    expect(ids([...base, ...head])).toEqual(["click:phone:cold:home"])
+    // The same three runs as rounds of one result per side.
+    const merged = (runs: ReturnType<typeof run>[], commit: string) => ({
+      commit,
+      clicks: runs.flatMap((item, index) =>
+        item.clicks.map((click) => ({ ...click, round: index + 1 }))
+      ),
+    })
+    const verdict = compare(
+      [merged(base, "aaaa"), merged(head, "bbbb")],
+      "aaaa",
+      "bbbb"
+    )
+    expect(verdict.comparisons[0]!.runs).toEqual({ base: 3, head: 3 })
   })
 
   test("server routes keep the 1 ms floor under 1 ms", () => {

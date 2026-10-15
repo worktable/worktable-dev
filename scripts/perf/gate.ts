@@ -148,10 +148,6 @@ export function serverLimit(base: number): number {
 /** One run's values by key (a journey's time to content, a route's p95). */
 type Run = Map<string, number | null>
 
-function present(values: (number | null | undefined)[]): number[] {
-  return values.filter((value): value is number => typeof value === "number")
-}
-
 function median0(values: number[]): number {
   return median(values) ?? Number.NaN
 }
@@ -241,15 +237,20 @@ export function compare(
   const headOnly: string[] = []
 
   const labels = new Map<string, string>()
+  // One run per result and round (a result can hold several rounds). The
+  // churn and backup passes measure other things and are not timed here.
   const clickRuns = (runs: ClickTraceResult[]): Run[] =>
-    runs.map((run) => {
-      const values: Run = new Map()
+    runs.flatMap((run) => {
+      const rounds = new Map<number, Run>()
       for (const click of run.clicks) {
+        if (click.pass === "churn" || click.pass === "backup") continue
         const key = `${click.network}:${click.pass}:${slug(click.journey)}`
         labels.set(key, `${click.network}, ${click.pass}, ${click.journey}`)
+        const values = rounds.get(click.round) ?? new Map()
         values.set(key, click.contentMs)
+        rounds.set(click.round, values)
       }
-      return values
+      return [...rounds.values()]
     })
   const serverRuns = (runs: IoResult[]): Run[] =>
     runs.map(
@@ -284,10 +285,17 @@ export function compare(
     }
     return keys
   }
+  // Log values of a key's runs. A click whose content never appeared counts
+  // as slower than any that did (Infinity), so it ranks in the median; the
+  // spread is estimated from finite values only.
   const logs = (runs: Run[], key: string) =>
-    present(runs.map((run) => run.get(key)))
-      .filter((value) => value > 0)
-      .map(Math.log)
+    runs
+      .filter((run) => run.has(key))
+      .map((run) => run.get(key))
+      .map((value) =>
+        typeof value === "number" && value > 0 ? Math.log(value) : Infinity
+      )
+  const finite = (values: number[]) => values.filter(Number.isFinite)
 
   // Clicks, grouped by network and pass for their noise.
   const baseClicks = clickRuns(sides.base.clicks)
@@ -300,13 +308,16 @@ export function compare(
   for (const [group, groupKeys] of groups) {
     const keys: string[] = []
     for (const key of groupKeys) {
-      if (logs(baseClicks, key).length === 0)
+      if (finite(logs(baseClicks, key)).length === 0)
         incomplete.push(`click ${key}: the base never showed its content`)
       else keys.push(key)
     }
     if (keys.length === 0) continue
     const sigma = pooledSpread(
-      keys.flatMap((key) => [logs(baseClicks, key), logs(headClicks, key)])
+      keys.flatMap((key) => [
+        finite(logs(baseClicks, key)),
+        finite(logs(headClicks, key)),
+      ])
     )
     // The shared part: each run's median residual over its journeys.
     const runEffects = (runs: Run[]) =>
@@ -317,7 +328,7 @@ export function compare(
             keys.flatMap((key) => {
               const value = run.get(key)
               if (typeof value !== "number" || value <= 0) return []
-              const others = logs(runs, key)
+              const others = finite(logs(runs, key))
               return [Math.log(value) - median0(others)]
             })
           )
@@ -341,21 +352,25 @@ export function compare(
     let nHead = 0
     for (const key of keys) {
       const baseLogs = logs(baseClicks, key)
-      const headValues = headClicks
-        .filter((run) => run.has(key))
-        .map((run) => run.get(key))
       const headLogs = logs(headClicks, key)
+      if (!Number.isFinite(median0(baseLogs))) {
+        incomplete.push(
+          `click ${key}: the base mostly never showed its content`
+        )
+        continue
+      }
       nBase = baseLogs.length
-      nHead = headValues.length
-      const baseMedian = Math.exp(median0(baseLogs))
-      // Content the head never showed in most runs is a regression; one
-      // timeout among several runs is noise like any slow run.
-      const headLost = headLogs.length * 2 < headValues.length
-      const change = median0(headLogs) - median0(baseLogs)
+      nHead = headLogs.length
+      // A timeout ranks as the slowest run; if it reaches the median (the
+      // head mostly never showed content) that alone is a regression.
+      const baseMedian = Math.exp(median0(finite(baseLogs)))
+      const headCenter = median0(headLogs)
+      const headLost = !Number.isFinite(headCenter)
+      const change = headCenter - median0(baseLogs)
       const error =
         Math.sqrt(
           medianError(sigma, baseLogs.length) ** 2 +
-            medianError(sigma, Math.max(1, headLogs.length)) ** 2
+            medianError(sigma, headLogs.length) ** 2
         ) || 0
       const floor = Math.log(1 + clickLimit(baseMedian) / baseMedian)
       const limit = Math.max(floor, k * error)
@@ -365,8 +380,8 @@ export function compare(
         kind: "click",
         label: labels.get(key) ?? key,
         base: round(baseMedian, 1),
-        head: headLost ? null : round(Math.exp(median0(headLogs)), 1),
-        runs: { base: baseLogs.length, head: headValues.length },
+        head: headLost ? null : round(Math.exp(headCenter), 1),
+        runs: { base: baseLogs.length, head: headLogs.length },
         noise: round(error * 100, 1)!,
         limit: round(baseMedian * (Math.exp(limit) - 1), 1),
         regressed: headLost || change > limit,
@@ -458,6 +473,7 @@ export function confirmationPlan(
       passes.set(network!, set)
     }
   }
+  // Churn and backup passes are never timed by compare().
   const order = ["cold", "first", "warm", "revisit", "reopen", "idle"]
   return [...passes].map(([network, set]) => ({
     network,

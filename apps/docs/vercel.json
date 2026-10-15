@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "cd ../.. && git diff --quiet HEAD^ HEAD -- apps/docs apps/cli/src assets/brand skills plugins/worktable/skills plugins/worktable/skill-inventory.json CHANGELOG.md mcp-tools.json package.json bun.lock turbo.json scripts/generate-docs-content.ts scripts/docs-skills.ts scripts/docs-links.ts packages/server/src/widget-authoring.ts packages/server/src/mcp/drawing-guide.ts"
+}

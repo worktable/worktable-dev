@@ -1,6 +1,12 @@
 import type { MiddlewareHandler } from "hono"
 import { promisify } from "node:util"
-import { brotliCompress, constants, gzip } from "node:zlib"
+import {
+  brotliCompress,
+  brotliCompressSync,
+  constants,
+  gzip,
+  gzipSync,
+} from "node:zlib"
 import { publicSurfaceAuthRequired } from "./auth.ts"
 import { isLoopbackPeer } from "./request-source.ts"
 import { timing } from "./request-timing.ts"
@@ -10,6 +16,37 @@ export const gzipAsync = promisify(gzip)
 const brotliAsync = promisify(brotliCompress)
 
 export type ContentEncoding = "br" | "gzip"
+
+/**
+ * Bodies under this size compress on the request loop: the hop to the thread
+ * pool and back, and the queue there under load, cost more than compressing
+ * them. Larger bodies stay off the loop so they never block other requests.
+ *
+ * Brotli quality 5 on a 4-CPU Namespace runner, on the perf fixture's spaces,
+ * documents, Recent, Activity, threads, search and document content: p50 /
+ * p95 0.03 / 0.04 ms at 4 KB, 0.11 / 0.17 ms at 16 KB, 0.26 / 0.35 ms at
+ * 32 KB and 0.60 / 0.80 ms at 64 KB. Gzip level 6 takes about half as long.
+ */
+export const SYNC_COMPRESSION_LIMIT = 32 * 1024
+
+function compress(
+  encoding: ContentEncoding,
+  body: Uint8Array
+): Buffer<ArrayBuffer> | Promise<Buffer<ArrayBuffer>> {
+  const sync = body.byteLength < SYNC_COMPRESSION_LIMIT
+  if (encoding === "gzip") {
+    const options = { level: 6 }
+    return sync ? gzipSync(body, options) : gzipAsync(body, options)
+  }
+  const options = {
+    params: {
+      // Fast enough for every response; smaller than gzip level 6.
+      [constants.BROTLI_PARAM_QUALITY]: 5,
+      [constants.BROTLI_PARAM_SIZE_HINT]: body.byteLength,
+    },
+  }
+  return sync ? brotliCompressSync(body, options) : brotliAsync(body, options)
+}
 
 function codingQualities(value: string): Map<string, number> {
   return new Map(
@@ -102,17 +139,7 @@ export const compressApiResponse: MiddlewareHandler = async (c, next) => {
   const compressed =
     body.byteLength < 1024
       ? null
-      : await timing.span(encoding, () =>
-          encoding === "br"
-            ? brotliAsync(body, {
-                params: {
-                  // Fast enough for every response; smaller than gzip level 6.
-                  [constants.BROTLI_PARAM_QUALITY]: 5,
-                  [constants.BROTLI_PARAM_SIZE_HINT]: body.byteLength,
-                },
-              })
-            : gzipAsync(body, { level: 6 })
-        )
+      : await timing.span(encoding, () => compress(encoding, body))
   if (compressed && compressed.byteLength < body.byteLength) {
     c.res = new Response(compressed, c.res)
     c.header("Content-Encoding", encoding)

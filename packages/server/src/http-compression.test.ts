@@ -3,22 +3,32 @@ import { Hono } from "hono"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { brotliDecompressSync, gunzipSync } from "node:zlib"
+import {
+  brotliCompressSync,
+  brotliDecompressSync,
+  constants,
+  gunzipSync,
+  gzipSync,
+} from "node:zlib"
 import { setAppDirOverride } from "./app-storage.ts"
-import { compressApiResponse } from "./http-compression"
+import { compressApiResponse, SYNC_COMPRESSION_LIMIT } from "./http-compression"
 import { rememberPeer } from "./request-source.ts"
 import { invalidateServerSettingsCache } from "./settings-store.ts"
 
-const content = { content: Array.from({ length: 500 }, (_, i) => `Paragraph ${i}`) }
+const paragraphs = (count: number) => ({ content: Array.from({ length: count }, (_, i) => `Paragraph ${i}`) })
+const content = paragraphs(500)
+// Compressed on the request loop and on the thread pool respectively.
+const documents = { "/doc": content, "/large": paragraphs(SYNC_COMPRESSION_LIMIT / 10) }
 function fixture() {
   const app = new Hono()
   app.use("*", compressApiResponse)
-  app.get("/doc", (c) => {
-    c.header("Vary", "Origin")
-    c.header("Cache-Control", "private, no-cache")
-    c.header("ETag", '"revision-1"')
-    return c.json(content)
-  })
+  for (const [path, body] of Object.entries(documents))
+    app.get(path, (c) => {
+      c.header("Vary", "Origin")
+      c.header("Cache-Control", "private, no-cache")
+      c.header("ETag", '"revision-1"')
+      return c.json(body)
+    })
   app.get("/small", (c) => c.json({ ok: true }))
   app.get("/events", (c) => c.body("data: hello\n\n", 200, { "Content-Type": "text/event-stream" }))
   app.get("/api/mcp", (c) => c.json(content))
@@ -40,19 +50,29 @@ describe("API response compression", () => {
     expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString()).toBe("<p>HTML document</p>".repeat(500))
   })
   it("reduces document bytes without changing JSON, cache policy, or validators", async () => {
-    for (const [accept, encoding, decode] of [
-      ["br, gzip", "br", brotliDecompressSync],
-      ["gzip", "gzip", gunzipSync],
-    ] as const) {
-      const response = await fixture().request("/doc", { headers: { "Accept-Encoding": accept } })
-      const bytes = Buffer.from(await response.arrayBuffer())
-      expect(response.headers.get("Content-Encoding")).toBe(encoding)
-      expect(bytes.length).toBeLessThan(JSON.stringify(content).length / 2)
-      expect(JSON.parse(decode(bytes).toString())).toEqual(content)
-      expect(response.headers.get("Content-Length")).toBe(String(bytes.length))
-      expect(response.headers.get("Vary")).toBe("Origin, Accept-Encoding")
-      expect(response.headers.get("Cache-Control")).toBe("private, no-cache")
-      expect(response.headers.get("ETag")).toBe('W/"revision-1"')
+    expect(JSON.stringify(documents["/doc"]).length).toBeLessThan(SYNC_COMPRESSION_LIMIT)
+    expect(JSON.stringify(documents["/large"]).length).toBeGreaterThan(SYNC_COMPRESSION_LIMIT)
+    // Brotli quality 5 and gzip level 6, whichever path compressed the body.
+    const brotli = (json: Buffer) => brotliCompressSync(json, {
+      params: { [constants.BROTLI_PARAM_QUALITY]: 5, [constants.BROTLI_PARAM_SIZE_HINT]: json.length },
+    })
+    for (const [path, body] of Object.entries(documents)) {
+      const json = Buffer.from(JSON.stringify(body))
+      for (const [accept, encoding, encode, decode] of [
+        ["br, gzip", "br", brotli, brotliDecompressSync],
+        ["gzip", "gzip", (bytes: Buffer) => gzipSync(bytes, { level: 6 }), gunzipSync],
+      ] as const) {
+        const response = await fixture().request(path, { headers: { "Accept-Encoding": accept } })
+        const bytes = Buffer.from(await response.arrayBuffer())
+        expect(response.headers.get("Content-Encoding")).toBe(encoding)
+        expect(bytes.equals(encode(json))).toBe(true)
+        expect(bytes.length).toBeLessThan(json.length / 2)
+        expect(JSON.parse(decode(bytes).toString())).toEqual(body)
+        expect(response.headers.get("Content-Length")).toBe(String(bytes.length))
+        expect(response.headers.get("Vary")).toBe("Origin, Accept-Encoding")
+        expect(response.headers.get("Cache-Control")).toBe("private, no-cache")
+        expect(response.headers.get("ETag")).toBe('W/"revision-1"')
+      }
     }
   })
 

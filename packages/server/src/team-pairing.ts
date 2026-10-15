@@ -1,4 +1,8 @@
-import type { TokenIdentity } from "./token-store.ts"
+import {
+  finalizeAgentTokenRotations,
+  listTokens,
+  type TokenIdentity,
+} from "./token-store.ts"
 import {
   advanceTeamPolicy,
   currentTeamWorktable,
@@ -49,7 +53,12 @@ export function registerTeamPairing(
 
 export function bindTeamPairingCredential(
   sessionId: string,
-  credentialKey: string
+  credentialKey: string,
+  installation: {
+    /** Active credentials of the same installation label, newest last. */
+    previousCredentialKeys?: string[]
+    icon?: string | null
+  } = {}
 ): { agentId: string; createdAgent: boolean } {
   const db = requireTeamDatabase()
   const worktableId = currentTeamWorktable()!.id
@@ -86,9 +95,24 @@ export function bindTeamPairingCredential(
         "The member who authorized this connection is no longer available"
       )
     const identity = identityForTeamMember(member)
+    // Re-pairing the same installation keeps that member's agent, so its
+    // name, access and history survive; never across members.
+    const previous = installation.previousCredentialKeys ?? []
+    const reused =
+      !existing && !pending?.agent_id && previous.length
+        ? db
+            .query<{ id: string }, string[]>(
+              `SELECT a.id FROM wt_agents a JOIN wt_agent_credentials c ON c.agent_id = a.id
+               WHERE a.worktable_id = ? AND a.ownership = 'personal' AND a.member_id = ? AND a.active = 1
+                 AND c.active = 1 AND c.credential_key IN (${previous.map(() => "?").join(",")})
+               LIMIT 1`
+            )
+            .get(worktableId, member.id, ...previous)?.id
+        : undefined
     const agentId =
       existing?.agent_id ??
       pending!.agent_id ??
+      reused ??
       createTeamAgent(
         {
           name: pending!.name,
@@ -97,6 +121,11 @@ export function bindTeamPairingCredential(
         },
         identity
       ).id
+    const createdAgent = !existing?.agent_id && !pending?.agent_id && !reused
+    if (createdAgent && installation.icon)
+      db.query(
+        "UPDATE wt_agents SET icon = ? WHERE id = ? AND worktable_id = ? AND icon IS NULL"
+      ).run(installation.icon, agentId, worktableId)
     requireTeamAgentAdministrator(agentId, identity)
     if (pending?.mode)
       db.query(
@@ -109,7 +138,38 @@ export function bindTeamPairingCredential(
     db.query("DELETE FROM wt_pairing_authorizations WHERE session_id = ?").run(
       sessionId
     )
-    return { agentId, createdAgent: !existing?.agent_id && !pending?.agent_id }
+    return { agentId, createdAgent }
+  })()
+}
+
+/**
+ * Finish a Team re-pairing: earlier credentials of the same installation that
+ * belong to this agent stop working, as they do for a one-person Worktable.
+ */
+export async function finalizeTeamCredentialRotation(
+  tokenId: string,
+  agentId: string
+): Promise<void> {
+  const db = requireTeamDatabase()
+  const ownedBy = db.query<{ agent_id: string }, [string]>(
+    "SELECT agent_id FROM wt_agent_credentials WHERE credential_key = ?"
+  )
+  const active = new Set(
+    (await listTokens()).filter((token) => !token.revokedAt).map((token) => token.id)
+  )
+  await finalizeAgentTokenRotations([tokenId], {
+    retireIf: (principalId) => ownedBy.get(principalId)?.agent_id === agentId,
+  })
+  const retired = (await listTokens()).filter(
+    (token) => active.has(token.id) && token.revokedAt && token.id !== tokenId
+  )
+  if (!retired.length) return
+  db.transaction(() => {
+    for (const token of retired)
+      db.query(
+        "UPDATE wt_agent_credentials SET active = 0 WHERE credential_key = ? AND agent_id = ?"
+      ).run(token.principal.id, agentId)
+    advanceTeamPolicy(currentTeamWorktable()!.id)
   })()
 }
 

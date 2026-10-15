@@ -405,7 +405,11 @@ export async function rotateAgentToken(options: {
  */
 export async function finalizeAgentTokenRotations(
   ids: string[],
-  options: { retireAgentLabels?: string[] } = {}
+  options: {
+    retireAgentLabels?: string[]
+    /** Narrows which earlier same-label tokens a winner replaces, by principal ID. */
+    retireIf?: (principalId: string) => boolean
+  } = {}
 ): Promise<boolean> {
   const result = await serialized(async () => {
     const tokens = await loadTokens()
@@ -441,12 +445,15 @@ export async function finalizeAgentTokenRotations(
     for (let index = 0; index < tokens.length; index++) {
       const token = tokens[index]!
       if (winnerIds.has(token.id) || token.revokedAt) continue
-      const replacedByWinner = winners.some(
-        ({ index: winnerIndex, token: winner }) =>
-          index < winnerIndex &&
-          token.agent === winner!.agent &&
-          token.workspace === winner!.workspace
-      )
+      const replacedByWinner =
+        winners.some(
+          ({ index: winnerIndex, token: winner }) =>
+            index < winnerIndex &&
+            token.agent === winner!.agent &&
+            token.workspace === winner!.workspace
+        ) &&
+        (!options.retireIf ||
+          options.retireIf(principalForStoredToken(token).id))
       const retirementBoundary = retirementBoundaries.get(token.workspace)
       const retiredLegacyLabel =
         token.agent !== null &&

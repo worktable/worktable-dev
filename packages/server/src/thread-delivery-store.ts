@@ -507,6 +507,12 @@ export async function reconcileThreadDeliveries(
     retireMissing?: boolean
     threads?: ReconcileThreadSnapshot[]
     sourceStamp?: string
+    /**
+     * Locations the inputs were scanned from. A record elsewhere was not
+     * observed, so it is neither retired nor fenced: on a team the caller may
+     * simply be unable to see that Space.
+     */
+    scannedLocations?: ThreadLocation[]
   } = {}
 ): Promise<ThreadActivityLookup> {
   if (options.sourceStamp !== undefined && readStateTrusted()) {
@@ -553,6 +559,11 @@ export async function reconcileThreadDeliveries(
         )
       )
     )
+    const scannedKeys = options.scannedLocations
+      ? new Set(options.scannedLocations.map(threadLocationKey))
+      : null
+    const observed = (location: ThreadLocation) =>
+      !scannedKeys || scannedKeys.has(threadLocationKey(location))
     const removedTerminal: DeliveryRecord[] = []
     if (retireMissing) {
       file.deliveries = file.deliveries.filter((record) => {
@@ -566,6 +577,7 @@ export async function reconcileThreadDeliveries(
         )
         const highWatermark = file.canonicalRevisions[canonicalKey] ?? 0
         const snapshotRevision = snapshot?.revision ?? Number.MAX_SAFE_INTEGER
+        if (!observed(record.location)) return true
         if (snapshotRevision < highWatermark) return true
         if (
           record.participantId !== participantId ||
@@ -612,6 +624,7 @@ export async function reconcileThreadDeliveries(
       if (
         !retireMissing ||
         record.participantId !== participantId ||
+        !observed(record.location) ||
         snapshotRevision < highWatermark ||
         record.state === "replied" ||
         record.state === "failed" ||
@@ -780,7 +793,11 @@ export async function getThreadActivities(
 
 export async function nextThreadDeliveryEligibleAt(
   participantId: string,
-  options: { allowWorktable?: boolean } = {
+  options: {
+    allowWorktable?: boolean
+    /** Deliveries the caller cannot currently act on wait, unexpired. */
+    isDeliverable?: (location: ThreadLocation) => boolean
+  } = {
     allowWorktable: true,
   }
 ): Promise<number | undefined> {
@@ -791,6 +808,7 @@ export async function nextThreadDeliveryEligibleAt(
     if (
       record.participantId !== participantId ||
       (!options.allowWorktable && record.location.kind === "worktable") ||
+      (options.isDeliverable && !options.isDeliverable(record.location)) ||
       record.state === "replied" ||
       record.state === "failed"
     ) {
@@ -814,7 +832,10 @@ export async function nextThreadDeliveryEligibleAt(
 
 export async function claimThreadDelivery(
   participantId: string,
-  options: { allowWorktable?: boolean } = {
+  options: {
+    allowWorktable?: boolean
+    isDeliverable?: (location: ThreadLocation) => boolean
+  } = {
     allowWorktable: true,
   }
 ): Promise<ClaimedDelivery | null> {
@@ -828,6 +849,9 @@ export async function claimThreadDelivery(
     for (const record of file.deliveries) {
       if (record.participantId !== participantId) continue
       if (!options.allowWorktable && record.location.kind === "worktable") {
+        continue
+      }
+      if (options.isDeliverable && !options.isDeliverable(record.location)) {
         continue
       }
       if (record.state === "replied" || record.state === "failed") continue

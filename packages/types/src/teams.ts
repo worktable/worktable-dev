@@ -1,6 +1,8 @@
 export type TeamRole = "owner" | "member"
 export type SpaceVisibility = "shared" | "restricted"
 export type SpaceAccessLevel = "read" | "edit" | "manage"
+/** Team-agent access to threads that belong to the Worktable, not a Space. */
+export type WorktableThreadAccess = "none" | "read" | "edit"
 
 export interface TeamMember {
   id: string
@@ -36,6 +38,8 @@ export interface TeamAgent {
   active: boolean
   scopeCeiling: string[] | null
   icon: string | null
+  /** Team agents only; personal agents follow their member unless narrowed. */
+  worktableThreads: WorktableThreadAccess
 }
 
 export interface TeamStatus {

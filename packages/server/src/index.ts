@@ -6,6 +6,7 @@ import { APIError } from "better-auth/api"
 import { verifyTeamSession } from "./team-session.ts"
 import {
   canAccessSpace,
+  canAccessWorktableThreads,
   assertCurrentTeamIdentity,
   teamMemberForIdentity,
   resolveTeamAgentCredential,
@@ -655,6 +656,7 @@ if (HAS_STATIC) {
 interface WsData {
   identity?: TokenIdentity;
   canAccess?: (spaceId?: string, edit?: boolean) => boolean;
+  canAccessWorktableThreads?: () => boolean;
   actorId?: string;
   actorName?: string;
   localTokenId?: string;
@@ -775,6 +777,17 @@ function realtimeCookieCheck(req: Request, url: URL): (() => Promise<boolean>) |
   const cookie = req.headers.get("Cookie");
   // Keep the cookie in a private verifier closure, never in a serializable field.
   return cookie ? teamsEnabled() ? async () => Boolean(await verifyTeamSession(req)) : () => verifyRawCookieHeader(cookie) : undefined;
+}
+
+function realtimeWorktableThreads(identity: TokenIdentity): () => boolean {
+  return () => {
+    try {
+      assertCurrentTeamIdentity(identity)
+      return canAccessWorktableThreads("read", identity)
+    } catch {
+      return false
+    }
+  }
 }
 
 function realtimePolicy(identity: TokenIdentity): (spaceId?: string, edit?: boolean) => boolean {
@@ -1886,6 +1899,7 @@ export function startServer(
             data: {
               identity,
               canAccess: realtimePolicy(identity),
+              canAccessWorktableThreads: realtimeWorktableThreads(identity),
               actorId: identity.principal.id,
               actorName: identity.principal.displayName,
               type: "yjs" as const,
@@ -1931,6 +1945,7 @@ export function startServer(
             data: {
               identity,
               canAccess: realtimePolicy(identity),
+              canAccessWorktableThreads: realtimeWorktableThreads(identity),
               actorId: identity.principal.id,
               actorName: identity.principal.displayName,
               type: "space" as const,

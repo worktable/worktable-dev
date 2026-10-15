@@ -1,4 +1,4 @@
-import { assertSpaceAccess, assertCurrentTeamIdentity, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
+import { assertSpaceAccess, assertCurrentTeamIdentity, assertWorktableThreadAccess, canAccessWorktableThreads, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
 import {
   copyFile,
   mkdir,
@@ -8,7 +8,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises"
-import { constants as fsConstants } from "node:fs"
+import { constants as fsConstants, existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { nanoid } from "nanoid"
 import type {
@@ -46,6 +46,7 @@ import {
 } from "./store.ts"
 import { listSpaces, readSpace } from "./store.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
+import { teamsEnabled } from "./team-database.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
 import { logError } from "./debug-log.ts"
 
@@ -103,6 +104,7 @@ export function threadsDir(locationInput: ThreadLocation | string): string {
   if (identity) assertCurrentTeamIdentity(identity);
   const location = normalizeThreadLocation(locationInput)
   if (location.kind === "worktable") {
+    assertWorktableThreadAccess("read")
     return join(getWorkspaceRoot(), "threads")
   }
   assertSafeSegment(location.spaceId, "space ID")
@@ -135,13 +137,16 @@ function threadMutationLockPath(
 function withThreadMutationLock<T>(
   location: ThreadLocation | string,
   threadId: string,
-  operation: () => Promise<T>
+  operation: () => Promise<T>,
+  /** Where the change lands, when the lock is a shared namespace. */
+  target: ThreadLocation | string = location
 ): Promise<T> {
   const lockPath = threadMutationLockPath(location, threadId)
   return withStoreWriteLock(lockPath, () =>
     withCrossProcessLock(lockPath, { label: `Thread ${threadId}` }, () => {
-      const resolved = normalizeThreadLocation(location);
+      const resolved = normalizeThreadLocation(target);
       if (resolved.kind === "space") assertSpaceAccess(resolved.spaceId, "edit");
+      else assertWorktableThreadAccess("edit");
       return operation();
     })
   )
@@ -279,6 +284,8 @@ export interface ThreadDigestScan {
   threads: ThreadDigest[]
   /** False when a thread file could not be read. */
   complete: boolean
+  /** Locations this scan covered; on a team, only those the caller can read. */
+  locations: ThreadLocation[]
   /**
    * Names the exact file versions the scan used: two scans with equal stamps
    * returned equal digests.
@@ -367,7 +374,12 @@ export async function scanThreadDigests(
     const code = (error as NodeJS.ErrnoException).code
     if (code !== "ENOENT" && code !== "ENOTDIR") throw error
     threadFiles.delete(dir)
-    return { threads: [], complete: true, stamp: `${dir}:` }
+    return {
+      threads: [],
+      complete: true,
+      stamp: `${dir}:`,
+      locations: [normalizeThreadLocation(location)],
+    }
   }
   const previous = threadFiles.get(dir)
   // An entry that could not be read is never trusted, and its new read
@@ -432,6 +444,7 @@ export async function scanThreadDigests(
     threads: threads.sort(newestFirst),
     complete: threads.length === names.length,
     stamp: `${dir}:${reads.join(",")}`,
+    locations: [normalizeThreadLocation(location)],
   }
 }
 
@@ -443,7 +456,7 @@ export async function scanAllThreadDigests(
   spaces?: Array<{ id: string }>
 ): Promise<ThreadDigestScan> {
   const locations: ThreadLocation[] = [
-    { kind: "worktable" },
+    ...(canAccessWorktableThreads("read") ? [{ kind: "worktable" as const }] : []),
     ...(spaces ?? (await listSpaces())).map(
       (space): ThreadLocation => ({ kind: "space", spaceId: space.id })
     ),
@@ -451,14 +464,20 @@ export async function scanAllThreadDigests(
   const scans = await Promise.all(
     locations.map((location) => scanThreadDigests(location))
   )
+  // A team member's scan covers only the Spaces they can read, so it keeps
+  // other members' cached directories unless the directory is gone.
+  const partial = Boolean(currentRequestIdentity() && teamsEnabled())
   const scanned = new Set(locations.map((location) => threadsDir(location)))
   for (const dir of threadFiles.keys()) {
-    if (!scanned.has(dir)) threadFiles.delete(dir)
+    if (!scanned.has(dir) && (!partial || !existsSync(dir))) {
+      threadFiles.delete(dir)
+    }
   }
   return {
     threads: scans.flatMap((scan) => scan.threads).sort(newestFirst),
     complete: scans.every((scan) => scan.complete),
     stamp: scans.map((scan) => scan.stamp).join("\n"),
+    locations,
   }
 }
 
@@ -525,7 +544,7 @@ export async function findThread(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
   }
   const candidates: ThreadLocation[] = [
-    { kind: "worktable" },
+    ...(canAccessWorktableThreads("read") ? [{ kind: "worktable" as const }] : []),
     ...spaceIds.map((spaceId): ThreadLocation => ({ kind: "space", spaceId })),
   ]
   const present = await Promise.all(
@@ -1049,7 +1068,7 @@ export async function createThread(
       threadId,
     })
     return { thread, message, created: true }
-  })
+  }, location)
 }
 
 export async function appendThreadMessage(

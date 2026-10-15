@@ -6,8 +6,10 @@ import {
   bindTeamPairingCredential,
   retireFailedTeamPairingCredential,
   requireTeamPairingAdministrator,
+  finalizeTeamCredentialRotation,
 } from "../team-pairing.ts"
 import {
+  requireTeamAgentAdministrator,
   requireTeamHuman,
   resolveTeamAgentCredential,
   TeamAccessError,
@@ -415,6 +417,15 @@ ownerSurface.post("/", async (c) => {
     }
     scopes = body.scopes;
   }
+  // Check the agent before saving a session the caller could never use.
+  if (teamsEnabled() && body?.agentId !== undefined) {
+    if (typeof body.agentId !== "string")
+      return c.json(
+        { error: "agentId must identify a registered agent", code: "BAD_REQUEST" },
+        400
+      );
+    requireTeamAgentAdministrator(body.agentId, c.get("identity"));
+  }
 
   const { origin, originSource, mcpUrl } = agentEndpoint(c);
   const { code, session } = await createPairingSession({
@@ -432,8 +443,6 @@ ownerSurface.post("/", async (c) => {
   });
 
   if (teamsEnabled()) {
-    if (body?.agentId !== undefined && typeof body.agentId !== "string")
-      return c.json({ error: "agentId must identify a registered agent" }, 400)
     registerTeamPairing(
       session.id,
       {
@@ -687,7 +696,21 @@ pairingRouter.post("/redeem", async (c) => {
   let participantName = adapterTarget?.participantName;
   let teamBinding: ReturnType<typeof bindTeamPairingCredential> | null = null;
   try {
-    if (teamsEnabled()) teamBinding = bindTeamPairingCredential(session.id, metadata.principal.id);
+    if (teamsEnabled()) {
+      const previousCredentialKeys = (await listTokens())
+        .filter(
+          (token) =>
+            !token.revokedAt &&
+            token.id !== metadata.id &&
+            token.agent === metadata.agent &&
+            token.workspace === metadata.workspace
+        )
+        .map((token) => token.principal.id);
+      teamBinding = bindTeamPairingCredential(session.id, metadata.principal.id, {
+        previousCredentialKeys,
+        icon: session.target.icon ?? null,
+      });
+    }
     await attachPairingToken(session.id, metadata.id, teamBinding
       ? { ...teamBinding, credentialKey: metadata.principal.id }
       : undefined);
@@ -777,8 +800,9 @@ pairingRouter.post("/complete", async (c) => {
     async (session) => {
       if (teamsEnabled()) {
         const identity = resolveTeamAgentCredential(metadata);
-        if (!identity) throw new TeamAccessError("This agent connection has been revoked");
+        if (!identity?.team?.agentId) throw new TeamAccessError("This agent connection has been revoked");
         await resolveParticipant(identity);
+        await finalizeTeamCredentialRotation(tokenId, identity.team.agentId);
         return;
       }
       const target = session.target;
@@ -792,7 +816,7 @@ pairingRouter.post("/complete", async (c) => {
         }
         const participant = (
           await resolveParticipant(
-            teamsEnabled() ? resolveTeamAgentCredential(metadata)! : { agent: metadata.agent, principal: metadata.principal },
+            { agent: metadata.agent, principal: metadata.principal },
             {
               initialName: target.participantName,
               defaultSpaceId: target.defaultSpaceId ?? null,
@@ -821,7 +845,7 @@ pairingRouter.post("/complete", async (c) => {
         // its owner gave it since.
         const participant = (
           await resolveParticipant(
-            teamsEnabled() ? resolveTeamAgentCredential(metadata)! : { agent: metadata.agent, principal: metadata.principal },
+            { agent: metadata.agent, principal: metadata.principal },
             {
               initialName:
                 target.displayName ??

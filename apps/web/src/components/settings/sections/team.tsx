@@ -18,12 +18,20 @@ import {
   getTeamStatus,
   inviteTeamMember,
   removeTeamMember,
+  setTeamAgentWorktableThreads,
 } from "@/lib/team-api"
 import { signOutLocalTeam } from "@/lib/team-context"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
-import type { TeamMember } from "@worktable/types"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@worktable/ui/components/select"
+import type { TeamAgent, TeamMember } from "@worktable/types"
 
 const TeamAgentConnectPanel = lazy(() =>
   import("./agents").then((module) => ({
@@ -377,6 +385,15 @@ function TeamAgents({ owner }: { owner: boolean }) {
     queryKey: ["team", "agents"],
     queryFn: getTeamAgents,
   })
+  const threads = useMutation({
+    mutationFn: (change: {
+      id: string
+      value: TeamAgent["worktableThreads"]
+    }) => setTeamAgentWorktableThreads(change.id, change.value),
+    onSuccess: () =>
+      void client.invalidateQueries({ queryKey: ["team", "agents"] }),
+    onError: () => toast.error("Could not change thread access. Try again."),
+  })
   const register = useMutation({
     mutationFn: () => registerTeamAgent(name.trim()),
     onSuccess: (result) => {
@@ -389,8 +406,9 @@ function TeamAgents({ owner }: { owner: boolean }) {
   return (
     <SettingsGroup title="Team agents">
       <p className="text-sm text-muted-foreground">
-        Team agents belong to this Worktable. Grant them access through Space
-        access settings.
+        Team agents belong to this Worktable. Give them Space access in each
+        Space&apos;s access settings, and choose here whether they can use
+        threads outside Spaces.
       </p>
       {agents.data
         ?.filter((agent) => agent.active && agent.ownership === "team")
@@ -400,6 +418,13 @@ function TeamAgents({ owner }: { owner: boolean }) {
             className="flex items-center justify-between gap-3"
           >
             <span className="text-sm">{agent.name}</span>
+            {owner && (
+              <WorktableThreadsSelect
+                agent={agent}
+                onChange={(value) => threads.mutate({ id: agent.id, value })}
+                disabled={threads.isPending}
+              />
+            )}
             {owner && (
               <Button
                 variant="outline"
@@ -456,5 +481,45 @@ function TeamAgents({ owner }: { owner: boolean }) {
         </Suspense>
       )}
     </SettingsGroup>
+  )
+}
+
+const WORKTABLE_THREAD_LABELS: Record<TeamAgent["worktableThreads"], string> = {
+  none: "No access",
+  read: "Read",
+  edit: "Read and post",
+}
+
+/** Threads outside every Space; team agents get them only when an owner chooses. */
+function WorktableThreadsSelect({
+  agent,
+  disabled,
+  onChange,
+}: {
+  agent: TeamAgent
+  disabled: boolean
+  onChange: (value: TeamAgent["worktableThreads"]) => void
+}) {
+  return (
+    <div className="ml-auto w-40">
+      <Select
+        value={agent.worktableThreads}
+        disabled={disabled}
+        onValueChange={(value) => {
+          if (value) onChange(value as TeamAgent["worktableThreads"])
+        }}
+      >
+        <SelectTrigger aria-label={`Worktable threads for ${agent.name}`}>
+          <SelectValue>{WORKTABLE_THREAD_LABELS[agent.worktableThreads]}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {(["none", "read", "edit"] as const).map((value) => (
+            <SelectItem key={value} value={value}>
+              {WORKTABLE_THREAD_LABELS[value]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   )
 }

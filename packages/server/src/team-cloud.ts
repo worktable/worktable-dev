@@ -191,7 +191,7 @@ export async function acceptCloudTeamInvitation(
           {
             email: string
             status: string
-            expiresAt: number
+            expiresAt: number | string
             organizationId: string
           },
           [string]
@@ -202,7 +202,9 @@ export async function acceptCloudTeamInvitation(
       if (
         !invitation ||
         invitation.status !== "pending" ||
-        invitation.expiresAt <= Date.now() ||
+        (typeof invitation.expiresAt === "number"
+          ? invitation.expiresAt
+          : Date.parse(invitation.expiresAt)) <= Date.now() ||
         invitation.organizationId !== currentTeamWorktable()!.organizationId
       )
         throw new TeamAccessError("This invitation is no longer available")

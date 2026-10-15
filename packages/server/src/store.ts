@@ -23,7 +23,8 @@ import {
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
-import { getSpacesDir } from "./workspace.ts";
+import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
+import { ensureAppDir } from "./app-storage.ts";
 import {
   automaticCheckpointLabel,
   listVersionEntries,
@@ -434,9 +435,14 @@ async function replaySuppressedDocChange(
 
 const writeLocks = new Map<string, Promise<void>>();
 
+/**
+ * Serialize work on one store path. Paths inside a Space require edit access
+ * unless a reader that only needs a consistent view passes "read".
+ */
 export async function withStoreWriteLock<T>(
   filePath: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  access: "read" | "edit" = "edit"
 ): Promise<T> {
   const current = writeLocks.get(filePath) ?? Promise.resolve();
   let release!: () => void;
@@ -451,7 +457,7 @@ export async function withStoreWriteLock<T>(
     const position = filePath.indexOf(ownedPrefix);
     if (position !== -1) {
       const spaceId = filePath.slice(position + ownedPrefix.length).split(sep)[0];
-      if (spaceId && spaceId !== ".trash") assertSpaceAccess(spaceId, "edit");
+      if (spaceId && spaceId !== ".trash") assertSpaceAccess(spaceId, access);
     }
     return await fn();
   } finally {
@@ -465,13 +471,14 @@ export async function withStoreWriteLock<T>(
 /** Acquire several store-file locks in canonical order for one transaction. */
 export async function withStoreWriteLocks<T>(
   filePaths: string[],
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  access: "read" | "edit" = "edit"
 ): Promise<T> {
   const ordered = [...new Set(filePaths)].sort((a, b) => a.localeCompare(b))
   const acquire = (index: number): Promise<T> => {
     const path = ordered[index]
     if (!path) return fn()
-    return withStoreWriteLock(path, () => acquire(index + 1))
+    return withStoreWriteLock(path, () => acquire(index + 1), access)
   }
   return acquire(0)
 }
@@ -666,9 +673,18 @@ export async function readSpace(
 export async function writeSpace(space: SpaceFile): Promise<void> {
   if (!space.id || space.id === "." || space.id === ".." || /[\\/\0]/.test(space.id)) throw new TeamAccessError("Invalid Space ID");
   const path = join(baseDir(), space.id, "space.json");
+  // Refuse before reserving anything, so a denied creation leaves no folder.
+  if (!existsSync(path) && !canCreateTeamSpace()) throw new TeamAccessError();
   // Space creation needs its own reservation: an unpublished file must not
-  // leave behind a manager grant if filesystem creation fails.
-  await withCrossProcessLock(`${path}.creation.lock`, { label: "Space creation" }, async () => {
+  // leave behind a manager grant if filesystem creation fails. The lock lives
+  // in app storage, so taking it never creates the Space's folder.
+  const creationLock = join(
+    ensureAppDir(),
+    "space-locks",
+    workspaceCacheKey(),
+    `${space.id}.creation.lock`
+  );
+  await withCrossProcessLock(creationLock, { label: "Space creation" }, async () => {
     const existing = existsSync(path);
     let registered = false;
     if (existing) assertSpaceAccess(space.id, "edit");
@@ -689,9 +705,10 @@ export async function writeSpace(space: SpaceFile): Promise<void> {
 /** Read and replace one existing Space while holding its file write lock. */
 export async function mutateSpace(
   spaceId: string,
-  mutation: (space: SpaceFile) => SpaceFile | null
+  mutation: (space: SpaceFile) => SpaceFile | null,
+  access: "edit" | "manage" = "edit"
 ): Promise<{ data: SpaceFile | null; error: string | null }> {
-  assertSpaceAccess(spaceId, "edit");
+  assertSpaceAccess(spaceId, access);
   const path = spacePath(spaceId);
   return withWriteLock(path, async () => {
     const current = await readSpace(spaceId);
@@ -986,6 +1003,8 @@ export async function setSpaceArchived(
   archivedBy = "user",
   reason?: string
 ): Promise<{ space: SpaceFile | null; error: string | null }> {
+  // Archiving hides the Space from everyone, so it takes the same authority as
+  // managing its access.
   const { data: updated, error } = await mutateSpace(spaceId, (space) => {
     const settings = { ...space.settings };
     if (archived) {
@@ -1002,7 +1021,7 @@ export async function setSpaceArchived(
       settings,
       updatedAt: new Date().toISOString(),
     };
-  });
+  }, "manage");
   if (error || !updated) {
     return { space: null, error: error ?? `Space not found: ${spaceId}` };
   }

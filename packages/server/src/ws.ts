@@ -24,6 +24,8 @@ interface WsClient {
   data: {
     spaceId: string
     canAccess?: (spaceId?: string, edit?: boolean) => boolean
+    /** Threads outside every Space; agents need an explicit grant. */
+    canAccessWorktableThreads?: () => boolean
     credentialRevoked?: boolean
     canReadDocs?: boolean
     canReadWidgets?: boolean
@@ -399,6 +401,12 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   if (ws.data.credentialRevoked) return false
   const spaceId = msg.spaceId ?? (msg.location?.kind === "space" ? msg.location.spaceId : undefined);
   if (ws.data.canAccess && !ws.data.canAccess(spaceId)) return false
+  if (
+    msg.location?.kind === "worktable" &&
+    ws.data.canAccessWorktableThreads &&
+    !ws.data.canAccessWorktableThreads()
+  )
+    return false
   switch (msg.type) {
     case "doc_update":
     case "doc_deleted":

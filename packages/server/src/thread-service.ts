@@ -1,7 +1,7 @@
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
-import { canAccessSpace, resolveTeamAgentCredential, teamAgentHasSpaceAccess } from "./team-policy.ts"
+import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentHasSpaceAccess } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   AgentPlatformId,
@@ -731,6 +731,7 @@ export async function listThreadParticipants(
           ownership: string
           scope_ceiling: string | null
           mode: string
+          worktable_threads: "none" | "read" | "edit"
         },
         [string]
       >(
@@ -754,6 +755,16 @@ export async function listThreadParticipants(
       >("SELECT credential_key, agent_id, sponsor_member_id FROM wt_agent_credentials WHERE active = 1")
       .all()
     const eligibleAgents = agents.filter((agent) => {
+      if (location?.kind !== "space") {
+        const level = agentWorktableThreadAccess({
+          ownership: agent.ownership as "team" | "personal",
+          spaceIds:
+            agent.space_ids === null ? null : JSON.parse(agent.space_ids),
+          worktableThreads: agent.worktable_threads,
+        })
+        if (level === "none" || (replyRequired && level !== "edit"))
+          return false
+      }
       if (
         location?.kind === "space" &&
         !teamAgentHasSpaceAccess(
@@ -1467,6 +1478,7 @@ async function reconcileParticipantDeliveries(
   }
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
+    scannedLocations: scan.locations,
     threads: scan.threads.map(({ summary: thread }) => ({
       threadId: thread.id,
       location: thread.location,
@@ -1495,15 +1507,36 @@ export async function claimNextThreadDelivery(
   )
   await reconcileParticipantDeliveries(participant.id)
   const deadline = Date.now() + boundedWaitSeconds(waitSeconds) * 1000
+  // Requests in threads this identity cannot currently reply in stay queued;
+  // they arrive if access returns.
+  const isDeliverable = (location: ThreadLocation) =>
+    location.kind === "space"
+      ? canAccessSpace(location.spaceId, "edit")
+      : canAccessWorktableThreads("edit")
   while (true) {
     const signalRevision = inboxSignalRevision(participant.id)
     const allowWorktable = threadLocationVersion === 2
-    const claim = await claimThreadDelivery(participant.id, { allowWorktable })
+    const claim = await claimThreadDelivery(participant.id, {
+      allowWorktable,
+      isDeliverable,
+    })
     if (claim) {
       let thread: Awaited<ReturnType<typeof readThread>>
       try {
         thread = await readThread(claim.location, claim.threadId)
       } catch (error) {
+        if (error instanceof TeamAccessError) {
+          // Access changed after the claim; release it to wait for access.
+          await failThreadDelivery({
+            messageId: claim.messageId,
+            leaseId: claim.leaseId,
+            participantId: participant.id,
+            retryable: true,
+            code: "ACCESS_CHANGED",
+            message: "Access to this thread changed while it was being delivered.",
+          })
+          continue
+        }
         if (
           error instanceof ThreadError &&
           (error.code === "THREAD_NOT_FOUND" ||
@@ -1568,6 +1601,7 @@ export async function claimNextThreadDelivery(
     if (remaining <= 0) return null
     const eligibleAt = await nextThreadDeliveryEligibleAt(participant.id, {
       allowWorktable,
+      isDeliverable,
     })
     if (eligibleAt !== undefined && eligibleAt <= Date.now()) continue
     const waitMs = Math.min(

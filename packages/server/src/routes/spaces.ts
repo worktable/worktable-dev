@@ -266,13 +266,15 @@ spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
     fields.group = undefined;
   }
 
+  // Name, description, icon and group change the Space for everyone.
   const { data: updated, error: mutationError } = await mutateSpace(
     spaceId,
     (space) => ({
       ...space,
       ...fields,
       updatedAt: new Date().toISOString(),
-    })
+    }),
+    "manage"
   );
   if (mutationError || !updated) {
     return c.json(

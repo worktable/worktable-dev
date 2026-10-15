@@ -222,9 +222,7 @@ async function enableLink(billingWorkspaceId?: string): Promise<LinkedStatus> {
         "INSERT OR IGNORE INTO wt_identity_bindings(worktable_id, issuer, subject, user_id) VALUES (?, ?, ?, ?)"
       ).run(worktable.id, link.cloudOrigin, subject, member.userId)
     }
-    delete link.teamAuthorizationRequired
-    link.billingWorkspaceId = z.string().min(1).parse(data["workspaceId"])
-    await saveLink(path(), link)
+    const approvedWorkspaceId = z.string().min(1).parse(data["workspaceId"])
     const destinationId = z
       .string()
       .regex(/^[a-f0-9]{32}$/)
@@ -235,6 +233,11 @@ async function enableLink(billingWorkspaceId?: string): Promise<LinkedStatus> {
         enrollment: enrollment(link),
         paused: false,
       })
+    // Record the authorization only once Cloud has accepted the resume, so a
+    // failed attempt still starts paused next time.
+    delete link.teamAuthorizationRequired
+    link.billingWorkspaceId = approvedWorkspaceId
+    await saveLink(path(), link)
     status = {
       state: "connecting",
       enabled: true,

@@ -12,6 +12,7 @@ import {
   lazy,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ErrorInfo,
   type ReactNode,
@@ -27,6 +28,7 @@ import { containsHtml } from "@/lib/markdown-html-detect"
 import { CodeBlock } from "@/components/document/code-block"
 import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
+import { DataTooltips } from "@/components/document/data-tooltip"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
@@ -139,7 +141,14 @@ export function MarkdownViewer({
   const router = useRouter()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
   const paneWidth = usePaneWidth<HTMLDivElement>()
-  const scrollRef = useMemo(() => mergeRefs(fade, paneWidth), [fade, paneWidth])
+  const scrollRoot = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useMemo(
+    () =>
+      mergeRefs<HTMLDivElement>(fade, paneWidth, (node) => {
+        scrollRoot.current = node
+      }),
+    [fade, paneWidth]
+  )
   const html = useHtmlPlugins(content)
   const { theme } = useTheme()
   const worktableOrigins = useMemo(
@@ -164,6 +173,7 @@ export function MarkdownViewer({
         data-document-scroll-root
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
+        <DataTooltips rootRef={scrollRoot} />
         <article className="worktable-markdown worktable-document-content">
           <MarkdownErrorBoundary>
             <Markdown

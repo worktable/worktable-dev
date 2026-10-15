@@ -18,7 +18,6 @@ const CHECK_ICON =
 
 function relabel(button: HTMLElement, label: string) {
   button.dataset.tooltip = label
-  button.dispatchEvent(new Event("tooltipchange", { bubbles: true }))
 }
 
 function iconButton(label: string, icon: string, className: string) {

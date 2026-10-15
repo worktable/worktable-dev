@@ -14,6 +14,10 @@ infrastructure and personal context out of release notes.
 - **Private logs:** Worktable's logs no longer name your documents. Requests are logged by route, documents by an opaque id, and errors without their messages, unless you set `WORKTABLE_DEBUG=1`. When something goes wrong on the server, Worktable shows a short error ID that matches the log line.
 - **Log rotation:** On local and self-hosted Worktable, each background service log rotates at 10 MB and keeps three older copies, so logs no longer grow without limit.
 
+### Fixed
+
+- **Thread messages:** While you type in a thread, the cursor stays with your text instead of falling behind it or sitting on a different line.
+
 ## [0.1.23] - 2026-10-14
 
 ### Changed

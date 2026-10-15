@@ -3,8 +3,8 @@
  * Brand lockup: the Worktable app icon (same mark as the favicon and
  * apps/web) plus the canonical wordmark from assets/brand, recolored to
  * currentColor at build time so it follows the theme, and a quiet "Docs"
- * qualifier. assets/brand is an out-of-graph build input — it's listed in
- * scripts/vercel-ignore.sh (docs case); consolidated CI builds every ready PR.
+ * qualifier. assets/brand is an out-of-graph build input, so it is listed in
+ * the docs deploy workflow's paths; consolidated CI builds every ready PR.
  */
 import wordmarkSource from "../../../../assets/brand/worktable-wordmark.svg?raw"
 

@@ -1,0 +1,64 @@
+# Deploys docs.worktable.dev. apps/docs/vercel.json turns off Vercel's Git
+# deployments, so pushes and pull requests create no Vercel deployments and
+# use none of the account's daily deployment quota. This workflow asks Vercel
+# to build main through the project's deploy hook, only when a merge changes
+# something the site is built from. Run it by hand to redeploy.
+name: Docs deploy
+"on":
+  push:
+    branches:
+      - main
+    # The @worktable/docs#build inputs in turbo.json, its workspace packages,
+    # and the scripts the build runs. The CLI reference renders the CLI's
+    # command definitions, which import shared packages' constants.
+    paths:
+      - .github/workflows/docs-deploy.yml
+      - apps/docs/**
+      - apps/cli/src/**
+      - packages/server/src/**
+      - packages/mcp-connect/src/**
+      - packages/types/src/**
+      - packages/hosted-contract/src/**
+      - packages/ui/**
+      - packages/public-analytics/**
+      - plugins/worktable/**
+      - skills/**
+      - assets/brand/**
+      - CHANGELOG.md
+      - mcp-tools.json
+      - package.json
+      - bun.lock
+      - bunfig.toml
+      - turbo.json
+      - scripts/generate-docs-content.ts
+      - scripts/docs-skills.ts
+      - scripts/skill-inventory.ts
+      - scripts/docs-links.ts
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Start a production build of main
+        env:
+          # A deploy hook URL deploys main without a Vercel account token.
+          DEPLOY_HOOK: ${{ secrets.VERCEL_DOCS_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::error::The VERCEL_DOCS_DEPLOY_HOOK secret is not set." >&2
+            exit 1
+          fi
+          # One request: a retried POST could queue a second deployment.
+          job="$(curl -fsS -X POST "$DEPLOY_HOOK" | jq -r '.job.id // empty')"
+          if [ -z "$job" ]; then
+            echo "::error::Vercel accepted no deploy job." >&2
+            exit 1
+          fi
+          echo "Vercel queued deploy job $job for main. Its result appears as the Vercel status on the main commit."

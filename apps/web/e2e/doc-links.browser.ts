@@ -545,10 +545,10 @@ test("pasting nested blocks assigns new IDs and preserves existing identities", 
   for (let i = 0; i < 2; i++) {
     const last = editor.locator('.bn-inline-content').last();
     // Place the caret at the end through the editor. The shared browser's
-    // platform key bindings can make End a no-op, and a DOM range set right
-    // after a click races the editor: until it has read the click, any update
-    // it renders puts the clicked caret back. Typing there would split the
-    // paragraph.
+    // platform key bindings can make End a no-op. A DOM range set after a
+    // click can be undone by ProseMirror, which copies its selection back to
+    // the page 20 ms after gaining focus; typing at the clicked caret would
+    // split the paragraph.
     expect(await last.evaluate((node) => {
       const { editor } = node.closest(".bn-editor") as HTMLElement & {
         editor: import("@tiptap/core").Editor

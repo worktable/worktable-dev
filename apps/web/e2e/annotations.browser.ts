@@ -73,9 +73,10 @@ for (const mobile of [true, false]) {
       const selectQuote = async () => {
         // Native selection handles are OS UI, so focus the editor and select
         // the quote through it, then use a real touch tap on mobile to
-        // exercise selection/focus preservation. Tapping the text first would
-        // race the editor: until it has read the tap, any update it renders
-        // puts the tapped caret back over a selection made in the meantime.
+        // exercise selection/focus preservation. Do not tap the text and set
+        // a DOM range: ProseMirror copies its selection back to the page
+        // 20 ms after gaining focus, and on a busy runner that can land after
+        // the range and before the editor reads it, restoring the caret.
         await paragraph.evaluate((node, length) => {
           const { editor } = node.closest(".bn-editor") as HTMLElement & {
             editor: import("@tiptap/core").Editor

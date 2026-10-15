@@ -122,11 +122,18 @@ export function resolveSourceMetadata(
       throw new Error(
         "Public builds require the AGPL source checkout and explicit public repository and commit"
       )
+    // A release carries the package version; an unreleased build carries a
+    // dev version of exactly the captured commit (scripts/release-version.ts),
+    // passed to its child builds through WORKTABLE_VERSION.
+    const version =
+      options.version || env["WORKTABLE_VERSION"] || packageJson.version
     if (
-      env["WORKTABLE_VERSION"] &&
-      env["WORKTABLE_VERSION"] !== packageJson.version
+      version !== packageJson.version &&
+      !isDevVersionOf(version, expectedCommit)
     )
-      throw new Error("Public version must match the captured package version")
+      throw new Error(
+        "Public version must match the captured package version, or be a dev version of the captured commit"
+      )
     if (
       Object.keys(env).some(
         (key) => key.startsWith("VITE_") && env[key] !== undefined
@@ -194,16 +201,8 @@ export function resolveSourceMetadata(
       throw new Error(
         "Public source tag must be the captured version tag on the exact source commit"
       )
-    if (
-      options.version !== undefined &&
-      options.version !== packageJson.version &&
-      !isDevVersionOf(options.version, sourceCommit)
-    )
-      throw new Error(
-        "Public builds carry the package version or a dev version of their commit"
-      )
     const metadata: SourceMetadata = {
-      version: options.version ?? packageJson.version,
+      version,
       sourceRepo,
       sourceCommit,
       sourceTag,

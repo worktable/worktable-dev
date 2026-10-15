@@ -360,8 +360,15 @@ test("unreleased builds carry a dev version of their exact commit", () => {
       version: dev,
     })
     verifyPublicSourceMetadata({ ...publicMetadata, version: dev })
+    // Child builds receive the dev version through WORKTABLE_VERSION.
+    expect(
+      resolveSourceMetadata(root, { ...env, WORKTABLE_VERSION: dev }).version
+    ).toBe(dev)
     expect(() =>
-      resolveSourceMetadata(root, env, { version: "1.2.4-dev.1+0000000" })
+      resolveSourceMetadata(root, {
+        ...env,
+        WORKTABLE_VERSION: "1.2.4-dev.1+0000000",
+      })
     ).toThrow("dev version")
     expect(() =>
       verifyPublicSourceMetadata({

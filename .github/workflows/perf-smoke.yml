@@ -1,0 +1,106 @@
+# Structural speed budgets (Plan 17 Speed): the click lane once, untimed, on
+# the 100-document fixture, and io-count's counting run, against
+# scripts/perf/smoke-budgets.json. Counts, not timings, so it does not depend
+# on the runner's speed. Pull requests that leave the product alone pass at
+# once; a dispatch measures another commit with this ref's tooling.
+name: perf-smoke
+"on":
+  pull_request: null
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to measure with this ref's tooling and budgets (empty: this ref)"
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: perf-smoke-${{ github.event_name }}-${{ github.ref }}-${{ inputs.sha }}
+  cancel-in-progress: true
+jobs:
+  perf-smoke:
+    name: perf-smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          # A pull request checks out its merge commit; its first parent is
+          # the base branch.
+          fetch-depth: 2
+      - name: Select
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |-
+          if [ "$EVENT" != pull_request ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if printf '%s\n' "$changed" | grep -qE '^(apps/web/|packages/(server|types|ui|hosted-contract|mcp|mcp-connect|public-analytics|config-typescript)/|scripts/perf/|patches/|package\.json$|bun\.lock$|\.github/workflows/perf-smoke\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No product change; perf-smoke has nothing to measure." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        if: steps.scope.outputs.run == 'true' && inputs.sha != ''
+        with:
+          ref: ${{ inputs.sha }}
+          path: .local-dev/product
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        if: steps.scope.outputs.run == 'true'
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 24.15.0
+      - name: Use Ubuntu archive mirrors
+        if: steps.scope.outputs.run == 'true'
+        # The runner's preferred Azure mirror can stall package downloads.
+        run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
+      - name: Install dependencies, Chromium, Caddy and strace
+        if: steps.scope.outputs.run == 'true'
+        env:
+          CADDY_VERSION: 2.11.7
+        run: |-
+          bun install --frozen-lockfile
+          bunx playwright@1.61.1 install --with-deps chromium
+          command -v strace || sudo apt-get install -y -qq strace
+          mkdir -p "$RUNNER_TEMP/caddy"
+          curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$RUNNER_TEMP/caddy" caddy
+          echo "$RUNNER_TEMP/caddy" >> "$GITHUB_PATH"
+      - name: Restore the perf fixture
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .local-dev/perf/fixtures
+          key: perf-fixtures-100-${{ hashFiles('scripts/perf/fixtures.ts') }}
+      - name: Build the web app
+        if: steps.scope.outputs.run == 'true'
+        env:
+          PRODUCT_SHA: ${{ inputs.sha }}
+        run: |-
+          checkout=.
+          if [ -n "$PRODUCT_SHA" ]; then
+            checkout=.local-dev/product
+            (cd "$checkout" && bun install --frozen-lockfile)
+          fi
+          echo "PERF_CHECKOUT=$checkout" >> "$GITHUB_ENV"
+          WORKTABLE_BUILD_ID="perf-smoke-$(git -C "$checkout" rev-parse HEAD)" bun run --cwd "$checkout/apps/web" build
+      - name: Check structural budgets
+        if: steps.scope.outputs.run == 'true'
+        run: bun scripts/perf/smoke.ts --checkout "$PERF_CHECKOUT" --out perf-smoke-results
+      - name: Upload results
+        if: always() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: perf-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: perf-smoke-results/
+          if-no-files-found: warn
+          retention-days: 14

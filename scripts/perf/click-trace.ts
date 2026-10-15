@@ -6,6 +6,7 @@
  *     [--networks local,desktop,phone,phone-h1] [--idle-seconds 20]
  *     [--spaces 28] [--content-timeout 45] [--caddy caddy] [--no-trace]
  *     [--checkout <dir>] [--as solo|owner|member] [--churn] [--backup]
+ *     [--passes cold,first,warm,revisit,reopen,idle] [--idle-window <s>]
  *     [--out <dir>]
  *
  * Needs a perf fixture (`bun run perf:fixtures --profile 1k`), a production
@@ -54,6 +55,10 @@
  * - `--backup`: live operator snapshots run back to back (the entry point a
  *   hosted backup uses) while the tab clicks and a second client reads and
  *   writes; it records failed reads, write waits and the slowest click.
+ *
+ * `--passes` limits the passes (all by default). `--idle-window <s>` leaves
+ * the tab at Home after reopening it and records every request it makes
+ * over that many seconds. perf-smoke (smoke.ts) uses both.
  *
  * Writes result.json, summary.md and waterfalls.md to
  * .local-dev/perf/results/<time>-clicks-<profile>/ (or --out), with
@@ -212,6 +217,8 @@ export interface Req {
   protocol: string | null
   initiator: string | null
   failed?: string
+  /** HTTP redirects followed before the final response. */
+  redirects?: number
 }
 
 export interface WsRec {
@@ -273,7 +280,20 @@ export interface ClickRecord {
     chainGaps: Breakdown & { gapMs: number }
   } | null
   navigation: Record<string, number> | null
+  /** Elements in the app's document once settled (frames not included). */
+  domNodes?: number
   screenshot?: string
+}
+
+/**
+ * Requests an open tab made while nobody touched it, over a fixed window
+ * after reopening the app at Home (`--idle-window`).
+ */
+export interface IdleWindowRecord {
+  network: Network["name"]
+  round: number
+  seconds: number
+  requests: string[]
 }
 
 export type Pass =
@@ -338,6 +358,7 @@ export interface ClickTraceResult {
   } | null
   churn: ChurnRecord[]
   backup: BackupRecord[]
+  idleWindows?: IdleWindowRecord[]
   startedAt: string
   machine: {
     cpus: number
@@ -363,6 +384,8 @@ export interface ClickTraceResult {
     hoverMs: number
     churn: boolean
     backup: boolean
+    passes?: Pass[]
+    idleWindowSeconds?: number
   }
   clicks: ClickRecord[]
 }
@@ -420,6 +443,7 @@ interface CdpRequest {
   cached: boolean
   encoded: number
   failed: string | null
+  redirects: number
 }
 
 interface Session {
@@ -559,6 +583,7 @@ async function openSession(
       cached: false,
       encoded: 0,
       failed: null,
+      redirects: (existing?.redirects ?? 0) + (event.redirectResponse ? 1 : 0),
     })
     if (!event.request.url.startsWith("data:"))
       session.inflight.add(event.requestId)
@@ -682,6 +707,7 @@ interface PageData {
   lastMutation: number
   marks: { name: string; at: number }[]
   navigation: Record<string, number> | null
+  domNodes: number
 }
 
 async function readPage(session: Session, from: number): Promise<PageData> {
@@ -728,6 +754,7 @@ async function readPage(session: Session, from: number): Promise<PageData> {
       hovers: wt.hovers,
       lastMutation: wt.lastMutation,
       marks: wt.marks,
+      domNodes: document.getElementsByTagName("*").length,
       navigation:
         from <= 0 && navigation
           ? {
@@ -825,6 +852,7 @@ function buildRequests(
       protocol: request.protocol ?? timing?.protocol ?? null,
       initiator: request.initiator,
       ...(request.failed ? { failed: request.failed } : {}),
+      ...(request.redirects ? { redirects: request.redirects } : {}),
     })
   }
   return requests.sort((left, right) => left.start - right.start)
@@ -1138,6 +1166,7 @@ async function measure(
       .map(([source, ms]) => ({ source, ms: round1(ms) })),
     mainThread,
     navigation: data.navigation,
+    domNodes: data.domNodes,
   }
   if (run.screenshots) {
     const name = `${session.network.name}-${action.pass}-${action.journey.replace(/\W+/g, "-")}.jpg`
@@ -1567,21 +1596,43 @@ async function runNetwork(
   extras: Extras
 ): Promise<ClickRecord[]> {
   const records: ClickRecord[] = []
-  for (const load of coldLoads(targets))
-    records.push(await measureLoad(run, network, base, "cold", load))
+  const passes = extras.passes
+  if (passes.has("cold"))
+    for (const load of coldLoads(targets))
+      records.push(await measureLoad(run, network, base, "cold", load))
 
   const session = await openSession(run.browser, network, base)
   try {
     const home = coldLoads(targets)[0]!
-    records.push(await measureLoad(run, network, base, "first", home, session))
-    for (const action of clickJourney("first", targets, false))
-      records.push(await measure(run, session, action))
-    for (const action of clickJourney("warm", targets, true))
-      records.push(await measure(run, session, action))
-    for (const action of clickJourney("revisit", targets, false))
-      records.push(await measure(run, session, action))
-    records.push(await measureLoad(run, network, base, "reopen", home, session))
-    for (const action of clickJourney("idle", targets, false)) {
+    // The tab always opens at Home; "first" decides whether that is measured.
+    if (passes.has("first"))
+      records.push(
+        await measureLoad(run, network, base, "first", home, session)
+      )
+    else {
+      await session.page.goto(base + home.path, { waitUntil: "commit" })
+      await waitSettled(session)
+    }
+    if (passes.has("first"))
+      for (const action of clickJourney("first", targets, false))
+        records.push(await measure(run, session, action))
+    if (passes.has("warm"))
+      for (const action of clickJourney("warm", targets, true))
+        records.push(await measure(run, session, action))
+    if (passes.has("revisit"))
+      for (const action of clickJourney("revisit", targets, false))
+        records.push(await measure(run, session, action))
+    if (passes.has("reopen"))
+      records.push(
+        await measureLoad(run, network, base, "reopen", home, session)
+      )
+    if (extras.idleWindowSeconds > 0)
+      extras.idleWindowRecords.push(
+        await idleWindow(run, session, home, extras.idleWindowSeconds)
+      )
+    for (const action of passes.has("idle")
+      ? clickJourney("idle", targets, false)
+      : []) {
       const prepare = action.prepare
       records.push(
         await measure(run, session, {
@@ -1657,9 +1708,49 @@ async function runNetwork(
   return records
 }
 
+/**
+ * Leave the tab at Home, settled, for `seconds` and list the requests it
+ * makes meanwhile. A tab nobody touches should make none: polling and timers
+ * belong to the change stream (docs/performance.md).
+ */
+async function idleWindow(
+  run: RunContext,
+  session: Session,
+  home: ColdLoad,
+  seconds: number
+): Promise<IdleWindowRecord> {
+  if (!session.page.url().endsWith(home.path)) {
+    await session.page.goto(session.base + home.path, { waitUntil: "commit" })
+  }
+  await waitSettled(session)
+  const from = Date.now()
+  await Bun.sleep(seconds * 1000)
+  const to = Date.now()
+  const requests = [...session.requests.values()]
+    .filter(
+      (request) =>
+        !request.url.startsWith("data:") &&
+        request.wallMs >= from &&
+        request.wallMs <= to
+    )
+    .map((request) => shortUrl(request.url))
+  console.log(
+    `[clicks] r${run.round} ${session.network.name} idle ${seconds} s at Home: ${requests.length} requests`
+  )
+  return {
+    network: session.network.name,
+    round: run.round,
+    seconds,
+    requests,
+  }
+}
+
 // ── Churn and backup passes ───────────────────────────────────────────
 
 interface Extras {
+  passes: Set<Pass>
+  idleWindowSeconds: number
+  idleWindowRecords: IdleWindowRecord[]
   churn: ChurnContext | null
   backup: BackupContext | null
   churnRecords: ChurnRecord[]
@@ -2347,6 +2438,28 @@ async function main() {
     throw new Error("--as must be solo, owner or member")
   const churn = args.has("churn")
   const backup = args.has("backup")
+  const allPasses: Pass[] = [
+    "cold",
+    "first",
+    "warm",
+    "revisit",
+    "reopen",
+    "idle",
+  ]
+  const passes = (args.get("passes")?.split(",") ?? allPasses) as Pass[]
+  for (const pass of passes)
+    if (!allPasses.includes(pass))
+      throw new Error(`--passes takes ${allPasses.join(", ")}; not ${pass}`)
+  // Warm, revisit and idle clicks only mean what they say after the tab's
+  // first visits.
+  if (
+    !passes.includes("first") &&
+    passes.some((pass) => ["warm", "revisit", "idle"].includes(pass))
+  )
+    throw new Error("--passes with warm, revisit or idle needs first")
+  const idleWindowSeconds = args.has("idle-window")
+    ? numberArg(args, "idle-window", 60)
+    : 0
   if (churn && as !== "member")
     throw new Error(
       "--churn measures a member's tab while the owner changes the team; use --as member"
@@ -2425,6 +2538,9 @@ async function main() {
     )
 
     const extras: Extras = {
+      passes: new Set(passes),
+      idleWindowSeconds,
+      idleWindowRecords: [],
       churn:
         churn && roles
           ? {
@@ -2461,6 +2577,7 @@ async function main() {
         : null,
       churn: extras.churnRecords,
       backup: extras.backupRecords,
+      idleWindows: extras.idleWindowRecords,
       startedAt: new Date().toISOString(),
       machine: {
         cpus: cpus().length,
@@ -2480,6 +2597,8 @@ async function main() {
         hoverMs: HOVER_MS,
         churn,
         backup,
+        passes,
+        idleWindowSeconds,
       },
       clicks: [],
     }

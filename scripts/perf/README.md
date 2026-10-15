@@ -215,6 +215,13 @@ screenshot of each settled screen and the phone's Chrome traces. Rewrite the
 Markdown from a `result.json` with
 `bun scripts/perf/click-trace-report.ts <result.json>`.
 
+`--raw-traces` adds JS sampling and JS stacks to the Chrome traces and saves
+every measured action's trace, each round and profile, as
+`traces/trace-<profile>-<pass>-<journey>-r<round>.json.gz`. Open one in the
+DevTools Performance panel for the call stacks behind a long task, the timer
+or request that scheduled it, and each request's initiator. The web build has
+no source maps; build with `vite build --sourcemap hidden` to map the frames.
+
 Two limits of the emulation: Chromium applies the round trip as a minimum,
 not on top of server time, so a slow response looks up to one round trip
 faster than it would be; and it does not throttle an HTML document's frame

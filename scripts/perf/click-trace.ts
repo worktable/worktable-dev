@@ -5,6 +5,7 @@
  *   bun scripts/perf/click-trace.ts [--profile 1k] [--seed 1] [--rounds 3]
  *     [--networks local,desktop,phone,phone-h1] [--idle-seconds 20]
  *     [--spaces 28] [--content-timeout 45] [--caddy caddy] [--no-trace]
+ *     [--raw-traces]
  *     [--checkout <dir>] [--as solo|owner|member] [--churn] [--backup]
  *     [--passes cold,first,warm,revisit,reopen,idle] [--idle-window <s>]
  *     [--out <dir>]
@@ -60,6 +61,10 @@
  * the tab at Home after reopening it and records every request it makes
  * over that many seconds. perf-smoke (smoke.ts) uses both.
  *
+ * `--raw-traces` adds JS sampling (a V8 CPU profile) and JS stacks on trace
+ * events to every Chrome trace, and saves each measured action's trace, every
+ * round and profile, to traces/, to name the functions behind a long task.
+ *
  * Writes result.json, summary.md and waterfalls.md to
  * .local-dev/perf/results/<time>-clicks-<profile>/ (or --out), with
  * screenshots of round 1.
@@ -106,6 +111,7 @@ import {
   type Expectation,
 } from "./click-trace-page.ts"
 import {
+  RAW_TRACE_CATEGORIES,
   TRACE_CATEGORIES,
   breakdown,
   readMainThread,
@@ -954,6 +960,8 @@ interface Action {
 interface RunContext {
   browser: Browser
   trace: boolean
+  /** Profile JS in the trace and save every action's trace. */
+  rawTraces: boolean
   round: number
   outDir: string
   screenshots: boolean
@@ -979,7 +987,9 @@ async function measure(
       { expect: action.expect, timeoutMs: CONTENT_TIMEOUT_MS }
     )
   if (run.trace)
-    await run.browser.startTracing(page, { categories: TRACE_CATEGORIES })
+    await run.browser.startTracing(page, {
+      categories: run.rawTraces ? RAW_TRACE_CATEGORIES : TRACE_CATEGORIES,
+    })
   await action.act(session)
   let results: ArmedResult["results"]
   try {
@@ -1077,11 +1087,12 @@ async function measure(
       }
     }
     if (
-      run.round === 1 &&
-      session.network.name === "phone" &&
-      (action.pass === "cold" || action.pass === "first")
+      run.rawTraces ||
+      (run.round === 1 &&
+        session.network.name === "phone" &&
+        (action.pass === "cold" || action.pass === "first"))
     ) {
-      const name = `trace-${session.network.name}-${action.pass}-${action.journey.replace(/\W+/g, "-")}.json.gz`
+      const name = `trace-${session.network.name}-${action.pass}-${action.journey.replace(/\W+/g, "-")}${run.rawTraces ? `-r${run.round}` : ""}.json.gz`
       writeFileSync(join(run.outDir, "traces", name), gzipSync(traceBuffer))
     }
   }
@@ -2413,6 +2424,9 @@ async function main() {
   const idleSeconds = numberArg(args, "idle-seconds", 20)
   const totalSpaces = numberArg(args, "spaces", 28)
   CONTENT_TIMEOUT_MS = numberArg(args, "content-timeout", 45) * 1000
+  const rawTraces = args.has("raw-traces")
+  if (rawTraces && args.has("no-trace"))
+    throw new Error("--raw-traces needs tracing; drop --no-trace")
   const trace = !args.has("no-trace")
   const networks = (args.get("networks") ?? "local,desktop,phone,phone-h1")
     .split(",")
@@ -2607,6 +2621,7 @@ async function main() {
         const run: RunContext = {
           browser,
           trace,
+          rawTraces,
           round,
           outDir,
           screenshots: round === 1,

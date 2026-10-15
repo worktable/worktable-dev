@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { writeFile } from "node:fs/promises"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -37,6 +38,12 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
       })
     ).ok()
   ).toBe(true)
+  // Portable content may retain mixed-case paths. Automatic drawing names
+  // share their case-insensitive namespace with every document format.
+  await writeFile(
+    harness.workspacePath("spaces/folder-creation/docs/plans/nested/Sketch.md"),
+    "# Existing sketch\n"
+  )
   await page.goto(
     `${harness.webUrl}/spaces/folder-creation/documents/plans/nested/brief`
   )
@@ -69,7 +76,7 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   await page.getByRole("menuitem", { name: "Drawing", exact: true }).click()
   await page.getByLabel("Name", { exact: true }).fill("Sketch")
   await page.getByRole("button", { name: "Create drawing" }).click()
-  await expect(page).toHaveURL(/documents\/plans\/nested\/sketch$/)
+  await expect(page).toHaveURL(/documents\/plans\/nested\/sketch-2$/)
   await expect(page.getByLabel("Drawing canvas")).toBeVisible()
 
   await page.getByRole("button", { name: "New in Plans", exact: true }).click()
@@ -100,13 +107,18 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   const { documents } = await catalog.json()
   for (const path of [
     "plans/nested/untitled",
-    "plans/nested/sketch",
+    "plans/nested/sketch-2",
     "plans/status",
   ]) {
     expect(
       documents.find((document: { path: string }) => document.path === path)
     ).toMatchObject({ lifetime: "durable" })
   }
+  expect(
+    documents.find(
+      (document: { path: string }) => document.path === "plans/nested/Sketch"
+    )
+  ).toMatchObject({ format: { id: "worktable.markdown" } })
   await page.reload()
   await expect(
     page.getByRole("button", { name: "New in Plans", exact: true })

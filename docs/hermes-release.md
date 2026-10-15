@@ -9,7 +9,7 @@ skills; regenerate it with `bun run generate:hermes-skills` rather than editing
 
 1. Make the change, update `version` in `plugin.yaml` and `pyproject.toml`
    together, and add a `CHANGELOG.md` entry.
-2. Merge the reviewed pull request and confirm the `Hermes plugin / Verify`
+2. Merge the reviewed pull request and confirm the `Hermes plugin / hermes-plugin`
    check succeeds on `main`.
 3. Create a protected tag named `hermes-v<version>` at that commit. Do not
    create a GitHub Release, because Worktable's installer uses the repository's

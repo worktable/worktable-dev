@@ -120,6 +120,49 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("region", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+
+  // Opening a Space shows its real page while its details load: the title
+  // and Activity column stay in place, and the pins fill in where they sit.
+  await page.goto(`${harness.webUrl}/`)
+  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
+  let releaseDetails!: () => void
+  const detailsHeld = new Promise<void>((resolve) => {
+    releaseDetails = resolve
+  })
+  await page.route(/\/api\/spaces\/organize(\?.*)?$/, async (route) => {
+    await detailsHeld
+    await route.continue()
+  })
+  await page
+    .getByRole("button", { name: /^(Expand|Collapse) Organize$/ })
+    .locator("../..")
+    .getByRole("link", { name: "Organize", exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/spaces\/organize$/)
+  const title = page.getByRole("heading", { level: 1, name: "Organize" })
+  const activity = page.getByRole("region", { name: "Activity" })
+  await expect(title).toBeVisible()
+  await expect(activity).toBeVisible()
+  const titleBox = await title.boundingBox()
+  const activityBox = await activity.boundingBox()
+  expect(titleBox).not.toBeNull()
+  expect(activityBox).not.toBeNull()
+  await expect(
+    page
+      .getByRole("region", { name: "Pinned" })
+      .getByRole("link", { name: "Untitled" })
+  ).toHaveCount(0)
+  releaseDetails()
+  await expect(
+    page
+      .getByRole("region", { name: "Pinned" })
+      .getByRole("link", { name: "Untitled" })
+  ).toBeVisible()
+  // Positions only: the Activity list may grow as its own entries load.
+  const position = (box: { x: number; y: number } | null) =>
+    box && { x: box.x, y: box.y }
+  expect(position(await title.boundingBox())).toEqual(position(titleBox))
+  expect(position(await activity.boundingBox())).toEqual(position(activityBox))
 })
 
 test.describe("archive date editing", () => {

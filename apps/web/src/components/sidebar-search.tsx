@@ -125,7 +125,7 @@ function ResultRow({
 
   const body = (
     <div
-      className={`flex flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-all duration-180 ${
+      className={`flex flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors duration-180 ${
         active
           ? "bg-sidebar-accent text-sidebar-primary"
           : "text-sidebar-foreground/60 hover:bg-sidebar-hover hover:text-sidebar-foreground"

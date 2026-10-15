@@ -425,7 +425,7 @@ function ShareAccessCard({
   return (
     <div className="rounded-xl bg-surface-tint p-4">
       <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-card text-primary">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-tint text-primary">
           <Globe2 className="size-4" />
         </div>
         <div className="min-w-0 flex-1">

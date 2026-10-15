@@ -92,8 +92,7 @@ export default function MermaidBlockComponent({
       <div
         className={cn(
           "mermaid-block-shell @container w-full cursor-pointer select-none",
-          "flex min-h-11 items-center gap-3 rounded-xl border border-border bg-card/60 px-3.5 py-2.5",
-          "transition-colors hover:border-primary/25 hover:bg-card"
+          "flex min-h-11 items-center gap-3 rounded-xl card-surface-interactive card-surface px-3.5 py-2.5"
         )}
         onClick={toggleCollapse}
         role="button"
@@ -124,7 +123,7 @@ export default function MermaidBlockComponent({
     <div
       className={cn(
         "mermaid-block-shell @container flex w-full flex-col",
-        !isReadOnly && "gap-2 rounded-xl border border-border bg-card/40 p-2.5"
+        !isReadOnly && "gap-2 rounded-xl card-surface p-2.5"
       )}
     >
       {!isReadOnly && (
@@ -261,8 +260,7 @@ export default function MermaidBlockComponent({
                 key={example.name}
                 type="button"
                 className={cn(
-                  "rounded-lg border border-border bg-card/60 p-2.5 text-left transition-colors",
-                  "hover:border-primary/30 hover:bg-card"
+                  "rounded-lg card-surface-interactive card-surface p-2.5 text-left"
                 )}
                 onClick={() => {
                   updateProps({ data: example.code })

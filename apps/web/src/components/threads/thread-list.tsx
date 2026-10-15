@@ -361,7 +361,7 @@ const ThreadListRow = memo(function ThreadListRow({
   return (
     <Item
       variant={active ? "muted" : "default"}
-      className="flex-nowrap gap-3 rounded-xl px-3 py-3 hover:bg-muted/60 [a]:hover:bg-muted/60"
+      className="flex-nowrap gap-3 rounded-xl px-3 py-3 aria-[current=page]:bg-surface-selected aria-[current=page]:hover:bg-surface-selected"
       render={threadLinkElement(threadLink(thread.location, thread.id), active)}
     >
       <ItemMedia>

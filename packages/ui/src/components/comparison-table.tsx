@@ -74,9 +74,9 @@ function ComparisonTable({
     >
       <table className="w-full min-w-max border-collapse text-sm">
         <thead>
-          <tr className="bg-muted/60">
+          <tr className="bg-surface-inset">
             <th
-              className="sticky left-0 z-10 w-36 border-b border-border bg-muted/60 px-3 py-2.5 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+              className="sticky left-0 z-10 w-36 border-b border-border bg-card bg-linear-to-r from-surface-inset to-surface-inset px-3 py-2.5 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase"
               scope="col"
             >
               Feature
@@ -97,14 +97,16 @@ function ComparisonTable({
             <tr
               key={rowIdx}
               className={cn(
-                "border-b border-border transition-colors last:border-0 hover:bg-muted/40",
-                rowIdx % 2 === 1 && "bg-muted/20"
+                "border-b border-border transition-colors last:border-0 hover:bg-surface-hover",
+                rowIdx % 2 === 1 && "bg-surface-inset"
               )}
             >
               <td
                 className={cn(
                   "sticky left-0 z-10 border-r border-border px-3 py-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground",
-                  rowIdx % 2 === 1 ? "bg-muted/20" : "bg-card"
+                  "bg-card",
+                  rowIdx % 2 === 1 &&
+                    "bg-linear-to-r from-surface-inset to-surface-inset"
                 )}
               >
                 {dim.label}
@@ -114,8 +116,7 @@ function ComparisonTable({
                   key={colIdx}
                   className={cn(
                     "px-3 py-2.5 text-sm text-foreground",
-                    val.highlight &&
-                      "bg-surface-tint font-medium text-primary dark:bg-surface-tint"
+                    val.highlight && "bg-surface-tint font-medium text-primary"
                   )}
                 >
                   {renderCellContent(val.content)}

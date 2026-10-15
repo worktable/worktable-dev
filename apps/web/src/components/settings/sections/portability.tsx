@@ -529,7 +529,7 @@ function TransferDetails({
 }) {
   return (
     <Collapsible className="border-t border-border/60">
-      <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-3 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50 [&[data-panel-open]>svg]:rotate-180">
+      <CollapsibleTrigger className="flex min-h-12 w-full items-center justify-between gap-3 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50 [&[data-panel-open]>svg]:rotate-180">
         {title}
         <ChevronDown
           className="size-4 shrink-0 transition-transform motion-reduce:transition-none"

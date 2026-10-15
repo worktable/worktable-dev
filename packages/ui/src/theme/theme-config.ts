@@ -1,3 +1,5 @@
+import { oklchToHex } from "./oklch.ts"
+
 export const THEME_MODES = ["light", "dark"] as const
 
 export type ThemeMode = (typeof THEME_MODES)[number]
@@ -17,7 +19,7 @@ const primaryTextAccent = {
 const neutralSurfaces = {
   light: {
     canvas: "oklch(0.955 0.006 250)",
-    panel: "oklch(0.978 0.004 250)",
+    panel: "oklch(0.968 0.004 250)",
     raised: "oklch(0.985 0.003 250)",
     overlay: "oklch(0.988 0.003 250)",
     muted: "oklch(0.92 0.006 250)",
@@ -28,16 +30,52 @@ const neutralSurfaces = {
   },
   dark: {
     canvas: "oklch(0.165 0.006 250)",
-    panel: "oklch(0.185 0.006 250)",
-    raised: "oklch(0.20 0.007 250)",
-    overlay: "oklch(0.21 0.007 250)",
-    muted: "oklch(0.22 0.007 250)",
+    panel: "oklch(0.182 0.006 250)",
+    raised: "oklch(0.195 0.007 250)",
+    overlay: "oklch(0.205 0.007 250)",
+    muted: "oklch(0.235 0.007 250)",
     field: "oklch(1 0 0 / 3.5%)",
     fieldHover: "oklch(1 0 0 / 6%)",
-    selected: "oklch(0.285 0.009 250)",
-    decorative: "oklch(0.225 0.007 250)",
+    selected: "oklch(0.28 0.009 250)",
+    decorative: "oklch(0.235 0.007 250)",
   },
 } as const
+
+const ink = {
+  light: {
+    foreground: "oklch(0.27 0.025 250)",
+    readingForeground: "oklch(0.32 0.020 250)",
+    mutedForeground: "oklch(0.49 0.018 250)",
+  },
+  dark: {
+    foreground: "oklch(0.86 0.008 250)",
+    readingForeground: "oklch(0.82 0.008 250)",
+    mutedForeground: "oklch(0.62 0.012 250)",
+  },
+} as const
+
+// Hex adapters for libraries that cannot read CSS variables. Surfaces derive
+// from the semantic roles above so third-party chrome cannot drift from them.
+const hex = {
+  light: {
+    canvas: oklchToHex(neutralSurfaces.light.canvas),
+    overlay: oklchToHex(neutralSurfaces.light.overlay),
+    decorative: oklchToHex(neutralSurfaces.light.decorative),
+    selected: oklchToHex(neutralSurfaces.light.selected),
+    foreground: oklchToHex(ink.light.foreground),
+    readingForeground: oklchToHex(ink.light.readingForeground),
+    mutedForeground: oklchToHex(ink.light.mutedForeground),
+  },
+  dark: {
+    canvas: oklchToHex(neutralSurfaces.dark.canvas),
+    overlay: oklchToHex(neutralSurfaces.dark.overlay),
+    decorative: oklchToHex(neutralSurfaces.dark.decorative),
+    selected: oklchToHex(neutralSurfaces.dark.selected),
+    foreground: oklchToHex(ink.dark.foreground),
+    readingForeground: oklchToHex(ink.dark.readingForeground),
+    mutedForeground: oklchToHex(ink.dark.mutedForeground),
+  },
+}
 
 export const themeConfig = {
   neutralSurfaces,
@@ -56,16 +94,17 @@ export const themeConfig = {
     light: {
       ...neutralSurfaces.light,
       border: "oklch(0.30 0.012 250 / 10%)",
+      cardBorder: "oklch(0.30 0.012 250 / 6.5%)",
       borderInput: "oklch(0.30 0.012 250 / 8%)",
       borderInputHover: "oklch(0.30 0.012 250 / 11%)",
       borderChrome: "oklch(0.30 0.012 250 / 5.5%)",
-      overlayBorder: "oklch(0.30 0.012 250 / 10%)",
-      foreground: "oklch(0.27 0.025 250)",
-      readingForeground: "oklch(0.32 0.020 250)",
-      mutedForeground: "oklch(0.49 0.018 250)",
+      overlayBorder: "oklch(0.30 0.012 250 / 7.5%)",
+      ...ink.light,
       resizeHandle: "oklch(0.49 0.018 250 / 65%)",
       contrastForeground: "oklch(0.99 0 0)",
       secondaryForeground: "oklch(0.32 0.02 250)",
+      surfaceHover: "oklch(0.30 0.012 250 / 4%)",
+      surfaceInset: "oklch(0.30 0.012 250 / 3%)",
       sidebar: "oklch(0.975 0.004 250 / 56%)",
       sidebarDesktop: "oklch(0.935 0.006 250 / 72%)",
       sidebarForeground: "oklch(0.27 0.025 250)",
@@ -81,16 +120,17 @@ export const themeConfig = {
     dark: {
       ...neutralSurfaces.dark,
       border: "oklch(1 0 0 / 7%)",
+      cardBorder: "oklch(1 0 0 / 6%)",
       borderInput: "oklch(1 0 0 / 8%)",
       borderInputHover: "oklch(1 0 0 / 12%)",
       borderChrome: "oklch(1 0 0 / 3.5%)",
       overlayBorder: "oklch(1 0 0 / 4.5%)",
-      foreground: "oklch(0.86 0.008 250)",
-      readingForeground: "oklch(0.82 0.008 250)",
-      mutedForeground: "oklch(0.62 0.012 250)",
+      ...ink.dark,
       resizeHandle: "oklch(0.62 0.012 250 / 60%)",
       contrastForeground: "oklch(0.985 0 0)",
       secondaryForeground: "oklch(0.86 0.008 250)",
+      surfaceHover: "oklch(1 0 0 / 4%)",
+      surfaceInset: "oklch(1 0 0 / 2.5%)",
       sidebar: "oklch(0.14 0.006 250 / 64%)",
       sidebarDesktop: "oklch(0.135 0.006 250 / 72%)",
       sidebarForeground: "oklch(0.78 0.01 250)",
@@ -268,29 +308,29 @@ export const themeConfig = {
     },
   },
   shell: {
-    light: "#eef1f4",
-    dark: "#17191d",
+    light: hex.light.canvas,
+    dark: hex.dark.canvas,
   },
   blockNote: {
     light: {
-      editorText: "#2b343d",
-      text: "#26313d",
-      menu: "#fafbfc",
-      subtle: "#e7eaee",
-      selectedText: "#26313d",
-      selected: "#d9dee4",
-      disabledText: "#5f6975",
+      editorText: hex.light.readingForeground,
+      text: hex.light.foreground,
+      menu: hex.light.overlay,
+      subtle: hex.light.decorative,
+      selectedText: hex.light.foreground,
+      selected: hex.light.selected,
+      disabledText: hex.light.mutedForeground,
       shadow: "rgba(38, 49, 61, 0.10)",
       border: "rgba(38, 49, 61, 0.05)",
     },
     dark: {
-      editorText: "#c0c5c9",
-      text: "#d2d7de",
-      menu: "#202329",
-      subtle: "#292d33",
-      selectedText: "#eef1f4",
-      selected: "#343941",
-      disabledText: "#858c96",
+      editorText: hex.dark.readingForeground,
+      text: hex.dark.foreground,
+      menu: hex.dark.overlay,
+      subtle: hex.dark.decorative,
+      selectedText: hex.dark.foreground,
+      selected: hex.dark.selected,
+      disabledText: hex.dark.mutedForeground,
       shadow: "rgba(0, 0, 0, 0.30)",
       border: "rgba(255, 255, 255, 0.045)",
     },
@@ -299,7 +339,7 @@ export const themeConfig = {
   drawing: {
     light: {
       id: "light",
-      background: "#f3f5f7",
+      background: hex.light.canvas,
       colors: {
         black: { stroke: "#283440", fill: "#e7eaee", note: "#eee4bb" },
         grey: { stroke: "#6b7683", fill: "#e7eaee", note: "#e2e6eb" },
@@ -317,7 +357,7 @@ export const themeConfig = {
       noteText: "#283440",
       selection: "#4263bd",
       selectionFill: "rgba(66, 99, 189, 0.09)",
-      handleFill: "#f3f5f7",
+      handleFill: hex.light.overlay,
       scribble: "#db6065",
       grid: {
         line: {
@@ -332,7 +372,7 @@ export const themeConfig = {
     },
     dark: {
       id: "dark",
-      background: "#17191d",
+      background: hex.dark.canvas,
       colors: {
         black: { stroke: "#e1e5ea", fill: "#2f343b", note: "#d8cda7" },
         grey: { stroke: "#a0aab6", fill: "#2b3037", note: "#ced4dc" },
@@ -350,7 +390,7 @@ export const themeConfig = {
       noteText: "#283440",
       selection: "#8ba5ed",
       selectionFill: "rgba(139, 165, 237, 0.12)",
-      handleFill: "#202329",
+      handleFill: hex.dark.overlay,
       scribble: "#db6065",
       grid: {
         line: {
@@ -366,7 +406,7 @@ export const themeConfig = {
   },
   mermaid: {
     light: {
-      canvas: "#f3f5f7",
+      canvas: hex.light.canvas,
       surfaces: ["#eef1f4", "#e7eaee", "#dde1e6", "#d2d7dd"],
       text: "#283440",
       mutedText: "#5f6975",
@@ -375,8 +415,14 @@ export const themeConfig = {
       bronzeText: "#604b34",
     },
     dark: {
-      canvas: "#17191d",
-      surfaces: ["#202329", "#272b31", "#2f343b", "#383e46"],
+      canvas: hex.dark.canvas,
+      // Node fills keep their contrast steps on the canvas hue and chroma.
+      surfaces: [
+        oklchToHex("oklch(0.25 0.008 250)"),
+        oklchToHex("oklch(0.285 0.008 250)"),
+        oklchToHex("oklch(0.32 0.009 250)"),
+        oklchToHex("oklch(0.36 0.010 250)"),
+      ],
       text: "#e1e5ea",
       mutedText: "#aeb5be",
       border: "#59616c",

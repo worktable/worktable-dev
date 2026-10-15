@@ -135,7 +135,7 @@ function PinnedSection({
           {pins.map((pin) => (
             <div
               key={pin.path}
-              className="group relative rounded-xl border border-border bg-card px-4 py-3.5 transition-colors hover:border-foreground/15"
+              className="card-surface card-surface-interactive group relative rounded-xl px-4 py-3.5"
             >
               {pin.status === "active" && (
                 <Link
@@ -337,7 +337,7 @@ function SpaceOverview({
           {loading ? (
             <div className="space-y-1">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted/20" />
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
               ))}
             </div>
           ) : listed.length === 0 ? (
@@ -434,8 +434,8 @@ function SpaceDetailPage() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 lg:py-10">
         <div className="space-y-3">
-          <div className="h-9 w-56 animate-pulse rounded-lg bg-muted/30" />
-          <div className="h-4 w-80 animate-pulse rounded bg-muted/20" />
+          <div className="h-9 w-56 animate-pulse rounded-lg bg-muted" />
+          <div className="h-4 w-80 animate-pulse rounded bg-muted" />
         </div>
       </div>
     )

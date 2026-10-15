@@ -62,6 +62,9 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-surface-tint: var(--surface-tint);
   --color-surface-selected: var(--surface-selected);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-inset: var(--surface-inset);
+  --color-card-border: var(--card-border);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -468,6 +471,23 @@
 .sidebar-selector:hover,
 .sidebar-selector[aria-expanded="true"] {
   background-color: var(--sidebar-hover);
+}
+
+/* Content cards are quiet paper on the canvas: one fill step and a perimeter
+   quieter than dividers. Clickable cards raise only the perimeter on hover,
+   matching interactive field wells. Utilities, so call sites keep radius,
+   padding, and layout. */
+@utility card-surface {
+  background-color: var(--card);
+  border: 1px solid var(--card-border);
+}
+
+@utility card-surface-interactive {
+  transition: border-color 150ms ease-out;
+
+  &:hover {
+    border-color: var(--input-hover);
+  }
 }
 
 /* Opaque portaled surfaces share two quiet elevation levels. Keep these

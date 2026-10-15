@@ -189,7 +189,7 @@ function SettingsBody({
       {/* The rail column is a full-height quiet surface so the nav reads as a
           grounded region of the dialog, not buttons floating in space. The
           dialog title lives here; the content pane header names the section. */}
-      <aside className="flex min-h-0 flex-col gap-3 bg-muted/40 p-3">
+      <aside className="flex min-h-0 flex-col gap-3 bg-surface-inset p-3">
         <ResponsiveDialogTitle className="px-2.5 pt-1.5 text-base">
           Settings
         </ResponsiveDialogTitle>
@@ -362,7 +362,7 @@ function SettingsNavRail({
                       "relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-180",
                       isActive
                         ? "font-medium text-primary-text"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        : "text-muted-foreground hover:bg-surface-hover hover:text-foreground"
                     )}
                   >
                     <Icon className="size-4 shrink-0" />

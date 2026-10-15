@@ -146,7 +146,7 @@ export function HistorySection() {
           </span>
         </Callout>
       )}
-      <div className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-1 rounded-xl card-surface p-4">
         {settingsQuery.isError ? (
           <p className="text-sm text-muted-foreground">
             History settings require owner access.

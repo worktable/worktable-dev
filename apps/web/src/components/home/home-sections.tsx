@@ -143,7 +143,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
           </button>
         </p>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-1">
+        <div className="rounded-xl card-surface p-1">
           {items.map((item) => (
             <PendingRow
               key={item.id}
@@ -301,7 +301,7 @@ export function TemporaryGroup({ items }: { items: RecentItem[] }) {
       >
         Temporary
       </h2>
-      <div className="rounded-xl border border-border bg-card p-1">
+      <div className="rounded-xl card-surface p-1">
         {shown.map((item) => (
           <TemporaryRow
             key={`${item.spaceId}/${item.document.path}`}

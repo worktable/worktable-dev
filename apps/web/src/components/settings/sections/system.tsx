@@ -168,7 +168,7 @@ function AboutGroup({ cloud = false }: { cloud?: boolean }) {
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-foreground">About</h3>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
         {cloud ? <AboutRow label="Product" value="Worktable Cloud" /> : null}
         <AboutRow
           label="Version"
@@ -379,7 +379,7 @@ function DesktopUpdateFrame({
           </span>
         ) : null}
       </div>
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
         {children}
       </div>
     </section>
@@ -395,7 +395,7 @@ function AutoUpdateGroup() {
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl card-surface p-4">
         {settingsQuery.isError ? (
           <p className="text-sm text-muted-foreground">
             Update settings require owner access.
@@ -630,7 +630,7 @@ function SoftwareUpdateSection() {
         )}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl card-surface p-4">
         {versionQuery.isLoading ? (
           <p className="text-sm text-muted-foreground">Checking version…</p>
         ) : versionQuery.isError ? (

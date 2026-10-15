@@ -121,7 +121,7 @@ export function AccountSection() {
         )}
 
         <h3 className="text-sm font-medium text-foreground">Session</h3>
-        <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-xl card-surface p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
               Signed in on this browser

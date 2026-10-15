@@ -320,7 +320,7 @@ function GroupSwitcher({
               className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-150 ${
                 activeGroup === null
                   ? "bg-accent text-accent-foreground"
-                  : "text-popover-foreground/70 hover:bg-accent/50 hover:text-popover-foreground"
+                  : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
               }`}
             >
               <LayoutGrid className="size-4 shrink-0" />
@@ -348,7 +348,7 @@ function GroupSwitcher({
                   className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-150 ${
                     isActive
                       ? "bg-accent text-accent-foreground"
-                      : "text-popover-foreground/70 hover:bg-accent/50 hover:text-popover-foreground"
+                      : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
                   }`}
                 >
                   <Icon className="size-4 shrink-0" />

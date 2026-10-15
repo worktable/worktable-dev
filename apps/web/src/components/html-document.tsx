@@ -830,7 +830,7 @@ function WidgetDetailPage({
           } ${compareVersionId && !belowXl ? "flex-[1_1_50%] border-r border-border print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-border/70 bg-background/90 p-0.5 shadow-sm">
+          <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
             <Button
               variant="ghost"
               size="icon"
@@ -866,7 +866,7 @@ function WidgetDetailPage({
         </div>
 
         {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-muted/10 xl:flex print:hidden">
+          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
             <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-2 text-xs">
               <div className="min-w-0">
                 <div className="truncate font-medium text-foreground">
@@ -1221,7 +1221,7 @@ function WidgetDiagnostics({
 
   return (
     <div
-      className={`m-2 shrink-0 rounded-xl border px-3 py-2 text-sm shadow-sm sm:m-3 ${tone}`}
+      className={`m-2 shrink-0 rounded-xl border px-3 py-2 text-sm sm:m-3 ${tone}`}
     >
       <button
         type="button"
@@ -1632,7 +1632,7 @@ function WidgetVersionRow({
   const exact = new Date(version.createdAt).toLocaleString()
   return (
     <article
-      className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-muted/25" : "border-l-transparent hover:bg-muted/20"}`}
+      className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"}`}
     >
       <button
         type="button"

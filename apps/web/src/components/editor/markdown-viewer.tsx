@@ -208,7 +208,7 @@ export function MarkdownViewer({
                     return (
                       <Suspense
                         fallback={
-                          <div className="min-h-24 animate-pulse rounded-lg bg-muted/50" />
+                          <div className="min-h-24 animate-pulse rounded-lg bg-muted" />
                         }
                       >
                         <MermaidRenderer

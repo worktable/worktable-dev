@@ -80,7 +80,7 @@ function ThemeGroup() {
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-foreground">Theme</h3>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
         <div
           role="radiogroup"
           aria-label="Theme"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
+import { oklchToHex } from "./oklch"
 import { THEME_MODES, themeConfig } from "./theme-config"
 
 const REQUIRED_MODE_ROLES = [
@@ -102,6 +103,21 @@ describe("canonical theme configuration", () => {
 
   test("shell colors are six-digit browser-compatible hex values", () => {
     for (const mode of THEME_MODES) expect(themeConfig.shell[mode]).toMatch(HEX)
+  })
+
+  test("hex adapters paint the same surfaces as the semantic roles", () => {
+    expect(oklchToHex("oklch(1 0 0)")).toBe("#ffffff")
+    expect(oklchToHex("oklch(0 0 0)")).toBe("#000000")
+    for (const mode of THEME_MODES) {
+      const surfaces = themeConfig.modes[mode]
+      const canvas = oklchToHex(surfaces.canvas)
+      expect(themeConfig.shell[mode]).toBe(canvas)
+      expect(themeConfig.drawing[mode].background).toBe(canvas)
+      expect(themeConfig.mermaid[mode].canvas).toBe(canvas)
+      expect(themeConfig.blockNote[mode].menu).toBe(
+        oklchToHex(surfaces.overlay)
+      )
+    }
   })
 
   test("primary text accents meet normal-text contrast on panels", () => {

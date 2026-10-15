@@ -27,14 +27,14 @@ function Snippet({
         <span className="text-sm font-medium text-foreground">{label}</span>
       ) : null}
       <div className="relative">
-        <pre className="overflow-x-auto rounded-lg bg-muted/50 p-3 pr-11 font-mono text-xs whitespace-pre">
+        <pre className="overflow-x-auto rounded-lg bg-surface-inset p-3 pr-11 font-mono text-xs whitespace-pre">
           {code}
         </pre>
         <button
           type="button"
           onClick={() => void copy(code)}
           aria-label={copied ? "Copied" : "Copy"}
-          className="absolute top-2 right-2 grid size-7 place-items-center rounded-md bg-muted/80 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="absolute top-2 right-2 grid size-7 place-items-center rounded-md bg-muted text-muted-foreground transition-colors hover:bg-linear-to-r hover:from-surface-hover hover:to-surface-hover hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {copied ? (
             <Check className="size-3.5 text-primary-text" />

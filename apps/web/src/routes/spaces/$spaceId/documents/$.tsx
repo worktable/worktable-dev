@@ -416,7 +416,7 @@ function DocumentState({
   return (
     <div data-document-state className="flex h-full items-center justify-center px-6 py-12">
       <div className="max-w-md text-center">
-        <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+        <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-surface-tint text-muted-foreground">
           <Icon className="size-5" />
         </div>
         <h1 className="text-lg font-medium text-foreground">{title}</h1>

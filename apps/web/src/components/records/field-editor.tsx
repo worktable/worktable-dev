@@ -367,7 +367,7 @@ export function SelectEditor({
                 key={option}
                 aria-pressed={active}
                 type="button"
-                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-hover"
                 onClick={() => {
                   void pick(active && !column.field?.required ? null : option)
                 }}
@@ -381,7 +381,7 @@ export function SelectEditor({
           {!column.field?.required && value !== undefined && value !== null && value !== "" && (
             <button
               type="button"
-              className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50"
+              className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-surface-hover"
               onClick={() => {
                 void pick(null)
               }}
@@ -446,7 +446,7 @@ export function MultiSelectEditor({
                 key={option}
                 aria-pressed={active}
                 type="button"
-                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-hover"
                 onClick={() => setDraft(active ? draft.filter((entry) => entry !== option) : [...draft, option])}
               >
                 <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(option)}`} />
@@ -570,7 +570,7 @@ export function RelationPicker({
                     key={record.id}
                     aria-pressed={active}
                     type="button"
-                    className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+                    className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-hover"
                     onClick={() => pick(record)}
                   >
                     <span className={`size-1.5 shrink-0 rounded-full ${active ? "bronze-knob" : "bg-muted-foreground/30"}`} />
@@ -680,7 +680,7 @@ export function DocumentPicker({
             {docsLoading || committedReferencesLoading ? <div className="flex justify-center py-6"><Loader2 className="size-4 animate-spin text-muted-foreground" /></div> : candidates.map((doc) => {
               const active = documentPathIsSelected(many ? draft : committed, doc.path, committedIdentities)
               return (
-                <button key={doc.path} aria-pressed={active} type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left hover:bg-accent/50" onClick={() => pick(doc.path)}>
+                <button key={doc.path} aria-pressed={active} type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-1.5 text-left hover:bg-surface-hover" onClick={() => pick(doc.path)}>
                   <span className={`size-1.5 shrink-0 rounded-full ${doc.archived ? "bg-muted-foreground/40" : active ? "bronze-knob" : "bg-primary/50"}`} />
                   <span className="min-w-0 flex-1"><span className="block truncate text-sm">{doc.headings?.[0] || documentReferenceFallbackTitle(doc.path)}</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{doc.path}{doc.archived ? " · archived" : ""}</span></span>
                   {active && <Check className="size-3.5 shrink-0 text-primary" />}
@@ -688,7 +688,7 @@ export function DocumentPicker({
               )
             })}
             {fallbackPath && !docs.some((doc) => doc.path === fallbackPath) && (
-              <button type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-2 text-left hover:bg-accent/50" onClick={() => pick(fallbackPath)}>
+              <button type="button" className="flex min-h-8 w-full items-center gap-2 rounded-md max-sm:min-h-11 px-2 py-2 text-left hover:bg-surface-hover" onClick={() => pick(fallbackPath)}>
                 <Plus className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0"><span className="block text-sm">Link this path</span><span className="block truncate font-mono text-[10px] text-muted-foreground">{fallbackPath} · target may be missing</span></span>
               </button>

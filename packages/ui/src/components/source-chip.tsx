@@ -48,7 +48,7 @@ function SourceChip({
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-surface-tint hover:text-foreground",
+        "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-inset px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-surface-tint hover:text-foreground",
         className
       )}
     >

@@ -799,7 +799,7 @@ function AnnotationBadges({
             type="button"
             aria-label={`${blockAnnotations.length} annotations for this block`}
             onClick={() => onSelectAnnotation?.(primary)}
-            className={`pointer-events-auto absolute right-0 flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-xs font-medium shadow-sm transition-colors ${
+            className={`pointer-events-auto absolute right-0 flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-xs font-medium transition-colors ${
               active
                 ? "border-primary bg-surface-selected text-primary"
                 : hasInstruction

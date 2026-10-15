@@ -16,7 +16,7 @@ function MenuContent({
   return (
     <Menu.Content
       className={cn(
-        "z-50 min-w-32 rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        "overlay-floating z-50 min-w-32 rounded-md bg-popover p-1 text-popover-foreground",
         className
       )}
       {...props}
@@ -76,7 +76,7 @@ function PopoverContent({
   return (
     <Popover.Content
       className={cn(
-        "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none",
+        "overlay-floating z-50 w-72 rounded-md bg-popover p-4 text-popover-foreground outline-none",
         className
       )}
       {...props}

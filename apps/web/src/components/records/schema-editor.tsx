@@ -419,7 +419,7 @@ export function SchemaEditorDialog({
             />
 
             {missingTargets.length > 0 && (
-              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <p className="rounded-lg border border-border bg-surface-inset px-3 py-2 text-sm text-muted-foreground">
                 Pick a target collection for:{" "}
                 <span className="font-mono">{missingTargets.join(", ")}</span>
               </p>
@@ -504,7 +504,7 @@ function FieldRow({
         <span className="flex shrink-0">
           <button
             type="button"
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 hover:bg-muted/50 hover:text-foreground disabled:opacity-20"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 hover:bg-surface-hover hover:text-foreground disabled:opacity-20"
             onClick={onMoveUp}
             disabled={first}
             aria-label={`Move ${columnLabel({ key: field.key, field: field.spec })} up`}
@@ -513,7 +513,7 @@ function FieldRow({
           </button>
           <button
             type="button"
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 hover:bg-muted/50 hover:text-foreground disabled:opacity-20"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 hover:bg-surface-hover hover:text-foreground disabled:opacity-20"
             onClick={onMoveDown}
             disabled={last}
             aria-label={`Move ${columnLabel({ key: field.key, field: field.spec })} down`}
@@ -544,7 +544,7 @@ function FieldRow({
         ) : (
           <button
             type="button"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-destructive"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-surface-hover hover:text-destructive"
             onClick={() => setConfirmDelete(true)}
             aria-label={`Remove ${columnLabel({ key: field.key, field: field.spec })}`}
             title="Remove from schema (values already in record files stay on disk)"
@@ -768,12 +768,12 @@ function ValuesEditor({
         {values.map((value) => (
           <span
             key={value}
-            className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/30 py-0.5 pr-1 pl-2.5 text-xs"
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-inset py-0.5 pr-1 pl-2.5 text-xs"
           >
             {value}
             <button
               type="button"
-              className="flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-hover hover:text-foreground"
               onClick={() =>
                 onChange(values.filter((entry) => entry !== value))
               }

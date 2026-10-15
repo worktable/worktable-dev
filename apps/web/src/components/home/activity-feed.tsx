@@ -447,8 +447,8 @@ export function ActivityPanel({
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="flex gap-3">
-                <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted/30" />
-                <div className="h-9 flex-1 animate-pulse rounded-md bg-muted/20" />
+                <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted" />
+                <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
               </div>
             ))}
           </div>

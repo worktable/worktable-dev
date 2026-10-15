@@ -912,7 +912,7 @@ function ThreadResponseIdentityMenu({
                       type="button"
                       size="xs"
                       variant="ghost"
-                      className="max-w-48 min-w-0 rounded-s-full rounded-e-none px-2 text-primary-text hover:bg-muted hover:text-primary-text max-sm:h-11 dark:hover:bg-muted"
+                      className="max-w-48 min-w-0 rounded-s-full rounded-e-none px-2 text-primary-text hover:text-primary-text max-sm:h-11"
                       aria-label={`Change ${selected.name}`}
                     />
                   }
@@ -967,7 +967,7 @@ function ThreadResponseIdentityMenu({
         type="button"
         size="icon-xs"
         variant="ghost"
-        className="me-0.5 shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground max-sm:size-10 dark:hover:bg-muted"
+        className="me-0.5 shrink-0 rounded-full text-muted-foreground hover:text-foreground max-sm:size-10"
         aria-label={`Clear ${selected.name}`}
         onClick={onClear}
       >

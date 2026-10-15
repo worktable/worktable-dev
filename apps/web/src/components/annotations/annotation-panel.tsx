@@ -139,7 +139,7 @@ function AnnotationCard({
     <article
       className={cn(
         "border-l-2 px-3 py-4 transition-colors",
-        active ? "border-l-primary bg-muted/25" : "border-l-transparent hover:bg-muted/20"
+        active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"
       )}
     >
       <button type="button" onClick={onSelect} className="w-full text-left">

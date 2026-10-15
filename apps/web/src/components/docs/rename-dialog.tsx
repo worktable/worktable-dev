@@ -106,7 +106,7 @@ export function RenameDialog({
           </div>
 
           {hasChanged && (
-            <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 rounded-lg bg-surface-inset px-3 py-2 text-sm text-muted-foreground">
               <span className="truncate font-medium text-foreground/70">
                 {currentValue}
               </span>

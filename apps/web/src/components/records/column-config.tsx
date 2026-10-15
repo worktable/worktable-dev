@@ -68,7 +68,7 @@ export function ColumnConfig({
           {columns.map((column, index) => {
             const isHidden = hidden.has(column.key)
             return (
-              <div key={column.key} className="group/col flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-accent/40">
+              <div key={column.key} className="group/col flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-surface-hover">
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
@@ -110,7 +110,7 @@ export function ColumnConfig({
         {Object.keys(prefs.widths).length > 0 && (
           <button
             type="button"
-            className="mt-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            className="mt-1 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
             onClick={() => onChange({ ...prefs, widths: {} })}
           >
             <RotateCcw className="size-3.5" />

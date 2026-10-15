@@ -442,7 +442,7 @@ function OptionList({
           className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
             selected === option.value
               ? "border-primary/50 bg-surface-tint text-foreground"
-              : "border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+              : "border-border text-muted-foreground hover:bg-surface-hover hover:text-foreground"
           }`}
           onClick={() => onPick(option.value)}
         >

@@ -23,7 +23,7 @@ afterEach(async () => {
 
 describe("OpenClaw public source exporter", () => {
   test(
-    "exports only the allowlist with reproducible file hashes",
+    "exports buildable source with reproducible file hashes",
     async () => {
       const temporary = await mkdtemp(join(tmpdir(), "worktable-export-test-"))
       temporaryDirectories.push(temporary)
@@ -64,6 +64,14 @@ describe("OpenClaw public source exporter", () => {
       expect(pkg.devDependencies).not.toHaveProperty(
         "@worktable/hosted-contract"
       )
+
+      const build = await Bun.build({
+        entrypoints: [join(output, "index.ts"), join(output, "setup-entry.ts")],
+        target: "node",
+        packages: "external",
+        write: false,
+      })
+      expect(build.success).toBe(true)
     },
     REAL_IO_TIMEOUT_MS
   )

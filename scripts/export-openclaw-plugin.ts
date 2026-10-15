@@ -36,6 +36,7 @@ export const OPENCLAW_PUBLIC_FILES = [
   "src/connector.ts",
   "src/delivery-identity.ts",
   "src/fake-worktable-client.ts",
+  "src/json-store.ts",
   "src/openclaw-dispatcher.test.ts",
   "src/openclaw-dispatcher.ts",
   "src/package-contract.test.ts",

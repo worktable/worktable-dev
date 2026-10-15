@@ -1,9 +1,6 @@
 import { JSDOM } from "jsdom"
-import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import Markdown from "react-markdown"
-import rehypeRaw from "rehype-raw"
-import remarkGfm from "remark-gfm"
+import { markdownDocument } from "@worktable/ui/markdown-document"
 import { codeLanguageName } from "@worktable/ui/lib/code-language"
 import { getServerEditor } from "./blocknote.ts"
 import { sanitizeBlocksForConversion } from "./markdown.ts"
@@ -213,13 +210,7 @@ async function documentHtml(
   format: "blocknote" | "markdown"
 ): Promise<string> {
   if (format === "markdown") {
-    return renderToStaticMarkup(
-      createElement(Markdown, {
-        remarkPlugins: [remarkGfm],
-        rehypePlugins: [rehypeRaw],
-        children: content as string,
-      })
-    )
+    return renderToStaticMarkup(markdownDocument(content as string))
   }
   const editor = await getServerEditor()
   return editor.blocksToHTMLLossy(

@@ -94,8 +94,11 @@ export function startServiceLogRotation(): () => void {
     for (const path of paths) {
       try {
         rotateLogIfLarge(path)
-      } catch {
-        // Try again at the next check.
+      } catch (error) {
+        // Try again at the next check. The code, such as ENOSPC, without
+        // the message, which names the file.
+        const code = (error as NodeJS.ErrnoException).code ?? "unknown"
+        console.error(`[service-logs] rotation failed: ${code}`)
       }
     }
   }

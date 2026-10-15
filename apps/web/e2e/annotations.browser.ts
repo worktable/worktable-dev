@@ -71,17 +71,16 @@ for (const mobile of [true, false]) {
       })
       const composer = page.getByRole("dialog", { name: "Add Annotation" })
       const selectQuote = async () => {
-        if (mobile) await paragraph.tap()
-        else await paragraph.click()
-        // Native selection handles are OS UI, so select the quote through the
-        // editor, then use a real touch tap on mobile to exercise
-        // selection/focus preservation. A DOM range set this soon after the
-        // tap can lose to ProseMirror's post-focus sync, which puts the tapped
-        // caret back.
+        // Native selection handles are OS UI, so focus the editor and select
+        // the quote through it, then use a real touch tap on mobile to
+        // exercise selection/focus preservation. Tapping the text first would
+        // race the editor: until it has read the tap, any update it renders
+        // puts the tapped caret back over a selection made in the meantime.
         await paragraph.evaluate((node, length) => {
           const { editor } = node.closest(".bn-editor") as HTMLElement & {
             editor: import("@tiptap/core").Editor
           }
+          editor.view.focus()
           const from = editor.view.posAtDOM(node.firstChild!, 0)
           editor.commands.setTextSelection({ from, to: from + length })
         }, quote.length)

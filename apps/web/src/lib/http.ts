@@ -170,6 +170,22 @@ async function currentCsrfToken(
   }
 }
 
+/** Resolves true after `ms`, or false at once if the request was aborted. */
+function pause(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", stop);
+      resolve(true);
+    }, ms);
+    function stop() {
+      clearTimeout(timer);
+      resolve(false);
+    }
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
 /** Shared credentialed fetch with one Cloud-CSRF retry after a refusal. */
 export async function authenticatedFetch(
   input: RequestInfo | URL,
@@ -208,6 +224,25 @@ export async function authenticatedFetch(
   if (unsafe(method) && (await csrfFailure(response))) {
     const token = await acquireCsrfToken();
     if (token) response = await send(token);
+  }
+  // A backup or restore refuses requests before any handler runs, so even a
+  // write can be retried. Waits stay short and follow the request's signal.
+  const signal =
+    init.signal ?? (input instanceof Request ? input.signal : undefined);
+  for (let attempt = 0; attempt < 3 && response.status === 503; attempt++) {
+    const code = await response
+      .clone()
+      .json()
+      .then((body: { code?: unknown } | null) => body?.code)
+      .catch(() => null);
+    if (code !== "WORKSPACE_REPLACING" && code !== "WORKTABLE_BUSY") break;
+    const seconds = Number(response.headers.get("Retry-After") ?? "1");
+    const delay = Math.min(
+      5_000,
+      Math.max(250, (Number.isFinite(seconds) ? seconds : 1) * 1_000)
+    );
+    if (!(await pause(delay, signal))) break;
+    response = await send(token);
   }
   if (response.status === 403 || response.status === 409) {
     const body = await response

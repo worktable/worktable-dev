@@ -57,7 +57,8 @@ export async function serveTeamDirectory(request: Request): Promise<Response> {
     )
     if (!payload.iat || !payload.exp || payload.exp - payload.iat > 60)
       return unavailable()
-    release = admitWorkspaceRequest()
+    // Discovery reads stay available during a backup; a replacement refuses them.
+    release = admitWorkspaceRequest("read")
     if (!release)
       return new Response(null, {
         status: 503,

@@ -37,10 +37,17 @@ import {
   setWorkspaceReplacementRenameHookForTests,
 } from "./workspace-replacement.ts"
 import {
+  admitWorkspaceRequest,
+  classifyWorkspaceRequest,
   isWorkspaceRequest,
   resetWorkspaceRequestLifecycleForTests,
+  resumeWorkspaceRequestAdmission,
   setWorkspaceRequestAdmissionHookForTests,
+  stopWorkspaceMutationsAndDrain,
+  stopWorkspaceRequestAdmissionAndDrain,
+  waitForWorkspaceAdmission,
 } from "./workspace-request-lifecycle.ts"
+import { waitForThreadSignal } from "./thread-waiters.ts"
 import {
   setWorkspaceExportBeforePublishHookForTests,
   setWorkspaceExportCaptureHookForTests,
@@ -188,6 +195,38 @@ afterEach(async () => {
 })
 
 describe("live workspace replacement", () => {
+  it("lets reads continue during a capture, holds writes briefly, and releases long polls", async () => {
+    expect(classifyWorkspaceRequest("GET", "/api/spaces", true)).toBe("read")
+    expect(classifyWorkspaceRequest("GET", "/assets/app.js", true)).toBeNull()
+    expect(classifyWorkspaceRequest("GET", "/spaces/notes", true)).toBeNull()
+    expect(classifyWorkspaceRequest("POST", "/mcp")).toBe("write")
+
+    const heldWrite = admitWorkspaceRequest("write")!
+    const poll = waitForThreadSignal("thread-held", 25_000)
+    let captured = false
+    const capture = stopWorkspaceMutationsAndDrain().then(() => {
+      captured = true
+    })
+    // The long poll answers at once instead of holding the capture.
+    expect(await poll).toBe(false)
+    const read = admitWorkspaceRequest("read")
+    expect(read).not.toBeNull()
+    read!()
+    expect(admitWorkspaceRequest("write")).toBeNull()
+    expect(captured).toBe(false)
+    heldWrite()
+    await capture
+    const waiting = waitForWorkspaceAdmission("write", 5_000)
+    resumeWorkspaceRequestAdmission()
+    expect(await waiting).toBe(true)
+
+    // Replacing the tree refuses reads too.
+    await stopWorkspaceRequestAdmissionAndDrain()
+    expect(admitWorkspaceRequest("read")).toBeNull()
+    expect(await waitForWorkspaceAdmission("write", 5_000)).toBe(false)
+    resumeWorkspaceRequestAdmission()
+  })
+
   it("upgrades V1 before admitting edits, preserving collaboration identity and a rollback copy", async () => {
     const original = { ...ensureWorkspaceManifest(), version: 1 as const }
     writeWorkspaceManifest(original)
@@ -314,7 +353,9 @@ describe("live workspace replacement", () => {
         body: JSON.stringify({ content: [] }),
       }
     )
+    // Writes wait out a short capture, then are refused with a retry hint.
     expect(blockedWrite.status).toBe(503)
+    expect(blockedWrite.headers.get("Retry-After")).toBe("1")
     releaseCapture()
     await packaging
 
@@ -344,7 +385,7 @@ describe("live workspace replacement", () => {
     await expect(
       readFile(join(active, "spaces", "notes", "docs", "during-export.json"))
     ).rejects.toThrow()
-  })
+  }, 15_000)
 
   it.each([false, true])("drains, swaps and remains queryable (Teams=%s)", async (teams) => {
     let originalManifest = await readFile(

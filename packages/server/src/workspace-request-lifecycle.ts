@@ -1,33 +1,74 @@
-const activeWorkspaceRequests = new Set<symbol>()
-let acceptingWorkspaceRequests = true
+export type WorkspaceRequestKind = "read" | "write"
+
+// Writes are drained for every consistent capture. Reads are drained only when
+// the workspace tree itself is replaced, so a backup never refuses a read.
+const active: Record<WorkspaceRequestKind, Set<symbol>> = {
+  read: new Set(),
+  write: new Set(),
+}
+const accepting: Record<WorkspaceRequestKind, boolean> = {
+  read: true,
+  write: true,
+}
 let drainWaiters: Array<() => void> = []
+let reopenWaiters: Array<() => void> = []
+const drainListeners = new Set<() => void>()
 let admissionHookForTests:
   | ((request: { method: string; pathname: string }) => Promise<void>)
   | null = null
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
-export function isWorkspaceRequest(method: string, pathname: string, teamMode = false): boolean {
-  // Named-member reads must finish against the tree their grants authorized.
-  if (teamMode && SAFE_METHODS.has(method.toUpperCase()) && pathname !== "/health") return true
-  // Downloads expose workspace content even though they do not mutate it.
-  // Drain admission through replacement commit and export revocation.
-  if (
-    method.toUpperCase() === "GET" &&
-    /^\/api\/workspace\/transfers\/exports\/[^/]+\/download$/.test(pathname)
-  )
-    return true
-  if (
-    method.toUpperCase() === "GET" &&
-    pathname === "/api/linked/account/callback"
-  )
-    return true
-  // Recipient discovery may establish durable participant bindings.
-  if (method.toUpperCase() === "GET" && (pathname === "/api/profile" || /^\/api\/(?:spaces\/[^/]+\/)?threads\/participants$/.test(pathname))) return true
-  if (method.toUpperCase() === "GET" && (pathname === "/api/pending" || pathname === "/api/threads" || pathname.startsWith("/api/threads/"))) return true
-  if (SAFE_METHODS.has(method.toUpperCase())) return false
+/** App shell, static assets and auth pages never wait on the workspace. */
+function isStaticOrShell(pathname: string): boolean {
   return (
-    pathname === "/mcp" ||
+    pathname === "/health" ||
+    !(
+      pathname === "/mcp" ||
+      pathname.startsWith("/mcp/") ||
+      pathname.startsWith("/api/")
+    )
+  )
+}
+
+/**
+ * Which drain a request belongs to, or null when it never touches the
+ * workspace. Reads that also record durable app data (participant bindings,
+ * delivery state) are reads: a capture does not include that data.
+ */
+export function classifyWorkspaceRequest(
+  method: string,
+  pathname: string,
+  teamMode: boolean | (() => boolean) = false
+): WorkspaceRequestKind | null {
+  const verb = method.toUpperCase()
+  if (SAFE_METHODS.has(verb)) {
+    // Downloads expose workspace content; a link callback records state.
+    if (
+      verb === "GET" &&
+      /^\/api\/workspace\/transfers\/exports\/[^/]+\/download$/.test(pathname)
+    )
+      return "read"
+    if (verb === "GET" && pathname === "/api/linked/account/callback")
+      return "write"
+    if (
+      verb === "GET" &&
+      (pathname === "/api/profile" ||
+        pathname === "/api/pending" ||
+        pathname === "/api/threads" ||
+        pathname.startsWith("/api/threads/") ||
+        /^\/api\/spaces\/[^/]+\/threads(?:\/|$)/.test(pathname))
+    )
+      return "read"
+    // Named-member reads must finish against the tree their grants authorized.
+    if (
+      !isStaticOrShell(pathname) &&
+      (typeof teamMode === "function" ? teamMode() : teamMode)
+    )
+      return "read"
+    return null
+  }
+  return pathname === "/mcp" ||
     pathname.startsWith("/mcp/") ||
     pathname === "/api/mcp" ||
     pathname.startsWith("/api/mcp/") ||
@@ -50,39 +91,102 @@ export function isWorkspaceRequest(method: string, pathname: string, teamMode = 
     pathname.startsWith("/api/spaces/") ||
     pathname === "/api/threads" ||
     pathname.startsWith("/api/threads/")
-  )
+    ? "write"
+    : null
 }
 
-export function admitWorkspaceRequest(): (() => void) | null {
-  if (!acceptingWorkspaceRequests) return null
+export function isWorkspaceRequest(
+  method: string,
+  pathname: string,
+  teamMode: boolean | (() => boolean) = false
+): boolean {
+  return classifyWorkspaceRequest(method, pathname, teamMode) !== null
+}
+
+export function admitWorkspaceRequest(
+  kind: WorkspaceRequestKind = "write"
+): (() => void) | null {
+  if (!accepting[kind]) return null
   const request = Symbol("workspace-request")
-  activeWorkspaceRequests.add(request)
+  active[kind].add(request)
   let released = false
   return () => {
     if (released) return
     released = true
-    activeWorkspaceRequests.delete(request)
-    if (activeWorkspaceRequests.size === 0) {
-      const waiters = drainWaiters
-      drainWaiters = []
-      for (const resolve of waiters) resolve()
-    }
+    active[kind].delete(request)
+    // Each drain re-checks the sets it is waiting for.
+    const waiters = drainWaiters
+    drainWaiters = []
+    for (const resolve of waiters) resolve()
   }
 }
 
-export async function stopWorkspaceRequestAdmissionAndDrain(): Promise<void> {
-  acceptingWorkspaceRequests = false
-  while (activeWorkspaceRequests.size > 0) {
+async function drain(kinds: WorkspaceRequestKind[]): Promise<void> {
+  for (const kind of kinds) accepting[kind] = false
+  // Long polls answer now instead of holding the drain.
+  for (const listener of [...drainListeners]) listener()
+  while (kinds.some((kind) => active[kind].size > 0)) {
     await new Promise<void>((resolve) => drainWaiters.push(resolve))
   }
 }
 
-export function resumeWorkspaceRequestAdmission(): void {
-  acceptingWorkspaceRequests = true
+/** For a consistent capture: new writes wait, reads continue. */
+export function stopWorkspaceMutationsAndDrain(): Promise<void> {
+  return drain(["write"])
 }
 
+/** For replacing the workspace tree: nothing new is admitted. */
+export function stopWorkspaceRequestAdmissionAndDrain(): Promise<void> {
+  return drain(["write", "read"])
+}
+
+export function resumeWorkspaceRequestAdmission(): void {
+  accepting.read = true
+  accepting.write = true
+  const waiters = reopenWaiters
+  reopenWaiters = []
+  for (const resolve of waiters) resolve()
+}
+
+/** Whether new writes are admitted right now. */
 export function isWorkspaceRequestAdmissionOpen(): boolean {
-  return acceptingWorkspaceRequests
+  return accepting.write
+}
+
+/** True while a capture or replacement is draining or holding requests. */
+export function isWorkspaceDraining(): boolean {
+  return !accepting.write || !accepting.read
+}
+
+/** Called whenever a drain starts; returns an unsubscribe function. */
+export function onWorkspaceDrain(listener: () => void): () => void {
+  drainListeners.add(listener)
+  return () => drainListeners.delete(listener)
+}
+
+/** How long a write waits for a capture before being refused with Retry-After. */
+export const WRITE_ADMISSION_WAIT_MS = 3_000
+
+/**
+ * Wait briefly for a capture to finish before refusing a request. A
+ * replacement does not reopen quickly, so it is refused at once.
+ */
+export async function waitForWorkspaceAdmission(
+  kind: WorkspaceRequestKind,
+  timeoutMs: number
+): Promise<boolean> {
+  if (accepting[kind]) return true
+  if (!accepting.read) return false
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(done, timeoutMs)
+    function done() {
+      clearTimeout(timer)
+      reopenWaiters = reopenWaiters.filter((waiter) => waiter !== done)
+      resolve()
+    }
+    reopenWaiters.push(done)
+  })
+  return accepting[kind]
 }
 
 export async function runWorkspaceRequestAdmissionHookForTests(request: {
@@ -101,10 +205,12 @@ export function setWorkspaceRequestAdmissionHookForTests(
 }
 
 export function resetWorkspaceRequestLifecycleForTests(): void {
-  if (activeWorkspaceRequests.size > 0) {
+  if (active.read.size > 0 || active.write.size > 0) {
     throw new Error("cannot reset workspace request lifecycle while active")
   }
-  acceptingWorkspaceRequests = true
+  accepting.read = true
+  accepting.write = true
   drainWaiters = []
+  reopenWaiters = []
   admissionHookForTests = null
 }

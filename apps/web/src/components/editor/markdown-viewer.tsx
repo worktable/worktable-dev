@@ -10,6 +10,7 @@ import {
   Suspense,
   isValidElement,
   lazy,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -142,12 +143,12 @@ export function MarkdownViewer({
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
   const paneWidth = usePaneWidth<HTMLDivElement>()
   const scrollRoot = useRef<HTMLDivElement | null>(null)
+  const setScrollRoot = useCallback((node: HTMLDivElement | null) => {
+    scrollRoot.current = node
+  }, [])
   const scrollRef = useMemo(
-    () =>
-      mergeRefs<HTMLDivElement>(fade, paneWidth, (node) => {
-        scrollRoot.current = node
-      }),
-    [fade, paneWidth]
+    () => mergeRefs(fade, paneWidth, setScrollRoot),
+    [fade, paneWidth, setScrollRoot]
   )
   const html = useHtmlPlugins(content)
   const { theme } = useTheme()

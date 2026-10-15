@@ -6,6 +6,7 @@ import { startWorkspaceQueries } from "./lib/boot-facts";
 import { preloadOpeningDocumentRenderer } from "./lib/document-renderers";
 import { claimServerBuildReload, reloadWhenChunksAreGone } from "./lib/build-version";
 import { installTrace } from "./lib/trace";
+import { registerTeamQueryClient } from "./lib/team-access";
 
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -21,6 +22,7 @@ export function getRouter() {
   // Start browser workspace discovery here so it overlaps document resolution;
   // a signed-in page already carries it.
   if (typeof window !== "undefined") {
+    registerTeamQueryClient(queryClient);
     startWorkspaceQueries(queryClient);
     // Execute already-downloading renderer code while path metadata is in
     // flight. Preserve the saved-content paint before scheduling this work.

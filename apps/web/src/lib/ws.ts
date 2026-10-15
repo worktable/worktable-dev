@@ -1,5 +1,5 @@
+import { acceptTeamContext, browserTeamMemberId } from "./team-context"
 import { RUNTIME_BASE_PATH } from "./runtime-path"
-import { browserTeamMemberId } from "./team-context"
 import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
@@ -795,6 +795,11 @@ function connectShared(
       message = JSON.parse(event.data as string) as WsMessage
     } catch {
       // Ignore malformed messages without disrupting the live connection.
+      return
+    }
+    if (message.type === "team_access") {
+      // This member's access changed: apply it in place, without a request.
+      acceptTeamContext(message)
       return
     }
     if (message.type === "subscribed") {

@@ -20,7 +20,7 @@ import {
   type WorkspaceManifest,
 } from "../workspace.ts"
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
-import { memberAccess } from "../team-access.ts"
+import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
 import {
   appendWorkspaceImportChunk,
@@ -119,12 +119,20 @@ function canReadWorkspaceRoot(c: Context): boolean {
  * (source label/path, snapshotAt, one-way/disposable flags) for non-daily workspaces.
  * The served page carries the same summary for its first render (boot-facts.ts).
  */
-export async function workspaceSummary(c: Context) {
+export async function workspaceSummary(
+  c: Context,
+  options: { accessKeys?: boolean } = {}
+) {
   const identity = c.get("identity");
   const member = identity?.team ? teamMemberForIdentity(identity) : null;
   const team = member ? currentTeamWorktable() : null;
+  const access = member && team ? memberAccess(member.id) : null;
+  // The page carries each Space's content key, so the first render addresses
+  // content once instead of again after the spaces list arrives. Later reads
+  // take them from the spaces list, which keeps this summary small.
+  const accessKeys = options.accessKeys && member && access ? Object.fromEntries([...access.levels.keys()].flatMap((spaceId) => { const key = spaceAccessKey(member.id, spaceId); return key ? [[spaceId, key]] : []; })) : undefined;
   return {
-    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision, access: memberAccess(member.id)?.fingerprint ?? null } } : {}),
+    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision, access: access?.fingerprint ?? null, ...(accessKeys ? { accessKeys } : {}) } } : {}),
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),

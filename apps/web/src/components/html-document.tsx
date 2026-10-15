@@ -1,3 +1,4 @@
+import { spaceAccessKey } from "@/lib/team-access"
 import {
   AlertTriangle,
   Archive,
@@ -262,7 +263,11 @@ function WidgetDetailPage({
     !page && !frameBeforeCheck
       ? null
       : frameRevision
-        ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}`
+        ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}${
+            spaceAccessKey(spaceId)
+              ? `&a=${encodeURIComponent(spaceAccessKey(spaceId)!)}`
+              : ""
+          }`
         : `${contentUrl}&v=${encodeURIComponent(
             page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
           )}`

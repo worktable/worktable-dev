@@ -6,7 +6,10 @@
     "home": { "gzip": 323000 },
     "space": { "gzip": 313000 },
     "rich document": { "gzip": 785000 },
-    "html document": { "gzip": 339000 }
+    "html document": {
+      "gzip": 342000,
+      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16)."
+    }
   },
   "targets": {
     "entry": { "gzip": 180000 },

@@ -1,3 +1,5 @@
+import { spaceAccessKey } from "./team-access"
+import { browserTeamMemberId } from "./team-context"
 import { queryOptions, useQuery, type QueryClient } from "@tanstack/react-query"
 import type { DocumentContent } from "@worktable/types"
 import {
@@ -167,13 +169,20 @@ export function documentContentRevision(
   return contentRedirects.get(key) ?? revision
 }
 
+function contentQueryKey(spaceId: string, path: string, revision: string) {
+  const key = documentQueryKeys.content(spaceId, path, revision)
+  const accessKey = spaceAccessKey(spaceId)
+  return accessKey ? ([...key, accessKey] as const) : key
+}
+
 export const documentContentQueryOptions = (
   spaceId: string,
   path: string,
   revision: string
 ) =>
   queryOptions({
-    queryKey: documentQueryKeys.content(spaceId, path, revision),
+    // The access key is part of the address, so it is part of the cache key.
+    queryKey: contentQueryKey(spaceId, path, revision),
     queryFn: async (context): Promise<DocumentContent> => {
       try {
         return await abandonableRead(context, (read) =>
@@ -202,6 +211,9 @@ export async function prefetchDocumentContent(
   revision: string,
   current = false
 ): Promise<void> {
+  // On a team, content is addressed by this member's key; without it, wait
+  // for the real open instead of fetching an unkeyed copy.
+  if (browserTeamMemberId() && !spaceAccessKey(spaceId)) return
   const effective = documentContentRevision(spaceId, path, revision, current)
   await queryClient.prefetchQuery(
     documentContentQueryOptions(spaceId, path, effective)

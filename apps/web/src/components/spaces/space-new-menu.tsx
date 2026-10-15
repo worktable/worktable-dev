@@ -37,7 +37,6 @@ import {
   queryKeys,
   recordCollectionsQueryOptions,
   useWorkspace,
-  useSpace,
 } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
@@ -57,6 +56,8 @@ const NewDrawingDialog = lazy(() =>
 /**
  * Everything a Space can create, behind one menu. The sidebar and Space Home
  * pass their own trigger; creation and its dialogs behave the same in both.
+ * Callers render it only where the person can edit, from the Space data they
+ * already hold, so a list of Spaces never loads each Space.
  */
 export function SpaceNewMenu({
   spaceId,
@@ -157,9 +158,6 @@ export function SpaceNewMenu({
       console.error("Failed to create HTML doc shell:", err)
     }
   }
-
-  const { data: spaceDetail } = useSpace(spaceId)
-  if (spaceDetail?.space.permissions?.edit === false) return null
 
   return (
     <>

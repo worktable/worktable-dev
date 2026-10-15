@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe("service log rotation", () => {
-  test("rotates a log its writer keeps open, keeping the newest copies", async () => {
+  test("rotates a log its writer keeps open, keeping the newest copies", () => {
     const dir = mkdtempSync(join(tmpdir(), "worktable-logs-"))
     dirs.push(dir)
     const log = join(dir, "service.err.log")
@@ -28,7 +28,7 @@ describe("service log rotation", () => {
     try {
       for (const round of ["first", "second", "third"]) {
         writeSync(fd, `${round} `.repeat(20))
-        expect(await rotateLogIfLarge(log, 64, 2)).toBe(true)
+        expect(rotateLogIfLarge(log, 64, 2)).toBe(true)
         expect(readFileSync(log, "utf8")).toBe("")
       }
       expect(readFileSync(`${log}.1`, "utf8")).toStartWith("third ")
@@ -38,7 +38,7 @@ describe("service log rotation", () => {
       // The writer carries on at the start of the emptied file.
       writeSync(fd, "after rotation\n")
       expect(readFileSync(log, "utf8")).toBe("after rotation\n")
-      expect(await rotateLogIfLarge(log, 64, 2)).toBe(false)
+      expect(rotateLogIfLarge(log, 64, 2)).toBe(false)
     } finally {
       closeSync(fd)
     }

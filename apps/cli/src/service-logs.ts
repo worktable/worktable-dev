@@ -1,5 +1,11 @@
-import { fstatSync, statSync } from "node:fs"
-import { copyFile, rename, rm, stat, truncate } from "node:fs/promises"
+import {
+  copyFileSync,
+  fstatSync,
+  renameSync,
+  rmSync,
+  statSync,
+  truncateSync,
+} from "node:fs"
 import { join } from "node:path"
 import { getAppDir } from "@worktable/server/runtime"
 
@@ -18,28 +24,37 @@ export function getServiceLogPaths(): { stdout: string; stderr: string } {
 }
 
 /**
- * Rotate a log that another party holds open for appending: shift
- * `log.1`..`log.{keep-1}` up one, copy the log to `log.1`, then truncate it in
- * place. systemd (`append:`), launchd and the process backend all open the
- * file with O_APPEND, so the next write lands at the start of the emptied
- * file. Lines written between the copy and the truncate are lost.
+ * Rotate a log held open for appending: copy it aside, truncate it in place,
+ * then shift `log.1`..`log.{keep-1}` up one and make the copy `log.1`.
+ * systemd (`append:`), launchd and the process backend all open the file with
+ * O_APPEND, so the next write lands at the start of the emptied file. The
+ * copy and the truncate run back to back without yielding, so this process,
+ * the log's writer, cannot log in between; a failed copy changes nothing.
  */
-export async function rotateLogIfLarge(
+export function rotateLogIfLarge(
   path: string,
   maxBytes = SERVICE_LOG_MAX_BYTES,
   keep = SERVICE_LOG_KEEP
-): Promise<boolean> {
-  const size = await stat(path).then(
-    (info) => info.size,
-    () => 0
-  )
-  if (size < maxBytes) return false
-  await rm(`${path}.${keep}`, { force: true })
-  for (let index = keep - 1; index >= 1; index -= 1) {
-    await rename(`${path}.${index}`, `${path}.${index + 1}`).catch(() => {})
+): boolean {
+  let size = 0
+  try {
+    size = statSync(path).size
+  } catch {
+    return false
   }
-  await copyFile(path, `${path}.1`)
-  await truncate(path, 0)
+  if (size < maxBytes) return false
+  const copy = `${path}.rotating`
+  copyFileSync(path, copy)
+  truncateSync(path, 0)
+  rmSync(`${path}.${keep}`, { force: true })
+  for (let index = keep - 1; index >= 1; index -= 1) {
+    try {
+      renameSync(`${path}.${index}`, `${path}.${index + 1}`)
+    } catch {
+      // Fewer copies exist yet.
+    }
+  }
+  renameSync(copy, `${path}.1`)
   return true
 }
 
@@ -66,15 +81,14 @@ export function startServiceLogRotation(): () => void {
     ...(writesTo(2, logs.stderr) ? [logs.stderr] : []),
   ]
   if (paths.length === 0) return () => {}
-  let running = false
   const check = () => {
-    if (running) return
-    running = true
-    void Promise.all(
-      paths.map((path) => rotateLogIfLarge(path).catch(() => false))
-    ).finally(() => {
-      running = false
-    })
+    for (const path of paths) {
+      try {
+        rotateLogIfLarge(path)
+      } catch {
+        // Try again at the next check.
+      }
+    }
   }
   check()
   const timer = setInterval(check, CHECK_INTERVAL_MS)

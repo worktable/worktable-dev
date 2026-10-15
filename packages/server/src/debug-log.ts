@@ -35,8 +35,17 @@ export function logError(error: unknown): string {
   }
   const code = (error as { code?: unknown }).code
   const head = `${error.name}${typeof code === "string" ? ` ${code}` : ""}`
-  const lines = error.stack?.split("\n") ?? []
-  const first = lines.findIndex((line) => /^\s+at /.test(line))
-  const frames = first < 0 ? "" : `\n${lines.slice(first).join("\n")}`
-  return `${head}${debugLogging ? `: ${error.message}` : ""}${frames}`
+  return `${head}${debugLogging ? `: ${error.message}` : ""}${stackFrames(error)}`
+}
+
+/**
+ * The frames after the stack's first line, which repeats the message. A
+ * stack that does not start with the message is left out: frames cannot be
+ * told apart from message lines that look like them.
+ */
+function stackFrames(error: Error): string {
+  const stack = error.stack ?? ""
+  const header = error.message ? `${error.name}: ${error.message}` : error.name
+  if (!stack.startsWith(`${header}\n`)) return ""
+  return stack.slice(header.length)
 }

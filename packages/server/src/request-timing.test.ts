@@ -36,7 +36,7 @@ function fixture() {
     c.json(await timing.span("catalog", async () => documents))
   )
   app.get("/api/spaces/:spaceId/docs/*", () => {
-    throw new Error("cannot read Quarterly plan for Acme")
+    throw new Error("cannot read\n    at Quarterly plan for Acme")
   })
   app.route("/api/diagnostics", diagnosticsRouter)
   app.onError((error, c) => unexpectedErrorResponse(c, error))
@@ -86,6 +86,8 @@ describe("request timing", () => {
       const log = logged.join("\n")
       expect(log).toContain(body.errorId)
       expect(log).toContain("GET /api/spaces/:spaceId/docs/* 500")
+      // Stack frames stay, so the failure can still be traced.
+      expect(log).toContain("request-timing.test.ts")
       for (const secret of ["alpha", "quarterly", "Quarterly plan"]) {
         expect(log).not.toContain(secret)
       }

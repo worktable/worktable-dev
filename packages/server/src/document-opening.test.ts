@@ -93,7 +93,7 @@ it("never embeds private content for cross-origin, invalid bearer or non-loopbac
       },
     }),
     new Request(url, { headers: { Authorization: "Bearer invalid" } }),
-    new Request(url.replace("localhost", "192.168.2.211")),
+    new Request(url.replace("localhost", "192.168.1.30")),
   ])
     expect(await injectDocumentOpening(request, shell)).toBeNull()
 })
@@ -127,15 +127,15 @@ it("leaves missing, conflicting and non-document paths to the normal app", async
 })
 
 it("includes the preview for an authenticated LAN browser, but not a signed-out browser", async () => {
-  await updateServerSettings({ network: { publicUrl: "http://192.168.2.211" } })
-  const lanUrl = url.replace("localhost", "192.168.2.211")
+  await updateServerSettings({ network: { publicUrl: "http://192.168.1.30" } })
+  const lanUrl = url.replace("localhost", "192.168.1.30")
   expect(await injectDocumentOpening(new Request(lanUrl), shell)).toBeNull()
   const issuer = new Hono()
   issuer.get("/cookie", async (c) => {
     await issueSessionCookie(c)
     return c.text("ok")
   })
-  const issued = await issuer.request("http://192.168.2.211/cookie")
+  const issued = await issuer.request("http://192.168.1.30/cookie")
   const cookie = issued.headers.get("Set-Cookie")!.split(";")[0]
   expect(
     await injectDocumentOpening(

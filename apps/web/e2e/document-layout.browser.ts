@@ -234,6 +234,8 @@ test("block handles sit beside the first line of each block", async ({
       .locator(".bn-editor .bn-inline-content")
       .filter({ hasText: line })
       .first()
+    // Blocks below the fold must be on screen for the pointer to reach them.
+    await content.scrollIntoViewIfNeeded()
     const box = await content.boundingBox()
     if (!box) throw new Error(`${line} is not visible`)
     await page.mouse.move(box.x + 24, box.y + 4)

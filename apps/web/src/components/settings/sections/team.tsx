@@ -19,6 +19,9 @@ import {
   inviteTeamMember,
   removeTeamMember,
   setTeamAgentWorktableThreads,
+  issueMemberPasswordReset,
+  issueInvitationPasswordReset,
+  setMemberOperator,
 } from "@/lib/team-api"
 import { signOutLocalTeam } from "@/lib/team-context"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
@@ -63,6 +66,7 @@ export function TeamSection() {
   return (
     <TeamMembers
       owner={team.data.member?.role === "owner"}
+      operator={team.data.operator}
       selfId={team.data.member?.id}
       cloud={deployment.data?.mode === "cloud"}
     />
@@ -135,16 +139,19 @@ function EnableTeams() {
 
 function TeamMembers({
   owner,
+  operator,
   selfId,
   cloud,
 }: {
   owner: boolean
+  operator: boolean
   selfId?: string
   cloud: boolean
 }) {
   const client = useQueryClient()
   const [email, setEmail] = useState("")
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [resetLink, setResetLink] = useState<{ name: string; url: string } | null>(null)
   const [removing, setRemoving] = useState<TeamMember | null>(null)
   const [selectedSpace, setSelectedSpace] = useState<string | null>(null)
   const members = useQuery({
@@ -181,9 +188,28 @@ function TeamMembers({
       void refresh()
     },
   })
+  const reset = useMutation({
+    mutationFn: (target: { name: string; memberId?: string; invitationId?: string }) =>
+      (target.memberId
+        ? issueMemberPasswordReset(target.memberId)
+        : issueInvitationPasswordReset(target.invitationId!)
+      ).then((link) => ({ name: target.name, url: link.url })),
+    onSuccess: setResetLink,
+  })
+  const operatorChange = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: boolean }) =>
+      setMemberOperator(id, value),
+    onSuccess: refresh,
+  })
   const logout = useMutation({ mutationFn: signOutLocalTeam })
   const error =
-    invite.error ?? cancel.error ?? role.error ?? remove.error ?? logout.error
+    invite.error ??
+    cancel.error ??
+    role.error ??
+    remove.error ??
+    reset.error ??
+    operatorChange.error ??
+    logout.error
   return (
     <div className="flex flex-col gap-6">
       {cloud && <Button variant="outline" render={<a href="/" />}>Switch Worktable</Button>}
@@ -210,6 +236,36 @@ function TeamMembers({
               <Badge variant="secondary">
                 {member.role === "owner" ? "Owner" : "Member"}
               </Badge>
+              {!cloud && member.operator && (
+                <Badge variant="outline">Operator</Badge>
+              )}
+              {!cloud && operator && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={operatorChange.isPending}
+                  onClick={() =>
+                    operatorChange.mutate({
+                      id: member.id,
+                      value: !member.operator,
+                    })
+                  }
+                >
+                  {member.operator ? "Remove operator" : "Make operator"}
+                </Button>
+              )}
+              {!cloud && owner && member.role !== "owner" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={reset.isPending}
+                  onClick={() =>
+                    reset.mutate({ name: member.name, memberId: member.id })
+                  }
+                >
+                  Reset password
+                </Button>
+              )}
               {owner && (
                 <>
                   <Button
@@ -282,6 +338,32 @@ function TeamMembers({
             </Button>
           </div>
         )}
+        {resetLink && (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              This link lets {resetLink.name} choose a new password. It works
+              once, expires in 24 hours, and signs them out everywhere. Send it
+              to them directly.
+            </p>
+            <Input
+              aria-label="Password reset link"
+              value={resetLink.url}
+              readOnly
+              onFocus={(event) => event.target.select()}
+            />
+            <Button
+              variant="outline"
+              onClick={() =>
+                void navigator.clipboard.writeText(resetLink.url).then(
+                  () => toast.success("Reset link copied"),
+                  () => toast.error("Select and copy the reset link")
+                )
+              }
+            >
+              Copy reset link
+            </Button>
+          </div>
+        )}
         {invitations.data
           ?.filter((invitation) => invitation.status === "pending")
           .map((invitation) => (
@@ -289,7 +371,24 @@ function TeamMembers({
               key={invitation.id}
               className="flex items-center justify-between gap-3 text-sm"
             >
-              <span className="truncate">{invitation.email} · Invited</span>
+              <span className="min-w-0 flex-1 truncate">
+                {invitation.email} · Invited
+              </span>
+              {!cloud && owner && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={reset.isPending}
+                  onClick={() =>
+                    reset.mutate({
+                      name: invitation.email,
+                      invitationId: invitation.id,
+                    })
+                  }
+                >
+                  Reset password
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

@@ -54,18 +54,19 @@ export function listTeamMembers(): TeamMember[] {
   const worktable = currentTeamWorktable()
   if (!worktable) return []
   const rows = requireTeamDatabase()
-    .query<MemberRow, [string, string]>(
+    .query<MemberRow & { operator: number }, [string, string]>(
       `
-    SELECT m.id, m.userId, e.actor_id AS actorId, u.name, u.email, m.role
+    SELECT m.id, m.userId, e.actor_id AS actorId, u.name, u.email, m.role,
+      EXISTS (SELECT 1 FROM wt_operators o WHERE o.worktable_id = e.worktable_id AND o.user_id = m.userId) AS operator
     FROM member m JOIN wt_enrollments e ON e.id = m.id AND e.user_id = m.userId
     JOIN user u ON u.id = m.userId
     WHERE m.organizationId = ? AND e.worktable_id = ? AND e.active = 1 ORDER BY m.createdAt, m.id
   `
     )
     .all(worktable.organizationId, worktable.id)
-  return rows.flatMap((row) => {
+  return rows.flatMap(({ operator, ...row }) => {
     const member = parseMember(row)
-    return member ? [member] : []
+    return member ? [{ ...member, operator: operator === 1 }] : []
   })
 }
 
@@ -129,6 +130,14 @@ export function retireTeamEnrollment(
       .get(memberId, worktable.id)
     if (enrollment?.active === 1)
       db.query("DELETE FROM session WHERE userId = ?").run(enrollment.user_id)
+    if (enrollment) {
+      // A removed person keeps no way back in: unused reset links and machine
+      // operation end with membership. Re-inviting restores neither.
+      db.query("DELETE FROM verification WHERE value = ?").run(enrollment.user_id)
+      db.query(
+        "DELETE FROM wt_operators WHERE worktable_id = ? AND user_id = ?"
+      ).run(worktable.id, enrollment.user_id)
+    }
     db.query(
       "UPDATE wt_enrollments SET active = 0 WHERE id = ? AND worktable_id = ?"
     ).run(memberId, worktable.id)

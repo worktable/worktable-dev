@@ -139,7 +139,11 @@ export function recoverTeamInitialization(): void {
 /** Retry adopts only the authenticated initial owner's otherwise unused organization. */
 export async function getInitialTeamOrganization(
   origin: string,
-  userId: string
+  userId: string,
+  options: {
+    /** Local activation: an unfinished attempt with another account is discarded. */
+    replaceUnfinished?: boolean
+  } = {}
 ): Promise<{ organizationId: string; ownerMemberId: string }> {
   const auth = await getTeamAuth(origin)
   const db = requireTeamDatabase()
@@ -174,15 +178,28 @@ export async function getInitialTeamOrganization(
         [string]
       >("SELECT id, userId, role FROM member WHERE organizationId = ?")
       .all(existing.id)
-    if (
-      members.length !== 1 ||
-      members[0]!.userId !== userId ||
-      members[0]!.role !== "owner"
-    )
+    const matches =
+      members.length === 1 &&
+      members[0]!.userId === userId &&
+      members[0]!.role === "owner"
+    const unfinished =
+      !db.query("SELECT id FROM wt_worktables LIMIT 1").get() &&
+      !db
+        .query("SELECT id FROM invitation WHERE organizationId = ? LIMIT 1")
+        .get(existing.id)
+    if (!matches && options.replaceUnfinished && unfinished) {
+      db.transaction(() => {
+        db.query("DELETE FROM member WHERE organizationId = ?").run(existing!.id)
+        db.query("DELETE FROM organization WHERE id = ?").run(existing!.id)
+      })()
+      existing = null
+    } else if (!matches) {
       throw new TeamAccessError(
         "Team initialization does not match its initial owner"
       )
-    return { organizationId: existing.id, ownerMemberId: members[0]!.id }
+    } else {
+      return { organizationId: existing.id, ownerMemberId: members[0]!.id }
+    }
   }
   const org = await auth.api.createOrganization({
     body: { userId, name: ensureWorkspaceManifest().name, slug },

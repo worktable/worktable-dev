@@ -25,6 +25,7 @@ import {
 import { sameOriginRequestAllowed } from "../auth.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import { readSpace } from "../store.ts"
+import { issueTeamPasswordReset, setTeamOperator } from "../team-recovery.ts"
 
 export const teamRouter = new Hono()
 const origin = (c: Context) =>
@@ -127,6 +128,41 @@ teamRouter.delete("/members/:id", async (c) => {
     c.get("identity"),
     c.req.param("id"),
     null
+  )
+  return c.json({ ok: true })
+})
+// Owners pass a reset link on themselves; there is no email.
+teamRouter.post("/members/:id/password-reset", async (c) =>
+  c.json(
+    await issueTeamPasswordReset(
+      origin(c),
+      { memberId: c.req.param("id") },
+      c.get("identity")
+    ),
+    201
+  )
+)
+// A person invited back may have forgotten their earlier account's password.
+teamRouter.post("/invitations/:id/password-reset", async (c) =>
+  c.json(
+    await issueTeamPasswordReset(
+      origin(c),
+      { invitationId: c.req.param("id") },
+      c.get("identity")
+    ),
+    201
+  )
+)
+teamRouter.put("/members/:id/operator", async (c) => {
+  const body = z
+    .object({ operator: z.boolean() })
+    .strict()
+    .safeParse(await c.req.json().catch(() => null))
+  if (!body.success) return c.json({ error: "Invalid operator change" }, 400)
+  setTeamOperator(
+    { memberId: c.req.param("id") },
+    body.data.operator,
+    c.get("identity")
   )
   return c.json({ ok: true })
 })

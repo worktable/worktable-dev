@@ -82,6 +82,14 @@ export async function activateLocalTeams(
       const existing = await context.internalAdapter.findUserByEmail(
         setup.email.toLowerCase()
       )
+      // Before activation completes, the only accounts are leftovers of an
+      // interrupted attempt by this same local owner, so the password chosen
+      // now replaces the earlier one.
+      if (existing)
+        await context.internalAdapter.updatePassword(
+          existing.user.id,
+          await context.password.hash(setup.password)
+        )
       const signedIn = existing
         ? await auth.api.signInEmail({
             body: { email: setup.email, password: setup.password },
@@ -91,7 +99,9 @@ export async function activateLocalTeams(
       const user = signedIn.response.user
       beginTeamInitialization("local", user.id)
       const { organizationId, ownerMemberId } =
-        await getInitialTeamOrganization(origin, user.id)
+        await getInitialTeamOrganization(origin, user.id, {
+          replaceUnfinished: true,
+        })
       await pauseLinkForTeamActivation()
       const db = openTeamDatabase()!
       try {

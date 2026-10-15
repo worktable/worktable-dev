@@ -75,3 +75,22 @@ export const setTeamAgentWorktableThreads = (
     method: "PATCH",
     body: JSON.stringify({ worktableThreads }),
   })
+export interface PasswordResetLink {
+  url: string
+  expiresAt: string
+}
+export const issueMemberPasswordReset = (id: string) =>
+  fetchJSON<PasswordResetLink>(
+    `/api/team/members/${encodeURIComponent(id)}/password-reset`,
+    { method: "POST" }
+  )
+export const issueInvitationPasswordReset = (id: string) =>
+  fetchJSON<PasswordResetLink>(
+    `/api/team/invitations/${encodeURIComponent(id)}/password-reset`,
+    { method: "POST" }
+  )
+export const setMemberOperator = (id: string, operator: boolean) =>
+  fetchJSON(`/api/team/members/${encodeURIComponent(id)}/operator`, {
+    method: "PUT",
+    body: JSON.stringify({ operator }),
+  })

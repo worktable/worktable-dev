@@ -11,6 +11,8 @@ export interface TeamMember {
   name: string
   email: string
   role: TeamRole
+  /** Listed members only: may operate the machine (self-hosted). */
+  operator?: boolean
 }
 
 export interface SpaceAccessGrant {

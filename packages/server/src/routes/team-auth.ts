@@ -71,6 +71,7 @@ for (const endpoint of [
   "sign-out",
   "change-password",
   "revoke-sessions",
+  "reset-password",
 ] as const) {
   teamAuthRouter.post(`/${endpoint}`, async (c) => {
     const auth = await getTeamAuth(

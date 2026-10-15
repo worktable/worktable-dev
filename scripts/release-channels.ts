@@ -83,6 +83,10 @@ export function publishChannel(
   const version = normalizeVersion(input.version)
   const tag = version ? releaseTagForVersion(version) : null
   if (!version || !tag) throw new Error(`Not a version: ${input.version}`)
+  // Stable only ever offers releases, never a beta build.
+  if (input.channel === "stable" && !/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error(`Stable takes a release version (X.Y.Z), not ${version}`)
+  }
   if (!/^[0-9a-f]{40}$/.test(input.commit)) {
     throw new Error("publish needs the full 40-character source commit")
   }

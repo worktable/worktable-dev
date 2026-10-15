@@ -67,6 +67,17 @@ describe("release channel manifest", () => {
     })
   })
 
+  it("never points stable at a beta build", () => {
+    expect(() =>
+      publishChannel(stable, {
+        channel: "stable",
+        version: "0.1.24-dev.130+bbbbbbb",
+        commit: commit("b"),
+        publishedAt: at,
+      })
+    ).toThrow("release version")
+  })
+
   it("refuses to write a manifest updaters would reject", () => {
     expect(() =>
       serializeManifest(

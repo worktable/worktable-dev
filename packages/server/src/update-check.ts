@@ -571,7 +571,9 @@ export async function resolveUpdateTarget(
  * not leak into `status` or the passive CLI nudge.
  */
 export function getCachedUpdateCheck(): UpdateCheckResult {
-  if (updateCheckDisabled()) return toResult(null, "disabled", null)
+  // Checks may be off, but `worktable update` still follows the channel, so
+  // keep showing it; source builds have no channel to follow.
+  if (updateCheckDisabled()) return toResult(null, "disabled")
   if (!updateCheckSupported()) return toResult(null, "unsupported", null)
   return toResult(readCacheFile())
 }
@@ -597,7 +599,7 @@ async function checkForUpdateOutcome(opts?: {
   ttlMs?: number
 }): Promise<{ result: UpdateCheckResult; persisted: boolean }> {
   if (updateCheckDisabled()) {
-    return { result: toResult(null, "disabled", null), persisted: true }
+    return { result: toResult(null, "disabled"), persisted: true }
   }
   if (!updateCheckSupported()) {
     return { result: toResult(null, "unsupported", null), persisted: true }

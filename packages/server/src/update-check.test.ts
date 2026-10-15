@@ -536,7 +536,10 @@ describe("getCachedUpdateCheck", () => {
     )
 
     process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
+    setUpdateChannel("beta")
     const disabled = getCachedUpdateCheck()
+    // `worktable update` still follows the channel, so it stays visible.
+    expect(disabled.channel).toBe("beta")
     expect(disabled.latest).toBeNull()
     expect(disabled.updateAvailable).toBe(false)
     expect(disabled.checkedAt).toBeNull()
@@ -545,6 +548,7 @@ describe("getCachedUpdateCheck", () => {
     delete process.env["WORKTABLE_NO_UPDATE_CHECK"]
     delete process.env["WORKTABLE_VERSION"]
     const unsupported = getCachedUpdateCheck()
+    expect(unsupported.channel).toBeNull()
     expect(unsupported.latest).toBeNull()
     expect(unsupported.updateAvailable).toBe(false)
     expect(unsupported.checkedAt).toBeNull()

@@ -815,7 +815,11 @@ export function renderDocumentContentTs(): string {
     join(root, "packages/ui/src/styles/document-content.css"),
     "utf8"
   )
-  return `// ${generatedNote}\n// Source: packages/ui/src/styles/document-content.css\nexport const DOCUMENT_CONTENT_CSS = ${JSON.stringify(css)}\n`
+  // Share pages have no theme class; give them the dark palette by system theme.
+  const dark = css.match(/:is\(\.dark\) \.worktable-markdown \{([^}]*)\}/)?.[1]
+  if (!dark) throw new Error("document-content.css lost its dark palette block")
+  const shared = `${css}\n@media (prefers-color-scheme: dark) {\n  .shared-document.worktable-markdown {${dark}}\n}\n`
+  return `// ${generatedNote}\n// Source: packages/ui/src/styles/document-content.css\nexport const DOCUMENT_CONTENT_CSS = ${JSON.stringify(shared)}\n`
 }
 
 export const generatedThemeOutputs = new Map([

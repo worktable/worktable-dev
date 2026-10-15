@@ -322,63 +322,6 @@
   overflow-x: auto;
 }
 
-/* In the app a table can widen to the reading pane (--doc-pane-width). */
-.worktable-table-frame {
-  --doc-expanded-width: calc(var(--doc-pane-width, 100%) - 3rem);
-  position: relative;
-  width: 100%;
-  margin: 0 0 var(--doc-gap-large);
-  transition:
-    width var(--doc-motion),
-    margin-left var(--doc-motion);
-}
-
-.worktable-table-frame[data-expanded] {
-  width: var(--doc-expanded-width);
-  margin-left: calc((100% - var(--doc-expanded-width)) / 2);
-}
-
-.worktable-markdown .worktable-table-frame > .worktable-table-scroll {
-  margin: 0;
-}
-
-/* Floats over the table's corner, so it never moves the text. */
-.worktable-table-controls {
-  position: absolute;
-  top: 0.3125rem;
-  right: 0.3125rem;
-  z-index: 1;
-  border-radius: 0.375rem;
-  background: var(--card);
-  box-shadow: 0 0 0 1px var(--border);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.worktable-table-frame:is(:hover, :focus-within) > .worktable-table-controls,
-.worktable-table-frame[data-expanded] > .worktable-table-controls {
-  opacity: 1;
-}
-
-/* Touch screens have no hover: keep Expand in view where it fits. */
-@media (hover: none) {
-  .worktable-table-controls {
-    opacity: 1;
-  }
-}
-
-@media (max-width: 767px) {
-  .worktable-table-controls {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .worktable-table-frame {
-    transition: none;
-  }
-}
-
 .worktable-markdown table {
   width: 100%;
   margin: 0;
@@ -521,33 +464,6 @@
   transition: border-color 0.15s ease;
 }
 
-.worktable-diagram:is(:hover, :focus-within),
-.worktable-diagram[data-editing] {
-  border-color: var(--border);
-}
-
-.worktable-diagram-controls {
-  position: absolute;
-  top: 0.3125rem;
-  right: 0.3125rem;
-  z-index: 1;
-  display: flex;
-  gap: 0.125rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.worktable-diagram:is(:hover, :focus-within) .worktable-diagram-controls,
-.worktable-diagram[data-editing] .worktable-diagram-controls {
-  opacity: 1;
-}
-
-@media (pointer: coarse) {
-  .worktable-diagram-controls {
-    opacity: 1;
-  }
-}
-
 /* A collapsed diagram is one line, like a closed toggle. */
 .worktable-diagram-collapsed {
   display: flex;
@@ -612,6 +528,8 @@
   --doc-pink-background: #f4dfeb;
 }
 
+/* Share pages follow the system theme; the generator repeats this block
+   under prefers-color-scheme for them. */
 :is(.dark) .worktable-markdown {
   --doc-gray-text: #bebdb8;
   --doc-gray-background: #9b9a97;
@@ -631,29 +549,6 @@
   --doc-purple-background: #6940a5;
   --doc-pink-text: #da208f;
   --doc-pink-background: #ad1a72;
-}
-
-@media (prefers-color-scheme: dark) {
-  .shared-document.worktable-markdown {
-    --doc-gray-text: #bebdb8;
-    --doc-gray-background: #9b9a97;
-    --doc-brown-text: #8e6552;
-    --doc-brown-background: #64473a;
-    --doc-red-text: #ec4040;
-    --doc-red-background: #be3434;
-    --doc-orange-text: #e3790d;
-    --doc-orange-background: #b7600a;
-    --doc-yellow-text: #dfab01;
-    --doc-yellow-background: #b58b00;
-    --doc-green-text: #6b8b87;
-    --doc-green-background: #4d6461;
-    --doc-blue-text: #0e87bc;
-    --doc-blue-background: #0b6e99;
-    --doc-purple-text: #8552d7;
-    --doc-purple-background: #6940a5;
-    --doc-pink-text: #da208f;
-    --doc-pink-background: #ad1a72;
-  }
 }
 
 .worktable-markdown [data-text-color="gray"] {

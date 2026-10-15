@@ -86,3 +86,30 @@
     opacity: 1;
   }
 }
+
+/* Panels that open below a diagram unfold with the shared height motion.
+   Pure CSS, so the editor needs no collapsible component for them. */
+.worktable-unfold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows var(--doc-motion),
+    visibility var(--doc-motion) allow-discrete;
+  visibility: hidden;
+}
+
+.worktable-unfold[data-open] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+
+.worktable-unfold > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worktable-unfold {
+    transition: none;
+  }
+}

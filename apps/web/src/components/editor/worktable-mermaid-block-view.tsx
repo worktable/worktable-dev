@@ -9,10 +9,6 @@ import {
 import { lazy, Suspense, useCallback, useMemo, useState } from "react"
 import { DEFAULT_MERMAID_TITLE } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@worktable/ui/components/collapsible"
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { DocIconButton } from "@/components/document/doc-icon-button"
@@ -54,6 +50,8 @@ export default function MermaidBlockComponent({
 
   const [showEditor, setShowEditor] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
+  // Panels mount on first opening, then stay mounted so closing can unfold.
+  const [opened, setOpened] = useState({ editor: false, templates: false })
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const templatesScrollRef = useScrollFade<HTMLDivElement>()
   const canEdit = !isReadOnly && !isLocked
@@ -100,7 +98,10 @@ export default function MermaidBlockComponent({
           <DocIconButton
             label="Edit source"
             aria-pressed={showEditor}
-            onClick={() => setShowEditor((current) => !current)}
+            onClick={() => {
+              setOpened((current) => ({ ...current, editor: true }))
+              setShowEditor((current) => !current)
+            }}
             onPointerEnter={preloadSourceEditor}
             onFocus={preloadSourceEditor}
           >
@@ -109,7 +110,10 @@ export default function MermaidBlockComponent({
           <DocIconButton
             label="Templates"
             aria-pressed={showTemplates}
-            onClick={() => setShowTemplates((current) => !current)}
+            onClick={() => {
+              setOpened((current) => ({ ...current, templates: true }))
+              setShowTemplates((current) => !current)
+            }}
           >
             <LayoutGrid />
           </DocIconButton>
@@ -130,81 +134,85 @@ export default function MermaidBlockComponent({
 
   const footer = canEdit ? (
     <>
-      <Collapsible open={showTemplates}>
-        <CollapsibleContent>
-          <div className="mermaid-authoring-ui border-t border-border p-2.5">
-            <div className="mb-2 flex flex-wrap gap-1">
-              {[null, ...categories].map((category) => (
-                <Button
-                  key={category ?? "all"}
-                  variant="ghost"
-                  size="xs"
-                  aria-pressed={activeCategory === category}
-                  className={cn(
-                    "h-6 rounded-full px-2.5 text-xs",
-                    activeCategory === category &&
-                      "bg-surface-tint text-primary-text"
-                  )}
-                  onClick={() => setActiveCategory(category)}
-                >
-                  {category ?? "All"}
-                </Button>
-              ))}
+      <div className="worktable-unfold" data-open={showTemplates || undefined}>
+        <div>
+          {opened.templates && (
+            <div className="mermaid-authoring-ui border-t border-border p-2.5">
+              <div className="mb-2 flex flex-wrap gap-1">
+                {[null, ...categories].map((category) => (
+                  <Button
+                    key={category ?? "all"}
+                    variant="ghost"
+                    size="xs"
+                    aria-pressed={activeCategory === category}
+                    className={cn(
+                      "h-6 rounded-full px-2.5 text-xs",
+                      activeCategory === category &&
+                        "bg-surface-tint text-primary-text"
+                    )}
+                    onClick={() => setActiveCategory(category)}
+                  >
+                    {category ?? "All"}
+                  </Button>
+                ))}
+              </div>
+              <div
+                ref={templatesScrollRef}
+                className="scroll-fade grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto @md:grid-cols-3 @2xl:grid-cols-4"
+                style={{ "--sf-size": "20px" } as React.CSSProperties}
+              >
+                {visibleExamples.map((example: MermaidExample) => (
+                  <button
+                    key={example.name}
+                    type="button"
+                    className={cn(
+                      "rounded-lg card-surface-interactive card-surface p-2.5 text-left"
+                    )}
+                    onClick={() => {
+                      updateProps({ data: example.code })
+                      setShowTemplates(false)
+                    }}
+                  >
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {example.name}
+                    </div>
+                    <div className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
+                      {example.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div
-              ref={templatesScrollRef}
-              className="scroll-fade grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto @md:grid-cols-3 @2xl:grid-cols-4"
-              style={{ "--sf-size": "20px" } as React.CSSProperties}
-            >
-              {visibleExamples.map((example: MermaidExample) => (
-                <button
-                  key={example.name}
-                  type="button"
-                  className={cn(
-                    "rounded-lg card-surface-interactive card-surface p-2.5 text-left"
-                  )}
-                  onClick={() => {
-                    updateProps({ data: example.code })
-                    setShowTemplates(false)
-                  }}
-                >
-                  <div className="truncate text-sm font-medium text-foreground">
-                    {example.name}
-                  </div>
-                  <div className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
-                    {example.description}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-      <Collapsible open={showEditor}>
-        <CollapsibleContent>
-          <div className="mermaid-source-editor border-t border-border">
-            <input
-              type="text"
-              value={name}
-              onChange={(event) =>
-                updateProps({
-                  title: event.target.value || DEFAULT_MERMAID_TITLE,
-                })
-              }
-              placeholder="Caption"
-              aria-label="Caption"
-              className="h-9 w-full border-b border-border bg-transparent px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
-            <Suspense fallback={<div className="h-[200px]" />}>
-              <MermaidSourceEditor
-                value={data}
-                theme={resolvedTheme === "dark" ? "dark" : "light"}
-                onChange={(value) => updateProps({ data: value })}
+          )}
+        </div>
+      </div>
+      <div className="worktable-unfold" data-open={showEditor || undefined}>
+        <div>
+          {opened.editor && (
+            <div className="mermaid-source-editor border-t border-border">
+              <input
+                type="text"
+                value={name}
+                onChange={(event) =>
+                  updateProps({
+                    title: event.target.value || DEFAULT_MERMAID_TITLE,
+                  })
+                }
+                placeholder="Caption"
+                aria-label="Caption"
+                className="h-9 w-full border-b border-border bg-transparent px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
-            </Suspense>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+              <Suspense fallback={<div className="h-[200px]" />}>
+                <MermaidSourceEditor
+                  value={data}
+                  theme={resolvedTheme === "dark" ? "dark" : "light"}
+                  onChange={(value) => updateProps({ data: value })}
+                />
+              </Suspense>
+            </div>
+          )}
+        </div>
+      </div>
     </>
   ) : null
 

@@ -809,6 +809,19 @@ export function renderDrawingTs(): string {
   return `// ${generatedNote}\nexport const DRAWING_THEME = ${JSON.stringify(themeConfig.drawing, null, 2)} as const\n`
 }
 
+/** The shared document stylesheet as text, for pages rendered outside the app. */
+export function renderDocumentContentTs(): string {
+  const css = readFileSync(
+    join(root, "packages/ui/src/styles/document-content.css"),
+    "utf8"
+  )
+  // Share pages have no theme class; give them the dark palette by system theme.
+  const dark = css.match(/:is\(\.dark\) \.worktable-markdown \{([^}]*)\}/)?.[1]
+  if (!dark) throw new Error("document-content.css lost its dark palette block")
+  const shared = `${css}\n@media (prefers-color-scheme: dark) {\n  .shared-document.worktable-markdown {${dark}}\n}\n`
+  return `// ${generatedNote}\n// Source: packages/ui/src/styles/document-content.css\nexport const DOCUMENT_CONTENT_CSS = ${JSON.stringify(shared)}\n`
+}
+
 export const generatedThemeOutputs = new Map([
   ["packages/ui/src/styles/theme.generated.css", renderThemeCss()],
   ["apps/web/src/styles/blocknote-theme.generated.css", renderBlockNoteCss()],
@@ -818,6 +831,10 @@ export const generatedThemeOutputs = new Map([
   ]),
   ["packages/ui/src/theme/mermaid-theme.generated.ts", renderMermaidTs()],
   ["packages/types/src/drawing-theme.generated.ts", renderDrawingTs()],
+  [
+    "packages/ui/src/styles/document-content.generated.ts",
+    renderDocumentContentTs(),
+  ],
 ])
 
 if (import.meta.main) {

@@ -139,6 +139,12 @@ Long-form prose uses `--reading-foreground`, which is deliberately softer than U
 
 Operational state titles such as empty states, errors, and recovery prompts use the body font at a larger semibold weight. Reserve the display font for major page and artifact headings where its character has enough size and space to read clearly.
 
+### Document content
+
+Docs read the same in every format and every stage. `packages/ui/src/styles/document-content.css` owns the reading look: spacing, heading scale, lists and checklists, quotes, code, tables, captions, toggles, diagrams, and the text color palette. The Markdown viewer, the saved preview a rich text Doc shows while it opens, and public share pages use it directly; share pages embed it through the generated `document-content.generated.ts`. `apps/web/src/styles/blocknote.css` maps the same `--doc-*` values onto BlockNote's markup, and `apps/web/src/styles/document-controls.css` styles the controls the app adds once a Doc is interactive, so they load with the viewer and editor rather than with every page. Change a value in the shared file, not in one renderer, and keep `apps/web/e2e/document-layout.browser.ts` passing: it holds Markdown, the preview, and the editor to the same line positions.
+
+Headings one to three use the display font; four to six read at body size and use the body font. Controls inside a Doc, such as code Wrap and Copy, table Expand, and diagram tools, are quiet icon buttons named by their tooltip, and appear without moving the text around them.
+
 ## Loading and transition states
 
 Choose the smallest state treatment that preserves the user’s sense of place:

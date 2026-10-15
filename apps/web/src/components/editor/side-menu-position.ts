@@ -16,6 +16,19 @@ export function firstLineCenter(block: Element): number | null {
     content.querySelector(".bn-inline-content") ??
     content.querySelector("th p, td p, th, td")
   if (line) {
+    // Center on the first character's glyphs where there is text: code, for
+    // one, sits at the top of its line box rather than in its middle.
+    const text = document
+      .createTreeWalker(line, NodeFilter.SHOW_TEXT)
+      .nextNode()
+    if (text?.textContent) {
+      const range = document.createRange()
+      range.setStart(text, 0)
+      range.setEnd(text, 1)
+      const glyph = range.getClientRects()[0]
+      if (glyph && glyph.height > 0)
+        return glyph.top + glyph.height / 2 - block.getBoundingClientRect().top
+    }
     const style = getComputedStyle(line)
     const lineHeight = Number.parseFloat(style.lineHeight)
     const top =

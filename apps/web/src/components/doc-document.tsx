@@ -1530,7 +1530,6 @@ function BlockNoteDocPage({
       )}
 
       <AnnotationComposer
-        key={`${composerDraft?.blockId ?? "none"}-${composerDraft?.category ?? "comment"}`}
         draft={composerDraft}
         open={composerOpen}
         onOpenChange={setComposerOpen}

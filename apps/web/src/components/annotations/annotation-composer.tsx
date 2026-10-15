@@ -39,7 +39,17 @@ export function AnnotationComposer({
 }) {
   const [category, setCategory] = useState<AnnotationCategory>(draft?.category ?? "comment");
   const [body, setBody] = useState("");
+  const [wasOpen, setWasOpen] = useState(open);
   const isMobile = useIsMobile();
+
+  // Reset each time the composer opens so a prior draft never lingers.
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setCategory(draft?.category ?? "comment");
+      setBody("");
+    }
+  }
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>

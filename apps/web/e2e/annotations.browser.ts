@@ -132,6 +132,22 @@ for (const mobile of [true, false]) {
       ).toBeVisible()
       await expect(paragraph).toHaveText(`${quote} before publishing.`)
       expect(await savedAnnotations()).toHaveLength(1)
+
+      // A second annotation on the same block starts from a blank draft.
+      if (mobile) {
+        await page
+          .getByRole("button", { name: "Close annotations", exact: true })
+          .tap()
+        // Closing returns focus, which would clear a selection made mid-close.
+        await expect(
+          page.getByRole("dialog", { name: "Annotations", exact: true })
+        ).toHaveCount(0)
+      }
+      await selectQuote()
+      await expect(composer.getByRole("textbox")).toHaveValue("")
+      await expect(
+        composer.getByRole("button", { name: "Comment", exact: true })
+      ).toHaveAttribute("aria-pressed", "true")
     })
   })
 }

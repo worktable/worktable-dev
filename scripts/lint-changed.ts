@@ -103,7 +103,8 @@ type WorkspaceResult = {
 async function lintWorkspace(
   dir: string,
   base: string,
-  files: [path: string, from: string | null][]
+  files: [path: string, from: string | null][],
+  configProbe: string | null
 ): Promise<WorkspaceResult> {
   const require = createRequire(join(root, dir, "package.json"))
   const { ESLint } = (await import(require.resolve("eslint"))) as {
@@ -111,6 +112,15 @@ async function lintWorkspace(
   }
   const eslint = new ESLint({ cwd: join(root, dir) })
   const result: WorkspaceResult = { checked: 0, files: [] }
+  if (configProbe) {
+    // A changed config must still load and name real rules, even when no
+    // source file in scope changed. A config that fails to load throws.
+    const [probe] = await eslint.lintText("export {}\n", {
+      filePath: join(root, configProbe),
+    })
+    const added = addedLintErrors(null, probe!.messages)
+    if (added.length > 0) result.files.push([configProbe, added])
+  }
   for (const [path, from] of files) {
     const absolute = join(root, path)
     if (await eslint.isPathIgnored(absolute)) continue
@@ -137,8 +147,12 @@ async function lintWorkspace(
 if (import.meta.main) {
   const args = process.argv.slice(2)
   if (args[0] === "--workspace") {
-    const files = JSON.parse(await Bun.stdin.text())
-    console.log(JSON.stringify(await lintWorkspace(args[1]!, args[2]!, files)))
+    const { files, configProbe } = JSON.parse(await Bun.stdin.text())
+    console.log(
+      JSON.stringify(
+        await lintWorkspace(args[1]!, args[2]!, files, configProbe)
+      )
+    )
     process.exit(0)
   }
   const baseIndex = args.indexOf("--base")
@@ -178,12 +192,20 @@ if (import.meta.main) {
     const files = [...changed]
       .filter(([path]) => inScope(path))
       .map(([path, from]) => [path, from && inScope(from) ? from : null])
-    if (files.length === 0) return []
+    const configChanged = [...changed.keys()].some(
+      (path) =>
+        path.startsWith(`${dir}/`) &&
+        /^eslint\.config\.[cm]?[jt]s$/.test(path.slice(dir.length + 1))
+    )
+    const configProbe = configChanged
+      ? join(dir, scopes[0] === "." ? "" : scopes[0]!, "lint-config-probe.ts")
+      : null
+    if (files.length === 0 && !configProbe) return []
     const child = Bun.spawn(
       [process.execPath, import.meta.path, "--workspace", dir, base],
       { cwd: root, stdin: "pipe", stdout: "pipe", stderr: "inherit" }
     )
-    child.stdin.write(JSON.stringify(files))
+    child.stdin.write(JSON.stringify({ files, configProbe }))
     child.stdin.end()
     return [
       (async () => {

@@ -188,15 +188,19 @@ export function ThreadComposer({
             </InputGroupAddon>
           ) : null}
           <div className="relative w-full min-w-0 flex-1">
+            {/* The visible text is drawn here, under the transparent textarea.
+                It must wrap exactly like the textarea or the caret drifts away
+                from it, so spans keep the textarea's letter spacing and both
+                layers reserve the same scrollbar gutter. */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden"
+              className="pointer-events-none absolute inset-0 overflow-hidden [scrollbar-gutter:stable]"
             >
               <div
                 ref={mentionMirrorRef}
                 className={cn(
                   composerTextClassName,
-                  "break-words whitespace-pre-wrap text-foreground"
+                  "break-words whitespace-pre-wrap text-foreground [&_span]:tracking-[inherit]"
                 )}
               >
                 <MentionOverlayText
@@ -298,7 +302,7 @@ export function ThreadComposer({
               placeholder={placeholder}
               className={cn(
                 composerTextClassName,
-                "scroll-fade relative z-1 max-h-40 w-full overflow-y-auto text-transparent caret-foreground selection:bg-primary/20 selection:text-foreground placeholder:text-muted-foreground"
+                "scroll-fade relative z-1 max-h-40 w-full overflow-y-auto text-transparent caret-foreground [scrollbar-gutter:stable] selection:bg-primary/20 selection:text-foreground placeholder:text-muted-foreground"
               )}
             />
             <Popover

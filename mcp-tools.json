@@ -77,7 +77,7 @@
   {
     "name": "fetch",
     "title": "Fetch Worktable item",
-    "description": "Fetch the full text and URL of one Worktable document or record by opaque result ID.",
+    "description": "Fetch the full text and URL of one Worktable document or record by its result ID.",
     "inputSchema": {
       "type": "object",
       "properties": {

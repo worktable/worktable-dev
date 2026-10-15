@@ -219,3 +219,5 @@ export function rebaseRegions(
   }
   return { ok: true, blocks, operations }
 }
+
+export const probeAny: any = 1

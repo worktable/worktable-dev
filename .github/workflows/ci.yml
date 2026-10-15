@@ -421,6 +421,11 @@ jobs:
               --notes "Beta build of $GITHUB_SHA from main, for the beta release channel. Not a stable release." \
               --prerelease \
               --latest=false
+          else
+            # A rerun after a partial upload: replace every asset before the
+            # channel points at this tag.
+            gh release upload "$tag" dist/lab-releases/* \
+              --repo "$GITHUB_REPOSITORY" --clobber
           fi
           bun scripts/release-channels.ts publish beta "$version" "$GITHUB_SHA"
           bun scripts/release-channels.ts prune-beta --keep 10

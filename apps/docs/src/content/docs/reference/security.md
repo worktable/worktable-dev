@@ -28,13 +28,17 @@ ownership of the invited email address. Everyone signs in after Teams is enabled
 Existing Spaces remain restricted until an owner shares them. New Spaces let
 members read and edit by default. Owners can read and administer every Space.
 Space creators manage access to their Spaces through **Manage access** in the
-Space menu or **Settings → Team**. Threads inherit their Space's audience;
+Space menu or **Settings → Team**. Renaming, archiving, or deleting a Space
+also requires managing its access. Threads inherit their Space's audience;
 participants identify who is involved. Worktable threads are visible to all members.
 
-Personal agents follow their member's current Space access unless narrowed.
-Owners register team agents, which have independent grants. Space managers can
-grant those agents access. Removing a member revokes that member's sessions and
-personal agents. People manage invitations and access; agents cannot do so.
+Personal agents follow their member's current Space access unless narrowed; a
+narrowed agent cannot use Worktable threads. Owners register team agents, which
+have independent grants. Space managers can grant those agents access, and an
+owner chooses whether each team agent can read or post in Worktable threads.
+Removing a member revokes that member's sessions and personal agents. People
+manage invitations and access; agents cannot do so. Restoring a full backup
+cancels pending invitation links.
 
 Team ownership grants application administration. Operating the underlying
 machine is a separate authority. Machine operators can access its files.

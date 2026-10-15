@@ -67,3 +67,11 @@ export const registerTeamAgent = (name: string) =>
     method: "POST",
     body: JSON.stringify({ name, platform: "other", ownership: "team" }),
   })
+export const setTeamAgentWorktableThreads = (
+  id: string,
+  worktableThreads: TeamAgent["worktableThreads"]
+) =>
+  fetchJSON<{ agent: TeamAgent }>(`/api/team/agents/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ worktableThreads }),
+  })

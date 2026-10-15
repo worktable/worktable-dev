@@ -1,4 +1,4 @@
-import { teamsEnabled } from "./team-database.ts"
+import { requireTeamDatabase, teamsEnabled } from "./team-database.ts"
 import {
   createTeamAgentConnection,
   disconnectTeamAgentConnection,
@@ -618,7 +618,22 @@ export async function updateAgentConnection(
     spaceIds?: string[] | null
   }
 ): Promise<AgentConnection | null> {
-  if (teamsEnabled()) return updateTeamAgentConnection(id, changes);
+  if (teamsEnabled()) {
+    // The same rules as a one-person Worktable, checked before the team store
+    // applies anything.
+    if (changes.access) {
+      const mode = requireTeamDatabase()
+        .query<{ mode: string }, [string]>("SELECT mode FROM wt_agents WHERE id = ?")
+        .get(id)?.mode
+      if (mode === "always-on" && !changes.access.threads)
+        throw new AgentConnectionUpdateError(
+          "An always-on agent needs threads: that is how it receives messages"
+        )
+      if (scopesForAccess(changes.access).length === 0)
+        throw new AgentConnectionUpdateError("Choose at least one kind of access")
+    }
+    return updateTeamAgentConnection(id, changes);
+  }
   const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()

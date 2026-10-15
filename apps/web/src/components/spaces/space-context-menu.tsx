@@ -119,6 +119,9 @@ export function SpaceContextMenuButton({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const groups = useAvailableGroups(currentGroup)
+  // On a team, renaming, archiving and deleting a Space affect everyone, so
+  // they follow access management. Solo keeps the edit rule.
+  const canAdminister = browserTeamMemberId() ? canManageAccess : canEdit
 
   return (
     <>
@@ -131,16 +134,16 @@ export function SpaceContextMenuButton({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
           {canManageAccess && spaceId && <DropdownMenuItem onClick={() => setAccessOpen(true)}>Manage access</DropdownMenuItem>}
-          <DropdownMenuItem disabled={!canEdit} onClick={() => setRenameOpen(true)}>
+          <DropdownMenuItem disabled={!canAdminister} onClick={() => setRenameOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={!canEdit} onClick={() => setIconPickerOpen(true)}>
+          <DropdownMenuItem disabled={!canAdminister} onClick={() => setIconPickerOpen(true)}>
             <Smile className="mr-2 h-4 w-4" />
             Change Icon
           </DropdownMenuItem>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!canEdit}>
+            <DropdownMenuSubTrigger disabled={!canAdminister}>
               <FolderOpen className="mr-2 h-4 w-4" />
               Change Group
             </DropdownMenuSubTrigger>
@@ -187,7 +190,7 @@ export function SpaceContextMenuButton({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           {(archived ? onRestore : onArchive) && (
-            <DropdownMenuItem disabled={!canEdit}
+            <DropdownMenuItem disabled={!canAdminister}
               onClick={archived ? onRestore : onArchive}>
               {archived ? (
                 <RotateCcw className="mr-2 h-4 w-4" />
@@ -200,7 +203,7 @@ export function SpaceContextMenuButton({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
-            disabled={browserTeamMemberId() ? !canManageAccess : !canEdit}
+            disabled={!canAdminister}
             onClick={() => setDeleteOpen(true)}
           >
             <Trash className="mr-2 h-4 w-4" />

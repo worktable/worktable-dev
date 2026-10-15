@@ -61,6 +61,7 @@ import {
   readWidgetDocument,
   setWidgetArchived,
   updateWidgetMetadata,
+  withWidgetReadLock,
   withWidgetWriteLock,
   writeWidget,
 } from "../widget-store.ts"
@@ -1005,6 +1006,12 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const rawIcon = args["icon"] as string | undefined
       const rawGroup = args["group"] as string | undefined
+      const metadataChange = ["name", "description", "icon", "group"].some(
+        (key) => args[key] !== undefined
+      )
+      // Changing how the Space appears to everyone needs manage access; check
+      // it before pins are saved so a refused update changes nothing.
+      if (metadataChange) assertSpaceAccess(spaceId, "manage")
       // Pins validate against current documents; apply them first so an
       // invalid pin fails the whole update before anything is saved.
       if (args["pins"]) {
@@ -1028,7 +1035,7 @@ async function _dispatchOperationInner(
             ? { group: rawGroup }
             : {}),
         updatedAt: new Date().toISOString(),
-      }))
+      }), metadataChange ? "manage" : "edit")
       if (error || !updated) throw new Error(error ?? `Space not found: ${spaceId}`)
       wsManager.broadcastAll({ type: "spaces_changed" })
       return { space: updated, pins: await resolveStartHere(spaceId, updated) }
@@ -1362,7 +1369,7 @@ async function _dispatchOperationInner(
           )
         }
         const widgetId = aliasResolution.path
-        return withWidgetWriteLock(spaceId, widgetId, async () => {
+        return withWidgetReadLock(spaceId, widgetId, async () => {
           if (!includeHtml) {
             const { data: widget, error } = await readWidget(spaceId, widgetId)
             if (error || !widget) throw new Error(error ?? "Widget not found")

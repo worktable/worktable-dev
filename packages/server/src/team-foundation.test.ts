@@ -33,6 +33,8 @@ import {
   rename,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { existsSync } from "node:fs"
+import { updateAgentConnection } from "./agent-connection-store.ts"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
@@ -68,15 +70,27 @@ import {
   reconnectCloudPersonalAgent,
   setSpaceAccessPolicy,
 } from "./team-policy.ts"
-import { readDoc, readSpace, writeDoc, writeSpace } from "./store.ts"
+import {
+  mutateSpace,
+  readDoc,
+  readSpace,
+  setSpaceArchived,
+  writeDoc,
+  writeSpace,
+} from "./store.ts"
 import { createDocumentAnnotationForPath } from "./document-annotation-service.ts"
 import { replyAnnotation } from "./annotation-store.ts"
 import { listPending } from "./pending.ts"
 import type { TokenIdentity } from "./token-store.ts"
-import { listThreadParticipants, postThreadMessage } from "./thread-service.ts"
+import {
+  claimNextThreadDelivery,
+  listThreadParticipants,
+  postThreadMessage,
+} from "./thread-service.ts"
 import { findThread } from "./thread-store.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { participantKey } from "./participant-store.ts"
+import { dispatchOperation } from "./mcp/dispatcher.ts"
 
 let root: string
 const origin = "http://localhost:7481"
@@ -273,6 +287,124 @@ describe("team foundation", () => {
     ).rejects.toThrow("Choose a recipient")
   })
 
+  test("deliveries wait while an agent cannot reply in their Space and arrive when access returns", async () => {
+    const { owner } = await setup()
+    const location = { kind: "space" as const, spaceId: "original" }
+    const agent = createTeamAgent(
+      { name: "Responder", platform: "codex", ownership: "team" },
+      owner
+    )
+    const { createToken } = await import("./token-store.ts")
+    const credential = await createToken({
+      agent: "codex",
+      scopes: ["threads:read", "threads:write"],
+    })
+    bindTeamAgentCredential(agent.id, credential.metadata.principal.id, owner)
+    const grant = (grants: Parameters<typeof setSpaceAccessPolicy>[0]["grants"]) =>
+      setSpaceAccessPolicy(
+        { spaceId: "original", visibility: "restricted", grants },
+        owner
+      )
+    grant([{ subjectType: "agent", subjectId: agent.id, access: "edit" }])
+    const recipient = (await listThreadParticipants(owner, location)).find(
+      (participant) => participant.name === "Responder"
+    )!
+    await runWithTeamIdentity(owner, () =>
+      postThreadMessage(owner, {
+        location,
+        to: recipient.id,
+        body: "Please reply when you can",
+        idempotencyKey: crypto.randomUUID(),
+      })
+    )
+    const responder = resolveTeamAgentCredential({
+      ...credential.metadata,
+      credentialClass: "local",
+    } as TokenIdentity)!
+    const claim = () =>
+      runWithTeamIdentity(responder, () =>
+        claimNextThreadDelivery(responder, 0, 2)
+      )
+    grant([])
+    // Losing access hides the request without retiring it.
+    expect(await claim()).toBeNull()
+    grant([{ subjectType: "agent", subjectId: agent.id, access: "edit" }])
+    const delivered = await claim()
+    expect(delivered?.message.body).toBe("Please reply when you can")
+  })
+
+  test("agents use threads outside Spaces only when their access reaches that far", async () => {
+    const { owner, member } = await setup()
+    const bob = (await resolveParticipant(member)).participant
+    const worktable = { kind: "worktable" as const }
+    const posted = await runWithTeamIdentity(owner, () =>
+      postThreadMessage(owner, {
+        location: worktable,
+        to: bob.id,
+        body: "Planning outside any Space",
+        idempotencyKey: crypto.randomUUID(),
+        expectsReply: false,
+      })
+    )
+    const agent = createTeamAgent(
+      { name: "Scoped", platform: "codex", ownership: "team" },
+      owner
+    )
+    const { createToken } = await import("./token-store.ts")
+    const credential = await createToken({
+      agent: "codex",
+      scopes: ["threads:read", "threads:write"],
+    })
+    bindTeamAgentCredential(agent.id, credential.metadata.principal.id, owner)
+    setSpaceAccessPolicy(
+      {
+        spaceId: "original",
+        visibility: "restricted",
+        grants: [{ subjectType: "agent", subjectId: agent.id, access: "edit" }],
+      },
+      owner
+    )
+    const scoped = resolveTeamAgentCredential({
+      ...credential.metadata,
+      credentialClass: "local",
+    } as TokenIdentity)!
+    const offered = async () =>
+      (await listThreadParticipants(owner, worktable)).some(
+        (participant) => participant.name === "Scoped"
+      )
+    expect(await offered()).toBe(false)
+    await expect(
+      runWithTeamIdentity(scoped, () => findThread(posted.threadId, worktable))
+    ).rejects.toThrow(TeamAccessError)
+    await expect(
+      runWithTeamIdentity(scoped, () => findThread(posted.threadId))
+    ).rejects.toThrow()
+    updateTeamAgent(agent.id, { worktableThreads: "edit" }, owner)
+    expect(await offered()).toBe(true)
+    expect(
+      (await runWithTeamIdentity(scoped, () => findThread(posted.threadId))).id
+    ).toBe(posted.threadId)
+    // Personal agents follow their member unless narrowed to some Spaces.
+    const personal = createTeamAgent(
+      { name: "Bob Helper", platform: "codex", ownership: "personal" },
+      member
+    )
+    bindTeamAgentCredential(personal.id, "local-token:bob-helper", member)
+    const helper = resolveTeamAgentCredential({
+      ...owner,
+      team: undefined,
+      agent: "codex",
+      principal: { id: "local-token:bob-helper", type: "agent", displayName: "Codex" },
+    })!
+    expect(
+      (await runWithTeamIdentity(helper, () => findThread(posted.threadId))).id
+    ).toBe(posted.threadId)
+    updateTeamAgent(personal.id, { spaceIds: [] }, member)
+    await expect(
+      runWithTeamIdentity(helper, () => findThread(posted.threadId, worktable))
+    ).rejects.toThrow(TeamAccessError)
+  })
+
   test("local activation preserves the owner and restricts existing Spaces; new Spaces share and grant management separately", async () => {
     const linkPath = join(root, "app", "linked", `${workspaceCacheKey()}.json`)
     await mkdir(join(root, "app", "linked"), { recursive: true })
@@ -369,6 +501,36 @@ describe("team foundation", () => {
       runWithTeamIdentity(member, () => getSpaceAccessPolicy("shared"))
         .visibility
     ).toBe("restricted")
+
+    // A shared Space lets every member edit its content, but only managers
+    // change how the Space itself appears to everyone.
+    setSpaceAccessPolicy(
+      { spaceId: "original", visibility: "shared", grants: [] },
+      owner
+    )
+    await expect(
+      runWithTeamIdentity(member, () => setSpaceArchived("original", true))
+    ).rejects.toThrow(TeamAccessError)
+    await expect(
+      runWithTeamIdentity(member, () =>
+        dispatchOperation("spaces.update", {
+          spaceId: "original",
+          name: "Renamed by a member",
+        })
+      )
+    ).rejects.toThrow(TeamAccessError)
+    const sorted = await runWithTeamIdentity(member, () =>
+      mutateSpace("original", (space) => ({
+        ...space,
+        settings: { ...space.settings, docSort: "updated" },
+      }))
+    )
+    expect(sorted.data?.settings["docSort"]).toBe("updated")
+    expect(sorted.data?.name).toBe("Original")
+    const archived = await runWithTeamIdentity(owner, () =>
+      setSpaceArchived("original", true)
+    )
+    expect(archived.space?.settings["archive"]).toBeDefined()
   })
 
   test("personal agents remain distinct, follow current member access, and never inherit administrative authority", async () => {
@@ -404,6 +566,23 @@ describe("team foundation", () => {
     updateTeamAgent(bobAgent.id, { spaceIds: [] }, member)
     expect(canAccessSpace("original", "read", bob)).toBe(false)
     expect(canCreateTeamSpace(bob)).toBe(false)
+    const now = new Date().toISOString()
+    await expect(
+      runWithTeamIdentity(bob, () =>
+        writeSpace({
+          type: "worktable.space",
+          version: 1,
+          id: "refused",
+          name: "Refused",
+          createdAt: now,
+          updatedAt: now,
+          createdBy: "agent",
+          settings: {},
+        })
+      )
+    ).rejects.toThrow(TeamAccessError)
+    // A refused creation leaves nothing that reserves the name.
+    expect(existsSync(join(root, "workspace", "spaces", "refused"))).toBe(false)
     const beforeInvalid = await runWithTeamIdentity(
       member,
       listTeamAgentConnections
@@ -443,6 +622,13 @@ describe("team foundation", () => {
         }),
       })
     expect((await write()).status).toBe(403)
+    await expect(
+      runWithTeamIdentity(member, () =>
+        updateAgentConnection(first.connection.id, {
+          access: { threads: false, read: false, edit: false },
+        })
+      )
+    ).rejects.toThrow("at least one")
     const edited = await runWithTeamIdentity(member, () =>
       updateTeamAgentConnection(first.connection.id, {
         displayName: "Bob Research",
@@ -494,6 +680,28 @@ describe("team foundation", () => {
     )!
     expect(canAccessSpace("original", "read", teamIdentity)).toBe(true)
     expect(canAccessSpace("original", "edit", teamIdentity)).toBe(false)
+    await runWithTeamIdentity(owner, () =>
+      dispatchOperation("html.create", {
+        lifetime: "durable",
+        spaceId: "original",
+        id: "status",
+        name: "Status",
+        html: "<main><h1>Readable by read grants</h1></main>",
+      })
+    )
+    const readable = (await runWithTeamIdentity(teamIdentity, () =>
+      dispatchOperation("html.read", { spaceId: "original", widgetId: "status" })
+    )) as { html: string }
+    expect(readable.html).toContain("Readable by read grants")
+    await expect(
+      runWithTeamIdentity(teamIdentity, () =>
+        dispatchOperation("html.update", {
+          spaceId: "original",
+          widgetId: "status",
+          html: "<main>Changed without edit access</main>",
+        })
+      )
+    ).rejects.toThrow(TeamAccessError)
     await auth.api.updateMemberRole({
       headers: ownerHeaders,
       body: {
@@ -1053,6 +1261,57 @@ test("connector rollback retires its Team credential without removing other agen
   expect((await runWithTeamIdentity(member, listTeamAgentConnections)).some(item => item.id === existing.id)).toBe(true)
 })
 
+test("re-pairing an installation keeps its agent and retires the previous credential", async () => {
+  const { member, owner } = await setup()
+  const { pairingRouter } = await import("./routes/pairing.ts")
+  const { createPairingSession } = await import("./pairing-store.ts")
+  const { registerTeamPairing } = await import("./team-pairing.ts")
+  const { verifyToken } = await import("./token-store.ts")
+  const app = new Hono().route("/api/pairing", pairingRouter)
+  const request = (path: string, body: unknown, token?: string) =>
+    app.request(`${origin}/api/pairing/${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+  const pair = async (identity: TokenIdentity) => {
+    const pairing = await createPairingSession({
+      client: "codex",
+      target: { kind: "mcp-client", client: "codex", icon: "sparkles" },
+      scopes: ["docs:read"],
+      mcpUrl: `${origin}/mcp`,
+    })
+    registerTeamPairing(
+      pairing.session.id,
+      { name: "Laptop Codex", platform: "codex", expiresAt: pairing.session.expiresAt },
+      identity
+    )
+    const redeemed = await request("redeem", { code: pairing.code, hostname: "laptop" })
+    expect(redeemed.status).toBe(200)
+    const { token } = (await redeemed.json()) as { token: string }
+    expect((await request("complete", { code: pairing.code }, token)).status).toBe(200)
+    return token
+  }
+  const first = await pair(member)
+  const firstAgent = resolveTeamAgentCredential((await verifyToken(first))!)!
+  const second = await pair(member)
+  expect(await verifyToken(first)).toBeNull()
+  const secondAgent = resolveTeamAgentCredential((await verifyToken(second))!)!
+  expect(secondAgent.team?.agentId).toBe(firstAgent.team?.agentId)
+  const agents = (await runWithTeamIdentity(member, listTeamAgentConnections))
+    .filter((agent) => agent.id === secondAgent.team?.agentId)
+  expect(agents).toHaveLength(1)
+  expect(agents[0]!.icon).toBe("sparkles")
+  // Another member pairing the same kind of installation gets their own agent.
+  const ownerToken = await pair(owner)
+  const ownerAgent = resolveTeamAgentCredential((await verifyToken(ownerToken))!)!
+  expect(ownerAgent.team?.agentId).not.toBe(secondAgent.team?.agentId)
+  expect(await verifyToken(second)).not.toBeNull()
+})
+
 test("Cloud maps provider subjects to the same membership model and keeps browser authentication separate from local sessions", async () => {
   const previous = {
     hosted: process.env.WORKTABLE_HOSTED,
@@ -1410,7 +1669,16 @@ test("operator snapshots drain admitted membership changes before capturing Team
 })
 
 test("operator recovery preserves members and grants while requiring fresh sessions and agent connections", async () => {
-  const { owner, member, bobHeaders } = await setup()
+  const { owner, member, bobHeaders, auth: ownerAuth, ownerHeaders } =
+    await setup()
+  const pending = await ownerAuth.api.createInvitation({
+    headers: ownerHeaders,
+    body: {
+      organizationId: currentTeamWorktable()!.organizationId,
+      email: "carol@example.test",
+      role: "member",
+    },
+  })
   const { restoreTeamBackupState, withTeamBackupBarrier } =
     await import("./team-backup.ts")
   const { verifyTeamSession } = await import("./team-session.ts")
@@ -1490,6 +1758,14 @@ test("operator recovery preserves members and grants while requiring fresh sessi
     await import("node:fs/promises")
   ).writeFile(participantPath, staleParticipantBytes)
   await restoreTeamBackupState(directory, state!)
+  // Invitation links are joining capabilities; restore never revives one.
+  expect(
+    requireTeamDatabase()
+      .query<{ status: string }, [string]>(
+        "SELECT status FROM invitation WHERE id = ?"
+      )
+      .get(pending.id)?.status
+  ).toBe("canceled")
   const restoredParticipant = (
     await resolveParticipant(owner, { initialName: "Alice" })
   ).participant

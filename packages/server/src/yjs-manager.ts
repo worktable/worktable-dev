@@ -985,7 +985,10 @@ export class YjsDocManager {
       // while the flag still lives only in this process's memory, so a crash
       // before the debounced persist would lose the attribution for good.
       liveDoc.humanEdited = true;
-      liveDoc.humanActor = ws.data?.actorId ? { id: ws.data.actorId, type: "human", displayName: ws.data.actorName ?? "Member" } : undefined;
+      // The first person with unsaved edits is credited until that save; a
+      // later editor does not take over earlier, unsaved work.
+      if (!liveDoc.humanActor && ws.data?.actorId)
+        liveDoc.humanActor = { id: ws.data.actorId, type: "human", displayName: ws.data.actorName ?? "Member" };
       liveDoc.intentGeneration += 1;
     } else if (messageType === MESSAGE_AWARENESS) {
       // Single-user app; awareness not needed. Ignore.
@@ -1495,6 +1498,7 @@ export class YjsDocManager {
       liveDoc.intentGeneration === intentAtStart.generation
     ) {
       liveDoc.humanEdited = false;
+      liveDoc.humanActor = undefined;
       this.sendIntentAck(liveDoc);
     }
     try {
@@ -2378,6 +2382,7 @@ export class YjsDocManager {
     const spendIntent = () => {
       if (hadIntent && liveDoc.intentGeneration === intentGen) {
         liveDoc.humanEdited = false;
+        liveDoc.humanActor = undefined;
         this.sendIntentAck(liveDoc);
       }
     };

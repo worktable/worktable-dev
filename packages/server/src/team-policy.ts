@@ -7,6 +7,7 @@ import type {
   SpaceAccessPolicy,
   TeamAgent,
   TeamMember,
+  WorktableThreadAccess,
 } from "@worktable/types"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 import {
@@ -101,6 +102,7 @@ interface AgentRow {
   active: number
   scope_ceiling: string | null
   icon: string | null
+  worktable_threads: WorktableThreadAccess
 }
 
 function parseAgent(row: AgentRow): TeamAgent {
@@ -124,6 +126,7 @@ function parseAgent(row: AgentRow): TeamAgent {
     scopeCeiling:
       row.scope_ceiling === null ? null : JSON.parse(row.scope_ceiling),
     icon: row.icon,
+    worktableThreads: row.worktable_threads ?? "none",
   }
 }
 
@@ -269,6 +272,36 @@ export function teamAgentHasSpaceAccess(
   }
   const granted = subjectGrant(spaceId, "agent", agent.id)
   return granted !== null && levels[granted] >= levels[access]
+}
+
+/** A personal agent follows its member unless narrowed to some Spaces. */
+export function agentWorktableThreadAccess(
+  agent: Pick<TeamAgent, "ownership" | "spaceIds" | "worktableThreads">
+): WorktableThreadAccess {
+  if (agent.ownership === "personal")
+    return agent.spaceIds === null ? "edit" : "none"
+  return agent.worktableThreads
+}
+
+/** Threads outside every Space: all members, and agents granted them. */
+export function canAccessWorktableThreads(
+  access: "read" | "edit" = "read",
+  identity = currentRequestIdentity()
+): boolean {
+  if (!currentTeamWorktable() || !identity) return true
+  if (identity.operatorVerification) return access === "read"
+  if (teamMemberForIdentity(identity)) return true
+  const agent = teamAgentForIdentity(identity)
+  if (!agent) return false
+  const level = agentWorktableThreadAccess(agent)
+  return level !== "none" && levels[level] >= levels[access]
+}
+
+export function assertWorktableThreadAccess(
+  access: "read" | "edit" = "read",
+  identity = currentRequestIdentity()
+): void {
+  if (!canAccessWorktableThreads(access, identity)) throw new TeamAccessError()
 }
 
 export function assertSpaceAccess(
@@ -491,6 +524,7 @@ export function createTeamAgent(
     mode: "on-demand",
     scopeCeiling: null,
     icon: null,
+    worktableThreads: "none",
   }
   requireTeamDatabase()
     .query(
@@ -662,6 +696,7 @@ export function updateTeamAgent(
     scopeCeiling?: string[] | null
     icon?: string | null
     active?: false
+    worktableThreads?: WorktableThreadAccess
   },
   identity: TokenIdentity
 ): TeamAgent {
@@ -669,6 +704,8 @@ export function updateTeamAgent(
   const worktable = currentTeamWorktable()!
   if (patch.spaceIds !== undefined && agent.ownership !== "personal")
     throw new TeamAccessError("Team agents use explicit Space grants")
+  if (patch.worktableThreads !== undefined && agent.ownership !== "team")
+    throw new TeamAccessError("Personal agents follow their member's thread access")
   if (patch.spaceIds)
     for (const spaceId of patch.spaceIds)
       assertSpaceAccess(spaceId, "read", identity)
@@ -676,13 +713,14 @@ export function updateTeamAgent(
   const db = requireTeamDatabase()
   db.transaction(() => {
     db.query(
-      "UPDATE wt_agents SET name = ?, space_ids = ?, scope_ceiling = ?, icon = ?, active = ? WHERE worktable_id = ? AND id = ?"
+      "UPDATE wt_agents SET name = ?, space_ids = ?, scope_ceiling = ?, icon = ?, active = ?, worktable_threads = ? WHERE worktable_id = ? AND id = ?"
     ).run(
       next.name,
       next.spaceIds === null ? null : JSON.stringify(next.spaceIds),
       next.scopeCeiling === null ? null : JSON.stringify(next.scopeCeiling),
       next.icon,
       next.active ? 1 : 0,
+      next.worktableThreads,
       worktable.id,
       agentId
     )

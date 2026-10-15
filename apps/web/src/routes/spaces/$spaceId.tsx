@@ -8,6 +8,7 @@ import {
 import { useCallback, useMemo, useState } from "react"
 import { Archive, Database, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
+import { browserTeamMemberId } from "@/lib/team-context"
 import type {
   DocumentSummary,
   RecordCollectionSummary,
@@ -76,7 +77,7 @@ function ArchivedSpaceBanner({
   restoring,
 }: {
   archivedAt: string
-  onRestore: () => void
+  onRestore?: () => void
   restoring: boolean
 }) {
   return (
@@ -88,10 +89,12 @@ function ArchivedSpaceBanner({
             This space is archived. Archived <RelativeTime iso={archivedAt} />.
           </span>
         </div>
-        <Button size="sm" variant="outline" onClick={onRestore} disabled={restoring}>
-          <RotateCcw className="mr-2 size-4" />
-          {restoring ? "Restoring..." : "Restore"}
-        </Button>
+        {onRestore && (
+          <Button size="sm" variant="outline" onClick={onRestore} disabled={restoring}>
+            <RotateCcw className="mr-2 size-4" />
+            {restoring ? "Restoring..." : "Restore"}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -435,6 +438,9 @@ function SpaceDetailPage() {
   })
 
   const archiveInfo = space ? getSpaceArchiveInfo(space.settings) : undefined
+  // On a team, restoring a Space follows access management.
+  const canRestore =
+    !browserTeamMemberId() || space?.permissions?.manage === true
 
   const handleRestore = async () => {
     setRestoring(true)
@@ -456,7 +462,7 @@ function SpaceDetailPage() {
         {archiveInfo && (
           <ArchivedSpaceBanner
             archivedAt={archiveInfo.archivedAt}
-            onRestore={() => void handleRestore()}
+            onRestore={canRestore ? () => void handleRestore() : undefined}
             restoring={restoring}
           />
         )}
@@ -472,7 +478,7 @@ function SpaceDetailPage() {
       {archiveInfo && (
         <ArchivedSpaceBanner
           archivedAt={archiveInfo.archivedAt}
-          onRestore={() => void handleRestore()}
+          onRestore={canRestore ? () => void handleRestore() : undefined}
           restoring={restoring}
         />
       )}

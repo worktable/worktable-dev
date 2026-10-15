@@ -252,11 +252,19 @@ teamRouter.patch("/agents/:id", async (c) => {
     .object({
       name: z.string().trim().min(1).max(100).optional(),
       spaceIds: z.array(z.string().min(1)).max(1000).nullable().optional(),
+      worktableThreads: z.enum(["none", "read", "edit"]).optional(),
     })
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid agent settings" }, 400)
-  await updateTeamAgentConnection(c.req.param("id"), {displayName: parsed.data.name, ...(parsed.data.spaceIds !== undefined ? {spaceIds: parsed.data.spaceIds} : {})})
+  if (parsed.data.worktableThreads !== undefined)
+    updateTeamAgent(
+      c.req.param("id"),
+      { worktableThreads: parsed.data.worktableThreads },
+      c.get("identity")
+    )
+  if (parsed.data.name !== undefined || parsed.data.spaceIds !== undefined)
+    await updateTeamAgentConnection(c.req.param("id"), {displayName: parsed.data.name, ...(parsed.data.spaceIds !== undefined ? {spaceIds: parsed.data.spaceIds} : {})})
   return c.json({agent: listTeamAgents(c.get("identity")).find(agent => agent.id === c.req.param("id"))})
 })
 teamRouter.delete("/agents/:id", (c) => {

@@ -171,6 +171,7 @@ export function openTeamDatabase(create = false): Database | null {
         name TEXT NOT NULL, platform TEXT NOT NULL,
         ownership TEXT NOT NULL CHECK (ownership IN ('personal', 'team')),
         member_id TEXT, space_ids TEXT, scope_ceiling TEXT, icon TEXT, mode TEXT NOT NULL DEFAULT 'on-demand', active INTEGER NOT NULL DEFAULT 1,
+        worktable_threads TEXT NOT NULL DEFAULT 'none' CHECK (worktable_threads IN ('none', 'read', 'edit')),
         UNIQUE (worktable_id, actor_id)
       );
       CREATE TABLE IF NOT EXISTS wt_agent_credentials (
@@ -201,6 +202,7 @@ export function openTeamDatabase(create = false): Database | null {
     `)
     const agentColumns = new Set(db.query<{name: string}, []>("PRAGMA table_info(wt_agents)").all().map(column => column.name))
     if (!agentColumns.has("mode")) db.exec("ALTER TABLE wt_agents ADD COLUMN mode TEXT NOT NULL DEFAULT 'on-demand'")
+    if (!agentColumns.has("worktable_threads")) db.exec("ALTER TABLE wt_agents ADD COLUMN worktable_threads TEXT NOT NULL DEFAULT 'none' CHECK (worktable_threads IN ('none', 'read', 'edit'))")
     const credentialColumns = new Set(db.query<{name: string}, []>("PRAGMA table_info(wt_agent_credentials)").all().map(column => column.name))
     if (!credentialColumns.has("minimum_issued_at")) db.exec("ALTER TABLE wt_agent_credentials ADD COLUMN minimum_issued_at INTEGER NOT NULL DEFAULT 0")
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)

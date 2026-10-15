@@ -71,6 +71,11 @@ export function withWidgetWriteLock<T>(spaceId: string, widgetId: string, fn: ()
   return withStoreWriteLock(`widget-txn:${widgetDir(spaceId, widgetId)}`, fn);
 }
 
+/** Read a consistent widget (YAML and HTML from one write) without requiring edit access. */
+export function withWidgetReadLock<T>(spaceId: string, widgetId: string, fn: () => Promise<T>): Promise<T> {
+  return withStoreWriteLock(`widget-txn:${widgetDir(spaceId, widgetId)}`, fn, "read");
+}
+
 /** Acquire several widget transaction locks in canonical order. */
 export function withWidgetWriteLocks<T>(spaceId: string, widgetIds: string[], fn: () => Promise<T>): Promise<T> {
   return withStoreWriteLocks(

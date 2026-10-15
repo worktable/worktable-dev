@@ -21,7 +21,31 @@ const enrollment = z
     password: z.string().min(8).max(128),
   })
   .strict()
-let attempts: number[] = []
+// Password work is bounded per invitation: an unknown link costs one query and
+// cannot use up the attempts of a person holding a real one.
+const attempts = new Map<string, number[]>()
+const MAX_ATTEMPTS_PER_INVITATION = 10
+
+function expiresAtMs(value: unknown): number {
+  if (typeof value === "number") return value
+  if (value instanceof Date) return value.getTime()
+  return Date.parse(String(value))
+}
+
+function pendingInvitation(invitationId: string) {
+  const worktable = currentTeamWorktable()!
+  const invitation = requireTeamDatabase()
+    .query<
+      { email: string; inviterId: string; expiresAt: number | string },
+      [string, string]
+    >("SELECT email, inviterId, expiresAt FROM invitation WHERE id = ? AND organizationId = ? AND status = 'pending' AND role = 'member'")
+    .get(invitationId, worktable.organizationId)
+  return invitation &&
+    expiresAtMs(invitation.expiresAt) > Date.now() &&
+    findTeamMember(invitation.inviterId)
+    ? invitation
+    : null
+}
 
 teamAuthRouter.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store")
@@ -71,39 +95,34 @@ teamAuthRouter.get("/get-session", async (c) => {
   return auth.handler(c.req.raw)
 })
 teamAuthRouter.post("/enroll", async (c) => {
-  // Bound expensive password work without relying on proxy IP addresses.
-  const now = Date.now()
-  attempts = attempts.filter((at) => at > now - 60_000)
-  if (attempts.length >= 30)
-    return c.json({ error: "Too many attempts. Try again later." }, 429)
-  attempts.push(now)
   const parsed = enrollment.safeParse(await c.req.json().catch(() => null))
   if (!parsed.success)
     return c.json(
       { error: "Enter your name and a password of at least eight characters" },
       400
     )
+  const unavailable = () =>
+    c.json(
+      { error: "This invitation has expired or is no longer available" },
+      410
+    )
+  if (!pendingInvitation(parsed.data.invitationId)) return unavailable()
+  const now = Date.now()
+  for (const [id, times] of attempts) {
+    const recent = times.filter((at) => at > now - 60_000)
+    if (recent.length) attempts.set(id, recent)
+    else attempts.delete(id)
+  }
+  const recent = attempts.get(parsed.data.invitationId) ?? []
+  if (recent.length >= MAX_ATTEMPTS_PER_INVITATION)
+    return c.json({ error: "Too many attempts. Try again later." }, 429)
+  attempts.set(parsed.data.invitationId, [...recent, now])
   return withCrossProcessLock(
     `${teamDatabasePath()}.members.lock`,
     { label: "Team invitation" },
     async () => {
-      const worktable = currentTeamWorktable()!
-      const invitation = requireTeamDatabase()
-        .query<
-          { email: string; inviterId: string; expiresAt: number },
-          [string, string]
-        >("SELECT email, inviterId, expiresAt FROM invitation WHERE id = ? AND organizationId = ? AND status = 'pending' AND role = 'member'")
-        .get(parsed.data.invitationId, worktable.organizationId)
-      if (
-        !invitation ||
-        invitation.expiresAt <= Date.now() ||
-        !findTeamMember(invitation.inviterId)
-      ) {
-        return c.json(
-          { error: "This invitation has expired or is no longer available" },
-          410
-        )
-      }
+      const invitation = pendingInvitation(parsed.data.invitationId)
+      if (!invitation) return unavailable()
       const auth = await getTeamAuth(
         resolveWorkspaceOriginForRequest(c.req.raw).origin
       )

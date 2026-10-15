@@ -52,19 +52,29 @@ export function withTeamBackupBarrier<T>(
   )
 }
 
+function hasTable(db: Database, name: string): boolean {
+  return Boolean(
+    db
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(name)
+  )
+}
+
+/** Retire every bearer capability: sessions, agent credentials, pairings,
+ * invitation links and one-time verification tokens. People keep accounts. */
 function invalidateConnections(db: Database): void {
   db.transaction(() => {
     db.exec(
       "DELETE FROM session; DELETE FROM wt_cloud_sessions; DELETE FROM wt_pairings; UPDATE wt_agent_credentials SET active = 0;"
     )
-    if (
-      db
-        .query(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'wt_pairing_authorizations'"
-        )
-        .get()
-    )
+    if (hasTable(db, "wt_pairing_authorizations"))
       db.exec("DELETE FROM wt_pairing_authorizations")
+    // An invitation link authorizes joining, so a restored one must not
+    // revive a link that was cancelled after the backup.
+    if (hasTable(db, "invitation"))
+      db.exec("UPDATE invitation SET status = 'canceled' WHERE status = 'pending'")
+    if (hasTable(db, "verification")) db.exec("DELETE FROM verification")
+    if (hasTable(db, "rateLimit")) db.exec('DELETE FROM "rateLimit"')
     db.query("UPDATE wt_config SET value = ? WHERE key = 'auth-secret'").run(
       randomBytes(32).toString("base64url")
     )
@@ -236,20 +246,22 @@ export async function restoreTeamBackupState(
     )
     if (!state.participants) await rm(participantsTarget, { force: true })
     if (state.participants) {
-      const target = join(
-        getAppDir(),
-        "participants",
-        `${workspaceCacheKey()}.json`
-      )
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 })
-      await writeFile(
-        target,
-        await readBoundedRegularFileBytes(
-          join(snapshotRoot, "team", "participants.json"),
-          MAX_TEAM_STATE_BYTES
-        ),
-        { mode: 0o600 }
-      )
+      await mkdir(dirname(participantsTarget), { recursive: true, mode: 0o700 })
+      // Publish whole: a reader must never see a partially written binding file.
+      const staged = `${participantsTarget}.restore-${randomBytes(8).toString("hex")}`
+      try {
+        await writeFile(
+          staged,
+          await readBoundedRegularFileBytes(
+            join(snapshotRoot, "team", "participants.json"),
+            MAX_TEAM_STATE_BYTES
+          ),
+          { mode: 0o600, flag: "wx" }
+        )
+        await rename(staged, participantsTarget)
+      } finally {
+        await rm(staged, { force: true })
+      }
     }
     writeTeamMarker(state.worktableId)
     for (const token of await listTokens())

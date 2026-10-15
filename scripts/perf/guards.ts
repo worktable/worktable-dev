@@ -533,7 +533,8 @@ export function compareSmokeBudgets(
     const looser = (["slack", "headroom"] as const).filter(
       (field) => (metric[field] ?? 0) > (before[field] ?? 0)
     )
-    if (looser.length === 0 || metric.why.trim() !== before.why.trim()) continue
+    const why = metric.why.trim()
+    if (looser.length === 0 || (why && why !== before.why.trim())) continue
     problems.push({
       guard: "perf-smoke budgets",
       message: `The "${name}" metric's ${looser.join(" and ")} rises without a new "why". Say why in its "why" in ${SMOKE_BUDGETS_FILE}, or keep the limit.`,

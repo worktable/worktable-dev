@@ -80,7 +80,20 @@ describe("paired speed gate", () => {
         "aaaa",
         "bbbb"
       ).incomplete
-    ).toEqual(["clicks:desktop: 2 base runs, 1 head runs"])
+    ).toEqual([
+      "clicks:desktop: 2 base runs, 1 head runs",
+      "click desktop:first:open_markdown_doc: 2 base runs, 1 head runs",
+      "click desktop:first:open_space: 2 base runs, 1 head runs",
+    ])
+    // A journey the head never ran, and one the base never showed.
+    const head = clicks("bbbb", 100, 400)
+    head.clicks.pop()
+    expect(
+      compare([clicks("aaaa", null, 400), head], "aaaa", "bbbb").incomplete
+    ).toEqual([
+      "click desktop:first:open_space: 1 base runs, 0 head runs",
+      "click desktop:first:open_markdown_doc: the base never showed its content",
+    ])
   })
 
   test("a confirmation run keeps only the regressions found both times", () => {

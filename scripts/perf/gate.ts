@@ -176,11 +176,32 @@ export function compare(all: unknown[], base: string, head: string): Verdict {
   }
   const baseClicks = clickValues(sides.base.clicks)
   const headClicks = clickValues(sides.head.clicks)
+  // Every key must pair: the same runs on both sides, and a base to judge by.
+  const unpaired = (
+    kind: string,
+    left: Map<string, { length: number }>,
+    right: Map<string, { length: number }>
+  ) =>
+    [...new Set([...left.keys(), ...right.keys()])]
+      .filter((key) => left.get(key)?.length !== right.get(key)?.length)
+      .map(
+        (key) =>
+          `${kind} ${key}: ${left.get(key)?.length ?? 0} base runs, ${right.get(key)?.length ?? 0} head runs`
+      )
+  const timesOf = (values: Map<string, { times: (number | null)[] }>) =>
+    new Map([...values].map(([key, entry]) => [key, entry.times]))
+  incomplete.push(
+    ...unpaired("click", timesOf(baseClicks), timesOf(headClicks))
+  )
   for (const [key, headEntry] of headClicks) {
     const baseEntry = baseClicks.get(key)
     if (!baseEntry) continue
     const present = (times: (number | null)[]) =>
       times.filter((time): time is number => time !== null)
+    if (present(baseEntry.times).length === 0) {
+      incomplete.push(`click ${key}: the base never showed its content`)
+      continue
+    }
     const baseMedian = median(present(baseEntry.times))
     const headMissing = headEntry.times.some((time) => time === null)
     const headMedian = median(present(headEntry.times))
@@ -218,6 +239,7 @@ export function compare(all: unknown[], base: string, head: string): Verdict {
   }
   const baseServer = serverValues(sides.base.io)
   const headServer = serverValues(sides.head.io)
+  incomplete.push(...unpaired("server", baseServer, headServer))
   for (const [endpoint, headTimes] of headServer) {
     const baseTimes = baseServer.get(endpoint)
     if (!baseTimes) continue

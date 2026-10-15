@@ -2,6 +2,7 @@ import { JSDOM } from "jsdom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { markdownDocument } from "@worktable/ui/markdown-document"
 import { codeLanguageName } from "@worktable/ui/lib/code-language"
+import { MERMAID_LANGUAGE_ALIASES } from "@worktable/types"
 import { getServerEditor } from "./blocknote.ts"
 import { sanitizeBlocksForConversion } from "./markdown.ts"
 
@@ -190,7 +191,10 @@ function markMermaidDiagrams(document: Document): void {
   )) {
     element.removeAttribute(PUBLIC_SHARE_DIAGRAM_ATTRIBUTE)
   }
-  for (const code of document.querySelectorAll("pre > code.language-mermaid")) {
+  const fences = MERMAID_LANGUAGE_ALIASES.map(
+    (alias) => `pre > code.language-${alias}`
+  ).join(", ")
+  for (const code of document.querySelectorAll(fences)) {
     const diagram = document.createElement("pre")
     diagram.setAttribute(
       PUBLIC_SHARE_DIAGRAM_ATTRIBUTE,

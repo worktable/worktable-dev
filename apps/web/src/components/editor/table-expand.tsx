@@ -44,11 +44,17 @@ export function TableExpandControl({
         })
       })
     }
-    const leave = () => setTarget(null)
+    // Touch pointers leave after every tap; keep the control until the next tap.
+    const leave = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") setTarget(null)
+    }
+    // A tap on a touch screen finds the table as a pointer move would.
     frame.addEventListener("pointermove", measure)
+    frame.addEventListener("pointerdown", measure)
     frame.addEventListener("pointerleave", leave)
     return () => {
       frame.removeEventListener("pointermove", measure)
+      frame.removeEventListener("pointerdown", measure)
       frame.removeEventListener("pointerleave", leave)
       cancelAnimationFrame(frameRequest)
     }

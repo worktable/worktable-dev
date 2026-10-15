@@ -180,6 +180,12 @@ function media(block: Props, props: Props): ReactNode {
   )
 }
 
+/** A diagram's name, unless it still has the placeholder title. */
+function diagramName(props: Props): string | undefined {
+  const title = text(props.title)
+  return title && title !== "Untitled Diagram" ? title : undefined
+}
+
 const LISTS: Record<string, { tag: "ul" | "ol"; className?: string }> = {
   bulletListItem: { tag: "ul" },
   numberedListItem: { tag: "ol" },
@@ -207,8 +213,7 @@ function listItem(block: Props, budget: Budget, depth: number): ReactNode {
         readOnly: true,
       }),
       inline(block.content),
-      nested.length > 0 &&
-        h("ul", { className: "contains-task-list" }, nested)
+      nested
     )
   return h("li", { key, ...blockAttributes(props) }, inline(block.content), nested)
 }
@@ -260,12 +265,23 @@ function single(block: Props, budget: Budget, depth: number, key: string | numbe
     case "file":
       return h("div", { key }, media(block, props))
     case "mermaid":
+      if (props.collapsed === "true")
+        return h(
+          "div",
+          { key, className: "worktable-diagram-collapsed" },
+          h(
+            "svg",
+            { viewBox: "0 0 24 24", "aria-hidden": true },
+            h("path", { d: "m9 18 6-6-6-6" })
+          ),
+          h("span", null, diagramName(props) ?? "Diagram"),
+          diagramName(props) && h("span", { className: "worktable-diagram-kind" }, "· Diagram")
+        )
       return h(
         "div",
         { key, className: "worktable-diagram worktable-preview-diagram" },
-        text(props.title) &&
-          props.title !== "Untitled Diagram" &&
-          h("span", { className: "worktable-caption" }, text(props.title))
+        diagramName(props) &&
+          h("span", { className: "worktable-caption" }, diagramName(props))
       )
     default:
       return h(

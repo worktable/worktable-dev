@@ -358,16 +358,6 @@
   margin: 0;
 }
 
-.worktable-diagram-collapsed {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  width: 100%;
-  color: var(--foreground);
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
 
 /* ============================================
    Placeholder Text

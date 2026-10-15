@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react"
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react"
 import { Maximize2, Minimize2 } from "lucide-react"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { mergeRefs } from "@/hooks/use-pane-width"
@@ -12,12 +12,18 @@ export function DocTable({ children }: { children: ReactNode }) {
   const fade = useScrollFadeX<HTMLDivElement>()
   const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
+  const observer = useRef<ResizeObserver | null>(null)
   const measure = useCallback((node: HTMLDivElement | null) => {
+    observer.current?.disconnect()
+    observer.current = null
     if (!node) return
     const update = () => setOverflows(node.scrollWidth > node.clientWidth + 1)
     update()
-    new ResizeObserver(update).observe(node.firstElementChild ?? node)
+    observer.current = new ResizeObserver(update)
+    observer.current.observe(node)
+    if (node.firstElementChild) observer.current.observe(node.firstElementChild)
   }, [])
+  const scrollRef = useMemo(() => mergeRefs(fade, measure), [fade, measure])
   return (
     <div className="worktable-table-frame" data-expanded={expanded || undefined}>
       {(overflows || expanded) && (
@@ -31,7 +37,7 @@ export function DocTable({ children }: { children: ReactNode }) {
         </div>
       )}
       <div
-        ref={mergeRefs(fade, measure)}
+        ref={scrollRef}
         className="worktable-table-scroll scroll-fade-x"
       >
         <table>{children}</table>

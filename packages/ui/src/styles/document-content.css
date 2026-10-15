@@ -360,6 +360,13 @@
   opacity: 1;
 }
 
+/* Touch screens have no hover: keep Expand in view where it fits. */
+@media (hover: none) {
+  .worktable-table-controls {
+    opacity: 1;
+  }
+}
+
 @media (max-width: 767px) {
   .worktable-table-controls {
     display: none;
@@ -539,6 +546,40 @@
   .worktable-diagram-controls {
     opacity: 1;
   }
+}
+
+/* A collapsed diagram is one line, like a closed toggle. */
+.worktable-diagram-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  margin: 0;
+  color: var(--foreground);
+  font-weight: 500;
+  line-height: var(--doc-line-height);
+  text-align: left;
+  cursor: pointer;
+}
+
+.worktable-markdown .worktable-diagram-collapsed {
+  margin-bottom: var(--doc-gap-large);
+}
+
+.worktable-diagram-collapsed svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.worktable-diagram-kind {
+  color: var(--muted-foreground);
+  font-weight: 400;
 }
 
 .worktable-diagram .worktable-caption {

@@ -86,9 +86,9 @@ export default function MermaidBlockComponent({
         onClick={toggleCollapse}
         aria-expanded={false}
       >
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        <ChevronRight />
         <span className="truncate">{name || "Diagram"}</span>
-        {name && <span className="text-muted-foreground">· Diagram</span>}
+        {name && <span className="worktable-diagram-kind">· Diagram</span>}
       </button>
     )
   }

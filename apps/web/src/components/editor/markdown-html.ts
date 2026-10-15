@@ -32,15 +32,22 @@ type HastNode = {
   children?: HastNode[]
 }
 
-/** Authored ids and names cannot collide with the app's own elements. */
+/**
+ * Authored ids and names cannot collide with the app's own elements. Links
+ * to them within the Doc follow the new names.
+ */
 function namespaceIds() {
+  const namespace = (value: string) =>
+    value.startsWith(USER_PREFIX) ? value : USER_PREFIX + value
   const visit = (node: HastNode) => {
     if (node.type === "element" && node.properties) {
       for (const key of ["id", "name"]) {
         const value = node.properties[key]
-        if (typeof value === "string" && !value.startsWith(USER_PREFIX))
-          node.properties[key] = USER_PREFIX + value
+        if (typeof value === "string") node.properties[key] = namespace(value)
       }
+      const href = node.properties.href
+      if (typeof href === "string" && href.length > 1 && href.startsWith("#"))
+        node.properties.href = `#${namespace(href.slice(1))}`
     }
     node.children?.forEach(visit)
   }

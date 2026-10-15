@@ -32,9 +32,12 @@ describe("HTML in Markdown Docs", () => {
     expect(html).toContain('<img src="a.png"')
   })
 
-  it("keeps authored ids apart from the app's and footnote links working", () => {
-    const html = render('<div id="root">x</div>\n\nNote[^1]\n\n[^1]: Text.')
+  it("keeps authored ids apart from the app's, with links to them still working", () => {
+    const html = render(
+      '<a href="#root">Jump</a> <div id="root">x</div>\n\nNote[^1]\n\n[^1]: Text.'
+    )
     expect(html).toContain('id="user-content-root"')
+    expect(html).toContain('href="#user-content-root"')
     const href = html.match(/href="#([^"]+)"[^>]*data-footnote-ref/)?.[1]
     expect(href).toBeTruthy()
     expect(html).toContain(`id="${href}"`)

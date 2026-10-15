@@ -20,6 +20,20 @@ describe("saved document preview", () => {
     expect(JSON.stringify(content)).toBe(before)
   })
 
+  it("draws nested checklists and collapsed diagrams as the editor does", () => {
+    const text = (value: string) => [{ type: "text", text: value, styles: {} }]
+    const html = renderToStaticMarkup(<DocumentPreview content={[
+      { type: "checkListItem", props: { checked: false }, content: text("Parent"), children: [
+        { type: "checkListItem", props: { checked: true }, content: text("Child") },
+      ] },
+      { type: "mermaid", props: { data: "graph TD\n  A --> B", title: "Flow", collapsed: "true" } },
+    ]} />)
+    expect(html).not.toMatch(/<ul[^>]*>\s*<ul/)
+    expect(html).toMatch(/task-list-item[^>]*>.*Parent.*<ul class="contains-task-list">.*Child/s)
+    expect(html).toContain("worktable-diagram-collapsed")
+    expect(html).not.toContain("worktable-preview-diagram")
+  })
+
   it("escapes authored text and retains headings and table content", () => {
     const html = renderToStaticMarkup(<DocumentPreview content={[
       { type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Notes", styles: {} }] },

@@ -88,8 +88,12 @@ describe("public Doc projection", () => {
       `\`\`\`mermaid\n${source}\n\`\`\``,
       "markdown"
     )
+    const fromAlias = await renderPublicDocProjection(
+      `\`\`\`mmd\n${source}\n\`\`\``,
+      "markdown"
+    )
 
-    for (const html of [fromBlocks, fromMarkdown]) {
+    for (const html of [fromBlocks, fromMarkdown, fromAlias]) {
       const body = new JSDOM(html).window.document.body
       expect(body.innerHTML).toBe(
         '<pre data-worktable-diagram="mermaid"><code>graph TD\n  A[Start] --&gt; B[End]</code></pre>'

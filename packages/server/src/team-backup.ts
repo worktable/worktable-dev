@@ -83,7 +83,7 @@ function invalidateConnections(db: Database): void {
 
 function validateTeamDatabase(db: Database, worktableId: string): void {
   if (
-    ![1, 2].includes(
+    ![1, 2, 3].includes(
       db.query<{ user_version: number }, []>("PRAGMA user_version").get()
         ?.user_version ?? 0
     )

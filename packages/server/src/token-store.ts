@@ -158,6 +158,11 @@ function tokensFile(): string {
   return join(ensureAppDir(), "tokens.json")
 }
 
+/** The token store's path, for cheap change detection (a stat, not a read). */
+export function tokenStorePath(): string {
+  return tokensFile()
+}
+
 async function loadTokens(): Promise<StoredToken[]> {
   try {
     const raw = await readFile(tokensFile(), "utf8")

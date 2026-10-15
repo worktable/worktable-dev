@@ -16,8 +16,16 @@ import {
   requireTeamDatabase,
   openTeamDatabase,
   TeamStateError,
+  teamRequestMemo,
 } from "./team-database.ts"
 import { findTeamMemberById } from "./team-members.ts"
+import {
+  accessSnapshot,
+  grantedLevel,
+  levelAtLeast,
+  memberLevel,
+  spaceInventory,
+} from "./team-access.ts"
 
 export class TeamAccessError extends Error {
   readonly code: string
@@ -50,6 +58,27 @@ export function currentRequestIdentity(): TokenIdentity | undefined {
   return requestIdentity.getStore()
 }
 
+interface SessionRow {
+  userId: string
+  expiresAt: number | string
+}
+
+function sessionMemoKey(sessionId: string): string {
+  return `session:${sessionId}`
+}
+
+/** The session Better Auth just verified stands for the rest of this request. */
+export function noteVerifiedTeamSession(
+  sessionId: string,
+  userId: string,
+  expiresAt: Date
+): void {
+  teamRequestMemo<SessionRow | null>(sessionMemoKey(sessionId), () => ({
+    userId,
+    expiresAt: expiresAt.getTime(),
+  }))
+}
+
 export function teamMemberForIdentity(
   identity: TokenIdentity
 ): TeamMember | null {
@@ -62,12 +91,16 @@ export function teamMemberForIdentity(
   )
     return null
   if (identity.sessionId) {
-    const session = requireTeamDatabase()
-      .query<
-        { userId: string; expiresAt: number | string },
-        [string]
-      >("SELECT userId, expiresAt FROM session WHERE id = ?")
-      .get(identity.sessionId)
+    const sessionId = identity.sessionId
+    // Sign-out removes the row without moving the policy revision, so the
+    // session is read directly: once per request, or per turn on sockets.
+    const session = teamRequestMemo(sessionMemoKey(sessionId), () =>
+      requireTeamDatabase()
+        .query<SessionRow, [string]>(
+          "SELECT userId, expiresAt FROM session WHERE id = ?"
+        )
+        .get(sessionId)
+    )
     const expiresAt = session
       ? typeof session.expiresAt === "number"
         ? session.expiresAt
@@ -141,26 +174,20 @@ export function teamAgentForIdentity(
     !identity.team.agentId
   )
     return null
-  const row = requireTeamDatabase()
-    .query<
-      AgentRow,
-      [string, string]
-    >("SELECT * FROM wt_agents WHERE worktable_id = ? AND id = ? AND active = 1")
-    .get(worktable.id, identity.team.agentId)
-  if (!row || row.actor_id !== identity.principal.id) return null
+  const current = accessSnapshot()!
+  const row = current.agents.get(identity.team.agentId)
+  if (!row || row.active !== 1 || row.actor_id !== identity.principal.id)
+    return null
   if (!identity.team.credentialKey) return null
-  const credential = requireTeamDatabase()
-    .query<
-      { sponsor_member_id: string | null; minimum_issued_at: number },
-      [string, string]
-    >("SELECT sponsor_member_id, minimum_issued_at FROM wt_agent_credentials WHERE credential_key = ? AND agent_id = ? AND active = 1")
-    .get(identity.team.credentialKey, identity.team.agentId)
+  const credential = current.credentials.get(identity.team.credentialKey)
   if (
     !credential ||
-    (credential.sponsor_member_id &&
-      !findTeamMemberById(credential.sponsor_member_id)) ||
-    (credential.minimum_issued_at > 0 &&
-      (identity.credentialIssuedAt ?? 0) < credential.minimum_issued_at)
+    !credential.active ||
+    credential.agentId !== identity.team.agentId ||
+    (credential.sponsorMemberId &&
+      !current.members.has(credential.sponsorMemberId)) ||
+    (credential.minimumIssuedAt > 0 &&
+      (identity.credentialIssuedAt ?? 0) < credential.minimumIssuedAt)
   )
     return null
   const agent = parseAgent(row)
@@ -207,15 +234,7 @@ function subjectGrant(
   subjectType: "member" | "agent",
   subjectId: string
 ): SpaceAccessLevel | null {
-  const worktable = currentTeamWorktable()!
-  return (
-    requireTeamDatabase()
-      .query<
-        { access: SpaceAccessLevel },
-        [string, string, string, string]
-      >("SELECT access FROM wt_space_grants WHERE worktable_id = ? AND space_id = ? AND subject_type = ? AND subject_id = ?")
-      .get(worktable.id, spaceId, subjectType, subjectId)?.access ?? null
-  )
+  return grantedLevel(accessSnapshot()!, spaceId, subjectType, subjectId)
 }
 
 function memberHasSpaceAccess(
@@ -224,16 +243,7 @@ function memberHasSpaceAccess(
   access: SpaceAccessLevel
 ): boolean {
   if (member.role === "owner") return true
-  const worktable = currentTeamWorktable()!
-  const visibility = requireTeamDatabase()
-    .query<
-      { visibility: string },
-      [string, string]
-    >("SELECT visibility FROM wt_space_policy WHERE worktable_id = ? AND space_id = ?")
-    .get(worktable.id, spaceId)?.visibility
-  if (access !== "manage" && visibility === "shared") return true
-  const granted = subjectGrant(spaceId, "member", member.id)
-  return granted !== null && levels[granted] >= levels[access]
+  return levelAtLeast(memberLevel(accessSnapshot()!, member, spaceId), access)
 }
 
 /** With no external request context, filesystem/catalog work remains trusted internal work. */
@@ -295,6 +305,17 @@ export function canAccessWorktableThreads(
   if (!agent) return false
   const level = agentWorktableThreadAccess(agent)
   return level !== "none" && levels[level] >= levels[access]
+}
+
+/** Spaces this identity may read, or null when it may read every Space. */
+export function readableSpaceIds(
+  identity = currentRequestIdentity()
+): string[] | null {
+  if (!currentTeamWorktable() || !identity) return null
+  if (teamMemberForIdentity(identity)?.role === "owner") return null
+  return spaceInventory().ids.filter((spaceId) =>
+    canAccessSpace(spaceId, "read", identity)
+  )
 }
 
 export function assertWorktableThreadAccess(
@@ -546,13 +567,8 @@ export function createTeamAgent(
 
 export function listTeamAgents(identity: TokenIdentity): TeamAgent[] {
   const member = requireTeamHuman(identity)
-  const worktable = currentTeamWorktable()!
-  const rows = requireTeamDatabase()
-    .query<
-      AgentRow,
-      [string]
-    >("SELECT * FROM wt_agents WHERE worktable_id = ? ORDER BY name, id")
-    .all(worktable.id)
+  const current = accessSnapshot()!
+  const rows = current.agentOrder.map((id) => current.agents.get(id)!)
   return rows
     .filter(
       (row) =>
@@ -611,30 +627,21 @@ export function resolveTeamAgentCredential(
 ): TokenIdentity | null {
   const worktable = currentTeamWorktable()
   if (!worktable) return identity
-  const db = requireTeamDatabase()
-  const credential = db
-    .query<
-      AgentRow & {
-        sponsor_member_id: string | null
-        minimum_issued_at: number
-      },
-      [string, string]
-    >(
-      `
-    SELECT a.*, c.sponsor_member_id, c.minimum_issued_at FROM wt_agent_credentials c JOIN wt_agents a ON a.id = c.agent_id
-    WHERE c.credential_key = ? AND a.worktable_id = ? AND c.active = 1 AND a.active = 1
-  `
-    )
-    .get(identity.principal.id, worktable.id)
+  const current = accessSnapshot()!
+  const binding = current.credentials.get(identity.principal.id)
+  const row = binding ? current.agents.get(binding.agentId) : undefined
   if (
-    !credential ||
-    (credential.minimum_issued_at > 0 &&
-      (identity.credentialIssuedAt ?? 0) < credential.minimum_issued_at) ||
-    (credential.sponsor_member_id &&
-      !findTeamMemberById(credential.sponsor_member_id))
+    !binding ||
+    !binding.active ||
+    !row ||
+    row.active !== 1 ||
+    (binding.minimumIssuedAt > 0 &&
+      (identity.credentialIssuedAt ?? 0) < binding.minimumIssuedAt) ||
+    (binding.sponsorMemberId && !current.members.has(binding.sponsorMemberId))
   )
     return null
-  const agent = parseAgent(credential)
+  const credential = row
+  const agent = parseAgent(row)
   if (
     agent.ownership === "personal" &&
     (!agent.memberId || !findTeamMemberById(agent.memberId))

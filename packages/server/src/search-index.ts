@@ -6,8 +6,7 @@
 // ============================================================
 
 import MiniSearch from "minisearch";
-import { assertSpaceAccess, canAccessSpace, currentRequestIdentity, runWithoutTeamIdentity } from "./team-policy.ts";
-import { teamsEnabled } from "./team-database.ts";
+import { assertSpaceAccess, canAccessSpace, readableSpaceIds, runWithoutTeamIdentity } from "./team-policy.ts";
 import {
   docStat,
   getDocArchiveInfo,
@@ -1073,9 +1072,7 @@ export async function searchWithStatus(
   }
 ): Promise<{ results: SearchResult[]; complete: boolean }> {
   if (opts?.spaceId) assertSpaceAccess(opts.spaceId);
-  const allowedSpaces = currentRequestIdentity() && teamsEnabled()
-    ? (await listSpaces()).map((space) => space.id)
-    : undefined;
+  const allowedSpaces = readableSpaceIds() ?? undefined;
   // Snapshot the record-search mode once per call: MiniSearch is built for
   // this mode and the record-hit append below uses the same decision, so a
   // mode flip mid-call (record index becoming ready) can't serve records

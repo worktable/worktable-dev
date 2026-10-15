@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { authRequired } from "../auth.ts";
 import { isHosted } from "../hosted.ts";
-import { teamsEnabled } from "../team-database.ts";
+import { noteTeamSessionsChanged, teamsEnabled } from "../team-database.ts";
 import { verifyTeamSession } from "../team-session.ts";
 import {
   clearSessionCookie,
@@ -161,6 +161,8 @@ authSessionRouter.post("/logout-everywhere", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   await rotateSessionSecret();
+  // Open sockets were authorized by the old secret; recheck them now.
+  noteTeamSessionsChanged();
   clearSessionCookie(c);
   return c.json({ ok: true });
 });

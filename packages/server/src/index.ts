@@ -11,8 +11,9 @@ import {
   teamMemberForIdentity,
   resolveTeamAgentCredential,
 } from "./team-policy.ts"
-import { teamsEnabled, currentTeamWorktable } from "./team-database.ts"
+import { teamsEnabled, currentTeamWorktable, runWithTeamRequestScope, teamSessionEpoch } from "./team-database.ts"
 import { teamRouter } from "./routes/team.ts"
+import { memberAccess } from "./team-access.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { closePreviewBrowsers } from "./document-preview-browser.ts"
 import {
@@ -55,7 +56,7 @@ import { readBootFacts, withBootFacts } from "./boot-facts.ts"
 import { createAppShell } from "./app-shell.ts"
 import { productFontAssets } from "./product-fonts.ts"
 import { gzipSync } from "node:zlib"
-import { existsSync, lstatSync } from "node:fs"
+import { existsSync, lstatSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { healthRouter } from "./routes/health.ts"
 import { spacesRouter } from "./routes/spaces.ts"
@@ -102,6 +103,7 @@ import {
   hasScope,
   listTokens,
   tokenIdFromToken,
+  tokenStorePath,
   type TokenIdentity,
 } from "./token-store.ts"
 import {
@@ -234,6 +236,9 @@ import { TeamStateError } from "./team-database.ts";
 // ============================================================
 
 const app = new Hono();
+
+// Every request sees one view of team state, resolved on first use.
+app.use("*", (c, next) => runWithTeamRequestScope(next));
 
 // CORS split.
 //
@@ -481,13 +486,21 @@ app.use("/api/*", async (c, next) => {
   const identity = c.get("identity")
   const member = identity?.team ? teamMemberForIdentity(identity) : null
   const team = member ? currentTeamWorktable() : null
-  if (member && team) {
+  // A stored response would replay an old header later, so only responses
+  // that are never reused carry the member's current access.
+  const cacheControl = c.res.headers.get("Cache-Control") ?? ""
+  const storable =
+    /\bimmutable\b/.test(cacheControl) ||
+    /\bmax-age=(?!0\b)\d+/.test(cacheControl)
+  const access = member && team && !storable ? memberAccess(member.id) : null
+  if (member && team && access) {
     c.header(
       "X-Worktable-Team",
       JSON.stringify({
         worktableId: team.id,
         memberId: member.id,
         policyRevision: team.policyRevision,
+        access: access.fingerprint,
       })
     )
     const vary = new Set(
@@ -684,6 +697,8 @@ interface WsData {
   localTokenScopes?: string;
   credentialRevoked?: boolean;
   sessionStillValid?: () => Promise<boolean>;
+  /** The member's access fingerprint last reported on this socket. */
+  teamAccess?: string;
   type: "space" | "yjs";
   spaceId: string;
   threadScope?: boolean;
@@ -1710,9 +1725,68 @@ export function startServer(
 
   const credentialSockets = new Set<import("bun").ServerWebSocket<WsData>>();
   let credentialCheck: Promise<void> | null = null;
+  // Bounded revocation latency for sockets on local bearer, owner-cookie and
+  // team sessions. The timer runs only while such a socket is open, so an idle
+  // server never wakes for it.
+  let credentialTimer: ReturnType<typeof setInterval> | null = null;
+  let credentialTimerStopped = false;
+  const trackCredentialSocket = (socket: import("bun").ServerWebSocket<WsData>) => {
+    credentialSockets.add(socket);
+    if (credentialTimer || credentialTimerStopped) return;
+    credentialTimer = setInterval(() => { void checkRealtimeCredentials(); }, 1000);
+    credentialTimer.unref?.();
+  };
+  const untrackCredentialSocket = (socket: import("bun").ServerWebSocket<WsData>) => {
+    credentialSockets.delete(socket);
+    if (credentialSockets.size > 0 || !credentialTimer) return;
+    clearInterval(credentialTimer);
+    credentialTimer = null;
+  };
+  // Sockets are rechecked when something that could revoke them changed: the
+  // token file, team policy, or an in-process sign-out. Expiry is checked
+  // against the clock every tick; a full recheck also runs once a minute.
+  let lastCredentialKey: string | null = null;
+  let lastFullCredentialCheck = 0;
+  const credentialChangeKey = (): string => {
+    const tokens = statSync(tokenStorePath(), { bigint: true, throwIfNoEntry: false });
+    let team = "solo";
+    try {
+      const worktable = currentTeamWorktable();
+      if (worktable) team = `${worktable.id}:${worktable.policyRevision}`;
+    } catch {
+      team = `unavailable:${Date.now()}`;
+    }
+    return `${tokens ? `${tokens.ino}:${tokens.size}:${tokens.mtimeNs}` : "none"}|${team}|${teamSessionEpoch()}`;
+  };
+  const revokeSocket = (socket: import("bun").ServerWebSocket<WsData>) => {
+    socket.data.credentialRevoked = true;
+    untrackCredentialSocket(socket);
+    if (socket.data.type === "yjs") {
+      yjsManager.handleDisconnect(socket, socket.data.spaceId, socket.data.docPath!);
+    } else {
+      wsManager.unsubscribe(socket);
+    }
+    if (socket.data.type === "space") {
+      try {
+        socket.send(JSON.stringify({ type: "error", error: "Credential revoked" }));
+      } catch {
+        // The peer may already have gone away; authorization is detached.
+      }
+    }
+  };
   const checkRealtimeCredentials = (): Promise<void> => {
     if (credentialCheck) return credentialCheck;
     if (credentialSockets.size === 0) return Promise.resolve();
+    const now = Date.now();
+    for (const socket of credentialSockets) {
+      const expiresAt = socket.data.identity?.credentialExpiresAt;
+      if (expiresAt !== undefined && expiresAt <= now) revokeSocket(socket);
+    }
+    const key = credentialChangeKey();
+    if (key === lastCredentialKey && now - lastFullCredentialCheck < 60_000)
+      return Promise.resolve();
+    lastCredentialKey = key;
+    lastFullCredentialCheck = now;
     credentialCheck = (async () => {
       // Read canonical app-private state so CLI / other-process revocations also
       // take effect. No token secrets are copied into WebSocket state.
@@ -1744,23 +1818,26 @@ export function startServer(
           try { revoked = !(await socket.data.sessionStillValid()); } catch { revoked = true; }
         }
         if (revoked) {
-          socket.data.credentialRevoked = true;
-          credentialSockets.delete(socket);
-          if (socket.data.type === "yjs") {
-            yjsManager.handleDisconnect(socket, socket.data.spaceId, socket.data.docPath!);
-          } else {
-            wsManager.unsubscribe(socket);
-          }
           // Bun 1.3.14 can retain its pending-WebSocket count after a server-
           // initiated close, hanging stop(). Detach authorization immediately;
           // let the peer / native idle timeout / shutdown finish the transport.
           // A revoked Yjs peer must not receive a JSON frame on its binary protocol.
-          if (socket.data.type === "space") {
-            try {
-              socket.send(JSON.stringify({ type: "error", error: "Credential revoked" }));
-            } catch {
-              // The peer may already have gone away; authorization is detached.
+          revokeSocket(socket);
+          continue;
+        }
+        // A member whose own access changed is told in place, so their tab
+        // updates without waiting for its next request.
+        const memberId = socket.data.identity?.team?.memberId;
+        if (socket.data.type === "space" && memberId && socket.data.identity?.principal.type === "human") {
+          try {
+            const access = memberAccess(memberId)?.fingerprint;
+            if (access && socket.data.teamAccess && access !== socket.data.teamAccess) {
+              const worktable = currentTeamWorktable();
+              socket.send(JSON.stringify({ type: "team_access", worktableId: worktable?.id, memberId, policyRevision: worktable?.policyRevision, access }));
             }
+            if (access) socket.data.teamAccess = access;
+          } catch {
+            // Team state is unavailable; the next request reports it.
           }
         }
       }
@@ -1991,7 +2068,7 @@ export function startServer(
             ws.data.localTokenId ||
             ws.data.sessionStillValid
           )
-            credentialSockets.add(ws)
+            trackCredentialSocket(ws)
           if (workspaceRejected || workspaceRecoveryRequired()) {
             ws.close()
             return
@@ -2064,7 +2141,7 @@ export function startServer(
           // Old space WS clients don't send messages; ignore
         },
         close(ws) {
-          credentialSockets.delete(ws)
+          untrackCredentialSocket(ws)
           if (ws.data.type === "yjs") {
             yjsManager.handleDisconnect(ws, ws.data.spaceId, ws.data.docPath!)
           } else {
@@ -2088,10 +2165,6 @@ export function startServer(
     discardFailedStart();
     throw err;
   }
-  // Bounded revocation latency for local bearer and owner-cookie sessions. Empty
-  // installs do no token-store I/O, and overlapping checks are coalesced.
-  const credentialTimer = setInterval(() => { void checkRealtimeCredentials(); }, 1000);
-  credentialTimer.unref?.();
   activeServer = server;
   markBootMilestone("listening");
   // Open the record index after the bind so its SQLite setup, the slowest
@@ -2175,7 +2248,9 @@ export function startServer(
     // Cancel sources synchronously, even when a caller intentionally does not
     // await stop(). The returned promise drains work that was already running.
     stopWorkspaceSafetyHandler()
-    clearInterval(credentialTimer);
+    credentialTimerStopped = true;
+    if (credentialTimer) clearInterval(credentialTimer);
+    credentialTimer = null;
     const searchWarmupStopping = stopSearchWarmup();
     watcher.stop({ flushPending: true });
     const documentFilesystemStopping = documentFilesystemCoordinator

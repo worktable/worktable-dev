@@ -24,6 +24,7 @@ import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
 import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
+import { refreshTeamStateForWrite } from "./team-database.ts";
 import { ensureAppDir } from "./app-storage.ts";
 import {
   automaticCheckpointLabel,
@@ -457,7 +458,12 @@ export async function withStoreWriteLock<T>(
     const position = filePath.indexOf(ownedPrefix);
     if (position !== -1) {
       const spaceId = filePath.slice(position + ownedPrefix.length).split(sep)[0];
-      if (spaceId && spaceId !== ".trash") assertSpaceAccess(spaceId, access);
+      if (spaceId && spaceId !== ".trash") {
+        // Access is checked again at commit, so a change made while this
+        // request waited for the lock applies to this write.
+        if (access === "edit") refreshTeamStateForWrite();
+        assertSpaceAccess(spaceId, access);
+      }
     }
     return await fn();
   } finally {

@@ -20,6 +20,7 @@ import {
   type WorkspaceManifest,
 } from "../workspace.ts"
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
+import { memberAccess } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
 import {
   appendWorkspaceImportChunk,
@@ -123,7 +124,7 @@ export async function workspaceSummary(c: Context) {
   const member = identity?.team ? teamMemberForIdentity(identity) : null;
   const team = member ? currentTeamWorktable() : null;
   return {
-    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision } } : {}),
+    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision, access: memberAccess(member.id)?.fingerprint ?? null } } : {}),
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),

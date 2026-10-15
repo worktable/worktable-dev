@@ -11,6 +11,7 @@
 import type { MiddlewareHandler } from "hono"
 import type { TokenIdentity } from "./token-store.ts"
 import { currentTeamWorktable } from "./team-database.ts"
+import { memberAccess } from "./team-access.ts"
 import {
   noteWorkspaceActivity,
   workspaceGeneration,
@@ -37,9 +38,18 @@ function compare(a: string, b: string): number {
 }
 
 function sharedReadKey(url: URL, identity: TokenIdentity | undefined): string {
+  // Reads are shared only within one principal: some responses are per
+  // person. A member's access fingerprint, not the team-wide revision, fences
+  // a read that started before their access changed.
+  const memberId = identity?.team?.memberId
+  const team = currentTeamWorktable()
   return JSON.stringify([
     workspaceGeneration(),
-    currentTeamWorktable()?.policyRevision ?? null,
+    team
+      ? memberId && identity?.principal.type === "human"
+        ? (memberAccess(memberId)?.fingerprint ?? team.policyRevision)
+        : team.policyRevision
+      : null,
     url.pathname,
     // Handlers read the first of repeated parameters, so keep their order.
     [...url.searchParams.entries()].sort(([a], [b]) => compare(a, b)),

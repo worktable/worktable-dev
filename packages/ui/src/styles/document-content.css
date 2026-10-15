@@ -10,6 +10,10 @@
 
 :where(.worktable-document-content, .shared-document) {
   --doc-line-height: 1.85;
+  /* Large headings set tighter, so titles that wrap still read as one. */
+  --doc-h1-line-height: 1.25;
+  --doc-h2-line-height: 1.25;
+  --doc-h3-line-height: 1.25;
   --doc-heading-line-height: 1.5;
   /* Space after a paragraph, list or quote, and after a heading. */
   --doc-gap: 0.75rem;
@@ -71,16 +75,19 @@
 
 .worktable-markdown h1 {
   margin: var(--doc-h1-before) 0 var(--doc-h1-after);
+  line-height: var(--doc-h1-line-height);
   font-size: 3rem;
 }
 
 .worktable-markdown h2 {
   margin: var(--doc-h2-before) 0 var(--doc-h2-after);
+  line-height: var(--doc-h2-line-height);
   font-size: 2rem;
 }
 
 .worktable-markdown h3 {
   margin: var(--doc-h3-before) 0 var(--doc-h3-after);
+  line-height: var(--doc-h3-line-height);
   font-size: 1.3rem;
 }
 

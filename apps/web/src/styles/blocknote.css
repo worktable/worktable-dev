@@ -237,6 +237,18 @@
   line-height: var(--doc-heading-line-height) !important;
 }
 
+.bn-editor [data-content-type="heading"]:not([data-level]) {
+  line-height: var(--doc-h1-line-height) !important;
+}
+
+.bn-editor [data-content-type="heading"][data-level="2"] {
+  line-height: var(--doc-h2-line-height) !important;
+}
+
+.bn-editor [data-content-type="heading"][data-level="3"] {
+  line-height: var(--doc-h3-line-height) !important;
+}
+
 /* Small headings read at body size, so they use the body face. */
 .bn-editor [data-content-type="heading"]:is([data-level="4"], [data-level="5"], [data-level="6"]) {
   font-family: var(--font-sans) !important;

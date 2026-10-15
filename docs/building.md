@@ -83,7 +83,7 @@ as a beta prerelease and moves `beta` forward. The release workflow moves
 releases channels, and reports how long a commit has been the unheld beta
 build (`soak <commit>`); writes need a token with contents access. A held channel
 offers nothing new, and installing fails closed when the manifest can't be
-read, so holding a channel stops CLI and self-hosted updates without
+read, so holding a channel stops CLI, self-hosted and Desktop updates without
 touching published releases.
 
 ## Runtime verification

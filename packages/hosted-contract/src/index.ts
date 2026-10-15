@@ -106,6 +106,8 @@ export const ENV = {
   AUTH_SERVER_URL: "WORKTABLE_AUTH_SERVER_URL",
   /** This tenant's canonical MCP resource URL; AS tokens bind to it. */
   RESOURCE_URL: "WORKTABLE_RESOURCE_URL",
+  /** The shared `/api/mcp` resource the gateway routes only to an account's default Worktable. */
+  LEGACY_RESOURCE_URL: "WORKTABLE_LEGACY_RESOURCE_URL",
   /** The AS subject (WorkOS user id) that owns this instance. */
   OWNER_SUBJECT: "WORKTABLE_OWNER_SUBJECT",
   /** Stable control-plane workspace identity used by browser assertions. */
@@ -583,6 +585,7 @@ export function buildTenantEnv(
     [ENV.VERSION]: parsed.version,
     [ENV.AUTH_SERVER_URL]: parsed.authServerUrl,
     [ENV.RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl, parsed.cloudWorkspaceId),
+    [ENV.LEGACY_RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl),
     [ENV.OWNER_SUBJECT]: parsed.ownerSubject,
     [ENV.CLOUD_WORKSPACE_ID]: parsed.cloudWorkspaceId,
     [ENV.BROWSER_ASSERTION_KEYRING]: JSON.stringify(

@@ -109,6 +109,9 @@ describe("buildTenantEnv", () => {
     // The GATEWAY origin, never the sprite: it is the URL clients call, so it
     // is what the token audience names and what the 401 challenge points at.
     expect(env[ENV.RESOURCE_URL]).toBe(`https://app.worktable.cloud/api/mcp/w/${base.cloudWorkspaceId}`)
+    // Existing directory connectors keep the shared audience. The gateway
+    // forwards it only to the account's default or single Worktable.
+    expect(env[ENV.LEGACY_RESOURCE_URL]).toBe("https://app.worktable.cloud/api/mcp")
     expect(env[ENV.VERSION]).toBe("0.0.25")
     expect(env[ENV.PORT]).toBe("8080")
     expect(env[ENV.WORKSPACE]).toBe("/data/workspace")

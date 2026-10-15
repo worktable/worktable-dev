@@ -1,5 +1,6 @@
 import {
   copyFileSync,
+  existsSync,
   fstatSync,
   renameSync,
   rmSync,
@@ -44,8 +45,16 @@ export function rotateLogIfLarge(
   }
   if (size < maxBytes) return false
   const copy = `${path}.rotating`
+  // A copy left by an interrupted rotation is the only copy of its lines.
+  if (existsSync(copy)) keepCopy(path, copy, keep)
   copyFileSync(path, copy)
   truncateSync(path, 0)
+  keepCopy(path, copy, keep)
+  return true
+}
+
+/** Shift `log.1`..`log.{keep-1}` up one and make the copy `log.1`. */
+function keepCopy(path: string, copy: string, keep: number): void {
   rmSync(`${path}.${keep}`, { force: true })
   for (let index = keep - 1; index >= 1; index -= 1) {
     try {
@@ -56,7 +65,6 @@ export function rotateLogIfLarge(
     }
   }
   renameSync(copy, `${path}.1`)
-  return true
 }
 
 /** Whether a file descriptor writes to the file at this path. */

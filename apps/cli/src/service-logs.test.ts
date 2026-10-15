@@ -6,6 +6,7 @@ import {
   openSync,
   readFileSync,
   rmSync,
+  writeFileSync,
   writeSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -39,6 +40,14 @@ describe("service log rotation", () => {
       writeSync(fd, "after rotation\n")
       expect(readFileSync(log, "utf8")).toBe("after rotation\n")
       expect(rotateLogIfLarge(log, 64, 2)).toBe(false)
+
+      // A copy left by an interrupted rotation is kept, not overwritten.
+      writeFileSync(`${log}.rotating`, "interrupted")
+      writeSync(fd, "fourth ".repeat(20))
+      expect(rotateLogIfLarge(log, 64, 2)).toBe(true)
+      expect(readFileSync(`${log}.2`, "utf8")).toBe("interrupted")
+      expect(readFileSync(`${log}.1`, "utf8")).toContain("fourth ")
+      expect(existsSync(`${log}.rotating`)).toBe(false)
     } finally {
       closeSync(fd)
     }

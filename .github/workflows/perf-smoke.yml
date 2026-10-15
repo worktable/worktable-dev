@@ -17,8 +17,10 @@ name: perf-smoke
         type: string
 permissions:
   contents: read
+# A new push supersedes the last run for its pull request or branch; every
+# dispatch is a deliberate measurement and runs to the end.
 concurrency:
-  group: perf-smoke-${{ github.event_name }}-${{ github.ref }}-${{ inputs.sha }}
+  group: perf-smoke-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 jobs:
   perf-smoke:

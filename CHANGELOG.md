@@ -23,6 +23,9 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Thread messages:** While you type in a thread, the cursor stays with your text instead of falling behind it or sitting on a different line.
+- **Opening rich text Docs:** A Doc that starts with a title no longer shifts down when it becomes editable.
+- **Block handles:** The add and drag handles beside a block line up with its first line of text, including headings.
+- **Wide Markdown tables:** A table wider than the page scrolls inside its own box, and long links wrap, so a Markdown Doc no longer scrolls sideways.
 
 ## [0.1.23] - 2026-10-14
 

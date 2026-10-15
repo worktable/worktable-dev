@@ -7,6 +7,8 @@
   font-size: 1rem;
   line-height: 1.85;
   word-spacing: 0.02em;
+  /* Long links and unbroken words wrap instead of widening the page. */
+  overflow-wrap: break-word;
 }
 
 .worktable-markdown h1 {
@@ -153,6 +155,16 @@
   margin-bottom: 0.75rem;
   color: var(--muted-foreground);
   font-style: italic;
+}
+
+/* Wide tables scroll inside their own box, as rich-text tables do. */
+.worktable-markdown .worktable-table-scroll {
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.worktable-markdown .worktable-table-scroll > table {
+  margin-bottom: 0;
 }
 
 .worktable-markdown table {

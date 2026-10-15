@@ -82,28 +82,6 @@
   letter-spacing: -0.02em !important;
 }
 
-/* Breathing room before headings */
-.bn-editor
-  .bn-block-outer:has(
-    > .bn-block > [data-content-type="heading"]:not([data-level])
-  ) {
-  margin-top: 1.75rem !important;
-}
-
-.bn-editor
-  .bn-block-outer:has(
-    > .bn-block > [data-content-type="heading"][data-level="2"]
-  ) {
-  margin-top: 1.25rem !important;
-}
-
-.bn-editor
-  .bn-block-outer:has(
-    > .bn-block > [data-content-type="heading"][data-level="3"]
-  ) {
-  margin-top: 1rem !important;
-}
-
 /* ============================================
    Heading Styles
    ============================================ */
@@ -115,23 +93,25 @@
   letter-spacing: -0.02em !important;
 }
 
-/* Breathing room before headings */
+/* Breathing room before headings. The document frame owns the gap above
+   the document's first block, so an opening heading adds none; headings
+   that open a nested group keep theirs. */
 .bn-editor
-  .bn-block-outer:has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"]:not([data-level])
   ) {
   margin-top: 2rem !important;
 }
 
 .bn-editor
-  .bn-block-outer:has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="2"]
   ) {
   margin-top: 1.25rem !important;
 }
 
 .bn-editor
-  .bn-block-outer:has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="3"]
   ) {
   margin-top: 1rem !important;
@@ -637,32 +617,6 @@
   border-color: transparent !important;
   color: var(--muted-foreground) !important;
   border-radius: calc(var(--radius) * 0.65) !important;
-}
-
-/* BlockNote positions the side menu against the block content box.
-   Body text needs a small optical nudge. Heading handles should center
-   on the visible text line, not BlockNote's oversized heading box. */
-.bn-side-menu[data-block-type="paragraph"],
-.bn-side-menu[data-block-type="bulletListItem"],
-.bn-side-menu[data-block-type="numberedListItem"],
-.bn-side-menu[data-block-type="checkListItem"] {
-  translate: 0 3px;
-}
-
-.bn-side-menu[data-block-type="heading"] {
-  translate: 0 0;
-}
-
-.bn-side-menu[data-block-type="heading"][data-level="1"] {
-  height: 58px !important;
-}
-
-.bn-side-menu[data-block-type="heading"][data-level="2"] {
-  height: 44px !important;
-}
-
-.bn-side-menu[data-block-type="heading"][data-level="3"] {
-  height: 34px !important;
 }
 
 .bn-side-menu button:hover,

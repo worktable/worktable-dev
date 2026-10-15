@@ -22,7 +22,10 @@ import {
   useComponentsContext,
   useExtension,
 } from "@blocknote/react"
-import type { DefaultReactSuggestionItem } from "@blocknote/react"
+import type {
+  DefaultReactSuggestionItem,
+  FloatingUIOptions,
+} from "@blocknote/react"
 import {
   filterSuggestionItems,
   SideMenuExtension,
@@ -58,11 +61,16 @@ import {
 import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { sideMenuFirstLine } from "./side-menu-position"
 
 import {
   WorktableMermaidBlock,
   insertWorktableMermaid,
 } from "./worktable-mermaid-block"
+
+const sideMenuFloatingOptions: Partial<FloatingUIOptions> = {
+  useFloatingOptions: { middleware: [sideMenuFirstLine] },
+}
 
 const worktableCodeBlockOptions = {
   ...codeBlockOptions,
@@ -458,6 +466,7 @@ function EditorInner({
             sideMenu={() => (
               <AnnotationSideMenu onAnnotate={onCreateAnnotation} />
             )}
+            floatingUIOptions={sideMenuFloatingOptions}
           />
           <SuggestionMenuController
             triggerCharacter="/"

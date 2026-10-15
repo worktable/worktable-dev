@@ -57,7 +57,7 @@ interface Size {
 
 interface Budgets {
   $comment?: string
-  budgets: Record<string, { gzip: number }>
+  budgets: Record<string, { gzip: number; why?: string }>
   targets: Record<string, { gzip: number }>
 }
 
@@ -194,18 +194,21 @@ if (import.meta.main) {
   )
   if (over.length > 0) {
     console.error(
-      `\nOver budget: ${over.map(([name]) => name).join(", ")}. Reduce the bundle, or raise the budget in scripts/perf/bundle-budgets.json with the reason in the pull request.`
+      `\nOver budget: ${over.map(([name]) => name).join(", ")}. Reduce the bundle, or raise the budget in scripts/perf/bundle-budgets.json with a "why" on its entry (bun run perf:guards checks it).`
     )
   }
 
   if (args.has("update")) {
+    // A budget keeps its `why`; one that rises needs a new one
+    // (bun run perf:guards).
     config.budgets = Object.fromEntries(
-      Object.entries(sizes).map(([name, size]) => [
-        name,
-        { gzip: Math.ceil((size.gzip * 1.02) / 1000) * 1000 },
-      ])
+      Object.entries(sizes).map(([name, size]) => {
+        const why = config.budgets[name]?.why
+        const gzip = Math.ceil((size.gzip * 1.02) / 1000) * 1000
+        return [name, why ? { gzip, why } : { gzip }]
+      })
     )
-    // One line per bundle, as Prettier leaves it.
+    // One line per bundle without a `why`, as Prettier leaves it.
     const json = JSON.stringify(config, null, 2).replace(
       /\{\n\s+"gzip": (\d+)\n\s+\}/g,
       '{ "gzip": $1 }'

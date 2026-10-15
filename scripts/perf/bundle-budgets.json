@@ -1,5 +1,5 @@
 {
-  "$comment": "Gzip bytes. Budgets sit 2% above the sizes at the time they were set; lower them as bundles shrink (bun scripts/perf/bundle.ts --update). Targets are Plan 15 goals and are not enforced yet.",
+  "$comment": "Gzip bytes. Budgets sit 2% above the sizes at the time they were set; lower them as bundles shrink (bun scripts/perf/bundle.ts --update). A budget that rises needs a \"why\" on its entry, such as { \"gzip\": 290000, \"why\": \"...\" }; bun run perf:guards checks it. Targets are Plan 15 goals and are not enforced yet.",
   "budgets": {
     "entry": { "gzip": 278000 },
     "root css": { "gzip": 36000 },

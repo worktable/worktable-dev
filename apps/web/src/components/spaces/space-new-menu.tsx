@@ -37,7 +37,6 @@ import {
   queryKeys,
   recordCollectionsQueryOptions,
   useWorkspace,
-  useSpace,
 } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
@@ -55,7 +54,9 @@ const NewDrawingDialog = lazy(() =>
 )
 
 /**
- * Shared creation menu for a Space or one of its document folders.
+ * Shared creation menu for a Space or one of its document folders. Callers
+ * render it only where the person can edit, from the Space data they already
+ * hold, so a list of Spaces never loads each Space.
  */
 export function SpaceNewMenu({
   spaceId,
@@ -160,9 +161,6 @@ export function SpaceNewMenu({
       throw err
     }
   }
-
-  const { data: spaceDetail } = useSpace(spaceId)
-  if (spaceDetail?.space.permissions?.edit === false) return null
 
   return (
     <>

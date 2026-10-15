@@ -252,14 +252,16 @@ export async function authenticatedFetch(
     if (contentMutation && body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace()
     if (body?.code === "MEMBERSHIP_REQUIRED") {
       fenceChangedWorkspace()
-      void clearTeamBrowserData().finally(() => window.location.replace("/"))
+      void clearTeamBrowserData().finally(() =>
+        window.location.replace(runtimePath("/"))
+      )
     }
     if (body?.code === "MEMBER_CHANGED") {
       fenceChangedWorkspace()
       void clearTeamBrowserData().finally(() => window.location.replace(runtimePath("/")))
     }
   }
-  acceptTeamResponse(response, method, input);
+  acceptTeamResponse(response);
   return response;
 }
 

@@ -274,6 +274,7 @@ function SpaceOverview({
   spaceDescription,
   pins,
   onRetryPins,
+  canEdit,
 }: {
   spaceId: string
   /** Undefined only until the Space list or details arrive. */
@@ -281,6 +282,7 @@ function SpaceOverview({
   spaceDescription?: string
   pins: ResolvedStartHerePin[] | undefined
   onRetryPins?: () => void
+  canEdit: boolean
 }) {
   const [folder, setFolder] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -339,15 +341,17 @@ function SpaceOverview({
               </p>
             )}
           </div>
-          <SpaceNewMenu
-            spaceId={spaceId}
-            trigger={
-              <Button variant="outline" size="sm" className="shrink-0">
-                <Plus className="size-4" />
-                New
-              </Button>
-            }
-          />
+          {canEdit && (
+            <SpaceNewMenu
+              spaceId={spaceId}
+              trigger={
+                <Button variant="outline" size="sm" className="shrink-0">
+                  <Plus className="size-4" />
+                  New
+                </Button>
+              }
+            />
+          )}
         </header>
 
         <PendingSection spaceId={spaceId} />
@@ -490,6 +494,7 @@ function SpaceDetailPage() {
         spaceDescription={space?.description}
         pins={data ? (data.pins ?? []) : undefined}
         onRetryPins={isError ? () => void refetch() : undefined}
+        canEdit={space?.permissions?.edit !== false}
       />
     </div>
   )

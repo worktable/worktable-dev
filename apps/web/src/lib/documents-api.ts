@@ -1,3 +1,4 @@
+import { spaceAccessKey } from "./team-access"
 import { flushDrawingBeforeMove } from "./drawing-drafts"
 import type {
   DocumentContent,
@@ -49,6 +50,10 @@ export function readDocumentContent(
   options?: ReadOptions
 ): Promise<DocumentContent> {
   const query = new URLSearchParams({ path, rev: revision })
+  // On a team, the member's per-Space key makes the stored response specific
+  // to this access, so a revoked member's old copy is never addressed again.
+  const accessKey = spaceAccessKey(spaceId)
+  if (accessKey) query.set("a", accessKey)
   return fetchJSON<DocumentContent>(
     `/api/spaces/${encodeURIComponent(spaceId)}/documents/content?${query}`,
     options

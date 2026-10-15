@@ -1,16 +1,38 @@
 import { runtimePath } from "./runtime-path"
+import { fetchSpaces, type SpaceView } from "./api"
+import {
+  adoptSpaceAccessKeys,
+  forgetSpaceAccess,
+  rememberSpaceAccess,
+  teamQueryClient,
+  type SpaceAccessChange,
+} from "./team-access"
+
 interface BrowserTeamContext {
   worktableId: string
   memberId: string
   policyRevision: number
+  /** Changes only when this member's own access changes. */
+  access?: string | null
 }
 let context: BrowserTeamContext | null = null
 let resetting = false
+let refreshingAccess: Promise<void> | null = null
 
 export function initializeBrowserTeamContext(
-  value: BrowserTeamContext | undefined
+  value: (BrowserTeamContext & { accessKeys?: Record<string, string> }) | undefined
 ): void {
-  if (value && !context) context = value
+  if (!value || context) return
+  const { accessKeys, ...current } = value
+  context = current
+  adoptSpaceAccessKeys(accessKeys)
+}
+
+/** Forget this tab's team identity; tests share one module instance. */
+export function resetBrowserTeamContext(): void {
+  context = null
+  resetting = false
+  forgetSpaceAccess()
 }
 
 export function browserTeamMemberId(): string | null {
@@ -21,112 +43,158 @@ export function browserTeamCacheKey(): string | null {
   return context ? `${context.worktableId}:${context.memberId}` : null
 }
 
-/** Human identity and access are supplied by the authenticated runtime. */
-export function acceptTeamResponse(
-  response: Response,
-  method: string,
-  input: RequestInfo | URL
-): void {
-  const raw = response.headers.get("X-Worktable-Team")
-  if (!raw) return
-  let next: BrowserTeamContext
-  try {
-    next = JSON.parse(raw)
-  } catch {
-    return
-  }
+function parseContext(value: unknown): BrowserTeamContext | null {
+  if (!value || typeof value !== "object") return null
+  const next = value as Partial<BrowserTeamContext>
   if (
     typeof next.worktableId !== "string" ||
     typeof next.memberId !== "string" ||
     !Number.isSafeInteger(next.policyRevision)
   )
-    return
-  const previous = context
-  context = next
-  if (!previous || resetting) return
-  const changedMember =
-    previous.memberId !== next.memberId ||
-    previous.worktableId !== next.worktableId
-  if (!changedMember && previous.policyRevision === next.policyRevision) return
-  const path =
-    typeof input === "string"
-      ? input
-      : input instanceof Request
-        ? input.url
-        : input.toString()
-  // Creating or configuring one's agent leaves the human's content access
-  // intact and may return a credential that must remain visible exactly once.
-  if (
-    !changedMember &&
-    method.toUpperCase() !== "GET" &&
-    (/\/api\/(tokens|agent-connections|pairing|team\/agents)(\/|$)/.test(
-      path
-    ) ||
-      (method.toUpperCase() === "POST" && /\/api\/spaces(?:\?|$)/.test(path)))
-  )
-    return
-  resetting = true
-  window.dispatchEvent(new Event("worktable:workspace-changed"))
-  void (
-    changedMember ? clearTeamBrowserData() : clearRevokedTeamCaches()
-  ).finally(() => window.location.replace(runtimePath("/")))
+    return null
+  return {
+    worktableId: next.worktableId,
+    memberId: next.memberId,
+    policyRevision: next.policyRevision!,
+    access: typeof next.access === "string" ? next.access : null,
+  }
 }
 
-async function clearRevokedTeamCaches(): Promise<void> {
-  const member = browserTeamMemberId()
-  const base =
-    window.location.pathname.match(/^\/t\/[A-Za-z0-9_-]+(?=\/|$)/)?.[0] ?? ""
-  const response = await fetch(`${base}/api/spaces`, {
-    credentials: "include",
-    headers: member ? { "X-Worktable-Member": member } : {},
-  })
-  if (response.status === 401) return clearTeamBrowserData()
-  if (!response.ok) return // The server remains authoritative; keep recoverable authorized drafts on an outage.
-  const result = (await response.json()) as {
-    spaces: Array<{ id: string; permissions?: { edit: boolean } }>
+/**
+ * Apply the authenticated runtime's view of who this tab is and what they may
+ * access. Another member's actions never reload this tab: only a change to
+ * this member's own access refreshes the affected data, in place.
+ */
+export function acceptTeamContext(value: unknown): void {
+  const next = parseContext(value)
+  if (!next) return
+  const previous = context
+  const sameMember =
+    previous?.memberId === next.memberId &&
+    previous.worktableId === next.worktableId
+  // A response that was delayed or replayed must not move the tab backwards.
+  if (previous && sameMember && next.policyRevision < previous.policyRevision)
+    return
+  context = next
+  if (!previous || resetting) return
+  if (!sameMember) {
+    resetting = true
+    window.dispatchEvent(new Event("worktable:workspace-changed"))
+    void clearTeamBrowserData(previous).finally(() =>
+      window.location.replace(runtimePath("/"))
+    )
+    return
   }
-  const editable = new Set(
-    result.spaces
-      .filter((space) => space.permissions?.edit !== false)
-      .map((space) => space.id)
+  if (next.access && previous.access && next.access !== previous.access)
+    void refreshTeamAccess()
+}
+
+/** Human identity and access are supplied by the authenticated runtime. */
+export function acceptTeamResponse(response: Response): void {
+  const raw = response.headers.get("X-Worktable-Team")
+  if (!raw) return
+  try {
+    acceptTeamContext(JSON.parse(raw))
+  } catch {
+    // An unreadable header changes nothing; the server stays authoritative.
+  }
+}
+
+function currentSpaceId(): string | null {
+  const match = window.location.pathname.match(
+    /^(?:\/t\/[A-Za-z0-9_-]+)?\/spaces\/([^/]+)/
   )
+  return match ? decodeURIComponent(match[1]!) : null
+}
+
+// Lists that gather items from every Space this member can read.
+const CROSS_SPACE_LISTS = new Set(["recent", "activity", "pending", "threads", "search"])
+
+/**
+ * Every spaces list carries this member's per-Space keys. Whichever request
+ * brings a change first applies it: lost Spaces' data goes, changed Spaces
+ * refresh, lists spanning Spaces refresh when the set of Spaces moved, and
+ * the tab leaves only a Space it can no longer read.
+ */
+export function applySpaceAccess(spaces: SpaceView[]): SpaceAccessChange | null {
+  if (!context) return null
+  const change = rememberSpaceAccess(spaces)
+  const queryClient = teamQueryClient()
+  for (const spaceId of change.lost)
+    queryClient?.removeQueries({ queryKey: ["spaces", spaceId] })
+  for (const spaceId of [...change.changed, ...change.gained])
+    void queryClient?.invalidateQueries({ queryKey: ["spaces", spaceId] })
+  if (change.lost.length || change.gained.length)
+    void queryClient?.invalidateQueries({
+      predicate: (query) => CROSS_SPACE_LISTS.has(String(query.queryKey[0])),
+    })
   const scope = browserTeamCacheKey()
-  if (!scope || typeof indexedDB === "undefined" || !indexedDB.databases) return
+  if (scope && (change.lost.length || change.readOnly.length))
+    void deleteTeamStores(scope, new Set([...change.lost, ...change.readOnly]))
+  const here = currentSpaceId()
+  if (here && change.lost.includes(here)) window.location.replace(runtimePath("/"))
+  return change
+}
+
+/** This member's access changed: refresh what it affects, stay on the page. */
+function refreshTeamAccess(): Promise<void> {
+  refreshingAccess ??= (async () => {
+    const spaces = await fetchSpaces().catch(() => null)
+    if (!spaces) return // The server stays authoritative; keep drafts on an outage.
+    applySpaceAccess(spaces)
+    teamQueryClient()?.setQueryData(["spaces"], spaces)
+  })().finally(() => {
+    refreshingAccess = null
+  })
+  return refreshingAccess
+}
+
+async function deleteTeamStores(
+  scope: string,
+  spaceIds: Set<string> | null
+): Promise<void> {
+  if (typeof indexedDB === "undefined" || !indexedDB.databases) return
   const prefix = `worktable-team:${encodeURIComponent(scope)}:`
   for (const database of await indexedDB.databases().catch(() => [])) {
     if (!database.name?.startsWith(prefix)) continue
     const spaceId = decodeURIComponent(
       database.name.slice(prefix.length).split(":", 1)[0]!
     )
-    if (!editable.has(spaceId)) indexedDB.deleteDatabase(database.name)
+    if (!spaceIds || spaceIds.has(spaceId)) indexedDB.deleteDatabase(database.name)
   }
 }
 
-export async function clearTeamBrowserData(): Promise<void> {
+/**
+ * Remove one member's local data for one Worktable: their cached rooms,
+ * drafts and profile. Other Worktables on the same origin and solo caches are
+ * left alone. Without a scope, every member's team data on this origin goes.
+ */
+export async function clearTeamBrowserData(
+  scope: Pick<BrowserTeamContext, "worktableId" | "memberId"> | null = context
+): Promise<void> {
+  forgetSpaceAccess()
+  const key = scope ? `${scope.worktableId}:${scope.memberId}` : null
+  const owns = (name: string) =>
+    key ? name.includes(`member:${key}`) || name.endsWith(`:${key}`) : name.includes("member:")
   try {
-    localStorage.removeItem("worktable-profile")
-  } catch {
-    /* unavailable */
-  }
-  try {
-    for (const key of Object.keys(localStorage))
+    for (const name of Object.keys(localStorage))
       if (
-        key.startsWith("worktable:drawing-draft:") ||
-        key.startsWith("worktable-profile:")
+        (name.startsWith("worktable:drawing-draft:") ||
+          name.startsWith("worktable-profile:")) &&
+        owns(name)
       )
-        localStorage.removeItem(key)
-    for (const key of Object.keys(sessionStorage))
-      if (key.startsWith("worktable:thread-drafts:"))
-        sessionStorage.removeItem(key)
+        localStorage.removeItem(name)
+    for (const name of Object.keys(sessionStorage))
+      if (name.startsWith("worktable:thread-drafts:") && owns(name))
+        sessionStorage.removeItem(name)
   } catch {
     /* unavailable */
   }
-  if (typeof indexedDB !== "undefined" && indexedDB.databases) {
-    const databases = await indexedDB.databases().catch(() => [])
-    for (const database of databases)
-      if (database.name?.startsWith("worktable-"))
-        indexedDB.deleteDatabase(database.name)
-  }
+  if (typeof indexedDB === "undefined" || !indexedDB.databases) return
+  if (key) return deleteTeamStores(key, null)
+  for (const database of await indexedDB.databases().catch(() => []))
+    if (database.name?.startsWith("worktable-team:"))
+      indexedDB.deleteDatabase(database.name)
 }
 
 export async function signOutLocalTeam(): Promise<void> {

@@ -1546,6 +1546,7 @@ function SpaceTreeSection({
     onNavigate,
     onRefresh,
     onWidgetRefresh,
+    canEdit: space.permissions?.edit !== false,
   }
 
   return (
@@ -1657,6 +1658,8 @@ interface TreeRowProps {
   onWidgetRefresh: (widgetId?: string) => Promise<void>
   folderArchived: boolean
   reorder?: DocReorder
+  /** Whether this person can create in the Space (false for read access). */
+  canEdit: boolean
 }
 
 /**
@@ -1756,6 +1759,7 @@ function DocTreeItem({
   onWidgetRefresh,
   folderArchived,
   reorder,
+  canEdit,
 }: TreeRowProps) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -2020,7 +2024,7 @@ function DocTreeItem({
               </CollapsibleTrigger>
             )}
             <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
-              <SpaceNewMenu
+              {canEdit && <SpaceNewMenu
                 spaceId={spaceId}
                 folder={node.path}
                 onCreated={onNavigate}
@@ -2033,7 +2037,7 @@ function DocTreeItem({
                     <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
                   </button>
                 }
-              />
+              />}
               {view === "html" ? (
                 <WidgetTreeActions
                   key={`${node.path}:${exactDocumentArchived ? "archived" : "active"}`}
@@ -2101,6 +2105,7 @@ function DocTreeItem({
                   onWidgetRefresh={onWidgetRefresh}
                   folderArchived={folderArchived}
                   reorder={reorder}
+                  canEdit={canEdit}
                 />
               ))}
             </div>

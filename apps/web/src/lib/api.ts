@@ -1,4 +1,4 @@
-import { initializeBrowserTeamContext } from "./team-context";
+import { applySpaceAccess, initializeBrowserTeamContext } from "./team-context";
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
   ResolvedStartHerePin,
@@ -8,13 +8,22 @@ import type {
 } from "@worktable/types"
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
-export type SpaceView = SpaceFile & { permissions?: { edit: boolean; manage: boolean } };
+export type SpaceView = SpaceFile & {
+  permissions?: { edit: boolean; manage: boolean; accessKey?: string };
+};
 
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
 
 export interface WorkspaceInfo {
   contentEpoch?: string
-  teamContext?: { worktableId: string; memberId: string; policyRevision: number };
+  teamContext?: {
+    worktableId: string;
+    memberId: string;
+    policyRevision: number;
+    access?: string | null;
+    /** This member's content key for each Space they can read. */
+    accessKeys?: Record<string, string>;
+  };
   canManage?: boolean
   id: string
   name: string
@@ -71,10 +80,18 @@ export function updateWorkspace(patch: {
 }
 
 /** Every Space, archived ones included. */
-export function getSpaces() {
+/** The spaces list without applying access changes; see getSpaces. */
+export function fetchSpaces() {
   return fetchJSON<{ spaces: SpaceView[] }>("/api/spaces").then(
     (r) => r.spaces
   )
+}
+
+export function getSpaces() {
+  return fetchSpaces().then((spaces) => {
+    applySpaceAccess(spaces)
+    return spaces
+  })
 }
 
 export function getSpace(spaceId: string, options?: ReadOptions) {

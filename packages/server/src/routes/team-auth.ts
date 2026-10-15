@@ -78,8 +78,14 @@ for (const endpoint of [
     const auth = await getTeamAuth(
       resolveWorkspaceOriginForRequest(c.req.raw).origin
     )
-    const response = await auth.handler(c.req.raw)
+    let response = await auth.handler(c.req.raw)
     if (endpoint !== "sign-in/email") noteTeamSessionsChanged()
+    if (endpoint === "sign-out" && response.ok) {
+      // Content this person read stays in the browser's HTTP cache otherwise.
+      // Only the cache: other Worktables may share this origin's storage.
+      response = new Response(response.body, response)
+      response.headers.set("Clear-Site-Data", '"cache"')
+    }
     if (endpoint === "sign-in/email" && response.ok) {
       const result = (await response.clone().json()) as { user?: { id?: string } }
       if (!result.user?.id || !findTeamMember(result.user.id)) {

@@ -17,16 +17,22 @@ describe("perf guards", () => {
         file: "apps/web/src/lib/feed.ts",
         text: `export const feedOptions = () => ({ queryKey: ["feed"], refetchInterval: 5_000 })`,
       },
+      {
+        file: "apps/web/src/lib/clock.ts",
+        text: `export function useClock(refetchInterval) { return useQuery({ queryKey: ["clock"], refetchInterval }) }`,
+      },
     ]
     const sites = findPolling(sources)
     expect(sites.map((site) => site.site)).toEqual([
       "apps/web/src/lib/feed.ts#feedOptions",
+      "apps/web/src/lib/clock.ts#useClock",
     ])
+    const [feed] = sites
 
     const unregistered = compareAllowlist(
       "Polling",
       "polling.json",
-      sites,
+      [feed!],
       { sites: [] },
       register
     )
@@ -40,7 +46,7 @@ describe("perf guards", () => {
       compareAllowlist(
         "Polling",
         "polling.json",
-        sites,
+        [feed!],
         { sites: [{ site }] },
         register
       )[0]!.message
@@ -49,7 +55,7 @@ describe("perf guards", () => {
       compareAllowlist(
         "Polling",
         "polling.json",
-        sites,
+        [feed!],
         { sites: [{ site, why: "No event exists." }] },
         register
       )
@@ -79,6 +85,8 @@ describe("perf guards", () => {
             const refresh = [{ queryKey: ["spaces", spaceId] }]
             refreshLive(client, refresh)
             client.getQueryCache().findAll({ queryKey: ["spaces", spaceId] })
+            const everything = { predicate: () => true }
+            client.invalidateQueries(everything)
             return useQuery({ queryKey: queryKeys.space(spaceId), queryFn: read })
           }
         `,
@@ -88,6 +96,7 @@ describe("perf guards", () => {
       "unkeyed:3",
       "space-wide:4",
       "space-wide:7",
+      "predicate:11",
     ])
   })
 
@@ -95,7 +104,8 @@ describe("perf guards", () => {
     const sites = findCatalogBuilders([
       {
         file: "packages/server/src/routes/docs.ts",
-        text: `docsRouter.get("/", async (c) => { const docs = await listDocs(spaceId); return c.json(docs) })`,
+        text: `import { listDocs as list } from "../store.ts"
+docsRouter.get("/", async (c) => { const docs = await list(spaceId); return c.json(docs) })`,
       },
       {
         // Boot work is not on the request path.

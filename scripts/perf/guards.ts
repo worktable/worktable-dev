@@ -165,7 +165,8 @@ export function findPolling(sources: Source[]): Site[] {
       continue
     walk(parse(source), (node) => {
       if (
-        ts.isPropertyAssignment(node) &&
+        (ts.isPropertyAssignment(node) ||
+          ts.isShorthandPropertyAssignment(node)) &&
         node.name.getText() === "refetchInterval"
       )
         sites.push(siteOf(source, node, "refetchInterval"))
@@ -207,8 +208,8 @@ function isSpaceWideKey(expression: ts.Expression): boolean {
   return false
 }
 
-/** What a key identifier holds: its declaration, or the array a loop walks. */
-function resolveKey(expression: ts.Expression): ts.Expression[] {
+/** What an identifier holds: its declaration, or the array a loop walks. */
+function resolveValue(expression: ts.Expression): ts.Expression[] {
   if (!ts.isIdentifier(expression)) return [expression]
   const name = expression.text
   for (let scope = expression.parent; scope; scope = scope.parent) {
@@ -255,7 +256,7 @@ function filterKind(object: ts.ObjectLiteralExpression): string | null {
       ? key.name
       : null
   if (!expression) return null
-  return resolveKey(expression).some(isSpaceWideKey) ? "space-wide" : null
+  return resolveValue(expression).some(isSpaceWideKey) ? "space-wide" : null
 }
 
 function calleeName(call: ts.CallExpression): string {
@@ -298,13 +299,27 @@ export function findInvalidation(sources: Source[]): Site[] {
         INVALIDATING.test(node.expression.name.text)
       ) {
         const [filter] = node.arguments
+        // A filter held in a variable is classified where it is used.
+        const indirect = filter && ts.isIdentifier(filter)
+        const filters = filter
+          ? indirect
+            ? resolveValue(filter)
+            : [filter]
+          : []
+        const objects = filters.filter(ts.isObjectLiteralExpression)
         if (
           !filter ||
-          (ts.isObjectLiteralExpression(filter) &&
-            !property(filter, "queryKey") &&
-            !property(filter, "predicate"))
+          objects.some(
+            (object) =>
+              !property(object, "queryKey") && !property(object, "predicate")
+          )
         )
           sites.push(siteOf(source, node, "unkeyed"))
+        else if (
+          indirect &&
+          objects.some((object) => filterKind(object) === "predicate")
+        )
+          sites.push(siteOf(source, node, "predicate"))
         return
       }
       if (ts.isObjectLiteralExpression(node) && !isReadOnlyFilter(node)) {
@@ -357,15 +372,26 @@ export function findCatalogBuilders(
   sources: Source[],
   builders: readonly string[] = CATALOG_BUILDERS
 ): Site[] {
-  const pattern = new RegExp(`\\b(?:${builders.join("|")})\\(`)
+  const pattern = new RegExp(`\\b(?:${builders.join("|")})\\b`)
   const sites: Site[] = []
   for (const source of sources) {
     if (!pattern.test(source.text)) continue
-    walk(parse(source), (node) => {
+    const file = parse(source)
+    // `import { listDocs as list }` calls the builder by another name.
+    const builderOf = new Map(builders.map((name) => [name, name]))
+    walk(file, (node) => {
+      if (
+        ts.isImportSpecifier(node) &&
+        node.propertyName &&
+        builders.includes(node.propertyName.text)
+      )
+        builderOf.set(node.name.text, node.propertyName.text)
+    })
+    walk(file, (node) => {
       if (!ts.isCallExpression(node)) return
-      const callee = calleeName(node)
-      if (!builders.includes(callee)) return
-      const site = siteOf(source, node, callee)
+      const builder = builderOf.get(calleeName(node))
+      if (!builder) return
+      const site = siteOf(source, node, builder)
       if (!inBackground(site.site)) sites.push(site)
     })
   }

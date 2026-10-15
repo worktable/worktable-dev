@@ -83,6 +83,9 @@ for (const mobile of [true, false]) {
           }
           editor.view.focus()
           const from = editor.view.posAtDOM(node.firstChild!, 0)
+          // Start from a caret, as a drag would, so selecting the same quote
+          // again still reads as a new selection and shows the toolbar.
+          editor.commands.setTextSelection(from)
           editor.commands.setTextSelection({ from, to: from + length })
         }, quote.length)
         await expect

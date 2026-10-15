@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  betaResidenceMs,
   betaTagsToPrune,
   parseManifest,
   publishChannel,
@@ -89,6 +90,34 @@ describe("release channel manifest", () => {
         }).manifest
       )
     ).toThrow("stable is required")
+  })
+
+  it("soaks a beta only while installs run it", () => {
+    const hour = 3_600_000
+    const point = (at: number, c: string, held = false) => ({
+      at: at * hour,
+      manifest: setHeld(
+        publishChannel(stable, {
+          channel: "beta",
+          version: `0.1.24-dev.${at + 1}+${c.repeat(7)}`,
+          commit: commit(c),
+          publishedAt: String(at),
+        }).manifest,
+        "beta",
+        held
+      ).manifest,
+    })
+    const history = [
+      point(0, "a"),
+      point(10, "a", true),
+      point(12, "a"),
+      point(30, "b"),
+    ]
+    // Ten hours, a two-hour hold that doesn't count, then 18 more hours
+    // until a newer beta replaced it.
+    expect(betaResidenceMs(history, commit("a"), 40 * hour)).toBe(28 * hour)
+    expect(betaResidenceMs(history, commit("b"), 40 * hour)).toBe(10 * hour)
+    expect(betaResidenceMs(history, commit("c"), 40 * hour)).toBe(0)
   })
 
   it("prunes old betas but never the one the channel points at", () => {

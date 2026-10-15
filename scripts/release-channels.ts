@@ -20,6 +20,7 @@ import {
 //   bun scripts/release-channels.ts hold <channel>
 //   bun scripts/release-channels.ts release <channel>
 //   bun scripts/release-channels.ts prune-beta [--keep N]
+//   bun scripts/release-channels.ts soak <commit>
 //
 // Writes need GH_TOKEN with contents: write on the repository
 // (RELEASE_CHANNELS_REPOSITORY, default worktable/worktable-dev).
@@ -132,6 +133,34 @@ export function setHeld(
 }
 
 const DEV_TAG = /^v\d+\.\d+\.\d+-dev\.\d+$/
+
+/** One state of channels.json, from the moment it was committed. */
+export interface ManifestSnapshot {
+  at: number
+  manifest: ChannelsManifest
+}
+
+/**
+ * How long `commit` has been what beta installs run: the time the beta
+ * channel pointed at it, unheld, until it moved on (or until `now`). A build
+ * replaced by a newer beta stops soaking, even though the newer one contains
+ * its changes, because a later fix could hide its bugs.
+ */
+export function betaResidenceMs(
+  history: ManifestSnapshot[],
+  commit: string,
+  now: number
+): number {
+  const ordered = [...history].sort((left, right) => left.at - right.at)
+  let total = 0
+  ordered.forEach((snapshot, index) => {
+    const beta = snapshot.manifest.channels.beta
+    if (!beta || beta.held || beta.commit !== commit) return
+    const end = ordered[index + 1]?.at ?? now
+    total += Math.max(0, Math.min(end, now) - snapshot.at)
+  })
+  return total
+}
 
 /** Beta tags to delete: all but the newest `keep`, never the current pointer. */
 export function betaTagsToPrune(
@@ -279,6 +308,35 @@ async function updateRemote(
   throw new Error("channels.json kept changing; giving up after 5 attempts")
 }
 
+/** channels.json as of every change since `since` (ISO), oldest first. */
+async function readHistory(since: string): Promise<ManifestSnapshot[]> {
+  const snapshots: ManifestSnapshot[] = []
+  for (let page = 1; page <= 10; page += 1) {
+    const commits = (await expectOk(
+      await github(
+        `/repos/${repository}/commits?sha=${CHANNELS_BRANCH}&path=${CHANNELS_PATH}&since=${encodeURIComponent(since)}&per_page=100&page=${page}`
+      ),
+      "Listing channel history"
+    )) as Array<{ sha: string; commit: { committer: { date: string } } }>
+    for (const entry of commits) {
+      const file = await expectOk(
+        await github(
+          `/repos/${repository}/contents/${CHANNELS_PATH}?ref=${entry.sha}`
+        ),
+        `Reading channels.json at ${entry.sha}`
+      )
+      snapshots.push({
+        at: Date.parse(entry.commit.committer.date),
+        manifest: parseManifest(
+          Buffer.from(file.content, "base64").toString("utf8")
+        ),
+      })
+    }
+    if (commits.length < 100) break
+  }
+  return snapshots.sort((left, right) => left.at - right.at)
+}
+
 async function listReleaseTags(): Promise<string[]> {
   const tags: string[] = []
   for (let page = 1; page <= 10; page += 1) {
@@ -315,7 +373,7 @@ async function deleteRelease(tag: string): Promise<void> {
 
 function usage(): never {
   console.error(
-    "usage: release-channels.ts show | publish <channel> <version> <commit> | hold <channel> | release <channel> | prune-beta [--keep N]"
+    "usage: release-channels.ts show | publish <channel> <version> <commit> | hold <channel> | release <channel> | prune-beta [--keep N] | soak <commit>"
   )
   process.exit(2)
 }
@@ -349,6 +407,17 @@ if (import.meta.main) {
       `${held ? "Hold" : "Release"} ${channel}`
     )
     console.log(`${channel}: ${JSON.stringify(manifest.channels[channel])}`)
+  } else if (command === "soak") {
+    // Prints the hours `commit` has been the unheld beta build.
+    const commit = args[0] ?? usage()
+    if (!/^[0-9a-f]{40}$/.test(commit)) usage()
+    const source = await expectOk(
+      await github(`/repos/${repository}/commits/${commit}`),
+      `Reading ${commit}`
+    )
+    const history = await readHistory(source.commit.committer.date)
+    const hours = betaResidenceMs(history, commit, Date.now()) / 3_600_000
+    console.log(hours.toFixed(1))
   } else if (command === "prune-beta") {
     const keepIndex = args.indexOf("--keep")
     const keep = keepIndex === -1 ? 10 : Number(args[keepIndex + 1])

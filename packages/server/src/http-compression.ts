@@ -23,9 +23,10 @@ export type ContentEncoding = "br" | "gzip"
  * them. Larger bodies stay off the loop so they never block other requests.
  *
  * Brotli quality 5 on a 4-CPU Namespace runner, on the perf fixture's spaces,
- * documents, Recent, Activity, threads, search and document content: p50 /
- * p95 0.03 / 0.04 ms at 4 KB, 0.11 / 0.17 ms at 16 KB, 0.26 / 0.35 ms at
- * 32 KB and 0.60 / 0.80 ms at 64 KB. Gzip level 6 takes about half as long.
+ * documents, Recent, Activity, threads, search and document content, took at
+ * most 0.04 / 0.06 ms (p50 / p95) at 4 KB, 0.11 / 0.17 ms at 16 KB,
+ * 0.26 / 0.35 ms at 32 KB and 0.61 / 0.81 ms at 64 KB. Gzip level 6 takes
+ * half to two thirds as long up to 64 KB.
  */
 export const SYNC_COMPRESSION_LIMIT = 32 * 1024
 

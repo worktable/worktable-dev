@@ -1,0 +1,40 @@
+{
+  "$comment": "Structural speed budgets checked by perf-smoke (bun scripts/perf/smoke.ts) on the 100-document fixture. Counts, not timings: they do not depend on the runner's speed. Rewrite with bun scripts/perf/smoke.ts --update; a budget that rises needs a \"why\" on its entry, which bun run perf:guards checks.",
+  "metrics": {
+    "requests": {
+      "why": "Requests per click (API, HTML frame and page loads; cached assets aside). Each extra request is a round trip on a phone, 150 ms or more."
+    },
+    "chain": {
+      "why": "Requests the click's content waited for one after another. Plan 15 target: at most one on a click's critical path."
+    },
+    "revisit content": {
+      "why": "Opening a document again reads its content from the browser cache (documents by revision, #113 and #117)."
+    },
+    "idle requests": {
+      "why": "An untouched tab makes no requests: changes arrive over the socket (Plan 15; perf:guards registers polling)."
+    },
+    "redirects": {
+      "why": "A redirect adds a round trip before anything loads (Plan 16 gate D5)."
+    },
+    "cold js": {
+      "why": "JavaScript files a cold page load fetches before content. Each file is a request the phone waits on before any data."
+    },
+    "dom": {
+      "why": "Elements once a screen settles. Long lists render only what is visible (W3-05); layout cost grows with the element count.",
+      "headroom": 0.1
+    },
+    "io stat": {
+      "why": "File stats per hot request, solo owner. Plan 16 gate D4 and the Plan 17 per-request I/O work.",
+      "slack": 0.5
+    },
+    "io read": {
+      "why": "File opens, reads and directory reads per hot request, solo owner. Hot reads come from derived data, not files (docs/performance.md).",
+      "slack": 0.5
+    },
+    "io sql": {
+      "why": "SQL statements per hot request, solo owner, Better Auth's included.",
+      "slack": 0.5
+    }
+  },
+  "budgets": {}
+}

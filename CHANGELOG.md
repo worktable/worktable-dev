@@ -16,7 +16,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Updates:** If Worktable can't reach the release server, `worktable update` and the **Software update** panel keep the installed version instead of installing whatever is newest. When releases are paused, Worktable offers no new version until they resume.
-
+- **Desktop updates:** Desktop installs only the release currently offered. When releases are paused, it offers no new version and doesn't install one it already downloaded. If it can't reach the release server before installing, it keeps the current app.
 - **Private logs:** Worktable's logs no longer name your documents. Requests are logged by route, documents by an opaque id, and errors without their messages, unless you set `WORKTABLE_DEBUG=1`. When something goes wrong on the server, Worktable shows a short error ID that matches the log line.
 - **Log rotation:** On local and self-hosted Worktable, each background service log rotates at 10 MB and keeps three older copies, so logs no longer grow without limit.
 

@@ -11,7 +11,7 @@ generated package outputs.
 
 1. Make the change in the canonical source and update the package and plugin manifest versions together.
 2. Merge the reviewed pull request and confirm all required checks pass.
-3. Confirm the `OpenClaw plugin / Verify` check succeeds on `main`.
+3. Confirm the `OpenClaw plugin / openclaw-plugin` check succeeds on `main`.
 4. Create a protected tag named `openclaw-v<package-version>` at that exact
    public commit. Do not create a GitHub Release, because Worktable's installer
    uses the repository's latest application release.

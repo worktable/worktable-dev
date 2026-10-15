@@ -28,7 +28,7 @@ env:
 
 jobs:
   verify:
-    name: Verify
+    name: hermes-plugin
     runs-on: ubuntu-latest
     steps:
       - name: Check out the public source

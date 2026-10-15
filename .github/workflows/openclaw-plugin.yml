@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify
+    name: openclaw-plugin
     runs-on: ubuntu-latest
     defaults:
       run:

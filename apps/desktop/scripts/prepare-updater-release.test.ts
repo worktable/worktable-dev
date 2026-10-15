@@ -76,6 +76,37 @@ describe("Desktop updater release feed", () => {
     )
   })
 
+  test("publishes a beta build under its beta's tag", () => {
+    const root = temporaryDirectory()
+    const sourceBundle = join(root, "Worktable.app.tar.gz")
+    const sourceSignature = `${sourceBundle}.sig`
+    writeFileSync(sourceBundle, "signed beta archive")
+    const version = "0.1.24-dev.140+abc1234"
+    writeFileSync(sourceSignature, updaterSignature(version))
+    const base = {
+      appVersion: version,
+      tag: "v0.1.24-dev.140",
+      pubDate: "2026-10-15T12:00:00Z",
+      releaseNotes: "Beta build of main.",
+      releaseDirectory: join(root, "release"),
+      updaterBundlePath: sourceBundle,
+      updaterSignaturePath: sourceSignature,
+    }
+    const prepared = prepareDesktopUpdaterRelease(base)
+    // The feed names the exact signed version; the URL drops build metadata.
+    expect(prepared.feed.version).toBe(version)
+    expect(prepared.feed.platforms["darwin-aarch64"].url).toBe(
+      "https://worktable.dev/releases/v0.1.24-dev.140/worktable-desktop-darwin-arm64.app.tar.gz"
+    )
+    expect(() =>
+      prepareDesktopUpdaterRelease({ ...base, tag: `v${version}` })
+    ).toThrow("does not match application version")
+    writeFileSync(sourceSignature, updaterSignature("0.1.24-dev.140"))
+    expect(() => prepareDesktopUpdaterRelease(base)).toThrow(
+      "signature is for 0.1.24-dev.140, not 0.1.24-dev.140+abc1234"
+    )
+  })
+
   test("fails closed on version, publication date, notes, and signature", () => {
     const root = temporaryDirectory()
     const sourceBundle = join(root, "Worktable.app.tar.gz")
@@ -94,7 +125,7 @@ describe("Desktop updater release feed", () => {
 
     expect(() =>
       prepareDesktopUpdaterRelease({ ...base, appVersion: "0.0.45-beta.1" })
-    ).toThrow("must be stable semver")
+    ).toThrow("must be a release or beta build")
     expect(() =>
       prepareDesktopUpdaterRelease({ ...base, tag: "v0.0.46" })
     ).toThrow("does not match application version")

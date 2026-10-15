@@ -171,7 +171,7 @@ test("a slow System check still announces after the user leaves the section", as
   await expect(page.getByText("Worktable 9.9.9 is available")).toBeVisible()
 })
 
-test("Desktop's own update controls replace the server's, even when its status fails", async ({
+test("Desktop's own update controls replace the server's, even when its status fails, and switch its channel", async ({
   page,
 }) => {
   await mockDeployment(page)
@@ -186,7 +186,16 @@ test("Desktop's own update controls replace the server's, even when its status f
       __desktopStatusFails: true,
       __TAURI__: {
         core: {
-          invoke: async (command: string) => {
+          invoke: async (command: string, args?: { channel?: string }) => {
+            const state = window as {
+              __desktopChannel?: string
+              __desktopStatusFails?: boolean
+            }
+            if (command === "desktop_workspace_set_update_channel") {
+              state.__desktopChannel = args?.channel
+              return null
+            }
+            if (command === "desktop_workspace_check_for_updates") return null
             if (command !== "desktop_workspace_update_status") {
               throw new Error(`unexpected ${command}`)
             }
@@ -210,6 +219,7 @@ test("Desktop's own update controls replace the server's, even when its status f
                 outcome: "current",
                 message: null,
               },
+              channel: state.__desktopChannel ?? "stable",
             }
           },
         },
@@ -247,6 +257,17 @@ test("Desktop's own update controls replace the server's, even when its status f
   await expect(
     settings.getByText("Check for updates automatically")
   ).toHaveCount(0)
+
+  // Desktop follows the beta channel once it's switched on.
+  const beta = settings.getByRole("switch", { name: "Beta updates" })
+  await expect(beta).not.toBeChecked()
+  await beta.click()
+  await expect(beta).toBeChecked()
+  expect(
+    await page.evaluate(
+      () => (window as { __desktopChannel?: string }).__desktopChannel
+    )
+  ).toBe("beta")
 
   // A later failed read replaces the earlier status rather than leaving it.
   await page.evaluate(() => {

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "workspace-desktop-updates",
-  "description": "Desktop update status, checks and restart for the active local loopback workspace only.",
+  "description": "Desktop update status, checks, channel and restart for the active local loopback workspace only.",
   "local": false,
   "remote": {
     "urls": [
@@ -14,6 +14,7 @@
   "permissions": [
     "allow-desktop-workspace-update-status",
     "allow-desktop-workspace-check-for-updates",
-    "allow-desktop-workspace-restart-to-update"
+    "allow-desktop-workspace-restart-to-update",
+    "allow-desktop-workspace-set-update-channel"
   ]
 }

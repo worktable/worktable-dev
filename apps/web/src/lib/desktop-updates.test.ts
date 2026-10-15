@@ -23,6 +23,7 @@ const readyStatus = {
   totalBytes: 155_000_000,
   canRestart: true,
   lastCheck: { checkedAt: 1_791_605_530, outcome: "available", message: null },
+  channel: "beta",
 }
 
 afterEach(() => {
@@ -62,7 +63,13 @@ describe("Desktop update bridge", () => {
         outcome: "available",
         message: null,
       },
+      channel: "beta",
     })
+    // A Desktop from before release channels doesn't say which it follows.
+    const older: Record<string, unknown> = { ...readyStatus }
+    delete older.channel
+    respond(older)
+    expect((await getDesktopUpdateStatus())?.channel).toBeNull()
   })
 
   it("rejects a status it does not understand instead of guessing", async () => {
@@ -70,6 +77,7 @@ describe("Desktop update bridge", () => {
       { ...readyStatus, schemaVersion: 2 },
       { ...readyStatus, state: "paused" },
       { ...readyStatus, canRestart: "yes" },
+      { ...readyStatus, channel: "nightly" },
       {
         ...readyStatus,
         lastCheck: { checkedAt: 1, outcome: "maybe", message: null },

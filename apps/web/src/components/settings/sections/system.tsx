@@ -35,6 +35,8 @@ import {
   checkDesktopUpdates,
   mayHaveDesktopUpdates,
   restartDesktopToUpdate,
+  setDesktopUpdateChannel,
+  type DesktopUpdateChannel,
   type DesktopUpdateStatus,
 } from "@/lib/desktop-updates"
 import { useSettingsPatch } from "../use-settings-patch"
@@ -108,7 +110,12 @@ export function SystemSection() {
           </div>
         </DesktopUpdateFrame>
       ) : desktopUpdate.data ? (
-        <DesktopUpdateSection status={desktopUpdate.data} />
+        <>
+          <DesktopUpdateSection status={desktopUpdate.data} />
+          {desktopUpdate.data.channel ? (
+            <DesktopChannelGroup channel={desktopUpdate.data.channel} />
+          ) : null}
+        </>
       ) : inDesktop && desktopUpdate.isPending ? null : (
         <>
           {deployment?.capabilities.softwareUpdates ? (
@@ -359,6 +366,47 @@ function DesktopUpdateSection({ status }: { status: DesktopUpdateStatus }) {
         )}
       </div>
     </DesktopUpdateFrame>
+  )
+}
+
+// Beta follows main: Desktop installs each beta build that has a signed
+// Desktop download, and moves on to the release those builds lead up to.
+function DesktopChannelGroup({ channel }: { channel: DesktopUpdateChannel }) {
+  const queryClient = useQueryClient()
+  const change = useMutation({
+    mutationFn: (next: DesktopUpdateChannel) => {
+      // Desktop checks the new channel straight away.
+      noteDesktopCheckRequested()
+      return setDesktopUpdateChannel(next)
+    },
+    onError: (error) =>
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Couldn’t change the update channel."
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: DESKTOP_UPDATE_QUERY_KEY }),
+  })
+  const beta = change.isPending
+    ? change.variables === "beta"
+    : channel === "beta"
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="rounded-xl border border-border bg-card p-4">
+        <SettingRow
+          label="Beta updates"
+          description="Get new versions before they’re released"
+        >
+          <Switch
+            checked={beta}
+            disabled={change.isPending}
+            onCheckedChange={(next) => change.mutate(next ? "beta" : "stable")}
+          />
+        </SettingRow>
+      </div>
+    </section>
   )
 }
 

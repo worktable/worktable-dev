@@ -12,6 +12,9 @@ export type DesktopUpdateState =
   | "error"
   | "recovery"
 
+/** The release channel Desktop follows. */
+export type DesktopUpdateChannel = "stable" | "beta"
+
 export interface DesktopUpdateCheck {
   checkedAt: number
   outcome: "current" | "available" | "failed"
@@ -27,6 +30,8 @@ export interface DesktopUpdateStatus {
   totalBytes: number | null
   canRestart: boolean
   lastCheck: DesktopUpdateCheck | null
+  /** Null when this Desktop predates release channels. */
+  channel: DesktopUpdateChannel | null
 }
 
 type NativeInvoke = (command: string, args?: unknown) => Promise<unknown>
@@ -111,7 +116,10 @@ export function parseDesktopUpdateStatus(value: unknown): DesktopUpdateStatus {
     !optionalString(status.notes) ||
     typeof status.downloadedBytes !== "number" ||
     (status.totalBytes !== null && typeof status.totalBytes !== "number") ||
-    typeof status.canRestart !== "boolean"
+    typeof status.canRestart !== "boolean" ||
+    (status.channel !== undefined &&
+      status.channel !== "stable" &&
+      status.channel !== "beta")
   ) {
     throw new Error("Desktop returned an invalid update status.")
   }
@@ -124,6 +132,7 @@ export function parseDesktopUpdateStatus(value: unknown): DesktopUpdateStatus {
     totalBytes: status.totalBytes as number | null,
     canRestart: status.canRestart,
     lastCheck: parseCheck(status.lastCheck ?? null),
+    channel: (status.channel as DesktopUpdateChannel | undefined) ?? null,
   }
 }
 
@@ -146,6 +155,15 @@ export async function checkDesktopUpdates(): Promise<void> {
   const nativeInvoke = invoke()
   if (!nativeInvoke) throw new Error("Desktop updates are unavailable here.")
   await nativeInvoke("desktop_workspace_check_for_updates")
+}
+
+/** Follows `channel` from now on; Desktop checks it right away. */
+export async function setDesktopUpdateChannel(
+  channel: DesktopUpdateChannel
+): Promise<void> {
+  const nativeInvoke = invoke()
+  if (!nativeInvoke) throw new Error("Desktop updates are unavailable here.")
+  await nativeInvoke("desktop_workspace_set_update_channel", { channel })
 }
 
 /** Installs the downloaded update and restarts Desktop. */

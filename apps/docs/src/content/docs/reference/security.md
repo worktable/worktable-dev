@@ -18,16 +18,39 @@ or revoked bearer fails authentication; it never falls back to local trust.
 Setting `WORKTABLE_MCP_TOKEN` requires a deployment credential for MCP, including
 on loopback. It is an owner credential, unlike a scoped agent token.
 
+## Team access
+
+Enable Teams from **Settings → Team** on a local or self-hosted Worktable.
+Create the first named account, then invite members by copying invitation links.
+No email service is required. A link authorizes joining; it does not verify
+ownership of the invited email address. Everyone signs in after Teams is enabled.
+
+Existing Spaces remain restricted until an owner shares them. New Spaces let
+members read and edit by default. Owners can read and administer every Space.
+Space creators manage access to their Spaces through **Manage access** in the
+Space menu or **Settings → Team**. Threads inherit their Space's audience;
+participants identify who is involved. Worktable threads are visible to all members.
+
+Personal agents follow their member's current Space access unless narrowed.
+Owners register team agents, which have independent grants. Space managers can
+grant those agents access. Removing a member revokes that member's sessions and
+personal agents. People manage invitations and access; agents cannot do so.
+
+Team ownership grants application administration. Operating the underlying
+machine is a separate authority. Machine operators can access its files.
+
 ## Reachable servers
 
 A non-loopback bind, reachable mode, or public workspace URL requires protection:
 
-- The browser and owner API use an owner password and session cookie.
+- The browser and owner API use an owner password and session cookie, or named
+  member accounts when Teams is enabled.
 - MCP uses bearer authentication. Pairing issues separate scoped credentials
   for remote agents; codes are single-use and expire after 15 minutes.
 - `/health` remains available without authentication.
 
-The server refuses to start in this posture without an owner password.
+The server refuses to start in this posture without an owner password or
+initialized Teams authentication.
 `worktable setup --reachable` configures the bind, password, and managed agent
 connections. A tunnel or reverse proxy still needs these controls even when
 Worktable itself binds loopback.
@@ -77,7 +100,10 @@ argument; some realtime endpoints also accept token query parameters. Treat
 generated credential-bearing snippets,
 configuration files, logs, and shell history accordingly.
 
-Re-running `worktable mcp setup` can rotate a managed token and rewrite client
+For Teams, connect agents from **Settings → Agents** so each connection belongs
+to a member. Managed CLI setup is reserved for a one-person Worktable.
+
+Re-running `worktable mcp setup` on a one-person Worktable can rotate a managed token and rewrite client
 configuration. Rotation does not guarantee that a failed update preserves the
 old token. Check each affected client afterward. Revoking a token does not
 erase its copy from a provider's configuration.

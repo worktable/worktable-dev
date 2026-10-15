@@ -22,8 +22,9 @@ use credential_store::{
 };
 use host_cookie::{purge_persisted_host_only_cookie, set_host_only_cookie};
 use remote_connection::{
-    normalize_remote_origin, remote_origin_string, validate_remote_origin, RemoteConnectionError,
-    RemoteHttpClient, RemoteWorkspace, WorkspaceProbe,
+    is_worktable_session_cookie_name, normalize_remote_origin, remote_origin_string,
+    select_remote_session_cookie, validate_remote_origin, RemoteConnectionError, RemoteHttpClient,
+    RemoteSessionCookie, RemoteWorkspace, WorkspaceProbe,
 };
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -171,6 +172,8 @@ struct DesktopBootstrapStatus {
     can_remove_connection: bool,
     connection_profile_id: Option<String>,
     saved_connections: Vec<DesktopSavedConnectionSummary>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    cloud_worktables: Vec<cloud_auth::CloudWorktableChoice>,
     workspace_native_commands: &'static str,
 }
 
@@ -194,6 +197,7 @@ impl DesktopBootstrapStatus {
             can_remove_connection: false,
             connection_profile_id: None,
             saved_connections: Vec::new(),
+            cloud_worktables: Vec::new(),
             workspace_native_commands: "pending",
         }
     }
@@ -1232,9 +1236,13 @@ async fn desktop_start_self_hosted_connection(
 }
 
 #[tauri::command]
-async fn desktop_start_cloud_connection(webview: Webview, app: AppHandle) -> Result<(), String> {
+async fn desktop_start_cloud_connection(
+    webview: Webview,
+    app: AppHandle,
+    workspace_id: Option<String>,
+) -> Result<(), String> {
     require_trusted_surface(&webview)?;
-    run_cloud_connection_operation(&app, true).await
+    run_selected_cloud_connection_operation(&app, workspace_id.is_none(), workspace_id).await
 }
 
 #[tauri::command]
@@ -1414,8 +1422,16 @@ async fn clear_rejected_cloud_credential(
 }
 
 async fn run_cloud_connection_operation(app: &AppHandle, interactive: bool) -> Result<(), String> {
+    run_selected_cloud_connection_operation(app, interactive, None).await
+}
+
+async fn run_selected_cloud_connection_operation(
+    app: &AppHandle,
+    interactive: bool,
+    selected_workspace_id: Option<String>,
+) -> Result<(), String> {
     run_guarded_operation(app, async {
-        match connect_cloud(app, interactive).await {
+        match connect_cloud(app, interactive, selected_workspace_id).await {
             Ok(()) => Ok(()),
             Err(error) => {
                 let profile = saved_cloud_profile(app).ok().flatten();
@@ -1457,7 +1473,11 @@ async fn run_cloud_connection_operation(app: &AppHandle, interactive: bool) -> R
     .await
 }
 
-async fn connect_cloud(app: &AppHandle, interactive: bool) -> Result<(), CloudAuthError> {
+async fn connect_cloud(
+    app: &AppHandle,
+    interactive: bool,
+    selected_workspace_id: Option<String>,
+) -> Result<(), CloudAuthError> {
     let profile = saved_cloud_profile(app).map_err(|message| CloudAuthError {
         code: "CLOUD_PROFILE_UNAVAILABLE".into(),
         message,
@@ -1554,6 +1574,34 @@ async fn connect_cloud(app: &AppHandle, interactive: bool) -> Result<(), CloudAu
             retry_after: None,
         });
     }
+    if interactive && selected_workspace_id.is_none() {
+        let worktables = app
+            .state::<CloudAuthController>()
+            .list_worktables(&desktop_version)
+            .await?;
+        if !connection_generation_is_active(app, generation) {
+            return Ok(());
+        }
+        let mut status = DesktopBootstrapStatus::cloud_selection(
+            "Choose a Worktable to open.",
+            profile_id.clone(),
+        );
+        status.cloud_worktables = worktables;
+        if status.cloud_worktables.is_empty() {
+            status.message =
+                "Create a Worktable or accept an invitation in your browser, then sign in again."
+                    .into();
+        }
+        set_status(app, status);
+        size_current_window(app);
+        return Ok(());
+    }
+    let switching_worktable = selected_workspace_id
+        .as_deref()
+        .is_some_and(|selected| Some(selected) != expected_hosted_id.as_deref());
+    let requested_workspace_id = selected_workspace_id
+        .as_deref()
+        .or(expected_hosted_id.as_deref());
     if !connection_generation_is_active(app, generation) {
         if profile_id.is_none() {
             app.state::<CloudAuthController>()
@@ -1576,6 +1624,7 @@ async fn connect_cloud(app: &AppHandle, interactive: bool) -> Result<(), CloudAu
         generation,
         &desktop_version,
         &user.id,
+        requested_workspace_id,
         provisioning_deadline,
     )
     .await
@@ -1590,12 +1639,16 @@ async fn connect_cloud(app: &AppHandle, interactive: bool) -> Result<(), CloudAu
             return Err(error);
         }
     };
-    if expected_hosted_id
+    if selected_workspace_id
         .as_deref()
-        .is_some_and(|expected| expected != session.workspace.hosted_workspace_id)
-        || expected_portable_id
-            .as_deref()
-            .is_some_and(|expected| expected != session.workspace.portable_workspace_id)
+        .is_some_and(|selected| selected != session.workspace.hosted_workspace_id)
+        || (!switching_worktable
+            && (expected_hosted_id
+                .as_deref()
+                .is_some_and(|expected| expected != session.workspace.hosted_workspace_id)
+                || expected_portable_id
+                    .as_deref()
+                    .is_some_and(|expected| expected != session.workspace.portable_workspace_id)))
     {
         let error = cloud_workspace_identity_conflict(
             "Worktable Cloud returned a different workspace identity for this account.",
@@ -1647,6 +1700,7 @@ async fn wait_for_cloud_session(
     generation: u64,
     desktop_version: &str,
     workos_user_id: &str,
+    workspace_id: Option<&str>,
     deadline: tokio::time::Instant,
 ) -> Result<CloudWebViewSession, CloudAuthError> {
     loop {
@@ -1689,7 +1743,7 @@ async fn wait_for_cloud_session(
         }
         let session_result = await_connection_operation(
             app.state::<CloudAuthController>()
-                .issue_webview_session(desktop_version),
+                .issue_webview_session(desktop_version, workspace_id),
             connection_changed,
         )
         .await?;
@@ -1832,7 +1886,7 @@ fn finish_cloud_connection(
     create_workspace_webview(
         app,
         WORKTABLE_CLOUD_ORIGIN.into(),
-        "/",
+        &format!("/t/{}/", session.workspace.hosted_workspace_id),
         Some((session.cookie, generation)),
     )
     .map_err(cloud_local_error)?;
@@ -2068,9 +2122,17 @@ async fn refresh_cloud_session(
     if !cookie_refresh_pending {
         return Ok(());
     }
+    let profile = saved_cloud_profile(app).map_err(cloud_local_error)?;
+    let workspace_id = match profile.as_ref() {
+        Some(DesktopConnectionProfile::Cloud {
+            hosted_workspace_id,
+            ..
+        }) => Some(hosted_workspace_id.as_str()),
+        _ => None,
+    };
     let session = match app
         .state::<CloudAuthController>()
-        .issue_webview_session(&desktop_version)
+        .issue_webview_session(&desktop_version, workspace_id)
         .await
     {
         Ok(session) => session,
@@ -2886,12 +2948,13 @@ fn clear_remote_session(app: &AppHandle, origin: &str) -> Result<(), String> {
     let cookies = webview
         .cookies_for_url(origin_url.clone())
         .map_err(|error| format!("failed to read the Worktable session: {error}"))?;
-    let session = cookies
-        .iter()
-        .find(|cookie| cookie.name() == "wt_session")
-        .map(|cookie| cookie.value().to_string());
+    let session = select_remote_session_cookie(
+        cookies
+            .iter()
+            .map(|cookie| (cookie.name().to_string(), cookie.value().to_string())),
+    );
     for cookie in cookies {
-        if cookie.name() == "wt_session" {
+        if is_worktable_session_cookie_name(cookie.name()) {
             webview
                 .delete_cookie(cookie)
                 .map_err(|error| format!("failed to delete the Worktable session: {error}"))?;
@@ -2901,13 +2964,13 @@ fn clear_remote_session(app: &AppHandle, origin: &str) -> Result<(), String> {
         .cookies_for_url(origin_url.clone())
         .map_err(|error| format!("failed to verify Worktable session deletion: {error}"))?
         .iter()
-        .any(|cookie| cookie.name() == "wt_session");
+        .any(|cookie| is_worktable_session_cookie_name(cookie.name()));
     if session_still_exists {
         return Err("Desktop could not delete the Worktable session cookie. The saved server was kept so you can try again.".into());
     }
     if let Ok(client) = remote_http_client(app) {
         tauri::async_runtime::spawn(async move {
-            client.logout(&origin_url, session.as_deref()).await;
+            client.logout(&origin_url, session.as_ref()).await;
         });
     }
     Ok(())
@@ -4410,7 +4473,7 @@ fn begin_remote_connection(
 fn session_cookie_for_origin<R: Runtime>(
     app: &AppHandle<R>,
     origin: &tauri::Url,
-) -> Result<Option<String>, String> {
+) -> Result<Option<RemoteSessionCookie>, String> {
     let webview = app
         .get_webview(WORKSPACE_WEBVIEW_LABEL)
         .or_else(|| app.get_webview(TRUSTED_WEBVIEW_LABEL))
@@ -4418,10 +4481,9 @@ fn session_cookie_for_origin<R: Runtime>(
     let cookies = webview
         .cookies_for_url(origin.clone())
         .map_err(|error| format!("failed to read the Worktable session: {error}"))?;
-    Ok(cookies
-        .into_iter()
-        .find(|cookie| cookie.name() == "wt_session")
-        .map(|cookie| cookie.value().to_string()))
+    Ok(select_remote_session_cookie(cookies.into_iter().map(
+        |cookie| (cookie.name().to_string(), cookie.value().to_string()),
+    )))
 }
 
 async fn run_remote_probe(app: AppHandle, generation: u64, verify_service: bool) {
@@ -4484,7 +4546,7 @@ async fn perform_remote_probe(
             transient: false,
         })?;
     match client
-        .probe_workspace(&origin, session_cookie.as_deref())
+        .probe_workspace(&origin, session_cookie.as_ref())
         .await?
     {
         WorkspaceProbe::AuthenticationRequired => {
@@ -4767,7 +4829,7 @@ async fn perform_remote_monitor_probe(
             message,
             transient: false,
         })?;
-    match client.probe_workspace(&origin, cookie.as_deref()).await? {
+    match client.probe_workspace(&origin, cookie.as_ref()).await? {
         WorkspaceProbe::AuthenticationRequired => Ok(MonitorOutcome::AuthenticationRequired),
         WorkspaceProbe::Ready(workspace) => {
             if pending

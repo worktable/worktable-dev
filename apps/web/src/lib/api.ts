@@ -1,3 +1,4 @@
+import { initializeBrowserTeamContext } from "./team-context";
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
   ResolvedStartHerePin,
@@ -7,10 +8,13 @@ import type {
 } from "@worktable/types"
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
+export type SpaceView = SpaceFile & { permissions?: { edit: boolean; manage: boolean } };
+
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
 
 export interface WorkspaceInfo {
   contentEpoch?: string
+  teamContext?: { worktableId: string; memberId: string; policyRevision: number };
   canManage?: boolean
   id: string
   name: string
@@ -45,6 +49,7 @@ export async function getWorkspace() {
 
 /** Adopt a workspace summary, read now or carried by the served page. */
 export async function acceptWorkspace(workspace: WorkspaceInfo) {
+  initializeBrowserTeamContext(workspace.teamContext);
   await acceptWorkspaceContentEpoch(workspace.id, workspace.contentEpoch)
   return workspace
 }
@@ -67,14 +72,14 @@ export function updateWorkspace(patch: {
 
 /** Every Space, archived ones included. */
 export function getSpaces() {
-  return fetchJSON<{ spaces: SpaceFile[] }>("/api/spaces").then(
+  return fetchJSON<{ spaces: SpaceView[] }>("/api/spaces").then(
     (r) => r.spaces
   )
 }
 
 export function getSpace(spaceId: string, options?: ReadOptions) {
   return fetchJSON<{
-    space: SpaceFile
+    space: SpaceView
     pins?: WithContentRevision<ResolvedStartHerePin>[]
   }>(`/api/spaces/${spaceId}`, options)
 }

@@ -1,3 +1,4 @@
+import { assertSpaceAccess } from "./team-policy.ts";
 import { noteCommentActivity } from "./activity-log.ts"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
@@ -66,6 +67,7 @@ export async function withAnnotationStoreLock<T>(
   await previous
   try {
     assertWorkspaceAvailable()
+    assertSpaceAccess(spaceId, "edit");
     if (await usesDocumentDataV2()) return await operation()
     return await withLegacyAnnotationStoreLock(
       { workspaceRoot: getWorkspaceRoot(), spaceId },
@@ -228,6 +230,7 @@ function matches(annotation: Annotation, filters: AnnotationListFilters): boolea
 }
 
 export async function listAnnotations(spaceId: string, filters: AnnotationListFilters = {}): Promise<{ annotations: Annotation[]; total: number; nextOffset?: number }> {
+  assertSpaceAccess(spaceId);
   if (await usesDocumentDataV2()) {
     const requestedPath = filters.target?.docPath ?? filters.target?.widgetId
     let compatible: Annotation[]
@@ -290,6 +293,7 @@ export async function listDocAnnotations(
   docPath: string,
   options: { namespaceLockHeld?: boolean } = {}
 ): Promise<Annotation[]> {
+  assertSpaceAccess(spaceId);
   if (await usesDocumentDataV2()) {
     return listLegacyCompatibleAnnotationsV2(spaceId, docPath, options)
   }
@@ -310,6 +314,7 @@ async function findAnnotation(spaceId: string, annotationId: string): Promise<{ 
 }
 
 export async function readAnnotation(spaceId: string, annotationId: string): Promise<Annotation> {
+  assertSpaceAccess(spaceId);
   if (await usesDocumentDataV2()) {
     return readLegacyCompatibleAnnotationV2(spaceId, annotationId)
   }
@@ -379,6 +384,7 @@ async function replyAnnotationRecord(spaceId: string, annotationId: string, body
 }
 
 export async function updateAnnotation(spaceId: string, annotationId: string, patch: UpdateAnnotationPatch, updatedBy = "worktable"): Promise<Annotation> {
+  assertSpaceAccess(spaceId, "edit");
   if (await usesDocumentDataV2()) {
     return updateLegacyCompatibleAnnotationV2(
       spaceId,
@@ -445,6 +451,7 @@ async function noteAnnotationActivity(spaceId: string, annotation: Annotation): 
 }
 
 export async function createAnnotation(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
+  assertSpaceAccess(spaceId, "edit");
   const result = await createAnnotationRecord(spaceId, input)
   if (result.created && (input.author ?? DEFAULT_AUTHOR).type !== "system") {
     await noteAnnotationActivity(spaceId, result.annotation)
@@ -464,6 +471,7 @@ export async function createAnnotation(spaceId: string, input: CreateAnnotationI
 }
 
 export async function replyAnnotation(spaceId: string, annotationId: string, body: string, author: AnnotationAuthor = DEFAULT_AUTHOR): Promise<{ annotation: Annotation; replyId: string }> {
+  assertSpaceAccess(spaceId, "edit");
   const result = await replyAnnotationRecord(spaceId, annotationId, body, author)
   if (author.type !== "system" && !(await usesDocumentDataV2())) {
     await noteAnnotationActivity(spaceId, result.annotation)
@@ -483,6 +491,7 @@ export async function replyAnnotation(spaceId: string, annotationId: string, bod
 }
 
 export async function resolveAnnotation(spaceId: string, annotationId: string, reason?: string, resolvedBy = "worktable"): Promise<Annotation> {
+  assertSpaceAccess(spaceId, "edit");
   const annotation = await resolveAnnotationRecord(spaceId, annotationId, reason, resolvedBy)
   if (!NON_ENGAGING_ACTORS.has(resolvedBy) && !(await usesDocumentDataV2())) {
     await noteAnnotationActivity(spaceId, annotation)
@@ -560,6 +569,7 @@ function blockContext(
 }
 
 export async function getAnnotationContext(spaceId: string, annotationOrTarget: string | AnnotationTarget): Promise<AnnotationContext> {
+  assertSpaceAccess(spaceId);
   const target = typeof annotationOrTarget === "string" ? (await readAnnotation(spaceId, annotationOrTarget)).target : annotationOrTarget;
   if (target.type === "widget") {
     // Doc-level context only (no block anchoring inside the sandboxed iframe):
@@ -640,6 +650,7 @@ export async function validateAnnotationDocPathMoves(
   spaceId: string,
   moves: Array<{ from: string; to: string }>
 ): Promise<void> {
+  assertSpaceAccess(spaceId);
   await withAnnotationStoreLock(spaceId, async () => {
     const prepared = moves.map(({ from, to }) => ({
       from,
@@ -677,6 +688,7 @@ export async function renameAnnotationDocPath(
   oldPath: string,
   newPath: string
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   await withAnnotationStoreLock(spaceId, () =>
     renameAnnotationDocPathLocked(spaceId, oldPath, newPath)
   );
@@ -686,6 +698,7 @@ export async function deleteAnnotationDocPath(
   spaceId: string,
   docPath: string
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   await withAnnotationStoreLock(spaceId, async () => {
     const path = annotationPath(spaceId, {
       root: "docs",
@@ -701,6 +714,7 @@ export async function deleteAnnotationWidgetId(
   spaceId: string,
   widgetId: string
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   if (!WidgetIdSchema.safeParse(widgetId).success) return;
   await withAnnotationStoreLock(spaceId, async () => {
     const path = annotationPath(spaceId, {

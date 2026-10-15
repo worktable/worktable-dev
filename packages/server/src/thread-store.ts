@@ -1,3 +1,4 @@
+import { assertSpaceAccess, assertCurrentTeamIdentity, currentRequestIdentity, canAccessSpace } from "./team-policy.ts";
 import {
   copyFile,
   mkdir,
@@ -98,11 +99,14 @@ export function normalizeThreadLocation(
 }
 
 export function threadsDir(locationInput: ThreadLocation | string): string {
+  const identity = currentRequestIdentity();
+  if (identity) assertCurrentTeamIdentity(identity);
   const location = normalizeThreadLocation(locationInput)
   if (location.kind === "worktable") {
     return join(getWorkspaceRoot(), "threads")
   }
   assertSafeSegment(location.spaceId, "space ID")
+  assertSpaceAccess(location.spaceId)
   return join(getSpacesBaseDir(), location.spaceId, "threads")
 }
 
@@ -135,7 +139,11 @@ function withThreadMutationLock<T>(
 ): Promise<T> {
   const lockPath = threadMutationLockPath(location, threadId)
   return withStoreWriteLock(lockPath, () =>
-    withCrossProcessLock(lockPath, { label: `Thread ${threadId}` }, operation)
+    withCrossProcessLock(lockPath, { label: `Thread ${threadId}` }, () => {
+      const resolved = normalizeThreadLocation(location);
+      if (resolved.kind === "space") assertSpaceAccess(resolved.spaceId, "edit");
+      return operation();
+    })
   )
 }
 
@@ -511,7 +519,7 @@ export async function findThread(
   let spaceIds: string[] = []
   try {
     spaceIds = (await readdir(getSpacesBaseDir(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => entry.isDirectory() && canAccessSpace(entry.name))
       .map((entry) => entry.name)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
@@ -907,6 +915,7 @@ export async function createThread(
   }
   const recipient = input.recipient
   return withThreadMutationLock({ kind: "worktable" }, "create", async () => {
+    if (location.kind === "space") assertSpaceAccess(location.spaceId, "edit");
     for (const existingThread of await threadsWithIdempotencyKey(
       location,
       input.author.id,

@@ -43,6 +43,7 @@ import {
 import { UsageError } from "./style.ts"
 import {
   createToken,
+  teamsEnabled,
   currentAgentScopes,
   finalizeAgentTokenRotations,
   getWorkspaceRoot,
@@ -89,6 +90,7 @@ const MANAGED_TOKEN_SCOPES = [...DEFAULT_AGENT_TOKEN_SCOPES]
  * Returns the raw token string to inject into agent configs.
  */
 export async function rotateManagedToken(): Promise<string> {
+  if (teamsEnabled()) throw new UsageError("Connect your agents from Settings → Agents when Teams is enabled.")
   const existing = await listTokens()
   // Re-issuing keeps the access its owner chose in Settings.
   const scopes =
@@ -112,6 +114,7 @@ export async function rotateManagedToken(): Promise<string> {
  * raw token (to inject) must use rotateManagedToken instead.
  */
 export async function ensureManagedToken(): Promise<void> {
+  if (teamsEnabled()) return
   const existing = await listTokens()
   // The token must be valid for the CURRENT workspace: tokens are workspace-bound
   // (verifyToken rejects a token whose workspace != getWorkspaceRoot()). A managed
@@ -500,6 +503,7 @@ export async function setupManagedClients(
 ): Promise<McpClientStatus[]> {
   const config = readConfig()
   applyRuntimeConfig(config)
+  if (teamsEnabled()) throw new UsageError("Connect your agents from Settings → Agents when Teams is enabled.")
   const clientIds = managedTransactionClients(config, requested)
   if (clientIds.length === 0) {
     return []

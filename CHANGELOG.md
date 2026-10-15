@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
+- **Worktable for Teams:** Invite named members, restrict Space access, and connect personal or team agents on local, self-hosted, and Cloud Worktables.
 
 ### Changed
 

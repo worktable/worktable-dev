@@ -1,3 +1,4 @@
+import { useSpace } from "@/lib/queries"
 import { useRef, useState } from "react"
 import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Hash, Info, Loader2, Maximize2, MoreVertical, ExternalLink, RotateCcw, SearchX, Trash, X } from "lucide-react"
 import { Link } from "@tanstack/react-router"
@@ -51,6 +52,7 @@ import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEd
 const PEEK_EDITABLE_TYPES = new Set([...INLINE_EDITABLE_TYPES, "relation", "document", "json"])
 
 export interface RecordPeekActions {
+  readOnly?: boolean
   onCommitField: (recordId: string, key: string, value: unknown) => Promise<void>
   onDuplicate: (record: RecordFile) => void
   onArchive: (recordId: string) => void
@@ -470,16 +472,16 @@ function RecordActionsMenu({ record, actions, archived }: { record: RecordFile; 
           <Hash className="mr-2 size-4" />
           Copy Record ID
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => actions.onDuplicate(record)}>
+        <DropdownMenuItem disabled={actions.readOnly} onClick={() => actions.onDuplicate(record)}>
           <Copy className="mr-2 size-4" />
           Duplicate
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => (archived ? actions.onRestore(record.id) : actions.onArchive(record.id))}>
+        <DropdownMenuItem disabled={actions.readOnly} onClick={() => (archived ? actions.onRestore(record.id) : actions.onArchive(record.id))}>
           {archived ? <RotateCcw className="mr-2 size-4" /> : <Archive className="mr-2 size-4" />}
           {archived ? "Restore" : "Archive"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={() => actions.onDelete(record.id)}>
+        <DropdownMenuItem disabled={actions.readOnly} variant="destructive" onClick={() => actions.onDelete(record.id)}>
           <Trash className="mr-2 size-4" />
           Delete
         </DropdownMenuItem>
@@ -576,7 +578,8 @@ function DetailFieldValue({
     setEditing(false)
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus())
   }
-  const editable = editingEnabled && PEEK_EDITABLE_TYPES.has(column.type)
+  const { data: spaceDetail } = useSpace(spaceId)
+  const editable = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false) && editingEnabled && PEEK_EDITABLE_TYPES.has(column.type)
 
   const commitRaw = async (raw: unknown) => {
     const { value: next, error } = coerceFieldInput(column, raw)

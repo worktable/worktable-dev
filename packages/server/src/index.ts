@@ -1,57 +1,87 @@
-import { closePreviewBrowsers } from "./document-preview-browser.ts";
-import { fulfillPreviewFont, previewFontVersion, previewFontCss } from "./preview-fonts.ts";
-import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts";
-import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts";
-import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts";
-import { Hono } from "hono";
-import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts";
-import { startLinkedRuntime } from "./linked-runtime.ts";
-import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
-import { markBootMilestone, startBootPhase, timeBootTask } from "./boot-timing.ts";
-import { cors } from "hono/cors";
-import { compressApiResponse } from "./http-compression.ts";
+import { recoverTeamInitialization } from "./team-initialization.ts";
+import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
+import { serveTeamDirectory, TEAM_DIRECTORY_PATH } from "./team-directory.ts"
+import { finalizeCommittedTeamSnapshotRestore } from "./workspace-snapshot-restore.ts"
+import { APIError } from "better-auth/api"
+import { verifyTeamSession } from "./team-session.ts"
+import {
+  canAccessSpace,
+  assertCurrentTeamIdentity,
+  teamMemberForIdentity,
+  resolveTeamAgentCredential,
+} from "./team-policy.ts"
+import { teamsEnabled, currentTeamWorktable } from "./team-database.ts"
+import { teamRouter } from "./routes/team.ts"
+import { teamAuthRouter } from "./routes/team-auth.ts"
+import { closePreviewBrowsers } from "./document-preview-browser.ts"
+import {
+  fulfillPreviewFont,
+  previewFontVersion,
+  previewFontCss,
+} from "./preview-fonts.ts"
+import { requireWorkspaceContentEpoch } from "./workspace-content-epoch.ts"
+import { retireWorkspaceDerivedFiles } from "./workspace-reset-files.ts"
+import { finalizeWorkspaceClearJob } from "./workspace-clear-jobs.ts"
+import { Hono } from "hono"
+import { cloudCallbackRouter, linkedRouter } from "./routes/linked.ts"
+import { startLinkedRuntime } from "./linked-runtime.ts"
+import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts"
+import {
+  markBootMilestone,
+  startBootPhase,
+  timeBootTask,
+} from "./boot-timing.ts"
+import { cors } from "hono/cors"
+import { compressApiResponse } from "./http-compression.ts"
 import {
   serverTiming,
   timedMiddleware,
   unexpectedErrorResponse,
-} from "./request-timing.ts";
-import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
-import { debugLogging, logDocument, logError } from "./debug-log.ts";
-import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
-import { acceptsGzip, gzipAsync, isLocalBrowserRequest } from "./http-compression.ts";
-import { injectDocumentOpening } from "./document-opening.ts";
-import { readBootFacts, withBootFacts } from "./boot-facts.ts";
-import { createAppShell } from "./app-shell.ts";
-import { productFontAssets } from "./product-fonts.ts";
-import { gzipSync } from "node:zlib";
-import { existsSync, lstatSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { healthRouter } from "./routes/health.ts";
-import { spacesRouter } from "./routes/spaces.ts";
-import { docsRouter } from "./routes/docs.ts";
-import { documentsRouter } from "./routes/documents.ts";
-import { widgetsRouter } from "./routes/widgets.ts";
-import { recordsRouter } from "./routes/records.ts";
-import { annotationsRouter } from "./routes/annotations.ts";
-import { threadsRouter } from "./routes/threads.ts";
-import { searchRouter } from "./routes/search.ts";
-import { recentRouter } from "./routes/recent.ts";
-import { activityRouter, pendingRouter } from "./routes/activity.ts";
-import { tokensRouter } from "./routes/tokens.ts";
-import { wellKnownRouter } from "./routes/well-known.ts";
-import { mcpRouter } from "./routes/mcp.ts";
-import { pairingRouter } from "./routes/pairing.ts";
-import { agentConnectionsRouter } from "./routes/agent-connections.ts";
-import { sharesRouter } from "./routes/shares.ts";
-import { publicSharesRouter } from "./routes/public-shares.ts";
-import { connectRouter } from "./routes/connect.ts";
-import { workspaceRouter } from "./routes/workspace.ts";
-import { operatorRouter } from "./routes/operator.ts";
-import { systemRouter } from "./routes/system.ts";
-import { integrationsRouter } from "./routes/integrations.ts";
-import { authSessionRouter } from "./routes/auth-session.ts";
-import { profileRouter } from "./routes/profile.ts";
-import { diagnosticsRouter } from "./routes/diagnostics.ts";
+} from "./request-timing.ts"
+import {
+  noteServerActivity,
+  startEventLoopLagSampler,
+} from "./perf-diagnostics.ts"
+import { debugLogging, logDocument, logError } from "./debug-log.ts"
+import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts"
+import {
+  acceptsGzip,
+  gzipAsync,
+  isLocalBrowserRequest,
+} from "./http-compression.ts"
+import { injectDocumentOpening } from "./document-opening.ts"
+import { readBootFacts, withBootFacts } from "./boot-facts.ts"
+import { createAppShell } from "./app-shell.ts"
+import { productFontAssets } from "./product-fonts.ts"
+import { gzipSync } from "node:zlib"
+import { existsSync, lstatSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { healthRouter } from "./routes/health.ts"
+import { spacesRouter } from "./routes/spaces.ts"
+import { docsRouter } from "./routes/docs.ts"
+import { documentsRouter } from "./routes/documents.ts"
+import { widgetsRouter } from "./routes/widgets.ts"
+import { recordsRouter } from "./routes/records.ts"
+import { annotationsRouter } from "./routes/annotations.ts"
+import { threadsRouter } from "./routes/threads.ts"
+import { searchRouter } from "./routes/search.ts"
+import { recentRouter } from "./routes/recent.ts"
+import { activityRouter, pendingRouter } from "./routes/activity.ts"
+import { tokensRouter } from "./routes/tokens.ts"
+import { wellKnownRouter } from "./routes/well-known.ts"
+import { mcpRouter } from "./routes/mcp.ts"
+import { pairingRouter } from "./routes/pairing.ts"
+import { agentConnectionsRouter } from "./routes/agent-connections.ts"
+import { sharesRouter } from "./routes/shares.ts"
+import { publicSharesRouter } from "./routes/public-shares.ts"
+import { connectRouter } from "./routes/connect.ts"
+import { workspaceRouter } from "./routes/workspace.ts"
+import { operatorRouter } from "./routes/operator.ts"
+import { systemRouter } from "./routes/system.ts"
+import { integrationsRouter } from "./routes/integrations.ts"
+import { authSessionRouter } from "./routes/auth-session.ts"
+import { profileRouter } from "./routes/profile.ts"
+import { diagnosticsRouter } from "./routes/diagnostics.ts"
 import {
   authRequired,
   implicitLoopbackRequestAllowed,
@@ -62,12 +92,17 @@ import {
   trustedLocalIdentity,
   verifyRealtimeCredential,
   wsAuthRequired,
-} from "./auth.ts";
-import { gatewayAdmits, hostedAgentBase, isHosted } from "./hosted.ts";
-import { rememberPeer } from "./request-source.ts";
-import { warmAuthServerCaches } from "./oauth-jwt.ts";
-import { verifyRawCookieHeader, hasOwnerPasswordSync } from "./session-store.ts";
-import { hasScope, listTokens, tokenIdFromToken, type TokenIdentity } from "./token-store.ts";
+} from "./auth.ts"
+import { gatewayAdmits, hostedAgentBase, isHosted } from "./hosted.ts"
+import { rememberPeer } from "./request-source.ts"
+import { warmAuthServerCaches } from "./oauth-jwt.ts"
+import { verifyRawCookieHeader, hasOwnerPasswordSync } from "./session-store.ts"
+import {
+  hasScope,
+  listTokens,
+  tokenIdFromToken,
+  type TokenIdentity,
+} from "./token-store.ts"
 import {
   REACHABLE_NETWORK_NOTICE,
   tlsTerminatedUpstream,
@@ -101,14 +136,29 @@ import {
   startBackgroundUpdateCheckScheduler,
   updateCheckDisabled,
   updateCheckSupported,
-} from "./update-check.ts";
-import { VERSION } from "./release-info.ts";
-import { createStaticFileResponse, getStaticAssetsInfo, indexStaticAssets, servedBuildId } from "./static-assets.ts";
-import { ensureWorkspaceManifest, getWorkspaceRoot, WorkspaceAdoptionError } from "./workspace.ts";
-import { setWorkspaceStorageUpgradeState, upgradeWorkspaceBeforeStartup } from "./workspace-storage-upgrade.ts";
-import { runRetentionSweep, workspaceHasVersionHistory } from "./version-retention.ts";
-import { settleRetentionPolicy } from "./settings-store.ts";
-import { readLocalWorkspaceRegistry } from "./local-host.ts";
+} from "./update-check.ts"
+import { VERSION } from "./release-info.ts"
+import {
+  createStaticFileResponse,
+  getStaticAssetsInfo,
+  indexStaticAssets,
+  servedBuildId,
+} from "./static-assets.ts"
+import {
+  ensureWorkspaceManifest,
+  getWorkspaceRoot,
+  WorkspaceAdoptionError,
+} from "./workspace.ts"
+import {
+  setWorkspaceStorageUpgradeState,
+  upgradeWorkspaceBeforeStartup,
+} from "./workspace-storage-upgrade.ts"
+import {
+  runRetentionSweep,
+  workspaceHasVersionHistory,
+} from "./version-retention.ts"
+import { settleRetentionPolicy } from "./settings-store.ts"
+import { readLocalWorkspaceRegistry } from "./local-host.ts"
 import {
   drainWorkspaceChanges,
   notifyWorkspaceChangeAndWait,
@@ -125,6 +175,7 @@ import {
 } from "./workspace-transfer-v2.ts";
 import {
   setWorkspaceReplacementExecutor,
+  isWorkspaceReplacementScheduled,
   waitForActiveWorkspaceExports,
 } from "./workspace-replacement-coordinator.ts";
 import {
@@ -170,6 +221,8 @@ import {
   isAuthorizedLocalOperatorRequest,
 } from "./operator-export.ts";
 import { runAsActivityActor } from "./activity-log.ts";
+import { TeamAccessError } from "./team-policy.ts";
+import { TeamStateError } from "./team-database.ts";
 
 // ============================================================
 // App setup
@@ -263,7 +316,7 @@ app.use("/api/*", async (c, next) => {
 // handler that already passed authorization cannot write into the new root.
 app.use("*", async (c, next) => {
   const pathname = new URL(c.req.url).pathname;
-  if (!isWorkspaceRequest(c.req.method, pathname)) return next();
+  if (!isWorkspaceRequest(c.req.method, pathname, teamsEnabled())) return next();
   const release = admitWorkspaceRequest();
   if (!release) {
     return c.json(
@@ -301,6 +354,18 @@ app.use("*", async (c, next) => {
 // Error handler. Routes answer expected errors themselves; anything that
 // reaches here gets a generic message and an id that is also logged.
 app.onError((err, c) => {
+  if (err instanceof APIError)
+    return new Response(
+      JSON.stringify({ error: err.message, code: err.body?.code }),
+      {
+        status: err.statusCode,
+        headers: { "Content-Type": "application/json" },
+      }
+    )
+  if (err instanceof TeamAccessError)
+    return c.json({ error: err.message, code: err.code }, 403)
+  if (err instanceof TeamStateError)
+    return c.json({ error: err.message, code: err.code }, 503)
   if (err instanceof WorkspaceUnavailableError) {
     return c.json({ error: err.message, code: err.code }, 503)
   }
@@ -348,7 +413,9 @@ app.route("/api/tokens", tokensRouter);
 app.route("/api/agent-connections", agentConnectionsRouter);
 app.route("/api/linked", cloudCallbackRouter);
 // Public immutable application assets only; this map cannot read workspace files.
-let previewFontStyles: { version: string; css: string; gzip: Buffer } | undefined;
+let previewFontStyles:
+  | { version: string; css: string; gzip: Buffer }
+  | undefined
 app.get("/worktable-preview/fonts.css", (c) => {
   const version = previewFontVersion();
   const etag = `W/"${version}"`;
@@ -363,19 +430,25 @@ app.get("/worktable-preview/fonts.css", (c) => {
     const css = previewFontCss("/worktable-preview");
     previewFontStyles = { version, css, gzip: gzipSync(css) };
   }
-  const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "");
-  return new Response(compressed ? new Uint8Array(previewFontStyles.gzip) : previewFontStyles.css, {
-    headers: { ...headers, ...(compressed ? { "Content-Encoding": "gzip" } : {}) },
-  });
-});
+  const compressed = acceptsGzip(c.req.header("Accept-Encoding") ?? "")
+  return new Response(
+    compressed ? new Uint8Array(previewFontStyles.gzip) : previewFontStyles.css,
+    {
+      headers: {
+        ...headers,
+        ...(compressed ? { "Content-Encoding": "gzip" } : {}),
+      },
+    }
+  )
+})
 app.get("/worktable-preview/fonts/*", async (c) => {
   const version = c.req.query("v");
   const currentVersion = previewFontVersion();
   if (version && version !== currentVersion) return c.notFound();
   const bytes = await fulfillPreviewFont(
-    c.req.path.replace("/worktable-preview", ""),
-  );
-  if (!bytes) return c.notFound();
+    c.req.path.replace("/worktable-preview", "")
+  )
+  if (!bytes) return c.notFound()
   return new Response(Buffer.from(bytes), {
     headers: {
       "Content-Type": c.req.path.endsWith(".woff") ? "font/woff" : "font/woff2",
@@ -393,12 +466,38 @@ app.use("/api/*", timedMiddleware("auth", trustedLocalIdentity()));
 app.use("/api/*", (c, next) =>
   runAsActivityActor(c.get("identity")?.principal, next)
 );
-app.use("/api/*", requireWorkspaceContentEpoch);
-app.use("/api/*", shareInFlightReads);
+app.use("/api/*", async (c, next) => {
+  await next()
+  const identity = c.get("identity")
+  const member = identity?.team ? teamMemberForIdentity(identity) : null
+  const team = member ? currentTeamWorktable() : null
+  if (member && team) {
+    c.header(
+      "X-Worktable-Team",
+      JSON.stringify({
+        worktableId: team.id,
+        memberId: member.id,
+        policyRevision: team.policyRevision,
+      })
+    )
+    const vary = new Set(
+      (c.res.headers.get("Vary") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+    for (const header of ["Cookie", "Authorization", "X-Worktable-Member"])
+      vary.add(header)
+    c.header("Vary", [...vary].join(", "))
+  }
+})
+app.use("/api/*", requireWorkspaceContentEpoch)
+app.use("/api/*", shareInFlightReads)
 
 // Auth/session routes are mounted OUTSIDE the /api/* identity middleware so
 // login and status work unauthenticated (the login page must be reachable with
 // no cookie). The SPA fallback already serves /login.
+app.route("/auth/team", teamAuthRouter);
 app.route("/auth", authSessionRouter);
 
 // Routes
@@ -407,6 +506,7 @@ app.route("/internal/operator", operatorRouter);
 app.route("/public/share", publicSharesRouter);
 app.route("/api/workspace", workspaceRouter);
 app.route("/api/profile", profileRouter);
+app.route("/api/team", teamRouter);
 app.route("/api/diagnostics", diagnosticsRouter);
 app.route("/api/system", systemRouter);
 app.route("/api/shares", sharesRouter);
@@ -480,20 +580,36 @@ if (HAS_STATIC) {
   // through the second release without the worker, then delete these routes.
   // Never let /sw.js fall through to the HTML shell: browsers reject it as a
   // service worker, and stale clients can keep serving broken cached bundles.
-  app.get("/sw.js", (c) => c.text(SERVICE_WORKER_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
-  app.get("/workbox-*.js", (c) => c.text("", 404));
-  app.get("/registerSW.js", (c) => c.text(REGISTER_SW_CLEANUP, 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }));
+  app.get("/sw.js", (c) =>
+    c.text(SERVICE_WORKER_CLEANUP, 200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+    })
+  )
+  app.get("/workbox-*.js", (c) => c.text("", 404))
+  app.get("/registerSW.js", (c) =>
+    c.text(REGISTER_SW_CLEANUP, 200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+    })
+  )
   app.get("/manifest.webmanifest", (c) =>
-    staticFile(c.req.path, c.req.raw, { "Content-Type": "application/manifest+json" })
-  );
-  app.get("/favicon.ico", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/favicon.svg", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/apple-touch-icon-180x180.png", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/pwa-64x64.png", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/pwa-192x192.png", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/pwa-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/maskable-icon-512x512.png", (c) => staticFile(c.req.path, c.req.raw));
-  app.get("/robots.txt", (c) => staticFile(c.req.path, c.req.raw));
+    staticFile(c.req.path, c.req.raw, {
+      "Content-Type": "application/manifest+json",
+    })
+  )
+  app.get("/favicon.ico", (c) => staticFile(c.req.path, c.req.raw))
+  app.get("/favicon.svg", (c) => staticFile(c.req.path, c.req.raw))
+  app.get("/apple-touch-icon-180x180.png", (c) =>
+    staticFile(c.req.path, c.req.raw)
+  )
+  app.get("/pwa-64x64.png", (c) => staticFile(c.req.path, c.req.raw))
+  app.get("/pwa-192x192.png", (c) => staticFile(c.req.path, c.req.raw))
+  app.get("/pwa-512x512.png", (c) => staticFile(c.req.path, c.req.raw))
+  app.get("/maskable-icon-512x512.png", (c) =>
+    staticFile(c.req.path, c.req.raw)
+  )
+  app.get("/robots.txt", (c) => staticFile(c.req.path, c.req.raw))
   // Agent platform logos shown in Settings and onboarding.
   app.get("/agent-logos/*", (c) => staticFile(c.req.path, c.req.raw));
 
@@ -522,7 +638,7 @@ if (HAS_STATIC) {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "private, no-store",
-          "Vary": "Cookie, Authorization, Accept-Encoding",
+          Vary: "Cookie, Authorization, Accept-Encoding",
           ...(compressed ? { "Content-Encoding": "gzip" } : {}),
         },
       });
@@ -537,6 +653,10 @@ if (HAS_STATIC) {
 // ============================================================
 
 interface WsData {
+  identity?: TokenIdentity;
+  canAccess?: (spaceId?: string, edit?: boolean) => boolean;
+  actorId?: string;
+  actorName?: string;
   localTokenId?: string;
   /** The token's scopes at the handshake, which fixed this socket's reads. */
   localTokenScopes?: string;
@@ -632,6 +752,7 @@ async function wsGateIdentity(
   const origin = req.headers.get("Origin");
   if (!origin || !sameOriginRequestAllowed(req)) return null;
 
+  if (teamsEnabled()) return verifyTeamSession(req);
   return (await verifyRawCookieHeader(req.headers.get("Cookie")))
     ? ownerIdentity()
     : null;
@@ -653,7 +774,20 @@ function realtimeCookieCheck(req: Request, url: URL): (() => Promise<boolean>) |
   if (isHosted() || !wsAuthRequired() || req.headers.has("Authorization") || url.searchParams.has("token")) return undefined;
   const cookie = req.headers.get("Cookie");
   // Keep the cookie in a private verifier closure, never in a serializable field.
-  return cookie ? () => verifyRawCookieHeader(cookie) : undefined;
+  return cookie ? teamsEnabled() ? async () => Boolean(await verifyTeamSession(req)) : () => verifyRawCookieHeader(cookie) : undefined;
+}
+
+function realtimePolicy(identity: TokenIdentity): (spaceId?: string, edit?: boolean) => boolean {
+  return (spaceId, edit = false) => {
+    try {
+      assertCurrentTeamIdentity(identity)
+      return (
+        !spaceId || canAccessSpace(spaceId, edit ? "edit" : "read", identity)
+      )
+    } catch {
+      return false
+    }
+  }
 }
 
 async function realtimeAccess(identity: TokenIdentity): Promise<{
@@ -719,8 +853,10 @@ const LIFETIME_BOOT_DELAY_MS = 60_000;
 const LIFETIME_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 function startLifetimeSweep(): void {
-  if (lifetimeSweepRun) return;
-  lifetimeSweepRun = runLifetimeSweep({ shouldStop: () => lifetimeSweepStopping })
+  if (lifetimeSweepRun) return
+  lifetimeSweepRun = runLifetimeSweep({
+    shouldStop: () => lifetimeSweepStopping,
+  })
     .then((receipts) => {
       for (const receipt of receipts) {
         console.log(
@@ -750,8 +886,8 @@ function installHasVersionHistory(): boolean {
   if (workspaceHasVersionHistory()) return true;
   try {
     return readLocalWorkspaceRegistry().workspaces.some((entry) =>
-      workspaceHasVersionHistory(entry.path),
-    );
+      workspaceHasVersionHistory(entry.path)
+    )
   } catch {
     return true;
   }
@@ -767,14 +903,15 @@ const RETENTION_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 // Watchers are the responsive path, but filesystem event delivery is not a
 // durable queue. A low-frequency file-truth sweep heals wholly dropped events.
-let recordReconcileSweepTimer: ReturnType<typeof setInterval> | null = null;
-const RECORD_RECONCILE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
-let activeServer: ReturnType<typeof Bun.serve<WsData>> | null = null;
-let replacementRestartInProgress = false;
-let starterSeedScheduleHookForTests: (() => void | Promise<void>) | null = null;
-let workspaceWatcherTestOptions:
-  | { debounceMs: number; onPendingChange: (event: ChangeEvent | null) => void }
-  | null = null;
+let recordReconcileSweepTimer: ReturnType<typeof setInterval> | null = null
+const RECORD_RECONCILE_SWEEP_INTERVAL_MS = 5 * 60 * 1000
+let activeServer: ReturnType<typeof Bun.serve<WsData>> | null = null
+let replacementRestartInProgress = false
+let starterSeedScheduleHookForTests: (() => void | Promise<void>) | null = null
+let workspaceWatcherTestOptions: {
+  debounceMs: number
+  onPendingChange: (event: ChangeEvent | null) => void
+} | null = null
 let starterSeedRequestWaitHookForTests:
   | ((method: string, path: string) => void)
   | null = null;
@@ -802,9 +939,10 @@ export function setStarterSeedScheduleHookForTests(
 }
 
 export function setWorkspaceWatcherTestOptions(
-  options:
-    | { debounceMs: number; onPendingChange: (event: ChangeEvent | null) => void }
-    | null
+  options: {
+    debounceMs: number
+    onPendingChange: (event: ChangeEvent | null) => void
+  } | null
 ): void {
   workspaceWatcherTestOptions = options;
 }
@@ -887,8 +1025,14 @@ export async function runRecordReconcileSweep(): Promise<void> {
   await recordIndex.rebuild();
   // A sweep can repair drift without a corresponding watcher event. Tell
   // browsers about every collection it changed, including removed ones.
-  for (const { spaceId, collectionId } of recordIndex.collectionsChangedSince(before)) {
-    wsManager.broadcast(spaceId, { type: "record_collection_update", spaceId, collectionId });
+  for (const { spaceId, collectionId } of recordIndex.collectionsChangedSince(
+    before
+  )) {
+    wsManager.broadcast(spaceId, {
+      type: "record_collection_update",
+      spaceId,
+      collectionId,
+    })
   }
 }
 
@@ -929,18 +1073,31 @@ function startStorageUpgradeServer(
         url.pathname === "/api/workspace/storage-upgrade" ||
         url.pathname === "/api/workspace/storage-upgrade/retry" ||
         (req.method === "GET" &&
-          (url.pathname.startsWith("/assets/") || url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico"))
-      ) return app.fetch(req);
-      if (req.method === "GET" && req.headers.get("accept")?.includes("text/html") &&
-        !["/api/", "/internal/", "/mcp", "/yjs/", "/ws"].some(prefix => url.pathname.startsWith(prefix))) {
+          (url.pathname.startsWith("/assets/") ||
+            url.pathname === "/favicon.svg" ||
+            url.pathname === "/favicon.ico"))
+      )
+        return app.fetch(req)
+      if (
+        req.method === "GET" &&
+        req.headers.get("accept")?.includes("text/html") &&
+        !["/api/", "/internal/", "/mcp", "/yjs/", "/ws"].some((prefix) =>
+          url.pathname.startsWith(prefix)
+        )
+      ) {
         // Always serve the neutral shell: document-opening injection must not
         // inspect content while the workspace is being converted or swapped.
         url.pathname = "/";
         url.search = "";
         return app.fetch(new Request(url, req));
       }
-      return Response.json({ code: "WORKSPACE_UPGRADING", error: "Worktable is upgrading this workspace." },
-        { status: 503, headers: { "Retry-After": "2" } });
+      return Response.json(
+        {
+          code: "WORKSPACE_UPGRADING",
+          error: "Worktable is upgrading this workspace.",
+        },
+        { status: 503, headers: { "Retry-After": "2" } }
+      )
     },
   };
   const server = Bun.serve<WsData>(maintenance);
@@ -960,17 +1117,24 @@ function startStorageUpgradeServer(
       if (activeServer === server) activeServer = null;
       // Keep the same listener through cutover so clients never race a rebind.
       // The normal runtime installs its own stop boundary around the raw socket.
-      server.stop = stopListener;
-      replacement = startServer(selectedPort, hostname, { ...options, upgradeListener: server });
-      setWorkspaceStorageUpgradeState("ready");
-    })().catch((error) => {
-      server.reload(maintenance);
-      server.stop = stop;
-      activeServer = server;
-      console.error("[workspace] storage upgrade needs attention:", logError(error));
-      setWorkspaceStorageUpgradeState("blocked", run);
-    }).finally(() => { running = null; });
-  };
+      server.stop = stopListener
+      replacement = startServer(selectedPort, hostname, {
+        ...options,
+        upgradeListener: server,
+      })
+      setWorkspaceStorageUpgradeState("ready")
+    })()
+      .catch((error) => {
+        server.reload(maintenance)
+        server.stop = stop
+        activeServer = server
+        console.error("[workspace] storage upgrade needs attention:", logError(error))
+        setWorkspaceStorageUpgradeState("blocked", run)
+      })
+      .finally(() => {
+        running = null
+      })
+  }
   const stop = async (closeActiveConnections?: boolean) => {
     stopped = true;
     await running;
@@ -996,8 +1160,8 @@ export function startServer(
 ): ReturnType<typeof Bun.serve<WsData>> {
   if (activeServer) {
     throw new Error(
-      "A Worktable server is already running or stopping in this process. Await server.stop() before starting its replacement.",
-    );
+      "A Worktable server is already running or stopping in this process. Await server.stop() before starting its replacement."
+    )
   }
   markBootMilestone("server start");
   const endConfigPhase = startBootPhase("config");
@@ -1022,12 +1186,14 @@ export function startServer(
   // the cloud gateway — and the hosted posture already 401s every bare surface
   // (publicSurfaceAuthRequired/mcpBearerRequired are forced on), so booting
   // without a password exposes nothing.
+  recoverTeamInitialization();
+  finalizePendingTeamSpacePolicyReset();
   const bindIsLoopback =
     hostname === undefined || isLoopbackBindHost(hostname);
   const exposedBind = authRequired() || !bindIsLoopback;
   const publicOrigin = publicOriginConfigured();
   if (!isHosted() && ((exposedBind && !bindIsLoopback) || publicOrigin)) {
-    if (!hasOwnerPasswordSync()) {
+    if (!teamsEnabled() && !hasOwnerPasswordSync()) {
       const message = publicOrigin
         ? "[Worktable] refusing to serve with a configured public URL and no owner password set. " +
           "Set an owner password before configuring WORKTABLE_PUBLIC_URL or Settings > General > Public URL."
@@ -1080,24 +1246,36 @@ export function startServer(
   try {
     const endRecoveryPhase = startBootPhase("journal recovery");
     if (!replacementRestartInProgress) {
-      workspaceReplacementRecoveryHookForTests?.();
-      const recovered = recoverInterruptedWorkspaceReplacements({ details: true })
-        .filter((job) => job.resetRequired);
+      workspaceReplacementRecoveryHookForTests?.()
+      const recovered = recoverInterruptedWorkspaceReplacements({
+        details: true,
+      }).filter((job) => job.resetRequired)
       if (recovered.length > 0) {
         retireWorkspaceDerivedFiles();
         recoveredWorkspaceReset = notifyWorkspaceChangeAndWaitOrThrow({
           type: "workspaceReset",
-        }).then(async () => {
-          // A committed clear must revoke old downloads before boot serves requests.
-          for (const job of recovered) {
-            if (job.kind === "clear" && job.state === "complete")
-              await finalizeWorkspaceClearJob(job.id);
-          }
-          acknowledgeWorkspaceReplacementResets(recovered.map((job) => job.id));
-        }).catch((error) => {
-          workspaceRejected = true;
-          console.error("[workspace] recovered state could not be initialized", logError(error));
-        });
+        })
+          .then(async () => {
+            // A committed clear must revoke old downloads before boot serves requests.
+            for (const job of recovered) {
+              if (job.state === "complete" && (job.kind === "import" || job.kind === "clear"))
+                resetTeamSpacePoliciesAfterContentReplacement()
+              if (job.id.startsWith("wss_") && job.state === "complete")
+                await finalizeCommittedTeamSnapshotRestore(job.id)
+              if (job.kind === "clear" && job.state === "complete")
+                await finalizeWorkspaceClearJob(job.id)
+            }
+            acknowledgeWorkspaceReplacementResets(
+              recovered.map((job) => job.id)
+            )
+          })
+          .catch((error) => {
+            workspaceRejected = true
+            console.error(
+              "[workspace] recovered state could not be initialized",
+              logError(error)
+            )
+          })
         console.warn(
           `[Worktable] recovered ${recovered.length} interrupted workspace replacement${recovered.length === 1 ? "" : "s"}`
         );
@@ -1188,8 +1366,8 @@ export function startServer(
     const settled = settleRetentionPolicy({
       hasVersionHistory: installHasVersionHistory,
     }).catch((err) =>
-      console.error("[version-retention] could not settle the policy:", logError(err)),
-    );
+      console.error("[version-retention] could not settle the policy:", logError(err))
+    )
     const sweep = () =>
       void settled
         .then(() => runRetentionSweep())
@@ -1398,13 +1576,16 @@ export function startServer(
             // gone — so clients would never learn of the deletion. Emit
             // widget_deleted explicitly so widget AND annotation queries refetch.
             const exists = (await usesHtmlDocumentStorageV2())
-              ? await htmlDocumentSourceExistsV2(
-                  event.spaceId,
-                  event.widgetId
+              ? await htmlDocumentSourceExistsV2(event.spaceId, event.widgetId)
+              : existsSync(
+                  dirname(getWidgetPath(event.spaceId, event.widgetId))
                 )
-              : existsSync(dirname(getWidgetPath(event.spaceId, event.widgetId)));
             if (!exists) {
-              wsManager.broadcast(event.spaceId, { type: "widget_deleted", spaceId: event.spaceId, widgetId: event.widgetId });
+              wsManager.broadcast(event.spaceId, {
+                type: "widget_deleted",
+                spaceId: event.spaceId,
+                widgetId: event.widgetId,
+              })
             } else {
               await wsManager.handleChange(event).catch((err) =>
                 console.error("[server] ws broadcast error:", logError(err))
@@ -1506,9 +1687,17 @@ export function startServer(
       // fixed at the handshake. The client reconnects with the new access.
       let activeScopes = new Map<string, string>();
       try {
-        activeScopes = new Map((await listTokens())
-          .filter(token => !token.revokedAt && token.workspace === getWorkspaceRoot())
-          .map(token => [token.id, scopeKey(token.scopes)]));
+        activeScopes = new Map(
+          (await listTokens())
+            .filter(
+              (token) =>
+                !token.revokedAt && token.workspace === getWorkspaceRoot()
+            )
+            .map((token) => [
+              token.id,
+              scopeKey((resolveTeamAgentCredential(token) ?? token).scopes),
+            ])
+        )
       } catch {
         // Losing the credential store cannot preserve authenticated sessions.
       }
@@ -1517,6 +1706,7 @@ export function startServer(
           socket.data.localTokenId &&
           activeScopes.get(socket.data.localTokenId) !== socket.data.localTokenScopes
         );
+        if (!revoked && socket.data.canAccess) revoked = !socket.data.canAccess(socket.data.spaceId === THREADS_SCOPE ? undefined : socket.data.spaceId, socket.data.type === "yjs");
         if (!revoked && socket.data.sessionStillValid) {
           try { revoked = !(await socket.data.sessionStillValid()); } catch { revoked = true; }
         }
@@ -1553,263 +1743,303 @@ export function startServer(
     async fetch(req, server) {
       rememberPeer(req, server.requestIP(req)?.address);
       const url = new URL(req.url);
+      if (isWorkspaceReplacementScheduled() && url.pathname !== "/health") {
+        return Response.json({error: "Workspace replacement is in progress", code: "WORKSPACE_REPLACING"}, {status: 503, headers: {"Retry-After": "1"}})
+      }
+
       // A full-workspace capture may be quiet for hours. This capability is
       // process-local and owner-only, so disable Bun's idle timer only for the
       // authenticated maintenance hop rather than for public requests.
       disableAuthorizedOperatorRequestTimeout(req, server);
 
-      if (recoveredDocumentTask && url.pathname !== "/health") {
-        await recoveredDocumentTask;
-      }
-
-      // A rejected workspace must be left byte-for-byte untouched. Short-circuit
-      // every workspace-touching surface (REST, MCP, Yjs/space WebSockets) with
-      // 503 so no request can create spaces/ or other files under the foreign or
-      // unreadable folder. /health stays up so the operator can see the server is
-      // alive and read the refusal reason in the logs.
-      if (
-        (workspaceRejected || workspaceRecoveryRequired()) &&
-        url.pathname !== "/health"
-      ) {
-        return new Response(
-          JSON.stringify({
-            error: workspaceRejected
-              ? "Workspace unavailable: the configured folder was not adopted. See server logs."
-              : "Workspace unavailable: restart Worktable to finish recovering a document move.",
-          }),
-          { status: 503, headers: { "Content-Type": "application/json" } }
-        );
-      }
-
-      if (recoveredWorkspaceReset && url.pathname !== "/health") {
-        await recoveredWorkspaceReset;
-        if (workspaceRejected) {
-          return new Response("Workspace recovery failed; restart Worktable.", {
-            status: 503,
-          });
-        }
-      }
-
-      // Health remains responsive while the first-run seed lands, but no
-      // workspace-facing request may observe or mutate the empty workspace.
-      // Transfer maintenance stays exempt so a requested replacement can
-      // supersede a pending seed without deadlocking server shutdown.
-      const pendingStarterSeed = starterSeedTask;
-      const readOnlyWorkspaceIdentityProbe =
-        req.method === "GET" && url.pathname === "/api/workspace";
-      if (
-        pendingStarterSeed &&
-        url.pathname !== "/health" &&
-        !readOnlyWorkspaceIdentityProbe &&
-        !url.pathname.startsWith("/api/workspace/transfers/")
-      ) {
-        starterSeedRequestWaitHookForTests?.(req.method, url.pathname);
-        await pendingStarterSeed;
-      }
-
-      // Handle Yjs WebSocket upgrade at /yjs/{spaceId}/{docPath...}
-      if (url.pathname.startsWith("/yjs/")) {
-        if (!isWorkspaceRequestAdmissionOpen()) {
-          return new Response(
-            "Workspace writes are temporarily paused for a consistent snapshot",
-            { status: 503, headers: { "Retry-After": "1" } }
-          );
-        }
-        // Decode each segment so the collab room path matches the REST path
-        // (extractDocPath in routes/docs.ts also decodes). Without this, a doc
-        // titled "Planning Onsite" opens a room for "Planning%20Onsite" and the
-        // editor persists a duplicate "Planning%20Onsite.json" alongside it.
-        let parts: string[];
-        try {
-          parts = url.pathname.slice(5).split("/").map(decodeURIComponent); // Remove '/yjs/'
-        } catch {
-          return new Response("Invalid Yjs room path", { status: 400 });
-        }
-        const spaceId = parts[0] ?? "";
-        const docPath = parts.slice(1).join("/");
-
-        if (!spaceId || !docPath) {
-          return new Response("Missing spaceId or docPath", { status: 400 });
+        if (recoveredDocumentTask && url.pathname !== "/health") {
+          await recoveredDocumentTask
         }
 
-        const identity = await wsGateIdentity(req, url);
-        if (!identity) {
-          return new Response("Forbidden", { status: 403 });
-        }
-        // Browser edit-intent frames become human provenance. Agent writes use
-        // the REST/MCP paths, which attribute them to the verified principal.
-        if (identity.principal.type !== "human" || !hasScope(identity.scopes, "docs:write")) {
-          return new Response("Forbidden", { status: 403 });
-        }
-        const access = await realtimeAccess(identity);
-
-        // Existence and format only: opening the room reads the content, and
-        // a live room already holds it.
-        const roomDoc = await docStat(spaceId, docPath);
-        if (!roomDoc) {
-          return new Response("Document not found", { status: 404 });
-        }
-        if (roomDoc.format === "md") {
-          return new Response("Markdown documents are read-only", {
-            status: 409,
-          });
-        }
-        const collaborationEpoch = url.searchParams.get(
-          "collaborationEpoch"
-        );
-        const collaborationCacheEpoch = url.searchParams.get(
-          "collaborationCacheEpoch"
-        );
-        const expectedCacheEpoch = await getDocCollaborationCacheEpoch(
-          spaceId,
-          docPath
-        );
+        // A rejected workspace must be left byte-for-byte untouched. Short-circuit
+        // every workspace-touching surface (REST, MCP, Yjs/space WebSockets) with
+        // 503 so no request can create spaces/ or other files under the foreign or
+        // unreadable folder. /health stays up so the operator can see the server is
+        // alive and read the refusal reason in the logs.
         if (
-          !collaborationEpoch ||
-          collaborationEpoch !== (await getWorkspaceCollaborationEpoch()) ||
-          (collaborationCacheEpoch
-            ? collaborationCacheEpoch !== expectedCacheEpoch
-            : expectedCacheEpoch !== "legacy")
+          (workspaceRejected || workspaceRecoveryRequired()) &&
+          url.pathname !== "/health"
         ) {
           return new Response(
-            "Collaboration session expired; reload the document",
-            { status: 409 }
-          );
+            JSON.stringify({
+              error: workspaceRejected
+                ? "Workspace unavailable: the configured folder was not adopted. See server logs."
+                : "Workspace unavailable: restart Worktable to finish recovering a document move.",
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } }
+          )
         }
 
-        const success = server.upgrade(req, {
-          data: {
-            type: "yjs" as const,
-            localTokenId: localRealtimeTokenId(req, url, identity),
-            localTokenScopes: scopeKey(identity.scopes),
-            sessionStillValid: realtimeCookieCheck(req, url),
-            spaceId,
-            ...access,
-            docPath,
-            baseVersionId: url.searchParams.get("baseVersionId") ?? undefined,
-            baseContentHash: url.searchParams.get("baseContentHash") ?? undefined,
-          },
-        });
-        if (success) return undefined;
-        return new Response("WebSocket upgrade failed", { status: 400 });
-      }
-
-      // Handle existing space WebSocket upgrade at /ws?spaceId=xxx
-      if (url.pathname === "/ws") {
-        const identity = await wsGateIdentity(req, url);
-        if (!identity) {
-          return new Response("Forbidden", { status: 403 });
-        }
-        const access = await realtimeAccess(identity);
-        if (!access.canReadAny) {
-          return new Response("Forbidden", { status: 403 });
-        }
-        const threadScope = url.searchParams.get("scope") === "threads";
-        const spaceId = threadScope
-          ? THREADS_SCOPE
-          : (url.searchParams.get("spaceId") ?? "");
-        if (threadScope && !access.canReadThreads) {
-          return new Response("Forbidden", { status: 403 });
-        }
-        const success = server.upgrade(req, {
-          data: {
-            type: "space" as const,
-            localTokenId: localRealtimeTokenId(req, url, identity),
-            localTokenScopes: scopeKey(identity.scopes),
-            sessionStillValid: realtimeCookieCheck(req, url),
-            spaceId,
-            threadScope,
-            ...access,
-          },
-        });
-        if (success) return undefined;
-        return new Response("WebSocket upgrade failed", { status: 400 });
-      }
-
-      return app.fetch(req);
-    },
-    websocket: {
-      async open(ws) {
-        if (ws.data.localTokenId || ws.data.sessionStillValid) credentialSockets.add(ws);
-        if (workspaceRejected || workspaceRecoveryRequired()) {
-          ws.close()
-          return
-        }
-        if (ws.data.type === "yjs") {
-          try {
-            // Bun may deliver message events before this async handler settles.
-            // YjsDocManager registers the socket synchronously and buffers those
-            // early protocol frames until the room is ready.
-            await yjsManager.handleConnection(
-              ws,
-              ws.data.spaceId,
-              ws.data.docPath!,
+        if (recoveredWorkspaceReset && url.pathname !== "/health") {
+          await recoveredWorkspaceReset
+          if (workspaceRejected) {
+            return new Response(
+              "Workspace recovery failed; restart Worktable.",
               {
-                baseVersionId: ws.data.baseVersionId,
-                baseContentHash: ws.data.baseContentHash,
+                status: 503,
               }
-            );
-          } catch (err) {
-            console.warn(
-              `[YjsManager] refusing room ${logDocument(ws.data.spaceId, ws.data.docPath ?? "")}: ${logError(err)}`
-            );
-            ws.close();
-          }
-        } else {
-          const { spaceId } = ws.data;
-          if (spaceId) {
-            wsManager.subscribe(ws, spaceId);
-            ws.send(
-              JSON.stringify(
-                ws.data.threadScope
-                  ? { type: "subscribed", scope: "threads" }
-                  : { type: "subscribed", spaceId }
-              )
-            );
-          } else {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                error: "Missing spaceId query param",
-              })
-            );
-            ws.close();
+            )
           }
         }
+
+        // Health remains responsive while the first-run seed lands, but no
+        // workspace-facing request may observe or mutate the empty workspace.
+        // Transfer maintenance stays exempt so a requested replacement can
+        // supersede a pending seed without deadlocking server shutdown.
+        const pendingStarterSeed = starterSeedTask
+        const readOnlyWorkspaceIdentityProbe =
+          req.method === "GET" && url.pathname === "/api/workspace"
+        if (
+          pendingStarterSeed &&
+          url.pathname !== "/health" &&
+          !readOnlyWorkspaceIdentityProbe &&
+          !url.pathname.startsWith("/api/workspace/transfers/")
+        ) {
+          starterSeedRequestWaitHookForTests?.(req.method, url.pathname)
+          await pendingStarterSeed
+        }
+
+        // Handle Yjs WebSocket upgrade at /yjs/{spaceId}/{docPath...}
+        if (url.pathname.startsWith("/yjs/")) {
+          if (!isWorkspaceRequestAdmissionOpen()) {
+            return new Response(
+              "Workspace writes are temporarily paused for a consistent snapshot",
+              { status: 503, headers: { "Retry-After": "1" } }
+            )
+          }
+          // Decode each segment so the collab room path matches the REST path
+          // (extractDocPath in routes/docs.ts also decodes). Without this, a doc
+          // titled "Planning Onsite" opens a room for "Planning%20Onsite" and the
+          // editor persists a duplicate "Planning%20Onsite.json" alongside it.
+          let parts: string[]
+          try {
+            parts = url.pathname.slice(5).split("/").map(decodeURIComponent) // Remove '/yjs/'
+          } catch {
+            return new Response("Invalid Yjs room path", { status: 400 })
+          }
+          const spaceId = parts[0] ?? ""
+          const docPath = parts.slice(1).join("/")
+
+          if (!spaceId || !docPath) {
+            return new Response("Missing spaceId or docPath", { status: 400 })
+          }
+
+          const identity = await wsGateIdentity(req, url)
+          if (!identity || (identity.team?.memberId && identity.principal.type === "human" && url.searchParams.get("memberId") !== identity.team.memberId)) {
+            return new Response("Forbidden", { status: 403 })
+          }
+          // Browser edit-intent frames become human provenance. Agent writes use
+          // the REST/MCP paths, which attribute them to the verified principal.
+          if (
+            identity.principal.type !== "human" ||
+            !hasScope(identity.scopes, "docs:write") ||
+            !realtimePolicy(identity)(spaceId, true)
+          ) {
+            return new Response("Forbidden", { status: 403 })
+          }
+          const access = await realtimeAccess(identity)
+
+          // Existence and format only: opening the room reads the content, and
+          // a live room already holds it.
+          const roomDoc = await docStat(spaceId, docPath)
+          if (!roomDoc) {
+            return new Response("Document not found", { status: 404 })
+          }
+          if (roomDoc.format === "md") {
+            return new Response("Markdown documents are read-only", {
+              status: 409,
+            })
+          }
+          const collaborationEpoch = url.searchParams.get("collaborationEpoch")
+          const collaborationCacheEpoch = url.searchParams.get(
+            "collaborationCacheEpoch"
+          )
+          const expectedCacheEpoch = await getDocCollaborationCacheEpoch(
+            spaceId,
+            docPath
+          )
+          if (
+            !collaborationEpoch ||
+            collaborationEpoch !== (await getWorkspaceCollaborationEpoch()) ||
+            (collaborationCacheEpoch
+              ? collaborationCacheEpoch !== expectedCacheEpoch
+              : expectedCacheEpoch !== "legacy")
+          ) {
+            return new Response(
+              "Collaboration session expired; reload the document",
+              { status: 409 }
+            )
+          }
+
+          if (
+            !realtimePolicy(identity)(
+              spaceId === THREADS_SCOPE ? undefined : spaceId
+            )
+          )
+            return new Response("Forbidden", { status: 403 })
+          const success = server.upgrade(req, {
+            data: {
+              identity,
+              canAccess: realtimePolicy(identity),
+              actorId: identity.principal.id,
+              actorName: identity.principal.displayName,
+              type: "yjs" as const,
+              localTokenId: localRealtimeTokenId(req, url, identity),
+              localTokenScopes: scopeKey(identity.scopes),
+              sessionStillValid: realtimeCookieCheck(req, url),
+              spaceId,
+              ...access,
+              docPath,
+              baseVersionId: url.searchParams.get("baseVersionId") ?? undefined,
+              baseContentHash:
+                url.searchParams.get("baseContentHash") ?? undefined,
+            },
+          })
+          if (success) return undefined
+          return new Response("WebSocket upgrade failed", { status: 400 })
+        }
+
+        // Handle existing space WebSocket upgrade at /ws?spaceId=xxx
+        if (url.pathname === "/ws") {
+          const identity = await wsGateIdentity(req, url)
+          if (!identity || (identity.team?.memberId && identity.principal.type === "human" && url.searchParams.get("memberId") !== identity.team.memberId)) {
+            return new Response("Forbidden", { status: 403 })
+          }
+          const access = await realtimeAccess(identity)
+          if (!access.canReadAny) {
+            return new Response("Forbidden", { status: 403 })
+          }
+          const threadScope = url.searchParams.get("scope") === "threads"
+          const spaceId = threadScope
+            ? THREADS_SCOPE
+            : (url.searchParams.get("spaceId") ?? "")
+          if (threadScope && !access.canReadThreads) {
+            return new Response("Forbidden", { status: 403 })
+          }
+          if (
+            !realtimePolicy(identity)(
+              spaceId === THREADS_SCOPE ? undefined : spaceId
+            )
+          )
+            return new Response("Forbidden", { status: 403 })
+          const success = server.upgrade(req, {
+            data: {
+              identity,
+              canAccess: realtimePolicy(identity),
+              actorId: identity.principal.id,
+              actorName: identity.principal.displayName,
+              type: "space" as const,
+              localTokenId: localRealtimeTokenId(req, url, identity),
+              localTokenScopes: scopeKey(identity.scopes),
+              sessionStillValid: realtimeCookieCheck(req, url),
+              spaceId,
+              threadScope,
+              ...access,
+            },
+          })
+          if (success) return undefined
+          return new Response("WebSocket upgrade failed", { status: 400 })
+        }
+
+        if (url.pathname === TEAM_DIRECTORY_PATH) return serveTeamDirectory(req)
+        return app.fetch(req)
       },
-      message(ws, message) {
-        noteServerActivity();
-        if (ws.data.credentialRevoked) return;
-        if (ws.data.type === "yjs") {
-          if (workspaceRecoveryRequired()) {
+      websocket: {
+        async open(ws) {
+          if (
+            ws.data.identity?.team ||
+            ws.data.localTokenId ||
+            ws.data.sessionStillValid
+          )
+            credentialSockets.add(ws)
+          if (workspaceRejected || workspaceRecoveryRequired()) {
             ws.close()
             return
           }
-          yjsManager.handleMessage(
-            ws,
-            ws.data.spaceId,
-            ws.data.docPath!,
-            message as ArrayBuffer | Uint8Array
-          );
-        }
-        // Old space WS clients don't send messages; ignore
+          if (ws.data.type === "yjs") {
+            try {
+              // Bun may deliver message events before this async handler settles.
+              // YjsDocManager registers the socket synchronously and buffers those
+              // early protocol frames until the room is ready.
+              await yjsManager.handleConnection(
+                ws,
+                ws.data.spaceId,
+                ws.data.docPath!,
+                {
+                  baseVersionId: ws.data.baseVersionId,
+                  baseContentHash: ws.data.baseContentHash,
+                }
+              )
+            } catch (err) {
+              console.warn(
+                `[YjsManager] refusing room ${logDocument(ws.data.spaceId, ws.data.docPath ?? "")}: ${logError(err)}`
+              )
+              ws.close()
+            }
+          } else {
+            const { spaceId } = ws.data
+            if (spaceId) {
+              wsManager.subscribe(ws, spaceId)
+              ws.send(
+                JSON.stringify(
+                  ws.data.threadScope
+                    ? { type: "subscribed", scope: "threads" }
+                    : { type: "subscribed", spaceId }
+                )
+              )
+            } else {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  error: "Missing spaceId query param",
+                })
+              )
+              ws.close()
+            }
+          }
+        },
+        message(ws, message) {
+          noteServerActivity()
+          if (
+            ws.data.credentialRevoked ||
+            (ws.data.canAccess &&
+              !ws.data.canAccess(
+                ws.data.spaceId === THREADS_SCOPE ? undefined : ws.data.spaceId,
+                ws.data.type === "yjs"
+              ))
+          )
+            return
+          if (ws.data.type === "yjs") {
+            if (workspaceRecoveryRequired()) {
+              ws.close()
+              return
+            }
+            yjsManager.handleMessage(
+              ws,
+              ws.data.spaceId,
+              ws.data.docPath!,
+              message as ArrayBuffer | Uint8Array
+            )
+          }
+          // Old space WS clients don't send messages; ignore
+        },
+        close(ws) {
+          credentialSockets.delete(ws)
+          if (ws.data.type === "yjs") {
+            yjsManager.handleDisconnect(ws, ws.data.spaceId, ws.data.docPath!)
+          } else {
+            wsManager.unsubscribe(ws)
+          }
+        },
       },
-      close(ws) {
-        credentialSockets.delete(ws);
-        if (ws.data.type === "yjs") {
-          yjsManager.handleDisconnect(
-            ws,
-            ws.data.spaceId,
-            ws.data.docPath!
-          );
-        } else {
-          wsManager.unsubscribe(ws);
-        }
-      },
-    },
-    };
-    return options.upgradeListener?.reload(config) ?? Bun.serve<WsData>(config);
-  };
+    }
+    return options.upgradeListener?.reload(config) ?? Bun.serve<WsData>(config)
+  }
 
   let server: ReturnType<typeof Bun.serve<WsData>>;
   try {
@@ -2007,9 +2237,9 @@ export function startServer(
   setWorkspaceReplacementExecutor((replacement) => {
     setTimeout(() => {
       void (async () => {
-        let transaction:
-          | Awaited<ReturnType<typeof beginPreparedWorkspaceReplacement>>
-          | null = null;
+        let transaction: Awaited<
+          ReturnType<typeof beginPreparedWorkspaceReplacement>
+        > | null = null
         try {
           await stopWorkspaceRequestAdmissionAndDrain();
           await waitForActiveWorkspaceExports();

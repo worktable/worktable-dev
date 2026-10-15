@@ -1,3 +1,4 @@
+import { resetTeamSpacePoliciesAfterContentReplacement } from "./team-policy.ts"
 import { randomBytes } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -230,6 +231,7 @@ export async function confirmWorkspaceClearJob(
         },
         expectedDestinationContentCheckpoint: prepared.destinationCheckpoint,
         async onCommitted() {
+          resetTeamSpacePoliciesAfterContentReplacement()
           const current = await getWorkspaceClearJob(id)
           await updateWorkspaceTransferJob(current, {
             state: "complete",

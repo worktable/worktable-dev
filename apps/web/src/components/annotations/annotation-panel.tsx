@@ -1,11 +1,18 @@
-import { useMemo, useState } from "react";
-import { ArrowUp, CheckCircle2, Circle, MessageSquareText, Sparkles, X } from "lucide-react";
-import type { Annotation, AnnotationCategory } from "@worktable/types";
-import { Badge } from "@worktable/ui/components/badge";
-import { Button } from "@worktable/ui/components/button";
-import { Textarea } from "@worktable/ui/components/textarea";
-import { cn } from "@worktable/ui/lib/utils";
-import { useScrollFade } from "@/hooks/use-scroll-fade";
+import { useMemo, useState } from "react"
+import {
+  ArrowUp,
+  CheckCircle2,
+  Circle,
+  MessageSquareText,
+  Sparkles,
+  X,
+} from "lucide-react"
+import type { Annotation, AnnotationCategory } from "@worktable/types"
+import { Badge } from "@worktable/ui/components/badge"
+import { Button } from "@worktable/ui/components/button"
+import { Textarea } from "@worktable/ui/components/textarea"
+import { cn } from "@worktable/ui/lib/utils"
+import { useScrollFade } from "@/hooks/use-scroll-fade"
 
 const categoryLabel: Record<AnnotationCategory, string> = {
   comment: "Comment",
@@ -18,13 +25,14 @@ function categoryVariant(category: AnnotationCategory): "default" | "secondary" 
 }
 
 export interface AnnotationPanelProps {
-  annotations: Annotation[];
-  activeAnnotationId?: string | null;
-  onSelectAnnotation: (annotation: Annotation) => void;
-  onResolve: (annotationId: string) => void;
-  onReopen: (annotationId: string) => void;
-  onReply: (annotationId: string, body: string) => void;
-  onClose?: () => void;
+  readOnly?: boolean
+  annotations: Annotation[]
+  activeAnnotationId?: string | null
+  onSelectAnnotation: (annotation: Annotation) => void
+  onResolve: (annotationId: string) => void
+  onReopen: (annotationId: string) => void
+  onReply: (annotationId: string, body: string) => void
+  onClose?: () => void
   /** When provided, renders a compose button under the header (used where there
    *  is no editor to attach annotations from — e.g. the HTML doc route). */
   onCompose?: () => void;
@@ -35,6 +43,7 @@ export interface AnnotationPanelProps {
 }
 
 export function AnnotationPanel({
+  readOnly = false,
   annotations,
   activeAnnotationId,
   onSelectAnnotation,
@@ -75,7 +84,7 @@ export function AnnotationPanel({
         </div>
       </div>
 
-      {onCompose && (
+      {onCompose && !readOnly && (
         <div className="px-4 pb-2">
           <Button size="sm" variant="outline" className="w-full gap-2" onClick={onCompose}>
             <MessageSquareText className="h-4 w-4" />
@@ -96,6 +105,7 @@ export function AnnotationPanel({
             {visible.map((annotation) => (
               <AnnotationCard
                 key={annotation.id}
+                readOnly={readOnly}
                 annotation={annotation}
                 active={annotation.id === activeAnnotationId}
                 onSelect={() => onSelectAnnotation(annotation)}
@@ -112,6 +122,7 @@ export function AnnotationPanel({
 }
 
 function AnnotationCard({
+  readOnly,
   annotation,
   active,
   onSelect,
@@ -119,12 +130,13 @@ function AnnotationCard({
   onReopen,
   onReply,
 }: {
-  annotation: Annotation;
-  active: boolean;
-  onSelect: () => void;
-  onResolve: () => void;
-  onReopen: () => void;
-  onReply: (body: string) => void;
+  readOnly?: boolean
+  annotation: Annotation
+  active: boolean
+  onSelect: () => void
+  onResolve: () => void
+  onReopen: () => void
+  onReply: (body: string) => void
 }) {
   const [reply, setReply] = useState("");
   const isResolved = annotation.status === "resolved";
@@ -145,48 +157,69 @@ function AnnotationCard({
       <button type="button" onClick={onSelect} className="w-full text-left">
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <Badge variant={categoryVariant(annotation.category)}>
-            {annotation.category === "instruction" && <Sparkles className="h-3 w-3" />}
+            {annotation.category === "instruction" && (
+              <Sparkles className="h-3 w-3" />
+            )}
             {categoryLabel[annotation.category]}
           </Badge>
           <Badge variant="outline">{annotation.status}</Badge>
           <span className="ml-auto text-[11px] text-muted-foreground">{blockLabel}</span>
         </div>
-        {annotation.title && <h3 className="mb-1 text-sm font-medium text-foreground">{annotation.title}</h3>}
+        {annotation.title && (
+          <h3 className="mb-1 text-sm font-medium text-foreground">
+            {annotation.title}
+          </h3>
+        )}
         {"quote" in annotation.target && annotation.target.quote && (
           <div className="mb-1.5 border-l-2 border-border pl-2">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Commenting on</span>
-            <p className="line-clamp-3 text-xs italic text-muted-foreground">{annotation.target.quote}</p>
+            <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+              Commenting on
+            </span>
+            <p className="line-clamp-3 text-xs text-muted-foreground italic">
+              {annotation.target.quote}
+            </p>
           </div>
         )}
-        <p className="whitespace-pre-wrap text-sm text-foreground/90">{annotation.body}</p>
+        <p className="text-sm whitespace-pre-wrap text-foreground/90">
+          {annotation.body}
+        </p>
       </button>
 
       {annotation.thread.length > 0 && (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           {annotation.thread.map((message) => (
-            <div key={message.id} className="border-l-2 border-border/70 py-1 pl-3">
-              <div className="mb-1 text-[11px] font-medium text-muted-foreground">{message.author.name ?? message.author.id}</div>
-              <p className="whitespace-pre-wrap text-xs text-foreground/80">{message.body}</p>
+            <div
+              key={message.id}
+              className="border-l-2 border-border/70 py-1 pl-3"
+            >
+              <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                {message.author.name ?? message.author.id}
+              </div>
+              <p className="text-xs whitespace-pre-wrap text-foreground/80">
+                {message.body}
+              </p>
             </div>
           ))}
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2">
-        {isResolved ? (
-          <Button size="sm" variant="outline" onClick={onReopen}>
-            <Circle className="mr-1.5 h-3.5 w-3.5" />
-            Reopen
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" onClick={onResolve}>
-            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-            Resolve
-          </Button>
-        )}
-      </div>
+      {!readOnly && (
+        <div className="mt-3 flex items-center gap-2">
+          {isResolved ? (
+            <Button size="sm" variant="outline" onClick={onReopen}>
+              <Circle className="mr-1.5 h-3.5 w-3.5" />
+              Reopen
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={onResolve}>
+              <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+              Resolve
+            </Button>
+          )}
+        </div>
+      )}
 
-      {!isResolved && (
+      {!isResolved && !readOnly && (
         <form
           className="mt-3 flex gap-2"
           onSubmit={(event) => {

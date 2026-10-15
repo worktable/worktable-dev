@@ -35,6 +35,8 @@ export interface RequestPrincipal {
   displayName: string
   /** Human principal that delegated authority to an agent. */
   authorizedBy?: string
+  /** Protected runtime binding; preserves a participant across credential changes. */
+  participantKey?: string
 }
 
 export interface TokenIdentity {
@@ -50,11 +52,35 @@ export interface TokenIdentity {
   /** Agent label ("claude-code", ...) or null for human/owner credentials. */
   agent: string | null
   principal: RequestPrincipal
+  /** Verified credential expiry, retained for live-session authorization. */
+  credentialIssuedAt?: number
+  credentialExpiresAt?: number
+  /** Better Auth session handle, never a session token or cookie. */
+  sessionId?: string
+  /** Trusted gateway proof, populated only after assertion verification. */
+  cloudIdentity?: { issuer: string; subject: string; email: string; name: string; companyId?: string };
+  /** Resolved from protected team state after credential verification. */
+  team?: {
+    worktableId: string
+    userId?: string
+    memberId?: string
+    agentId?: string
+    credentialKey?: string
+  }
+  /** Ephemeral native-host verification authority, never a minted credential. */
+  operatorVerification?: boolean
 }
 
 export interface TokenMetadata extends Omit<
   TokenIdentity,
-  "principal" | "credentialClass"
+  | "principal"
+  | "credentialClass"
+  | "team"
+  | "operatorVerification"
+  | "cloudIdentity"
+  | "credentialExpiresAt"
+  | "credentialIssuedAt"
+  | "sessionId"
 > {
   principal: RequestPrincipal
   id: string

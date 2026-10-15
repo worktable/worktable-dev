@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { requireHumanWorkspaceOwner } from "../auth.ts"
+import { canOperateHost, trustedLocalIdentity } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
 import {
   beginLink,
@@ -14,6 +14,7 @@ import {
   signOutCloudAccount,
   startCloudSignIn,
   linkedCloudOrigin,
+  cloudLinkRequest,
 } from "../cloud-account.ts"
 
 export const cloudCallbackRouter = new Hono()
@@ -30,7 +31,12 @@ cloudCallbackRouter.get("/account/callback", async (c) => {
 })
 
 export const linkedRouter = new Hono()
-linkedRouter.use("*", requireHumanWorkspaceOwner())
+linkedRouter.use("*", trustedLocalIdentity())
+linkedRouter.use("*", async (c, next) =>
+  canOperateHost(c)
+    ? next()
+    : c.json({ error: "Operator authority is required" }, 403)
+)
 linkedRouter.use("*", async (c, next) => {
   if (isHosted()) return c.json({ error: "Not found" }, 404)
   c.header("Cache-Control", "no-store")
@@ -39,6 +45,15 @@ linkedRouter.use("*", async (c, next) => {
 linkedRouter.get("/", async (c) =>
   c.json({ ...linkedStatus(), account: await cloudAccountStatus() })
 )
+linkedRouter.get("/subscriptions", async (c) => {
+  try {
+    return c.json(
+      await cloudLinkRequest(linkedCloudOrigin(), { action: "subscriptions" })
+    )
+  } catch {
+    return c.json({ error: "Could not load Cloud subscriptions" }, 503)
+  }
+})
 linkedRouter.post("/account", async (c) => {
   try {
     // The normal owner/Origin gate has already checked this request's browser origin.
@@ -55,11 +70,21 @@ linkedRouter.delete("/account", async (c) => {
 linkedRouter.patch("/", async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     enabled?: unknown
+    workspaceId?: unknown
   } | null
   if (typeof body?.enabled !== "boolean")
     return c.json({ error: "Invalid request" }, 400)
   try {
-    return c.json(await setLinkEnabled(body.enabled))
+    if (
+      body.workspaceId !== undefined &&
+      (typeof body.workspaceId !== "string" ||
+        !body.workspaceId ||
+        body.workspaceId.length > 256)
+    )
+      return c.json({ error: "Choose a Worktable subscription" }, 400)
+    return c.json(
+      await setLinkEnabled(body.enabled, body.workspaceId as string | undefined)
+    )
   } catch (error) {
     return c.json(
       {

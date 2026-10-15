@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import time
 from datetime import datetime
 import urllib.error
@@ -83,11 +84,15 @@ def _request(url: str, body: Optional[dict] = None, token: Optional[str] = None)
 def mcp_resource(origin: str) -> Optional[str]:
     """The MCP endpoint a Worktable advertises for OAuth sign-in, if any."""
     try:
-        metadata = _request(f"{origin}/.well-known/oauth-protected-resource")
+        parts = urlsplit(origin)
+        resource_path = parts.path.rstrip("/") if re.fullmatch(r"/api/mcp/[wd]/[A-Za-z0-9_-]+/?", parts.path) else ""
+        metadata = _request(f"{parts.scheme}://{parts.netloc}/.well-known/oauth-protected-resource{resource_path}")
     except PairingError:
         return None
     resource = metadata.get("resource")
     servers = metadata.get("authorization_servers")
+    if resource_path and resource != f"{parts.scheme}://{parts.netloc}{resource_path}":
+        return None
     return resource if isinstance(resource, str) and isinstance(servers, list) and servers else None
 
 

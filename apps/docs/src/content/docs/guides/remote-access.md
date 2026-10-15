@@ -39,7 +39,8 @@ Prefer a valid HTTPS address such as `https://worktable.example.com`.
 2. Enter the server address without a path or query.
 3. If you use plain HTTP, acknowledge the warning. HTTPS is strongly
    recommended.
-4. Sign in with the Worktable owner password.
+4. Sign in with your named account when Teams is enabled, or the Worktable
+   owner password for a one-person workspace.
 
 Desktop remembers the server but does not save the owner password. Use
 **Change Connection…** to keep the saved server available, or **Forget this
@@ -48,10 +49,24 @@ Desktop does not create the tunnel or configure the server for you. See the
 [Desktop reference](/reference/desktop/) for connection validation and storage
 details.
 
+## Invite teammates
+
+Enable Teams from **Settings → Team**, then copy an invitation link for each
+member. Everyone uses a named account. Existing Spaces remain restricted until
+you share them; newly created Spaces are shared by default. The
+[security model](/reference/security/) explains owners and restricted Spaces.
+
+If Worktable Link was already connected, enabling Teams pauses it. In
+**Settings → Cloud**, turn Link on again to connect your Cloud account to your
+named member account.
+
 ## Connect a remote agent
 
 Open **Settings → Agents** and choose **Connect an agent**, or create a pairing
 from the Worktable host:
+
+For Teams, use Settings so the connection belongs to the member who approves
+it. The CLI commands below apply to one-person Worktables.
 
 ```sh
 worktable agent invite
@@ -99,7 +114,8 @@ A remote self-hosted installation needs an HTTPS address.
 
 1. Choose **Sign in** in **Settings → Worktable Cloud**. Complete browser
    sign-in and confirm the server address when prompted.
-2. Return to Settings and turn on **Worktable Link**. Sign-in alone does not
+2. Return to Settings, choose a payer-owned **Worktable subscription**, and turn
+   on **Worktable Link**. Sign-in alone does not
    enable remote access. Complete subscription setup if requested.
 3. Copy the device's **MCP URL** into your AI app's connector setup and choose
    OAuth authentication.
@@ -108,6 +124,9 @@ A remote self-hosted installation needs an HTTPS address.
 Keep the device online and Worktable running. Authorized requests pass through
 Cloud to the device; Link does not copy its workspace into the hosted workspace,
 synchronize the two, or expose the full local interface remotely.
+Each device follows its selected subscription, with up to three devices across
+the payer's account. On a team installation, an operator enables Link and its
+AI apps follow that member's Space permissions as personal agents.
 
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it on
 again restores the same MCP URL, share links, and approved connections. You can

@@ -70,7 +70,7 @@ export function useDocumentOrganizeActions(
   const queryClient = useQueryClient()
   const pins = space?.pins ?? []
   const pinned = pins.some((pin) => pin.path === path)
-  if (!summary || summary.archived || !summary.lifetime) return []
+  if (!summary || summary.archived || !summary.lifetime || space?.space.permissions?.edit === false) return []
 
   const updatePins = async (next: Array<{ path: string; note?: string }>) => {
     try {

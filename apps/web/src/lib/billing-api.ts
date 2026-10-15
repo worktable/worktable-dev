@@ -1,3 +1,4 @@
+import { runtimePath } from "./runtime-path"
 import {
   BillingStatus as BillingStatusSchema,
   type BillingStatus,
@@ -7,6 +8,7 @@ import {
   BASE_URL,
   redirectToLogin,
   UnauthorizedError,
+  HttpError,
 } from "./http"
 
 export async function getCloudBillingStatus(): Promise<BillingStatus> {
@@ -18,7 +20,7 @@ export async function getCloudBillingStatus(): Promise<BillingStatus> {
     const body = (await response.json().catch(() => null)) as {
       error?: unknown
     } | null
-    throw new Error(
+    throw new HttpError(response.status, body,
       typeof body?.error === "string"
         ? body.error
         : "Could not read billing status"
@@ -69,5 +71,5 @@ export async function openCloudBillingPortal(): Promise<void> {
 }
 
 export function downloadCloudWorkspace(): void {
-  window.location.assign("/api/workspace/export")
+  window.location.assign(runtimePath("/api/workspace/export"))
 }

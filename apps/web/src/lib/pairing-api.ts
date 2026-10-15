@@ -103,6 +103,7 @@ export function createPairing(
   ) & {
     /** What the agent may do; Worktable grants all of it when omitted. */
     access?: AgentAccess
+    agentId?: string
   }
 ): Promise<PairingCreated> {
   return fetchJSON<PairingCreated>("/api/pairing", {

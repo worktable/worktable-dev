@@ -35,6 +35,8 @@ export type ConnectionRequestTarget =
 
 /** What the owner chose when approving. */
 export interface ConnectionApproval {
+  /** Verified approving enrollment, recorded by the server only. */
+  teamMemberId?: string;
   displayName: string
   icon: string | null
   access: AgentAccess

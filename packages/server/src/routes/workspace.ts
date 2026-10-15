@@ -1,3 +1,6 @@
+import { teamsEnabled } from "../team-database.ts"
+import { currentTeamWorktable } from "../team-database.ts";
+import { teamMemberForIdentity } from "../team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
 import { isHosted } from "../hosted.ts"
 import { retryWorkspaceStorageUpgrade, workspaceStorageUpgradeState } from "../workspace-storage-upgrade.ts"
@@ -16,7 +19,7 @@ import {
   writeWorkspaceManifest,
   type WorkspaceManifest,
 } from "../workspace.ts"
-import { canManageUserSettings, isLocalOwner } from "../auth.ts"
+import { canManageUserSettings, canOperateHost } from "../auth.ts"
 import { hasScope } from "../token-store.ts"
 import {
   appendWorkspaceImportChunk,
@@ -106,7 +109,7 @@ function hasExplicitBearerAuthorization(c: Context): boolean {
 }
 
 function canReadWorkspaceRoot(c: Context): boolean {
-  return isLocalOwner(c) && sameOriginOrNonBrowserRequest(c)
+  return !isHosted() && canOperateHost(c) && sameOriginOrNonBrowserRequest(c)
 }
 
 /**
@@ -116,7 +119,11 @@ function canReadWorkspaceRoot(c: Context): boolean {
  * The served page carries the same summary for its first render (boot-facts.ts).
  */
 export async function workspaceSummary(c: Context) {
+  const identity = c.get("identity");
+  const member = identity?.team ? teamMemberForIdentity(identity) : null;
+  const team = member ? currentTeamWorktable() : null;
   return {
+    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision } } : {}),
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
@@ -227,6 +234,7 @@ function workspaceExportReader(c: Context): Response | null {
   const identity = c.get("identity")
   return identity?.principal.type === "human" &&
     hasScope(identity.scopes, "workspace:export") &&
+    (!teamsEnabled() || canManageUserSettings(c)) &&
     (hasExplicitBearerAuthorization(c) || sameOriginOrNonBrowserRequest(c))
     ? null
     : c.json({ error: "Forbidden", required: "human + workspace:export" }, 403)
@@ -679,6 +687,7 @@ workspaceRouter.get("/export", async (c) => {
   const identity = c.get("identity")
   if (
     identity.principal.type !== "human" ||
+    (teamsEnabled() && !canManageUserSettings(c)) ||
     !hasScope(identity.scopes, "workspace:export") ||
     // Bare loopback requests inherit the implicit owner identity for local
     // compatibility. They must still be same-origin (or non-browser) before
@@ -825,5 +834,5 @@ function applyWorkspacePatch(
   writeWorkspaceManifest(next)
   // Hosted browser owners may rename but never receive the filesystem root.
   // Local owners retain the existing owner-gated PUT response.
-  return c.json(publicView(next, { includeRoot: isLocalOwner(c) }))
+  return c.json(publicView(next, { includeRoot: canReadWorkspaceRoot(c) }))
 }

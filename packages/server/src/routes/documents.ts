@@ -1,3 +1,5 @@
+import { teamsEnabled } from "../team-database.ts";
+import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
@@ -287,7 +289,7 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       "annotations:read"
     ),
     sharingAuthorized:
-      isHumanWorkspaceOwner(c) && Boolean(getDocumentSharingConfig()),
+      (teamsEnabled() ? c.get("identity").principal.type === "human" && canAccessSpace(c.req.param("spaceId") ?? "", "manage") : isHumanWorkspaceOwner(c)) && Boolean(getDocumentSharingConfig()),
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

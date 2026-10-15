@@ -10,12 +10,19 @@ portable format as local and self-hosted Worktable.
 ## Open a workspace
 
 1. Open [Worktable Cloud](https://app.worktable.cloud/) and sign in.
-2. Follow the account setup and subscription steps. Checkout shows the current
+2. Choose a Worktable or create one. Each Worktable has its own subscription.
+   Checkout shows the current
    price and terms before purchase.
-3. Open your hosted workspace and complete its onboarding.
+3. Open your Worktable and complete its onboarding. In Desktop, choose the
+   Worktable after signing in; Desktop remembers that destination.
 
 Cloud is optional. To run Worktable on your own computer or server instead,
 use [Desktop](/start/desktop/) or the [CLI installer](/start/install/).
+
+Invite people from **Settings → Team**. Invitations can be accepted with
+personal accounts or another email domain. Newly created Spaces are shared by
+default; owners can access every Space and Space creators manage their Spaces.
+Threads follow the access rules of their containing Space.
 
 ## Connect an agent
 

@@ -133,6 +133,7 @@ agentConnectionsRouter.patch("/:id", async (c) => {
     displayName?: unknown
     icon?: unknown
     access?: unknown
+    spaceIds?: unknown
   } | null
   if (!body) return c.json(badRequest("Expected a JSON object"), 400)
   let displayName: string | undefined
@@ -159,11 +160,23 @@ agentConnectionsRouter.patch("/:id", async (c) => {
       400
     )
   }
+  if (
+    body.spaceIds !== undefined &&
+    body.spaceIds !== null &&
+    (!Array.isArray(body.spaceIds) ||
+      body.spaceIds.length > 1000 ||
+      body.spaceIds.some((id) => typeof id !== "string" || !id))
+  ) {
+    return c.json(badRequest("spaceIds must be Space identifiers or null"), 400)
+  }
   try {
     const connection = await updateAgentConnection(c.req.param("id"), {
       ...(displayName !== undefined ? { displayName } : {}),
       ...(body.icon !== undefined ? { icon: body.icon as string | null } : {}),
       ...(access ? { access } : {}),
+      ...(body.spaceIds !== undefined
+        ? { spaceIds: body.spaceIds as string[] | null }
+        : {}),
     })
     if (!connection) {
       return c.json(

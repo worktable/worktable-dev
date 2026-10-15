@@ -6,6 +6,8 @@
 // ============================================================
 
 import MiniSearch from "minisearch";
+import { assertSpaceAccess, canAccessSpace, currentRequestIdentity, runWithoutTeamIdentity } from "./team-policy.ts";
+import { teamsEnabled } from "./team-database.ts";
 import {
   docStat,
   getDocArchiveInfo,
@@ -1070,6 +1072,10 @@ export async function searchWithStatus(
     documentAccess?: DocumentSearchAccess;
   }
 ): Promise<{ results: SearchResult[]; complete: boolean }> {
+  if (opts?.spaceId) assertSpaceAccess(opts.spaceId);
+  const allowedSpaces = currentRequestIdentity() && teamsEnabled()
+    ? (await listSpaces()).map((space) => space.id)
+    : undefined;
   // Snapshot the record-search mode once per call: MiniSearch is built for
   // this mode and the record-hit append below uses the same decision, so a
   // mode flip mid-call (record index becoming ready) can't serve records
@@ -1082,12 +1088,12 @@ export async function searchWithStatus(
   const {
     variant: { idx, displayBodies },
     complete: indexComplete,
-  } = await indexForSearch(
+  } = await runWithoutTeamIdentity(() => indexForSearch(
     documentAccess,
     includeArchived,
     recordMode === "files",
     opts?.spaceId,
-  );
+  ));
 
   // Take each hit's display body now: later syncs update the index in place
   // while the archive checks below await.
@@ -1095,6 +1101,7 @@ export async function searchWithStatus(
     .search(query, {
       filter: (result) => {
         const entry = result as unknown as IndexEntry;
+        if (!canAccessSpace(entry.spaceId)) return false;
         if (opts?.spaceId && entry.spaceId !== opts.spaceId) return false;
         return true;
       },
@@ -1173,10 +1180,11 @@ export async function searchWithStatus(
   if (recordsViaIndex) {
     // The space scope is applied inside the query (before its LIMIT), so a
     // scoped search can't lose in-space hits to other spaces' matches.
-    const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId) ?? [];
+    const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, allowedSpaces) ?? [];
     // FTS matches on query-token prefixes, so the raw tokens locate in the text.
     const queryTerms = query.trim().split(/\s+/);
     for (const [i, hit] of hits.entries()) {
+      if (!canAccessSpace(hit.spaceId)) continue;
       if (results.length >= maxResults) break;
       if (!includeArchived) {
         const { data: space } = await readSpace(hit.spaceId);

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { recordActivity } from "./activity-log.ts";
+import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
@@ -41,6 +42,7 @@ function invalidIdError(kind: string, id: string): string {
 }
 
 function spaceDir(spaceId: string): string {
+  assertSpaceAccess(spaceId);
   return join(getSpacesBaseDir(), spaceId);
 }
 
@@ -168,6 +170,7 @@ async function collectionIds(spaceId: string): Promise<string[]> {
 }
 
 export async function listRecordCollections(spaceId: string): Promise<RecordCollectionSummary[]> {
+  assertSpaceAccess(spaceId, "read");
   const summaries: RecordCollectionSummary[] = [];
   for (const collectionId of await collectionIds(spaceId)) {
     // The index counts rows without loading them; the file scan is the fallback.
@@ -187,6 +190,7 @@ export async function listRecordCollections(spaceId: string): Promise<RecordColl
 
 /** Collection display names by id, without counting or listing records. */
 export async function listRecordCollectionNames(spaceId: string): Promise<Map<string, string>> {
+  assertSpaceAccess(spaceId, "read");
   const names = new Map<string, string>();
   for (const collectionId of await collectionIds(spaceId)) {
     names.set(collectionId, (await readRecordCollectionSchema(spaceId, collectionId)).data?.name ?? collectionId);
@@ -195,6 +199,7 @@ export async function listRecordCollectionNames(spaceId: string): Promise<Map<st
 }
 
 export async function readRecordCollectionSchema(spaceId: string, collectionId: string): Promise<{ data: RecordCollectionSchema | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   const path = schemaPath(spaceId, collectionId);
@@ -211,6 +216,7 @@ export async function writeRecordCollectionSchema(
   schema: RecordCollectionSchema,
   opts?: { ifAbsent?: boolean }
 ): Promise<{ data: RecordCollectionSchema | null; error: string | null; conflict?: boolean }> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const parsed = RecordCollectionSchemaSchema.safeParse(schema);
   if (!parsed.success) return { data: null, error: parsed.error.message };
@@ -435,6 +441,7 @@ export function resetRecordDiagnosticsForTests(): void {
 // collection, scanning now if this collection has not been listed yet this
 // process.
 export async function getRecordDiagnostics(spaceId: string, collectionId: string): Promise<RecordDiagnostic[]> {
+  assertSpaceAccess(spaceId, "read");
   const key = diagnosticsKey(spaceId, collectionId);
   const indexed = isCanonicalId(spaceId) && isCanonicalId(collectionId) && recordIndexEnabled()
     ? recordIndex.listDiagnostics(spaceId, collectionId)
@@ -466,6 +473,7 @@ export async function findRecordBounded(
   predicate: (record: RecordFile) => boolean,
   options: { includeArchived?: boolean; maxFiles: number }
 ): Promise<RecordFile | null> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId) || !isCanonicalId(collectionId)) return null;
   if (!Number.isFinite(options.maxFiles)) return null;
   const maxFiles = Math.max(0, Math.floor(options.maxFiles));
@@ -487,6 +495,7 @@ export async function findRecordBounded(
 }
 
 export async function listRecords(spaceId: string, collectionId: string, query: RecordQuery = {}): Promise<RecordFile[]> {
+  assertSpaceAccess(spaceId, "read");
   const safeQuery = parseRecordQuery(query);
   if (!isCanonicalId(spaceId) || !isCanonicalId(collectionId)) return [];
   const key = diagnosticsKey(spaceId, collectionId);
@@ -579,6 +588,7 @@ export async function queryRecords(
   input: unknown,
   options: { authorizeCollection?: (collectionId: string) => void | Promise<void> } = {},
 ): Promise<RecordQueryResult> {
+  assertSpaceAccess(spaceId, "read");
   await options.authorizeCollection?.(collectionId);
   const query = parseRecordQuery(input);
   const withProjectionWarnings = async (result: RecordQueryResult, collectionIds: string[]): Promise<RecordQueryResult> => {
@@ -638,6 +648,7 @@ export async function queryRecords(
 // Collections a query reaches beyond its own — the widget bridge permission-
 // gates each one before running the query.
 export async function queryTargetCollections(spaceId: string, collectionId: string, input: unknown): Promise<string[]> {
+  assertSpaceAccess(spaceId, "read");
   const query = parseRecordQuery(input);
   if (!usesQueryV2(query)) return [];
   const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
@@ -715,6 +726,7 @@ function filterRecords(
 }
 
 export async function readRecord(spaceId: string, collectionId: string, recordId: string): Promise<{ data: RecordFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -767,11 +779,13 @@ async function writeRecordValidated(
 }
 
 export async function writeRecord(spaceId: string, record: RecordFile): Promise<{ data: RecordFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   return withStoreWriteLock(recordPath(spaceId, record.collectionId, record.id), () => writeRecordInner(spaceId, record));
 }
 
 export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   // An explicit ID that already exists overwrites that record.
   const existed =
     input.id !== undefined &&
@@ -820,6 +834,7 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
 }
 
 export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
   if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
   return result;
@@ -911,6 +926,7 @@ async function findInboundRelations(spaceId: string, collectionId: string, recor
 // warnings are UNKNOWN (index off or still building), not absent — callers
 // must not read an empty list as a healthy collection in that state.
 export async function listIntegrityWarnings(spaceId: string, collectionId: string): Promise<{ warnings: { recordId: string; field: string; target: string }[]; complete: boolean }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId) || !isCanonicalId(collectionId)) return { warnings: [], complete: true };
   const dangling = recordIndexEnabled() ? recordIndex.listDanglingRefs(spaceId, collectionId) : null;
   if (!dangling) return { warnings: [], complete: false };
@@ -927,6 +943,7 @@ export async function setRecordArchive(
   archive: { archivedBy?: string; reason?: string } | null,
   restoredBy = "user"
 ): Promise<{ data: RecordFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -956,6 +973,7 @@ export async function setRecordArchive(
 }
 
 export async function deleteRecord(spaceId: string, collectionId: string, recordId: string): Promise<{ error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   const existed =
     isCanonicalId(spaceId) &&
     isCanonicalId(collectionId) &&
@@ -1034,6 +1052,7 @@ async function deleteRecordInner(spaceId: string, collectionId: string, recordId
 }
 
 export async function readWidgetState(spaceId: string, widgetId: string): Promise<Record<string, unknown>> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return {};
   const {
     isHtmlDocumentPath,
@@ -1055,6 +1074,7 @@ export async function readWidgetState(spaceId: string, widgetId: string): Promis
 }
 
 export async function writeWidgetState(spaceId: string, widgetId: string, state: Record<string, unknown>): Promise<Record<string, unknown>> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) throw new Error(invalidIdError("space", spaceId));
   const {
     isHtmlDocumentPath,

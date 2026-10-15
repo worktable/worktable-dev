@@ -1,3 +1,4 @@
+import { withTeamBackupBarrier } from "./team-backup.ts"
 import { mkdir, lstat } from "node:fs/promises"
 import { join } from "node:path"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
@@ -63,6 +64,7 @@ export async function writeLiveOperatorWorkspaceSnapshot(
         const manifest = exists
           ? await inspectWorkspaceSnapshot(destination)
           : await writeWorkspaceSnapshot(destination, {
+              captureTeamState: true,
               signal: cancellation?.signal,
               withCaptureBarrier: async (capture) => {
                 const timer = cancellation
@@ -75,11 +77,14 @@ export async function writeLiveOperatorWorkspaceSnapshot(
                     )
                   : undefined
                 try {
-                  return await withWorkspaceExportSnapshot(capture, {
-                    onBarrierComplete: (duration) => {
-                      captureBarrierMs = duration
-                    },
-                  })
+                  return await withWorkspaceExportSnapshot(
+                    () => withTeamBackupBarrier(capture),
+                    {
+                      onBarrierComplete: (duration) => {
+                        captureBarrierMs = duration
+                      },
+                    }
+                  )
                 } finally {
                   clearTimeout(timer)
                 }

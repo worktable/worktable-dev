@@ -144,6 +144,46 @@ describe("connector transaction model", () => {
     expect(output.stdout.join("\n")).toContain("sign in with OAuth")
   })
 
+  it("preserves a selected Cloud Worktable and rejects a resource on another server before touching configs", async () => {
+    const host = fakeHost()
+    const output = captureIo()
+    expect(
+      await runConnector(
+        [
+          "--oauth",
+          "--server",
+          "https://app.worktable.cloud",
+          "--mcp-url",
+          "https://app.worktable.cloud/api/mcp/w/team_one",
+          "--client",
+          "codex",
+        ],
+        output.io,
+        host.dependencies
+      )
+    ).toBe(0)
+    const config = readFileSync(configPath, "utf8")
+    expect(config).toContain(
+      'url = "https://app.worktable.cloud/api/mcp/w/team_one"'
+    )
+    expect(
+      await runConnector(
+        [
+          "--oauth",
+          "--server",
+          "https://app.worktable.cloud",
+          "--mcp-url",
+          "https://other.example/api/mcp/w/team_one",
+          "--client",
+          "codex",
+        ],
+        output.io,
+        host.dependencies
+      )
+    ).toBe(2)
+    expect(readFileSync(configPath, "utf8")).toBe(config)
+  })
+
   it("writes a real client config and retries only idempotent completion", async () => {
     writeFileSync(configPath, 'model = "gpt-test"\n')
     const host = fakeHost({ completeFailures: 1 })

@@ -70,10 +70,12 @@ export async function discoverAgentAuth(
   server: string,
   fetchImpl: FetchLike = fetch
 ): Promise<AgentAuthDiscovery> {
-  const origin = new URL(server).origin
+  const serverUrl = new URL(server)
+  const origin = serverUrl.origin
+  const resourcePath = /^\/api\/mcp\/[wd]\/[A-Za-z0-9_-]+\/?$/.test(serverUrl.pathname) ? serverUrl.pathname.replace(/\/+$/, "") : ""
   const resourceMetadata = await readJson(
     await fetchImpl(
-      `${origin}/.well-known/oauth-protected-resource`,
+      `${origin}/.well-known/oauth-protected-resource${resourcePath}`,
       providerRequest()
     ),
     "Protected resource discovery"
@@ -89,6 +91,7 @@ export async function discoverAgentAuth(
       "Worktable Cloud did not advertise an authorization server and resource"
     )
   }
+  if (resourcePath && resource !== `${origin}${resourcePath}`) throw new Error("Worktable advertised a different OAuth resource")
   const authorizationServer = authorizationServers[0].replace(/\/+$/, "")
   let metadata: Record<string, unknown> | null = null
   let discoveryFailure = "no metadata candidate succeeded"

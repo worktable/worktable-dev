@@ -1,3 +1,4 @@
+import { browserTeamCacheKey } from "./team-context";
 import type { AnnotationAuthor } from "@worktable/types";
 import { fetchJSON } from "./http";
 
@@ -9,7 +10,10 @@ export interface UserProfile {
   name: string;
 }
 
-const STORAGE_KEY = "worktable-profile";
+function storageKey(): string {
+  const team = browserTeamCacheKey();
+  return team ? `worktable-profile:${team}` : "worktable-profile";
+}
 
 const DEFAULT_PROFILE: UserProfile = { id: "user", name: "User" };
 const DEFAULT_SERVER_NAME = "Owner";
@@ -25,7 +29,7 @@ function serializedProfileWrite<T>(write: () => Promise<T>): Promise<T> {
 
 export function getCurrentUser(): UserProfile {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (!raw) return DEFAULT_PROFILE;
     const parsed = JSON.parse(raw) as Partial<UserProfile>;
     if (typeof parsed.id === "string" && parsed.id && typeof parsed.name === "string" && parsed.name) {
@@ -39,7 +43,7 @@ export function getCurrentUser(): UserProfile {
 
 export function setCurrentUser(profile: UserProfile): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem(storageKey(), JSON.stringify(profile));
   } catch {
     // localStorage unavailable
   }
@@ -67,7 +71,7 @@ export async function fetchUserProfile(): Promise<UserProfile> {
     await profileWriteQueue;
     return fetchJSON<UserProfile>("/api/profile");
   }
-  if (!shouldMigrateLegacyProfile(legacy, profile)) return profile;
+  if (browserTeamCacheKey() || !shouldMigrateLegacyProfile(legacy, profile)) return profile;
   return serializedProfileWrite(() =>
     fetchJSON<UserProfile>("/api/profile", {
       method: "PUT",

@@ -1,3 +1,4 @@
+import { RUNTIME_BASE_PATH } from "./lib/runtime-path"
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
@@ -28,6 +29,30 @@ export function getRouter() {
 
   const router = createRouter({
     routeTree,
+    // Start replaces basepath during hydration. Keep the selected Worktable
+    // in the router's bidirectional rewrite, which hydration preserves.
+    rewrite: RUNTIME_BASE_PATH
+      ? {
+          input: ({ url }) => {
+            if (
+              url.pathname === RUNTIME_BASE_PATH ||
+              url.pathname.startsWith(`${RUNTIME_BASE_PATH}/`)
+            ) {
+              url.pathname = url.pathname.slice(RUNTIME_BASE_PATH.length) || "/";
+            }
+            return url;
+          },
+          output: ({ url }) => {
+            if (
+              url.pathname !== RUNTIME_BASE_PATH &&
+              !url.pathname.startsWith(`${RUNTIME_BASE_PATH}/`)
+            ) {
+              url.pathname = `${RUNTIME_BASE_PATH}${url.pathname}`;
+            }
+            return url;
+          },
+        }
+      : undefined,
     context: {
       queryClient,
     },

@@ -19,6 +19,7 @@ export * from "./threads";
 export * from "./agent-connections";
 export * from "./agent-platforms";
 export * from "./activity";
+export * from "./teams";
 
 export type SpaceId = string;
 export type AgentId = string;

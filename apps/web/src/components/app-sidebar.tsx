@@ -1,3 +1,5 @@
+import type { SpaceView } from "@/lib/api"
+import { browserTeamMemberId } from "@/lib/team-context"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
@@ -388,7 +390,7 @@ function GroupSwitcher({
 const SpaceSection = memo(function SpaceSection({
   space,
 }: {
-  space: SpaceFile
+  space: SpaceView
 }) {
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
@@ -557,7 +559,7 @@ const SpaceSection = memo(function SpaceSection({
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
           <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/space:opacity-100">
-            <SpaceNewMenu
+            {space.permissions?.edit !== false && <SpaceNewMenu
               spaceId={space.id}
               onCreated={afterCreate}
               trigger={
@@ -570,7 +572,11 @@ const SpaceSection = memo(function SpaceSection({
                 </button>
               }
             />
+            }
             <SpaceContextMenuButton
+              spaceId={space.id}
+              canEdit={space.permissions?.edit !== false}
+              canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
               spaceName={space.name}
               spaceIcon={space.icon}
               currentGroup={space.group}
@@ -618,7 +624,7 @@ const SpaceContent = memo(function SpaceContent({
   onNavigate,
   onNewDoc,
 }: {
-  space: SpaceFile
+  space: SpaceView
   onNavigate: () => void
   onNewDoc: (folder?: string) => void
 }) {
@@ -1364,7 +1370,7 @@ function SpaceTreeSection({
   onRefresh,
   onWidgetRefresh,
 }: {
-  space: SpaceFile
+  space: SpaceView
   documents: DocumentListItem[]
   docs: DocListEntry[]
   isLoading: boolean
@@ -1594,7 +1600,7 @@ function SpaceTreeSection({
                   node={node}
                   {...rowProps}
                   folderArchived={false}
-                  reorder={reorder}
+                  reorder={space.permissions?.edit !== false ? reorder : undefined}
                 />
               ))}
             </nav>

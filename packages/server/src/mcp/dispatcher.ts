@@ -1,4 +1,5 @@
 import { runAsActivityActor } from "../activity-log.ts"
+import { assertCurrentTeamIdentity, assertSpaceAccess, currentRequestIdentity } from "../team-policy.ts"
 import {
   renderDocumentPreview,
   renderFrozenHtmlPreview,
@@ -33,6 +34,7 @@ import {
   writeSpace,
   slugify,
   deduplicateSlug,
+  occupiedSpaceIds,
   listDocsDetailed,
   readDoc,
   readDocSourceSnapshot,
@@ -787,10 +789,22 @@ export async function dispatchOperation(
   args: Record<string, unknown>,
   context: ToolDispatchContext = {}
 ): Promise<unknown> {
+  const caller = currentRequestIdentity()
+  const definition = OPERATION_DEFINITIONS[operationId]
+  const authorize = () => {
+    if (caller) assertCurrentTeamIdentity(caller)
+    const access = definition.mutation === "none" ? "read" : "edit"
+    if (typeof args["spaceId"] === "string") assertSpaceAccess(args["spaceId"], access)
+    const location = args["location"]
+    if (location && typeof location === "object" && "kind" in location && location.kind === "space" &&
+        "spaceId" in location && typeof location.spaceId === "string") assertSpaceAccess(location.spaceId, access)
+  }
+  authorize()
   const principal = context.principal ?? DEFAULT_AGENT_PRINCIPAL
   const result = await runAsActivityActor(principal, () =>
     _dispatchOperationInner(operationId, args, { ...context, principal })
   )
+  authorize()
   const operation = OPERATION_DEFINITIONS[operationId]
   if (operation?.mutation === "records") {
     noteRecordMutated()
@@ -969,11 +983,7 @@ async function _dispatchOperationInner(
 
       const group = rawGroup || undefined
 
-      const existing = await listSpaces()
-      const spaceId = await deduplicateSlug(
-        slugify(name),
-        existing.map((s) => s.id)
-      )
+      const spaceId = await deduplicateSlug(slugify(name), await occupiedSpaceIds())
       const now = new Date().toISOString()
       const space: SpaceFile = {
         type: "worktable.space",

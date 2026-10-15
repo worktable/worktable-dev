@@ -66,8 +66,10 @@ export interface WorkspaceManifest {
   name: string;
   createdAt: string;
   cloud: {
-    status: "unlinked";
-  };
+    status: "unlinked"
+  }
+  /** Fail closed when protected Teams state is unavailable, including loss of the application directory. */
+  teamAccessRequired?: boolean
   /** A deliberately cleared workspace must not recreate starter content. */
   starterSeed?: { version: 1; status: "suppressed" };
   /**

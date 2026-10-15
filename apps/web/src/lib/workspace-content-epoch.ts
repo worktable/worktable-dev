@@ -1,3 +1,4 @@
+import { runtimePath } from "./runtime-path"
 import {
   setWorkspaceWritesFrozen,
   setCurrentWorkspaceContentEpoch,
@@ -65,7 +66,7 @@ export async function acceptWorkspaceContentEpoch(
         } catch {
           /* private browsing */
         }
-        if (wasMounted) window.location.replace("/")
+        if (wasMounted) window.location.replace(runtimePath("/"))
       })
     }
     await resetting
@@ -101,7 +102,7 @@ export function isBrowserContentMutation(
   const pathname = new URL(
     input instanceof Request ? input.url : String(input),
     typeof location === "undefined" ? "http://localhost" : location.href
-  ).pathname
+  ).pathname.replace(/^\/t\/[A-Za-z0-9_-]+(?=\/|$)/, "")
   return ["/api/spaces", "/api/threads", "/api/shares"].some(
     (root) => pathname === root || pathname.startsWith(`${root}/`)
   )

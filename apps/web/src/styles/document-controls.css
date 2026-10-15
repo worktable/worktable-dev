@@ -81,7 +81,8 @@
   opacity: 1;
 }
 
-@media (pointer: coarse) {
+/* Without hover (touch, or a pen), keep the tools in view. */
+@media (hover: none) {
   .worktable-diagram-controls {
     opacity: 1;
   }

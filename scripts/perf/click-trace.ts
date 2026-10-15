@@ -387,6 +387,8 @@ export interface ClickTraceResult {
     networks: Network[]
     idleSeconds: number
     trace: boolean
+    /** JS sampling was on, which slows the page: not timing evidence. */
+    rawTraces?: boolean
     hoverMs: number
     churn: boolean
     backup: boolean
@@ -2608,6 +2610,7 @@ async function main() {
         networks,
         idleSeconds,
         trace,
+        rawTraces,
         hoverMs: HOVER_MS,
         churn,
         backup,

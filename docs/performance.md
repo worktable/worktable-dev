@@ -87,9 +87,27 @@ Fix the regression, or, when the cost is worth it, run
 the budget, and add a one-line `why` to each raised entry. `perf:guards`
 fails a raised budget without a new `why`. Lower budgets when they fall.
 
-Timings vary 15 to 17% between rounds, so they are never a pull request
-gate. The nightly and release gates pair a base and a head on one machine in
-alternating rounds and apply Plan 16's rules with `scripts/perf/gate.ts`: a
-journey's median time to content may rise by at most 10% or 30 ms, whichever
-is larger, and a route's p95 by at most 10%, or 1 ms on routes under 1 ms.
+Timings are never a pull request gate: phone timings move 15 to 20% between
+runs on the same machine, more than the 10% limit. The nightly and release
+gates pair a base and a head on one machine in alternating rounds and judge
+them with `scripts/perf/gate.ts`. A change fails only when it exceeds both
+its floor and k standard errors of the change, where the standard error
+comes from the run-to-run spread in the same runs:
+
+| Measure                            | Floor                          |
+| ---------------------------------- | ------------------------------ |
+| A journey's median time to content | 10% or 30 ms, whichever larger |
+| A pass's typical journey           | 5%                             |
+| A server route's median p95        | 10%, at least 1 ms under 1 ms  |
+
+The typical journey (the median over a pass's journeys of head/base) catches
+a slowdown that touches every screen long before any single noisy journey
+can prove it. The nightly runs two independent stages: a 5-round screen
+lists suspects at k = 2, then a confirmation re-times only their passes with
+9 rounds and judges its own data at k = 3. It alerts only on a journey, pass
+or route both stages found slower. With the phone's spread (about 15% per
+run, about half of it shared by a run's journeys), 9 rounds detect a pass
+whose typical journey is about 18% slower (around 270 ms on a 1.5 s cold
+load) and a single journey about 30% slower. The release gate runs once, 3 rounds on the
+desktop profile and 5 of server timings, at k = 3.
 See the [perf lane](../scripts/perf/README.md) for the commands.

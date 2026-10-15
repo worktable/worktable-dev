@@ -382,14 +382,18 @@ tooling and budgets.
 ## Paired gate
 
 `gate.ts` compares paired timing runs of a base and a head: click-trace
-results (median time to content per network, pass and journey, against
-max(10%, 30 ms)) and io-count timing results (median solo p95 per endpoint,
-against 10%, at least 1 ms under 1 ms). It sorts every `result.json` under
-`--results` by its `commit`. `--confirm <verdict.json>` keeps only the
-regressions an earlier paired run also found; `--check` exits 1 on a
-regression. The private perf-nightly and release workflows run it after
-`perf-gates.sh` in its `paired` mode.
+results (median time to content per network, pass and journey, and per pass
+the typical journey) and io-count timing results (median solo p95 per
+route). It sorts every `result.json` under `--results` by its `commit`. A
+change fails only above both its floor (max(10%, 30 ms) per journey, 5% per
+pass, 10% or 1 ms per route) and `--k` standard errors of the change, from
+the run-to-run spread pooled per network and pass. `--plan` writes the
+passes to re-time for a confirmation run; `--confirm <verdict.json>` keeps
+only regressions an earlier, independent run also found; `--check` exits 1
+on a regression and 2 when the sides do not pair. The private perf-nightly
+and release workflows run it after `perf-gates.sh` in its `paired` mode; see
+[Speed gates](../../docs/performance.md#speed-gates) for the stages.
 
 ```sh
-bun scripts/perf/gate.ts --results results/ --base <sha> --head <sha> --out verdict.json
+bun scripts/perf/gate.ts --results results/ --base <sha> --head <sha> --k 3 --out verdict.json
 ```

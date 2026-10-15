@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { CanonicalIdSchema, WidgetIdSchema } from "@worktable/types"
 import { isAtomicWriteTemporaryFileName } from "./atomic-file.ts"
-import { debugLogging } from "./debug-log.ts"
+import { debugLogging, logError } from "./debug-log.ts"
 import {
   getSpacesBaseDir,
   notePathEventIfSuppressed,
@@ -509,7 +509,7 @@ export class WorkspaceWatcher {
     }, !rootThreadParent)
 
     watcher.on("error", (err) => {
-      console.error("[WorkspaceWatcher] fs.watch error:", err)
+      console.error("[WorkspaceWatcher] fs.watch error:", logError(err))
     })
 
     this.watchers.set(dir, watcher)

@@ -1,8 +1,12 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
 import { Hono } from "hono"
 import { ownerIdentity } from "./auth.ts"
 import { compressApiResponse } from "./http-compression.ts"
-import { serverTiming, timing } from "./request-timing.ts"
+import {
+  serverTiming,
+  timing,
+  unexpectedErrorResponse,
+} from "./request-timing.ts"
 import { diagnosticsRouter } from "./routes/diagnostics.ts"
 import type { TokenIdentity } from "./token-store.ts"
 
@@ -31,7 +35,11 @@ function fixture() {
   app.get("/api/spaces/:spaceId/documents", async (c) =>
     c.json(await timing.span("catalog", async () => documents))
   )
+  app.get("/api/spaces/:spaceId/docs/*", () => {
+    throw new Error("cannot read\n    at Quarterly plan for Acme")
+  })
   app.route("/api/diagnostics", diagnosticsRouter)
+  app.onError((error, c) => unexpectedErrorResponse(c, error))
   return app
 }
 
@@ -58,6 +66,34 @@ describe("request timing", () => {
     expect(timings.get("total")!).toBeGreaterThanOrEqual(
       timings.get("catalog")! + timings.get("gzip")!
     )
+  })
+
+  it("keeps document names out of failure logs and responses", async () => {
+    const logged: string[] = []
+    const error = spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args.join(" "))
+    })
+    try {
+      const response = await fixture().request(
+        "/api/spaces/alpha/docs/plans/quarterly-plan"
+      )
+      expect(response.status).toBe(500)
+      const body = (await response.json()) as Record<string, string>
+      expect(body.code).toBe("INTERNAL_ERROR")
+      expect(body.errorId).toMatch(/^[0-9a-f]{8}$/)
+      expect(body.error).toBe(`Something went wrong (error ${body.errorId}).`)
+
+      const log = logged.join("\n")
+      expect(log).toContain(body.errorId)
+      expect(log).toContain("GET /api/spaces/:spaceId/docs/* 500")
+      // Stack frames stay, so the failure can still be traced.
+      expect(log).toContain("request-timing.test.ts")
+      for (const secret of ["alpha", "quarterly", "Quarterly plan"]) {
+        expect(log).not.toContain(secret)
+      }
+    } finally {
+      error.mockRestore()
+    }
   })
 
   it("keeps timings from callers without an identity", async () => {

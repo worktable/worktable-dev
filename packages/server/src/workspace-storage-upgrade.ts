@@ -56,8 +56,7 @@ export async function upgradeWorkspaceBeforeStartup(): Promise<void> {
       })
       if (result.orphanedAnnotationFiles.length > 0) {
         console.warn(
-          `[workspace] storage upgrade left out ${result.orphanedAnnotationFiles.length} annotation file(s) for deleted documents; the originals remain in ${result.backupPath}:`,
-          result.orphanedAnnotationFiles.join(", ")
+          `[workspace] storage upgrade left out ${result.orphanedAnnotationFiles.length} annotation file(s) for deleted documents; the originals remain in ${result.backupPath}`
         )
       }
     }

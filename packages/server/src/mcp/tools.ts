@@ -48,6 +48,7 @@ import {
   installOpenAiToolDescriptorCompatibility,
   oauthToolMetadata,
 } from "./openai-tool-auth.ts"
+import { logError } from "../debug-log.ts"
 
 // ============================================================
 // Public capability registry
@@ -384,7 +385,10 @@ export function registerTools(
         return { ...response, content: [...response.content, ...content] }
       } catch (error) {
         if (error instanceof PublicOperationOutputError) {
-          console.error(`[mcp] ${error.message}`)
+          console.error(
+            `[mcp] invalid public output for ${error.operationId}:`,
+            logError(error)
+          )
           return mkErr(
             `Worktable could not return a valid result for ${error.operationId}.`
           )

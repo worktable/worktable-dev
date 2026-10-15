@@ -15,6 +15,7 @@
 // same mutation are expected — consumers must apply idempotently.
 
 import type { RecordFile } from "@worktable/types";
+import { logError } from "./debug-log.ts";
 
 export type RecordChangeEvent =
   | { kind: "write"; spaceId: string; record: RecordFile }
@@ -35,7 +36,7 @@ export function notifyRecordChanged(event: RecordChangeEvent): void {
     try {
       listener(event);
     } catch (err) {
-      console.error("[record-events] listener error:", err);
+      console.error("[record-events] listener error:", logError(err));
     }
   }
 }

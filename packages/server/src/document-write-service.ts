@@ -85,6 +85,7 @@ import {
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { validateDrawingImageMutation } from "./drawing-image-validation.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 const WRITE_ADAPTER_BUDGET = {
   maxInputBytes: DOCUMENT_GENERATION_MAX_ENTRY_BYTES,
@@ -577,7 +578,7 @@ async function publishLegacyDocProjection(input: {
     // so do not report a false failed write that a retry would duplicate.
     console.error(
       "[document-write] legacy Doc projection failed after commit:",
-      error
+      logError(error)
     )
   }
 }
@@ -590,7 +591,7 @@ async function pruneCommittedHistory(input: {
     input.spaceId,
     input.documentId
   ).catch((error) => {
-    console.warn("[document-write] version retention cleanup failed:", error)
+    console.warn("[document-write] version retention cleanup failed:", logError(error))
   })
 }
 
@@ -786,7 +787,7 @@ async function finishAgentReceipt(input: {
   // Source and history have committed. Do not roll back a successful edit if the receipt marker fails;
   // a retry verifies the exact source bytes before finishing this marker.
   await commitDocumentAgentMutationV2(input).catch((error) =>
-    console.warn("[document-write] mutation receipt commit deferred:", error)
+    console.warn("[document-write] mutation receipt commit deferred:", logError(error))
   )
 }
 
@@ -1017,7 +1018,7 @@ export async function createRegisteredDocument(options: {
             requireWorkspaceRecovery("document creation is waiting for recovery")
             console.error(
               "[document-write] document create recovery failed:",
-              recoveryError
+              logError(recoveryError)
             )
             return null
           })
@@ -1334,7 +1335,7 @@ export async function replaceRegisteredDocument(options: {
         )
         if (!canRollBackPublishedSource) {
           console.warn(
-            `[document-write] preserving a later filesystem edit after ${options.spaceId}/${current.path} replacement failed`
+            `[document-write] preserving a later filesystem edit after ${logDocument(options.spaceId, current.path)} replacement failed`
           )
         }
       }

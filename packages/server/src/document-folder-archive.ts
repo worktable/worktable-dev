@@ -25,6 +25,7 @@ import { readWidget, withWidgetWriteLocks } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 export type SetDocumentFolderArchivedResult =
   | {
@@ -222,8 +223,8 @@ async function publishFolderArchive(
       )
     } catch (error) {
       console.warn(
-        `[document-folder-archive] could not publish derived state for ${spaceId}/${document.path}`,
-        error
+        `[document-folder-archive] could not publish derived state for ${logDocument(spaceId, document.path)}`,
+        logError(error)
       )
     }
   }
@@ -313,8 +314,8 @@ export async function setDocumentFolderArchived(options: {
       )
     } catch (error) {
       console.warn(
-        `[document-folder-archive] could not publish derived state for ${options.spaceId}/${options.path}`,
-        error
+        `[document-folder-archive] could not publish derived state for ${logDocument(options.spaceId, options.path)}`,
+        logError(error)
       )
     }
     return {

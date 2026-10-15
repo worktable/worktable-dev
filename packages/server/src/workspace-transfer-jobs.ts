@@ -42,6 +42,7 @@ import {
   type WorkspaceExportHistoryPolicy,
   type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
+import { logError } from "./debug-log.ts"
 
 // Cloudflare's smallest documented request-body ceiling is 100 MB and a Worker
 // isolate has 128 MB of memory. Eight MiB leaves ample room for auth/proxy work,
@@ -364,7 +365,7 @@ export async function cleanupExpiredWorkspaceTransfers(): Promise<void> {
 
 function scheduleWorkspaceTransferCleanup(): void {
   const running = cleanupExpiredWorkspaceTransfers().catch((error) =>
-    console.error("[workspace-transfer] background cleanup failed:", error)
+    console.error("[workspace-transfer] background cleanup failed:", logError(error))
   )
   scheduledTransferCleanups.add(running)
   void running.finally(() => scheduledTransferCleanups.delete(running))
@@ -445,7 +446,7 @@ function runExport(id: string): void {
     .catch((error) =>
       console.error(
         `[workspace-transfer] export runner failed for ${id}:`,
-        error
+        logError(error)
       )
     )
     .finally(() => {
@@ -750,7 +751,7 @@ function startWorkspaceImportVerification(id: string): void {
     .catch((error) =>
       console.error(
         `[workspace-transfer] verification runner failed for ${id}:`,
-        error
+        logError(error)
       )
     )
     .finally(() => {
@@ -848,7 +849,7 @@ function startWorkspaceImportPreparation(
     .catch((error) =>
       console.error(
         `[workspace-transfer] preparation runner failed for ${id}:`,
-        error
+        logError(error)
       )
     )
     .finally(() => {
@@ -1057,7 +1058,7 @@ export async function replaceWorkspaceImportJob(
             } catch (cleanupError) {
               console.error(
                 "[workspace-transfer] rolled-back replacement cleanup failed:",
-                cleanupError
+                logError(cleanupError)
               )
               return
             }
@@ -1129,7 +1130,7 @@ export async function recoverInterruptedWorkspaceTransferJobs(): Promise<
       }
       console.error(
         `[workspace-transfer] recovery failed for ${entry.name}:`,
-        error
+        logError(error)
       )
     }
   }
@@ -1163,7 +1164,7 @@ export function startWorkspaceTransferMaintenance(
     activeRun = current
     void current
       .catch((error) =>
-        console.error("[workspace-transfer] maintenance failed:", error)
+        console.error("[workspace-transfer] maintenance failed:", logError(error))
       )
       .finally(() => {
         if (activeRun === current) activeRun = null

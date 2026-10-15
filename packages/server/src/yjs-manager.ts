@@ -28,6 +28,7 @@ import {
 import { wsManager } from "./ws.ts";
 import { docContentRevision } from "./document-content-revision.ts";
 import { timeOperation } from "./perf-diagnostics.ts";
+import { debugLogging, logDocument, logError } from "./debug-log.ts";
 import { rebaseRegions, type BlockRegion } from "./block-regions.ts";
 import {
   requireWorkspaceRecovery,
@@ -742,7 +743,7 @@ export class YjsDocManager {
 
       if (stale) {
         console.warn(
-          `[YjsManager] stale client connected for ${docPath}; baseVersion=${freshness?.baseVersionId}, currentVersion=${provenance?.versionId}`
+          `[YjsManager] stale client connected for ${logDocument(liveDoc.spaceId, liveDoc.docPath)}; baseVersion=${freshness?.baseVersionId}, currentVersion=${provenance?.versionId}`
         );
       }
 
@@ -813,7 +814,7 @@ export class YjsDocManager {
       nextBytes > MAX_PENDING_CONNECTION_BYTES
     ) {
       console.warn(
-        `[YjsManager] closing ${spaceId}/${docPath}: pending connection queue exceeded its limit`
+        `[YjsManager] closing ${logDocument(spaceId, docPath)}: pending connection queue exceeded its limit`
       );
       this.detachClient(ws, {
         close: true,
@@ -895,8 +896,8 @@ export class YjsDocManager {
           this.dispatchOrQueueMessage(client, pending.liveDoc, frame)
         } catch (error) {
           console.warn(
-            `[YjsManager] closing ${pending.liveDoc.spaceId}/${pending.liveDoc.docPath}: queued frame replay failed`,
-            error
+            `[YjsManager] closing ${logDocument(pending.liveDoc.spaceId, pending.liveDoc.docPath)}: queued frame replay failed:`,
+            logError(error)
           )
           this.detachClient(client, {
             close: true,
@@ -929,7 +930,7 @@ export class YjsDocManager {
       nextBytes > MAX_PENDING_CONNECTION_BYTES
     ) {
       console.warn(
-        `[YjsManager] closing ${liveDoc.spaceId}/${liveDoc.docPath}: paused mutation queue exceeded its limit`
+        `[YjsManager] closing ${logDocument(liveDoc.spaceId, liveDoc.docPath)}: paused mutation queue exceeded its limit`
       );
       this.pausedClientFrames.delete(ws);
       this.detachClient(ws, {
@@ -1087,7 +1088,7 @@ export class YjsDocManager {
             // Other disk content replaced the room while the write committed
             // (a REST write or a disk sync): the room must follow the disk.
             console.warn(
-              `[YjsManager] ${liveDoc.spaceId}/${liveDoc.docPath} changed on disk during an agent write; syncing the room from disk`
+              `[YjsManager] ${logDocument(liveDoc.spaceId, liveDoc.docPath)} changed on disk during an agent write; syncing the room from disk`
             );
             await this.syncFromDisk(liveDoc.spaceId, liveDoc.docPath);
           }
@@ -1123,7 +1124,7 @@ export class YjsDocManager {
       stableHash(disk.data) !== liveDoc.diskContentHash
     ) {
       console.log(
-        `[YjsManager] ${docPath} changed on disk since the room last synced; syncing before an agent write`
+        `[YjsManager] ${logDocument(spaceId, docPath)} changed on disk since the room last synced; syncing before an agent write`
       );
       await this.syncFromDisk(spaceId, docPath);
     }
@@ -1151,8 +1152,8 @@ export class YjsDocManager {
           this.dispatchOrQueueMessage(client, liveDoc, frame);
         } catch (error) {
           console.warn(
-            `[YjsManager] closing ${liveDoc.spaceId}/${liveDoc.docPath}: held frame replay failed`,
-            error
+            `[YjsManager] closing ${logDocument(liveDoc.spaceId, liveDoc.docPath)}: held frame replay failed:`,
+            logError(error)
           );
           this.detachClient(client, {
             close: true,
@@ -1190,7 +1191,7 @@ export class YjsDocManager {
           await this.persistDoc(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
         }
       } catch (error) {
-        console.error("[YjsManager] persist error:", error);
+        console.error("[YjsManager] persist error:", logError(error));
         this.schedulePersist(liveDoc.key, liveDoc.spaceId, liveDoc.docPath);
       } finally {
         if (liveDoc.persistPromise === slot) liveDoc.persistPromise = null;
@@ -1222,7 +1223,7 @@ export class YjsDocManager {
       : "the change has no block regions";
     if (outcome !== "applied" && outcome !== "unchanged") {
       console.warn(
-        `[YjsManager] agent write to ${spaceId}/${docPath} replaced the whole live document: ${outcome}`
+        `[YjsManager] agent write to ${logDocument(spaceId, docPath)} replaced the whole live document: ${outcome}`
       );
       await this.applyDiskContent(liveDoc, spaceId, docPath, written, intentAtStart);
       return;
@@ -1246,8 +1247,8 @@ export class YjsDocManager {
       );
     } catch (error) {
       console.warn(
-        `[YjsManager] failed to refresh derived Yjs state for ${spaceId}/${docPath}:`,
-        error
+        `[YjsManager] failed to refresh derived Yjs state for ${logDocument(spaceId, docPath)}:`,
+        logError(error)
       );
     }
   }
@@ -1349,10 +1350,9 @@ export class YjsDocManager {
     docPath: string,
     options?: { ifContentGeneration?: number }
   ): Promise<DiskSyncResult> {
-    console.log(`[Worktable] syncFromDisk called: spaceId=${spaceId}, docPath=${docPath}`);
+    if (debugLogging) console.debug(`[YjsManager] syncFromDisk ${logDocument(spaceId, docPath)}`);
     const key = docKey(spaceId, docPath);
     const liveDoc = this.docs.get(key);
-    console.log(`[Worktable] syncFromDisk: LiveDoc exists=${!!liveDoc} for key=${key}`);
     if (!liveDoc) return "not-loaded"; // Not loaded in memory, nothing to sync
     const intentAtStart = this.snapshotEditIntent(liveDoc);
 
@@ -1368,8 +1368,6 @@ export class YjsDocManager {
       this.requiredDiskSyncs.set(liveDoc, expectedGeneration);
     }
 
-    console.log(`[Worktable] syncFromDisk: connected clients=${liveDoc.clients.size}`);
-
     try {
       const result = await readDoc(spaceId, docPath);
       // File deleted, unreadable, or markdown (read-only in the editor).
@@ -1378,7 +1376,6 @@ export class YjsDocManager {
         return "not-applicable";
       }
 
-      console.log(`[Worktable] syncFromDisk: blocks read from disk=${result.data.length}`);
       const applied = await this.applyDiskContent(
         liveDoc,
         spaceId,
@@ -1389,7 +1386,11 @@ export class YjsDocManager {
       );
       this.requiredDiskSyncs.delete(liveDoc);
       if (applied !== "applied") return applied;
-      console.log(`[Worktable] syncFromDisk: Y.Doc update applied for ${docKey(spaceId, docPath)}`);
+      if (debugLogging) {
+        console.debug(
+          `[YjsManager] syncFromDisk applied ${result.data.length} blocks to ${liveDoc.clients.size} clients`
+        );
+      }
       return "applied";
     } catch (error) {
       if (
@@ -1500,8 +1501,8 @@ export class YjsDocManager {
       }
     } catch (error) {
       console.warn(
-        `[YjsManager] failed to refresh derived Yjs state for ${spaceId}/${docPath}:`,
-        error
+        `[YjsManager] failed to refresh derived Yjs state for ${logDocument(spaceId, docPath)}:`,
+        logError(error)
       );
     }
     return "applied";
@@ -1991,8 +1992,8 @@ export class YjsDocManager {
     )
     if (cacheErrors.length > 0) {
       console.warn(
-        `[YjsManager] could not discard every stale cache while moving ${preparedMoves.length} documents in ${spaceId}`,
-        cacheErrors
+        `[YjsManager] could not discard every stale cache while moving ${preparedMoves.length} documents:`,
+        cacheErrors.map(logError).join("\n")
       )
     }
 
@@ -2043,8 +2044,8 @@ export class YjsDocManager {
         rm(newStatePath, { force: true }),
       ]);
       console.warn(
-        `[YjsManager] discarded stale cache while moving ${spaceId}/${oldPath} to ${newPath}`,
-        error
+        `[YjsManager] discarded stale cache while moving ${logDocument(spaceId, oldPath)} to ${logDocument(spaceId, newPath)}:`,
+        logError(error)
       );
     } finally {
       if (oldLiveDoc) {
@@ -2205,7 +2206,7 @@ export class YjsDocManager {
     liveDoc.persistTimer = setTimeout(() => {
       liveDoc.persistTimer = null;
       this.runPersist(key, { continueSession: whileTyping }).catch((err) =>
-        console.error("[YjsManager] persist error:", err)
+        console.error("[YjsManager] persist error:", logError(err))
       );
     }, delay);
   }
@@ -2335,7 +2336,7 @@ export class YjsDocManager {
     const fileStat = await docStat(spaceId, docPath);
     if (fileStat && fileStat.updatedAt > liveDoc.lastPersistMs + 500) {
       console.log(
-        `[YjsManager] mtime guard: ${docPath} modified externally (disk=${fileStat.updatedAt}, lastPersist=${liveDoc.lastPersistMs}), syncing from disk`
+        `[YjsManager] mtime guard: ${logDocument(spaceId, docPath)} modified externally (disk=${fileStat.updatedAt}, lastPersist=${liveDoc.lastPersistMs}), syncing from disk`
       );
       await this.syncFromDisk(spaceId, docPath);
       return;
@@ -2487,7 +2488,7 @@ export class YjsDocManager {
       exportedGeneration !== liveDoc.restoredGeneration
     ) {
       console.log(
-        `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${docPath}`
+        `[YjsManager] stale-cache guard: refusing early browser persist over ${provenance.source} version for ${logDocument(spaceId, docPath)}`
       );
       await this.syncFromDisk(spaceId, docPath);
       return;
@@ -2621,7 +2622,7 @@ export class YjsDocManager {
 
     // Final persist
     await this.runPersist(key).catch((err) =>
-      console.error("[YjsManager] final persist error:", err)
+      console.error("[YjsManager] final persist error:", logError(err))
     );
 
     // A client can reconnect while the final persist is awaiting filesystem

@@ -3,6 +3,7 @@ import type {
   DocumentCorpusChangeEvent,
   WidgetChangeEvent,
 } from "./workspace-events.ts"
+import { logError } from "./debug-log.ts"
 
 const DEFAULT_DEBOUNCE_MS = 250
 const DEFAULT_MAX_BATCH_DELAY_MS = 1_000
@@ -255,10 +256,10 @@ export class DocumentFilesystemCoordinator {
       } catch (reportingError) {
         console.error(
           "[document-filesystem] error reporter failed:",
-          reportingError
+          logError(reportingError)
         )
       }
     }
-    console.error("[document-filesystem] batch error:", error)
+    console.error("[document-filesystem] batch error:", logError(error))
   }
 }

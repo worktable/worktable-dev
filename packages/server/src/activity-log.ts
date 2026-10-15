@@ -36,6 +36,7 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import type { RequestPrincipal } from "./token-store.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
+import { logError } from "./debug-log.ts"
 
 /** Log name for Worktable-level threads; Space IDs cannot start with "_". */
 const WORKTABLE_KEY = "_worktable"
@@ -185,11 +186,14 @@ export function recordActivity(input: ActivityInput): void {
     ...(input.quote ? { quote: clip(input.quote) } : {}),
   })
   if (!parsed.success) {
-    console.error("[activity] rejected event:", parsed.error.message)
+    console.error(
+      `[activity] rejected event: ${parsed.error.issues.length} issue(s)`,
+      parsed.error.issues.map((issue) => `${issue.path.map(String).join(".")} ${issue.code}`).join(", ")
+    )
     return
   }
   const write = appendEvent(parsed.data).catch((error) => {
-    console.error("[activity] could not record event:", error)
+    console.error("[activity] could not record event:", logError(error))
     // The session never got its first line; let the next edit try again.
     if (sessionKey && lastEditAt.get(sessionKey) === now) {
       lastEditAt.delete(sessionKey)

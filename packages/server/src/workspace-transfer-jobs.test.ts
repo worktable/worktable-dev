@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
+import { logError } from "./debug-log.ts"
 import {
   mkdir,
   mkdtemp,
@@ -138,7 +139,7 @@ describe("durable workspace transfer jobs", () => {
       (message, cause) => {
         if (
           message === "[workspace-transfer] background cleanup failed:" &&
-          cause === cleanupFailure
+          cause === logError(cleanupFailure)
         ) {
           logged()
         }
@@ -155,7 +156,7 @@ describe("durable workspace transfer jobs", () => {
       await cleanupWasLogged
       expect(error).toHaveBeenCalledWith(
         "[workspace-transfer] background cleanup failed:",
-        cleanupFailure
+        logError(cleanupFailure)
       )
     } finally {
       error.mockRestore()
@@ -308,7 +309,7 @@ describe("durable workspace transfer jobs", () => {
         if (
           typeof message === "string" &&
           message.startsWith("[workspace-transfer] export runner failed for") &&
-          cause === persistenceFailure
+          cause === logError(persistenceFailure)
         ) {
           logged()
         }

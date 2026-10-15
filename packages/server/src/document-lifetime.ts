@@ -25,6 +25,7 @@ import {
   getSpaceArchiveInfo,
 } from "./store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 /** Actor recorded on documents archived because their date passed. */
 export const LIFETIME_ACTOR = "worktable-lifetime"
@@ -252,7 +253,7 @@ export async function runLifetimeSweep(
     } catch (error) {
       console.error(
         `[document-lifetime] could not list documents in ${space.id}:`,
-        error
+        logError(error)
       )
       continue
     }
@@ -273,8 +274,8 @@ export async function runLifetimeSweep(
       } catch (error) {
         receipt.failed.push(path)
         console.error(
-          `[document-lifetime] could not archive ${space.id}/${path}:`,
-          error
+          `[document-lifetime] could not archive ${logDocument(space.id, path)}:`,
+          logError(error)
         )
       }
     }
@@ -312,8 +313,8 @@ export async function applyLifetimeOnCreate(options: {
     }
   } catch (error) {
     console.error(
-      `[document-lifetime] could not make new document temporary ${options.spaceId}/${options.path}:`,
-      error
+      `[document-lifetime] could not make new document temporary ${logDocument(options.spaceId, options.path)}:`,
+      logError(error)
     )
     return { lifetime: "durable" }
   }

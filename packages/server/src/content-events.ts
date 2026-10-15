@@ -12,6 +12,8 @@
 // Listeners must be synchronous and cheap (typically a dirty-flag
 // flip); anything expensive belongs behind lazy rebuilds.
 
+import { logError } from "./debug-log.ts";
+
 export type DocContentListener = (spaceId: string, docPath: string) => void;
 
 const listeners = new Set<DocContentListener>();
@@ -26,7 +28,7 @@ export function notifyDocContentChanged(spaceId: string, docPath: string): void 
     try {
       listener(spaceId, docPath);
     } catch (err) {
-      console.error("[content-events] listener error:", err);
+      console.error("[content-events] listener error:", logError(err));
     }
   }
 }

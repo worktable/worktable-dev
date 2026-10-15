@@ -17,6 +17,7 @@ import {
 } from "./token-store.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { logError } from "./debug-log.ts"
 
 interface ParticipantBinding {
   key: string
@@ -335,7 +336,7 @@ export async function resolveParticipant(
   // is retried by the next rename, and must not report the rename failed.
   if (renamed) {
     await reconcileThreadNames(renamed.id).catch((error: unknown) => {
-      console.error("Could not update thread names after a rename", error)
+      console.error("Could not update thread names after a rename", logError(error))
     })
   }
   return resolved

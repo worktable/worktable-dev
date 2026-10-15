@@ -419,7 +419,7 @@ function recordDiagnostic(diagnostics: RecordDiagnostic[], file: string, error: 
   const logKey = `${key}/${file}:${error}`;
   if (!loggedDiagnostics.has(logKey)) {
     loggedDiagnostics.add(logKey);
-    console.warn(`[records] Excluding unreadable record file ${key}/${file}: ${error}`);
+    console.warn(`[records] Excluding an unreadable record file in ${key}`);
   }
 }
 

@@ -23,6 +23,7 @@ import {
   deleteRegisteredDocument,
   DocumentWriteError,
 } from "./document-write-service.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 export type DeleteHtmlDocumentResult =
   | { ok: true; documentId: DocumentId }
@@ -96,8 +97,8 @@ export async function deleteHtmlDocument(
               await pruneEmptyWidgetParents(spaceId, widgetId)
             } catch (error) {
               console.warn(
-                `[html-delete] could not prune empty folders for ${spaceId}/${widgetId}`,
-                error
+                `[html-delete] could not prune empty folders for ${logDocument(spaceId, widgetId)}`,
+                logError(error)
               )
             }
             try {
@@ -109,8 +110,8 @@ export async function deleteHtmlDocument(
               })
             } catch (error) {
               console.warn(
-                `[html-delete] could not publish derived deletion state for ${spaceId}/${widgetId}`,
-                error
+                `[html-delete] could not publish derived deletion state for ${logDocument(spaceId, widgetId)}`,
+                logError(error)
               )
             }
           }

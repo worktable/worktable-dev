@@ -25,6 +25,7 @@ import {
   DocumentWriteError,
   moveRegisteredDocument,
 } from "./document-write-service.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 export type MoveHtmlDocumentResult =
   | {
@@ -121,8 +122,8 @@ export async function moveHtmlDocument(
               await pruneEmptyWidgetParents(spaceId, from)
             } catch (error) {
               console.warn(
-                `[html-move] could not prune empty folders for ${spaceId}/${from}`,
-                error
+                `[html-move] could not prune empty folders for ${logDocument(spaceId, from)}`,
+                logError(error)
               )
             }
           }
@@ -145,8 +146,8 @@ export async function moveHtmlDocument(
             })
           } catch (error) {
             console.warn(
-              `[html-move] could not publish derived move state for ${spaceId}/${from} -> ${to}`,
-              error
+              `[html-move] could not publish derived move state for ${logDocument(spaceId, from)} -> ${logDocument(spaceId, to)}`,
+              logError(error)
             )
           }
           return moved

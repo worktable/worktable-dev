@@ -41,6 +41,7 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 import { parseCanonicalYaml } from "./yaml.ts"
 import { pruneDocumentGenerationsForCountV2 } from "./version-retention.ts"
+import { logError } from "./debug-log.ts"
 
 type LegacyKind = "docs" | "widgets"
 
@@ -587,7 +588,7 @@ export async function recordLegacyDocVersionV2(input: {
     input.spaceId,
     owner.documentId
   ).catch((error) => {
-    console.warn("[document-versions] V2 retention cleanup failed:", error)
+    console.warn("[document-versions] V2 retention cleanup failed:", logError(error))
   })
   return provenance
 }
@@ -678,7 +679,7 @@ export async function recordLegacyWidgetVersionV2(input: {
     input.spaceId,
     owner.documentId
   ).catch((error) => {
-    console.warn("[document-versions] V2 retention cleanup failed:", error)
+    console.warn("[document-versions] V2 retention cleanup failed:", logError(error))
   })
   return provenance
 }

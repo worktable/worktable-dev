@@ -36,6 +36,7 @@ import {
   type RecordFile,
   type SearchResult,
 } from "@worktable/types";
+import { logError } from "./debug-log.ts";
 
 export type DocumentSearchAccess = "legacy" | "common";
 
@@ -987,7 +988,7 @@ export function startSearchWarmup(): () => Promise<void> {
     warming = warmSearchIndex(() => stopped).catch((error: unknown) => {
       console.warn(
         "[search] warm-up stopped:",
-        error instanceof Error ? error.message : error,
+        logError(error),
       );
     });
   }, 1_000);
@@ -1038,7 +1039,7 @@ async function indexForSearch(
   syncing.catch((error: unknown) => {
     console.warn(
       "[search] background build stopped:",
-      error instanceof Error ? error.message : error,
+      logError(error),
     );
   });
   return {

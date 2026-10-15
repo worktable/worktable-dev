@@ -6,9 +6,10 @@
 // failed requests.
 
 import { AsyncLocalStorage } from "node:async_hooks"
+import { randomBytes } from "node:crypto"
 import type { Context, MiddlewareHandler, Next } from "hono"
 import { routePath } from "hono/route"
-import { debugLogging } from "./debug-log.ts"
+import { debugLogging, logError } from "./debug-log.ts"
 import { noteServerActivity, recordRouteLatency } from "./perf-diagnostics.ts"
 
 /**
@@ -166,7 +167,10 @@ async function timeRequest(
   const totalMs = performance.now() - current.startedAt
   const { method, path } = c.req
   const status = c.res.status
-  recordRouteLatency(method, routePath(c), totalMs)
+  // Logs name the matched route, never the URL: paths carry Space and
+  // document names.
+  const route = routePath(c)
+  recordRouteLatency(method, route, totalMs)
   // Only an authenticated caller sees the breakdown: span durations would let
   // anyone else time workspace size and activity. MCP responses stay exactly
   // as the MCP transport produced them.
@@ -179,25 +183,45 @@ async function timeRequest(
   }
   if (status >= 500) {
     console.error(
-      `[http] ${method} ${path} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
+      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
     )
   } else if (totalMs - current.duration("wait") > SLOW_REQUEST_MS) {
     console.warn(
-      `[http] slow ${method} ${path} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
+      `[http] slow ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
     )
   } else if (debugLogging) {
     console.debug(
-      `[http] ${method} ${path} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
+      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()} ${path}`
     )
   }
 }
 
 /**
  * Register before response compression so the header and the total include
- * it. Logs the path without its query string.
+ * it. Logs the matched route template; only debug logging adds the path.
  */
 export const serverTiming: MiddlewareHandler = (c, next) => {
   const current = new RequestTiming()
   noteServerActivity(current.startedAt)
   return requestTiming.run(current, timeRequest, c, next, current)
+}
+
+/**
+ * Answer an error no route handled. The client gets a generic message and an
+ * id; the log gets the same id, the route template and the error without its
+ * message (`logError`).
+ */
+export function unexpectedErrorResponse(c: Context, error: Error): Response {
+  const errorId = randomBytes(4).toString("hex")
+  console.error(
+    `[server] unexpected error ${errorId} in ${c.req.method} ${routePath(c)}: ${logError(error)}`
+  )
+  return c.json(
+    {
+      error: `Something went wrong (error ${errorId}).`,
+      code: "INTERNAL_ERROR",
+      errorId,
+    },
+    500
+  )
 }

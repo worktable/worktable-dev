@@ -1493,6 +1493,18 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
     const member = await resolveVerifiedCloudMember(origin, bob)
     expect(member?.team?.memberId).toBeDefined()
     expect(findTeamMember(member!.team!.userId!)?.role).toBe("member")
+    // An unchanged identity is a read: it keeps working while a backup holds writes.
+    const { stopWorkspaceMutationsAndDrain } = await import(
+      "./workspace-request-lifecycle.ts"
+    )
+    await stopWorkspaceMutationsAndDrain()
+    try {
+      expect(
+        (await resolveVerifiedCloudMember(origin, bob))?.principal.id
+      ).toBe(member?.principal.id)
+    } finally {
+      resumeWorkspaceRequestAdmission()
+    }
     const updated = await resolveVerifiedCloudMember(origin, {
       ...bob,
       email: "bob.updated@example.test",

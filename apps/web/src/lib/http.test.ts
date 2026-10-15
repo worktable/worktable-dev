@@ -63,6 +63,22 @@ afterEach(() => {
 })
 
 describe("authenticatedFetch", () => {
+  it("retries a request refused while a backup holds the workspace", async () => {
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return calls === 1
+        ? Response.json(
+            { code: "WORKSPACE_REPLACING" },
+            { status: 503, headers: { "Retry-After": "0" } }
+          )
+        : Response.json({ ok: true })
+    }) as typeof fetch
+    const response = await authenticatedFetch("http://localhost/api/spaces")
+    expect(response.status).toBe(200)
+    expect(calls).toBe(2)
+  })
+
   it("recovers removed and switched members on ordinary reads", async () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
     const location = {pathname: "/spaces/private", replace: jest.fn()}

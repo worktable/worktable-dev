@@ -1,3 +1,4 @@
+import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import { identityForTeamMember } from "./team-identity.ts"
@@ -1613,7 +1614,7 @@ export async function claimNextThreadDelivery(
       waitMs,
       signalRevision
     )
-    if (!changed && waitMs >= remaining) return null
+    if (!changed && (waitMs >= remaining || isWorkspaceDraining())) return null
     if (changed) {
       await reconcileParticipantDeliveries(participant.id)
     }

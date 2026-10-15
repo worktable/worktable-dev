@@ -201,8 +201,12 @@ import {
 } from "./document-create-recovery-v2.ts"
 import {
   admitWorkspaceRequest,
+  classifyWorkspaceRequest,
+  waitForWorkspaceAdmission,
+  WRITE_ADMISSION_WAIT_MS,
+  stopWorkspaceMutationsAndDrain,
   isWorkspaceRequestAdmissionOpen,
-  isWorkspaceRequest,
+
   resumeWorkspaceRequestAdmission,
   runWorkspaceRequestAdmissionHookForTests,
   stopWorkspaceRequestAdmissionAndDrain,
@@ -317,15 +321,20 @@ app.use("/api/*", async (c, next) => {
 // handler that already passed authorization cannot write into the new root.
 app.use("*", async (c, next) => {
   const pathname = new URL(c.req.url).pathname;
-  if (!isWorkspaceRequest(c.req.method, pathname, teamsEnabled())) return next();
-  const release = admitWorkspaceRequest();
+  const kind = classifyWorkspaceRequest(c.req.method, pathname, teamsEnabled);
+  if (!kind) return next();
+  let release = admitWorkspaceRequest(kind);
+  // A backup capture pauses writes briefly; wait it out instead of failing.
+  if (!release && (await waitForWorkspaceAdmission(kind, WRITE_ADMISSION_WAIT_MS)))
+    release = admitWorkspaceRequest(kind);
   if (!release) {
     return c.json(
       {
         error: "Workspace replacement is in progress",
         code: "WORKSPACE_REPLACING",
       },
-      503
+      503,
+      { "Retry-After": "1" }
     );
   }
   try {
@@ -626,10 +635,21 @@ if (HAS_STATIC) {
   app.get("*", async (c) => {
     const pathname = new URL(c.req.url).pathname;
     const html = shell.html(pathname);
-    const [opening, facts] = await Promise.all([
-      injectDocumentOpening(c.req.raw, html, shell.documentPreloads()),
-      readBootFacts(c.req.raw, html, servedBuildId()),
-    ]);
+    // Workspace facts in the page are reads: a replacement serves the plain
+    // shell, and the app loads them once the new workspace is open.
+    const release = admitWorkspaceRequest("read");
+    let opening: string | null = null;
+    let facts: Awaited<ReturnType<typeof readBootFacts>> = null;
+    if (release) {
+      try {
+        [opening, facts] = await Promise.all([
+          injectDocumentOpening(c.req.raw, html, shell.documentPreloads()),
+          readBootFacts(c.req.raw, html, servedBuildId()),
+        ]);
+      } finally {
+        release();
+      }
+    }
     const page = facts ? withBootFacts(opening ?? html, facts) : opening;
     if (page) {
       const compressed =
@@ -2391,7 +2411,7 @@ export function startServer(
     await drainServerTasks();
   });
   setWorkspaceExportSnapshot(async (capture) => {
-    await stopWorkspaceRequestAdmissionAndDrain();
+    await stopWorkspaceMutationsAndDrain();
     let resumeYjs: (() => void) | null = null;
     try {
       resumeYjs = yjsManager.pauseWorkspaceMutations();

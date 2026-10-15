@@ -6,7 +6,11 @@ import {
 } from "./team-initialization.ts"
 import { randomUUID } from "node:crypto"
 import { APIError } from "better-auth/api"
-import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
+import {
+  admitWorkspaceRequest,
+  waitForWorkspaceAdmission,
+  WRITE_ADMISSION_WAIT_MS,
+} from "./workspace-request-lifecycle.ts"
 import { ENV } from "@worktable/hosted-contract"
 import type { TokenIdentity } from "./token-store.ts"
 import {
@@ -57,7 +61,11 @@ export async function resolveVerifiedCloudMember(
   if (!isHosted()) return null
   recoverTeamInitialization()
   if (!currentTeamWorktable()) {
-    const release = admitWorkspaceRequest()
+    const release =
+      admitWorkspaceRequest() ??
+      ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
+        ? admitWorkspaceRequest()
+        : null)
     if (!release)
       throw new APIError("SERVICE_UNAVAILABLE", {
         code: "WORKTABLE_BUSY",
@@ -122,14 +130,28 @@ export async function resolveVerifiedCloudMember(
       release()
     }
   }
-  let binding = requireTeamDatabase()
+  const current = requireTeamDatabase()
     .query<
-      { user_id: string },
+      { user_id: string; company_id: string | null; email: string | null },
       [string, string, string]
-    >("SELECT user_id FROM wt_identity_bindings WHERE worktable_id = ? AND issuer = ? AND subject = ?")
+    >(
+      `SELECT b.user_id, b.company_id, u.email FROM wt_identity_bindings b
+       LEFT JOIN user u ON u.id = b.user_id
+       WHERE b.worktable_id = ? AND b.issuer = ? AND b.subject = ?`
+    )
     .get(currentWorktableId(), proof.issuer, proof.subject)
-  if (binding || enrollment) {
-    const release = admitWorkspaceRequest()
+  let binding: { user_id: string } | null = current ?? null
+  // Most requests carry an unchanged identity: read it without the lock.
+  const unchanged =
+    current !== null &&
+    current.email?.toLowerCase() === proof.email.toLowerCase() &&
+    (!proof.companyId || proof.companyId === current.company_id)
+  if (enrollment || (binding && !unchanged)) {
+    const release =
+      admitWorkspaceRequest() ??
+      ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
+        ? admitWorkspaceRequest()
+        : null)
     if (!release)
       throw new APIError("SERVICE_UNAVAILABLE", {
         code: "WORKTABLE_BUSY",

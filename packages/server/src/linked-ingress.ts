@@ -14,7 +14,11 @@ import {
 } from "@worktable/hosted-contract"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
-import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
+import {
+  admitWorkspaceRequest,
+  waitForWorkspaceAdmission,
+  WRITE_ADMISSION_WAIT_MS,
+} from "./workspace-request-lifecycle.ts"
 import { handleRemoteMcpRequest } from "./routes/mcp.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { currentTeamWorktable } from "./team-database.ts"
@@ -107,8 +111,13 @@ export async function createLinkedIngress(options: {
         headers: { "Cache-Control": "no-store" },
       })
     // Admission precedes all asynchronous work, fencing workspace replacements.
-    const release = admitWorkspaceRequest()
-    if (!release) return new Response(null, { status: 503 })
+    const release =
+      admitWorkspaceRequest() ??
+      ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
+        ? admitWorkspaceRequest()
+        : null)
+    if (!release)
+      return new Response(null, { status: 503, headers: { "Retry-After": "1" } })
     if (inFlight >= 8) {
       release()
       return new Response(null, {

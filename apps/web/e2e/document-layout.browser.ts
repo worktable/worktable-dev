@@ -107,8 +107,7 @@ function appUrl(path: string): string {
 /** Where each line's first character sits, from the top of the page frame. */
 async function linePositions(page: Page, root: string): Promise<number[]> {
   return page.locator(root).evaluate((element, texts) => {
-    const frame =
-      element.closest(".worktable-document-content") ?? element
+    const frame = element.closest(".worktable-document-content") ?? element
     const top = frame.getBoundingClientRect().top
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
     const nodes: Text[] = []
@@ -151,7 +150,10 @@ test.beforeAll(async () => {
     body: JSON.stringify({ content: rich }),
   })
   expect(doc.ok).toBe(true)
-  await writeFile(harness.workspacePath("spaces/layout/docs/plain.md"), markdown)
+  await writeFile(
+    harness.workspacePath("spaces/layout/docs/plain.md"),
+    markdown
+  )
   const columns = Array.from(
     { length: 10 },
     (_, index) => `Column ${index + 1}`

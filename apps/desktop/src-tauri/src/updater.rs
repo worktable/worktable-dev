@@ -746,14 +746,31 @@ impl DesktopUpdaterState {
         if self.channel()? == channel {
             return Ok(false);
         }
-        let status = self.snapshot()?;
-        if matches!(status.state, "checking" | "downloading" | "installing") {
-            return Err("Wait for the current update to finish, then try again.".into());
+        // Hold the updater operation, so no check reads the old channel and
+        // prepares its update after the switch.
+        let _operation = self
+            .begin_operation()
+            .map_err(|_| "Wait for the current update to finish, then try again.".to_string())?;
+        let path = self
+            .state_path
+            .lock()
+            .map_err(|_| "desktop updater path lock is poisoned".to_string())?
+            .clone()
+            .ok_or_else(|| "desktop updater is not initialized".to_string())?;
+        {
+            let mut persisted = self
+                .persisted
+                .lock()
+                .map_err(|_| "desktop updater persistence lock is poisoned".to_string())?;
+            // Persist first: a failed write leaves the old channel everywhere.
+            let next = PersistedUpdaterState {
+                channel,
+                last_checked_at: None,
+                ..persisted.clone()
+            };
+            write_persisted_state(&path, &next)?;
+            *persisted = next;
         }
-        self.update_persisted(|persisted| {
-            persisted.channel = channel;
-            persisted.last_checked_at = None;
-        })?;
         self.reset_automatic_failures()?;
         if self.take_prepared()?.is_some() {
             let mut status = self
@@ -1249,10 +1266,17 @@ mod tests {
         relaunch.initialize(&root, "0.0.45").unwrap();
         assert_eq!(relaunch.channel().unwrap(), UpdateChannel::Beta);
 
-        // Switching waits for a download already under way.
-        relaunch
-            .record_update_found("0.0.47".into(), None, None, 100_002, false)
-            .unwrap();
+        // Switching waits for a check or download already under way.
+        {
+            let _check = relaunch.begin_check_operation(false).unwrap();
+            assert!(relaunch.set_channel(UpdateChannel::Stable).is_err());
+        }
+        assert_eq!(relaunch.channel().unwrap(), UpdateChannel::Beta);
+
+        // A switch that can't be saved changes nothing.
+        let unwritable = root.join("unwritable");
+        fs::create_dir_all(&unwritable).unwrap();
+        *relaunch.state_path.lock().unwrap() = Some(unwritable.clone());
         assert!(relaunch.set_channel(UpdateChannel::Stable).is_err());
         assert_eq!(relaunch.channel().unwrap(), UpdateChannel::Beta);
         let _ = fs::remove_dir_all(root);

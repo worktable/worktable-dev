@@ -156,8 +156,14 @@ export function publishDesktop(
   }
   const beta = manifest.channels.beta
   if (!beta) throw new Error("The beta channel has no build yet")
-  if (compareVersions(version, beta.version) > 0) {
-    throw new Error(`Beta has not offered ${version} yet`)
+  // Precedence ignores the commit, so the current beta must match exactly.
+  // An older beta's prerelease and commit are checked by the caller.
+  const order = compareVersions(version, beta.version)
+  if (
+    order > 0 ||
+    (order === 0 && (version !== beta.version || input.commit !== beta.commit))
+  ) {
+    throw new Error(`Beta has not offered ${version} of ${input.commit}`)
   }
   if (beta.desktop && compareVersions(beta.desktop.version, version) >= 0) {
     return { manifest, changed: false }
@@ -278,20 +284,38 @@ export function betaResidenceMs(
   return total
 }
 
+export interface BetaRelease {
+  tag: string
+  /** Whether the prerelease carries a signed Desktop build. */
+  desktop: boolean
+}
+
+/** Desktop betas kept beyond `keep`, for installs that need their DMG back. */
+export const KEEP_DESKTOP_BETAS = 5
+
 /**
  * Beta tags to delete: all but the newest `keep`, never one the manifest
- * points at (the current beta, and the beta Desktop installs).
+ * points at (the current beta, and the beta Desktop installs), and never one
+ * of the newest `keepDesktop` Desktop betas. A failed Desktop update offers
+ * the installed version's DMG for recovery, so those must stay downloadable.
  */
 export function betaTagsToPrune(
-  tags: string[],
+  releases: BetaRelease[],
   keep: number,
-  kept: Array<string | undefined>
+  kept: Array<string | undefined>,
+  keepDesktop = KEEP_DESKTOP_BETAS
 ): string[] {
-  return tags
-    .filter((tag) => DEV_TAG.test(tag))
-    .sort((left, right) => compareVersions(right, left))
+  const newestFirst = releases
+    .filter((release) => DEV_TAG.test(release.tag))
+    .sort((left, right) => compareVersions(right.tag, left.tag))
+  const recentDesktop = newestFirst
+    .filter((release) => release.desktop)
+    .slice(0, keepDesktop)
+    .map((release) => release.tag)
+  return newestFirst
     .slice(keep)
-    .filter((tag) => !kept.includes(tag))
+    .map((release) => release.tag)
+    .filter((tag) => !kept.includes(tag) && !recentDesktop.includes(tag))
 }
 
 // ── GitHub ──────────────────────────────────────────────────────────────────
@@ -456,19 +480,30 @@ async function readHistory(since: string): Promise<ManifestSnapshot[]> {
   return snapshots.sort((left, right) => left.at - right.at)
 }
 
-async function listReleaseTags(): Promise<string[]> {
-  const tags: string[] = []
+async function listBetaReleases(): Promise<BetaRelease[]> {
+  const betas: BetaRelease[] = []
   for (let page = 1; page <= 10; page += 1) {
     const releases = (await expectOk(
       await github(`/repos/${repository}/releases?per_page=100&page=${page}`),
       "Listing releases"
-    )) as Array<{ tag_name: string; prerelease: boolean }>
-    tags.push(
-      ...releases.filter((release) => release.prerelease).map((r) => r.tag_name)
+    )) as Array<{
+      tag_name: string
+      prerelease: boolean
+      assets?: Array<{ name: string }>
+    }>
+    betas.push(
+      ...releases
+        .filter((release) => release.prerelease)
+        .map((release) => ({
+          tag: release.tag_name,
+          desktop: (release.assets ?? []).some(
+            (asset) => asset.name === "desktop-updater.json"
+          ),
+        }))
     )
     if (releases.length < 100) break
   }
-  return tags
+  return betas
 }
 
 async function deleteRelease(tag: string): Promise<void> {
@@ -569,7 +604,7 @@ if (import.meta.main) {
     if (!Number.isInteger(keep) || keep < 1) usage()
     const beta = parseManifest((await readRemote()).text).channels.beta
     const kept = [beta?.tag, beta?.desktop?.tag]
-    for (const tag of betaTagsToPrune(await listReleaseTags(), keep, kept)) {
+    for (const tag of betaTagsToPrune(await listBetaReleases(), keep, kept)) {
       await deleteRelease(tag)
       console.log(`Deleted beta ${tag}`)
     }

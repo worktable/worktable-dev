@@ -92,7 +92,8 @@ no Desktop build yet, at most every few hours, and adds the DMG, updater archive
 signature and `desktop-updater.json` to that beta's prerelease. `publish-desktop
 <version> <commit>` then records the build in the beta entry as `desktop`
 (`version`, `tag`, `commit`, `publishedAt`). Desktop on beta installs only that
-version or a newer stable release, and pruning keeps its prerelease.
+version or a newer stable release. Pruning keeps its prerelease and the five
+newest Desktop betas, whose DMGs a failed update offers for recovery.
 `desktop-due` reports whether a Desktop build is due.
 
 To build a Desktop beta, set `WORKTABLE_VERSION` to the beta's dev version for

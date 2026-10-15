@@ -122,15 +122,33 @@ describe("release channel manifest", () => {
     expect(betaResidenceMs(history, commit("c"), 40 * hour)).toBe(0)
   })
 
-  it("prunes old betas but never one the channel or Desktop points at", () => {
-    const tags = ["v0.1.23", "v0.1.24-dev.3", "v0.1.24-dev.10", "v0.1.24-dev.2"]
-    expect(betaTagsToPrune(tags, 1, ["v0.1.24-dev.10"])).toEqual([
+  it("prunes old betas but never one the channel or Desktop needs", () => {
+    const release = (tag: string, desktop = false) => ({ tag, desktop })
+    const releases = [
+      release("v0.1.23"),
+      release("v0.1.24-dev.3"),
+      release("v0.1.24-dev.10"),
+      release("v0.1.24-dev.2"),
+    ]
+    expect(betaTagsToPrune(releases, 1, ["v0.1.24-dev.10"])).toEqual([
       "v0.1.24-dev.3",
       "v0.1.24-dev.2",
     ])
     expect(
-      betaTagsToPrune(tags, 1, ["v0.1.24-dev.10", "v0.1.24-dev.3"])
+      betaTagsToPrune(releases, 1, ["v0.1.24-dev.10", "v0.1.24-dev.3"])
     ).toEqual(["v0.1.24-dev.2"])
+    // The newest Desktop betas stay, so installs can recover to their DMG.
+    const desktop = [
+      release("v0.1.24-dev.9"),
+      release("v0.1.24-dev.8", true),
+      release("v0.1.24-dev.7"),
+      release("v0.1.24-dev.6", true),
+      release("v0.1.24-dev.5", true),
+    ]
+    expect(betaTagsToPrune(desktop, 1, ["v0.1.24-dev.9"], 2)).toEqual([
+      "v0.1.24-dev.7",
+      "v0.1.24-dev.5",
+    ])
   })
 
   it("offers Desktop the newest beta with a Desktop build, across new betas", () => {
@@ -168,6 +186,8 @@ describe("release channel manifest", () => {
     for (const input of [
       { version: "0.1.24-dev.132+eeeeeee", commit: commit("e") },
       { version: "0.1.24-dev.131+ccccccc", commit: commit("f") },
+      // Beta's count, but not beta's commit.
+      { version: "0.1.24-dev.131+ddddddd", commit: commit("d") },
       { version: "0.1.24", commit: commit("c") },
     ]) {
       expect(() =>

@@ -86,10 +86,11 @@ export function ThreadComposer({
   const errorId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mentionAnchorRef = useRef<HTMLSpanElement>(null)
-  const mentionMirrorRef = useRef<HTMLDivElement>(null)
+  const mirrorRef = useRef<HTMLDivElement>(null)
   const [mention, setMention] = useState<ThreadMentionQuery>()
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
   const textareaFadeRef = useScrollFade<HTMLTextAreaElement>()
+  const mirrorFadeRef = useScrollFade<HTMLDivElement>()
   const toolbarRef = useScrollFadeX<HTMLDivElement>()
   const composerTextareaRef = useCallback(
     (node: HTMLTextAreaElement | null) => {
@@ -99,6 +100,13 @@ export function ThreadComposer({
       else if (ref) ref.current = node
     },
     [ref, textareaFadeRef]
+  )
+  const composerMirrorRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      mirrorRef.current = node
+      mirrorFadeRef(node)
+    },
+    [mirrorFadeRef]
   )
   const label = pending
     ? "Sending message"
@@ -190,14 +198,15 @@ export function ThreadComposer({
           <div className="relative w-full min-w-0 flex-1">
             {/* The visible text is drawn here, under the transparent textarea.
                 It must wrap exactly like the textarea or the caret drifts away
-                from it, so spans keep the textarea's letter spacing and both
-                layers reserve the same scrollbar gutter. */}
+                from it, so spans keep the textarea's letter spacing and the
+                textarea hides its scrollbar. This layer scrolls with the
+                textarea and fades its own edges to show overflow. */}
             <div
+              ref={composerMirrorRef}
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 overflow-hidden [scrollbar-gutter:stable]"
+              className="scroll-fade pointer-events-none absolute inset-0 overflow-hidden"
             >
               <div
-                ref={mentionMirrorRef}
                 className={cn(
                   composerTextClassName,
                   "break-words whitespace-pre-wrap text-foreground [&_span]:tracking-[inherit]"
@@ -247,8 +256,9 @@ export function ThreadComposer({
                 )
               }
               onScroll={(event) => {
-                if (!mentionMirrorRef.current) return
-                mentionMirrorRef.current.style.transform = `translate(${-event.currentTarget.scrollLeft}px, ${-event.currentTarget.scrollTop}px)`
+                if (!mirrorRef.current) return
+                mirrorRef.current.scrollTop = event.currentTarget.scrollTop
+                mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft
               }}
               onKeyDown={(event) => {
                 if (mention && mentionOptions.length > 0) {
@@ -302,7 +312,7 @@ export function ThreadComposer({
               placeholder={placeholder}
               className={cn(
                 composerTextClassName,
-                "scroll-fade relative z-1 max-h-40 w-full overflow-y-auto text-transparent caret-foreground [scrollbar-gutter:stable] selection:bg-primary/20 selection:text-foreground placeholder:text-muted-foreground"
+                "scroll-fade scrollbar-none relative z-1 max-h-40 w-full overflow-y-auto text-transparent caret-foreground selection:bg-primary/20 selection:text-foreground placeholder:text-muted-foreground"
               )}
             />
             <Popover

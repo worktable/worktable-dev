@@ -221,7 +221,7 @@ function DocumentValue({ spaceId, value, linksDisabled, whole, className }: { sp
 }
 
 function OverflowCount({ count }: { count: number }) {
-  return <span className="inline-flex h-6 items-center rounded-full border border-border bg-muted/20 px-2 text-xs text-muted-foreground">+{count}</span>
+  return <span className="inline-flex h-6 items-center rounded-full border border-border bg-surface-inset px-2 text-xs text-muted-foreground">+{count}</span>
 }
 
 function DocumentChip({ reference, linksDisabled, spaceId }: { reference: ResolvedDocumentReference; linksDisabled: boolean; spaceId: string }) {
@@ -232,8 +232,8 @@ function DocumentChip({ reference, linksDisabled, spaceId }: { reference: Resolv
         reference.state === "invalid" || reference.state === "missing"
           ? "border-destructive/35 bg-destructive/5 text-destructive"
           : reference.state === "archived"
-            ? "border-border bg-muted/40 text-muted-foreground"
-            : "border-border bg-muted/30 text-foreground"
+            ? "border-border bg-surface-inset text-muted-foreground"
+            : "border-border bg-surface-inset text-foreground"
       }`}
       title={`${reference.storedPath}${reference.resolvedPath && reference.resolvedPath !== reference.storedPath ? ` → ${reference.resolvedPath}` : ""}${stateLabel}${reference.error ? ` · ${reference.error}` : ""}`}
     >
@@ -258,7 +258,7 @@ function DocumentChip({ reference, linksDisabled, spaceId }: { reference: Resolv
  *  material and action; the dot alone differentiates option values. */
 function SelectChip({ value }: { value: string }) {
   return (
-    <span className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2 py-0.5 text-xs">
+    <span className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border bg-surface-inset px-2 py-0.5 text-xs">
       <span className={`size-1.5 shrink-0 rounded-full ${optionColorClass(value)}`} />
       <span className="truncate">{value}</span>
     </span>
@@ -288,7 +288,7 @@ function RelationChip({
   const chip = (
     <span
       className={`inline-flex max-w-48 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
-        dangling ? "border-destructive/40 text-destructive" : "border-border bg-muted/30"
+        dangling ? "border-destructive/40 text-destructive" : "border-border bg-surface-inset"
       }`}
       title={dangling ? `${recordId} not found in ${collectionId}` : recordId}
     >

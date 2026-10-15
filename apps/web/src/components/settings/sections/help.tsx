@@ -50,7 +50,7 @@ export function HelpSection() {
 function HelpResourceLink({ label, href, icon: Icon }: HelpResource) {
   return (
     <a
-      className="group flex min-h-11 items-center gap-3 border-b border-border px-3 py-2.5 text-sm text-foreground transition-colors last:border-b-0 hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
+      className="group flex min-h-11 items-center gap-3 border-b border-border px-3 py-2.5 text-sm text-foreground transition-colors last:border-b-0 hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
       href={href}
       target="_blank"
       rel="noopener noreferrer"

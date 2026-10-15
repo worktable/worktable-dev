@@ -5,13 +5,13 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@worktable/ui/lib/utils"
 
 const statCardVariants = cva(
-  "group/stat-card relative flex flex-col gap-2 overflow-hidden rounded-xl p-3 ring-1 ring-border transition-all duration-180",
+  "group/stat-card relative flex flex-col gap-2 overflow-hidden rounded-xl p-3",
   {
     variants: {
       variant: {
-        default: "bg-card text-card-foreground",
+        default: "card-surface text-card-foreground",
         highlight:
-          "bg-surface-tint text-card-foreground ring-primary/20 dark:bg-surface-tint",
+          "border border-primary/20 bg-surface-tint text-card-foreground",
       },
     },
     defaultVariants: {

@@ -150,7 +150,7 @@ function ActivityPage() {
           {Array.from({ length: 8 }).map((_, index) => (
             <div
               key={index}
-              className="h-10 animate-pulse rounded-lg bg-muted/20"
+              className="h-10 animate-pulse rounded-lg bg-muted"
             />
           ))}
         </div>

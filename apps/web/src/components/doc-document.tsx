@@ -845,7 +845,7 @@ function MarkdownDocPage({
         </div>
 
         {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-muted/10 xl:flex print:hidden">
+          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
             <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
               <div className="min-w-0">
                 <div className="truncate font-medium text-foreground">
@@ -1392,7 +1392,7 @@ function BlockNoteDocPage({
         </div>
 
         {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-muted/10 xl:flex print:hidden">
+          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
             <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
               <div className="min-w-0">
                 <div className="truncate font-medium text-foreground">
@@ -1988,7 +1988,7 @@ function DocVersionHistoryContent({
               return (
                 <article
                   key={version.id}
-                  className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-muted/25" : "border-l-transparent hover:bg-muted/20"}`}
+                  className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"}`}
                 >
                   <button
                     type="button"

@@ -135,8 +135,7 @@ function StepProgress({ step }: { step: OnboardingStep }) {
               "grid size-7 place-items-center rounded-full border text-xs font-medium",
               index < active &&
                 "border-primary bg-primary text-primary-foreground",
-              index === active &&
-                "border-primary bg-background text-primary shadow-sm",
+              index === active && "border-primary bg-background text-primary",
               index > active && "border-border text-muted-foreground"
             )}
           >
@@ -470,7 +469,7 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
     <div className="min-h-dvh overflow-y-auto bg-background px-4 py-6 text-foreground sm:px-6 sm:py-10">
       <div className="mx-auto w-full max-w-2xl">
         <StepProgress step={draft.step} />
-        <main className="mt-8 rounded-2xl border border-border/70 bg-card p-5 shadow-sm sm:mt-10 sm:p-8">
+        <main className="mt-8 rounded-2xl card-surface p-5 sm:mt-10 sm:p-8">
           {draft.step === "identity" ? (
             <IdentityStep
               workspace={workspace}

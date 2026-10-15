@@ -16,6 +16,8 @@ Run `bun run generate:theme` after changing the configuration. It generates thes
 - `packages/ui/src/theme/mermaid-theme.generated.ts`, Mermaid-compatible constants, consumed by `packages/ui/src/theme/mermaid-config.ts`.
 - `packages/types/src/drawing-theme.generated.ts`, shared Quickdraw canvas and ink palettes for the editor and agent previews.
 
+The browser shell color, the drawing and Mermaid canvases, drawing handles, and the BlockNote menu, hover, selection, and text colors derive from the semantic surface and text roles through `oklchToHex`; do not hand-type hex values for these. Content palettes stay explicit in the configuration: drawing inks, Mermaid node fills, and Mermaid line and text colors.
+
 `bun run check:theme` rejects drift. Product CSS consumes `@worktable/ui/theme.css`; React continues using standard Tailwind semantic utilities.
 
 Additional deployment-specific outputs are declared in
@@ -46,6 +48,9 @@ outputs without rewriting them.
 | Sidebar item text        | `text-sidebar-item-foreground`                    | Resting file, folder, record, widget, and navigation labels         |
 | Reading foreground       | `text-reading-foreground`, `--reading-foreground` | Long-form editor, Markdown, and documentation prose                 |
 | Panel / raised / overlay | `bg-card`, `bg-popover`                           | Content panels and opaque portaled surfaces                         |
+| Card                     | `.card-surface`, `--card-border`                  | Cards and grouped lists on the canvas; see Cards below              |
+| Hover fill               | `bg-surface-hover`, `--surface-hover`             | Translucent hover and pressed state for rows and items on any surface |
+| Inset fill               | `bg-surface-inset`, `--surface-inset`             | Translucent static inset: zebra rows, table headers, footers, wells |
 | Decorative neutral       | `bg-surface-tint`                                 | Quiet non-status badges, chips, icon wells, and decorative emphasis |
 | Selected neutral         | `bg-surface-selected`                             | Current rows, tabs, and selected controls                           |
 | Field                    | `.well`, `--well-bg`                              | Inputs and control tracks; always flat                              |
@@ -66,6 +71,7 @@ outputs without rewriting them.
 - **Bronze = material.** Keep it for details such as presence and annotation dots. Never use it as a general decorative surface tint or primary action. Switch thumbs are flat cobalt controls.
 - **Technical notation = primary cobalt.** It shares the primary palette through its generated `--code-accent-*` finish. Use it for inline code, commands, environment variables, compact key hints, and docs tips; it does not imply clickability.
 - **Destructive stays red (hue ~22–28).** The primary no longer competes with it — keep it that way.
+- **Surfaces are opaque; fills are translucent.** Canvas, card, and popover are opaque steps. Hover and inset fills are translucent so one role reads the same on any surface. Do not put opacity modifiers on surface roles (`bg-muted/30`, `bg-card/60`) or add `dark:` surface overrides in components; add or retune a role in the theme instead.
 - **Sidebar text uses semantic hierarchy.** Space labels use `text-sidebar-space-foreground`; resting file, folder, record, widget, and navigation labels use `text-sidebar-item-foreground`. Hover and selected states may rise to the full sidebar foreground or primary text roles.
 
 ## Control finishes
@@ -78,6 +84,8 @@ Primary keys remain physical objects. Secondary actions and fields are flat neut
 | `.btn-key-outline`    | Flat neutral fill, subtle border, no gradient, shadow, or press translation                                              |
 | `.well`               | Flat translucent field fill and subtle border, with no inset shadow                                                      |
 | `.well-interactive`   | Hoverable field finish using canonical fill and border tokens without changing field depth                               |
+| `.card-surface`       | Card fill with the quiet `--card-border` perimeter; no shadow                                                            |
+| `.card-surface-interactive` | Clickable card: raises only the perimeter to `--input-hover` on hover                                              |
 | `.bronze-knob`        | Radial-lit bronze circle for material details such as agent and annotation dots                                          |
 | `.inline-code-accent` | Primary cobalt ink over a quiet borderless surface for compact technical notation                                        |
 | `.overlay-floating`   | Opaque dropdown, popover, context-menu, and floating-toolbar surface with the shared quiet perimeter and low elevation   |
@@ -92,6 +100,10 @@ Rules:
 3. Editable and clickable field wells use `.well-interactive`; hover changes fill and border through `--well-hover-bg` and `--input-hover`, while cobalt focus takes precedence and disabled, invalid, and read-only fields do not advertise editability. `--field-focus-shadow` provides the mode-aware focus halo for non-Tailwind adapters such as docs search.
 4. **Primary shadows are tinted ink, never pure black in light mode** — use `--key-shadow` and do not hand-roll structural shadows.
 5. Button sizes: default 40px (`h-10`), sm 36px, xs 32px (dense chrome only — audit before reaching for it), lg 44px. Inputs are `h-10`. Base radius `0.75rem`.
+
+### Cards
+
+Cards are quiet paper on the canvas: one fill step and a perimeter quieter than dividers, with no shadow. Use `Card` from `@worktable/ui/components/card` for titled content blocks, and the `card-surface` utility for grouped lists, settings sections, pinned items, and table containers that need their own layout. Add `card-surface-interactive` when the whole card is a link or button. Radius, padding, and layout stay with the call site. Elevation belongs to overlays; a card that needs a shadow is an overlay and uses `.overlay-floating`.
 
 ### Action hierarchy
 
@@ -235,7 +247,7 @@ function MyTable() {
 
 ## Context Panels
 
-Record details, annotations, and version history use the shared `DesktopContextPanel` shell at `xl` and wider. The shell is inset 12px on every side, uses an opaque paper-like floating surface in light mode and the standard card surface in dark mode, a complete quiet overlay-color perimeter, full rounding, and the shared floating shadow. It consumes layout width rather than covering the artifact.
+Record details, annotations, and version history use the shared `DesktopContextPanel` shell at `xl` and wider. The shell is inset 12px on every side and uses the card surface with `.overlay-floating` for its quiet perimeter and floating shadow, with full rounding. It consumes layout width rather than covering the artifact.
 
 Rules:
 
@@ -330,6 +342,7 @@ Sidebar rows share `--sidebar-item-radius`; `--sidebar-hover` is deliberately qu
 
 - **Don't put `backdrop-filter` in `@layer utilities`.** Tailwind v4 strips the unprefixed version.
 - **Use opaque overlay surfaces.** Menus and popovers must keep predictable contrast over any content.
+- **Don't hand-roll cards or fills.** Use `card-surface` rather than `border border-border bg-card`, and `bg-surface-hover` or `bg-surface-inset` rather than `bg-muted/NN`.
 - **Don't combine a hard edge and a scroll fade at the same boundary.** Choose the treatment that matches the surrounding surface.
 - **Don't use `useRef` for scroll fade on conditionally rendered elements.** Use `useScrollFade` (callback ref) or `ScrollFadeArea`.
 - **Don't forget `has-[[data-popup-open]]`** on hover-to-reveal triggers. Without it, the trigger disappears when the dropdown opens.

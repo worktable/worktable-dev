@@ -2,7 +2,7 @@
 export const DRAWING_THEME = {
   "light": {
     "id": "light",
-    "background": "#f3f5f7",
+    "background": "#edf0f4",
     "colors": {
       "black": {
         "stroke": "#283440",
@@ -68,7 +68,7 @@ export const DRAWING_THEME = {
     "noteText": "#283440",
     "selection": "#4263bd",
     "selectionFill": "rgba(66, 99, 189, 0.09)",
-    "handleFill": "#f3f5f7",
+    "handleFill": "#fafbfd",
     "scribble": "#db6065",
     "grid": {
       "line": {
@@ -83,7 +83,7 @@ export const DRAWING_THEME = {
   },
   "dark": {
     "id": "dark",
-    "background": "#17191d",
+    "background": "#0c0f11",
     "colors": {
       "black": {
         "stroke": "#e1e5ea",
@@ -149,7 +149,7 @@ export const DRAWING_THEME = {
     "noteText": "#283440",
     "selection": "#8ba5ed",
     "selectionFill": "rgba(139, 165, 237, 0.12)",
-    "handleFill": "#202329",
+    "handleFill": "#15171a",
     "scribble": "#db6065",
     "grid": {
       "line": {

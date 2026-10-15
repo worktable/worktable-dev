@@ -446,7 +446,7 @@ function AgentSetupDisclosure({
 }) {
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} className={className}>
-      <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50">
+      <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-colors outline-none hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
         <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
           {title}
         </span>
@@ -1468,7 +1468,7 @@ export function ConnectedAgentsGroup() {
                 return (
                   <li
                     key={connection.id}
-                    className="flex min-h-14 items-center gap-3 rounded-xl bg-muted/35 px-3 py-2"
+                    className="flex min-h-14 items-center gap-3 rounded-xl bg-surface-inset px-3 py-2"
                   >
                     <AgentAvatar
                       name={name}
@@ -1579,7 +1579,7 @@ export function AccessTokensGroup() {
       <Collapsible open={open} onOpenChange={setOpen}>
         <Card className="gap-0 py-0">
           <div className="flex min-h-14 items-center gap-2 pr-3">
-            <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors outline-none hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50">
+            <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors outline-none hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-foreground">
                   Access tokens

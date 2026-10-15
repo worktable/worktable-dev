@@ -164,7 +164,7 @@ function HomePage() {
           {recent.isLoading ? (
             <div className="space-y-1">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted/20" />
+                <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />
               ))}
             </div>
           ) : recent.isError ? (

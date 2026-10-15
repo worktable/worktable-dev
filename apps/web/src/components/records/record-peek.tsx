@@ -275,7 +275,7 @@ export function RecordDetailBody({
   const moreContent = moreCount > 0 ? (
     <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
       <Card className="gap-0 py-0">
-        <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-3 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-3 focus-visible:ring-ring/50">
+        <CollapsibleTrigger className="flex min-h-12 w-full items-center gap-3 rounded-xl px-4 py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-foreground">Other fields</span>
             <span className="block text-xs text-muted-foreground">Not in this collection’s schema</span>
@@ -305,7 +305,7 @@ export function RecordDetailBody({
   ) : null
 
   const provenanceContent = (
-    <Card className="gap-0 bg-muted/15 py-0">
+    <Card className="gap-0 bg-surface-inset py-0">
       <CardContent className="space-y-3 px-4 py-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Info className="size-4 text-accent-bronze-ink" />
@@ -332,7 +332,7 @@ export function RecordDetailBody({
   )
 
   const archiveNotice = archived && record.archive ? (
-    <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/25 px-3.5 py-3 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-inset px-3.5 py-3 text-xs text-muted-foreground">
       <Archive className="size-3.5 shrink-0 text-accent-bronze-ink" />
       <span>
         Archived <RelativeTime iso={record.archive.archivedAt} />

@@ -45,7 +45,7 @@ export function DesktopContextPanel({
         {resizeHandle}
         <div
           className={cn(
-            "h-full w-full overflow-hidden rounded-2xl border border-[color:var(--overlay-border)] bg-popover shadow-[var(--overlay-floating-shadow)] dark:bg-card",
+            "overlay-floating h-full w-full overflow-hidden rounded-2xl bg-card",
             surfaceClassName
           )}
           data-worktable-context-panel

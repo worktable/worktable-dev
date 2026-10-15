@@ -681,7 +681,7 @@ function RecordsPage() {
   ) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-        <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-muted/40">
+        <div className="mb-5 flex size-14 items-center justify-center rounded-3xl bg-surface-tint">
           <Database className="size-7 text-muted-foreground" />
         </div>
         <h2 className="text-lg font-medium text-foreground">Collection not found</h2>
@@ -848,7 +848,7 @@ function RecordsPage() {
                 <button
                   key={field}
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
                   title="This sort field has no column here; click to remove it"
                   onClick={() =>
                     setTableState({
@@ -865,7 +865,7 @@ function RecordsPage() {
 
           {/* Temporary, consolidated collection health row. */}
           {dataHealthNotices.length > 0 && (
-            <div className="mb-3 flex shrink-0 items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
+            <div className="mb-3 flex shrink-0 items-center gap-3 rounded-lg border border-border bg-surface-inset px-3 py-2">
               <Popover>
                 <PopoverTrigger
                   render={
@@ -929,7 +929,7 @@ function RecordsPage() {
             {pagesQuery.isFetching && !pagesQuery.isFetchingNextPage && (
               <Loader2 className="pointer-events-none absolute right-3 top-3 z-10 size-4 animate-spin text-muted-foreground" />
             )}
-            <div className="h-full min-w-0 overflow-hidden rounded-xl border border-border bg-card">
+            <div className="h-full min-w-0 overflow-hidden card-surface rounded-xl">
               {/* Reordered rows must not pull the viewport along with the browser's scroll anchor. */}
               <div key={`${spaceId}/${collectionId}`} ref={tableScrollRef} className="scroll-fade-x max-h-full min-w-0 overflow-auto overscroll-x-contain [overflow-anchor:none]">
                 <table className="border-separate border-spacing-0 caption-bottom text-sm" style={{ width: table.getTotalSize(), minWidth: "100%" }}>
@@ -996,7 +996,7 @@ function RecordsPage() {
                             {dropMark}
                             <button
                               type="button"
-                              className="group flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                              className="group flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
                               onClick={header.column.getToggleSortingHandler()}
                               title="Sort (shift-click to add)"
                             >
@@ -1032,7 +1032,7 @@ function RecordsPage() {
                       <TableCell colSpan={columns.length + 1}>
                         <div className="space-y-2 py-2">
                           {Array.from({ length: 6 }).map((_, i) => (
-                            <div key={i} className="h-9 animate-pulse rounded-lg bg-muted/20" />
+                            <div key={i} className="h-9 animate-pulse rounded-lg bg-muted" />
                           ))}
                         </div>
                       </TableCell>
@@ -1092,7 +1092,7 @@ function RecordsPage() {
             </div>
           </div>
           {pagesQuery.isError && (
-            <div role="alert" className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm">
+            <div role="alert" className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-surface-inset px-3 py-2 text-sm">
               <span className="flex-1">Couldn’t update records. Try again.</span>
               <Button size="sm" variant="outline" onClick={() => void pagesQuery.refetch()} disabled={pagesQuery.isFetching}>
                 Retry
@@ -1101,7 +1101,7 @@ function RecordsPage() {
           )}
           {!pagesQuery.isPending && !pagesQuery.isError && !collectionsLoading && rows.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 px-6 py-16 text-center">
-              <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-muted/40">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-surface-tint">
                 <Database className="size-6 text-muted-foreground" />
               </div>
               <h2 className="text-base font-medium text-foreground">{scoped ? "No matching records" : "No records yet"}</h2>
@@ -1279,7 +1279,7 @@ const RecordTableRow = memo(function RecordTableRow({
         actions.step(record.id, event.key === "ArrowDown" ? 1 : -1)
       }}
       data-state={selected ? "selected" : undefined}
-      className={`group/row cursor-pointer border-0 outline-none hover:bg-muted/15 dark:hover:bg-muted/35 data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 dark:data-[state=selected]:!bg-muted ${record.archive ? "opacity-55" : ""}`}
+      className={`group/row cursor-pointer border-0 outline-none hover:bg-surface-hover data-[state=selected]:!bg-card focus-visible:ring-2 focus-visible:ring-primary/40 ${record.archive ? "opacity-55" : ""}`}
     >
       {row.getVisibleCells().map((cell, cellIndex) => {
         const column = columns.find((column) => column.key === cell.column.id)
@@ -1288,7 +1288,7 @@ const RecordTableRow = memo(function RecordTableRow({
         return (
           <TableCell
             key={cell.id}
-            className={`overflow-hidden px-3 ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} ${grouped && cellIndex === 0 ? "pl-9" : ""} ${rowHeight === "full" ? "align-top" : "align-middle"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}
+            className={`overflow-hidden px-3 ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} ${grouped && cellIndex === 0 ? "pl-9" : ""} ${rowHeight === "full" ? "align-top" : "align-middle"} group-data-[state=selected]/row:bg-surface-hover`}
             style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}
           >
             <Fold enabled={grouped} folded={folded}>
@@ -1306,7 +1306,7 @@ const RecordTableRow = memo(function RecordTableRow({
           </TableCell>
         )
       })}
-      <TableCell className={`w-9 overflow-hidden px-1 align-middle ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} group-data-[state=selected]/row:bg-muted/20 dark:group-data-[state=selected]/row:bg-muted/55`}>
+      <TableCell className={`w-9 overflow-hidden px-1 align-middle ${FOLD_TRANSITION} ${folded ? "py-0" : "py-2"} group-data-[state=selected]/row:bg-surface-hover`}>
         <Fold enabled={grouped} folded={folded}>
         <RecordRowMenu
           record={record}
@@ -1345,7 +1345,7 @@ function RecordRowMenu({
     >
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<button type="button" aria-label="Record actions" className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground" />}
+          render={<button type="button" aria-label="Record actions" className="flex size-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-surface-hover hover:text-foreground" />}
         >
           <MoreVertical className="size-3.5" />
         </DropdownMenuTrigger>
@@ -1493,7 +1493,7 @@ function GroupByPicker({
             key={column.key}
             type="button"
             aria-pressed={groupBy === column.key}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-hover"
             onClick={() => {
               onChange(groupBy === column.key ? undefined : column.key)
               setOpen(false)
@@ -1506,7 +1506,7 @@ function GroupByPicker({
         {groupBy && (
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent/50"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-surface-hover"
             onClick={() => {
               onChange(undefined)
               setOpen(false)

@@ -48,7 +48,7 @@ function LinkCard({
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "group/link-card flex flex-col overflow-hidden rounded-xl bg-card ring-1 ring-border text-sm text-card-foreground transition-all duration-180 hover:ring-primary/25",
+        "group/link-card flex flex-col overflow-hidden card-surface card-surface-interactive rounded-xl text-sm text-card-foreground",
         className
       )}
     >

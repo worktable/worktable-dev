@@ -120,7 +120,7 @@ function FullRecordPage() {
             Back to collection
           </Button>
         </div>
-        <article className="mx-auto min-h-[calc(100%-3rem)] max-w-6xl overflow-hidden rounded-2xl bg-card shadow-[0_20px_70px_-48px_var(--key-shadow)] ring-1 ring-border">
+        <article className="mx-auto min-h-[calc(100%-3rem)] max-w-6xl overflow-hidden card-surface rounded-2xl">
           <RecordDetailBody
             key={recordQuery.data.id}
             spaceId={spaceId}

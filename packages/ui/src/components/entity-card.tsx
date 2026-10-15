@@ -47,7 +47,7 @@ function EntityCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-xl bg-card p-3 text-sm text-card-foreground ring-1 ring-border transition-all duration-180",
+        "flex flex-col gap-3 rounded-xl card-surface p-3 text-sm text-card-foreground",
         className
       )}
     >

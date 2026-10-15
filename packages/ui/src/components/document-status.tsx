@@ -39,7 +39,7 @@ export function DocumentStatus({
       role="status"
       aria-live={announce ? "polite" : "off"}
       aria-label={state === "opening" ? "Opening document" : undefined}
-      className="worktable-document-status rounded-full bg-popover/95 px-3 py-1.5 shadow-lg ring-1 ring-border/60 backdrop-blur-sm"
+      className="worktable-document-status overlay-floating rounded-full bg-popover px-3 py-1.5"
     >
       <div className={`flex items-center gap-1.5 text-xs font-medium ${color}`}>
         <Icon

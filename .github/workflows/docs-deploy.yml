@@ -8,15 +8,22 @@ name: Docs deploy
   push:
     branches:
       - main
+    # The @worktable/docs#build inputs in turbo.json, its workspace packages,
+    # and the scripts the build runs. The CLI reference renders the CLI's
+    # command definitions, which import shared packages' constants.
     paths:
       - .github/workflows/docs-deploy.yml
       - apps/docs/**
-      # The CLI reference is generated from the CLI's command definitions.
       - apps/cli/src/**
-      - assets/brand/**
+      - packages/server/src/**
+      - packages/mcp-connect/src/**
+      - packages/types/src/**
+      - packages/hosted-contract/src/**
+      - packages/ui/**
+      - packages/public-analytics/**
+      - plugins/worktable/**
       - skills/**
-      - plugins/worktable/skills/**
-      - plugins/worktable/skill-inventory.json
+      - assets/brand/**
       - CHANGELOG.md
       - mcp-tools.json
       - package.json
@@ -27,10 +34,6 @@ name: Docs deploy
       - scripts/docs-skills.ts
       - scripts/skill-inventory.ts
       - scripts/docs-links.ts
-      - packages/server/src/widget-authoring.ts
-      - packages/server/src/mcp/drawing-guide.ts
-      - packages/ui/**
-      - packages/public-analytics/**
   workflow_dispatch:
 permissions: {}
 concurrency:
@@ -52,7 +55,8 @@ jobs:
             echo "::error::The VERCEL_DOCS_DEPLOY_HOOK secret is not set." >&2
             exit 1
           fi
-          job="$(curl -fsS --retry 3 --retry-all-errors -X POST "$DEPLOY_HOOK" | jq -r '.job.id // empty')"
+          # One request: a retried POST could queue a second deployment.
+          job="$(curl -fsS -X POST "$DEPLOY_HOOK" | jq -r '.job.id // empty')"
           if [ -z "$job" ]; then
             echo "::error::Vercel accepted no deploy job." >&2
             exit 1

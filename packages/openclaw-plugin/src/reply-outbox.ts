@@ -1,8 +1,6 @@
 import { withFileLock } from "openclaw/plugin-sdk/file-lock"
-import {
-  readJsonFileWithFallback,
-  writeJsonFileAtomically,
-} from "openclaw/plugin-sdk/json-store"
+import { writeJsonFileAtomically } from "openclaw/plugin-sdk/json-store"
+import { readJsonFileWithFallback } from "./json-store.js"
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths"
 import { join } from "node:path"
 import type { WorktableThreadLocation } from "./types.js"

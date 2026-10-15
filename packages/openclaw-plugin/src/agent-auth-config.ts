@@ -1,5 +1,5 @@
 import { mutateConfigFile } from "openclaw/plugin-sdk/config-mutation"
-import { loadConfig } from "openclaw/plugin-sdk/config-runtime"
+import { getRuntimeConfig } from "openclaw/plugin-sdk/runtime-config-snapshot"
 import { parseWorktableAgentAuth } from "./agent-auth.js"
 import type { WorktableAgentAuth } from "./types.js"
 
@@ -58,7 +58,7 @@ export async function loadAgentCredential(
   registrationId: string
 ): Promise<WorktableAgentAuth | undefined> {
   const channels = (
-    loadConfig({ pin: false, skipPluginValidation: true }).channels ?? {}
+    getRuntimeConfig({ pin: false, skipPluginValidation: true }).channels ?? {}
   ) as Record<string, unknown>
   const section = channels.worktable as Record<string, unknown> | undefined
   const pending = parseWorktableAgentAuth(section?.pendingAgentAuth)

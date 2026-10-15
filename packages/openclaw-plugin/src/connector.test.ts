@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { getEventListeners } from "node:events"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -1318,7 +1318,7 @@ describe("OpenClaw Worktable connector", () => {
     ).toEqual({ kind: "duplicate" })
   })
 
-  it("persists a completed reply across an OpenClaw process restart", async () => {
+  it("persists replies across restart and refuses to overwrite corrupt retained state", async () => {
     const stateDir = await mkdtemp(join(tmpdir(), "worktable-reply-outbox-"))
     tempDirs.push(stateDir)
     const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir }
@@ -1338,5 +1338,12 @@ describe("OpenClaw Worktable connector", () => {
     expect(await restarted.get(eventId)).toEqual(reply)
     await restarted.delete(eventId)
     expect(await createOpenClawReplyOutbox(env).get(eventId)).toBeUndefined()
+    const path = join(stateDir, "plugins", "worktable", "reply-outbox.json")
+    const corrupted = '{"type":"worktable.openclaw-reply-outbox",'
+    await writeFile(path, corrupted)
+    await expect(restarted.put(eventId, reply)).rejects.toMatchObject({
+      code: "DURABLE_REPLY_OUTBOX_UNAVAILABLE",
+    })
+    expect(await readFile(path, "utf8")).toBe(corrupted)
   })
 })

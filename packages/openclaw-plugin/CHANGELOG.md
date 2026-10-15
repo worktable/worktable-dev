@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.17
+
+- Restore loading on current OpenClaw releases while keeping support for OpenClaw 2026.7.1-2 and later. Credential refresh continues to use the latest saved credentials without requiring reconnection.
+- Preserve the existing pairing identity and retained-reply files when using OpenClaw releases that removed the SDK's JSON read helper.
+
 ## 0.0.16
 
 - The bundled setup skill links to the Worktable install pages and asks you to run the installer yourself. The agent no longer pipes a downloaded script into a shell.

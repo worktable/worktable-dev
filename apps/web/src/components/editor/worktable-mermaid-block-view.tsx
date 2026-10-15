@@ -226,7 +226,7 @@ export default function MermaidBlockComponent({
         caption={name || undefined}
         controls={controls}
         footer={footer}
-        editing={showEditor || showTemplates}
+        editing={canEdit && (showEditor || showTemplates)}
       />
     </div>
   )

@@ -14,7 +14,7 @@ export function CodeBlock({
   children: ReactNode
 }) {
   const wrap = useCodeWrap()
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"copied" | "failed" | null>(null)
   const pre = useRef<HTMLPreElement>(null)
   return (
     <div className="worktable-code">
@@ -30,15 +30,22 @@ export function CodeBlock({
           <WrapText />
         </DocIconButton>
         <DocIconButton
-          label={copied ? "Copied" : "Copy"}
+          label={
+            copied === "copied"
+              ? "Copied"
+              : copied === "failed"
+                ? "Couldn't copy"
+                : "Copy"
+          }
           onClick={() => {
-            void copyText(pre.current?.textContent ?? "").then(() => {
-              setCopied(true)
-              window.setTimeout(() => setCopied(false), 1500)
-            })
+            void copyText(pre.current?.textContent ?? "").then(
+              () => setCopied("copied"),
+              () => setCopied("failed")
+            )
+            window.setTimeout(() => setCopied(null), 1500)
           }}
         >
-          {copied ? <Check /> : <Copy />}
+          {copied === "copied" ? <Check /> : <Copy />}
         </DocIconButton>
       </div>
       <pre ref={pre}>{children}</pre>

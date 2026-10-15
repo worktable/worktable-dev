@@ -21,11 +21,10 @@ export function TableExpandControl({
     const frame = frameRef.current
     if (!frame) return
     let frameRequest = 0
-    const measure = (event: PointerEvent) => {
+    const select = (element: Element | null) => {
       if (frameRequest) return
       frameRequest = requestAnimationFrame(() => {
         frameRequest = 0
-        const element = event.target as Element | null
         if (element?.closest(".worktable-table-controls")) return
         const content = element?.closest('[data-content-type="table"]')
         const outer = content?.closest<HTMLElement>(".bn-block-outer")
@@ -44,18 +43,27 @@ export function TableExpandControl({
         })
       })
     }
+    // Pointer moves, and taps on a touch screen, find the table under them.
+    const point = (event: Event) => select(event.target as Element | null)
+    // The caret moving into a table finds it too, for keyboard use.
+    const caret = () => {
+      const node = document.getSelection()?.anchorNode
+      const element = node instanceof Element ? node : node?.parentElement
+      if (element && frame.contains(element)) select(element)
+    }
     // Touch pointers leave after every tap; keep the control until the next tap.
     const leave = (event: PointerEvent) => {
       if (event.pointerType === "mouse") setTarget(null)
     }
-    // A tap on a touch screen finds the table as a pointer move would.
-    frame.addEventListener("pointermove", measure)
-    frame.addEventListener("pointerdown", measure)
+    frame.addEventListener("pointermove", point)
+    frame.addEventListener("pointerdown", point)
     frame.addEventListener("pointerleave", leave)
+    document.addEventListener("selectionchange", caret)
     return () => {
-      frame.removeEventListener("pointermove", measure)
-      frame.removeEventListener("pointerdown", measure)
+      frame.removeEventListener("pointermove", point)
+      frame.removeEventListener("pointerdown", point)
       frame.removeEventListener("pointerleave", leave)
+      document.removeEventListener("selectionchange", caret)
       cancelAnimationFrame(frameRequest)
     }
   }, [frameRef])

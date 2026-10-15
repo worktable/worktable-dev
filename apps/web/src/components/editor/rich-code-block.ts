@@ -18,6 +18,7 @@ const CHECK_ICON =
 
 function relabel(button: HTMLElement, label: string) {
   button.dataset.tooltip = label
+  button.setAttribute("aria-label", label)
 }
 
 function iconButton(label: string, icon: string, className: string) {
@@ -69,15 +70,19 @@ export function createRichCodeBlockSpec(
     let reset = 0
     copy.addEventListener("mousedown", (event) => event.preventDefault())
     copy.addEventListener("click", () => {
-      void copyText(view.contentDOM?.textContent ?? "").then(() => {
-        copy.innerHTML = CHECK_ICON
-        relabel(copy, "Copied")
+      const settle = (copied: boolean) => {
+        if (copied) copy.innerHTML = CHECK_ICON
+        relabel(copy, copied ? "Copied" : "Couldn't copy")
         window.clearTimeout(reset)
         reset = window.setTimeout(() => {
           copy.innerHTML = COPY_ICON
           relabel(copy, "Copy")
         }, 1500)
-      })
+      }
+      void copyText(view.contentDOM?.textContent ?? "").then(
+        () => settle(true),
+        () => settle(false)
+      )
     })
 
     header.append(wrap, copy)

@@ -49,14 +49,33 @@ describe("public Doc projection", () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
 
-  it("renders Markdown through the same inert projection", async () => {
+  it("renders Markdown as the app does, inert and unable to restyle the page", async () => {
     const html = await renderPublicDocProjection(
-      "# Hello\n\n<script>alert(1)</script>\n\n- one\n- two",
+      [
+        "# Hello",
+        "<script>alert(1)</script>",
+        '<style>body { display: none }</style><div style="position:fixed;inset:0">Overlay</div>',
+        "- [x] done",
+        "<details open><summary>More</summary>\n\nInside\n\n</details>",
+        "| Left | Right |\n| :--- | ---: |\n| a | b |",
+      ].join("\n\n"),
       "markdown"
     )
-    expect(html).toContain("<h1")
-    expect(html).toContain("<ul")
+    const body = new JSDOM(html).window.document.body
+    expect(body.querySelector("h1")?.textContent).toBe("Hello")
     expect(html).not.toContain("<script")
+    expect(body.querySelector("style")).toBeNull()
+    expect(body.querySelector("[style*='position']")).toBeNull()
+    expect(body.textContent).toContain("Overlay")
+    // The shared document markup the share page styles.
+    expect(
+      body.querySelector(".contains-task-list > .task-list-item > input:checked")
+    ).not.toBeNull()
+    expect(body.querySelector("details > summary")?.textContent).toBe("More")
+    expect(body.querySelector(".worktable-table-scroll > table")).not.toBeNull()
+    expect(body.querySelector("td:last-child")?.getAttribute("style")).toBe(
+      "text-align: right;"
+    )
   })
 
   it("carries Mermaid blocks as marked source text for the viewer to draw", async () => {

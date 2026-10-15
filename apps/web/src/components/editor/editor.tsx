@@ -1,8 +1,4 @@
-import {
-  BlockNoteEditor,
-  BlockNoteSchema,
-  createCodeBlockSpec,
-} from "@blocknote/core"
+import { BlockNoteEditor, BlockNoteSchema } from "@blocknote/core"
 import { withCollaboration, yXmlFragmentToBlocks } from "@blocknote/core/yjs"
 import {
   useCreateBlockNote,
@@ -62,6 +58,10 @@ import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { sideMenuFirstLine } from "./side-menu-position"
+import { usePaneWidth } from "@/hooks/use-pane-width"
+import { DataTooltips } from "@/components/document/data-tooltip"
+import { createRichCodeBlockSpec } from "./rich-code-block"
+import { TableExpandControl } from "./table-expand"
 
 import {
   WorktableMermaidBlock,
@@ -90,7 +90,7 @@ function getSchema() {
 
   const blockSpecs: Record<string, unknown> = {
     ...BlockNoteSchema.create().blockSpecs,
-    codeBlock: createCodeBlockSpec(worktableCodeBlockOptions),
+    codeBlock: createRichCodeBlockSpec(worktableCodeBlockOptions),
   }
 
   blockSpecs.mermaid = WorktableMermaidBlock()
@@ -395,12 +395,14 @@ function EditorInner({
   const scrollFadeRef = useScrollFade<HTMLDivElement>(8, { top: false })
   const editorScrollRef = useRef<HTMLDivElement>(null)
   const editorContainerRef = useRef<HTMLDivElement>(null)
+  const paneWidthRef = usePaneWidth<HTMLDivElement>()
   const setEditorScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
       editorScrollRef.current = node
       scrollFadeRef(node)
+      paneWidthRef(node)
     },
-    [scrollFadeRef]
+    [scrollFadeRef, paneWidthRef]
   )
 
   // Record user gestures for the human-edit transaction correlation above.
@@ -435,6 +437,8 @@ function EditorInner({
         ref={editorContainerRef}
         className="worktable-editor-content worktable-document-content"
       >
+        {!isMobile && <TableExpandControl frameRef={editorContainerRef} />}
+        <DataTooltips rootRef={editorContainerRef} />
         <AnnotationBadges
           annotations={annotations}
           activeAnnotationId={activeAnnotationId}

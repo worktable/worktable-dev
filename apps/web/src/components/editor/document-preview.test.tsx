@@ -26,11 +26,11 @@ describe("saved document preview", () => {
       { type: "paragraph", content: [{ type: "text", text: "<img src=x onerror=alert(1)>", styles: { bold: true } }] },
       { type: "table", content: { rows: [{ cells: [[{ type: "text", text: "Cell", styles: {} }]] }] } },
     ]} />)
-    expect(html).toContain("<h2>")
+    expect(html).toMatch(/<h2[ >]/)
     expect(html).toContain("Notes")
     expect(html).toContain("<strong>&lt;img")
     expect(html).not.toContain("<img")
-    expect(html).toContain("<table>")
+    expect(html).toMatch(/<table[ >]/)
     expect(html).toContain("Cell")
   })
 })

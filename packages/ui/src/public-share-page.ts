@@ -4,6 +4,7 @@ import {
 } from "@worktable/hosted-contract"
 import { getWorktableMermaidConfig } from "./theme/mermaid-config"
 import { themeConfig } from "./theme/theme-config"
+import { DOCUMENT_CONTENT_CSS } from "./styles/document-content.generated"
 
 export const PUBLIC_SHARE_ASSET_PATHS = {
   fraunces: "/gateway/assets/fraunces-variable-latin.woff2",
@@ -225,105 +226,12 @@ body::before {
   max-width: 48rem;
   margin: 0 auto;
   padding: 2rem 1.5rem 5rem;
-  color: var(--reading-foreground);
-  font-size: 1rem;
-  line-height: 1.85;
-  word-spacing: .02em;
-  overflow-wrap: break-word;
 }
-.shared-document > :first-child { margin-top: 0; }
-.shared-document h1,
-.shared-document h2,
-.shared-document h3,
-.shared-document h4,
-.shared-document h5,
-.shared-document h6 {
-  color: var(--foreground);
-  font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -.02em;
-}
-.shared-document h1 { margin: 2rem 0 .75rem; font-size: clamp(2.25rem, 7vw, 3rem); line-height: 1.2; }
-.shared-document h2 { margin: 1.75rem 0 .5rem; font-size: 2rem; line-height: 1.25; }
-.shared-document.markdown h2 { padding-bottom: .375rem; border-bottom: 1px solid var(--border); }
-.shared-document h3 { margin: 1.5rem 0 .5rem; font-size: 1.3rem; line-height: 1.3; }
-.shared-document h4 { margin: 1.25rem 0 .375rem; font-size: 1rem; line-height: 1.35; }
-.shared-document h5 { margin: 1.25rem 0 .375rem; font-size: .9rem; line-height: 1.35; }
-.shared-document h6 { margin: 1.25rem 0 .375rem; font-size: .8rem; line-height: 1.35; }
-.shared-document p { margin: 0 0 .75rem; }
-.shared-document strong { color: var(--foreground); font-weight: 600; }
-.shared-document a {
-  color: var(--primary-text);
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--primary) 40%, transparent);
-  text-underline-offset: 2px;
-}
-.shared-document a:hover { text-decoration-color: var(--primary); }
-.shared-document a:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: .125rem; }
-.shared-document ul,
-.shared-document ol { margin: 0 0 .75rem; padding-left: 1.5rem; }
-.shared-document ul { list-style-type: disc; }
-.shared-document ol { list-style-type: decimal; }
-.shared-document li { margin-bottom: .25rem; }
-.shared-document li > p { margin: 0; }
-.shared-document li > ul,
-.shared-document li > ol { margin-top: .25rem; margin-bottom: 0; }
-.shared-document code {
-  font-family: var(--font-mono);
-  font-size: .875em;
-}
-.shared-document code:not(pre code) {
-  padding: .1em .35em;
-  border-radius: .375rem;
-  color: var(--code-accent-foreground);
-  background: var(--code-accent-background);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-.shared-document pre {
-  margin: 0 0 1rem;
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--reading-foreground);
-  background: var(--muted);
-}
-.shared-document pre code { display: block; padding: 1rem; font-size: .8125rem; line-height: 1.6; white-space: pre-wrap; }
-.shared-document blockquote {
-  margin: 0 0 .75rem;
-  padding: 1.125rem;
-  border-left: 3px solid color-mix(in oklch, var(--primary) 72%, transparent);
-  border-radius: 0 calc(var(--radius) * .8) calc(var(--radius) * .8) 0;
-  color: var(--reading-foreground);
-  background: var(--surface-tint);
-}
-.shared-document.markdown blockquote { padding: 0 0 0 1rem; border-radius: 0; color: var(--muted-foreground); background: transparent; font-style: italic; }
-.shared-document table {
-  width: 100%;
-  margin-bottom: 1rem;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  border-collapse: separate;
-  border-spacing: 0;
-  background: var(--card);
-  font-size: .875rem;
-}
-.shared-document th,
-.shared-document td { padding: .625rem .75rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-.shared-document th:last-child,
-.shared-document td:last-child { border-right: 0; }
-.shared-document tr:last-child th,
-.shared-document tr:last-child td { border-bottom: 0; }
-.shared-document th { color: var(--foreground); background: var(--muted); font-weight: 600; }
-.shared-document hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--border); }
-.shared-document img { max-width: 100%; height: auto; border-radius: calc(var(--radius) * .8); }
-.shared-document input[type="checkbox"] { margin-right: .5rem; accent-color: var(--primary); }
 .shared-document .shared-diagram { position: relative; margin: 0 0 1rem; overflow-x: auto; text-align: center; contain: paint; }
 .shared-document .shared-diagram svg { max-width: 100%; height: auto; }
 .shared-document .shared-diagram a { color: inherit; font-weight: inherit; text-decoration: none; }
 .shared-image-placeholder { display: block; padding: 1.75rem; border-radius: var(--radius); color: var(--muted-foreground); background: var(--surface-tint); text-align: center; }
+${DOCUMENT_CONTENT_CSS}
 .html-page { height: 100vh; overflow: hidden; }
 .html-page::before { display: none; }
 .html-shell { height: calc(100vh - 3rem); background: var(--background); }
@@ -345,7 +253,6 @@ body::before {
 }
 @media (max-width: 32rem) {
   .brand-name, .header-separator { display: none; }
-  .shared-document h2 { font-size: 1.7rem; }
 }
 @media print {
   body::before, .app-header { display: none; }
@@ -407,7 +314,7 @@ export function renderPublicDocumentPage(
   if (document.kind === "doc") {
     return pageDocument(
       "Shared document",
-      `<body>${header(iconSvg, document.title, document.sourceUrl)}<main class="document-shell"><article class="shared-document ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}</body>`
+      `<body>${header(iconSvg, document.title, document.sourceUrl)}<main class="document-shell"><article class="shared-document worktable-markdown ${document.format}">${document.projectionHtml}</article></main>${diagramScripts(document.projectionHtml)}</body>`
     )
   }
 

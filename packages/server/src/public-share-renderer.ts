@@ -1,4 +1,10 @@
 import { JSDOM } from "jsdom"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import Markdown from "react-markdown"
+import rehypeRaw from "rehype-raw"
+import remarkGfm from "remark-gfm"
+import { codeLanguageName } from "@worktable/ui/lib/code-language"
 import { getServerEditor } from "./blocknote.ts"
 import { sanitizeBlocksForConversion } from "./markdown.ts"
 
@@ -194,23 +200,104 @@ function markMermaidDiagrams(document: Document): void {
       PUBLIC_SHARE_MERMAID_DIAGRAM
     )
     const source = document.createElement("code")
-    source.textContent = code.textContent
+    // Markdown fences end with a newline that is not part of the source.
+    source.textContent = (code.textContent ?? "").replace(/\n$/, "")
     diagram.append(source)
     code.parentElement?.replaceWith(diagram)
   }
 }
 
-async function documentBlocks(
+/** Markdown renders as the app renders it; rich text through BlockNote. */
+async function documentHtml(
   content: unknown[] | string,
   format: "blocknote" | "markdown"
-): Promise<unknown[]> {
-  const editor = await getServerEditor()
+): Promise<string> {
   if (format === "markdown") {
-    return (await editor.tryParseMarkdownToBlocks(
-      content as string
-    )) as unknown[]
+    return renderToStaticMarkup(
+      createElement(Markdown, {
+        remarkPlugins: [remarkGfm],
+        rehypePlugins: [rehypeRaw],
+        children: content as string,
+      })
+    )
   }
-  return content as unknown[]
+  const editor = await getServerEditor()
+  return editor.blocksToHTMLLossy(
+    sanitizeBlocksForConversion(content as unknown[], editor)
+  )
+}
+
+/**
+ * Shape sanitized HTML into the shared document markup
+ * (@worktable/ui/document-content.css), as the app draws the same Doc:
+ * checklists, toggles, code headers and contained tables.
+ */
+function shapeDocument(document: Document): void {
+  for (const box of document.querySelectorAll("li > input[type=checkbox]")) {
+    box.parentElement?.classList.add("task-list-item")
+    box.parentElement?.parentElement?.classList.add("contains-task-list")
+  }
+  // Rich text toggles arrive as one-item lists; they start closed, as in the editor.
+  for (const list of document.querySelectorAll("ul")) {
+    const items = [...list.children]
+    if (
+      items.length > 0 &&
+      items.every(
+        (item) =>
+          item.localName === "li" &&
+          item.children.length === 1 &&
+          item.firstElementChild?.localName === "details"
+      )
+    ) {
+      list.replaceWith(...items.map((item) => item.firstElementChild!))
+    }
+  }
+  for (const toggle of document.querySelectorAll(
+    "details:has(> summary > .bn-inline-content)"
+  )) {
+    toggle.removeAttribute("open")
+  }
+  for (const pre of document.querySelectorAll(
+    `pre:not([${PUBLIC_SHARE_DIAGRAM_ATTRIBUTE}])`
+  )) {
+    const language =
+      pre.getAttribute("data-language") ??
+      pre
+        .querySelector("code")
+        ?.className.match(/(?:^|\s)language-([\w+#.-]+)/)?.[1]
+    const frame = document.createElement("div")
+    frame.className = "worktable-code"
+    const header = document.createElement("div")
+    header.className = "worktable-code-header"
+    const label = document.createElement("span")
+    label.className = "worktable-code-language"
+    label.textContent = codeLanguageName(language ?? undefined) ?? ""
+    header.append(label)
+    pre.replaceWith(frame)
+    frame.append(header, pre)
+  }
+  for (const table of document.querySelectorAll("table")) {
+    if (table.querySelector(":scope > colgroup > col[style*='width:']:not([style*='min-width'])"))
+      table.setAttribute("style", "width: auto")
+    const scroll = document.createElement("div")
+    scroll.className = "worktable-table-scroll"
+    table.replaceWith(scroll)
+    scroll.append(table)
+  }
+}
+
+/**
+ * Markdown can carry authored HTML. Keep its column alignment but nothing
+ * that could restyle or overlay the share page.
+ */
+function limitAuthoredStyles(document: Document): void {
+  for (const style of document.querySelectorAll("style")) style.remove()
+  for (const element of document.querySelectorAll<HTMLElement>("[style]")) {
+    const align = element.style.textAlign
+    element.removeAttribute("style")
+    if (/^(left|center|right|justify)$/.test(align))
+      element.style.textAlign = align
+  }
 }
 
 /** Convert one saved Doc to a navigation-safe HTML fragment. */
@@ -218,17 +305,13 @@ export async function renderPublicDocProjection(
   content: unknown[] | string,
   format: "blocknote" | "markdown"
 ): Promise<string> {
-  const editor = await getServerEditor()
-  const blocks = sanitizeBlocksForConversion(
-    await documentBlocks(content, format),
-    editor
-  )
-  const converted = await editor.blocksToHTMLLossy(blocks)
-  const dom = new JSDOM(`<body>${converted}</body>`)
+  const dom = new JSDOM(`<body>${await documentHtml(content, format)}</body>`)
   sanitizeTree(dom.window.document, {
     allowStyles: true,
   })
+  if (format === "markdown") limitAuthoredStyles(dom.window.document)
   markMermaidDiagrams(dom.window.document)
+  shapeDocument(dom.window.document)
   return dom.window.document.body.innerHTML
 }
 

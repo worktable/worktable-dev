@@ -1,7 +1,8 @@
 /**
  * Read-only markdown viewer for .md documents.
  * Uses react-markdown + remark-gfm for GFM support (tables, checkboxes, etc.)
- * Styled to match BlockNote editor layout (max-w-3xl, same padding).
+ * Content styles are shared with rich text Docs:
+ * @worktable/ui/document-content.css.
  */
 
 import {
@@ -9,16 +10,23 @@ import {
   Suspense,
   isValidElement,
   lazy,
+  useEffect,
   useMemo,
+  useState,
   type ErrorInfo,
   type ReactNode,
 } from "react"
 import { useRouter } from "@tanstack/react-router"
-import Markdown from "react-markdown"
+import Markdown, { type Options as MarkdownOptions } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { AlertTriangle } from "lucide-react"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
+import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
+import { containsHtml } from "@/lib/markdown-html-detect"
+import { CodeBlock } from "@/components/document/code-block"
+import { DocTable } from "@/components/document/doc-table"
+import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { renderDocLinkHref } from "@/lib/doc-links"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
@@ -53,14 +61,31 @@ function ScrollableMermaidSource({ source }: { source: string }) {
   )
 }
 
-// Wide tables scroll inside their own box instead of widening the document.
-function ScrollableTable({ children }: { children: ReactNode }) {
-  const fade = useScrollFadeX<HTMLDivElement>()
-  return (
-    <div ref={fade} className="worktable-table-scroll scroll-fade-x">
-      <table>{children}</table>
-    </div>
-  )
+type HtmlPlugins = NonNullable<MarkdownOptions["rehypePlugins"]>
+let htmlPlugins: HtmlPlugins | undefined
+
+/**
+ * Sanitized HTML support, loaded only for Docs that contain HTML. Until it
+ * arrives, HTML is left out rather than shown as tag text.
+ */
+function useHtmlPlugins(content: string) {
+  const needed = useMemo(() => containsHtml(content), [content])
+  const [plugins, setPlugins] = useState(htmlPlugins)
+  useEffect(() => {
+    if (!needed || plugins) return
+    let active = true
+    void import("./markdown-html").then((module) => {
+      htmlPlugins = module.markdownHtmlPlugins
+      if (active) setPlugins(htmlPlugins)
+    })
+    return () => {
+      active = false
+    }
+  }, [needed, plugins])
+  return {
+    rehypePlugins: needed ? plugins : undefined,
+    skipHtml: needed && !plugins,
+  }
 }
 
 class MarkdownErrorBoundary extends Component<
@@ -111,7 +136,10 @@ export function MarkdownViewer({
   docPath,
 }: MarkdownViewerProps) {
   const router = useRouter()
-  const scrollRef = useScrollFade<HTMLDivElement>(8, { top: false })
+  const fade = useScrollFade<HTMLDivElement>(8, { top: false })
+  const paneWidth = usePaneWidth<HTMLDivElement>()
+  const scrollRef = useMemo(() => mergeRefs(fade, paneWidth), [fade, paneWidth])
+  const html = useHtmlPlugins(content)
   const { theme } = useTheme()
   const worktableOrigins = useMemo(
     () =>
@@ -139,6 +167,8 @@ export function MarkdownViewer({
           <MarkdownErrorBoundary>
             <Markdown
               remarkPlugins={[remarkGfm]}
+              rehypePlugins={html.rehypePlugins}
+              skipHtml={html.skipHtml}
               components={{
                 a: ({ node, href = "", ...props }) => {
                   void node
@@ -186,8 +216,26 @@ export function MarkdownViewer({
                 },
                 table: ({ node, children }) => {
                   void node
-                  return <ScrollableTable>{children}</ScrollableTable>
+                  return <DocTable>{children}</DocTable>
                 },
+                img: ({ node, title, ...props }) => {
+                  void node
+                  const image = <img {...props} title={title} />
+                  return title ? (
+                    <span className="worktable-figure">
+                      {image}
+                      <span className="worktable-caption">{title}</span>
+                    </span>
+                  ) : (
+                    image
+                  )
+                },
+                details: ({ node, open, children }) => {
+                  void node
+                  return <DocDetails open={open}>{children}</DocDetails>
+                },
+                // Mapped directly, so DocDetails can find it among its children.
+                summary: DocSummary,
                 pre: ({ node, children, ...props }) => {
                   void node
                   const child = Array.isArray(children) ? children[0] : children
@@ -233,7 +281,11 @@ export function MarkdownViewer({
                       </Suspense>
                     )
                   }
-                  return <pre {...props}>{children}</pre>
+                  void props
+                  const code = childProps?.className?.match(
+                    /(?:^|\s)language-([\w+#.-]+)/
+                  )
+                  return <CodeBlock language={code?.[1]}>{children}</CodeBlock>
                 },
               }}
             >

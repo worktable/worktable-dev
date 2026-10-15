@@ -1,0 +1,761 @@
+/* ── Document content ───────────────────────────────────────
+   One reading look for Docs, whatever renders them: the Markdown viewer,
+   the saved preview a rich text Doc shows while it opens, and public share
+   pages use the rules below. The rich text editor maps the same values onto
+   BlockNote's markup in apps/web/src/styles/blocknote.css, so a Doc reads
+   the same in either format and does not move when it becomes editable.
+
+   Share pages embed this file through document-content.generated.ts
+   (bun run generate:theme). */
+
+:where(.worktable-document-content, .shared-document) {
+  --doc-line-height: 1.85;
+  --doc-heading-line-height: 1.5;
+  /* Space after a paragraph, list or quote, and after a heading. */
+  --doc-gap: 0.75rem;
+  --doc-item-gap: 0.25rem;
+  /* Space after code, tables, images and diagrams. */
+  --doc-gap-large: 1rem;
+  --doc-rule-gap: 1.5rem;
+  --doc-h1-before: 2rem;
+  --doc-h1-after: 0.75rem;
+  --doc-h2-before: 1.75rem;
+  --doc-h2-after: 0.5rem;
+  --doc-h3-before: 1.5rem;
+  --doc-h3-after: 0.5rem;
+  --doc-h4-before: 1.25rem;
+  --doc-h4-after: 0.375rem;
+  --doc-indent: 1.5rem;
+  --doc-radius: 0.5rem;
+  --doc-code-size: 0.8125rem;
+  --doc-code-line-height: 1.6;
+  --doc-code-padding: 1rem;
+  --doc-code-surface: color-mix(in oklch, var(--muted), transparent 50%);
+  --doc-inline-code-size: 0.875em;
+  --doc-table-size: 0.9375rem;
+  --doc-table-line-height: 1.6;
+  --doc-table-header: color-mix(in oklch, var(--muted), transparent 45%);
+  --doc-table-column-rule: color-mix(in oklch, var(--border), transparent 50%);
+  --doc-quote-rule: color-mix(in oklch, var(--primary), transparent 60%);
+  --doc-caption-size: 0.875rem;
+  --doc-strong-weight: 600;
+  --doc-motion: 250ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.worktable-markdown {
+  color: var(--reading-foreground);
+  font-size: 1rem;
+  line-height: var(--doc-line-height);
+  word-spacing: 0.02em;
+  /* Long links and unbroken words wrap instead of widening the page. */
+  overflow-wrap: break-word;
+}
+
+.worktable-markdown > :first-child,
+.worktable-markdown > :first-child > :first-child {
+  margin-top: 0;
+}
+
+/* ── Headings ── */
+
+.worktable-markdown :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: var(--doc-heading-line-height);
+  letter-spacing: -0.005em;
+}
+
+.worktable-markdown :is(h1, h2, h3) {
+  font-family: var(--font-display);
+}
+
+.worktable-markdown h1 {
+  margin: var(--doc-h1-before) 0 var(--doc-h1-after);
+  font-size: 3rem;
+}
+
+.worktable-markdown h2 {
+  margin: var(--doc-h2-before) 0 var(--doc-h2-after);
+  font-size: 2rem;
+}
+
+.worktable-markdown h3 {
+  margin: var(--doc-h3-before) 0 var(--doc-h3-after);
+  font-size: 1.3rem;
+}
+
+.worktable-markdown :is(h4, h5, h6) {
+  margin: var(--doc-h4-before) 0 var(--doc-h4-after);
+}
+
+.worktable-markdown h4 {
+  font-size: 1rem;
+}
+
+.worktable-markdown h5 {
+  font-size: 0.9rem;
+}
+
+.worktable-markdown h6 {
+  font-size: 0.8rem;
+}
+
+/* ── Text ── */
+
+.worktable-markdown p {
+  margin: 0 0 var(--doc-gap);
+  letter-spacing: 0.02em;
+}
+
+.worktable-markdown :is(strong, b) {
+  font-weight: var(--doc-strong-weight);
+}
+
+.worktable-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--primary) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: text-decoration-color 0.15s ease;
+}
+
+.worktable-markdown a:hover {
+  text-decoration-color: var(--primary);
+}
+
+.worktable-markdown code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: var(--doc-inline-code-size);
+  color: var(--code-accent-foreground);
+  background: var(--code-accent-background);
+  border-radius: 0.375rem;
+  padding: 0.1em 0.35em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.worktable-markdown mark {
+  color: inherit;
+  background: color-mix(in oklch, var(--primary), transparent 82%);
+  border-radius: 0.2em;
+}
+
+.worktable-markdown kbd {
+  font-family: var(--font-mono);
+  font-size: var(--doc-inline-code-size);
+  padding: 0.05em 0.4em;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 0.3rem;
+}
+
+/* ── Lists ── */
+
+.worktable-markdown :is(ul, ol) {
+  margin: 0 0 var(--doc-gap);
+  padding-left: var(--doc-indent);
+}
+
+.worktable-markdown ul {
+  list-style-type: disc;
+}
+
+.worktable-markdown ul ul {
+  list-style-type: circle;
+}
+
+.worktable-markdown ul ul ul {
+  list-style-type: square;
+}
+
+.worktable-markdown ol {
+  list-style-type: decimal;
+}
+
+.worktable-markdown li {
+  margin-bottom: var(--doc-item-gap);
+}
+
+.worktable-markdown li > p {
+  margin: 0;
+}
+
+.worktable-markdown li > :is(ul, ol) {
+  margin-top: var(--doc-item-gap);
+  margin-bottom: 0;
+}
+
+/* Checklists: a checkbox in the bullet's place, as in the editor. */
+.worktable-markdown .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.worktable-markdown li > .contains-task-list {
+  padding-left: var(--doc-indent);
+}
+
+.worktable-markdown .task-list-item {
+  position: relative;
+  padding-left: var(--doc-indent);
+}
+
+.worktable-markdown .task-list-item > input[type="checkbox"] {
+  position: absolute;
+  top: calc(var(--doc-line-height) * 0.5em - 6px);
+  left: 0.25rem;
+  margin: 0;
+}
+
+/* One drawn checkbox for read-only and editable checklists, so a done task
+   looks the same whether or not it can be ticked here. */
+:is(.worktable-markdown .task-list-item, .bn-editor [data-content-type="checkListItem"] > div)
+  > input[type="checkbox"] {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 1px solid color-mix(in oklch, var(--foreground) 40%, transparent);
+  border-radius: 3px;
+  background: var(--background) center / 10px no-repeat;
+  opacity: 1;
+}
+
+:is(.worktable-markdown .task-list-item, .bn-editor [data-content-type="checkListItem"] > div)
+  > input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+.worktable-markdown .task-list-item:has(> input:checked) {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* ── Quotes ── */
+
+.worktable-markdown blockquote {
+  margin: 0 0 var(--doc-gap);
+  padding-left: 1rem;
+  border-left: 3px solid var(--doc-quote-rule);
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.worktable-markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Code ── */
+
+/* A code block is framed whether or not it has a header strip. */
+.worktable-markdown :is(.worktable-code, pre:not(.worktable-code pre)) {
+  margin: 0 0 var(--doc-gap-large);
+  border: 1px solid var(--border);
+  border-radius: var(--doc-radius);
+  background: var(--doc-code-surface);
+}
+
+.worktable-markdown pre {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+}
+
+.worktable-markdown pre code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding: var(--doc-code-padding);
+  color: var(--reading-foreground);
+  background: none;
+  font-size: var(--doc-code-size);
+  line-height: var(--doc-code-line-height);
+  white-space: pre;
+}
+
+.worktable-markdown .worktable-code-header + pre code {
+  padding-top: 0.25rem;
+}
+
+:root[data-code-wrap="true"] .worktable-markdown pre code,
+.worktable-markdown .worktable-code[data-wrap] pre code {
+  width: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Language on the left, quiet icon controls on the right. */
+.worktable-code-header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  height: 2.25rem;
+  padding: 0.25rem 0.375rem 0 1rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.worktable-code-language {
+  margin-right: auto;
+}
+
+/* ── Tables ── */
+
+/* Wide tables scroll inside their own box instead of widening the page. */
+.worktable-markdown .worktable-table-scroll {
+  margin: 0 0 var(--doc-gap-large);
+  overflow-x: auto;
+}
+
+/* In the app a table can widen to the reading pane (--doc-pane-width). */
+.worktable-table-frame {
+  --doc-expanded-width: calc(var(--doc-pane-width, 100%) - 3rem);
+  position: relative;
+  width: 100%;
+  margin: 0 0 var(--doc-gap-large);
+  transition:
+    width var(--doc-motion),
+    margin-left var(--doc-motion);
+}
+
+.worktable-table-frame[data-expanded] {
+  width: var(--doc-expanded-width);
+  margin-left: calc((100% - var(--doc-expanded-width)) / 2);
+}
+
+.worktable-markdown .worktable-table-frame > .worktable-table-scroll {
+  margin: 0;
+}
+
+/* Floats over the table's corner, so it never moves the text. */
+.worktable-table-controls {
+  position: absolute;
+  top: 0.3125rem;
+  right: 0.3125rem;
+  z-index: 1;
+  border-radius: 0.375rem;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.worktable-table-frame:is(:hover, :focus-within) > .worktable-table-controls,
+.worktable-table-frame[data-expanded] > .worktable-table-controls {
+  opacity: 1;
+}
+
+@media (max-width: 767px) {
+  .worktable-table-controls {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worktable-table-frame {
+    transition: none;
+  }
+}
+
+.worktable-markdown table {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--doc-radius);
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--doc-table-size);
+  line-height: var(--doc-table-line-height);
+}
+
+/* Columns keep the editor's minimum width, so a wide table scrolls (and can
+   expand) instead of squeezing every column to a word. */
+.worktable-markdown :is(th, td) {
+  min-width: 7.5rem;
+  padding: 0.5rem 0.75rem;
+  border-right: 1px solid var(--doc-table-column-rule);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.worktable-markdown tr > :last-child {
+  border-right: 0;
+}
+
+.worktable-markdown tr:last-child > :is(th, td) {
+  border-bottom: 0;
+}
+
+/* The header keeps its rule above the body. */
+.worktable-markdown thead tr:last-child > :is(th, td) {
+  border-bottom: 1px solid var(--border);
+}
+
+.worktable-markdown th {
+  color: var(--foreground);
+  background: var(--doc-table-header);
+  font-weight: 600;
+}
+
+.worktable-markdown :is(th, td) > p {
+  margin: 0;
+}
+
+/* ── Rules, images, captions ── */
+
+.worktable-markdown hr {
+  margin: var(--doc-rule-gap) 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.worktable-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--doc-radius);
+}
+
+.worktable-markdown figure {
+  margin: 0 0 var(--doc-gap-large);
+}
+
+.worktable-markdown :is(figure, .worktable-figure) img {
+  display: block;
+}
+
+.worktable-markdown .worktable-figure {
+  display: block;
+}
+
+.worktable-markdown figcaption,
+.worktable-caption {
+  display: block;
+  padding-top: 0.375rem;
+  color: var(--muted-foreground);
+  font-size: var(--doc-caption-size);
+  line-height: 1.5;
+}
+
+/* ── Toggles ── */
+
+.worktable-markdown :is(details, .worktable-details) {
+  margin: 0 0 var(--doc-gap);
+}
+
+.worktable-markdown :is(summary, .worktable-summary) {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.worktable-markdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.worktable-markdown :is(summary, .worktable-summary)::before {
+  content: "";
+  flex: none;
+  width: 1.5rem;
+  height: calc(var(--doc-line-height) * 1em);
+  background: currentColor;
+  /* The editor's toggle triangle. */
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5.5v13l10.5-6.5z'/%3E%3C/svg%3E")
+    center / 1.125rem no-repeat;
+  transition: transform var(--doc-motion);
+}
+
+.worktable-markdown details[open] > summary::before,
+.worktable-markdown .worktable-summary[data-panel-open]::before {
+  transform: rotate(90deg);
+}
+
+.worktable-markdown details > :not(summary),
+.worktable-markdown .worktable-details-body {
+  padding-left: var(--doc-indent);
+}
+
+.worktable-markdown :is(details, .worktable-details-body) > :last-child {
+  margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worktable-markdown :is(summary, .worktable-summary)::before {
+    transition: none;
+  }
+}
+
+/* ── Diagrams ── */
+
+/* Diagrams sit on the page; a frame and controls appear on demand. */
+.worktable-diagram {
+  position: relative;
+  margin: 0 0 var(--doc-gap-large);
+  border: 1px solid transparent;
+  border-radius: var(--doc-radius);
+  transition: border-color 0.15s ease;
+}
+
+.worktable-diagram:is(:hover, :focus-within),
+.worktable-diagram[data-editing] {
+  border-color: var(--border);
+}
+
+.worktable-diagram-controls {
+  position: absolute;
+  top: 0.3125rem;
+  right: 0.3125rem;
+  z-index: 1;
+  display: flex;
+  gap: 0.125rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.worktable-diagram:is(:hover, :focus-within) .worktable-diagram-controls,
+.worktable-diagram[data-editing] .worktable-diagram-controls {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .worktable-diagram-controls {
+    opacity: 1;
+  }
+}
+
+.worktable-diagram .worktable-caption {
+  padding: 0 0.75rem 0.5rem;
+  text-align: center;
+}
+
+/* ── Text colors and highlights ──
+   The rich text editor's palette (BlockNote's defaults), so colored text in
+   a saved preview or share page matches the editor. */
+
+.worktable-markdown {
+  --doc-gray-text: #9b9a97;
+  --doc-gray-background: #ebeced;
+  --doc-brown-text: #64473a;
+  --doc-brown-background: #e9e5e3;
+  --doc-red-text: #e03e3e;
+  --doc-red-background: #fbe4e4;
+  --doc-orange-text: #d9730d;
+  --doc-orange-background: #f6e9d9;
+  --doc-yellow-text: #dfab01;
+  --doc-yellow-background: #fbf3db;
+  --doc-green-text: #4d6461;
+  --doc-green-background: #ddedea;
+  --doc-blue-text: #0b6e99;
+  --doc-blue-background: #ddebf1;
+  --doc-purple-text: #6940a5;
+  --doc-purple-background: #eae4f2;
+  --doc-pink-text: #ad1a72;
+  --doc-pink-background: #f4dfeb;
+}
+
+:is(.dark) .worktable-markdown {
+  --doc-gray-text: #bebdb8;
+  --doc-gray-background: #9b9a97;
+  --doc-brown-text: #8e6552;
+  --doc-brown-background: #64473a;
+  --doc-red-text: #ec4040;
+  --doc-red-background: #be3434;
+  --doc-orange-text: #e3790d;
+  --doc-orange-background: #b7600a;
+  --doc-yellow-text: #dfab01;
+  --doc-yellow-background: #b58b00;
+  --doc-green-text: #6b8b87;
+  --doc-green-background: #4d6461;
+  --doc-blue-text: #0e87bc;
+  --doc-blue-background: #0b6e99;
+  --doc-purple-text: #8552d7;
+  --doc-purple-background: #6940a5;
+  --doc-pink-text: #da208f;
+  --doc-pink-background: #ad1a72;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shared-document.worktable-markdown {
+    --doc-gray-text: #bebdb8;
+    --doc-gray-background: #9b9a97;
+    --doc-brown-text: #8e6552;
+    --doc-brown-background: #64473a;
+    --doc-red-text: #ec4040;
+    --doc-red-background: #be3434;
+    --doc-orange-text: #e3790d;
+    --doc-orange-background: #b7600a;
+    --doc-yellow-text: #dfab01;
+    --doc-yellow-background: #b58b00;
+    --doc-green-text: #6b8b87;
+    --doc-green-background: #4d6461;
+    --doc-blue-text: #0e87bc;
+    --doc-blue-background: #0b6e99;
+    --doc-purple-text: #8552d7;
+    --doc-purple-background: #6940a5;
+    --doc-pink-text: #da208f;
+    --doc-pink-background: #ad1a72;
+  }
+}
+
+.worktable-markdown [data-text-color="gray"] {
+  color: var(--doc-gray-text);
+}
+
+.worktable-markdown [data-background-color="gray"] {
+  background-color: var(--doc-gray-background);
+}
+
+.worktable-markdown [data-text-color="brown"] {
+  color: var(--doc-brown-text);
+}
+
+.worktable-markdown [data-background-color="brown"] {
+  background-color: var(--doc-brown-background);
+}
+
+.worktable-markdown [data-text-color="red"] {
+  color: var(--doc-red-text);
+}
+
+.worktable-markdown [data-background-color="red"] {
+  background-color: var(--doc-red-background);
+}
+
+.worktable-markdown [data-text-color="orange"] {
+  color: var(--doc-orange-text);
+}
+
+.worktable-markdown [data-background-color="orange"] {
+  background-color: var(--doc-orange-background);
+}
+
+.worktable-markdown [data-text-color="yellow"] {
+  color: var(--doc-yellow-text);
+}
+
+.worktable-markdown [data-background-color="yellow"] {
+  background-color: var(--doc-yellow-background);
+}
+
+.worktable-markdown [data-text-color="green"] {
+  color: var(--doc-green-text);
+}
+
+.worktable-markdown [data-background-color="green"] {
+  background-color: var(--doc-green-background);
+}
+
+.worktable-markdown [data-text-color="blue"] {
+  color: var(--doc-blue-text);
+}
+
+.worktable-markdown [data-background-color="blue"] {
+  background-color: var(--doc-blue-background);
+}
+
+.worktable-markdown [data-text-color="purple"] {
+  color: var(--doc-purple-text);
+}
+
+.worktable-markdown [data-background-color="purple"] {
+  background-color: var(--doc-purple-background);
+}
+
+.worktable-markdown [data-text-color="pink"] {
+  color: var(--doc-pink-text);
+}
+
+.worktable-markdown [data-background-color="pink"] {
+  background-color: var(--doc-pink-background);
+}
+
+.worktable-markdown [data-text-alignment="center"] {
+  text-align: center;
+}
+
+.worktable-markdown [data-text-alignment="right"] {
+  text-align: right;
+}
+
+.worktable-markdown [data-text-alignment="justify"] {
+  text-align: justify;
+}
+
+/* ── Saved preview of a rich text Doc ──
+   Stand-ins with the editor's footprint for blocks that finish drawing once
+   the Doc opens. */
+
+.worktable-rich-preview .worktable-preview-children {
+  margin-top: var(--doc-item-gap);
+  padding-left: var(--doc-indent);
+}
+
+.worktable-markdown details:has(+ details) {
+  margin-bottom: var(--doc-item-gap);
+}
+
+.worktable-markdown summary > :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+}
+
+/* A toggle heading keeps its heading's space around it. */
+.worktable-markdown :is(details, .worktable-details):has(> summary > h1) {
+  margin: var(--doc-h1-before) 0 var(--doc-h1-after);
+}
+
+.worktable-markdown :is(details, .worktable-details):has(> summary > h2) {
+  margin: var(--doc-h2-before) 0 var(--doc-h2-after);
+}
+
+.worktable-markdown :is(details, .worktable-details):has(> summary > h3) {
+  margin: var(--doc-h3-before) 0 var(--doc-h3-after);
+}
+
+.worktable-markdown :is(details, .worktable-details):has(> summary > :is(h4, h5, h6)) {
+  margin: var(--doc-h4-before) 0 var(--doc-h4-after);
+}
+
+.worktable-rich-preview .worktable-preview-media {
+  border-radius: var(--doc-radius);
+  background: var(--doc-code-surface);
+}
+
+.worktable-rich-preview .worktable-preview-video {
+  aspect-ratio: 16 / 9;
+}
+
+.worktable-rich-preview .worktable-preview-audio {
+  height: 3.375rem;
+}
+
+.worktable-rich-preview .worktable-preview-file {
+  display: flex;
+  align-items: center;
+  height: 2.375rem;
+  margin: 0 0 var(--doc-gap-large);
+  color: var(--muted-foreground);
+}
+
+.worktable-rich-preview .worktable-preview-media-empty {
+  height: 3.1875rem;
+  margin: 0 0 var(--doc-gap-large);
+  border-radius: var(--doc-radius);
+  background: var(--doc-code-surface);
+}
+
+.worktable-rich-preview .worktable-preview-diagram {
+  min-height: 12rem;
+  border-color: var(--border);
+  background: var(--doc-code-surface);
+}

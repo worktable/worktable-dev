@@ -11,10 +11,16 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Code blocks:** Every code block shows its language with Wrap and Copy buttons. Wrap applies to all code on this device.
+- **Wide tables:** A table wider than the page can expand to fill the reading area.
+- **HTML in Markdown:** Markdown Docs show formatting HTML such as `<details>`, `<kbd>`, `<sub>`, `<sup>` and `<mark>`. Scripts, styles, frames and forms are left out.
 - **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
 
 ### Changed
 
+- **One look for every Doc:** Markdown and rich text Docs now read the same, with more space between paragraphs, quieter quotes and tables, a lighter bold, and no rule under section headings. Share pages match.
+- **Diagrams:** A diagram sits on the page without a card. Its name shows as a caption, and its controls appear when you point at it.
+- **Toggles:** Toggles open and close smoothly.
 - **Updates:** If Worktable can't reach the release server, `worktable update` and the **Software update** panel keep the installed version instead of installing whatever is newest. When releases are paused, Worktable offers no new version until they resume.
 - **Desktop updates:** Desktop installs only the release currently offered. When releases are paused, it offers no new version and doesn't install one it already downloaded. If it can't reach the release server before installing, it keeps the current app.
 - **Private logs:** Worktable's logs no longer name your documents. Requests are logged by route, documents by an opaque id, and errors without their messages, unless you set `WORKTABLE_DEBUG=1`. When something goes wrong on the server, Worktable shows a short error ID that matches the log line.
@@ -22,8 +28,9 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Shared Docs:** Checklists and toggles display correctly, and wide tables no longer make the page scroll sideways on phones. Footnotes, links and table alignment in shared Markdown Docs are kept.
 - **Thread messages:** While you type in a thread, the cursor stays with your text instead of falling behind it or sitting on a different line.
-- **Opening rich text Docs:** A Doc that starts with a title no longer shifts down when it becomes editable.
+- **Opening rich text Docs:** Nothing moves when a Doc becomes editable. Its title stays put, and while it opens, its images, checklists, toggles, colors and tables already look as they will.
 - **Block handles:** The add and drag handles beside a block line up with its first line of text, including headings.
 - **Wide Markdown tables:** A table wider than the page scrolls inside its own box, and long links wrap, so a Markdown Doc no longer scrolls sideways.
 

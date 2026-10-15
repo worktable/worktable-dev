@@ -2,11 +2,14 @@
 /**
  * perf-smoke: structural speed budgets for pull requests (Plan 17 Speed).
  *
- *   bun scripts/perf/smoke.ts [--checkout <dir>] [--out <dir>] [--update]
+ *   bun scripts/perf/smoke.ts [--checkout <dir>] [--network desktop]
+ *     [--out <dir>] [--update]
  *   bun scripts/perf/smoke.ts --clicks <result.json> --io <result.json> [--update]
  *
- * Runs the click lane once, untimed, on the 100-document fixture, and
- * io-count's counting run, then checks what they record against
+ * Runs the click lane once, untimed, on the 100-document fixture (the
+ * desktop profile by default: 40 ms round trips through the HTTP/2 proxy, so
+ * requests that wait on each other show as a chain), and io-count's counting
+ * run, then checks what they record against
  * smoke-budgets.json. Everything checked is a count that does not depend on
  * the machine's speed:
  *
@@ -21,7 +24,7 @@
  *
  * Needs what click-trace.ts and io-count.ts need: a web build of the checkout
  * (`WORKTABLE_BUILD_ID=smoke bun run --cwd apps/web build`), Playwright's
- * Chromium and strace. It generates the fixture if missing. With `--clicks`
+ * Chromium, Caddy and strace. It generates the fixture if missing. With `--clicks`
  * and `--io` it only checks existing results. `--update` rewrites the budgets
  * to the measured values, keeping each unchanged budget's `why`; a budget
  * that rises needs a new `why`, which `bun run perf:guards` checks.
@@ -35,7 +38,12 @@ import { PERF_ROOT, REPO_ROOT, markdownTable, parseArgs } from "./lib.ts"
 export const SMOKE_BUDGETS_FILE = "scripts/perf/smoke-budgets.json"
 const PROFILE = "100"
 export const SMOKE_PASSES: Pass[] = ["cold", "first", "warm", "revisit", "reopen"]
-const IDLE_WINDOW_SECONDS = 60
+/**
+ * Home's 60 s checks (Pending, Recent, Activity) start when the reopened app
+ * fetches them; the window opens once it settles and ends 15 s after their
+ * first tick, so each fires exactly once in it.
+ */
+const IDLE_WINDOW_SECONDS = 75
 
 export type Metric =
   | "requests"
@@ -251,19 +259,37 @@ export interface Verdict {
   key: string
   value: number
   max: number | null
-  status: "over" | "new" | "under" | "ok"
+  status: "over" | "new" | "under" | "ok" | "moved"
   detail?: string[]
+}
+
+/** "requests, <pass>, <journey>" -> "<pass>" */
+function passOf(key: string): string {
+  return key.split(", ")[1] ?? ""
 }
 
 /**
  * Over budget when the value exceeds the budget's max plus the metric's
  * slack. io-count figures are means over several requests, so they carry
  * half a call of slack: a whole extra call per request still fails.
+ *
+ * A request that starts late (such as the deployment check after a
+ * revisit) can land in the next click's window. So a click over its
+ * request budget fails only when its pass made more requests in total than
+ * the pass's budgets allow; otherwise it is reported as moved.
  */
 export function check(
   measurements: Measurement[],
   budgets: SmokeBudgets
 ): Verdict[] {
+  const passTotals = new Map<string, { value: number; max: number }>()
+  for (const measurement of measurements) {
+    if (measurement.metric !== "requests") continue
+    const total = passTotals.get(passOf(measurement.key)) ?? { value: 0, max: 0 }
+    total.value += measurement.value
+    total.max += budgets.budgets[measurement.key]?.max ?? 0
+    passTotals.set(passOf(measurement.key), total)
+  }
   return measurements.map((measurement) => {
     const budget = budgets.budgets[measurement.key]
     const slack = budgets.metrics[measurement.metric]?.slack ?? 0
@@ -273,13 +299,17 @@ export function check(
       ...(measurement.detail ? { detail: measurement.detail } : {}),
     }
     if (!budget) return { ...base, max: null, status: "new" }
-    if (measurement.value > budget.max + slack)
+    if (measurement.value > budget.max + slack) {
+      const total = passTotals.get(passOf(measurement.key))
+      if (measurement.metric === "requests" && total && total.value <= total.max)
+        return { ...base, max: budget.max, status: "moved" }
       return { ...base, max: budget.max, status: "over" }
-    return {
-      ...base,
-      max: budget.max,
-      status: measurement.value < budget.max - slack ? "under" : "ok",
     }
+    const total = passTotals.get(passOf(measurement.key))
+    const lower =
+      measurement.value < budget.max - slack &&
+      (measurement.metric !== "requests" || !total || total.value < total.max)
+    return { ...base, max: budget.max, status: lower ? "under" : "ok" }
   })
 }
 
@@ -310,6 +340,7 @@ function report(verdicts: Verdict[], failures: string[]): string {
   const over = verdicts.filter((verdict) => verdict.status === "over")
   const fresh = verdicts.filter((verdict) => verdict.status === "new")
   const under = verdicts.filter((verdict) => verdict.status === "under")
+  const moved = verdicts.filter((verdict) => verdict.status === "moved")
   const lines = ["## perf-smoke", ""]
   if (failures.length === 0 && over.length === 0 && fresh.length === 0)
     lines.push(`All ${verdicts.length} structural budgets hold.`, "")
@@ -343,6 +374,15 @@ function report(verdicts: Verdict[], failures: string[]): string {
       table(fresh),
       ""
     )
+  if (moved.length)
+    lines.push(
+      "### Requests in a neighbouring click's window",
+      "",
+      "Over the click's budget while its pass stays within its total: a late request landed in the next click's window. Not a failure.",
+      "",
+      table(moved),
+      ""
+    )
   if (under.length)
     lines.push(
       "### Below budget",
@@ -371,6 +411,7 @@ function run(command: string[], label: string): void {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  const network = args.get("network") ?? "desktop"
   const budgetsPath = join(REPO_ROOT, SMOKE_BUDGETS_FILE)
   const budgets = JSON.parse(readFileSync(budgetsPath, "utf8")) as SmokeBudgets
   let clicksPath = args.get("clicks")
@@ -395,7 +436,7 @@ async function main() {
         "--rounds",
         "1",
         "--networks",
-        "local",
+        network,
         "--passes",
         SMOKE_PASSES.join(","),
         "--idle-window",

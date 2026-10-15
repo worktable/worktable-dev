@@ -69,12 +69,17 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         # The runner's preferred Azure mirror can stall package downloads.
         run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt
-      - name: Install dependencies, Chromium and strace
+      - name: Install dependencies, Chromium, Caddy and strace
         if: steps.scope.outputs.run == 'true'
+        env:
+          CADDY_VERSION: 2.11.7
         run: |-
           bun install --frozen-lockfile
           bunx playwright@1.61.1 install --with-deps chromium
           command -v strace || sudo apt-get install -y -qq strace
+          mkdir -p "$RUNNER_TEMP/caddy"
+          curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" | tar -xz -C "$RUNNER_TEMP/caddy" caddy
+          echo "$RUNNER_TEMP/caddy" >> "$GITHUB_PATH"
       - name: Restore the perf fixture
         if: steps.scope.outputs.run == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830

@@ -1274,10 +1274,12 @@ export async function claimNextThreadDelivery(
       threadLocationVersion: supportedThreadLocationVersion,
     }
   )
+  // Read the signal revision before reconciling: a portable edit that lands
+  // while reconciliation scans the old file must still wake this wait.
+  let signalRevision = inboxSignalRevision(participant.id)
   await reconcileParticipantDeliveries(participant.id)
   const deadline = Date.now() + boundedWaitSeconds(waitSeconds) * 1000
   while (true) {
-    const signalRevision = inboxSignalRevision(participant.id)
     const allowWorktable = threadLocationVersion === 2
     const claim = await claimThreadDelivery(participant.id, { allowWorktable })
     if (claim) {
@@ -1362,6 +1364,7 @@ export async function claimNextThreadDelivery(
     )
     if (!changed && waitMs >= remaining) return null
     if (changed) {
+      signalRevision = inboxSignalRevision(participant.id)
       await reconcileParticipantDeliveries(participant.id)
     }
   }

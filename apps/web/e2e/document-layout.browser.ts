@@ -104,8 +104,13 @@ function appUrl(path: string): string {
   return new URL(path, harness.webUrl).href
 }
 
-/** Where each line's first character sits, from the top of the page frame. */
-async function linePositions(page: Page, root: string): Promise<number[]> {
+type Line = { top: number; width: number }
+
+/**
+ * Where each line's text starts, from the top of the page frame, and how wide
+ * that text runs, which catches tracking and ligature differences.
+ */
+async function linePositions(page: Page, root: string): Promise<Line[]> {
   return page.locator(root).evaluate((element, texts) => {
     const frame = element.closest(".worktable-document-content") ?? element
     const top = frame.getBoundingClientRect().top
@@ -114,24 +119,31 @@ async function linePositions(page: Page, root: string): Promise<number[]> {
     while (walker.nextNode()) nodes.push(walker.currentNode as Text)
     return texts.map((value) => {
       const node = nodes.find((candidate) => candidate.data.includes(value))
-      if (!node) return Number.NaN
+      if (!node) return { top: Number.NaN, width: Number.NaN }
       const range = document.createRange()
       const start = node.data.indexOf(value)
       range.setStart(node, start)
       range.setEnd(node, start + 1)
-      return range.getBoundingClientRect().top - top
+      const first = range.getBoundingClientRect().top - top
+      range.setEnd(node, start + value.length)
+      return { top: first, width: range.getBoundingClientRect().width }
     })
   }, lines)
 }
 
 // Line boxes match exactly; glyphs inside them may snap to a neighboring
 // pixel when the two renderers nest text differently.
-function expectSameLayout(actual: number[], expected: number[], label: string) {
+function expectSameLayout(actual: Line[], expected: Line[], label: string) {
   lines.forEach((line, index) => {
+    const [a, e] = [actual[index]!, expected[index]!]
     expect(
-      Math.abs(actual[index]! - expected[index]!),
-      `${label}: "${line}" at ${actual[index]} instead of ${expected[index]}`
+      Math.abs(a.top - e.top),
+      `${label}: "${line}" at ${a.top} instead of ${e.top}`
     ).toBeLessThanOrEqual(1.5)
+    expect(
+      Math.abs(a.width - e.width),
+      `${label}: "${line}" ${a.width}px wide instead of ${e.width}px`
+    ).toBeLessThanOrEqual(0.5)
   })
 }
 

@@ -65,7 +65,7 @@
    span and link body tracking, which would widen a heading's styled words,
    links, and the saved preview's text runs. */
 :is(.worktable-markdown, .bn-editor)
-  :is(h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption, summary)
+  :is(h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption, summary, pre)
   :is(span, a, label) {
   letter-spacing: inherit;
 }
@@ -287,6 +287,8 @@
 
 .worktable-markdown pre code {
   display: block;
+  /* Code keeps the font's own spacing, as in the editor. */
+  letter-spacing: normal;
   width: max-content;
   min-width: 100%;
   padding: var(--doc-code-padding);

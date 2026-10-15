@@ -62,6 +62,9 @@ function themeVariables(mode: "light" | "dark"): string {
     --muted-foreground: ${colors.mutedForeground};
     --surface-tint: ${colors.decorative};
     --border: ${colors.border};
+    --card-border: ${colors.cardBorder};
+    --surface-hover: ${colors.surfaceHover};
+    --surface-inset: ${colors.surfaceInset};
     --primary: ${themeConfig.accents.primary[mode]};
     --primary-text: ${themeConfig.accents.primaryText[mode]};
     --code-accent-foreground: ${themeConfig.accents.technicalInk[mode]};

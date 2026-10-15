@@ -417,7 +417,7 @@
 .bn-editor .bn-block-content[data-content-type="codeBlock"] {
   display: block !important;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-border);
   border-radius: var(--doc-radius) !important;
   background: var(--doc-code-surface) !important;
   color: var(--reading-foreground) !important;
@@ -934,7 +934,7 @@
   overflow: hidden !important;
   border-collapse: separate !important;
   border-spacing: 0 !important;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--card-border) !important;
   border-radius: var(--doc-radius) !important;
   background: transparent !important;
   font-size: var(--doc-table-size);

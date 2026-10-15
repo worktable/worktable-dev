@@ -27,6 +27,12 @@ the current app and offers the signed DMG for manual recovery.
 If **Worktable → Check for Updates…** is unavailable, install the latest DMG
 once. Future updates can then be installed from the app.
 
+Desktop installs only the release currently offered. Releases can be paused
+for a while; until they resume, Desktop offers no new version and doesn't
+install one it already downloaded. Before installing, Desktop confirms the
+release is still offered. If it can't reach the release server, it keeps the
+current app.
+
 The updater preserves workspace files, saved connections, and local settings.
 A Desktop-owned local host stops for restart; a CLI or managed
 service that Desktop only attached to keeps running. See the

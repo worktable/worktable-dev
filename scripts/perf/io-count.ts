@@ -361,16 +361,21 @@ async function endpointsFor(
     cookies,
     `${space}/documents/page?${query}`
   )
-  if (!page.revision) throw new Error(`no revision for ${path}`)
+  // Content by revision arrived with #113 and #117; an older base has no
+  // revision to address, so that endpoint is left out for it.
   return [
     { name: "spaces", path: "/api/spaces" },
     { name: "space", path: space },
     { name: "documents", path: `${space}/documents?includeArchived=false` },
     { name: "documents/page", path: `${space}/documents/page?${query}` },
-    {
-      name: "documents/content",
-      path: `${space}/documents/content?${new URLSearchParams({ path, rev: page.revision })}`,
-    },
+    ...(page.revision
+      ? [
+          {
+            name: "documents/content",
+            path: `${space}/documents/content?${new URLSearchParams({ path, rev: page.revision })}`,
+          },
+        ]
+      : []),
     {
       name: "recent",
       path: "/api/recent?sort=updated&includeTemporary=false&limit=30",

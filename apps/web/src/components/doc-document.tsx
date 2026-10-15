@@ -1108,6 +1108,8 @@ function BlockNoteDocPage({
     null
   )
   const [composerOpen, setComposerOpen] = useState(false)
+  // Bumped on every open so each new annotation starts from a blank composer.
+  const [composerSession, setComposerSession] = useState(0)
   const [belowXl, setBelowXl] = useState(false)
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1279px)")
@@ -1383,6 +1385,7 @@ function BlockNoteDocPage({
                   onSelectAnnotation={selectAnnotation}
                   onCreateAnnotation={(draft) => {
                     setComposerDraft(draft)
+                    setComposerSession((session) => session + 1)
                     setComposerOpen(true)
                   }}
                 />
@@ -1530,7 +1533,7 @@ function BlockNoteDocPage({
       )}
 
       <AnnotationComposer
-        key={`${composerDraft?.blockId ?? "none"}-${composerDraft?.category ?? "comment"}`}
+        key={composerSession}
         draft={composerDraft}
         open={composerOpen}
         onOpenChange={setComposerOpen}

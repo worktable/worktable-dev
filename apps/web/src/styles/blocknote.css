@@ -32,6 +32,11 @@
 
 /* ============================================
    Base Editor Styles
+   Spacing and type come from the shared document values
+   (@worktable/ui/document-content.css), so a rich text Doc reads like a
+   Markdown Doc and matches its saved preview while it opens. BlockNote
+   wraps every block in .bn-block-outer; sibling margins collapse just as
+   paragraph and heading margins do in Markdown.
    ============================================ */
 
 .bn-editor {
@@ -39,7 +44,7 @@
   font-family: var(--font-sans) !important;
   font-weight: 480 !important;
   font-size: 16px !important;
-  line-height: 1.9 !important;
+  line-height: var(--doc-line-height) !important;
   letter-spacing: 0.02em !important;
   word-spacing: 0.02em !important;
   padding: 0 !important;
@@ -48,38 +53,175 @@
   background: transparent !important;
 }
 
-/* Body text: more breathing room than BlockNote's default 1.5 */
-.bn-editor .bn-block-outer:has(> .bn-block > [data-content-type="paragraph"]) {
-  line-height: 1.85 !important;
+.bn-editor .bn-block-outer {
+  line-height: var(--doc-line-height) !important;
 }
 
-/* Lists should read as grouped content, but wrapped items need air. */
+/* Blocks are spaced by margins, not BlockNote's 3px block padding. */
+.bn-editor .bn-block-content {
+  padding-block: 0 !important;
+}
+
+.bn-editor .bn-inline-content {
+  letter-spacing: 0.02em;
+}
+
+/* Headings keep the shared heading tracking. */
+.bn-editor [data-content-type="heading"] .bn-inline-content {
+  letter-spacing: -0.005em;
+}
+
+.bn-editor .bn-block-outer:has(> .bn-block > [data-content-type="paragraph"]),
+.bn-editor .bn-block-outer:has(> .bn-block > [data-content-type="quote"]) {
+  margin-bottom: var(--doc-gap) !important;
+}
+
 .bn-editor
-  .bn-block-outer:has(> .bn-block > [data-content-type="bulletListItem"]),
+  .bn-block-outer:has(
+    > .bn-block
+      > :is(
+        [data-content-type="codeBlock"],
+        [data-content-type="table"],
+        [data-content-type="image"],
+        [data-content-type="video"],
+        [data-content-type="audio"],
+        [data-content-type="file"],
+        [data-content-type="mermaid"],
+        .react-renderer
+      )
+  ) {
+  margin-bottom: var(--doc-gap-large) !important;
+}
+
+/* A nested group starts just below its parent's line, as nested lists do. */
+.bn-editor .bn-block > .bn-block-group {
+  margin-top: var(--doc-item-gap);
+}
+
+/* ── Lists ──
+   Items in a run sit close together; the run ends with the paragraph gap. */
 .bn-editor
-  .bn-block-outer:has(> .bn-block > [data-content-type="numberedListItem"]),
+  .bn-block-outer:has(
+    > .bn-block
+      > :is(
+        [data-content-type="bulletListItem"],
+        [data-content-type="numberedListItem"],
+        [data-content-type="checkListItem"],
+        [data-content-type="toggleListItem"]
+      )
+  ) {
+  margin-bottom: var(--doc-item-gap) !important;
+}
+
+/* The block after a run of list items starts a paragraph gap below it.
+   (A margin on the next block, since :has() cannot look ahead inside :has().) */
 .bn-editor
-  .bn-block-outer:has(> .bn-block > [data-content-type="checkListItem"]) {
-  line-height: 1.7 !important;
-  margin-bottom: 0.125rem !important;
+  .bn-block-outer:has(> .bn-block > [data-content-type="bulletListItem"])
+  + .bn-block-outer:not(
+    :has(
+      > .bn-block
+        > :is([data-content-type="bulletListItem"], [data-content-type="heading"])
+    )
+  ),
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="numberedListItem"])
+  + .bn-block-outer:not(
+    :has(
+      > .bn-block
+        > :is([data-content-type="numberedListItem"], [data-content-type="heading"])
+    )
+  ),
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="checkListItem"])
+  + .bn-block-outer:not(
+    :has(
+      > .bn-block
+        > :is([data-content-type="checkListItem"], [data-content-type="heading"])
+    )
+  ),
+.bn-editor
+  .bn-block-outer:has(> .bn-block > [data-content-type="toggleListItem"])
+  + .bn-block-outer:not(
+    :has(
+      > .bn-block
+        > :is([data-content-type="toggleListItem"], [data-content-type="heading"])
+    )
+  ) {
+  margin-top: var(--doc-gap);
 }
 
-.bn-editor [data-content-type="bulletListItem"] .bn-inline-content,
-.bn-editor [data-content-type="numberedListItem"] .bn-inline-content,
-.bn-editor [data-content-type="checkListItem"] .bn-inline-content {
-  letter-spacing: 0.02em !important;
+/* Nested items end flush, so a parent item keeps a single item gap. */
+.bn-editor .bn-block-group .bn-block-group > .bn-block-outer:last-child {
+  margin-bottom: 0 !important;
 }
 
-/* Body text letter spacing */
-.bn-editor [data-content-type="paragraph"] .bn-inline-content {
-  letter-spacing: 0.02em !important;
+/* Done tasks recede, as in Markdown. */
+.bn-editor [data-content-type="checkListItem"][data-checked="true"] {
+  color: var(--muted-foreground);
 }
 
-/* Headings: tight tracking like NoteSync */
-.bn-editor [data-content-type="heading"] {
-  color: var(--foreground) !important;
-  padding-top: 0 !important;
-  letter-spacing: -0.02em !important;
+.bn-editor
+  [data-content-type="checkListItem"]
+  > div
+  > input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+/* ── Toggles open and close with the shared height transition ── */
+.bn-editor .bn-block:has(> .bn-block-content .bn-toggle-wrapper) {
+  display: grid !important;
+  /* Keeps the toggle's own line still while its children unfold. */
+  align-content: start;
+  grid-template-rows: auto 1fr;
+  transition: grid-template-rows var(--doc-motion);
+}
+
+.bn-editor
+  .bn-block:has(
+    > .bn-block-content .bn-toggle-wrapper[data-show-children="false"]
+  ) {
+  grid-template-rows: auto 0fr;
+}
+
+.bn-editor .bn-block:has(> .bn-block-content .bn-toggle-wrapper) > * {
+  min-width: 0;
+}
+
+.bn-editor
+  .bn-block:has(> .bn-block-content .bn-toggle-wrapper)
+  > .bn-block-group {
+  display: block !important;
+  min-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  transition: visibility var(--doc-motion) allow-discrete;
+}
+
+.bn-editor
+  .bn-block:has(
+    > .bn-block-content .bn-toggle-wrapper[data-show-children="false"]
+  )
+  > .bn-block-group {
+  visibility: hidden;
+}
+
+/* The gap above the children folds away with them. */
+.bn-editor
+  .bn-block:has(> .bn-block-content .bn-toggle-wrapper)
+  > .bn-block-group
+  > .bn-block-outer:first-child {
+  margin-top: var(--doc-item-gap);
+}
+
+.bn-editor .bn-toggle-button > svg {
+  transition: transform var(--doc-motion);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bn-editor .bn-block:has(> .bn-block-content .bn-toggle-wrapper),
+  .bn-editor .bn-toggle-button > svg {
+    transition: none;
+  }
 }
 
 /* ============================================
@@ -87,35 +229,135 @@
    ============================================ */
 
 .bn-editor [data-content-type="heading"] {
+  color: var(--foreground) !important;
   padding-top: 0 !important;
   font-family: var(--font-display) !important;
   font-weight: 600 !important;
   letter-spacing: -0.02em !important;
+  line-height: var(--doc-heading-line-height) !important;
 }
 
-/* Breathing room before headings. The document frame owns the gap above
-   the document's first block, so an opening heading adds none; headings
-   that open a nested group keep theirs. */
+.bn-editor [data-content-type="heading"]:not([data-level]) {
+  line-height: var(--doc-h1-line-height) !important;
+}
+
+.bn-editor [data-content-type="heading"][data-level="2"] {
+  line-height: var(--doc-h2-line-height) !important;
+}
+
+.bn-editor [data-content-type="heading"][data-level="3"] {
+  line-height: var(--doc-h3-line-height) !important;
+}
+
+/* Small headings read at body size, so they use the body face. */
+.bn-editor [data-content-type="heading"]:is([data-level="4"], [data-level="5"], [data-level="6"]) {
+  font-family: var(--font-sans) !important;
+}
+
+/* Space around headings. The document frame owns the gap above the
+   document's first block, so an opening heading adds none; headings that
+   open a nested group keep theirs. */
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"]:not([data-level])
+  ) {
+  margin-bottom: var(--doc-h1-after) !important;
+}
+
 .bn-editor
   .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"]:not([data-level])
   ) {
-  margin-top: 2rem !important;
+  margin-top: var(--doc-h1-before) !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="2"]
+  ) {
+  margin-bottom: var(--doc-h2-after) !important;
 }
 
 .bn-editor
   .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="2"]
   ) {
-  margin-top: 1.25rem !important;
+  margin-top: var(--doc-h2-before) !important;
+}
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block > [data-content-type="heading"][data-level="3"]
+  ) {
+  margin-bottom: var(--doc-h3-after) !important;
 }
 
 .bn-editor
   .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="3"]
   ) {
-  margin-top: 1rem !important;
+  margin-top: var(--doc-h3-before) !important;
 }
+
+.bn-editor
+  .bn-block-outer:has(
+    > .bn-block
+      > [data-content-type="heading"]:is(
+        [data-level="4"],
+        [data-level="5"],
+        [data-level="6"]
+      )
+  ) {
+  margin-bottom: var(--doc-h4-after) !important;
+}
+
+.bn-editor
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
+    > .bn-block
+      > [data-content-type="heading"]:is(
+        [data-level="4"],
+        [data-level="5"],
+        [data-level="6"]
+      )
+  ) {
+  margin-top: var(--doc-h4-before) !important;
+}
+
+/* ── Inline marks ── */
+
+.bn-editor strong {
+  font-weight: var(--doc-strong-weight) !important;
+}
+
+/* ── Dividers ── */
+
+/* The rule's space sits on its block so it collapses with its neighbors'
+   margins, as an <hr> does in Markdown. */
+.bn-editor .bn-block-outer:has(> .bn-block > [data-content-type="divider"]) {
+  margin-block: var(--doc-rule-gap) !important;
+}
+
+.bn-editor [data-content-type="divider"] hr {
+  margin: 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+/* ── Captions ── */
+
+.bn-editor [data-file-block] .bn-file-caption {
+  padding-top: 0.375rem;
+  color: var(--muted-foreground);
+  font-size: var(--doc-caption-size);
+  line-height: 1.5;
+}
+
+/* ── Diagrams ── */
+
+.bn-editor .worktable-diagram {
+  margin: 0;
+}
+
 
 /* ============================================
    Placeholder Text
@@ -156,7 +398,7 @@
 
 .bn-editor [data-content-type]:not([data-content-type="codeBlock"]) code {
   font-family: var(--font-mono) !important;
-  font-size: 0.875em !important;
+  font-size: var(--doc-inline-code-size) !important;
   color: var(--code-accent-foreground) !important;
   background: var(--code-accent-background) !important;
   border-radius: 0.375rem !important;
@@ -167,16 +409,43 @@
 
 /* ============================================
    Code Block Styling
+   Framed like Markdown code, with a header strip for the language, wrap
+   and copy (rich-code-block.ts). Lines stay whole and scroll inside the
+   block unless wrapping is on for this device.
    ============================================ */
 
-/* Code block: font and wrapping */
+.bn-editor .bn-block-content[data-content-type="codeBlock"] {
+  display: block !important;
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-radius: var(--doc-radius) !important;
+  background: var(--doc-code-surface) !important;
+  color: var(--reading-foreground) !important;
+}
+
+.bn-editor [data-content-type="codeBlock"] pre {
+  margin: 0 !important;
+  padding: 0.25rem var(--doc-code-padding) var(--doc-code-padding) !important;
+  overflow-x: auto;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
 .bn-editor [data-content-type="codeBlock"] pre,
 .bn-editor [data-content-type="codeBlock"] code {
   font-family: var(--font-mono) !important;
-  font-size: 0.8rem !important;
+  font-size: var(--doc-code-size) !important;
+  line-height: var(--doc-code-line-height) !important;
+  letter-spacing: normal !important;
+  white-space: pre !important;
+  overflow-wrap: normal !important;
+  background: transparent !important;
+}
+
+:root[data-code-wrap="true"] .bn-editor [data-content-type="codeBlock"] pre,
+:root[data-code-wrap="true"] .bn-editor [data-content-type="codeBlock"] code {
   white-space: pre-wrap !important;
-  word-wrap: break-word !important;
-  overflow-wrap: break-word !important;
+  overflow-wrap: anywhere !important;
 }
 
 /* Remove BlockNote's default border/outline on code block inner elements */
@@ -186,28 +455,33 @@
   outline: none !important;
 }
 
-/* Code block: background, text color, border radius.
-   BlockNote defaults: bg #161616, color #fff.
-   Override both to match our design system. */
-.bn-block-content[data-content-type="codeBlock"] {
-  border-radius: var(--radius) !important;
-  background-color: var(--muted) !important;
-  color: var(--reading-foreground) !important;
+/* The language picker reads as the header's label. */
+.bn-editor .worktable-code-header select {
+  appearance: none;
+  margin: 0 auto 0 -0.375rem;
+  padding: 0.125rem 0.375rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--muted-foreground) !important;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
-.bn-container[data-color-scheme="dark"]
-  .bn-block-content[data-content-type="codeBlock"] {
-  background-color: var(--secondary) !important;
+.bn-editor .worktable-code-header select:hover {
+  color: var(--foreground) !important;
+  background: var(--accent);
 }
 
-/* Remove prosemirror-highlight's node-level background.
-   The plugin sets --prosemirror-highlight-bg and background inline
-   on the code block node. Override to transparent so our design
-   system surface colors show through. */
-.bn-editor [data-content-type="codeBlock"] pre,
-.bn-editor [data-content-type="codeBlock"] code {
-  background: transparent !important;
+.bn-editor .worktable-code-header select:disabled {
+  cursor: default;
+  background: transparent;
 }
+
+.bn-editor .worktable-code-header > div:has(> select) {
+  display: contents;
+}
+
 
 /* Upstream provides both token variables but defaults code to a dark surface.
    Our code surface follows the app theme, so select its matching token color. */
@@ -217,26 +491,6 @@
 
 .bn-container[data-color-scheme="dark"] .shiki {
   color: var(--shiki-dark) !important;
-}
-
-/* Language selector styling */
-.bn-block-content[data-content-type="codeBlock"] > div > select {
-  font-family: var(--font-mono) !important;
-  font-size: 0.7rem !important;
-}
-
-.bn-container[data-color-scheme="light"]
-  .bn-block-content[data-content-type="codeBlock"]
-  > div
-  > select {
-  color: var(--muted-foreground) !important;
-}
-
-.bn-container[data-color-scheme="dark"]
-  .bn-block-content[data-content-type="codeBlock"]
-  > div
-  > select {
-  color: var(--muted-foreground) !important;
 }
 
 /* Scrollbars come from the app-wide treatment in @worktable/ui globals.css
@@ -636,50 +890,70 @@
 
 /* ============================================
    Quotes
+   A quiet rule and italics, as in Markdown.
    ============================================ */
-
-.bn-editor [data-content-type="quote"] {
-  padding-block: 0.25rem !important;
-}
 
 .bn-editor [data-content-type="quote"] blockquote {
   margin: 0 !important;
-  border-left: 3px solid color-mix(in oklch, var(--primary) 72%, transparent) !important;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0 !important;
-  background: var(--surface-tint) !important;
-  color: var(--reading-foreground) !important;
-  padding: 1.25rem 1.125rem !important;
-  font-style: normal !important;
-  line-height: 1.75 !important;
-}
-
-.bn-editor [data-content-type="quote"] blockquote .bn-inline-content {
-  letter-spacing: 0.015em !important;
+  padding: 0 0 0 1rem !important;
+  border-left: 3px solid var(--doc-quote-rule) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--muted-foreground) !important;
+  font-style: italic !important;
+  line-height: var(--doc-line-height) !important;
 }
 
 /* ============================================
    Tables
+   Thin frame and row rules, softer column rules, a lightly tinted header,
+   and no fill, so the table sits on the page. Shared with Markdown.
    ============================================ */
 
+/* BlockNote pads the wrapper for its row and column handles; pull it out by
+   that padding so the table itself lines up with the text column. */
 .bn-editor [data-content-type="table"] .tableWrapper {
-  border-radius: var(--radius-lg) !important;
+  width: calc(
+    100% + var(--bn-table-handle-size) + var(--bn-table-widget-size)
+  ) !important;
+  flex: none;
+  margin: calc(-1 * var(--bn-table-handle-size))
+    calc(-1 * var(--bn-table-widget-size))
+    calc(-1 * var(--bn-table-widget-size))
+    calc(-1 * var(--bn-table-handle-size));
+  overflow-x: auto;
+  transition:
+    width var(--doc-motion),
+    margin-left var(--doc-motion);
 }
 
+/* Expanded tables widen to the reading pane; see table-expand.tsx. */
+
 .bn-editor [data-content-type="table"] table {
+  margin: 0 !important;
+  overflow: hidden !important;
   border-collapse: separate !important;
   border-spacing: 0 !important;
-  overflow: hidden !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-lg) !important;
-  background: var(--card) !important;
+  border: 1px solid var(--card-border) !important;
+  border-radius: var(--doc-radius) !important;
+  background: transparent !important;
+  font-size: var(--doc-table-size);
+  line-height: var(--doc-table-line-height);
+}
+
+/* Tables without set column widths fill the text column, as in Markdown. */
+.bn-editor
+  [data-content-type="table"]
+  table:not(:has(> colgroup > col[style^="width"])) {
+  width: 100% !important;
 }
 
 .bn-editor [data-content-type="table"] th,
 .bn-editor [data-content-type="table"] td {
   border: 0 !important;
-  border-right: 1px solid var(--border) !important;
+  border-right: 1px solid var(--doc-table-column-rule) !important;
   border-bottom: 1px solid var(--border) !important;
-  padding: 0.625rem 0.75rem !important;
+  padding: 0.5rem 0.75rem !important;
   vertical-align: top !important;
 }
 
@@ -694,15 +968,15 @@
 }
 
 .bn-editor [data-content-type="table"] th {
-  background: var(--muted) !important;
+  background: var(--doc-table-header) !important;
   color: var(--foreground) !important;
   font-weight: 600 !important;
 }
 
 .bn-editor [data-content-type="table"] th > p,
 .bn-editor [data-content-type="table"] td > p {
-  min-height: 1.65rem !important;
-  line-height: 1.65 !important;
+  min-height: calc(var(--doc-table-line-height) * 1em) !important;
+  line-height: var(--doc-table-line-height) !important;
 }
 
 /* ============================================
@@ -778,7 +1052,6 @@
 /* Prevent ProseMirror from selecting/focusing mermaid blocks on touch.
    This stops the blue focus ring, text selection, keyboard popup, and
    accidental block deletion from a stray keystroke. */
-[data-content-type="mermaid"] .mermaid-interactive-container,
 [data-content-type="mermaid"] .mermaid-diagram-area,
 [data-content-type="mermaid"] .mermaid-diagram-area * {
   user-select: none !important;

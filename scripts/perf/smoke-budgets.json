@@ -62,13 +62,15 @@
       "max": 15
     },
     "cold js, open rich doc": {
-      "max": 32
+      "max": 33,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk."
     },
     "requests, cold, open rich doc (2,000 blocks)": {
       "max": 15
     },
     "cold js, open rich doc (2,000 blocks)": {
-      "max": 32
+      "max": 33,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk."
     },
     "requests, cold, open HTML doc": {
       "max": 14

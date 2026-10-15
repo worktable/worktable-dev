@@ -4,37 +4,147 @@ import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
 
-const blocks = [
-  { type: "heading", props: { level: 1 }, text: "Layout title" },
-  { type: "paragraph", text: "Opening paragraph that sits below the title." },
-  { type: "heading", props: { level: 2 }, text: "Second level" },
-  { type: "paragraph", text: "Body text between headings." },
-  { type: "heading", props: { level: 4 }, text: "Fourth level" },
-  { type: "paragraph", text: "Closing paragraph." },
+// One Doc written twice: as Markdown and as rich text. Both formats, and the
+// rich Doc's saved preview, should put every line in the same place.
+const markdown = `# Layout title
+
+Opening paragraph that sits below the title.
+
+## Second level
+
+- First bullet
+- Second bullet
+  - Nested bullet
+- Third bullet
+
+1. First number
+2. Second number
+
+- [ ] Open task
+- [x] Done task
+
+> Quoted line.
+
+\`\`\`ts
+const value = 1
+\`\`\`
+
+| Name | Value |
+| --- | --- |
+| Alpha | 1 |
+
+#### Fourth level
+
+Before the rule.
+
+---
+
+Closing paragraph.
+`
+
+const text = (value: string) => [{ type: "text", text: value, styles: {} }]
+const item = (type: string, value: string, extra: object = {}) => ({
+  type,
+  content: text(value),
+  ...extra,
+})
+const rich = [
+  item("heading", "Layout title", { props: { level: 1 } }),
+  item("paragraph", "Opening paragraph that sits below the title."),
+  item("heading", "Second level", { props: { level: 2 } }),
+  item("bulletListItem", "First bullet"),
+  item("bulletListItem", "Second bullet", {
+    children: [item("bulletListItem", "Nested bullet")],
+  }),
+  item("bulletListItem", "Third bullet"),
+  item("numberedListItem", "First number"),
+  item("numberedListItem", "Second number"),
+  item("checkListItem", "Open task", { props: { checked: false } }),
+  item("checkListItem", "Done task", { props: { checked: true } }),
+  item("quote", "Quoted line."),
+  item("codeBlock", "const value = 1", { props: { language: "typescript" } }),
+  {
+    type: "table",
+    content: {
+      type: "tableContent",
+      headerRows: 1,
+      rows: [
+        { cells: [text("Name"), text("Value")] },
+        { cells: [text("Alpha"), text("1")] },
+      ],
+    },
+  },
+  item("heading", "Fourth level", { props: { level: 4 } }),
+  item("paragraph", "Before the rule."),
+  { type: "divider" },
+  item("paragraph", "Closing paragraph."),
+]
+
+const lines = [
+  "Layout title",
+  "Opening paragraph",
+  "Second level",
+  "First bullet",
+  "Nested bullet",
+  "Third bullet",
+  "First number",
+  "Second number",
+  "Open task",
+  "Done task",
+  "Quoted line.",
+  "const",
+  "Name",
+  "Alpha",
+  "Fourth level",
+  "Before the rule.",
+  "Closing paragraph.",
 ]
 
 function appUrl(path: string): string {
   return new URL(path, harness.webUrl).href
 }
 
-/** Viewport position of the first character of each text, in order. */
-async function textTops(page: Page, root: string): Promise<number[]> {
-  return page.locator(root).evaluate(
-    (element, texts) => {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-      const nodes: Text[] = []
-      while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-      return texts.map((text) => {
-        const node = nodes.find((candidate) => candidate.data.startsWith(text))
-        if (!node) return Number.NaN
-        const range = document.createRange()
-        range.setStart(node, 0)
-        range.setEnd(node, 1)
-        return range.getBoundingClientRect().top
-      })
-    },
-    blocks.map((block) => block.text)
-  )
+type Line = { top: number; width: number }
+
+/**
+ * Where each line's text starts, from the top of the page frame, and how wide
+ * that text runs, which catches tracking and ligature differences.
+ */
+async function linePositions(page: Page, root: string): Promise<Line[]> {
+  return page.locator(root).evaluate((element, texts) => {
+    const frame = element.closest(".worktable-document-content") ?? element
+    const top = frame.getBoundingClientRect().top
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+    const nodes: Text[] = []
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+    return texts.map((value) => {
+      const node = nodes.find((candidate) => candidate.data.includes(value))
+      if (!node) return { top: Number.NaN, width: Number.NaN }
+      const range = document.createRange()
+      const start = node.data.indexOf(value)
+      range.setStart(node, start)
+      range.setEnd(node, start + 1)
+      const first = range.getBoundingClientRect().top - top
+      range.setEnd(node, start + value.length)
+      return { top: first, width: range.getBoundingClientRect().width }
+    })
+  }, lines)
+}
+
+// Line boxes match exactly; glyphs inside them may snap to a neighboring
+// pixel when the two renderers nest text differently.
+function expectSameLayout(actual: Line[], expected: Line[], label: string) {
+  lines.forEach((line, index) => {
+    const [a, e] = [actual[index]!, expected[index]!]
+    expect(
+      Math.abs(a.top - e.top),
+      `${label}: "${line}" at ${a.top} instead of ${e.top}`
+    ).toBeLessThanOrEqual(1.5)
+    expect(
+      Math.abs(a.width - e.width),
+      `${label}: "${line}" ${a.width}px wide instead of ${e.width}px`
+    ).toBeLessThanOrEqual(0.5)
+  })
 }
 
 test.beforeAll(async () => {
@@ -49,15 +159,13 @@ test.beforeAll(async () => {
   const doc = await fetch(`${harness.apiUrl}/api/spaces/layout/docs/rich`, {
     method: "PUT",
     headers: jsonHeaders,
-    body: JSON.stringify({
-      content: blocks.map(({ type, props, text }) => ({
-        type,
-        props,
-        content: [{ type: "text", text, styles: {} }],
-      })),
-    }),
+    body: JSON.stringify({ content: rich }),
   })
   expect(doc.ok).toBe(true)
+  await writeFile(
+    harness.workspacePath("spaces/layout/docs/plain.md"),
+    markdown
+  )
   const columns = Array.from(
     { length: 10 },
     (_, index) => `Column ${index + 1}`
@@ -81,16 +189,21 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("a rich doc keeps its layout when it becomes editable, with handles beside each line", async ({
+test("a Doc reads the same in Markdown, in its saved preview, and once editable", async ({
   page,
 }) => {
   test.setTimeout(120_000)
+  await page.goto(appUrl("/spaces/layout/documents/plain"))
+  await expect(page.locator("article.worktable-markdown")).toContainText(
+    "Closing paragraph.",
+    { timeout: 30_000 }
+  )
+  await page.evaluate(() => document.fonts.ready)
+  const asMarkdown = await linePositions(page, "article.worktable-markdown")
+
   // Refuse collaboration until measured, so the saved preview stays up. The
   // client reconnects on its own once sockets are let through.
   let held = true
-  const release = () => {
-    held = false
-  }
   await page.routeWebSocket(/.*/, (socket) => {
     if (held) socket.close()
     else socket.connectToServer()
@@ -101,26 +214,44 @@ test("a rich doc keeps its layout when it becomes editable, with handles beside 
     { timeout: 30_000 }
   )
   await page.evaluate(() => document.fonts.ready)
-  const before = await textTops(page, "[data-document-preview] article")
+  const asPreview = await linePositions(page, "[data-document-preview] article")
 
-  release()
+  held = false
   await expect(page.locator('[contenteditable="true"]')).toBeVisible({
     timeout: 30_000,
   })
   await expect(page.locator("[data-document-preview]")).toHaveCount(0)
-  const after = await textTops(page, ".bn-editor")
-  // Later blocks still differ until the preview shares the editor's styles;
-  // the title and opening paragraph must not move.
-  for (const index of [0, 1]) {
-    expect(Math.abs(after[index] - before[index])).toBeLessThanOrEqual(1)
-  }
+  const asEditor = await linePositions(page, ".bn-editor")
 
-  for (const { text } of blocks) {
+  expectSameLayout(asPreview, asEditor, "preview → editor")
+  expectSameLayout(asMarkdown, asEditor, "Markdown → rich text")
+})
+
+test("block handles sit beside the first line of each block", async ({
+  page,
+}) => {
+  await page.goto(appUrl("/spaces/layout/documents/rich"))
+  await expect(page.locator('[contenteditable="true"]')).toBeVisible({
+    timeout: 30_000,
+  })
+  for (const line of [
+    "Layout title",
+    "Opening paragraph",
+    "Second level",
+    "First bullet",
+    "Open task",
+    "Quoted line.",
+    "const value",
+    "Fourth level",
+  ]) {
     const content = page
       .locator(".bn-editor .bn-inline-content")
-      .filter({ hasText: text })
+      .filter({ hasText: line })
+      .first()
+    // Blocks below the fold must be on screen for the pointer to reach them.
+    await content.scrollIntoViewIfNeeded()
     const box = await content.boundingBox()
-    if (!box) throw new Error(`${text} is not visible`)
+    if (!box) throw new Error(`${line} is not visible`)
     await page.mouse.move(box.x + 24, box.y + 4)
     const handle = page.locator(".bn-side-menu button").last()
     await expect(handle).toBeVisible()
@@ -128,24 +259,23 @@ test("a rich doc keeps its layout when it becomes editable, with handles beside 
       .poll(
         async () => {
           const icon = await handle.boundingBox()
-          const line = await content.evaluate((element) => {
-            const text = document
+          const center = await content.evaluate((element) => {
+            const first = document
               .createTreeWalker(element, NodeFilter.SHOW_TEXT)
               .nextNode()
-            if (!text) return Number.NaN
+            if (!first) return Number.NaN
             const range = document.createRange()
-            range.setStart(text, 0)
-            range.setEnd(text, 1)
+            range.setStart(first, 0)
+            range.setEnd(first, 1)
             const rect = range.getBoundingClientRect()
             return rect.top + rect.height / 2
           })
-          return icon ? Math.abs(icon.y + icon.height / 2 - line) : Infinity
+          return icon ? Math.abs(icon.y + icon.height / 2 - center) : Infinity
         },
-        { message: `handle beside "${text}"` }
+        { message: `handle beside "${line}"` }
       )
       .toBeLessThanOrEqual(2)
   }
-  release()
 })
 
 test("wide Markdown tables and long links stay inside the page on a phone", async ({

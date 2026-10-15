@@ -1,0 +1,91 @@
+/**
+ * Display names for code block languages, keyed by id and alias. Mirrors
+ * the rich text editor's language picker (@blocknote/code-block), which is
+ * too heavy to load just for a label; code-language.test.ts keeps them equal.
+ */
+const LANGUAGE_NAMES: Record<string, string> = {
+  text: "Plain Text",
+  txt: "Plain Text",
+  plain: "Plain Text",
+  c: "C",
+  cpp: "C++",
+  "c++": "C++",
+  css: "CSS",
+  glsl: "GLSL",
+  graphql: "GraphQL",
+  gql: "GraphQL",
+  haml: "Ruby Haml",
+  html: "HTML",
+  java: "Java",
+  javascript: "JavaScript",
+  js: "JavaScript",
+  json: "JSON",
+  jsonc: "JSON with Comments",
+  jsonl: "JSON Lines",
+  jsx: "JSX",
+  julia: "Julia",
+  jl: "Julia",
+  less: "Less",
+  markdown: "Markdown",
+  md: "Markdown",
+  mdx: "MDX",
+  php: "PHP",
+  postcss: "PostCSS",
+  pug: "Pug",
+  jade: "Pug",
+  python: "Python",
+  py: "Python",
+  r: "R",
+  regexp: "RegExp",
+  regex: "RegExp",
+  sass: "Sass",
+  scss: "SCSS",
+  shellscript: "Shell",
+  bash: "Shell",
+  sh: "Shell",
+  shell: "Shell",
+  zsh: "Shell",
+  sql: "SQL",
+  svelte: "Svelte",
+  typescript: "TypeScript",
+  ts: "TypeScript",
+  vue: "Vue",
+  "vue-html": "Vue HTML",
+  wasm: "WebAssembly",
+  wgsl: "WGSL",
+  xml: "XML",
+  yaml: "YAML",
+  yml: "YAML",
+  tsx: "TSX",
+  typescriptreact: "TSX",
+  haskell: "Haskell",
+  hs: "Haskell",
+  csharp: "C#",
+  "c#": "C#",
+  cs: "C#",
+  latex: "LaTeX",
+  lua: "Lua",
+  mermaid: "Mermaid",
+  mmd: "Mermaid",
+  ruby: "Ruby",
+  rb: "Ruby",
+  rust: "Rust",
+  rs: "Rust",
+  scala: "Scala",
+  swift: "Swift",
+  kotlin: "Kotlin",
+  kt: "Kotlin",
+  kts: "Kotlin",
+  "objective-c": "Objective C",
+  objc: "Objective C",
+}
+
+/** The language's display name, or the authored id when it is unknown. */
+export function codeLanguageName(language: string | undefined): string | null {
+  const id = language?.trim().toLowerCase()
+  if (!id) return null
+  return LANGUAGE_NAMES[id] ?? id
+}
+
+export const CODE_LANGUAGE_NAMES: Readonly<Record<string, string>> =
+  LANGUAGE_NAMES

@@ -3,7 +3,7 @@
    BlockNote's styles load with the editor (components/editor/editor.tsx). */
 @import "@worktable/ui/globals.css";
 @import "./animations.css";
-@import "./markdown.css";
+@import "@worktable/ui/document-content.css";
 @import "./document.css";
 @import "./print.css";
 

@@ -1,9 +1,9 @@
 import { useEffect, useId, useMemo, useState } from "react"
 import type { ReactNode } from "react"
-import { Maximize } from "lucide-react"
+import { Maximize2 } from "lucide-react"
 import type { WorktableMermaidThemeMode } from "@worktable/ui/theme/mermaid-config"
-import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
+import { DocIconButton } from "@/components/document/doc-icon-button"
 import { renderWorktableMermaid } from "@/lib/mermaid-runtime"
 import { MermaidDiagramViewer } from "./mermaid-diagram-viewer"
 
@@ -13,6 +13,14 @@ interface WorktableMermaidRendererProps {
   themeMode: WorktableMermaidThemeMode
   /** Labels the fullscreen viewer. */
   title?: string
+  /** Shown under the diagram when someone named it. */
+  caption?: string
+  /** Extra icon controls, shown before Full screen. */
+  controls?: ReactNode
+  /** Content inside the frame below the diagram, such as its source. */
+  footer?: ReactNode
+  /** Keeps the frame and controls visible while editing. */
+  editing?: boolean
   errorFallback?: ReactNode
 }
 
@@ -21,6 +29,10 @@ export function WorktableMermaidRenderer({
   chart = "",
   themeMode,
   title,
+  caption,
+  controls,
+  footer,
+  editing,
   errorFallback,
 }: WorktableMermaidRendererProps) {
   const [viewerOpen, setViewerOpen] = useState(false)
@@ -76,28 +88,21 @@ export function WorktableMermaidRenderer({
     }
   }, [chart, stableName, themeMode])
 
+  let body: ReactNode
   if (!chart.trim()) {
-    return (
+    body = (
       <div className="p-5 text-center text-sm text-muted-foreground">
         Enter mermaid code to see a preview…
       </div>
     )
-  }
-
-  if (error) {
-    if (errorFallback) return errorFallback
-    return (
+  } else if (error) {
+    body = errorFallback ?? (
       <div className="m-2 rounded-lg bg-destructive/10 p-4 text-center text-sm text-destructive">
         {error}
       </div>
     )
-  }
-
-  return (
-    <div
-      className="mermaid-interactive-container group/diagram relative w-full"
-      data-theme-mode={themeMode}
-    >
+  } else {
+    body = (
       <div
         className={cn("mermaid-diagram-area", svg && "cursor-zoom-in")}
         data-mermaid-open=""
@@ -112,18 +117,31 @@ export function WorktableMermaidRenderer({
           dangerouslySetInnerHTML={svgHtml}
         />
       </div>
-      {svg && (
-        <Button
-          variant="outline"
-          size="icon-xs"
-          className="mermaid-open-control absolute top-2 right-2 z-10 opacity-0 transition-opacity duration-150 group-hover/diagram:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-          onClick={() => setViewerOpen(true)}
-          title="Fullscreen"
-          aria-label="Fullscreen"
-        >
-          <Maximize />
-        </Button>
+    )
+  }
+
+  return (
+    <div
+      className="worktable-diagram mermaid-interactive-container"
+      data-theme-mode={themeMode}
+      data-editing={editing || undefined}
+    >
+      {(controls || svg) && (
+        <div className="worktable-diagram-controls mermaid-open-control">
+          {controls}
+          {svg && (
+            <DocIconButton
+              label="Full screen"
+              onClick={() => setViewerOpen(true)}
+            >
+              <Maximize2 />
+            </DocIconButton>
+          )}
+        </div>
       )}
+      {body}
+      {caption && <span className="worktable-caption">{caption}</span>}
+      {footer}
       <MermaidDiagramViewer
         open={viewerOpen}
         onOpenChange={setViewerOpen}

@@ -23,12 +23,14 @@
   margin: 0;
 }
 
-/* Floats over the table's corner, so it never moves the text. */
-.worktable-table-controls {
+/* Table and diagram tools float in one small card over the block's corner,
+   so they never move the content and stay legible over a drawing. */
+:is(.worktable-table-controls, .worktable-diagram-controls) {
   position: absolute;
   top: 0.3125rem;
   right: 0.3125rem;
   z-index: 1;
+  display: flex;
   border-radius: 0.375rem;
   background: var(--card);
   box-shadow: 0 0 0 1px var(--card-border);
@@ -63,17 +65,6 @@
 .worktable-diagram:is(:hover, :focus-within),
 .worktable-diagram[data-editing] {
   border-color: var(--border);
-}
-
-.worktable-diagram-controls {
-  position: absolute;
-  top: 0.3125rem;
-  right: 0.3125rem;
-  z-index: 1;
-  display: flex;
-  gap: 0.125rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
 }
 
 .worktable-diagram:is(:hover, :focus-within) .worktable-diagram-controls,

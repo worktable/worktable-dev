@@ -81,12 +81,13 @@ export default function MermaidBlockComponent({
       <button
         type="button"
         className="mermaid-block-shell worktable-diagram-collapsed"
+        onMouseDown={(event) => event.preventDefault()}
         onClick={toggleCollapse}
         aria-expanded={false}
       >
-        <ChevronRight />
-        <span className="truncate">{name || "Diagram"}</span>
-        {name && <span className="worktable-diagram-kind">· Diagram</span>}
+        <ChevronRight className="size-3.5" />
+        <span className="worktable-diagram-name">{name || "Diagram"}</span>
+        {name && <span className="worktable-diagram-kind">Diagram</span>}
       </button>
     )
   }

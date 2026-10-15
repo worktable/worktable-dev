@@ -50,8 +50,9 @@ export function rotateLogIfLarge(
   for (let index = keep - 1; index >= 1; index -= 1) {
     try {
       renameSync(`${path}.${index}`, `${path}.${index + 1}`)
-    } catch {
-      // Fewer copies exist yet.
+    } catch (error) {
+      // Fewer copies exist yet; any other failure stops before a copy is lost.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
     }
   }
   renameSync(copy, `${path}.1`)

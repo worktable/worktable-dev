@@ -134,6 +134,9 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
     page.getByRole("menuitem", { name: "Drawing", exact: true })
   ).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath("folder-menu-mobile.png") })
+  // The harness is shared with the Home journey below; leave its recent and
+  // temporary lists free of this journey's documents.
+  expect((await page.request.delete(endpoint)).ok()).toBe(true)
 })
 
 // Owns the organization journey a person relies on: new documents start

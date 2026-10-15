@@ -53,6 +53,16 @@ function ScrollableMermaidSource({ source }: { source: string }) {
   )
 }
 
+// Wide tables scroll inside their own box instead of widening the document.
+function ScrollableTable({ children }: { children: ReactNode }) {
+  const fade = useScrollFadeX<HTMLDivElement>()
+  return (
+    <div ref={fade} className="worktable-table-scroll scroll-fade-x">
+      <table>{children}</table>
+    </div>
+  )
+}
+
 class MarkdownErrorBoundary extends Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
@@ -173,6 +183,10 @@ export function MarkdownViewer({
                       {...externalLinkProps(renderedHref, worktableOrigins)}
                     />
                   )
+                },
+                table: ({ node, children }) => {
+                  void node
+                  return <ScrollableTable>{children}</ScrollableTable>
                 },
                 pre: ({ node, children, ...props }) => {
                   void node

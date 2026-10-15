@@ -27,6 +27,14 @@ function inline(value: unknown, depth = 0): ReactNode {
   if (styles.underline) text = createElement("u", null, text)
   return text
 }
+// Wide tables scroll inside their own box, as they do once the document opens.
+function scrollableTable(children: ReactNode): ReactNode {
+  return createElement(
+    "div",
+    { className: "worktable-table-scroll" },
+    createElement("table", null, children)
+  )
+}
 function blocks(
   value: unknown[],
   budget: { remaining: number; truncated: boolean },
@@ -84,9 +92,7 @@ function blocks(
         const rows = record(block.content).rows
         if (Array.isArray(rows) && rows.length > 40) budget.truncated = true
         body = Array.isArray(rows)
-          ? createElement(
-              "table",
-              null,
+          ? scrollableTable(
               createElement(
                 "tbody",
                 null,
@@ -153,6 +159,10 @@ export function DocumentReadingPreview({
         remarkPlugins: [remarkGfm],
         skipHtml: true,
         disallowedElements: ["img"],
+        components: {
+          table: ({ children }: { children?: ReactNode }) =>
+            scrollableTable(children),
+        },
         children: content.slice(0, 64 * 1024),
       })
   return createElement(

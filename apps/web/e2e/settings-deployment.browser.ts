@@ -51,10 +51,12 @@ async function mockCloud(page: Page): Promise<void> {
       contentType: "application/json",
       body: JSON.stringify({
         current: "1.2.3",
+        sourceCommit: "8737f53a1b2c3d4e5f60718293a4b5c6d7e8f901",
         canUpdate: false,
         hasEmbeddedInstaller: false,
         latest: null,
         updateAvailable: false,
+        channel: null,
         checkedAt: null,
       }),
     })
@@ -162,6 +164,8 @@ test("Cloud composes relevant sections and saves human preferences", async ({
     settings.getByText("Worktable Cloud", { exact: true })
   ).toBeVisible()
   await expect(settings.getByText("v1.2.3", { exact: true })).toBeVisible()
+  await expect(settings.getByText("8737f53", { exact: true })).toBeVisible()
+  await expect(settings.getByText("Channel", { exact: true })).toHaveCount(0)
   await expect(
     settings.getByText("https://app.worktable.cloud", { exact: true })
   ).toBeVisible()

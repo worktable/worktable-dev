@@ -53,6 +53,32 @@ checks off with **Check for updates automatically** in **Settings → System**.
 The [configuration reference](/reference/configuration/) covers the environment
 override for automated or managed installations.
 
+If Worktable can't reach the release server, `worktable update` and the
+**Software update** panel leave the installed version in place. Releases can
+also be paused for a while; until they resume, Worktable offers no new version.
+To install a particular version anyway, name it: `worktable update v0.1.23`.
+
+## Release channels
+
+A local or self-hosted service follows the **stable** channel. To try changes
+before they are released, switch it to **beta**:
+
+```sh
+worktable update --channel beta     # follow beta and update now
+worktable update --channel stable   # return to stable releases
+```
+
+Beta builds are made from every change to the
+[public source](https://github.com/worktable/worktable-dev) and are versioned
+like `0.1.24-dev.131+8737f53`. They are tested but not released, so expect
+rough edges. On beta, Worktable updates to the newest beta or the newest
+stable release, whichever is newer. After you return to stable, Worktable
+keeps the beta you have until the next stable release is newer.
+
+**Settings → System → About** shows the channel and the commit the running
+version was built from. Beta builds are published for Linux x64; Desktop
+follows stable.
+
 What shipped in each release is on [What's new](/whats-new/).
 
 ## Workspace upgrades

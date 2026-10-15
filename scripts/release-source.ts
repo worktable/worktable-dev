@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, existsSync, realpathSync } from "node:fs"
 import { join } from "node:path"
+import { isDevVersionOf, isReleaseVersion } from "./release-version.ts"
 
 export interface SourceMetadata {
   version?: string
@@ -25,10 +26,16 @@ function publicRepository(value: string): string {
 
 /** Validate outgoing public identity independently of the private build runner. */
 export function verifyPublicSourceMetadata(value: SourceMetadata): void {
+  // A release names its version and may carry its tag; an unreleased (dev)
+  // build names the exact commit in its version and carries no tag.
+  const devBuild =
+    typeof value.version === "string" &&
+    isDevVersionOf(value.version, value.sourceCommit)
   if (
     value.sourceVisibility !== "public" ||
     typeof value.version !== "string" ||
-    !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value.version) ||
+    !(isReleaseVersion(value.version) || devBuild) ||
+    (devBuild && value.sourceTag !== "") ||
     publicRepository(value.sourceRepo) !== value.sourceRepo ||
     !/^[0-9a-f]{40}$/.test(value.sourceCommit) ||
     value.sourceUrl !== `${value.sourceRepo}/tree/${value.sourceCommit}` ||
@@ -84,7 +91,11 @@ export function verifyReleaseSourceMetadata(
 /** This binds build inputs; it does not approve or perform publication. */
 export function resolveSourceMetadata(
   root: string,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  options: {
+    /** The build's version when it differs from package.json (a dev build). */
+    version?: string
+  } = {}
 ): SourceMetadata {
   const git = (args: string[]): string | null => {
     const result = Bun.spawnSync(["git", ...args], {
@@ -111,11 +122,18 @@ export function resolveSourceMetadata(
       throw new Error(
         "Public builds require the AGPL source checkout and explicit public repository and commit"
       )
+    // A release carries the package version; an unreleased build carries a
+    // dev version of exactly the captured commit (scripts/release-version.ts),
+    // passed to its child builds through WORKTABLE_VERSION.
+    const version =
+      options.version || env["WORKTABLE_VERSION"] || packageJson.version
     if (
-      env["WORKTABLE_VERSION"] &&
-      env["WORKTABLE_VERSION"] !== packageJson.version
+      version !== packageJson.version &&
+      !isDevVersionOf(version, expectedCommit)
     )
-      throw new Error("Public version must match the captured package version")
+      throw new Error(
+        "Public version must match the captured package version, or be a dev version of the captured commit"
+      )
     if (
       Object.keys(env).some(
         (key) => key.startsWith("VITE_") && env[key] !== undefined
@@ -184,7 +202,7 @@ export function resolveSourceMetadata(
         "Public source tag must be the captured version tag on the exact source commit"
       )
     const metadata: SourceMetadata = {
-      version: packageJson.version,
+      version,
       sourceRepo,
       sourceCommit,
       sourceTag,

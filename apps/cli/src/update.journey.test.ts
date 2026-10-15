@@ -91,9 +91,16 @@ describe("installed update subprocess journey", () => {
     mkdirSync(appDir, { recursive: true })
     mkdirSync(releaseDir, { recursive: true })
 
+    // The release channels the host publishes; null makes it unreachable.
+    let channels: Record<string, { version: string; held: boolean }> | null = {
+      stable: { version: "0.0.10", held: false },
+    }
     const releaseHost = Bun.serve({
       port: 0,
-      fetch: () => Response.json({ version: "0.0.10" }),
+      fetch: () =>
+        channels
+          ? Response.json({ schema: 1, channels })
+          : new Response("unavailable", { status: 503 }),
     })
     const installerRecord = join(releaseDir, "install-args.txt")
     writeFileSync(
@@ -132,6 +139,44 @@ describe("installed update subprocess journey", () => {
         to: "0.0.10",
       })
       expect(existsSync(installerRecord)).toBe(false)
+
+      // Installing follows the release channel and fails closed: a held
+      // channel or an unreachable release server installs nothing.
+      channels = {
+        stable: { version: "0.0.11", held: true },
+        beta: { version: "0.0.11-dev.3+abc1234", held: false },
+      }
+      const held = await runCliAsync(["update"], home, baseEnvironment)
+      expectSuccess(held, "held update")
+      expect(held.stdout).toContain("paused")
+      channels = null
+      const offline = await runCliAsync(["update"], home, baseEnvironment)
+      expect(offline.exitCode).not.toBe(0)
+      expect(offline.stderr).toContain("stays on 0.0.10")
+      expect(existsSync(installerRecord)).toBe(false)
+      channels = {
+        stable: { version: "0.0.11", held: true },
+        beta: { version: "0.0.11-dev.3+abc1234", held: false },
+      }
+      const beta = await runCliAsync(
+        ["update", "--check", "--channel", "beta"],
+        home,
+        baseEnvironment
+      )
+      expectSuccess(beta, "switch to beta")
+      expect(beta.stdout).toContain("0.0.11-dev.3+abc1234")
+      expect(
+        (await runCliAsync(["update", "--check"], home, baseEnvironment)).stdout
+      ).toContain("Channel:         beta")
+      expectSuccess(
+        await runCliAsync(
+          ["update", "--check", "--channel", "stable"],
+          home,
+          baseEnvironment
+        ),
+        "switch back to stable"
+      )
+      channels = { stable: { version: "0.0.10", held: false } }
 
       const reservation = Bun.serve({
         port: 0,

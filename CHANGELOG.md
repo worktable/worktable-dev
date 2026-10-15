@@ -9,7 +9,13 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
+
 ### Changed
+
+- **Updates:** If Worktable can't reach the release server, `worktable update` and the **Software update** panel keep the installed version instead of installing whatever is newest. When releases are paused, Worktable offers no new version until they resume.
 
 - **Private logs:** Worktable's logs no longer name your documents. Requests are logged by route, documents by an opaque id, and errors without their messages, unless you set `WORKTABLE_DEBUG=1`. When something goes wrong on the server, Worktable shows a short error ID that matches the log line.
 - **Log rotation:** On local and self-hosted Worktable, each background service log rotates at 10 MB and keeps three older copies, so logs no longer grow without limit.

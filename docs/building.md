@@ -54,6 +54,38 @@ local environment files in build directories, and ignored files in web public
 assets or the OpenClaw skill staging directory. Build from a fresh checkout.
 These checks establish build inputs; they do not publish or approve a release.
 
+## Versions and release channels
+
+Release builds carry the version prepared in `package.json`. Lab builds are
+unreleased, so `release:lab` stamps `X.Y.Z-dev.N+<commit>`: `X.Y.Z` is the
+release it leads up to (the next patch once `package.json`'s version is tagged),
+`N` is the commit count and `<commit>` the short commit. Lab builds therefore
+need full Git history and tags. Version precedence places a dev build after the
+previous release and before `X.Y.Z`.
+
+Updaters read `channels.json` at the release base URL, served from the
+`release-channels` branch. It names each channel's current version and whether
+the channel is held:
+
+```json
+{
+  "schema": 1,
+  "channels": {
+    "stable": { "version": "0.1.23", "tag": "v0.1.23", "commit": "…", "publishedAt": "…", "held": false },
+    "beta": { "version": "0.1.24-dev.131+8737f53", "tag": "v0.1.24-dev.131", "commit": "…", "publishedAt": "…", "held": false }
+  }
+}
+```
+
+Every verified product change on public `main` publishes its Linux x64 lab build
+as a beta prerelease and moves `beta` forward. The release workflow moves
+`stable`. `bun scripts/release-channels.ts` shows, publishes, holds and
+releases channels, and reports how long a commit has been the unheld beta
+build (`soak <commit>`); writes need a token with contents access. A held channel
+offers nothing new, and installing fails closed when the manifest can't be
+read, so holding a channel stops CLI and self-hosted updates without
+touching published releases.
+
 ## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)

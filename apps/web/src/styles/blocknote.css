@@ -94,23 +94,24 @@
 }
 
 /* Breathing room before headings. The document frame owns the gap above
-   the first block, so an opening heading adds none. */
+   the document's first block, so an opening heading adds none; headings
+   that open a nested group keep theirs. */
 .bn-editor
-  .bn-block-outer:not(:first-child):has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"]:not([data-level])
   ) {
   margin-top: 2rem !important;
 }
 
 .bn-editor
-  .bn-block-outer:not(:first-child):has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="2"]
   ) {
   margin-top: 1.25rem !important;
 }
 
 .bn-editor
-  .bn-block-outer:not(:first-child):has(
+  .bn-block-outer:not(.bn-editor > .bn-block-group > :first-child):has(
     > .bn-block > [data-content-type="heading"][data-level="3"]
   ) {
   margin-top: 1rem !important;

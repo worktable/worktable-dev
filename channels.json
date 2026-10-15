@@ -7,6 +7,13 @@
       "commit": "89a3e9978a462d7c8fca26416555849fae29207d",
       "publishedAt": "2026-10-15T03:03:48.078Z",
       "held": false
+    },
+    "beta": {
+      "version": "0.1.24-dev.133+d375ff3",
+      "tag": "v0.1.24-dev.133",
+      "commit": "d375ff3f7d4035ef7b225d243a4ec57e9a034dd8",
+      "publishedAt": "2026-10-15T04:38:19.991Z",
+      "held": false
     }
   }
 }

@@ -82,8 +82,14 @@ stable release, whichever is newer. After you return to stable, Worktable
 keeps the beta you have until the next stable release is newer.
 
 **Settings → System → About** shows the channel and the commit the running
-version was built from. Beta builds are published for Linux x64; Desktop
-follows stable.
+version was built from. Beta builds are published for Linux x64.
+
+Desktop follows stable unless you turn on **Settings → System → Beta updates**,
+or choose **Worktable → Beta Updates** with a self-hosted or Cloud connection.
+Desktop on beta checks right away, then installs signed beta builds of the app
+as they are published, a few times a day at most, and the newest stable release
+when it is newer. Turning beta off drops a beta update that hasn't been
+installed yet.
 
 What shipped in each release is on [What's new](/whats-new/).
 

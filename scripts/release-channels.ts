@@ -6,6 +6,7 @@ import {
   UPDATE_CHANNELS,
   type UpdateChannel,
 } from "../packages/server/src/release-channels.ts"
+import { isDevVersionOf } from "./release-version.ts"
 
 // Maintains the release-channel manifest that every updater reads.
 //
@@ -21,6 +22,8 @@ import {
 //   bun scripts/release-channels.ts release <channel>
 //   bun scripts/release-channels.ts prune-beta [--keep N]
 //   bun scripts/release-channels.ts soak <commit>
+//   bun scripts/release-channels.ts publish-desktop <version> <commit>
+//   bun scripts/release-channels.ts desktop-due [--last-attempt ISO] [--min-hours H] [--force]
 //
 // Writes need GH_TOKEN with contents: write on the repository
 // (RELEASE_CHANNELS_REPOSITORY, default worktable/worktable-dev).
@@ -28,12 +31,25 @@ import {
 export const CHANNELS_BRANCH = "release-channels"
 export const CHANNELS_PATH = "channels.json"
 
+/** A signed Desktop build published with a beta prerelease. */
+export interface DesktopBuildRecord {
+  version: string
+  tag: string
+  commit: string
+  publishedAt: string
+}
+
 export interface ChannelRecord {
   version: string
   tag: string
   commit: string
   publishedAt: string
   held: boolean
+  /**
+   * Beta only: the newest beta with a signed Desktop build. Desktop builds are
+   * made less often than beta moves, and Desktop on beta installs only this.
+   */
+  desktop?: DesktopBuildRecord
 }
 
 export interface ChannelsManifest {
@@ -105,6 +121,10 @@ export function publishChannel(
     commit: input.commit,
     publishedAt: input.publishedAt,
     held: input.channel === "beta" ? (current?.held ?? false) : false,
+    // A new beta keeps naming the newest beta that has a Desktop build.
+    ...(input.channel === "beta" && current?.desktop
+      ? { desktop: current.desktop }
+      : {}),
   }
   return {
     manifest: {
@@ -112,6 +132,108 @@ export function publishChannel(
       channels: { ...manifest.channels, [input.channel]: record },
     },
     changed: true,
+  }
+}
+
+/**
+ * Record that beta `version` now has a signed Desktop build. Only ever moves
+ * forward, and only to a version beta has offered.
+ */
+export function publishDesktop(
+  manifest: ChannelsManifest,
+  input: { version: string; commit: string; publishedAt: string }
+): { manifest: ChannelsManifest; changed: boolean } {
+  const version = normalizeVersion(input.version)
+  const tag = version ? releaseTagForVersion(version) : null
+  if (!version || !tag) throw new Error(`Not a version: ${input.version}`)
+  if (!/^[0-9a-f]{40}$/.test(input.commit)) {
+    throw new Error("publish-desktop needs the full 40-character source commit")
+  }
+  if (!isDevVersionOf(version, input.commit)) {
+    throw new Error(
+      `A Desktop beta is a dev build of its full source commit, not ${version} of ${input.commit}`
+    )
+  }
+  const beta = manifest.channels.beta
+  if (!beta) throw new Error("The beta channel has no build yet")
+  // Precedence ignores the commit, so the current beta must match exactly.
+  // An older beta's prerelease and commit are checked by the caller.
+  const order = compareVersions(version, beta.version)
+  if (
+    order > 0 ||
+    (order === 0 && (version !== beta.version || input.commit !== beta.commit))
+  ) {
+    throw new Error(`Beta has not offered ${version} of ${input.commit}`)
+  }
+  if (beta.desktop && compareVersions(beta.desktop.version, version) >= 0) {
+    return { manifest, changed: false }
+  }
+  return {
+    manifest: {
+      ...manifest,
+      channels: {
+        ...manifest.channels,
+        beta: {
+          ...beta,
+          desktop: {
+            version,
+            tag,
+            commit: input.commit,
+            publishedAt: input.publishedAt,
+          },
+        },
+      },
+    },
+    changed: true,
+  }
+}
+
+export type DesktopBuildDecision =
+  | { due: true; version: string; tag: string; commit: string }
+  | { due: false; reason: string }
+
+/**
+ * Whether to build a signed Desktop for the newest beta. A macOS build is
+ * costly, so it runs only when beta has a build Desktop lacks, and at most
+ * once per `minIntervalMs` since the last attempt unless forced.
+ */
+export function desktopBuildDue(
+  manifest: ChannelsManifest,
+  input: {
+    now: number
+    lastAttemptAt: number | null
+    minIntervalMs: number
+    force: boolean
+  }
+): DesktopBuildDecision {
+  const beta = manifest.channels.beta
+  if (!beta) return { due: false, reason: "Beta has no build yet." }
+  if (beta.held) return { due: false, reason: "Beta is held." }
+  if (
+    beta.desktop &&
+    compareVersions(beta.desktop.version, beta.version) >= 0
+  ) {
+    return {
+      due: false,
+      reason: `Beta ${beta.version} already has a Desktop build.`,
+    }
+  }
+  if (
+    !input.force &&
+    input.lastAttemptAt !== null &&
+    input.now - input.lastAttemptAt < input.minIntervalMs
+  ) {
+    const hours = (input.now - input.lastAttemptAt) / 3_600_000
+    return {
+      due: false,
+      reason: `The last Desktop build started ${hours.toFixed(1)} h ago.`,
+    }
+  }
+  return {
+    due: true,
+    version: beta.version,
+    tag: beta.tag,
+    commit: beta.commit,
   }
 }
 
@@ -162,17 +284,38 @@ export function betaResidenceMs(
   return total
 }
 
-/** Beta tags to delete: all but the newest `keep`, never the current pointer. */
+export interface BetaRelease {
+  tag: string
+  /** Whether the prerelease carries a signed Desktop build. */
+  desktop: boolean
+}
+
+/** Desktop betas kept beyond `keep`, for installs that need their DMG back. */
+export const KEEP_DESKTOP_BETAS = 5
+
+/**
+ * Beta tags to delete: all but the newest `keep`, never one the manifest
+ * points at (the current beta, and the beta Desktop installs), and never one
+ * of the newest `keepDesktop` Desktop betas. A failed Desktop update offers
+ * the installed version's DMG for recovery, so those must stay downloadable.
+ */
 export function betaTagsToPrune(
-  tags: string[],
+  releases: BetaRelease[],
   keep: number,
-  current: string | undefined
+  kept: Array<string | undefined>,
+  keepDesktop = KEEP_DESKTOP_BETAS
 ): string[] {
-  return tags
-    .filter((tag) => DEV_TAG.test(tag))
-    .sort((left, right) => compareVersions(right, left))
+  const newestFirst = releases
+    .filter((release) => DEV_TAG.test(release.tag))
+    .sort((left, right) => compareVersions(right.tag, left.tag))
+  const recentDesktop = newestFirst
+    .filter((release) => release.desktop)
+    .slice(0, keepDesktop)
+    .map((release) => release.tag)
+  return newestFirst
     .slice(keep)
-    .filter((tag) => tag !== current)
+    .map((release) => release.tag)
+    .filter((tag) => !kept.includes(tag) && !recentDesktop.includes(tag))
 }
 
 // ── GitHub ──────────────────────────────────────────────────────────────────
@@ -337,19 +480,30 @@ async function readHistory(since: string): Promise<ManifestSnapshot[]> {
   return snapshots.sort((left, right) => left.at - right.at)
 }
 
-async function listReleaseTags(): Promise<string[]> {
-  const tags: string[] = []
+async function listBetaReleases(): Promise<BetaRelease[]> {
+  const betas: BetaRelease[] = []
   for (let page = 1; page <= 10; page += 1) {
     const releases = (await expectOk(
       await github(`/repos/${repository}/releases?per_page=100&page=${page}`),
       "Listing releases"
-    )) as Array<{ tag_name: string; prerelease: boolean }>
-    tags.push(
-      ...releases.filter((release) => release.prerelease).map((r) => r.tag_name)
+    )) as Array<{
+      tag_name: string
+      prerelease: boolean
+      assets?: Array<{ name: string }>
+    }>
+    betas.push(
+      ...releases
+        .filter((release) => release.prerelease)
+        .map((release) => ({
+          tag: release.tag_name,
+          desktop: (release.assets ?? []).some(
+            (asset) => asset.name === "desktop-updater.json"
+          ),
+        }))
     )
     if (releases.length < 100) break
   }
-  return tags
+  return betas
 }
 
 async function deleteRelease(tag: string): Promise<void> {
@@ -373,7 +527,7 @@ async function deleteRelease(tag: string): Promise<void> {
 
 function usage(): never {
   console.error(
-    "usage: release-channels.ts show | publish <channel> <version> <commit> | hold <channel> | release <channel> | prune-beta [--keep N] | soak <commit>"
+    "usage: release-channels.ts show | publish <channel> <version> <commit> | hold <channel> | release <channel> | prune-beta [--keep N] | soak <commit> | publish-desktop <version> <commit> | desktop-due [--last-attempt ISO] [--min-hours H] [--force]"
   )
   process.exit(2)
 }
@@ -418,12 +572,39 @@ if (import.meta.main) {
     const history = await readHistory(source.commit.committer.date)
     const hours = betaResidenceMs(history, commit, Date.now()) / 3_600_000
     console.log(hours.toFixed(1))
+  } else if (command === "publish-desktop") {
+    const version = args[0] ?? usage()
+    const commit = args[1] ?? usage()
+    const manifest = await updateRemote(
+      (current) =>
+        publishDesktop(current, { version, commit, publishedAt: at }),
+      `Offer Desktop ${version} on beta`
+    )
+    console.log(`beta: ${JSON.stringify(manifest.channels.beta)}`)
+  } else if (command === "desktop-due") {
+    // Prints {"due": true, version, tag, commit} or {"due": false, reason}.
+    const option = (name: string) => {
+      const index = args.indexOf(name)
+      return index === -1 ? undefined : args[index + 1]
+    }
+    const lastAttempt = option("--last-attempt")
+    const lastAttemptAt = lastAttempt ? Date.parse(lastAttempt) : null
+    const minHours = Number(option("--min-hours") ?? 3)
+    if (Number.isNaN(lastAttemptAt) || !(minHours >= 0)) usage()
+    const decision = desktopBuildDue(parseManifest((await readRemote()).text), {
+      now: Date.now(),
+      lastAttemptAt,
+      minIntervalMs: minHours * 3_600_000,
+      force: args.includes("--force"),
+    })
+    console.log(JSON.stringify(decision))
   } else if (command === "prune-beta") {
     const keepIndex = args.indexOf("--keep")
     const keep = keepIndex === -1 ? 10 : Number(args[keepIndex + 1])
     if (!Number.isInteger(keep) || keep < 1) usage()
-    const current = parseManifest((await readRemote()).text).channels.beta?.tag
-    for (const tag of betaTagsToPrune(await listReleaseTags(), keep, current)) {
+    const beta = parseManifest((await readRemote()).text).channels.beta
+    const kept = [beta?.tag, beta?.desktop?.tag]
+    for (const tag of betaTagsToPrune(await listBetaReleases(), keep, kept)) {
       await deleteRelease(tag)
       console.log(`Deleted beta ${tag}`)
     }

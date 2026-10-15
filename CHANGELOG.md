@@ -15,6 +15,7 @@ infrastructure and personal context out of release notes.
 - **Wide tables:** A table wider than the page can expand to fill the reading area.
 - **HTML in Markdown:** Markdown Docs show formatting HTML such as `<details>`, `<kbd>`, `<sub>`, `<sup>` and `<mark>`. Scripts, styles, frames and forms are left out.
 - **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
+- **Desktop beta updates:** Desktop can follow the beta channel too. Turn on **Settings → System → Beta updates**, or choose **Worktable → Beta Updates**, and Desktop installs signed beta builds as they are published, a few times a day at most.
 
 ### Changed
 

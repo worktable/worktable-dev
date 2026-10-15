@@ -86,6 +86,21 @@ offers nothing new, and installing fails closed when the manifest can't be
 read, so holding a channel stops CLI, self-hosted and Desktop updates without
 touching published releases.
 
+Desktop beta builds are signed and notarized less often than beta moves, because
+each takes a macOS build. Release automation builds the newest beta when it has
+no Desktop build yet, at most every few hours, and adds the DMG, updater archive,
+signature and `desktop-updater.json` to that beta's prerelease. `publish-desktop
+<version> <commit>` then records the build in the beta entry as `desktop`
+(`version`, `tag`, `commit`, `publishedAt`). Desktop on beta installs only that
+version or a newer stable release. Pruning keeps its prerelease and the five
+newest Desktop betas, whose DMGs a failed update offers for recovery.
+`desktop-due` reports whether a Desktop build is due.
+
+To build a Desktop beta, set `WORKTABLE_VERSION` to the beta's dev version for
+`release:local`, `release:prepare`, `native:build:release:prepared` and
+`release:finalize`. The app, its updater signature and its feed then carry that
+version, and the feed points at the beta's tag.
+
 ## Runtime verification
 
 Prebuilt Worktable downloads include Bun. [SOURCE-MATERIALS.json](../SOURCE-MATERIALS.json)

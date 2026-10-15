@@ -14,6 +14,7 @@ import { resolveRustHostTuple } from "./rust-toolchain"
 import { SHARED_SHELL_STYLESHEETS } from "./shell-stylesheets"
 import { copyReleaseLicenses } from "../../../scripts/release-licenses.ts"
 import { writeNativeNotices } from "../../../scripts/native-notices.ts"
+import { resolveDesktopVersion } from "./desktop-version"
 
 interface ReleaseManifest {
   type: string
@@ -122,9 +123,18 @@ const artifact = join(
   `worktable-darwin-${arch}.tar.gz`
 )
 const currentCommit = run(["git", "rev-parse", "HEAD"])
+// A beta build names its dev version in WORKTABLE_VERSION; release:local
+// below stamps the same version into a rebuilt runtime.
+const expectedVersion = resolveDesktopVersion({
+  configVersion: repoVersion,
+  buildVersion: process.env.WORKTABLE_VERSION,
+  commit: currentCommit,
+})
 const artifactManifest = readArtifactManifest(artifact)
 const staleArtifact =
-  artifactManifest?.sourceCommit !== currentCommit || sourceTreeIsDirty()
+  artifactManifest?.sourceCommit !== currentCommit ||
+  artifactManifest?.version !== expectedVersion ||
+  sourceTreeIsDirty()
 if (rebuild || !artifactManifest || staleArtifact) {
   console.log(
     rebuild
@@ -159,7 +169,7 @@ if (
   manifest.type !== "worktable.release" ||
   manifest.platform !== "darwin" ||
   manifest.arch !== arch ||
-  manifest.version !== repoVersion
+  manifest.version !== expectedVersion
 ) {
   throw new Error(
     `Release manifest does not match this Mac: ${JSON.stringify(manifest)}`

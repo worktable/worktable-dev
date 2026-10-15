@@ -14,6 +14,7 @@ function checkedAt(seconds: number): DesktopUpdateStatus {
     totalBytes: null,
     canRestart: false,
     lastCheck: { checkedAt: seconds, outcome: "current", message: null },
+    channel: "stable",
   }
 }
 

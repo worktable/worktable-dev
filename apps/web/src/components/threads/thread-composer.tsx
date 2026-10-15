@@ -1,7 +1,7 @@
 import {
   useCallback,
-  useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -94,14 +94,15 @@ export function ThreadComposer({
   const toolbarRef = useScrollFadeX<HTMLDivElement>()
 
   // The visible text is drawn in a mirror under the transparent textarea, so
-  // it must wrap at the textarea's width, which narrows when its scrollbar
-  // appears. Spans in the mirror also keep the textarea's letter spacing.
-  useEffect(() => {
+  // it must wrap at the textarea's text width, which narrows when its
+  // scrollbar appears. The mirror shares the textarea's padding.
+  useLayoutEffect(() => {
     const textarea = textareaRef.current
     const mirror = mentionMirrorRef.current
     if (!textarea || !mirror) return
-    const observer = new ResizeObserver(() => {
-      mirror.style.width = `${textarea.clientWidth}px`
+    const observer = new ResizeObserver(([entry]) => {
+      const width = `${entry.contentBoxSize[0].inlineSize}px`
+      if (mirror.style.width !== width) mirror.style.width = width
     })
     observer.observe(textarea)
     return () => observer.disconnect()
@@ -211,7 +212,9 @@ export function ThreadComposer({
                 ref={mentionMirrorRef}
                 className={cn(
                   composerTextClassName,
-                  "break-words whitespace-pre-wrap text-foreground [&_span]:tracking-[inherit]"
+                  // Spans would otherwise take the global span letter
+                  // spacing, wider than the textarea's.
+                  "box-content break-words whitespace-pre-wrap text-foreground [&_span]:tracking-[inherit]"
                 )}
               >
                 <MentionOverlayText

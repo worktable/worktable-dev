@@ -9,7 +9,9 @@
    (bun run generate:theme). */
 
 :where(.worktable-document-content, .shared-document) {
-  --doc-line-height: 1.85;
+  /* Line heights land on whole pixels (30px body, 21px code), so every
+     renderer puts each wrapped line on the same pixel row. */
+  --doc-line-height: 1.875;
   /* Large headings set tighter, so titles that wrap still read as one. */
   --doc-h1-line-height: 1.25;
   --doc-h2-line-height: 1.25;
@@ -32,7 +34,7 @@
   --doc-indent: 1.5rem;
   --doc-radius: 0.5rem;
   --doc-code-size: 0.8125rem;
-  --doc-code-line-height: 1.6;
+  --doc-code-line-height: 1.6154;
   --doc-code-padding: 1rem;
   --doc-code-surface: color-mix(in oklch, var(--muted), transparent 50%);
   --doc-inline-code-size: 0.875em;
@@ -176,27 +178,60 @@
 
 .worktable-markdown :is(ul, ol) {
   margin: 0 0 var(--doc-gap);
-  padding-left: var(--doc-indent);
-}
-
-.worktable-markdown ul {
-  list-style-type: disc;
-}
-
-.worktable-markdown ul ul {
-  list-style-type: circle;
-}
-
-.worktable-markdown ul ul ul {
-  list-style-type: square;
-}
-
-.worktable-markdown ol {
-  list-style-type: decimal;
+  padding-left: 0;
+  list-style: none;
 }
 
 .worktable-markdown li {
+  position: relative;
   margin-bottom: var(--doc-item-gap);
+  padding-left: var(--doc-indent);
+}
+
+/* The editor's markers: a glyph centered in the indent, short of the text,
+   in the body font. Drawn here too, so bullets and numbers sit exactly where
+   the editor puts them. */
+.worktable-markdown :is(ul:not(.contains-task-list), ol) > li::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--doc-indent);
+  padding-right: 4px;
+}
+
+.worktable-markdown ul:not(.contains-task-list) > li::before {
+  content: "•";
+}
+
+/* Bullets nested under bullets: ◦, then ▪ from the third level on. */
+.worktable-markdown
+  ul:not(.contains-task-list)
+  > li
+  > ul:not(.contains-task-list)
+  > li::before {
+  content: "◦";
+}
+
+.worktable-markdown
+  ul:not(.contains-task-list)
+  > li
+  ul:not(.contains-task-list)
+  > li
+  > ul:not(.contains-task-list)
+  > li::before {
+  content: "▪\FE0E";
+}
+
+.worktable-markdown ol > li::before {
+  content: counter(list-item) ".";
+}
+
+/* Renderers stamp each item's number, so the marker is one kerned string. */
+.worktable-markdown ol > li[data-index]::before {
+  content: attr(data-index) ".";
 }
 
 .worktable-markdown li > p {
@@ -209,22 +244,10 @@
 }
 
 /* Checklists: a checkbox in the bullet's place, as in the editor. */
-.worktable-markdown .contains-task-list {
-  list-style: none;
-  padding-left: 0;
-}
-
-.worktable-markdown li > .contains-task-list {
-  padding-left: var(--doc-indent);
-}
-
-.worktable-markdown .task-list-item {
-  position: relative;
-  padding-left: var(--doc-indent);
-}
 
 .worktable-markdown .task-list-item > input[type="checkbox"] {
   position: absolute;
+  /* Centered on the first line, as the editor centers its 12px box. */
   top: calc(var(--doc-line-height) * 0.5em - 6px);
   left: 0.25rem;
   margin: 0;
@@ -331,6 +354,34 @@
   margin-right: auto;
 }
 
+/* Header icon controls drawn outside React (the editor's code block, the
+   saved preview) match the Markdown viewer's icon buttons. */
+.worktable-code-header .worktable-code-button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+}
+
+.worktable-code-header .worktable-code-button:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+.worktable-code-header .worktable-code-button svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+:root[data-code-wrap="true"] .worktable-code-wrap {
+  color: var(--primary);
+}
+
 /* ── Tables ── */
 
 /* Wide tables scroll inside their own box instead of widening the page. */
@@ -353,6 +404,12 @@
 
 /* Columns keep the editor's minimum width, so a wide table scrolls (and can
    expand) instead of squeezing every column to a word. */
+/* Rich text tables keep the editor's fixed columns; Markdown tables size
+   their columns to their content. */
+.worktable-markdown table.worktable-fixed-table {
+  table-layout: fixed;
+}
+
 .worktable-markdown :is(th, td) {
   min-width: 7.5rem;
   padding: 0.5rem 0.75rem;

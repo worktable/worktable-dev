@@ -227,7 +227,10 @@ async function documentHtml(
  * (@worktable/ui/document-content.css), as the app draws the same Doc:
  * checklists, toggles, code headers and contained tables.
  */
-function shapeDocument(document: Document): void {
+function shapeDocument(
+  document: Document,
+  format: "blocknote" | "markdown"
+): void {
   for (const box of document.querySelectorAll("li > input[type=checkbox]")) {
     box.parentElement?.classList.add("task-list-item")
     box.parentElement?.parentElement?.classList.add("contains-task-list")
@@ -271,9 +274,41 @@ function shapeDocument(document: Document): void {
     pre.replaceWith(frame)
     frame.append(header, pre)
   }
+  // Numbered items carry their number, so the marker is one kerned string.
+  for (const list of document.querySelectorAll("ol")) {
+    let number = Number(list.getAttribute("start")) || 1
+    for (const item of list.children) {
+      if (item.localName === "li")
+        item.setAttribute("data-index", String(number++))
+    }
+  }
   for (const table of document.querySelectorAll("table")) {
-    if (table.querySelector(":scope > colgroup > col[style*='width:']:not([style*='min-width'])"))
-      table.setAttribute("style", "width: auto")
+    // Rich text tables keep the editor's fixed columns: set widths on their
+    // columns, unset ones at least 120px, filling the column unless sized.
+    if (format === "blocknote") {
+      const columns = Math.max(
+        0,
+        ...[...table.querySelectorAll("tr")].map((row) => row.children.length)
+      )
+      const widths = [...table.querySelectorAll(":scope > colgroup > col")].map(
+        (col) =>
+          Number.parseFloat(
+            col
+              .getAttribute("style")
+              ?.match(/(?:^|;)\s*width:\s*([\d.]+)px/)?.[1] ?? ""
+          ) || null
+      )
+      const sized = widths.some((width) => width !== null)
+      const minWidth = Array.from(
+        { length: columns },
+        (_, index) => widths[index] ?? 120
+      ).reduce((sum, width) => sum + width, 0)
+      table.classList.add("worktable-fixed-table")
+      table.setAttribute(
+        "style",
+        `min-width: ${minWidth}px;${sized ? " width: auto;" : ""}`
+      )
+    }
     const scroll = document.createElement("div")
     scroll.className = "worktable-table-scroll"
     table.replaceWith(scroll)
@@ -306,7 +341,7 @@ export async function renderPublicDocProjection(
   })
   if (format === "markdown") limitAuthoredStyles(dom.window.document)
   markMermaidDiagrams(dom.window.document)
-  shapeDocument(dom.window.document)
+  shapeDocument(dom.window.document, format)
   return dom.window.document.body.innerHTML
 }
 

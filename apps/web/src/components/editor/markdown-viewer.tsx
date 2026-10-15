@@ -30,6 +30,7 @@ import { CodeBlock } from "@/components/document/code-block"
 import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
+import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
@@ -229,6 +230,10 @@ export function MarkdownViewer({
                 table: ({ node, children }) => {
                   void node
                   return <DocTable>{children}</DocTable>
+                },
+                ol: ({ node, ...props }) => {
+                  void node
+                  return <NumberedList {...props} />
                 },
                 img: ({ node, title, ...props }) => {
                   void node

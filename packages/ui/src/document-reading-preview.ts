@@ -1,6 +1,7 @@
 import {
   cloneElement,
   createElement as h,
+  type ComponentProps,
   isValidElement,
   type ReactElement,
   type ReactNode,
@@ -10,6 +11,8 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { DocumentStatus } from "./components/document-status"
 import { codeLanguageName } from "./lib/code-language"
+import { NumberedList } from "./lib/numbered-list"
+import { COPY_ICON, WRAP_ICON } from "./lib/code-icons"
 
 type Props = Record<string, unknown>
 type Budget = { remaining: number; truncated: boolean }
@@ -81,18 +84,39 @@ function toggleOpen(id: unknown): boolean {
 }
 
 function scrollableTable(children: ReactNode): ReactNode {
-  return h("div", { className: "worktable-table-scroll" }, h("table", null, children))
+  return h(
+    "div",
+    { className: "worktable-table-scroll" },
+    h("table", null, children)
+  )
+}
+
+/** The language and the editor's Wrap and Copy icons, inert until it opens. */
+function codeHeader(language: string | undefined): ReactNode {
+  const control = (icon: string, className: string) =>
+    h("span", {
+      className: `worktable-code-button ${className}`,
+      "aria-hidden": true,
+      dangerouslySetInnerHTML: { __html: icon },
+    })
+  return h(
+    "div",
+    { className: "worktable-code-header" },
+    h(
+      "span",
+      { className: "worktable-code-language" },
+      codeLanguageName(language)
+    ),
+    control(WRAP_ICON, "worktable-code-wrap"),
+    control(COPY_ICON, "worktable-code-copy")
+  )
 }
 
 function codeBlock(language: string | undefined, code: ReactNode): ReactNode {
   return h(
     "div",
     { className: "worktable-code" },
-    h(
-      "div",
-      { className: "worktable-code-header" },
-      h("span", { className: "worktable-code-language" }, codeLanguageName(language))
-    ),
+    codeHeader(language),
     h("pre", null, h("code", null, code))
   )
 }
@@ -102,28 +126,44 @@ function table(block: Props): ReactNode {
   const rows = Array.isArray(content.rows) ? content.rows : []
   const headerRows = Number(content.headerRows) || 0
   const headerCols = Number(content.headerCols) || 0
-  const widths = Array.isArray(content.columnWidths) ? content.columnWidths : []
-  const sized = widths.some((width) => typeof width === "number")
+  // Laid out as the editor lays out tables (prosemirror-tables): fixed
+  // columns, set widths on their columns, unset ones at least 120px, filling
+  // the text column unless some width was set.
+  const columns = Math.max(
+    0,
+    ...rows.map((row) => {
+      const cells = record(row).cells
+      return Array.isArray(cells) ? cells.length : 0
+    })
+  )
+  const stored = Array.isArray(content.columnWidths) ? content.columnWidths : []
+  const widths = Array.from({ length: columns }, (_, index) =>
+    typeof stored[index] === "number" ? (stored[index] as number) : null
+  )
+  const sized = widths.some((width) => width !== null)
+  const minWidth = widths.reduce<number>(
+    (sum, width) => sum + (width ?? 120),
+    0
+  )
   return h(
     "div",
     { className: "worktable-table-scroll" },
     h(
       "table",
-      { style: sized ? { width: "auto" } : undefined },
-      sized &&
-        h(
-          "colgroup",
-          null,
-          widths.map((width, index) =>
-            h("col", {
-              key: index,
-              style:
-                typeof width === "number"
-                  ? { width: `${width}px` }
-                  : { minWidth: "120px" },
-            })
-          )
-        ),
+      {
+        className: "worktable-fixed-table",
+        style: { minWidth: `${minWidth}px`, width: sized ? "auto" : undefined },
+      },
+      h(
+        "colgroup",
+        null,
+        widths.map((width, index) =>
+          h("col", {
+            key: index,
+            style: width === null ? undefined : { width: `${width}px` },
+          })
+        )
+      ),
       h(
         "tbody",
         null,
@@ -167,14 +207,24 @@ function media(block: Props, props: Props): ReactNode {
   if (block.type === "image")
     body = h("img", { src: url, alt: caption ?? text(props.name) ?? "" })
   else if (block.type === "file")
-    return h("div", { className: "worktable-preview-file" }, text(props.name) ?? url)
+    return h(
+      "div",
+      { className: "worktable-preview-file" },
+      text(props.name) ?? url
+    )
   else
     body = h("div", {
       className: `worktable-preview-media worktable-preview-${String(block.type)}`,
     })
   return h(
     "figure",
-    { style: { width: width ? `${width}px` : undefined, maxWidth: "100%", ...place } },
+    {
+      style: {
+        width: width ? `${width}px` : undefined,
+        maxWidth: "100%",
+        ...place,
+      },
+    },
     body,
     caption && h("figcaption", null, caption)
   )
@@ -198,7 +248,12 @@ function children(block: Props, budget: Budget, depth: number): ReactNode[] {
     : []
 }
 
-function listItem(block: Props, budget: Budget, depth: number): ReactNode {
+function listItem(
+  block: Props,
+  budget: Budget,
+  depth: number,
+  number?: number
+): ReactNode {
   const props = record(block.props)
   const nested = children(block, budget, depth)
   const key = typeof block.id === "string" ? block.id : undefined
@@ -215,17 +270,31 @@ function listItem(block: Props, budget: Budget, depth: number): ReactNode {
       inline(block.content),
       nested
     )
-  return h("li", { key, ...blockAttributes(props) }, inline(block.content), nested)
+  return h(
+    "li",
+    { key, "data-index": number, ...blockAttributes(props) },
+    inline(block.content),
+    nested
+  )
 }
 
-function single(block: Props, budget: Budget, depth: number, key: string | number): ReactNode {
+function single(
+  block: Props,
+  budget: Budget,
+  depth: number,
+  key: string | number
+): ReactNode {
   const props = record(block.props)
   const attributes = { key, ...blockAttributes(props) }
   const content = inline(block.content)
   const nested = children(block, budget, depth)
   const indented =
     nested.length > 0 &&
-    h("div", { key: `${key}-children`, className: "worktable-preview-children" }, nested)
+    h(
+      "div",
+      { key: `${key}-children`, className: "worktable-preview-children" },
+      nested
+    )
   switch (block.type) {
     case "paragraph": {
       const empty = !Array.isArray(block.content) || block.content.length === 0
@@ -252,9 +321,15 @@ function single(block: Props, budget: Budget, depth: number, key: string | numbe
     case "quote":
       return [h("blockquote", attributes, content), indented]
     case "codeBlock":
-      return [h("div", { key }, codeBlock(text(props.language), content)), indented]
+      return [
+        h("div", { key }, codeBlock(text(props.language), content)),
+        indented,
+      ]
     case "table":
-      if (Array.isArray(record(block.content).rows) && (record(block.content).rows as unknown[]).length > 40)
+      if (
+        Array.isArray(record(block.content).rows) &&
+        (record(block.content).rows as unknown[]).length > 40
+      )
         budget.truncated = true
       return h("div", { key }, table(block))
     case "divider":
@@ -275,7 +350,8 @@ function single(block: Props, budget: Budget, depth: number, key: string | numbe
             h("path", { d: "m9 18 6-6-6-6" })
           ),
           h("span", null, diagramName(props) ?? "Diagram"),
-          diagramName(props) && h("span", { className: "worktable-diagram-kind" }, "· Diagram")
+          diagramName(props) &&
+            h("span", { className: "worktable-diagram-kind" }, "· Diagram")
         )
       return h(
         "div",
@@ -302,13 +378,16 @@ function blocks(value: unknown[], budget: Budget, depth = 0): ReactNode[] {
     if (list) {
       const first = record(block.props)
       const items: ReactNode[] = []
+      // Numbered items carry their number, so the marker is one kerned string.
+      let number = list.tag === "ol" ? Number(first.start) || 1 : undefined
       while (
         index < value.length &&
         budget.remaining > 0 &&
         record(value[index]).type === block.type
       ) {
         budget.remaining -= 1
-        items.push(listItem(record(value[index]), budget, depth))
+        items.push(listItem(record(value[index]), budget, depth, number))
+        if (number !== undefined) number += 1
         index += 1
       }
       output.push(
@@ -329,7 +408,12 @@ function blocks(value: unknown[], budget: Budget, depth = 0): ReactNode[] {
     }
     budget.remaining -= 1
     output.push(
-      single(block, budget, depth, typeof block.id === "string" ? block.id : index)
+      single(
+        block,
+        budget,
+        depth,
+        typeof block.id === "string" ? block.id : index
+      )
     )
     index += 1
   }
@@ -357,11 +441,7 @@ function markdownPre({ children }: { children?: ReactNode }): ReactNode {
   return h(
     "div",
     { className: "worktable-code" },
-    h(
-      "div",
-      { className: "worktable-code-header" },
-      h("span", { className: "worktable-code-language" }, codeLanguageName(language))
-    ),
+    codeHeader(language),
     h("pre", null, children)
   )
 }
@@ -390,6 +470,13 @@ export function DocumentReadingPreview({
           table: ({ children }: { children?: ReactNode }) =>
             scrollableTable(children),
           pre: markdownPre,
+          ol: ({
+            node,
+            ...props
+          }: ComponentProps<"ol"> & { node?: unknown }) => {
+            void node
+            return h(NumberedList, props)
+          },
         },
         children: content.slice(0, 64 * 1024),
       })
@@ -408,7 +495,11 @@ export function DocumentReadingPreview({
       },
       preview,
       budget.truncated &&
-        h("p", { className: "text-sm text-muted-foreground" }, "More content is opening…")
+        h(
+          "p",
+          { className: "text-sm text-muted-foreground" },
+          "More content is opening…"
+        )
     ),
     showStatus && h(DocumentStatus, { state: "opening", announce: false })
   )

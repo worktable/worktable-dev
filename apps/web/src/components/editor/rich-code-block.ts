@@ -1,4 +1,5 @@
 import { createCodeBlockSpec } from "@blocknote/core"
+import { CHECK_ICON, COPY_ICON, WRAP_ICON } from "@worktable/ui/lib/code-icons"
 import { copyText } from "@/lib/clipboard"
 import {
   codeWrapEnabled,
@@ -8,13 +9,6 @@ import {
 
 type CodeBlockSpec = ReturnType<typeof createCodeBlockSpec>
 type Render = CodeBlockSpec["implementation"]["render"]
-
-const WRAP_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h15a3 3 0 1 1 0 6h-4"/><path d="m16 16-2 2 2 2"/><path d="M3 18h7"/></svg>'
-const COPY_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
-const CHECK_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
 
 function relabel(button: HTMLElement, label: string) {
   button.dataset.tooltip = label

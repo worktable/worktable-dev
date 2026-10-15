@@ -20,14 +20,19 @@ describe("saved document preview", () => {
     expect(JSON.stringify(content)).toBe(before)
   })
 
-  it("draws nested checklists and collapsed diagrams as the editor does", () => {
+  it("draws nested checklists, collapsed diagrams and numbered items as the editor does", () => {
     const text = (value: string) => [{ type: "text", text: value, styles: {} }]
     const html = renderToStaticMarkup(<DocumentPreview content={[
       { type: "checkListItem", props: { checked: false }, content: text("Parent"), children: [
         { type: "checkListItem", props: { checked: true }, content: text("Child") },
       ] },
       { type: "mermaid", props: { data: "graph TD\n  A --> B", title: "Flow", collapsed: "true" } },
+      { type: "numberedListItem", props: { start: 3 }, content: text("Third") },
+      { type: "numberedListItem", content: text("Fourth") },
     ]} />)
+    // Numbers are stamped on items, so markers render as one kerned string.
+    expect(html).toMatch(/<li data-index="3"[^>]*><span>Third/)
+    expect(html).toMatch(/<li data-index="4"[^>]*><span>Fourth/)
     expect(html).not.toMatch(/<ul[^>]*>\s*<ul/)
     expect(html).toMatch(/task-list-item[^>]*>.*Parent.*<ul class="contains-task-list">.*Child/s)
     expect(html).toContain("worktable-diagram-collapsed")

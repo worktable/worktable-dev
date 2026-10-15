@@ -482,31 +482,6 @@
   display: contents;
 }
 
-.worktable-code-header .worktable-code-button {
-  display: inline-grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 0;
-  border-radius: 0.375rem;
-  color: var(--muted-foreground);
-  background: transparent;
-  cursor: pointer;
-}
-
-.worktable-code-header .worktable-code-button:hover {
-  color: var(--foreground);
-  background: var(--accent);
-}
-
-.worktable-code-header .worktable-code-button svg {
-  width: 0.875rem;
-  height: 0.875rem;
-}
-
-:root[data-code-wrap="true"] .worktable-code-wrap {
-  color: var(--primary);
-}
 
 /* Upstream provides both token variables but defaults code to a dark surface.
    Our code surface follows the app theme, so select its matching token color. */

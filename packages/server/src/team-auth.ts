@@ -13,6 +13,8 @@ import {
   teamDatabasePath,
   teamSecret,
   TeamStateError,
+  ensureAccountRevisionTriggers,
+  invalidateTeamState,
 } from "./team-database.ts"
 import {
   findTeamMember,
@@ -317,6 +319,8 @@ export function getTeamAuth(origin: string): Promise<TeamAuth> {
         async () => {
           const migration = await getMigrations(options)
           await migration.runMigrations()
+          ensureAccountRevisionTriggers(options.database)
+          invalidateTeamState()
         }
       )
       schemaMigrations.set(options.database, migration)

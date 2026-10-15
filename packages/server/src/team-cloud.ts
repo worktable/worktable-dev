@@ -34,6 +34,7 @@ import {
   writeWorkspaceManifest,
 } from "./workspace.ts"
 import { findTeamMember } from "./team-members.ts"
+import { accessSnapshot } from "./team-access.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { listSpaces } from "./store.ts"
 import { isHosted } from "./hosted.ts"
@@ -130,22 +131,17 @@ export async function resolveVerifiedCloudMember(
       release()
     }
   }
-  const current = requireTeamDatabase()
-    .query<
-      { user_id: string; company_id: string | null; email: string | null },
-      [string, string, string]
-    >(
-      `SELECT b.user_id, b.company_id, u.email FROM wt_identity_bindings b
-       LEFT JOIN user u ON u.id = b.user_id
-       WHERE b.worktable_id = ? AND b.issuer = ? AND b.subject = ?`
-    )
-    .get(currentWorktableId(), proof.issuer, proof.subject)
-  let binding: { user_id: string } | null = current ?? null
+  const known = accessSnapshot()?.bindings.get(
+    `${proof.issuer}\0${proof.subject}`
+  )
+  let binding: { user_id: string } | null = known
+    ? { user_id: known.userId }
+    : null
   // Most requests carry an unchanged identity: read it without the lock.
   const unchanged =
-    current !== null &&
-    current.email?.toLowerCase() === proof.email.toLowerCase() &&
-    (!proof.companyId || proof.companyId === current.company_id)
+    known !== undefined &&
+    known.email?.toLowerCase() === proof.email.toLowerCase() &&
+    (!proof.companyId || proof.companyId === known.companyId)
   if (enrollment || (binding && !unchanged)) {
     const release =
       admitWorkspaceRequest() ??
@@ -264,15 +260,8 @@ export async function acceptCloudTeamInvitation(
 }
 
 export function cloudTeamMemberForSubject(issuer: string, subject: string) {
-  const worktable = currentTeamWorktable()
-  if (!worktable) return null
-  const binding = requireTeamDatabase()
-    .query<
-      { user_id: string },
-      [string, string, string]
-    >("SELECT user_id FROM wt_identity_bindings WHERE worktable_id = ? AND issuer = ? AND subject = ?")
-    .get(worktable.id, issuer, subject)
-  return binding ? findTeamMember(binding.user_id) : null
+  const binding = accessSnapshot()?.bindings.get(`${issuer}\0${subject}`)
+  return binding ? findTeamMember(binding.userId) : null
 }
 
 /** Called only after resource-token signature, issuer and exact audience verification. */

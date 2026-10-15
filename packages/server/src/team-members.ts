@@ -1,73 +1,37 @@
 import { randomUUID } from "node:crypto"
 import type { TeamMember, TeamRole } from "@worktable/types"
-import {
-  advanceTeamPolicy,
-  currentTeamWorktable,
-  requireTeamDatabase,
-} from "./team-database.ts"
+import { advanceTeamPolicy, requireTeamDatabase } from "./team-database.ts"
+import { accessSnapshot } from "./team-access.ts"
 
-interface MemberRow {
-  id: string
-  userId: string
-  actorId: string
-  name: string
-  email: string
-  role: string
-}
-
-function parseMember(row: MemberRow | null): TeamMember | null {
-  if (!row || (row.role !== "owner" && row.role !== "member")) return null
-  return { ...row, role: row.role }
+function withoutOperator(
+  member: TeamMember & { operator: boolean }
+): TeamMember {
+  return {
+    id: member.id,
+    userId: member.userId,
+    actorId: member.actorId,
+    name: member.name,
+    email: member.email,
+    role: member.role,
+  }
 }
 
 export function findTeamMember(userId: string): TeamMember | null {
-  const worktable = currentTeamWorktable()
-  if (!worktable) return null
-  return parseMember(
-    requireTeamDatabase()
-      .query<MemberRow, [string, string, string]>(
-        `
-    SELECT m.id, m.userId, e.actor_id AS actorId, u.name, u.email, m.role
-    FROM member m JOIN wt_enrollments e ON e.id = m.id AND e.user_id = m.userId
-    JOIN user u ON u.id = m.userId
-    WHERE m.organizationId = ? AND e.worktable_id = ? AND e.active = 1 AND m.userId = ?
-  `
-      )
-      .get(worktable.organizationId, worktable.id, userId)
-  )
+  const current = accessSnapshot()
+  const memberId = current?.byUser.get(userId)
+  const member = memberId ? current!.members.get(memberId) : undefined
+  return member ? withoutOperator(member) : null
 }
 
 export function findTeamMemberById(memberId: string): TeamMember | null {
-  const worktable = currentTeamWorktable()
-  if (!worktable) return null
-  const row = requireTeamDatabase()
-    .query<
-      { user_id: string },
-      [string, string]
-    >("SELECT user_id FROM wt_enrollments WHERE worktable_id = ? AND id = ? AND active = 1")
-    .get(worktable.id, memberId)
-  const member = row ? findTeamMember(row.user_id) : null
-  return member?.id === memberId ? member : null
+  const member = accessSnapshot()?.members.get(memberId)
+  return member ? withoutOperator(member) : null
 }
 
 export function listTeamMembers(): TeamMember[] {
-  const worktable = currentTeamWorktable()
-  if (!worktable) return []
-  const rows = requireTeamDatabase()
-    .query<MemberRow & { operator: number }, [string, string]>(
-      `
-    SELECT m.id, m.userId, e.actor_id AS actorId, u.name, u.email, m.role,
-      EXISTS (SELECT 1 FROM wt_operators o WHERE o.worktable_id = e.worktable_id AND o.user_id = m.userId) AS operator
-    FROM member m JOIN wt_enrollments e ON e.id = m.id AND e.user_id = m.userId
-    JOIN user u ON u.id = m.userId
-    WHERE m.organizationId = ? AND e.worktable_id = ? AND e.active = 1 ORDER BY m.createdAt, m.id
-  `
-    )
-    .all(worktable.organizationId, worktable.id)
-  return rows.flatMap(({ operator, ...row }) => {
-    const member = parseMember(row)
-    return member ? [{ ...member, operator: operator === 1 }] : []
-  })
+  const current = accessSnapshot()
+  if (!current) return []
+  return current.memberOrder.map((id) => ({ ...current.members.get(id)! }))
 }
 
 /** Called by the library lifecycle, never from a browser-supplied membership ID. */
@@ -159,16 +123,9 @@ export function retireTeamEnrollment(
 }
 
 export function hasTeamOperatorAuthority(userId: string): boolean {
-  const worktable = currentTeamWorktable()
-  if (!worktable) return false
-  return Boolean(
-    requireTeamDatabase()
-      .query<
-        { user_id: string },
-        [string, string]
-      >("SELECT user_id FROM wt_operators WHERE worktable_id = ? AND user_id = ?")
-      .get(worktable.id, userId)
-  )
+  const current = accessSnapshot()
+  const memberId = current?.byUser.get(userId)
+  return Boolean(memberId && current!.members.get(memberId)?.operator)
 }
 
 export function isTeamRole(value: unknown): value is TeamRole {

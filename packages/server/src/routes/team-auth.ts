@@ -6,6 +6,7 @@ import {
   currentTeamWorktable,
   requireTeamDatabase,
   teamDatabasePath,
+  noteTeamSessionsChanged,
 } from "../team-database.ts"
 import { findTeamMember } from "../team-members.ts"
 import { withCrossProcessLock } from "../cross-process-lock.ts"
@@ -78,6 +79,7 @@ for (const endpoint of [
       resolveWorkspaceOriginForRequest(c.req.raw).origin
     )
     const response = await auth.handler(c.req.raw)
+    if (endpoint !== "sign-in/email") noteTeamSessionsChanged()
     if (endpoint === "sign-in/email" && response.ok) {
       const result = (await response.clone().json()) as { user?: { id?: string } }
       if (!result.user?.id || !findTeamMember(result.user.id)) {

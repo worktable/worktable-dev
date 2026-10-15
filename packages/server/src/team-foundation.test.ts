@@ -65,6 +65,7 @@ import {
   getSpaceAccessPolicy,
   registerTeamSpace,
   requireTeamHuman,
+  requireTeamOwner,
   resolveTeamAgentCredential,
   runWithTeamIdentity,
   reconnectCloudPersonalAgent,
@@ -1310,6 +1311,50 @@ test("re-pairing an installation keeps its agent and retires the previous creden
   const ownerAgent = resolveTeamAgentCredential((await verifyToken(ownerToken))!)!
   expect(ownerAgent.team?.agentId).not.toBe(secondAgent.team?.agentId)
   expect(await verifyToken(second)).not.toBeNull()
+})
+
+test("access follows changes made through another database connection", async () => {
+  const { owner, member } = await setup()
+  const { Database } = await import("bun:sqlite")
+  const { teamDatabasePath } = await import("./team-database.ts")
+  setSpaceAccessPolicy(
+    {
+      spaceId: "original",
+      visibility: "restricted",
+      grants: [
+        { subjectType: "member", subjectId: member.team!.memberId!, access: "edit" },
+      ],
+    },
+    owner
+  )
+  const nextTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
+  await nextTurn()
+  expect(canAccessSpace("original", "edit", member)).toBe(true)
+  // Another process (the CLI, a second server) writes without our hooks.
+  const other = new Database(teamDatabasePath())
+  try {
+    other.exec("PRAGMA busy_timeout = 5000")
+    other
+      .query("DELETE FROM wt_space_grants WHERE subject_id = ?")
+      .run(member.team!.memberId!)
+    await nextTurn()
+    expect(canAccessSpace("original", "read", member)).toBe(false)
+    // A demotion that bypasses Better Auth's after-hook still applies.
+    other
+      .query("UPDATE member SET role = 'member' WHERE id = ?")
+      .run(owner.team!.memberId!)
+    await nextTurn()
+    expect(() => requireTeamOwner(owner)).toThrow(TeamAccessError)
+    expect(canAccessSpace("original", "read", owner)).toBe(false)
+  } finally {
+    other.close()
+  }
+  // A database replaced underneath the running server is never trusted.
+  const { copyFileSync, renameSync } = await import("node:fs")
+  copyFileSync(teamDatabasePath(), `${teamDatabasePath()}.copy`)
+  renameSync(`${teamDatabasePath()}.copy`, teamDatabasePath())
+  await nextTurn()
+  expect(() => currentTeamWorktable()).toThrow("restart after recovery")
 })
 
 test("an interrupted activation can be retried with another email or password", async () => {

@@ -1,5 +1,6 @@
 import { teamsEnabled } from "../team-database.ts";
-import { canAccessSpace } from "../team-policy.ts";
+import { canAccessSpace, currentRequestIdentity, teamMemberForIdentity } from "../team-policy.ts";
+import { spaceAccessKey } from "../team-access.ts";
 import { requireScope, requireWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -30,7 +31,20 @@ import { hasScope } from "../token-store.ts";
 export const spacesRouter = new Hono();
 
 function spaceView(space: SpaceFile) {
-  return teamsEnabled() ? { ...space, permissions: { edit: canAccessSpace(space.id, "edit"), manage: canAccessSpace(space.id, "manage") } } : space;
+  if (!teamsEnabled()) return space;
+  const identity = currentRequestIdentity();
+  const member = identity ? teamMemberForIdentity(identity) : null;
+  // The browser keys cached content by this per-Space value, so a change to
+  // one Space's access leaves every other Space's cache in place.
+  const accessKey = member ? spaceAccessKey(member.id, space.id) : null;
+  return {
+    ...space,
+    permissions: {
+      edit: canAccessSpace(space.id, "edit"),
+      manage: canAccessSpace(space.id, "manage"),
+      ...(accessKey ? { accessKey } : {}),
+    },
+  };
 }
 
 const ArchiveSpaceSchema = z.object({

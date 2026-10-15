@@ -21,6 +21,7 @@ import {
   TeamStateError,
   requireTeamDatabase,
   teamSecret,
+  invalidateTeamState,
 } from "./team-database.ts"
 import {
   ensureWorkspaceManifest,
@@ -58,6 +59,7 @@ export function beginTeamInitialization(
 
 export function finishTeamInitialization(): void {
   rmSync(intentPath(), { force: true })
+  invalidateTeamState()
 }
 
 /** Recover a proven incomplete activation; never turn lost established team state into solo mode. */
@@ -132,6 +134,7 @@ export function recoverTeamInitialization(): void {
     const manifest = { ...ensureWorkspaceManifest() }
     delete manifest.teamAccessRequired
     writeWorkspaceManifest(manifest)
+    invalidateTeamState()
     // Keep the intent through retry: an orphaned organization may still exist.
   }).immediate()
 }

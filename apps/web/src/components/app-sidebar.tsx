@@ -254,7 +254,7 @@ function SettingsButton() {
       onClick={() => openSettings()}
       aria-label={settingsLabel}
       title={settingsLabel}
-      className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-all duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground"
+      className="relative flex size-10 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/50 transition-colors duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground"
     >
       <Settings className="size-4" />
       {updateAvailable && (
@@ -317,7 +317,7 @@ function GroupSwitcher({
                 onGroupChange(null)
                 setOpen(false)
               }}
-              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-150 ${
+              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
                 activeGroup === null
                   ? "bg-accent text-accent-foreground"
                   : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
@@ -345,7 +345,7 @@ function GroupSwitcher({
                     onGroupChange(groupId)
                     setOpen(false)
                   }}
-                  className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-150 ${
+                  className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
                     isActive
                       ? "bg-accent text-accent-foreground"
                       : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
@@ -371,7 +371,7 @@ function GroupSwitcher({
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="sidebar-selector flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-sidebar-space-foreground transition-all duration-180"
+        className="sidebar-selector flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-sidebar-space-foreground transition-colors duration-180"
       >
         <ActiveIcon className="size-4 shrink-0 text-sidebar-primary" />
         <span className="flex-1 truncate text-left">{activeLabel}</span>
@@ -739,7 +739,7 @@ const PinnedLink = memo(function PinnedLink({
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId, _splat: path }}
       onClick={onNavigate}
-      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
         isActive
           ? "bg-sidebar-accent font-medium text-sidebar-primary"
           : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -771,7 +771,7 @@ function ThreadsSidebarEntry({
         to="/spaces/$spaceId/threads/$"
         params={{ spaceId, _splat: "" }}
         onClick={onNavigate}
-        className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+        className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
           isActive
             ? "bg-sidebar-accent font-medium text-sidebar-primary"
             : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -844,7 +844,7 @@ const CollectionLink = memo(function CollectionLink({
       to="/spaces/$spaceId/records/$"
       params={{ spaceId, _splat: collectionId }}
       onClick={onNavigate}
-      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-all duration-180 sm:min-h-0 ${
+      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
         isActive
           ? "bg-sidebar-accent font-medium text-sidebar-primary"
           : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -1092,7 +1092,7 @@ function WidgetTreeItem({
   return (
     <>
       <div
-        className={`group/widget relative flex items-center rounded-md transition-all duration-180 ${
+        className={`group/widget relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}
         {...dragProps}
@@ -2141,7 +2141,7 @@ function DocTreeItem({
   return (
     <>
       <div
-        className={`group/doc relative flex items-center rounded-md transition-all duration-180 ${
+        className={`group/doc relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}
         {...dragProps}
@@ -2388,7 +2388,7 @@ export function AppSidebar() {
           <Link
             to="/"
             onClick={handleNavigateHome}
-            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-all duration-180 hover:opacity-80"
+            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity duration-180 hover:opacity-80"
           >
             <WorktableAppIcon className="size-6" />
             <span>Worktable</span>
@@ -2427,7 +2427,7 @@ export function AppSidebar() {
             <Link
               to="/"
               onClick={handleNavigateHome}
-              className={`mx-1 mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
+              className={`mx-1 mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
                 section === "home"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -2444,7 +2444,7 @@ export function AppSidebar() {
               onClick={() => {
                 if (isMobile) setOpen(false)
               }}
-              className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
+              className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
                 section === "threads"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
@@ -2459,7 +2459,7 @@ export function AppSidebar() {
               onClick={() => {
                 if (isMobile) setOpen(false)
               }}
-              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-all duration-180 ${
+              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
                 section === "activity"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
                   : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"

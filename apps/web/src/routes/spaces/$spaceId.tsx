@@ -29,7 +29,12 @@ import { activityQueryKeys } from "@/lib/activity"
 import { restoreSpace } from "@/lib/api"
 import { useDocuments } from "@/lib/documents-queries"
 import { setPins } from "@/lib/lifetime"
-import { spaceQueryOptions, useRecordCollections, useSpace } from "@/lib/queries"
+import {
+  spaceQueryOptions,
+  useRecordCollections,
+  useSpace,
+  useSpaces,
+} from "@/lib/queries"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
@@ -97,14 +102,15 @@ function PinnedSection({
   pins,
 }: {
   spaceId: string
-  pins: ResolvedStartHerePin[]
+  /** Undefined while the Space's details load. */
+  pins: ResolvedStartHerePin[] | undefined
 }) {
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
     try {
       await setPins(
         spaceId,
-        pins
+        (pins ?? [])
           .filter((pin) => pin.path !== path)
           .map((pin) => ({ path: pin.path, ...(pin.note ? { note: pin.note } : {}) }))
       )
@@ -126,7 +132,11 @@ function PinnedSection({
       <h2 id="pinned-heading" className="mb-2 text-sm font-semibold text-foreground">
         Pinned
       </h2>
-      {pins.length === 0 ? (
+      {!pins ? (
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="h-[3.375rem] animate-pulse rounded-xl bg-muted" />
+        </div>
+      ) : pins.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Pin the brief or current plan from its menu.
         </p>
@@ -247,9 +257,10 @@ function SpaceOverview({
   pins,
 }: {
   spaceId: string
-  spaceName: string
+  /** Undefined only until the Space list or details arrive. */
+  spaceName: string | undefined
   spaceDescription?: string
-  pins: ResolvedStartHerePin[]
+  pins: ResolvedStartHerePin[] | undefined
 }) {
   const [folder, setFolder] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -295,9 +306,13 @@ function SpaceOverview({
     <PageWithActivity spaceId={spaceId} className="xl:h-auto xl:min-h-0 xl:flex-1">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
-              {spaceName}
-            </h1>
+            {spaceName === undefined ? (
+              <div className="h-[2.1rem] w-56 animate-pulse rounded-lg bg-muted sm:h-10" />
+            ) : (
+              <h1 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
+                {spaceName}
+              </h1>
+            )}
             {spaceDescription && (
               <p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
                 {spaceDescription}
@@ -378,6 +393,11 @@ function SpaceOverview({
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
   const { data, isLoading } = useSpace(spaceId)
+  // The sidebar's Space list already holds the name, description and
+  // settings, so the overview renders in place while the details (pins)
+  // load, instead of swapping in a differently shaped placeholder.
+  const { data: spaces, isLoading: spacesLoading } = useSpaces()
+  const space = data?.space ?? spaces?.find((entry) => entry.id === spaceId)
   const router = useRouter()
   const [restoring, setRestoring] = useState(false)
   const reconcileRouteAfterReconnect = useCallback(
@@ -397,9 +417,7 @@ function SpaceDetailPage() {
     select: (matches) => matches.length > 0,
   })
 
-  const archiveInfo = data
-    ? getSpaceArchiveInfo(data.space.settings)
-    : undefined
+  const archiveInfo = space ? getSpaceArchiveInfo(space.settings) : undefined
 
   const handleRestore = async () => {
     setRestoring(true)
@@ -430,20 +448,7 @@ function SpaceDetailPage() {
     )
   }
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-8 lg:py-10">
-        <div className="space-y-3">
-          <div className="h-9 w-56 animate-pulse rounded-lg bg-muted" />
-          <div className="h-4 w-80 animate-pulse rounded bg-muted" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!data) return null
-
-  const { space } = data
+  if (!space && !isLoading && !spacesLoading) return null
 
   return (
     <div className="xl:flex xl:h-full xl:flex-col">
@@ -456,9 +461,9 @@ function SpaceDetailPage() {
       )}
       <SpaceOverview
         spaceId={spaceId}
-        spaceName={space.name}
-        spaceDescription={space.description}
-        pins={data.pins ?? []}
+        spaceName={space?.name}
+        spaceDescription={space?.description}
+        pins={data ? (data.pins ?? []) : undefined}
       />
     </div>
   )

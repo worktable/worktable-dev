@@ -120,6 +120,40 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
       .getByRole("region", { name: "Pinned" })
       .getByRole("link", { name: "Untitled" })
   ).toBeVisible()
+
+  // Opening a Space shows its real page while its details load: the title
+  // and Activity column stay in place, and the pins fill in where they sit.
+  await page.goto(`${harness.webUrl}/`)
+  await expect(page.getByRole("region", { name: "Recent" })).toBeVisible()
+  let releaseDetails!: () => void
+  const detailsHeld = new Promise<void>((resolve) => {
+    releaseDetails = resolve
+  })
+  await page.route(/\/api\/spaces\/organize(\?.*)?$/, async (route) => {
+    await detailsHeld
+    await route.continue()
+  })
+  await page
+    .getByRole("button", { name: /^(Expand|Collapse) Organize$/ })
+    .locator("../..")
+    .getByRole("link", { name: "Organize", exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/spaces\/organize$/)
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Organize" })
+  ).toBeVisible()
+  await expect(page.getByRole("region", { name: "Activity" })).toBeVisible()
+  await expect(
+    page
+      .getByRole("region", { name: "Pinned" })
+      .getByRole("link", { name: "Untitled" })
+  ).toHaveCount(0)
+  releaseDetails()
+  await expect(
+    page
+      .getByRole("region", { name: "Pinned" })
+      .getByRole("link", { name: "Untitled" })
+  ).toBeVisible()
 })
 
 test.describe("archive date editing", () => {

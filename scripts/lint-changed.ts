@@ -8,7 +8,7 @@
 // reports more errors than it did at the base.
 import { execFileSync } from "node:child_process"
 import { createRequire } from "node:module"
-import { join, resolve } from "node:path"
+import { join, posix, resolve } from "node:path"
 
 const root = resolve(import.meta.dir, "..")
 const lintable = /\.(?:[cm]?[jt]sx?)$/
@@ -167,19 +167,21 @@ if (import.meta.main) {
     }
   }
 
-  // Every touched path, deletions included.
-  const touched = git("diff", "--name-only", "-z", base)
+  // Every touched path, deletions and both sides of renames included.
+  const touched = git("diff", "--name-only", "--no-renames", "-z", base)
     .split("\0")
     .filter(Boolean)
 
   // typescript-eslint caches project roots per process, so each workspace
   // lints in its own process.
   const workspaces = lintWorkspaces().flatMap(({ dir, scopes }) => {
+    // "src", "./src" and "src/" name the same directory; a scope may be a file.
+    const roots = scopes.map((scope) =>
+      posix.join(dir, scope).replace(/\/+$/, "")
+    )
     const inScope = (path: string) =>
       lintable.test(path) &&
-      scopes.some((scope) =>
-        path.startsWith(scope === "." ? `${dir}/` : `${dir}/${scope}/`)
-      )
+      roots.some((scope) => path === scope || path.startsWith(`${scope}/`))
     // A changed, added or deleted config can affect every file it lints, so
     // lint the whole scope. Unchanged files compare with themselves: the
     // config must load and apply, and only edited files can add errors.
@@ -242,6 +244,6 @@ if (import.meta.main) {
     process.exit(1)
   }
   console.log(
-    `No lint errors added in ${checked} changed file${checked === 1 ? "" : "s"}.`
+    `No lint errors added (${checked} file${checked === 1 ? "" : "s"} checked).`
   )
 }

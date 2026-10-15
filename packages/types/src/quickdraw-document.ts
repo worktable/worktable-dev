@@ -225,6 +225,8 @@ export function emptyQuickdrawDocument(
     type: QUICKDRAW_FORMAT,
     version: 1,
     title,
+    // New drawings start plain. Drawings saved without a grid keep dots.
+    grid: "none",
     snapshot: { document: { store: {} } },
   }
 }

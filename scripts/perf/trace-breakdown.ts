@@ -14,6 +14,16 @@ export const TRACE_CATEGORIES = [
   "blink.user_timing",
 ]
 
+/**
+ * For reading a trace in DevTools: JS samples with call stacks, and the JS
+ * stack behind each request, timer and other trace event.
+ */
+export const RAW_TRACE_CATEGORIES = [
+  ...TRACE_CATEGORIES,
+  "disabled-by-default-v8.cpu_profiler",
+  "disabled-by-default-devtools.timeline.stack",
+]
+
 export type Group =
   | "parseCompile"
   | "script"

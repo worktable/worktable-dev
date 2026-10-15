@@ -148,14 +148,14 @@ function dispatchWorkspaceChange(event: ChangeEvent): Promise<unknown>[] {
         pendingHandlers.add(pending)
         void pending
           .catch((err) => {
-            console.error("[workspace-events] async handler error:", err)
+            console.error("[workspace-events] async handler error:", logError(err))
           })
           .finally(() => {
             pendingHandlers.delete(pending)
           })
       }
     } catch (err) {
-      console.error("[workspace-events] handler error:", err)
+      console.error("[workspace-events] handler error:", logError(err))
       const rejected = Promise.reject(err)
       // Fire-and-forget callers retain the historical log-and-continue
       // behavior; lifecycle callers can still observe this rejection through
@@ -204,3 +204,4 @@ export async function drainWorkspaceChanges(): Promise<void> {
   }
 }
 import type { ThreadLocation } from "@worktable/types"
+import { logError } from "./debug-log.ts"

@@ -36,6 +36,7 @@ import {
 import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { logError } from "./debug-log.ts"
 
 interface StoredAgentConnection {
   id: string
@@ -144,7 +145,7 @@ async function notifyThreadParticipantsChanged(): Promise<void> {
   } catch (error) {
     console.error(
       "[agent-connections] connection state changed, but participant invalidation failed:",
-      error
+      logError(error)
     )
   }
 }

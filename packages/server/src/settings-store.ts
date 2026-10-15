@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { ensureAppDir } from "./app-storage.ts";
 import { normalizePublicUrl } from "./public-origin.ts";
+import { logError } from "./debug-log.ts";
 
 // ============================================================
 // Server settings store (machine-local user preferences)
@@ -185,7 +186,7 @@ function markFailClosed(reason: string): void {
   try {
     writeFileSync(failClosedFile(), `${reason}\n`, { mode: 0o600 });
   } catch (err) {
-    console.warn("[settings] failed to persist fail-closed marker:", err);
+    console.warn("[settings] failed to persist fail-closed marker:", logError(err));
   }
 }
 
@@ -194,7 +195,7 @@ async function clearFailClosed(): Promise<void> {
   try {
     await rm(failClosedFile(), { force: true });
   } catch (err) {
-    console.warn("[settings] failed to clear fail-closed marker:", err);
+    console.warn("[settings] failed to clear fail-closed marker:", logError(err));
   }
 }
 
@@ -294,7 +295,7 @@ function readFromDisk(): ServerSettings {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
       markFailClosed("settings.json could not be read; requiring auth until settings are rewritten");
-      console.warn("[settings] settings.json could not be read; requiring auth until rewritten:", err);
+      console.warn("[settings] settings.json could not be read; requiring auth until rewritten:", logError(err));
     }
     // Missing (ENOENT) is a fresh install — fall back to defaults, no write.
     return { ...SETTINGS_DEFAULTS };
@@ -313,7 +314,7 @@ function readFromDisk(): ServerSettings {
         mode: 0o600,
       });
     } catch (writeErr) {
-      console.warn("[settings] failed to quarantine corrupt settings.json:", writeErr);
+      console.warn("[settings] failed to quarantine corrupt settings.json:", logError(writeErr));
     }
     console.warn(
       `[settings] settings.json was not valid JSON; preserved as settings.json.corrupt, reset to defaults, and auth will fail closed until settings are rewritten`,

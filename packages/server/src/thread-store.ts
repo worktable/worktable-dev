@@ -46,6 +46,7 @@ import {
 import { listSpaces, readSpace } from "./store.ts"
 import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { logError } from "./debug-log.ts"
 
 export type ThreadErrorCode =
   | "THREAD_NOT_FOUND"
@@ -377,7 +378,7 @@ export async function scanThreadDigests(
     try {
       fingerprint = await readFileFingerprint(join(dir, name))
     } catch (error) {
-      console.error(`[threads] skipping unreadable thread ${threadId}:`, error)
+      console.error(`[threads] skipping unreadable thread ${threadId}:`, logError(error))
       return [name, unreadable()] as const
     }
     // Removed since the listing.
@@ -399,7 +400,7 @@ export async function scanThreadDigests(
       if (cached?.digest !== null || cached.key !== fingerprint.key) {
         console.error(
           `[threads] skipping unreadable thread ${threadId}:`,
-          error
+          logError(error)
         )
       }
     }

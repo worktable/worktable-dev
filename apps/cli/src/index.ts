@@ -64,6 +64,7 @@ import {
   type ServiceStatus,
   uninstallService,
 } from "./service.ts"
+import { startServiceLogRotation } from "./service-logs.ts"
 import {
   classifyRuntimeReadiness,
   describeRuntimeReadinessFailure,
@@ -2902,6 +2903,7 @@ async function commandLaunchUnderAuthority(
     )
   }
   recordManagedPid()
+  startServiceLogRotation()
   if (!noBrowser && staticInfo.staticDir) await openBrowser(url)
 }
 

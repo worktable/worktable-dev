@@ -132,6 +132,7 @@ import {
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { requireWorkspaceRecovery } from "./workspace-safety.ts"
 import { yjsManager } from "./yjs-manager.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 const JOURNAL_SCHEMA_VERSION = 1 as const
 const LEGACY_JOURNAL_PLAN_VERSION = 1 as const
@@ -5806,8 +5807,8 @@ function removeEmptyDeleteQuarantineDirectories(quarantine: string): void {
       const code = (error as NodeJS.ErrnoException).code
       if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") {
         console.warn(
-          `[document-lifecycle] deferred empty delete quarantine cleanup ${directory}`,
-          error
+          "[document-lifecycle] deferred empty delete quarantine cleanup",
+          logError(error)
         )
         return
       }
@@ -5825,7 +5826,7 @@ function finishDeleteSourceCleanup(
   }
   if (!matchesDeleteSourceFingerprint(journal, paths.quarantine)) {
     console.warn(
-      `[document-lifecycle] retained changed deleted source for recovery: ${paths.quarantine}`
+      `[document-lifecycle] retained changed deleted source for recovery in operation ${journal.operationId}`
     )
     return
   }
@@ -7969,7 +7970,7 @@ function removeLifecycleCleanupTombstones(): void {
       } catch (error) {
         console.warn(
           `[document-lifecycle] could not remove settled cleanup state ${path}`,
-          error
+          logError(error)
         )
       }
     }
@@ -7977,7 +7978,7 @@ function removeLifecycleCleanupTombstones(): void {
     if (!isMissing(error)) {
       console.warn(
         "[document-lifecycle] could not inspect settled cleanup state",
-        error
+        logError(error)
       )
     }
   }
@@ -7987,7 +7988,7 @@ function removeLifecycleCleanupTombstones(): void {
     } catch (error) {
       console.warn(
         "[document-lifecycle] could not durably prune settled cleanup state",
-        error
+        logError(error)
       )
     }
   }
@@ -8007,7 +8008,7 @@ function removeAbandonedPreparationDirectories(): void {
       } catch (error) {
         console.warn(
           `[document-lifecycle] could not remove abandoned preparation state ${path}`,
-          error
+          logError(error)
         )
       }
     }
@@ -8015,7 +8016,7 @@ function removeAbandonedPreparationDirectories(): void {
     if (!isMissing(error)) {
       console.warn(
         "[document-lifecycle] could not inspect abandoned preparation state",
-        error
+        logError(error)
       )
     }
   }
@@ -8025,7 +8026,7 @@ function removeAbandonedPreparationDirectories(): void {
     } catch (error) {
       console.warn(
         "[document-lifecycle] could not durably prune abandoned preparation state",
-        error
+        logError(error)
       )
     }
   }
@@ -8127,7 +8128,7 @@ function removeReconciliationMarker(marker: ReconciliationMarker): void {
     // so cleanup failure cannot turn a committed rename into a reported error.
     console.warn(
       `[document-lifecycle] deferred settled cleanup state ${tombstone}`,
-      error
+      logError(error)
     )
   }
 }
@@ -10288,8 +10289,8 @@ async function transitionDurableDocumentFormatSerialized(
         await options.onCommitted?.()
       } catch (error) {
         console.error(
-          `[document-lifecycle] failed to finalize format transition for ${options.spaceId}/${options.docPath}:`,
-          error
+          `[document-lifecycle] failed to finalize format transition for ${logDocument(options.spaceId, options.docPath)}:`,
+          logError(error)
         )
       }
     }

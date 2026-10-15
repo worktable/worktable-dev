@@ -52,6 +52,7 @@ import {
   type VersionEntry,
   type VersionSnapshotBase,
 } from "./version-store.ts";
+import { logError } from "./debug-log.ts";
 
 // Checkpoints are kept forever; non-checkpoint versions beyond this cap are
 // pruned after each record. HTML snapshots (full markup + CSS + JS, twice per
@@ -260,7 +261,7 @@ export async function retireWidgetVersionHistory(spaceId: string, widgetId: stri
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const { rename } = await import("node:fs/promises");
   await rename(dir, `${dir}.deleted-${stamp}`).catch((err) => {
-    console.error("[widget-versions] failed to retire version history:", err);
+    console.error("[widget-versions] failed to retire version history:", logError(err));
   });
 }
 

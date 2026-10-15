@@ -61,6 +61,7 @@ import {
   invalidateHostedDocumentShares,
   invalidateHostedDocumentSharesForSpace,
 } from "./share-lifecycle.ts";
+import { logDocument, logError } from "./debug-log.ts";
 
 // ============================================================
 // Paths
@@ -342,7 +343,7 @@ export function unsuppressPath(filePath: string): void {
     void Promise.resolve()
       .then(state.pathReplay)
       .catch((err) => {
-        console.error("[store] replay suppressed path change failed:", err);
+        console.error("[store] replay suppressed path change failed:", logError(err));
       });
   }
 }
@@ -420,7 +421,7 @@ async function replaySuppressedDocChange(
       });
     });
   } catch (err) {
-    console.error("[store] replay suppressed doc change failed:", err);
+    console.error("[store] replay suppressed doc change failed:", logError(err));
   }
 }
 
@@ -545,7 +546,7 @@ async function prepareBlocksCanonical(
       }
     }
   } catch (err) {
-    console.error("[store] canonicalizeBlocks failed, writing raw blocks:", err);
+    console.error("[store] canonicalizeBlocks failed, writing raw blocks:", logError(err));
     canonical = blocks;
   }
   return { skipped: false, content: canonical };
@@ -1905,8 +1906,8 @@ async function pruneRecordedDocVersion(
     });
   } catch (err) {
     console.warn(
-      `[version-retention] post-write prune failed for ${spaceId}/${docPath}:`,
-      err,
+      `[version-retention] post-write prune failed for ${logDocument(spaceId, docPath)}:`,
+      logError(err),
     );
   }
 }
@@ -2666,8 +2667,8 @@ export async function convertDocToMarkdownStorage(
           });
         } catch (error) {
           console.error(
-            `[store] failed to record Markdown conversion history for ${spaceId}/${sanitizedDocPath}:`,
-            error
+            `[store] failed to record Markdown conversion history for ${logDocument(spaceId, sanitizedDocPath)}:`,
+            logError(error)
           );
         }
       };
@@ -2711,8 +2712,8 @@ export async function convertDocToMarkdownStorage(
           await options?.onConverted?.();
         } catch (error) {
           console.error(
-            `[store] failed to finalize Markdown conversion for ${spaceId}/${sanitizedDocPath}:`,
-            error
+            `[store] failed to finalize Markdown conversion for ${logDocument(spaceId, sanitizedDocPath)}:`,
+            logError(error)
           );
         }
         return { ok: true, storedAs: "md" };
@@ -2771,8 +2772,8 @@ export async function convertDocToMarkdownStorage(
         // has rotated. Derived cleanup must not turn a committed save into a
         // false failure that cannot succeed on retry.
         console.error(
-          `[store] failed to finalize Markdown conversion for ${spaceId}/${sanitizedDocPath}:`,
-          error
+          `[store] failed to finalize Markdown conversion for ${logDocument(spaceId, sanitizedDocPath)}:`,
+          logError(error)
         );
       }
       return { ok: true, storedAs: "md" };

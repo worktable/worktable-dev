@@ -42,6 +42,7 @@ import { timing } from "./request-timing.ts";
 import { getSpacesBaseDir, withStoreWriteLock } from "./store.ts";
 import { workspaceCacheKey, getWorkspaceRoot } from "./workspace.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
+import { logError } from "./debug-log.ts";
 
 // Bump when the table layout or row semantics change; a mismatch wipes and
 // rebuilds the file (it is a cache — rebuild is always safe). Additive,
@@ -164,7 +165,7 @@ class RecordIndex {
     try {
       this.db = this.open();
     } catch (err) {
-      console.error("[record-index] failed to open index database, records index disabled:", err);
+      console.error("[record-index] failed to open index database, records index disabled:", logError(err));
       this.started = false;
       return;
     }
@@ -180,7 +181,7 @@ class RecordIndex {
         }
       })
       .catch((err) => {
-        console.error("[record-index] initial build failed:", err);
+        console.error("[record-index] initial build failed:", logError(err));
       });
   }
 
@@ -351,12 +352,12 @@ class RecordIndex {
       } else {
         this.trackTask(
           this.refreshCollection(event.spaceId, event.collectionId).catch((err) =>
-            console.error("[record-index] collection refresh failed:", err),
+            console.error("[record-index] collection refresh failed:", logError(err)),
           ),
         );
       }
     } catch (err) {
-      console.error("[record-index] failed to apply record event:", err);
+      console.error("[record-index] failed to apply record event:", logError(err));
     }
   }
 
@@ -1090,7 +1091,7 @@ class RecordIndex {
           data: (JSON.parse(row.json) as RecordFile).data,
         }));
       } catch (err) {
-        console.error("[record-index] FTS query failed, falling back to scan:", err);
+        console.error("[record-index] FTS query failed, falling back to scan:", logError(err));
       }
     }
     this.lastSearchEngine = "scan";

@@ -44,6 +44,7 @@ import { extractHeadings, extractMarkdownHeadings, prepareMarkdownStorageConvers
 import { documentReferenceFallbackTitle, parseDocumentReference, type ResolvedDocumentReference } from "@worktable/types";
 import { MermaidDocumentValidationError } from "../mermaid-document.ts";
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts";
+import { logDocument, logError } from "../debug-log.ts";
 
 const WriteDocSchema = z.object({
   content: z.array(z.unknown()),
@@ -663,16 +664,16 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
               // canonical state. A stale machine-local Yjs file is rejected by
               // its snapshot identity when this doc is edited again.
               console.error(
-                `[docs] failed to remove Yjs state after converting ${spaceId}/${docPath}:`,
-                error
+                `[docs] failed to remove Yjs state after converting ${logDocument(spaceId, docPath)}:`,
+                logError(error)
               );
             }
             try {
               invalidateSearchIndex({ spaceId, path: docPath });
             } catch (error) {
               console.error(
-                `[docs] failed to invalidate derived state after converting ${spaceId}/${docPath}:`,
-                error
+                `[docs] failed to invalidate derived state after converting ${logDocument(spaceId, docPath)}:`,
+                logError(error)
               );
             }
             const statResult = await docStat(spaceId, docPath);
@@ -695,8 +696,8 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
               });
             } catch (error) {
               console.error(
-                `[docs] failed to broadcast Markdown conversion for ${spaceId}/${docPath}:`,
-                error
+                `[docs] failed to broadcast Markdown conversion for ${logDocument(spaceId, docPath)}:`,
+                logError(error)
               );
             }
           },

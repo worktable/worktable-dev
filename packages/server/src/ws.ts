@@ -11,6 +11,7 @@ import { readWidget } from "./widget-store.ts"
 import { readRecord } from "./record-store.ts"
 import { readThread } from "./thread-store.ts"
 import { getThreadActivity } from "./thread-delivery-store.ts"
+import { logError } from "./debug-log.ts"
 
 // ============================================================
 // Types
@@ -227,7 +228,7 @@ export class WsManager {
         this.broadcast(event.spaceId, msg)
       }
     } catch (err) {
-      console.error("[WsManager] handleChange error:", err)
+      console.error("[WsManager] handleChange error:", logError(err))
     }
   }
 

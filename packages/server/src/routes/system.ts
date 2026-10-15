@@ -31,6 +31,7 @@ import {
   resolveWorkspaceOriginForRequest,
   type WorkspaceOriginSource,
 } from "../workspace-origin.ts";
+import { logError } from "../debug-log.ts";
 
 // ============================================================
 // System / install control surface
@@ -330,7 +331,7 @@ systemRouter.put("/settings", async (c) => {
           expectedRetentionGeneration: result.retentionGeneration,
         });
       } catch (sweepErr) {
-        console.error("[version-retention] policy-change sweep error:", sweepErr);
+        console.error("[version-retention] policy-change sweep error:", logError(sweepErr));
         return c.json(
           {
             error: "Retention sweep failed",

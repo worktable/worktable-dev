@@ -34,6 +34,7 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
 import { DocFormatTransitionConflictError, yjsManager } from "./yjs-manager.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 export type DeleteDocumentFolderResult =
   | { ok: true; path: string; paths: string[] }
@@ -171,8 +172,8 @@ async function publishFolderDelete(
           await pruneEmptyWidgetParents(spaceId, document.path)
         } catch (error) {
           console.warn(
-            `[document-folder-delete] could not prune empty folders for ${spaceId}/${document.path}`,
-            error
+            `[document-folder-delete] could not prune empty folders for ${logDocument(spaceId, document.path)}`,
+            logError(error)
           )
         }
       }
@@ -270,8 +271,8 @@ export async function deleteDocumentFolder(
       await publishFolderDelete(spaceId, planned)
     } catch (error) {
       console.warn(
-        `[document-folder-delete] could not publish derived state for ${spaceId}/${path}`,
-        error
+        `[document-folder-delete] could not publish derived state for ${logDocument(spaceId, path)}`,
+        logError(error)
       )
     }
     return { ok: true, path, paths: outcome.deleted.map((entry) => entry.path) }

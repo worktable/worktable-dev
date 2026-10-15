@@ -34,6 +34,7 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
 import { yjsManager } from "./yjs-manager.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 export type MoveDocumentFolderResult =
   | {
@@ -204,8 +205,8 @@ async function publishFolderMove(
           await pruneEmptyWidgetParents(spaceId, move.from)
         } catch (error) {
           console.warn(
-            `[document-folder-move] could not prune empty folders for ${spaceId}/${move.from}`,
-            error
+            `[document-folder-move] could not prune empty folders for ${logDocument(spaceId, move.from)}`,
+            logError(error)
           )
         }
       }
@@ -298,8 +299,8 @@ export async function moveDocumentFolder(
       await publishFolderMove(spaceId, planned)
     } catch (error) {
       console.warn(
-        `[document-folder-move] could not publish derived state for ${spaceId}/${fromPrefix} -> ${toPrefix}`,
-        error
+        `[document-folder-move] could not publish derived state for ${logDocument(spaceId, fromPrefix)} -> ${logDocument(spaceId, toPrefix)}`,
+        logError(error)
       )
     }
     return {

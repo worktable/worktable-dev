@@ -10,9 +10,13 @@ import { startWorkspaceBackupNotifier } from "./workspace-backup-notifier.ts";
 import { markBootMilestone, startBootPhase, timeBootTask } from "./boot-timing.ts";
 import { cors } from "hono/cors";
 import { compressApiResponse } from "./http-compression.ts";
-import { serverTiming, timedMiddleware } from "./request-timing.ts";
+import {
+  serverTiming,
+  timedMiddleware,
+  unexpectedErrorResponse,
+} from "./request-timing.ts";
 import { noteServerActivity, startEventLoopLagSampler } from "./perf-diagnostics.ts";
-import { debugLogging } from "./debug-log.ts";
+import { debugLogging, logDocument, logError } from "./debug-log.ts";
 import { advanceGenerationOnWrite, shareInFlightReads } from "./shared-reads.ts";
 import { acceptsGzip, gzipAsync, isLocalBrowserRequest } from "./http-compression.ts";
 import { injectDocumentOpening } from "./document-opening.ts";
@@ -294,16 +298,13 @@ app.use("*", async (c, next) => {
   return next();
 });
 
-// Error handler
+// Error handler. Routes answer expected errors themselves; anything that
+// reaches here gets a generic message and an id that is also logged.
 app.onError((err, c) => {
   if (err instanceof WorkspaceUnavailableError) {
     return c.json({ error: err.message, code: err.code }, 503)
   }
-  console.error("[server] unhandled error:", err);
-  return c.json(
-    { error: err.message ?? "Internal server error", code: "INTERNAL_ERROR" },
-    500
-  );
+  return unexpectedErrorResponse(c, err);
 });
 
 // Every REST request resolves to an identity (implicit owner for bare
@@ -703,7 +704,7 @@ async function runLintRetirement(): Promise<void> {
       );
     }
   } catch (err) {
-    console.error("[lint-retirement] failed:", err);
+    console.error("[lint-retirement] failed:", logError(err));
   }
 }
 
@@ -727,7 +728,7 @@ function startLifetimeSweep(): void {
         );
       }
     })
-    .catch((err) => console.error("[document-lifetime] sweep failed:", err))
+    .catch((err) => console.error("[document-lifetime] sweep failed:", logError(err)))
     .finally(() => {
       lifetimeSweepRun = null;
     });
@@ -789,7 +790,7 @@ let terminateAfterWorkspaceReplacementRecoveryFailure = (
 ): void => {
   console.error(
     "[Worktable] workspace replacement recovery could not restart the server; terminating for supervisor recovery:",
-    error
+    logError(error)
   );
   process.exit(1);
 };
@@ -840,7 +841,7 @@ export function setWorkspaceReplacementFatalExitHookForTests(
     ((error: unknown): void => {
       console.error(
         "[Worktable] workspace replacement recovery could not restart the server; terminating for supervisor recovery:",
-        error
+        logError(error)
       );
       process.exit(1);
     });
@@ -966,7 +967,7 @@ function startStorageUpgradeServer(
       server.reload(maintenance);
       server.stop = stop;
       activeServer = server;
-      console.error("[workspace] storage upgrade needs attention:", error);
+      console.error("[workspace] storage upgrade needs attention:", logError(error));
       setWorkspaceStorageUpgradeState("blocked", run);
     }).finally(() => { running = null; });
   };
@@ -1059,7 +1060,7 @@ export function startServer(
   try {
     ensureInstallIdentity();
   } catch (err) {
-    console.error("[Worktable] install identity setup error:", err);
+    console.error("[Worktable] install identity setup error:", logError(err));
   }
   // Finalize any in-flight self-update: if this boot is the post-update restart,
   // the running version is the verdict. Machine-local, so it runs regardless of
@@ -1073,7 +1074,7 @@ export function startServer(
     else if (update.state === "failed")
       console.warn(`[Worktable] update did not complete: ${update.error ?? "unknown error"}`);
   } catch (err) {
-    console.error("[Worktable] update reconcile error:", err);
+    console.error("[Worktable] update reconcile error:", logError(err));
   }
   endConfigPhase();
   try {
@@ -1095,7 +1096,7 @@ export function startServer(
           acknowledgeWorkspaceReplacementResets(recovered.map((job) => job.id));
         }).catch((error) => {
           workspaceRejected = true;
-          console.error("[workspace] recovered state could not be initialized", error);
+          console.error("[workspace] recovered state could not be initialized", logError(error));
         });
         console.warn(
           `[Worktable] recovered ${recovered.length} interrupted workspace replacement${recovered.length === 1 ? "" : "s"}`
@@ -1187,12 +1188,12 @@ export function startServer(
     const settled = settleRetentionPolicy({
       hasVersionHistory: installHasVersionHistory,
     }).catch((err) =>
-      console.error("[version-retention] could not settle the policy:", err),
+      console.error("[version-retention] could not settle the policy:", logError(err)),
     );
     const sweep = () =>
       void settled
         .then(() => runRetentionSweep())
-        .catch((err) => console.error("[version-retention] sweep error:", err));
+        .catch((err) => console.error("[version-retention] sweep error:", logError(err)));
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
     retentionSweepTimer = setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS);
@@ -1211,9 +1212,9 @@ export function startServer(
   sweptSpaces = null;
   if (!workspaceRejected && process.env["WORKTABLE_SKIP_RECORD_RECONCILE_SWEEP"] !== "1") {
     recordReconcileSweepTimer = setInterval(() => {
-      void runSpaceListSweep().catch((err) => console.error("[Worktable] periodic space sweep failed:", err));
+      void runSpaceListSweep().catch((err) => console.error("[Worktable] periodic space sweep failed:", logError(err)));
       if (recordIndexEnabled()) {
-        void runRecordReconcileSweep().catch((err) => console.error("[record-index] periodic reconciliation failed:", err));
+        void runRecordReconcileSweep().catch((err) => console.error("[record-index] periodic reconciliation failed:", logError(err)));
       }
     }, RECORD_RECONCILE_SWEEP_INTERVAL_MS);
     recordReconcileSweepTimer.unref?.();
@@ -1226,7 +1227,7 @@ export function startServer(
   const documentFilesystemCoordinator = new DocumentFilesystemCoordinator({
     emit: notifyWorkspaceChangeAndWait,
     onError: (error) => {
-      console.error("[document-filesystem] coordination error:", error);
+      console.error("[document-filesystem] coordination error:", logError(error));
     },
   });
   const watcher = new WorkspaceWatcher({
@@ -1275,7 +1276,7 @@ export function startServer(
         console.log("[Worktable] seeded starter workspace (welcome space)");
       }
     })().catch((err) =>
-      console.error("[Worktable] starter seed error:", err)
+      console.error("[Worktable] starter seed error:", logError(err))
     );
     starterSeedTask = task;
     timeBootTask("starter seed", task);
@@ -1305,7 +1306,7 @@ export function startServer(
       .catch((stopErr) =>
         console.error(
           "[document-filesystem] failed-start cleanup error:",
-          stopErr
+          logError(stopErr)
         )
       );
     for (const { timer } of widgetChangeCoalescer.values()) clearTimeout(timer);
@@ -1361,7 +1362,7 @@ export function startServer(
           })}`);
         }
       } catch (err) {
-        console.error(`[record-index] watcher ${event.type} projection update failed:`, err);
+        console.error(`[record-index] watcher ${event.type} projection update failed:`, logError(err));
       }
 
       // Version external HTML-doc (widget) edits. One logical save touches
@@ -1386,7 +1387,7 @@ export function startServer(
                 source: "filesystem",
               });
             } catch (err) {
-              console.error("[server] widget version record error:", err);
+              console.error("[server] widget version record error:", logError(err));
             }
             // Broadcast AFTER recording: clients refetch on widget_update, and a
             // broadcast before the provenance write would hand them a stale
@@ -1406,7 +1407,7 @@ export function startServer(
               wsManager.broadcast(event.spaceId, { type: "widget_deleted", spaceId: event.spaceId, widgetId: event.widgetId });
             } else {
               await wsManager.handleChange(event).catch((err) =>
-                console.error("[server] ws broadcast error:", err)
+                console.error("[server] ws broadcast error:", logError(err))
               );
             }
           };
@@ -1430,12 +1431,12 @@ export function startServer(
         try {
           await syncExternalDocChange(event.spaceId, event.docPath);
         } catch (err) {
-          console.error("[server] external doc sync error:", err);
+          console.error("[server] external doc sync error:", logError(err));
         }
       }
 
       trackServerTask(wsManager.handleChange(event).catch((err) =>
-        console.error("[server] ws broadcast error:", err)
+        console.error("[server] ws broadcast error:", logError(err))
       ));
     });
     try {
@@ -1469,7 +1470,7 @@ export function startServer(
         );
         console.error(
           "[document-lifecycle] recovered content reconciliation failed:",
-          error
+          logError(error)
         );
       });
       recoveredDocumentTask = task;
@@ -1483,7 +1484,7 @@ export function startServer(
     // Spaces present now so the periodic sweep can catch one it missed.
     if (recordReconcileSweepTimer) {
       trackServerTask(runSpaceListSweep().catch((err) =>
-        console.error("[Worktable] initial space sweep failed:", err)
+        console.error("[Worktable] initial space sweep failed:", logError(err))
       ));
     }
   }
@@ -1750,7 +1751,7 @@ export function startServer(
             );
           } catch (err) {
             console.warn(
-              `[YjsManager] refusing room ${ws.data.spaceId}/${ws.data.docPath}: ${(err as Error).message}`
+              `[YjsManager] refusing room ${logDocument(ws.data.spaceId, ws.data.docPath ?? "")}: ${logError(err)}`
             );
             ws.close();
           }
@@ -2081,7 +2082,7 @@ export function startServer(
           } catch (statusError) {
             console.error(
               "[Worktable] workspace replacement rolled back, but failure status finalization failed:",
-              statusError
+              logError(statusError)
             );
           } finally {
             if (recoveryIncomplete) {
@@ -2121,7 +2122,7 @@ export function startServer(
           // if this final app-data status write fails.
           console.error(
             "[Worktable] workspace replacement committed, but status finalization failed:",
-            error
+            logError(error)
           );
         } finally {
           enableWorkspaceTransferMaintenance();

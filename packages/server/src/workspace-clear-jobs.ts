@@ -33,6 +33,7 @@ import {
   WORKSPACE_TRANSFER_TTL_MS,
   type TransferJobBase,
 } from "./workspace-transfer-jobs.ts"
+import { logError } from "./debug-log.ts"
 
 export interface WorkspaceClearJob extends TransferJobBase {
   kind: "clear"
@@ -124,7 +125,7 @@ function startPreparation(id: string): void {
       }
     })
       .catch((error) =>
-        console.error("[workspace-clear] preparation failed", error)
+        console.error("[workspace-clear] preparation failed", logError(error))
       )
       .finally(() => activeClearJobs.delete(id))
   }, 0)

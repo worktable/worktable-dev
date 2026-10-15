@@ -10,6 +10,7 @@ import { recordActivity } from "./activity-log.ts"
 import { graceEndsAt } from "./lifetime-rules.ts"
 import { extendDocsArchiveOn, recordDocCreated } from "./store.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { logDocument, logError } from "./debug-log.ts"
 
 /** Actors whose annotations are bookkeeping rather than engagement. */
 export const NON_ENGAGING_ACTORS: ReadonlySet<string> = new Set(["worktable-lint"])
@@ -32,8 +33,8 @@ export async function noteDocumentActivity(
     }
   } catch (error) {
     console.error(
-      `[document-lifetime] could not extend ${paths.join(", ")} in ${spaceId}:`,
-      error
+      `[document-lifetime] could not extend ${paths.length} document(s) in ${spaceId}:`,
+      logError(error)
     )
   }
 }
@@ -54,8 +55,8 @@ export async function noteDocumentCreated(
     await recordDocCreated(spaceId, path, new Date(now).toISOString())
   } catch (error) {
     console.error(
-      `[document-lifetime] could not record creation of ${spaceId}/${path}:`,
-      error
+      `[document-lifetime] could not record creation of ${logDocument(spaceId, path)}:`,
+      logError(error)
     )
   }
 }

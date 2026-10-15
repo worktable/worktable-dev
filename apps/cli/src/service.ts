@@ -17,6 +17,7 @@ import {
 } from "@worktable/server/runtime";
 import { isLoopbackHost, readConfig, type WorktableConfig } from "./config.ts";
 import { getExecutablePath, getReleaseDir, VERSION } from "./paths.ts";
+import { getServiceLogPaths } from "./service-logs.ts";
 
 export type ServiceBackend = "launchd" | "systemd" | "process" | "unsupported";
 export type ServiceState =
@@ -259,11 +260,7 @@ export function getServicePaths(): ServiceStatus["logs"] & {
   file: string | null;
   platform: ServiceBackend;
 } {
-  const logDir = join(getAppDir(), "logs");
-  const logs = {
-    stdout: join(logDir, "service.out.log"),
-    stderr: join(logDir, "service.err.log"),
-  };
+  const logs = getServiceLogPaths();
   const platform = resolveBackend();
   return { platform, file: backendFilePath(platform), ...logs };
 }

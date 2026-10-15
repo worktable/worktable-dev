@@ -16,7 +16,10 @@ worktable paths
 
 These report installation health, the active host and workspace, and resolved
 paths. For a managed service, inspect `worktable service logs -n 100` and
-`worktable service status`.
+`worktable service status`. Each service log rotates at 10 MB and keeps three
+older copies. Logs leave out document paths and error details; to include them
+while you reproduce a problem, set `WORKTABLE_DEBUG=1` for the service and
+restart it.
 
 If the port is occupied, choose another with
 `worktable launch --port 7481`. Use the endpoint reported by Worktable when

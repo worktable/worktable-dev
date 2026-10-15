@@ -16,6 +16,7 @@ import type { Annotation } from "@worktable/types"
 import { listAnnotations, resolveAnnotation } from "./annotation-store.ts"
 import { listSpaces } from "./store.ts"
 import { wsManager } from "./ws.ts"
+import { logError } from "./debug-log.ts"
 
 const RETIRED_LINT_AUTHOR_ID = "worktable-lint"
 const RETIREMENT_REASON = "Automatic lint was retired"
@@ -77,7 +78,7 @@ export async function retireLintAnnotations(
         annotations = page.annotations
         more = page.nextOffset !== undefined
       } catch (err) {
-        console.error(`[lint-retirement] could not list annotations in ${space.id}:`, err)
+        console.error(`[lint-retirement] could not list annotations in ${space.id}:`, logError(err))
         break
       }
       for (const annotation of annotations) {
@@ -109,7 +110,7 @@ export async function retireLintAnnotations(
           skip += 1
           console.error(
             `[lint-retirement] could not resolve ${annotation.id} in ${space.id}:`,
-            err
+            logError(err)
           )
         }
       }

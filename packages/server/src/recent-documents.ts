@@ -10,6 +10,7 @@
 import type { DocumentSummary } from "@worktable/types"
 import { listDocuments } from "./document-query.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { logError } from "./debug-log.ts"
 
 export type RecentSort = "updated" | "created"
 
@@ -76,7 +77,7 @@ export async function listRecentDocuments(options: {
           activity: { spaceId: space.id, ...(newest ? { lastActivityAt: newest } : {}) },
         }
       } catch (error) {
-        console.error(`[recent-documents] could not list ${space.id}:`, error)
+        console.error(`[recent-documents] could not list ${space.id}:`, logError(error))
         return { items: [], temporary: [], activity: { spaceId: space.id } }
       }
     })

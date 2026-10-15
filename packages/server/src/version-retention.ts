@@ -41,6 +41,7 @@ import {
   versionKeyDir,
   withVersionKeyLock,
 } from "./version-store.ts";
+import { logDocument, logError } from "./debug-log.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -264,7 +265,7 @@ async function deleteVersionFileSafely(
   const resolved = resolve(file.path);
   if (!isInsideResolvedRoot(resolved, versionsRootResolved)) {
     console.warn(
-      `[version-retention] refusing to delete a path outside the versions dir: ${resolved}`,
+      "[version-retention] refusing to delete a version file outside the versions dir",
     );
     return { deleted: false, bytesFreed: 0 };
   }
@@ -272,7 +273,7 @@ async function deleteVersionFileSafely(
   // A symlink snapshot has no business in a versions dir; deleting one is
   // harmless but refusing is simpler to reason about.
   if ((await lstat(resolved)).isSymbolicLink()) {
-    console.warn(`[version-retention] refusing to delete symlink ${resolved}`);
+    console.warn("[version-retention] refusing to delete a symlinked version file");
     return { deleted: false, bytesFreed: 0 };
   }
 
@@ -280,7 +281,7 @@ async function deleteVersionFileSafely(
   const realParent = await realpath(parent);
   if (!isInsideResolvedRoot(realParent, versionsRootReal)) {
     console.warn(
-      `[version-retention] refusing to delete ${resolved} — parent resolves outside the versions dir (${realParent})`,
+      "[version-retention] refusing to delete a version file whose parent resolves outside the versions dir",
     );
     return { deleted: false, bytesFreed: 0 };
   }
@@ -289,7 +290,7 @@ async function deleteVersionFileSafely(
   const latestRealParent = await realpath(parent);
   if (!isInsideResolvedRoot(latestRealParent, versionsRootReal)) {
     console.warn(
-      `[version-retention] refusing to delete ${resolved} — parent moved outside the versions dir (${latestRealParent})`,
+      "[version-retention] refusing to delete a version file whose parent moved outside the versions dir",
     );
     return { deleted: false, bytesFreed: 0 };
   }
@@ -326,12 +327,15 @@ async function pruneKeyDir(
       realRoot = await realpath(versionsRootResolved);
       realDir = await realpath(dir);
     } catch (err) {
-      console.warn(`[version-retention] could not resolve ${dir}, skipping:`, err);
+      console.warn(
+        `[version-retention] could not resolve the version dir for ${logDocument(spaceId, key)}, skipping:`,
+        logError(err),
+      );
       return { filesDeleted, bytesFreed };
     }
     if (realDir !== realRoot && !realDir.startsWith(realRoot + sep)) {
       console.warn(
-        `[version-retention] refusing to prune ${dir} — resolves outside the versions dir (${realDir})`,
+        `[version-retention] refusing to prune the version dir for ${logDocument(spaceId, key)}: it resolves outside the versions dir`,
       );
       return { filesDeleted, bytesFreed };
     }
@@ -349,7 +353,10 @@ async function pruneKeyDir(
           bytesFreed += result.bytesFreed;
         }
       } catch (err) {
-        console.warn(`[version-retention] failed to delete ${file.path}:`, err);
+        console.warn(
+          `[version-retention] failed to delete a version file for ${logDocument(spaceId, key)}:`,
+          logError(err),
+        );
       }
     }
     return { filesDeleted, bytesFreed };
@@ -643,7 +650,7 @@ export async function runRetentionSweep(
     } catch (error) {
       console.warn(
         `[version-retention] failed to prune V2 generations for ${spaceId}/${documentId}:`,
-        error,
+        logError(error),
       );
     }
   }
@@ -704,8 +711,8 @@ export async function pruneDocKeyForCount(
     );
   } catch (err) {
     console.warn(
-      `[version-retention] post-write prune failed for ${spaceId}/${docPath}:`,
-      err,
+      `[version-retention] post-write prune failed for ${logDocument(spaceId, docPath)}:`,
+      logError(err),
     );
   }
 }

@@ -6,6 +6,7 @@ import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChange } from "./workspace-events.ts"
+import { logError } from "./debug-log.ts"
 
 // ============================================================
 // Access tokens
@@ -185,7 +186,7 @@ async function notifyParticipantsChanged(): Promise<void> {
   } catch (error) {
     console.error(
       "[tokens] credential state changed, but participant invalidation failed:",
-      error
+      logError(error)
     )
   }
 }

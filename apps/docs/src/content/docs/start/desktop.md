@@ -25,7 +25,8 @@ Desktop asks where your Worktable runs on first launch.
   HTTPS is strongly recommended. Plain HTTP requires an explicit warning
   acknowledgement.
 - **Worktable Cloud:** choose **Sign in**. Desktop opens the system browser for
-  authentication and then opens your hosted workspace in the native window.
+  authentication. Choose a Worktable and select **Open Worktable**. Desktop
+  remembers that destination for your next connection.
 
 Desktop remembers saved workspaces and servers. It does not store a
 self-hosted password. Cloud credentials remain in macOS Keychain rather than

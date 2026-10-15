@@ -1,3 +1,4 @@
+import { resetTeamSpacePoliciesAfterContentReplacement } from "./team-policy.ts"
 import { ensureWorkspaceManifest, workspaceCacheKey } from "./workspace.ts"
 import {
   WorkspaceExportPathError,
@@ -1012,6 +1013,7 @@ export async function replaceWorkspaceImportJob(
         stagingPath: scheduled.prepared!.stagingPath,
         backupPath: scheduled.prepared!.backupPath,
         contentCheckpoint: scheduled.prepared!.contentCheckpoint,
+        async onCommitted() { resetTeamSpacePoliciesAfterContentReplacement() },
         async onSucceeded() {
           let current = await getWorkspaceImportJob(id)
           const prepared = current.prepared

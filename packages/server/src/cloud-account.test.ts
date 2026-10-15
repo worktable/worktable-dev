@@ -101,9 +101,12 @@ beforeEach(async () => {
     }
     if (url.endsWith("/link")) {
       linkActions++
+      if (body.action === "enable") expect(body.workspaceId).toBe("subscription_one")
       if (body.action === "pause") paused = body.paused
       return Response.json({
         destinationId: "a".repeat(32),
+        workspaceId: "subscription_one",
+        ownerSubject: "owner",
         state: paused ? "paused" : "online",
       })
     }
@@ -247,7 +250,8 @@ test("an expired account is cleared only on provider rejection, not a transient 
 test("the Settings toggle preserves the MCP URL and share capability, while Unlink invalidates it", async () => {
   await startCloudSignIn(origin)
   await completeCloudSignIn(callback())
-  const first = await setLinkEnabled(true)
+  const first = await setLinkEnabled(true, "subscription_one")
+  expect(first.billingWorkspaceId).toBe("subscription_one")
   const share = await createDocumentShare({
     kind: "doc",
     spaceId: "notes",

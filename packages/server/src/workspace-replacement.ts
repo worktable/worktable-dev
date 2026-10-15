@@ -446,6 +446,7 @@ export async function beginPreparedWorkspaceReplacement(
           name: current.value.name,
           createdAt: current.value.createdAt,
           cloud: current.value.cloud,
+          teamAccessRequired: current.value.teamAccessRequired,
         }) + "\n"
       )
     )

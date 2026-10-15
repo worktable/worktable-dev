@@ -1,3 +1,10 @@
+import { teamsEnabled } from "./team-database.ts"
+import {
+  createTeamAgentConnection,
+  disconnectTeamAgentConnection,
+  listTeamAgentConnections,
+  updateTeamAgentConnection,
+} from "./team-agent-connections.ts"
 import { createHash } from "node:crypto"
 import { chmod, readFile, rename, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -466,6 +473,7 @@ export async function agentNamesByPrincipal(): Promise<Map<string, string>> {
 }
 
 export async function listAgentConnections(): Promise<AgentConnection[]> {
+  if (teamsEnabled()) return listTeamAgentConnections();
   const [file, tokens, participants] = await Promise.all([
     loadFile(),
     listTokens(),
@@ -491,6 +499,15 @@ export async function listAgentConnections(): Promise<AgentConnection[]> {
 export async function findAppAgent(
   label: DirectAgentLabel
 ): Promise<AgentConnection | null> {
+  if (teamsEnabled())
+    return (
+      (await listTeamAgentConnections()).find(
+        (connection) =>
+          connection.platform === label &&
+          connection.ownership === "personal" &&
+          connection.canManage
+      ) ?? null
+    )
   const id = labeledConnectionId(getWorkspaceRoot(), label)
   return (
     (await listAgentConnections()).find((connection) => connection.id === id) ??
@@ -499,6 +516,7 @@ export async function findAppAgent(
 }
 
 export async function disconnectAgentConnection(id: string): Promise<boolean> {
+  if (teamsEnabled()) return disconnectTeamAgentConnection(id);
   return serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()
@@ -565,6 +583,7 @@ export async function createAgentCredential(input: {
   if (scopes.length === 0) {
     throw new AgentConnectionUpdateError("Choose at least one kind of access")
   }
+  if (teamsEnabled()) return createTeamAgentConnection(input);
   const { token, metadata } = await createToken({ agent: input.label, scopes })
   try {
     const connection = await updateAgentConnection(
@@ -596,8 +615,10 @@ export async function updateAgentConnection(
     displayName?: string
     icon?: string | null
     access?: AgentAccess
+    spaceIds?: string[] | null
   }
 ): Promise<AgentConnection | null> {
+  if (teamsEnabled()) return updateTeamAgentConnection(id, changes);
   const token = await serialized(async () => {
     const [file, tokens] = await Promise.all([loadFile(), listTokens()])
     const workspace = getWorkspaceRoot()

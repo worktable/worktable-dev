@@ -33,7 +33,7 @@ pub const WORKTABLE_CLOUD_ORIGIN: &str = env!("WORKTABLE_DESKTOP_STAGING_ORIGIN"
 pub const WORKTABLE_CLOUD_ORIGIN: &str = "https://app.worktable.cloud";
 
 #[cfg(feature = "staging")]
-pub const WORKTABLE_CLOUD_ENVIRONMENT: &str = "staging";
+pub const WORKTABLE_CLOUD_ENVIRONMENT: &str = env!("WORKTABLE_DESKTOP_STAGING_ENVIRONMENT");
 #[cfg(not(feature = "staging"))]
 pub const WORKTABLE_CLOUD_ENVIRONMENT: &str = "production";
 
@@ -198,6 +198,18 @@ pub struct CloudWorkspace {
     pub hosted_workspace_id: String,
     pub portable_workspace_id: String,
     pub name: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudWorktableChoice {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+struct CloudWorktableChoices {
+    worktables: Vec<CloudWorktableChoice>,
 }
 
 pub struct CloudWebViewSession {
@@ -367,6 +379,7 @@ impl CloudHttpClient {
         access_token: &str,
         access_token_expires_at: OffsetDateTime,
         desktop_version: &str,
+        workspace_id: Option<&str>,
     ) -> Result<CloudWebViewSession, GatewayFailure> {
         let response = self
             .post(
@@ -374,6 +387,7 @@ impl CloudHttpClient {
                 &serde_json::json!({
                     "desktopVersion": desktop_version,
                     "sessionProtocolVersion": DESKTOP_SESSION_PROTOCOL_VERSION,
+                    "workspaceId": workspace_id,
                 }),
                 Some(access_token),
             )
@@ -1550,6 +1564,7 @@ impl CloudAuthController {
     pub async fn issue_webview_session(
         &self,
         desktop_version: &str,
+        workspace_id: Option<&str>,
     ) -> Result<CloudWebViewSession, CloudAuthError> {
         let (access_token, access_token_expires_at) = self
             .access
@@ -1566,9 +1581,42 @@ impl CloudAuthController {
                 )
             })?;
         self.http
-            .webview_session(&access_token, access_token_expires_at, desktop_version)
+            .webview_session(
+                &access_token,
+                access_token_expires_at,
+                desktop_version,
+                workspace_id,
+            )
             .await
             .map_err(GatewayFailure::into_auth_error)
+    }
+
+    pub async fn list_worktables(
+        &self,
+        desktop_version: &str,
+    ) -> Result<Vec<CloudWorktableChoice>, CloudAuthError> {
+        let access_token = self
+            .access
+            .lock()
+            .map_err(|_| CloudAuthError::configuration("Cloud session state is unavailable"))?
+            .as_ref()
+            .map(|session| session.access_token.clone())
+            .ok_or_else(|| CloudAuthError::configuration("Sign in to Worktable Cloud"))?;
+        let result: CloudWorktableChoices = self.http.post_json_failure("/gateway/desktop/worktables", &serde_json::json!({"desktopVersion": desktop_version, "sessionProtocolVersion": DESKTOP_SESSION_PROTOCOL_VERSION}), Some(&access_token)).await.map_err(GatewayFailure::into_auth_error)?;
+        if result.worktables.len() > 10000
+            || result.worktables.iter().any(|worktable| {
+                worktable.id.is_empty()
+                    || worktable.id.len() > 200
+                    || !worktable
+                        .id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                    || worktable.name.is_empty()
+            })
+        {
+            return Err(CloudAuthError::configuration("Worktable list is invalid"));
+        }
+        Ok(result.worktables)
     }
 
     pub async fn exact_session_logout_url(

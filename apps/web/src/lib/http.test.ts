@@ -7,6 +7,7 @@ import {
   getFreshBrowserCsrfToken,
   prefetchBrowserCsrfToken,
 } from "./http.ts"
+import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 
 const realFetch = globalThis.fetch
 
@@ -62,6 +63,25 @@ afterEach(() => {
 })
 
 describe("authenticatedFetch", () => {
+  it("recovers removed and switched members on ordinary reads", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
+    const location = {pathname: "/spaces/private", replace: jest.fn()}
+    Object.defineProperty(globalThis, "window", {configurable: true, value: {location, dispatchEvent: () => true}})
+    try {
+      for (const [code, status] of [["MEMBERSHIP_REQUIRED", 403], ["MEMBER_CHANGED", 409]] as const) {
+        location.replace.mockClear()
+        globalThis.fetch = (async () => Response.json({code}, {status})) as typeof fetch
+        expect((await authenticatedFetch("https://app.worktable.cloud/api/spaces")).status).toBe(status)
+        await settle(() => location.replace.mock.calls.length > 0)
+        expect(location.replace).toHaveBeenCalledWith("/")
+        await acceptWorkspaceContentEpoch("recovery-test", "same-content")
+      }
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "window", descriptor)
+      else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
   it("acquires Cloud CSRF and retries an unsafe request exactly once", async () => {
     const requests: Request[] = []
     globalThis.fetch = (async (input, init) => {

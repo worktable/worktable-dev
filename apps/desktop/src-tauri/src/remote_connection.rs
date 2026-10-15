@@ -132,7 +132,7 @@ impl RemoteHttpClient {
     pub async fn probe_workspace(
         &self,
         origin: &Url,
-        session_cookie: Option<&str>,
+        session_cookie: Option<&RemoteSessionCookie>,
     ) -> Result<WorkspaceProbe, RemoteConnectionError> {
         let url = origin.join("/api/workspace").map_err(|error| {
             RemoteConnectionError::permanent(
@@ -183,8 +183,13 @@ impl RemoteHttpClient {
         Ok(WorkspaceProbe::Ready(workspace))
     }
 
-    pub async fn logout(&self, origin: &Url, session_cookie: Option<&str>) {
-        let Ok(url) = origin.join("/auth/logout") else {
+    pub async fn logout(&self, origin: &Url, session_cookie: Option<&RemoteSessionCookie>) {
+        let logout_path = if session_cookie.is_some_and(|cookie| cookie.name != "wt_session") {
+            "/auth/team/sign-out"
+        } else {
+            "/auth/logout"
+        };
+        let Ok(url) = origin.join(logout_path) else {
             return;
         };
         let mut request = self
@@ -198,7 +203,7 @@ impl RemoteHttpClient {
             };
             request = request.header(COOKIE, value);
         }
-        let _ = request.send().await;
+        let _ = request.json(&serde_json::json!({})).send().await;
     }
 }
 
@@ -311,9 +316,41 @@ pub fn remote_origin_string(origin: &Url) -> String {
     origin.origin().ascii_serialization()
 }
 
-pub fn session_cookie_header(cookie_value: &str) -> Result<String, RemoteConnectionError> {
-    if cookie_value.is_empty()
-        || cookie_value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteSessionCookie {
+    pub name: String,
+    pub value: String,
+}
+
+pub fn is_worktable_session_cookie_name(name: &str) -> bool {
+    matches!(
+        name,
+        "wt_session" | "worktable-team.session_token" | "__Secure-worktable-team.session_token"
+    )
+}
+
+/// Prefer the named-member session when a legacy owner cookie also exists.
+pub fn select_remote_session_cookie(
+    cookies: impl IntoIterator<Item = (String, String)>,
+) -> Option<RemoteSessionCookie> {
+    cookies
+        .into_iter()
+        .filter(|(name, _)| is_worktable_session_cookie_name(name))
+        .max_by_key(|(name, _)| match name.as_str() {
+            "__Secure-worktable-team.session_token" => 2,
+            "worktable-team.session_token" => 1,
+            _ => 0,
+        })
+        .map(|(name, value)| RemoteSessionCookie { name, value })
+}
+
+pub fn session_cookie_header(
+    cookie: &RemoteSessionCookie,
+) -> Result<String, RemoteConnectionError> {
+    if !is_worktable_session_cookie_name(&cookie.name)
+        || cookie.value.is_empty()
+        || cookie
+            .value
             .bytes()
             .any(|byte| byte <= 0x20 || byte == 0x7f || matches!(byte, b';' | b','))
     {
@@ -322,7 +359,7 @@ pub fn session_cookie_header(cookie_value: &str) -> Result<String, RemoteConnect
             "Desktop could not read a valid Worktable session cookie.",
         ));
     }
-    Ok(format!("wt_session={cookie_value}"))
+    Ok(format!("{}={}", cookie.name, cookie.value))
 }
 
 fn request_error(url: &Url, error: reqwest::Error) -> RemoteConnectionError {
@@ -500,14 +537,51 @@ mod tests {
     }
 
     #[test]
-    fn builds_only_the_worktable_session_cookie() {
-        assert_eq!(
-            session_cookie_header("signed.value").unwrap(),
-            "wt_session=signed.value"
-        );
-        for invalid in ["", "bad;cookie", "bad\nvalue", "bad value"] {
-            assert!(session_cookie_header(invalid).is_err());
+    fn forwards_only_recognized_sessions_and_prefers_named_members() {
+        for name in [
+            "wt_session",
+            "worktable-team.session_token",
+            "__Secure-worktable-team.session_token",
+        ] {
+            let cookie = RemoteSessionCookie {
+                name: name.into(),
+                value: "signed.value".into(),
+            };
+            assert_eq!(
+                session_cookie_header(&cookie).unwrap(),
+                format!("{name}=signed.value")
+            );
+            for invalid in ["", "bad;cookie", "bad\nvalue", "bad value"] {
+                assert!(session_cookie_header(&RemoteSessionCookie {
+                    name: name.into(),
+                    value: invalid.into()
+                })
+                .is_err());
+            }
         }
+        assert!(session_cookie_header(&RemoteSessionCookie {
+            name: "unrelated".into(),
+            value: "signed.value".into()
+        })
+        .is_err());
+        let selected = select_remote_session_cookie([
+            (String::from("wt_session"), String::from("old-owner")),
+            (
+                String::from("worktable-team.session_token"),
+                String::from("named-member"),
+            ),
+            (String::from("unrelated"), String::from("ignored")),
+        ])
+        .unwrap();
+        assert_eq!(
+            session_cookie_header(&selected).unwrap(),
+            "worktable-team.session_token=named-member"
+        );
+        assert!(select_remote_session_cookie([(
+            String::from("unrelated"),
+            String::from("ignored")
+        )])
+        .is_none());
     }
 
     #[test]

@@ -7,7 +7,9 @@ let admissionHookForTests:
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 
-export function isWorkspaceRequest(method: string, pathname: string): boolean {
+export function isWorkspaceRequest(method: string, pathname: string, teamMode = false): boolean {
+  // Named-member reads must finish against the tree their grants authorized.
+  if (teamMode && SAFE_METHODS.has(method.toUpperCase()) && pathname !== "/health") return true
   // Downloads expose workspace content even though they do not mutate it.
   // Drain admission through replacement commit and export revocation.
   if (
@@ -20,6 +22,9 @@ export function isWorkspaceRequest(method: string, pathname: string): boolean {
     pathname === "/api/linked/account/callback"
   )
     return true
+  // Recipient discovery may establish durable participant bindings.
+  if (method.toUpperCase() === "GET" && (pathname === "/api/profile" || /^\/api\/(?:spaces\/[^/]+\/)?threads\/participants$/.test(pathname))) return true
+  if (method.toUpperCase() === "GET" && (pathname === "/api/pending" || pathname === "/api/threads" || pathname.startsWith("/api/threads/"))) return true
   if (SAFE_METHODS.has(method.toUpperCase())) return false
   return (
     pathname === "/mcp" ||
@@ -32,6 +37,15 @@ export function isWorkspaceRequest(method: string, pathname: string): boolean {
     pathname.startsWith("/api/shares/") ||
     pathname === "/api/linked" ||
     pathname.startsWith("/api/linked/") ||
+    pathname === "/api/profile" ||
+    pathname === "/api/agent-connections" ||
+    pathname.startsWith("/api/agent-connections/") ||
+    pathname === "/api/pairing" ||
+    pathname.startsWith("/api/pairing/") ||
+    pathname === "/api/team" ||
+    pathname.startsWith("/api/team/") ||
+    pathname === "/api/tokens" ||
+    pathname.startsWith("/api/tokens/") ||
     pathname === "/api/spaces" ||
     pathname.startsWith("/api/spaces/") ||
     pathname === "/api/threads" ||

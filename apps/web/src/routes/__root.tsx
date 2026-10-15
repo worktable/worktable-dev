@@ -1,8 +1,11 @@
+import { runtimePath } from "@/lib/runtime-path"
 /// <reference types="vite/client" />
 import {
   DocumentLifetimeChip,
   DocumentOrganizeMenuItems,
 } from "@/components/document-organize"
+import { DEPLOYMENT_QUERY_KEY } from "@/hooks/use-deployment-info"
+import type { DeploymentInfo } from "@/lib/system-api"
 import { WorkspaceOperationObserver } from "@/components/workspace-operation-observer"
 import { WorkspaceStorageGate } from "@/components/workspace-storage-gate"
 import appStylesheet from "@/styles/app.css?url"
@@ -34,7 +37,7 @@ import {
   Scripts,
 } from "@tanstack/react-router"
 import type { QueryClient } from "@tanstack/react-query"
-import { QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query"
 import {
   PanelLeft,
   PanelRight,
@@ -142,21 +145,22 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       },
     ],
     links: [
-      { rel: "stylesheet", href: appStylesheet },
-      { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
+      { rel: "stylesheet", href: runtimePath(appStylesheet) },
+      { rel: "icon", href: runtimePath("/favicon.ico"), sizes: "48x48" },
       {
         rel: "icon",
-        href: "/favicon.svg",
+        href: runtimePath("/favicon.svg"),
         sizes: "any",
         type: "image/svg+xml",
       },
       {
         rel: "apple-touch-icon",
-        href: "/apple-touch-icon-180x180.png",
+        href: runtimePath("/apple-touch-icon-180x180.png"),
       },
       {
         rel: "manifest",
-        href: "/manifest.webmanifest",
+        href: runtimePath("/manifest.webmanifest"),
+        crossOrigin: "use-credentials",
       },
     ],
   }),
@@ -184,7 +188,7 @@ const productFontCss =
   (typeof document === "undefined"
     ? undefined
     : document.getElementById(PRODUCT_FONT_STYLE_ID)?.textContent) ??
-  productFontFaceCss(PRODUCT_FONT_PATH)
+  productFontFaceCss(runtimePath(PRODUCT_FONT_PATH))
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
@@ -404,6 +408,10 @@ function WorkspaceTitle() {
 }
 
 function RootLayout() {
+  // The shell reads queries without subscribing: a re-render here re-renders
+  // the whole sidebar in one blocking task.
+  const queryClient = useQueryClient()
+  const workspaceQuery = useWorkspace()
   const isLoginPage = useRouterState({
     select: (s) => s.location.pathname === "/login",
   })
@@ -449,13 +457,16 @@ function RootLayout() {
   useEffect(
     () =>
       onBrowserLogout(() => {
+        const deployment =
+          queryClient.getQueryData<DeploymentInfo>(DEPLOYMENT_QUERY_KEY)
         // Navigation unloads this tab and closes its /ws and /yjs connections.
-        window.location.replace("/signed-out")
+        window.location.replace(
+          deployment?.mode === "cloud" ? "/signed-out" : runtimePath("/login")
+        )
       }),
-    []
+    [queryClient]
   )
 
-  const workspaceQuery = useWorkspace()
   const workspace = workspaceQuery.data
 
   // Close sidebar on mobile when route changes

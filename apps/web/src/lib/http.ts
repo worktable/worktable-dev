@@ -1,4 +1,10 @@
-import { noteServerBuild } from "./build-version";
+import { RUNTIME_BASE_PATH, runtimePath } from "./runtime-path"
+import {
+  acceptTeamResponse,
+  browserTeamMemberId,
+  clearTeamBrowserData,
+} from "./team-context"
+import { noteServerBuild } from "./build-version"
 import {
   workspaceContentEpoch,
   workspaceContentChanged,
@@ -16,7 +22,7 @@ import {
 // On loopback / flag-off this is a no-op: there is no cookie to send and the
 // server never returns 401, so behavior is byte-for-byte today.
 
-export const BASE_URL = import.meta.env.VITE_API_URL ?? "";
+export const BASE_URL = import.meta.env.VITE_API_URL ?? RUNTIME_BASE_PATH;
 
 /**
  * Redirect to the login page, preserving the current location as ?next (so the
@@ -29,8 +35,10 @@ export function redirectToLogin(): void {
     window.location.pathname + window.location.search
   );
   // Avoid a redirect loop if we're already on /login.
-  if (window.location.pathname === "/login") return;
-  window.location.assign(`/login?next=${next}`);
+  if (window.location.pathname === runtimePath("/login")) return
+  void clearTeamBrowserData().finally(() =>
+    window.location.assign(RUNTIME_BASE_PATH ? `/login?return_to=${next}` : `${runtimePath("/login")}?next=${next}`)
+  )
 }
 
 export class UnauthorizedError extends Error {
@@ -181,11 +189,14 @@ export async function authenticatedFetch(
   // Capture once: a CSRF retry must not silently rebase an old mutation.
   const epoch = workspaceContentEpoch();
   const send = (token: string | null) => {
-    const headers = new Headers(init.headers);
-    if (contentMutation && epoch) headers.set("X-Worktable-Content-Epoch", epoch);
-    if (unsafe(method) && token) headers.set("X-Worktable-CSRF", token);
-    return fetch(input, { ...init, method, headers, credentials: "include" });
-  };
+    const headers = new Headers(init.headers)
+    const member = browserTeamMemberId()
+    if (member) headers.set("X-Worktable-Member", member)
+    if (contentMutation && epoch)
+      headers.set("X-Worktable-Content-Epoch", epoch)
+    if (unsafe(method) && token) headers.set("X-Worktable-CSRF", token)
+    return fetch(input, { ...init, method, headers, credentials: "include" })
+  }
 
   const token = unsafe(method)
     ? await currentCsrfToken(
@@ -198,10 +209,22 @@ export async function authenticatedFetch(
     const token = await acquireCsrfToken();
     if (token) response = await send(token);
   }
-  if (contentMutation && response.status === 409) {
-    const body = await response.clone().json().catch(() => null);
-    if (body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace();
+  if (response.status === 403 || response.status === 409) {
+    const body = await response
+      .clone()
+      .json()
+      .catch(() => null)
+    if (contentMutation && body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace()
+    if (body?.code === "MEMBERSHIP_REQUIRED") {
+      fenceChangedWorkspace()
+      void clearTeamBrowserData().finally(() => window.location.replace("/"))
+    }
+    if (body?.code === "MEMBER_CHANGED") {
+      fenceChangedWorkspace()
+      void clearTeamBrowserData().finally(() => window.location.replace(runtimePath("/")))
+    }
   }
+  acceptTeamResponse(response, method, input);
   return response;
 }
 

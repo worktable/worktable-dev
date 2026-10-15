@@ -59,7 +59,9 @@ function DrawingEditor({
   workspaceId,
   spaceId,
   documentPath,
+  page,
 }: DocumentRendererProps & { workspaceId: string }) {
+  const readOnly = !page || page.capabilities.edit === false
   const container = useRef<HTMLDivElement>(null)
   const editor = useRef<Editor | null>(null)
   const dirty = useRef(false)
@@ -159,6 +161,7 @@ function DrawingEditor({
       clearTimeout(timer)
       if (
         disposed ||
+        readOnly ||
         saving ||
         loading ||
         conflict ||
@@ -332,7 +335,7 @@ function DrawingEditor({
         setError(null)
         setConflictError(false)
         setStatus("Saved")
-        if (recoverDraft) {
+        if (recoverDraft && !readOnly) {
           try {
             const raw = localStorage.getItem(draftKey)
             if (raw) {
@@ -374,7 +377,7 @@ function DrawingEditor({
         console.error("Drawing load failed", cause)
       } finally {
         loading = false
-        if (!disposed && drawing) instance.editor.setReadonly(false)
+        if (!disposed && drawing) instance.editor.setReadonly(readOnly)
         void refreshExternal()
       }
       if (recoverDraft && dirty.current && !conflict) scheduleSave()
@@ -429,7 +432,7 @@ function DrawingEditor({
           } finally {
             saving = false
             if (!disposed) {
-              instance.editor.setReadonly(false)
+              instance.editor.setReadonly(readOnly)
               node.inert = false
             }
           }
@@ -446,6 +449,7 @@ function DrawingEditor({
       }
     )
     const markChanged = () => {
+      if (readOnly) return
       dirty.current = true
       change += 1
       setStatus("Unsaved changes")
@@ -549,7 +553,15 @@ function DrawingEditor({
       node.removeEventListener("keydown", stopKeys)
       instance.destroy()
     }
-  }, [workspaceId, spaceId, documentPath, queryClient, navigate, subscribe])
+  }, [
+    workspaceId,
+    spaceId,
+    documentPath,
+    queryClient,
+    navigate,
+    subscribe,
+    readOnly,
+  ])
 
   useEffect(() => {
     editor.current?.setTheme(resolvedTheme)
@@ -592,10 +604,10 @@ function DrawingEditor({
           icon: RotateCw,
           onSelect: () => actions.current?.reload(),
         },
-      ],
+      ].filter((action) => !readOnly || action.id !== "drawing-copy"),
     })
     return () => setPageMeta(null)
-  }, [title, spaceId, documentPath, setPageMeta])
+  }, [title, spaceId, documentPath, setPageMeta, readOnly])
 
   return (
     <section

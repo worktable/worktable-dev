@@ -1,3 +1,13 @@
+import {
+  resetTeamSpacePoliciesAfterContentReplacement,
+  prepareTeamSpacePolicyResetForMissingRootRecovery,
+  finalizePendingTeamSpacePolicyReset,
+} from "./team-policy.ts"
+import {
+  restoreTeamBackupState,
+  TeamBackupStateSchema,
+  type TeamBackupState,
+} from "./team-backup.ts"
 import { lstat, mkdir, open, rename } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
@@ -32,6 +42,13 @@ export interface SnapshotRestoreRequest {
 }
 
 /** Offline recovery runs before the replacement runtime's first server boot. */
+let missingRootRecoveryHookForTests: (() => void) | null = null
+export function setMissingRootRecoveryHookForTests(
+  hook: (() => void) | null
+): void {
+  missingRootRecoveryHookForTests = hook
+}
+
 export async function recoverMissingWorkspaceSnapshot(
   operationId: string,
   workspaceId: string,
@@ -59,7 +76,13 @@ export async function recoverMissingWorkspaceSnapshot(
         sourceCheckpoint,
       })
       await convertStagedWorkspaceStorageV2(join(downloaded, "workspace"))
+      if (!manifest.teamState)
+        prepareTeamSpacePolicyResetForMissingRootRecovery(manifest.workspaceId)
       await rename(join(downloaded, "workspace"), root)
+      missingRootRecoveryHookForTests?.()
+      if (manifest.teamState)
+        await restoreTeamBackupState(downloaded, manifest.teamState)
+      else finalizePendingTeamSpacePolicyReset()
       const parent = await open(dirname(root), "r")
       try {
         await parent.sync()
@@ -76,6 +99,8 @@ export async function recoverMissingWorkspaceSnapshot(
   )
 }
 interface RestoreJob extends SnapshotRestoreRequest {
+  teamState?: TeamBackupState
+  teamRestored?: boolean
   id: string
   kind: "snapshot"
   state: "replacing" | "complete" | "failed"
@@ -200,6 +225,7 @@ export async function restoreLiveWorkspaceSnapshot(
           ...request,
           id,
           kind: "snapshot",
+          ...(snapshot.teamState ? { teamState: snapshot.teamState } : {}),
           state: "replacing",
           updatedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
@@ -215,7 +241,9 @@ export async function restoreLiveWorkspaceSnapshot(
           )
           scheduleWorkspaceReplacement({
             ...job.prepared,
-            contentCheckpoint: await calculateWorkspaceContentCheckpoint(job.prepared.stagingPath),
+            contentCheckpoint: await calculateWorkspaceContentCheckpoint(
+              job.prepared.stagingPath
+            ),
             options: {
               manifest: "checkpoint",
               expectedSourceCheckpoint: convertedSourceCheckpoint,
@@ -228,6 +256,13 @@ export async function restoreLiveWorkspaceSnapshot(
                     "workspace changed after its safety backup; retry the restore"
                   )
               },
+            },
+            onCommitted: async () => {
+              if (job.teamState) {
+                await restoreTeamBackupState(downloaded, job.teamState)
+                job.teamRestored = true
+                await saveJob(jobDirectory, job)
+              } else resetTeamSpacePoliciesAfterContentReplacement()
             },
             onSucceeded: async () => {
               job.state = "complete"
@@ -265,4 +300,27 @@ export async function restoreLiveWorkspaceSnapshot(
       })
     }
   )
+}
+
+/** Complete app-private restore before boot reopens a committed replacement. */
+export async function finalizeCommittedTeamSnapshotRestore(
+  jobId: string
+): Promise<void> {
+  if (!/^wss_[A-Za-z0-9_-]{8,80}$/.test(jobId)) return
+  const directory = join(ensureAppDir(), "workspace-transfers", "jobs", jobId)
+  const job = JSON.parse(
+    await readBoundedRegularFile(join(directory, "job.json"), 128 * 1024)
+  ) as RestoreJob
+  if (job.kind !== "snapshot" || job.id !== jobId || job.teamRestored) return
+  if (!job.teamState) {
+    resetTeamSpacePoliciesAfterContentReplacement()
+    job.teamRestored = true
+    await saveJob(directory, job)
+    return
+  }
+  const state = TeamBackupStateSchema.parse(job.teamState)
+  const operationDirectory = await operatorSnapshotDirectory(job.operationId)
+  await restoreTeamBackupState(join(operationDirectory, "download"), state)
+  job.teamRestored = true
+  await saveJob(directory, job)
 }

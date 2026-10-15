@@ -1,3 +1,4 @@
+import { cloudConnectorCommand } from "@/lib/always-on-agents"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bot, Check, ExternalLink, Plug } from "lucide-react"
@@ -673,7 +674,6 @@ export function ConnectStep({
     session?.status !== "failed"
   const canCreate = name.trim().length > 0 && anyAccess && !busy && appKnown
 
-  const origin = current ? new URL(current.remoteMcpUrl).origin : ""
   const manualDetails = current ? desktopAgentConnectionDetails(current) : null
   const endpoint = isCloud ? current?.remoteMcpUrl : manualDetails?.endpoint
   const snippet =
@@ -857,14 +857,7 @@ export function ConnectStep({
       isCloud ? (
         <>
           <CopyValue
-            value={[
-              `curl -fsSL ${origin}/connect.sh | sh -s --`,
-              "--oauth",
-              `--server ${origin}`,
-              computerTarget === "auto" ? "" : `--client ${computerTarget}`,
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            value={cloudConnectorCommand(current!.remoteMcpUrl, computerTarget)}
             label="Copy install command"
           />
           <p className="text-xs text-muted-foreground">
@@ -900,7 +893,7 @@ export function ConnectStep({
                     pairing.serverOrigin,
                     pairing.code
                   )
-                : alwaysOnAgent.cloudConnectCommand(origin, name.trim())
+                : alwaysOnAgent.cloudConnectCommand(current!.remoteMcpUrl, name.trim())
             }
             copyLabel="Copy connection command"
           />

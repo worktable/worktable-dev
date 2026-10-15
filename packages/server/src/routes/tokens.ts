@@ -1,3 +1,5 @@
+import { teamsEnabled } from "../team-database.ts";
+import { bindTeamAgentCredential, createTeamAgent, requireTeamAgentAdministrator, teamAgentForCredentialAdministration, updateTeamAgent } from "../team-policy.ts";
 import { Hono } from "hono";
 import { requireMintAuth, requireScope, trustedLocalIdentity } from "../auth.ts";
 import { isHosted } from "../hosted.ts";
@@ -51,7 +53,7 @@ tokensRouter.post("/", async (c) => {
   if (!body || typeof body !== "object") {
     return c.json({ error: "Invalid JSON body", code: "BAD_REQUEST" }, 400);
   }
-  const { scopes, agent } = body as { scopes?: unknown; agent?: unknown };
+  const { scopes, agent, agentId } = body as { scopes?: unknown; agent?: unknown; agentId?: unknown };
 
   if (
     !Array.isArray(scopes) ||
@@ -72,6 +74,20 @@ tokensRouter.post("/", async (c) => {
   }
 
   const identity = c.get("identity");
+  if (teamsEnabled()) {
+    if (agentId !== undefined && typeof agentId !== "string") return c.json({ error: "agentId must identify a registered agent" }, 400);
+    const target = typeof agentId === "string" ? requireTeamAgentAdministrator(agentId, identity) : createTeamAgent({ name: typeof agent === "string" && agent.trim() ? agent.trim() : "Agent", platform: typeof agent === "string" && agent.trim() ? agent.trim() : "agent", ownership: "personal" }, identity);
+    let minted: Awaited<ReturnType<typeof createToken>> | undefined;
+    try {
+      minted = await createToken({ scopes, agent: target.platform, user: identity.team!.userId });
+      bindTeamAgentCredential(target.id, minted.metadata.principal.id, identity);
+      return c.json({ ...minted, agentId: target.id }, 201);
+    } catch (error) {
+      try { if (minted) await revokeToken(minted.metadata.id); }
+      finally { if (agentId === undefined) updateTeamAgent(target.id, {active: false}, identity); }
+      throw error;
+    }
+  }
   const requestedAgent = agent as string | null | undefined;
   // Token management permits delegation, not promotion from an agent to a
   // human principal. Empty labels also classify as human in the token store.
@@ -87,10 +103,14 @@ tokensRouter.post("/", async (c) => {
 });
 
 tokensRouter.get("/", async (c) => {
-  return c.json({ tokens: await listTokens() });
+  const tokens = await listTokens();
+  return c.json({ tokens: teamsEnabled() ? tokens.filter((token) => {
+    try { teamAgentForCredentialAdministration(token.principal.id, c.get("identity")); return true; } catch { return false; }
+  }) : tokens });
 });
 
 tokensRouter.delete("/:id", async (c) => {
+  if (teamsEnabled()) teamAgentForCredentialAdministration(`local-token:${c.req.param("id")}`, c.get("identity"));
   const revoked = await revokeToken(c.req.param("id"));
   if (!revoked) {
     return c.json({ error: "Token not found", code: "NOT_FOUND" }, 404);

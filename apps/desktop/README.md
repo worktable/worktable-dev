@@ -79,3 +79,8 @@ Supply `WORKTABLE_DESKTOP_STAGING_ORIGIN` as the canonical HTTPS origin of your
 staging deployment when building with the `staging` feature and when verifying
 the resulting bundle. There is no default staging endpoint. Production builds
 retain their fixed production origin and ignore this staging setting.
+
+For an isolated pre-merge gateway running in the `integration` environment,
+set `WORKTABLE_DESKTOP_STAGING_ENVIRONMENT=integration` alongside that origin.
+Omitting this setting retains `staging`. The native shell checks the exact
+compiled origin and environment and requires the staging WorkOS issuer.

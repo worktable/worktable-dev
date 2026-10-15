@@ -1,3 +1,5 @@
+import { cloudConnectorCommand } from "@/lib/always-on-agents"
+import { fetchJSON } from "@/lib/http"
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -237,15 +239,7 @@ function CloudQuickConnectPanel({
   connection: ConnectionInfo
 }) {
   const [clientChoice, setClientChoice] = useState<RemoteClientChoice>("auto")
-  const origin = new URL(connection.remoteMcpUrl).origin
-  const command = [
-    `curl -fsSL ${origin}/connect.sh | sh -s --`,
-    "--oauth",
-    `--server ${origin}`,
-    clientChoice === "auto" ? "" : `--client ${clientChoice}`,
-  ]
-    .filter(Boolean)
-    .join(" ")
+  const command = cloudConnectorCommand(connection.remoteMcpUrl, clientChoice)
   return (
     <div className="flex flex-col gap-4">
       <Select
@@ -283,8 +277,7 @@ function CloudAlwaysOnPanel({
   connection: ConnectionInfo
   agent: AlwaysOnAgent
 }) {
-  const origin = new URL(connection.remoteMcpUrl).origin
-  const connect = agent.cloudConnectCommand(origin)
+  const connect = agent.cloudConnectCommand(connection.remoteMcpUrl)
   const installCopy = useCopy(() => toast.success("Copied"))
   const connectCopy = useCopy(() => toast.success("Copied"))
   return (
@@ -504,7 +497,13 @@ function RemoteAgentOriginWarning({
   )
 }
 
-function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
+function QuickConnectPanel({
+  connection,
+  agentId,
+}: {
+  connection: ConnectionInfo
+  agentId?: string
+}) {
   const queryClient = useQueryClient()
   const sectionActive = useSettingsSectionActive()
 
@@ -531,6 +530,7 @@ function QuickConnectPanel({ connection }: { connection: ConnectionInfo }) {
       createPairing({
         client: clientChoice === "auto" ? null : clientChoice,
         access,
+        ...(agentId ? { agentId } : {}),
       }),
     onSuccess: (res) => setPairing(res),
     onError: (err) =>
@@ -1430,6 +1430,11 @@ export function ConnectedAgentsGroup() {
       ),
   })
 
+  const reconnect = useMutation({
+    mutationFn: (id: string) => fetchJSON(`/api/team/agents/${encodeURIComponent(id)}/reconnect`, {method: "POST"}),
+    onSuccess: () => { toast.success("Sign in again from your agent to finish reconnecting."); void queryClient.invalidateQueries({queryKey: ["agent-connections"]}) },
+    onError: error => toast.error(error instanceof Error ? error.message : "Could not reconnect the agent."),
+  })
   const [editing, setEditing] = useState<AgentConnection | null>(null)
   const connections = connectionsQuery.data?.connections ?? []
   const oauthInventoryUnavailable =
@@ -1496,8 +1501,8 @@ export function ConnectedAgentsGroup() {
                           : "Not used yet"}
                       </p>
                     </div>
-                    {connection.authKind === "local-token" ||
-                    (connection.authKind === "oauth" && connection.access) ? (
+                    {connection.canManage !== false && (connection.authKind === "local-token" ||
+                    (connection.authKind === "oauth" && connection.access)) ? (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1506,10 +1511,11 @@ export function ConnectedAgentsGroup() {
                         Edit
                       </Button>
                     ) : null}
+                    {connection.canReconnect && <Button variant="outline" size="sm" disabled={reconnect.isPending} onClick={() => reconnect.mutate(connection.id)}>Reconnect</Button>}
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={disconnect.isPending}
+                      disabled={disconnect.isPending || connection.canManage === false}
                       onClick={() => disconnect.mutate(connection.id)}
                     >
                       Disconnect
@@ -2099,5 +2105,32 @@ function ScopeCheckbox({
       />
       {label}
     </label>
+  )
+}
+
+/** Use the ordinary connection flow for an explicitly registered team agent. */
+export function TeamAgentConnectPanel({ agentId }: { agentId: string }) {
+  const connection = useQuery({
+    queryKey: ["system", "connection"],
+    queryFn: getConnection,
+  })
+  if (connection.isPending)
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        Loading connection…
+      </p>
+    )
+  if (connection.isError)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        Could not load connection settings.
+      </p>
+    )
+  return (
+    <QuickConnectPanel
+      key={agentId}
+      connection={connection.data}
+      agentId={agentId}
+    />
   )
 }

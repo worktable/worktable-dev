@@ -10,6 +10,7 @@ import {
   type ThreadSummary,
 } from "@worktable/types"
 import { hasScope } from "../token-store.ts"
+import { assertSpaceAccess } from "../team-policy.ts"
 import {
   assignResponseRequest,
   listThreadParticipantsForDisplay,
@@ -161,7 +162,9 @@ function threadListItem({
 threadsRouter.get("/participants", async (c) => {
   const denied = requireThreadScope(c, "threads:read")
   if (denied) return denied
-  return c.json(await listThreadParticipantsForDisplay(c.get("identity")))
+  const location = routeLocation(c)
+  if (location.kind === "space") assertSpaceAccess(location.spaceId, "read", c.get("identity"))
+  return c.json(await listThreadParticipantsForDisplay(c.get("identity"), location))
 })
 
 threadsRouter.get("/", async (c) => {

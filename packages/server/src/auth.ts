@@ -1,3 +1,4 @@
+import { resolveCloudTeamAgentCredential } from "./team-cloud.ts";
 import { timingSafeEqual } from "node:crypto"
 import type { Context, Next } from "hono"
 import {
@@ -27,6 +28,13 @@ import {
   verifyHostedBrowserAssertion,
   verifyHostedResourceToken,
 } from "./hosted-auth.ts"
+import { teamsEnabled } from "./team-database.ts"
+import { verifyTeamSession } from "./team-session.ts"
+import { hasTeamOperatorAuthority } from "./team-members.ts"
+import {
+  assertCurrentTeamIdentity, assertSpaceAccess, requireTeamHuman,
+  resolveTeamAgentCredential, runWithTeamIdentity, teamMemberForIdentity,
+} from "./team-policy.ts"
 
 // ============================================================
 // Request identity
@@ -75,6 +83,7 @@ export function ownerIdentity(): TokenIdentity {
 /** Whether the resolved request identity carries local owner authority. */
 export function isLocalOwner(c: Context): boolean {
   const identity = c.get("identity")
+  if (teamsEnabled()) return Boolean(identity && teamMemberForIdentity(identity)?.role === "owner")
   return Boolean(identity && identity.scopes.includes("*"))
 }
 
@@ -85,6 +94,7 @@ export function isLocalOwner(c: Context): boolean {
  */
 export function isHostedBrowserOwner(c: Context): boolean {
   if (!isHosted()) return false
+  if (teamsEnabled()) return teamMemberForIdentity(c.get("identity"))?.role === "owner"
   const ownerSubject = getOwnerSubject()
   const principal = trustedGatewayPrincipal(c.req.raw)
   return Boolean(
@@ -99,6 +109,34 @@ export function canManageUserSettings(c: Context): boolean {
   return isLocalOwner(c) || isHostedBrowserOwner(c)
 }
 
+/** Host controls never follow a newly granted team-owner role. */
+export function canOperateHost(c: Context): boolean {
+  if (!teamsEnabled()) return isLocalOwner(c) || isHostedBrowserOwner(c)
+  const identity = c.get("identity")
+  if (identity?.operatorVerification) return c.req.method === "GET"
+  const member = identity ? teamMemberForIdentity(identity) : null
+  return Boolean(member && hasTeamOperatorAuthority(member.userId))
+}
+
+function changedBrowserMember(
+  c: Context,
+  identity: TokenIdentity
+): Response | null {
+  const expected = c.req.header("X-Worktable-Member")
+  return expected &&
+    identity.principal.type === "human" &&
+    identity.team?.memberId &&
+    expected !== identity.team.memberId
+    ? c.json(
+        {
+          error: "Your account changed. Reload before continuing.",
+          code: "MEMBER_CHANGED",
+        },
+        409
+      )
+    : null
+}
+
 function withTrustedGatewayPrincipal(
   request: Request,
   identity: TokenIdentity
@@ -106,6 +144,12 @@ function withTrustedGatewayPrincipal(
   const principal = trustedGatewayPrincipal(request)
   if (!principal) return identity
   const ceiling = trustedGatewayScopeCeiling(request)
+  if (identity.team) {
+    const scopes = ceiling !== null && principal.type === "agent"
+      ? HOSTED_AGENT_SCOPES.filter((scope) => hasScope(identity.scopes, scope) && hasScope(ceiling, scope))
+      : identity.scopes
+    return { ...identity, scopes }
+  }
   if (ceiling === null || principal.type === "human") {
     return { ...identity, principal }
   }
@@ -180,8 +224,9 @@ function bearerOf(c: Context): string | null {
  */
 async function verifyLocalBearer(raw: string): Promise<TokenIdentity | null> {
   const legacy = process.env["WORKTABLE_MCP_TOKEN"] ?? ""
-  if (legacy && safeEqual(raw, legacy)) return ownerIdentity()
-  return verifyToken(raw)
+  if (legacy && safeEqual(raw, legacy)) return teamsEnabled() ? null : ownerIdentity()
+  const identity = await verifyToken(raw)
+  return identity ? resolveTeamAgentCredential(identity) : null
 }
 
 /**
@@ -202,7 +247,13 @@ export async function verifyBearer(raw: string): Promise<TokenIdentity | null> {
     const local = await verifyLocalBearer(raw)
     if (local) return local
   }
-  return isHosted() ? verifyHostedResourceToken(raw) : verifyAuthServerJwt(raw)
+  const identity = await (isHosted() ? verifyHostedResourceToken(raw) : verifyAuthServerJwt(raw))
+  if (!identity) return null
+  if (identity.team) {
+    assertCurrentTeamIdentity(identity)
+    return identity
+  }
+  return isHosted() ? resolveCloudTeamAgentCredential(identity) : resolveTeamAgentCredential(identity)
 }
 
 /** Hosted realtime accepts the route's explicit human or agent credential class. */
@@ -211,6 +262,7 @@ export async function verifyRealtimeCredential(
   raw: string
 ): Promise<TokenIdentity | null> {
   if (!isHosted()) return verifyBearer(raw)
+  if (hostedWorktableCredential(request)) return verifyLocalBearer(raw)
   const actor = trustedGatewayPrincipal(request)
   if (!actor) return null
   if (actor.type === "human") {
@@ -220,7 +272,7 @@ export async function verifyRealtimeCredential(
     const legacy = await verifyHostedResourceToken(raw)
     return legacy ? withTrustedGatewayPrincipal(request, legacy) : null
   }
-  const resource = await verifyHostedResourceToken(raw)
+  const resource = await verifyBearer(raw)
   return resource ? withTrustedGatewayPrincipal(request, resource) : null
 }
 
@@ -279,6 +331,7 @@ export function publicOriginConfigured(): boolean {
  */
 export async function mcpBearerRequired(): Promise<boolean> {
   return (
+    teamsEnabled() ||
     authRequired() ||
     explicitMcpCredentialConfigured() ||
     publicOriginConfigured() ||
@@ -293,7 +346,7 @@ export async function mcpBearerRequired(): Promise<boolean> {
  * keep using the local implicit-owner bridge.
  */
 export function publicSurfaceAuthRequired(): boolean {
-  return authRequired() || publicOriginConfigured()
+  return teamsEnabled() || authRequired() || publicOriginConfigured()
 }
 
 /**
@@ -347,8 +400,13 @@ export function sameOriginRequestAllowed(request: Request, allowProxy = publicSu
     // Browsers send Site/Dest as well; an opaque or foreign Origin is never
     // admitted by this exception.
     const mode = request.headers.get("Sec-Fetch-Mode")
-    return fetchSite === "same-origin" || fetchSite === "none" ||
-      (!fetchSite && !request.headers.has("Sec-Fetch-Dest") && (mode === null || mode === "cors"))
+    return (
+      fetchSite === "same-origin" ||
+      fetchSite === "none" ||
+      (!fetchSite &&
+        !request.headers.has("Sec-Fetch-Dest") &&
+        (mode === null || mode === "cors"))
+    )
   }
   const parsed = asHttpOrigin(origin)
   if (!parsed) return false
@@ -380,15 +438,28 @@ export function requireIdentity() {
           return unauthorized(c)
         }
         c.set("identity", identity)
-        return next()
+        assertCurrentTeamIdentity(identity)
+        return runWithTeamIdentity(identity, next)
       }
       const identity = await verifyBearer(bearer)
       if (!identity) return unauthorized(c)
       if (isHosted() && trustedGatewayPrincipal(c.req.raw)?.type !== "agent") {
         return unauthorized(c)
       }
-      c.set("identity", withTrustedGatewayPrincipal(c.req.raw, identity))
-      return next()
+      const resolved = withTrustedGatewayPrincipal(c.req.raw, identity)
+      if (
+        !(
+          resolved.cloudIdentity &&
+          !resolved.team &&
+          c.req.method === "POST" &&
+          c.req.path === "/api/team/accept-invitation"
+        )
+      )
+        assertCurrentTeamIdentity(resolved)
+      const changed = changedBrowserMember(c, resolved)
+      if (changed) return changed
+      c.set("identity", resolved)
+      return runWithTeamIdentity(resolved, next)
     }
     if (await mcpBearerRequired()) return unauthorized(c)
     if (!implicitLoopbackRequestAllowed(c.req.raw)) return unauthorized(c)
@@ -441,6 +512,10 @@ export function authRequired(): boolean {
  */
 export function requireMintAuth() {
   return async (c: Context, next: Next) => {
+    if (teamsEnabled()) {
+      requireTeamHuman(c.get("identity"))
+      return next()
+    }
     if (publicSurfaceAuthRequired()) {
       const bearer = bearerOf(c)
       // Local credentials only — an AS-issued OAuth bearer must not clear
@@ -477,8 +552,9 @@ export function trustedLocalIdentity() {
     // workspace identity and starter readiness; it is never persisted or
     // exposed by /health, and cannot authorize mutations or any hosted route.
     if (supervisedHostVerificationMatches(c)) {
-      c.set("identity", ownerIdentity())
-      return next()
+      const identity = { ...ownerIdentity(), operatorVerification: true }
+      c.set("identity", identity)
+      return runWithTeamIdentity(identity, next)
     }
     const bearer = bearerOf(c)
     if (c.req.header("Authorization") !== undefined && !bearer) return unauthorized(c)
@@ -523,8 +599,29 @@ export function trustedLocalIdentity() {
         throw error
       }
       if (!identity) return unauthorized(c)
-      c.set("identity", withTrustedGatewayPrincipal(c.req.raw, identity))
-      return next()
+      const resolved = withTrustedGatewayPrincipal(c.req.raw, identity)
+      if (
+        !(
+          resolved.cloudIdentity &&
+          !resolved.team &&
+          c.req.method === "POST" &&
+          c.req.path === "/api/team/accept-invitation"
+        )
+      )
+        assertCurrentTeamIdentity(resolved)
+      const changed = changedBrowserMember(c, resolved)
+      if (changed) return changed
+      c.set("identity", resolved)
+      return runWithTeamIdentity(resolved, next)
+    }
+    if (teamsEnabled()) {
+      if (!sameOriginRequestAllowed(c.req.raw)) return unauthorized(c)
+      const identity = await verifyTeamSession(c.req.raw)
+      if (!identity) return unauthorized(c)
+      const changed = changedBrowserMember(c, identity)
+      if (changed) return changed
+      c.set("identity", identity)
+      return runWithTeamIdentity(identity, next)
     }
     if (publicSurfaceAuthRequired()) {
       if (!sameOriginRequestAllowed(c.req.raw) || !(await verifyOwnerSessionCookie(c))) return unauthorized(c)
@@ -544,7 +641,22 @@ export function requireScope(scope: string) {
     if (!identity || !hasScope(identity.scopes, scope)) {
       return c.json({ error: "Forbidden", required: scope }, 403)
     }
-    return next()
+    if (teamsEnabled()) {
+      assertCurrentTeamIdentity(identity)
+      const spaceId = c.req.param("spaceId") || c.req.query("spaceId")
+      if (spaceId) assertSpaceAccess(spaceId, scope.endsWith(":write") ? "edit" : "read", identity)
+    }
+    await next()
+    if (teamsEnabled()) {
+      assertCurrentTeamIdentity(identity)
+      const spaceId = c.req.param("spaceId") || c.req.query("spaceId")
+      if (spaceId)
+        assertSpaceAccess(
+          spaceId,
+          scope.endsWith(":write") ? "edit" : "read",
+          identity
+        )
+    }
   }
 }
 
@@ -575,6 +687,7 @@ export function requireHumanWorkspaceOwner() {
 /** A credentialed agent cannot choose a human attribution through a REST body. */
 export function restWriteActor(c: Context, requested?: string): string {
   const principal = c.get("identity")?.principal
+  if (teamsEnabled() && principal) return principal.id
   if (principal?.type === "human") return requested ?? "user"
   if (principal?.type === "agent") return `agent:${principal.id}`
   return "system"
@@ -592,6 +705,12 @@ export function requireAgentManager() {
     requireScope("tokens:manage"),
   ]
   return async (c: Context, next: Next) => {
+    if (teamsEnabled()) {
+      return trustedLocalIdentity()(c, async () => {
+        requireTeamHuman(c.get("identity"))
+        await next()
+      })
+    }
     if (isHosted()) {
       return isHostedBrowserOwner(c)
         ? next()

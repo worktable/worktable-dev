@@ -37,6 +37,7 @@ import {
   queryKeys,
   recordCollectionsQueryOptions,
   useWorkspace,
+  useSpace,
 } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
@@ -159,6 +160,9 @@ export function SpaceNewMenu({
       throw err
     }
   }
+
+  const { data: spaceDetail } = useSpace(spaceId)
+  if (spaceDetail?.space.permissions?.edit === false) return null
 
   return (
     <>

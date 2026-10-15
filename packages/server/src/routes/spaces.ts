@@ -1,8 +1,11 @@
+import { teamsEnabled } from "../team-database.ts";
+import { canAccessSpace } from "../team-policy.ts";
 import { requireScope, requireWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
   listSpaces,
+  occupiedSpaceIds,
   mutateSpace,
   readSpace,
   writeSpace,
@@ -26,6 +29,10 @@ import { hasScope } from "../token-store.ts";
 
 export const spacesRouter = new Hono();
 
+function spaceView(space: SpaceFile) {
+  return teamsEnabled() ? { ...space, permissions: { edit: canAccessSpace(space.id, "edit"), manage: canAccessSpace(space.id, "manage") } } : space;
+}
+
 const ArchiveSpaceSchema = z.object({
   archivedBy: z.string().optional(),
   reason: z.string().optional(),
@@ -34,7 +41,8 @@ const ArchiveSpaceSchema = z.object({
 // GET /api/spaces — every Space, archived ones included. Each Space's
 // documents are listed by /api/spaces/:spaceId/documents.
 spacesRouter.get("/", requireScope("docs:read"), async (c) => {
-  return c.json({ spaces: await listSpaces() });
+  const spaces = await listSpaces();
+  return c.json({ spaces: spaces.map(spaceView) });
 });
 
 // POST /api/spaces — create a new space
@@ -63,8 +71,7 @@ spacesRouter.post("/", requireScope("docs:write"), async (c) => {
   const { name, description, icon, group, createdBy = "user" } = parsed.data;
 
   // Deduplicate slug
-  const existingSpaces = await listSpaces();
-  const existingSlugs = existingSpaces.map((s) => s.id);
+  const existingSlugs = await occupiedSpaceIds();
   const baseSlug = slugify(name);
   const spaceId = await deduplicateSlug(baseSlug, existingSlugs);
 
@@ -151,7 +158,7 @@ spacesRouter.get("/:spaceId", requireScope("docs:read"), async (c) => {
         })
       )
     : [];
-  return c.json({ space, pins });
+  return c.json({ space: spaceView(space), pins });
 });
 
 // PUT /api/spaces/:spaceId/doc-order — persist common document-tree ordering.
@@ -166,7 +173,7 @@ const DocOrderSchema = z
     message: "Provide order and/or sort",
   });
 
-spacesRouter.put("/:spaceId/doc-order", requireWorkspaceOwner(), async (c) => {
+spacesRouter.put("/:spaceId/doc-order", async (c, next) => teamsEnabled() ? requireScope("docs:write")(c, next) : requireWorkspaceOwner()(c, next), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const body = await c.req.json().catch(() => null);
   if (!body) {
@@ -277,7 +284,13 @@ spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
 });
 
 // DELETE /api/spaces/:spaceId — delete a space and all its contents
-spacesRouter.delete("/:spaceId", requireWorkspaceOwner(), async (c) => {
+spacesRouter.delete("/:spaceId", async (c, next) => {
+  if (teamsEnabled()) {
+    if (!canAccessSpace(c.req.param("spaceId"), "manage")) return c.json({ error: "Forbidden" }, 403);
+    return next();
+  }
+  return requireWorkspaceOwner()(c, next);
+}, async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
   const { data: space, error } = await readSpace(spaceId);
 

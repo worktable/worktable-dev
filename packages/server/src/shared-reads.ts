@@ -10,6 +10,7 @@
 
 import type { MiddlewareHandler } from "hono"
 import type { TokenIdentity } from "./token-store.ts"
+import { currentTeamWorktable } from "./team-database.ts"
 import {
   noteWorkspaceActivity,
   workspaceGeneration,
@@ -38,6 +39,7 @@ function compare(a: string, b: string): number {
 function sharedReadKey(url: URL, identity: TokenIdentity | undefined): string {
   return JSON.stringify([
     workspaceGeneration(),
+    currentTeamWorktable()?.policyRevision ?? null,
     url.pathname,
     // Handlers read the first of repeated parameters, so keep their order.
     [...url.searchParams.entries()].sort(([a], [b]) => compare(a, b)),

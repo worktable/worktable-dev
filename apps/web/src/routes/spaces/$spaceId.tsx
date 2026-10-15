@@ -108,6 +108,7 @@ function PinnedSection({
   /** Set when the details failed, so the pins show a retry, not a placeholder. */
   onRetry?: () => void
 }) {
+  const { data: spaceDetail } = useSpace(spaceId)
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
     try {
@@ -182,14 +183,14 @@ function PinnedSection({
                     {pin.status === "archived" ? "Archived" : "Missing"}
                   </span>
                 )}
-                <Button
+                {spaceDetail?.space.permissions?.edit !== false && <Button
                   size="xs"
                   variant="ghost"
                   className="relative -my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                   onClick={() => void unpin(pin.path)}
                 >
                   Unpin
-                </Button>
+                </Button>}
               </div>
               {pin.note && (
                 <p className="mt-1.5 text-[0.8rem] leading-5 text-muted-foreground">

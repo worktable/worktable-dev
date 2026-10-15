@@ -32,6 +32,7 @@
 import { isAbsolute, relative, sep } from "node:path"
 import { onDocContentChanged } from "./content-events.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
+import { assertSpaceAccess } from "./team-policy.ts"
 import {
   RACY_FINGERPRINT_WINDOW_MS,
   readFileFingerprint,
@@ -229,9 +230,10 @@ export async function readSpaceSnapshot<T>(options: {
   refresh?: boolean
 }): Promise<T> {
   const { workspaceRoot, spaceId } = options
+  assertSpaceAccess(spaceId)
   const locked = <R>(fn: () => Promise<R>) =>
     options.lockHeld ? fn() : withDocPathLock(spaceId, fn)
-  if (!readModelEnabled()) return locked(options.build)
+  if (!readModelEnabled()) return locked(() => { assertSpaceAccess(spaceId); return options.build() })
   // A snapshot hit skips the lock, which is where reads fail closed while a
   // document move awaits recovery.
   assertWorkspaceAvailable()
@@ -246,6 +248,7 @@ export async function readSpaceSnapshot<T>(options: {
     return seen.value as T
   }
   return locked(async () => {
+    assertSpaceAccess(spaceId)
     const published = snapshots.get(spaceId)
     if (
       !options.refresh &&

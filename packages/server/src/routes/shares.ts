@@ -1,3 +1,5 @@
+import { teamsEnabled } from "../team-database.ts";
+import { requireTeamHuman, assertSpaceAccess } from "../team-policy.ts";
 import { Hono, type Context } from "hono"
 import { requireHumanWorkspaceOwner } from "../auth.ts"
 import { getDocumentSharingConfig } from "../linked-sharing.ts"
@@ -20,8 +22,11 @@ sharesRouter.use("*", async (c, next) => {
   if (!getDocumentSharingConfig()) {
     return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
   }
-  const denied = await requireHumanWorkspaceOwner()(c, async () => {})
-  if (denied) return denied
+  if (teamsEnabled()) requireTeamHuman(c.get("identity"));
+  else {
+    const denied = await requireHumanWorkspaceOwner()(c, async () => {});
+    if (denied) return denied;
+  }
   c.header("Cache-Control", "no-store")
   return next()
 })
@@ -53,6 +58,7 @@ sharesRouter.get("/", async (c) => {
     )
   }
 
+  if (teamsEnabled()) assertSpaceAccess(parsed.data.spaceId, "manage");
   const share = await getDocumentShare(parsed.data)
   if (!share) return c.json({ share: null })
   if (!(await sharedArtifactIdentityIsCurrent(parsed.data))) {
@@ -72,6 +78,7 @@ sharesRouter.post("/", async (c) => {
       400
     )
   }
+  if (teamsEnabled()) assertSpaceAccess(parsed.data.spaceId, "manage");
   const share = await createDocumentShareIfEligible(
     parsed.data,
     async () => (await readSharedArtifact(parsed.data)) !== null
@@ -93,6 +100,7 @@ sharesRouter.delete("/", async (c) => {
       400
     )
   }
+  if (teamsEnabled()) assertSpaceAccess(parsed.data.spaceId, "manage");
   await stopDocumentShare(parsed.data as ShareArtifact)
   return c.json({ ok: true })
 })

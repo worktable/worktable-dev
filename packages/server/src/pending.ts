@@ -46,7 +46,7 @@ export async function listPending(
     canReadThreads
       ? listPendingThreadWork(identity, spaces, spaceId)
       : { requests: [], failures: [] },
-    canReadAnnotations ? commentReplies(spaces, spaceId) : [],
+    canReadAnnotations ? commentReplies(spaces, spaceId, identity) : [],
   ])
   const items = [
     ...threadRequests(threadWork.requests),
@@ -110,7 +110,8 @@ async function openAnnotations(spaceId: string): Promise<Annotation[]> {
 /** An agent answered a comment you left, and the comment is still open. */
 async function commentReplies(
   allSpaces: SpaceFile[],
-  spaceId?: string
+  spaceId: string | undefined,
+  identity: TokenIdentity
 ): Promise<PendingItem[]> {
   const spaces = allSpaces.filter((space) =>
     spaceId ? space.id === spaceId : !getSpaceArchiveInfo(space)
@@ -129,6 +130,8 @@ async function commentReplies(
               : null
         if (
           annotation.author.type !== "user" ||
+          (identity.team && annotation.author.id !== identity.principal.id &&
+            !(identity.principal.id === "local:owner" && annotation.author.id === "user")) ||
           last?.author.type !== "agent" ||
           !docPath
         ) {

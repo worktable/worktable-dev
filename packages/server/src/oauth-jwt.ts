@@ -1,3 +1,7 @@
+import { isHosted } from "./hosted.ts";
+import { teamsEnabled } from "./team-database.ts";
+import { cloudTeamMemberForSubject } from "./team-cloud.ts";
+import { hostedOAuthPrincipalId } from "@worktable/hosted-contract";
 import { createRemoteJWKSet, jwtVerify } from "jose"
 import {
   authorizationServerMetadataCandidates,
@@ -312,14 +316,18 @@ export async function verifyAuthServerJwt(
         ? (payload.act as { sub: string }).sub
         : null
     const workspaceOwner = delegatedBy ?? subject
-    if (workspaceOwner !== ownerSubject) return null
+    const team = isHosted() && teamsEnabled();
+    if (team ? !cloudTeamMemberForSubject(authServer, workspaceOwner) : workspaceOwner !== ownerSubject) return null
+    if (team && !delegatedBy && (typeof payload.client_id !== "string" || !payload.client_id)) return null
     const isDelegatedAgent = delegatedBy !== null
     return {
       user: "owner",
       workspace: getWorkspaceRoot(),
       credentialClass: "resource",
+      credentialExpiresAt: (payload.exp as number) * 1000,
+      ...(typeof payload.iat === "number" ? { credentialIssuedAt: payload.iat * 1000 } : {}),
       scopes: AS_BEARER_SCOPES,
-      agent: isDelegatedAgent ? subject : null,
+      agent: isDelegatedAgent ? subject : team ? payload.client_id as string : null,
       principal: isDelegatedAgent
         ? {
             id: `workos-agent:${subject}`,
@@ -327,7 +335,7 @@ export async function verifyAuthServerJwt(
             displayName: "Connected agent",
             authorizedBy: `workos:${delegatedBy}`,
           }
-        : {
+        : team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent", authorizedBy: `workos:${subject}` } : {
             id: `workos:${subject}`,
             type: "human",
             displayName: "Worktable user",

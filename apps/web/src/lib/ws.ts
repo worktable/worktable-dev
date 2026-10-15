@@ -1,3 +1,5 @@
+import { RUNTIME_BASE_PATH } from "./runtime-path"
+import { browserTeamMemberId } from "./team-context"
 import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
@@ -48,7 +50,7 @@ const WS_BASE =
   import.meta.env.VITE_WS_URL ??
   (typeof window === "undefined"
     ? "ws://localhost:7480"
-    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`)
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${RUNTIME_BASE_PATH}`)
 
 export interface WsMessage {
   type: string
@@ -773,7 +775,10 @@ function connectShared(
     connection.reconnectTimer = null
   }
   publishStatus(connection, "connecting")
-  const ws = new WebSocket(connection.url)
+  const url = new URL(connection.url)
+  const memberId = browserTeamMemberId()
+  if (memberId) url.searchParams.set("memberId", memberId)
+  const ws = new WebSocket(url)
   connection.ws = ws
   let opened = false
 

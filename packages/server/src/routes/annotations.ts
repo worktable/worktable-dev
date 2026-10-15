@@ -70,6 +70,7 @@ export const annotationsRouter = new Hono();
 
 function annotationAuthor(c: Context, requested?: AnnotationAuthor): AnnotationAuthor {
   const principal = c.get("identity").principal;
+  if (c.get("identity").team) return { type: principal.type === "human" ? "user" : principal.type, id: principal.id, name: principal.displayName };
   if (principal.type === "human") return requested ?? { type: "user", id: "user", name: "User" };
   return { type: principal.type, id: principal.id };
 }

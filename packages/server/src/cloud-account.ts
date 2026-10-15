@@ -311,6 +311,8 @@ export async function cloudLinkRequest(origin: string, body: unknown) {
         const code = data["code"]
         const messages: Record<string, string> = {
           BILLING_REQUIRED: "A Worktable Cloud subscription is required.",
+          WORKTABLE_REQUIRED: "Choose a Worktable subscription for this device.",
+          BILLING_PAYER_REQUIRED: "Choose a subscription you pay for.",
           BILLING_LOCKED:
             "Update your Worktable Cloud subscription to continue.",
           INSTALLATION_LIMIT: "Unlink a device in Cloud to connect this one.",

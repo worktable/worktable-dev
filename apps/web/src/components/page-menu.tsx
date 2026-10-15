@@ -1,3 +1,4 @@
+import { useSpace } from "@/lib/queries"
 import { Fragment, useState } from "react"
 import type { ReactNode } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
@@ -245,6 +246,7 @@ function DocumentActions({
   pending: boolean
   onPendingChange: (pending: boolean) => void
 }) {
+  const { data: space } = useSpace(spaceId)
   const archiveLabel = useTemporaryArchiveLabel(spaceId, path)
   const organizeActions = useDocumentOrganizeActions(spaceId, path)
   const actions = [
@@ -259,7 +261,7 @@ function DocumentActions({
   ]
   return (
     <>
-      {archiveLabel && (
+      {archiveLabel && space?.space.permissions?.edit !== false && (
         <div className="mt-2 border-t border-border/60 pt-2">
           <LifetimeRow
             spaceId={spaceId}

@@ -23,6 +23,7 @@ interface WsClient {
   close(): void
   data: {
     spaceId: string
+    canAccess?: (spaceId?: string, edit?: boolean) => boolean
     credentialRevoked?: boolean
     canReadDocs?: boolean
     canReadWidgets?: boolean
@@ -335,7 +336,7 @@ export class WsManager {
     const json = JSON.stringify(msg)
     const dead: WsClient[] = []
     for (const ws of clients) {
-      const authorized = !ws.data.credentialRevoked && ws.data.canReadThreads === true
+      const authorized = canReceive(ws, msg) && ws.data.canReadThreads === true
       if (!authorized) continue
       try {
         ws.send(json)
@@ -396,6 +397,8 @@ export class WsManager {
 
 function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   if (ws.data.credentialRevoked) return false
+  const spaceId = msg.spaceId ?? (msg.location?.kind === "space" ? msg.location.spaceId : undefined);
+  if (ws.data.canAccess && !ws.data.canAccess(spaceId)) return false
   switch (msg.type) {
     case "doc_update":
     case "doc_deleted":

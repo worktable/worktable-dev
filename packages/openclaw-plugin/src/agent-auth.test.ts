@@ -26,9 +26,9 @@ describe("WorkOS Agent Registration", () => {
         body:
           typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       })
-      if (url.endsWith("/.well-known/oauth-protected-resource")) {
+      if (url.endsWith("/.well-known/oauth-protected-resource/api/mcp/w/team_one")) {
         return json({
-          resource: "https://app.worktable.cloud/api/mcp",
+          resource: "https://app.worktable.cloud/api/mcp/w/team_one",
           authorization_servers: ["https://example.authkit.app"],
         })
       }
@@ -71,7 +71,7 @@ describe("WorkOS Agent Registration", () => {
     }) as typeof fetch
 
     const discovery = await discoverAgentAuth(
-      "https://app.worktable.cloud",
+      "https://app.worktable.cloud/api/mcp/w/team_one",
       fetchImpl
     )
     const registration = await beginServiceAuthRegistration(
@@ -89,7 +89,7 @@ describe("WorkOS Agent Registration", () => {
     expect(registration.verificationUri).toContain("/claim/attempt_1")
     expect(credential).toMatchObject({
       registrationId: "agent_reg_1",
-      resource: "https://app.worktable.cloud/api/mcp",
+      resource: "https://app.worktable.cloud/api/mcp/w/team_one",
       assertion: "assertion_1",
       refreshToken: "refresh_1",
     })

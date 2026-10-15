@@ -1,3 +1,6 @@
+import { runtimePath } from "@/lib/runtime-path"
+import { notifyBrowserAccountChanged } from "@/lib/auth-events"
+import { clearTeamBrowserData } from "@/lib/team-context"
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, Lock } from "lucide-react";
@@ -14,6 +17,7 @@ interface AuthStatus {
   exposed: boolean;
   hasOwnerPassword: boolean;
   authenticated: boolean;
+  teamsEnabled?: boolean;
 }
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -25,13 +29,16 @@ const MIN_PASSWORD_LENGTH = 8;
 function safeNext(): string {
   if (typeof window === "undefined") return "/";
   const raw = new URLSearchParams(window.location.search).get("next");
-  if (!raw) return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  if (!raw) return runtimePath("/");
+  if (!raw.startsWith("/") || raw.startsWith("//")) return runtimePath("/");
   return raw;
 }
 
 function LoginPage() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
+  const invitationId = new URLSearchParams(window.location.search).get("invite");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +46,7 @@ function LoginPage() {
 
   const isHttp =
     typeof window !== "undefined" && window.location.protocol !== "https:";
-  const needsSetup = status ? !status.hasOwnerPassword : false;
+  const needsSetup = status ? !status.teamsEnabled && !status.hasOwnerPassword : false;
 
   const redirectNext = useCallback(() => {
     window.location.assign(safeNext());
@@ -55,7 +62,7 @@ function LoginPage() {
         });
         const json = (await res.json()) as AuthStatus;
         if (cancelled) return;
-        if (json.authenticated) {
+        if (json.authenticated && !invitationId) {
           redirectNext();
           return;
         }
@@ -73,7 +80,7 @@ function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [redirectNext]);
+  }, [redirectNext, invitationId]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -90,20 +97,24 @@ function LoginPage() {
           return;
         }
       } else if (!password) {
-        setError("Enter your owner password.");
+        setError(status?.teamsEnabled ? "Enter your password." : "Enter your owner password.");
         return;
       }
 
       setSubmitting(true);
       try {
-        const path = needsSetup ? "/auth/password" : "/auth/login";
+        const path = invitationId ? "/auth/team/enroll" : status?.teamsEnabled ? "/auth/team/sign-in/email" : needsSetup ? "/auth/password" : "/auth/login";
         const res = await fetch(`${BASE_URL}${path}`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password }),
+          body: JSON.stringify(invitationId ? { invitationId, name, password } : status?.teamsEnabled ? { email, password } : { password }),
         });
         if (res.ok) {
+          if (status?.teamsEnabled) {
+            notifyBrowserAccountChanged();
+            await clearTeamBrowserData();
+          }
           redirectNext();
           return;
         }
@@ -114,8 +125,8 @@ function LoginPage() {
           setStatus((s) => (s ? { ...s, hasOwnerPassword: true } : s));
           setError("This workspace already has a password. Sign in instead.");
         } else {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(body.error ?? "Something went wrong. Try again.");
+          const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+          setError(body.message ?? body.error ?? "Something went wrong. Try again.");
         }
       } catch {
         setError("Could not reach the server. Try again.");
@@ -123,7 +134,7 @@ function LoginPage() {
         setSubmitting(false);
       }
     },
-    [needsSetup, password, confirmPassword, redirectNext]
+    [needsSetup, password, confirmPassword, redirectNext, status?.teamsEnabled, invitationId, email, name]
   );
 
   return (
@@ -132,10 +143,10 @@ function LoginPage() {
         <div className="mb-8 flex flex-col items-center text-center">
           <WorktableAppIcon className="mb-4 size-12" />
           <h1 className="text-lg font-semibold">
-            {needsSetup ? "Set your owner password" : "Sign in to Worktable"}
+            {invitationId ? "Join Worktable" : needsSetup ? "Set your owner password" : "Sign in to Worktable"}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {needsSetup
+            {invitationId ? "Choose a name and password for your individual account. If you already have an account here, use its password." : status?.teamsEnabled ? "Sign in with your individual account." : needsSetup
               ? "Create a password to protect this workspace over the network."
               : "Enter your owner password to open this workspace."}
           </p>
@@ -152,11 +163,13 @@ function LoginPage() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-3">
+          {invitationId ? <Input aria-label="Name" autoComplete="name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting || !status} /> : status?.teamsEnabled ? <Input aria-label="Email" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={submitting || !status} /> : null}
           <div className="relative">
             <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="password"
-              autoComplete={needsSetup ? "new-password" : "current-password"}
+              aria-label="Password"
+              autoComplete={needsSetup || invitationId ? "new-password" : "current-password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
@@ -196,7 +209,7 @@ function LoginPage() {
               ? needsSetup
                 ? "Setting password…"
                 : "Signing in…"
-              : needsSetup
+              : invitationId ? "Join Worktable" : needsSetup
                 ? "Set password"
                 : "Sign in"}
           </Button>

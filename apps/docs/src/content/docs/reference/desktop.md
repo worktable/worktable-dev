@@ -19,7 +19,7 @@ Worktable connections. It does not introduce a separate workspace format.
 | Provider           | What Desktop does                                    | Authentication                     |
 | ------------------ | ---------------------------------------------------- | ---------------------------------- |
 | This Mac           | Opens a local workspace, starting a host when needed | Local owner trust or owner sign-in |
-| Self-hosted server | Connects to one canonical server origin              | Server owner-password session      |
+| Self-hosted server | Connects to one canonical server origin              | Named member account for Teams; owner password otherwise      |
 | Worktable Cloud    | Connects to the hosted workspace                     | System-browser sign-in             |
 
 An unexposed local host uses implicit local-owner access. If Desktop attaches
@@ -34,7 +34,7 @@ the self-hosted provider, and a different workspace later appearing at the
 same saved origin.
 
 **Change Connection…** retains saved profiles and their origin-scoped sessions.
-**Forget this server** removes that profile and its Worktable session cookie; it
+**Forget this server** removes that profile and its Worktable session cookies; it
 does not change or delete anything on the server.
 
 ## Process lifecycle
@@ -52,6 +52,6 @@ machine-local connection profiles, WebKit session data, logs, update state, and
 local-host runtime data. Those files are not part of workspace exports.
 
 Desktop stores a self-hosted origin, display name, and portable workspace
-identity, but not the owner's password. Cloud tokens and browser sessions use
+identity, but not account passwords. Cloud tokens and browser sessions use
 the operating system and WebKit storage appropriate to their provider. Agent
 credentials remain separate from Desktop connection profiles.

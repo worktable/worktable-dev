@@ -60,7 +60,7 @@ import { isCanonicalId } from "@worktable/types/constants"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useRecordFieldColumns } from "@/hooks/use-record-field-columns"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
-import { queryKeys, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
+import { queryKeys, useSpace, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
@@ -182,6 +182,8 @@ function restoredTableSearch(
 function RecordsPage() {
   const { spaceId, _splat } = Route.useParams()
   const collectionId = _splat ?? ""
+  const { data: spaceDetail } = useSpace(spaceId)
+  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   // Belt and braces on top of validateSearch: the id reaches a REST path, so
   // anything non-canonical is treated as absent no matter how it arrived.
   const routeSearch = Route.useSearch()
@@ -488,6 +490,7 @@ function RecordsPage() {
 
   const peekActions = useMemo<RecordPeekActions>(
     () => ({
+      readOnly: !canEdit,
       onCommitField: async (recordId, key, value) => { await mutations.updateField.mutateAsync({ recordId, data: { [key]: value } }) },
       onDuplicate: (record) => void duplicateRecord(record),
       onArchive: (recordId) => mutations.archive.mutate(recordId),
@@ -498,7 +501,7 @@ function RecordsPage() {
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation objects are stable per collection
-    [spaceId, collectionId, rows, peekRecord]
+    [spaceId, collectionId, rows, peekRecord, canEdit]
   )
 
   const diagnostics = health?.diagnostics ?? []
@@ -767,6 +770,7 @@ function RecordsPage() {
                         <Button
                           variant="outline"
                           size={editCells ? "sm" : "icon-sm"}
+                          disabled={!canEdit}
                           onClick={() => setEditCells((value) => !value)}
                           aria-label={editCells ? "Done editing table cells" : "Edit table cells"}
                         />
@@ -790,7 +794,7 @@ function RecordsPage() {
                   <ColumnConfig columns={orderedColumns} prefs={colPrefs} onChange={setColPrefs} />
                 </div>
               )}
-              <Button size="sm" onClick={() => setNewRecordOpen(true)}>
+              <Button size="sm" disabled={!canEdit} onClick={() => setNewRecordOpen(true)}>
                 <Plus className="mr-1.5 size-4" />
                 New record
               </Button>
@@ -799,7 +803,7 @@ function RecordsPage() {
                   <MoreVertical className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-48">
-                  <DropdownMenuItem onClick={() => setSchemaOpen(true)}>
+                  <DropdownMenuItem disabled={!canEdit} onClick={() => setSchemaOpen(true)}>
                     <Settings2 className="mr-2 size-4" />
                     Edit Schema
                   </DropdownMenuItem>
@@ -908,7 +912,7 @@ function RecordsPage() {
                   variant="secondary"
                   className="shrink-0"
                   onClick={() => mutations.reconcile.mutate()}
-                  disabled={mutations.reconcile.isPending}
+                  disabled={!canEdit || mutations.reconcile.isPending}
                 >
                   {mutations.reconcile.isPending ? (
                     <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -1056,7 +1060,7 @@ function RecordsPage() {
                         spaceId={spaceId}
                         expanded={expanded}
                         dangling={danglingByRecordField}
-                        editing={editCells}
+                        editing={editCells && canEdit}
                         actions={rowActions}
                       />
                     )
@@ -1111,7 +1115,7 @@ function RecordsPage() {
                   : "Create the first record here, or let an agent fill the collection over MCP."}
               </p>
               {!scoped && (
-                <Button size="sm" className="mt-5" onClick={() => setNewRecordOpen(true)}>
+                <Button size="sm" className="mt-5" disabled={!canEdit} onClick={() => setNewRecordOpen(true)}>
                   <Plus className="mr-1.5 size-4" />
                   New record
                 </Button>
@@ -1163,7 +1167,7 @@ function RecordsPage() {
       </DocumentReferenceScope>
 
       <NewRecordDialog
-        open={newRecordOpen}
+        open={newRecordOpen && canEdit}
         spaceId={spaceId}
         schema={schema}
         onClose={() => setNewRecordOpen(false)}
@@ -1174,7 +1178,7 @@ function RecordsPage() {
       />
 
       <SchemaEditorDialog
-        open={schemaOpen}
+        open={schemaOpen && canEdit}
         onClose={() => setSchemaOpen(false)}
         spaceId={spaceId}
         collectionId={collectionId}
@@ -1310,6 +1314,7 @@ const RecordTableRow = memo(function RecordTableRow({
         <Fold enabled={grouped} folded={folded}>
         <RecordRowMenu
           record={record}
+          spaceId={spaceId}
           onOpen={() => actions.open(record.id)}
           onDuplicate={() => actions.duplicate(record)}
           onArchive={() => actions.archive(record.id)}
@@ -1324,6 +1329,7 @@ const RecordTableRow = memo(function RecordTableRow({
 
 function RecordRowMenu({
   record,
+  spaceId,
   onOpen,
   onDuplicate,
   onArchive,
@@ -1331,12 +1337,15 @@ function RecordRowMenu({
   onDelete,
 }: {
   record: RecordFile
+  spaceId: string
   onOpen: () => void
   onDuplicate: () => void
   onArchive: () => void
   onRestore: () => void
   onDelete: () => void
 }) {
+  const { data: spaceDetail } = useSpace(spaceId)
+  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   const archived = Boolean(record.archive)
   return (
     <span
@@ -1354,16 +1363,16 @@ function RecordRowMenu({
             <PanelRight className="mr-2 size-4" />
             Open Details
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onDuplicate}>
+          <DropdownMenuItem disabled={!canEdit} onClick={onDuplicate}>
             <Copy className="mr-2 size-4" />
             Duplicate
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
+          <DropdownMenuItem disabled={!canEdit} onClick={archived ? onRestore : onArchive}>
             {archived ? <RotateCcw className="mr-2 size-4" /> : <Archive className="mr-2 size-4" />}
             {archived ? "Restore" : "Archive"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+          <DropdownMenuItem disabled={!canEdit} variant="destructive" onClick={onDelete}>
             <Trash className="mr-2 size-4" />
             Delete
           </DropdownMenuItem>

@@ -115,6 +115,8 @@ interface StoredPairingSession {
   redeemedBy: PairingRedeemer | null;
   /** Id of the token minted at redemption, for the Connections table link. */
   tokenId: string | null;
+  /** Durable rollback custody for the credential created during redemption. */
+  teamBinding?: { agentId: string; createdAgent: boolean; credentialKey: string };
   outcome: "verified" | "failed" | null;
   events: PairingEvent[];
 }
@@ -388,13 +390,15 @@ export async function redeemPairingSession(
 /** Link the token minted at redemption to its session (Connections table). */
 export async function attachPairingToken(
   id: string,
-  tokenId: string
+  tokenId: string,
+  teamBinding?: StoredPairingSession["teamBinding"]
 ): Promise<void> {
   await serialized(async () => {
     const sessions = await loadSessions();
     const session = sessions.find((s) => s.id === id);
     if (!session) return;
     session.tokenId = tokenId;
+    if (teamBinding) session.teamBinding = teamBinding;
     await saveSessions(sessions);
   });
 }

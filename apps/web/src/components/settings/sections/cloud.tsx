@@ -5,6 +5,13 @@ import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { CopyField } from "@worktable/ui/components/copy-field"
 import { Switch } from "@worktable/ui/components/switch"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@worktable/ui/components/select"
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -18,6 +25,8 @@ type Status = {
   enabled: boolean | null
   cloudOrigin: string
   mcpUrl?: string
+  billingWorkspaceId?: string
+  teamAuthorizationRequired?: boolean
   account: {
     user: { id: string; email?: string; name?: string } | null
     signingIn: boolean
@@ -40,12 +49,34 @@ export function CloudSection() {
   const client = useQueryClient()
   const [signInUrl, setSignInUrl] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
+  // A choice belongs to the account that made it.
+  const [chosen, setChosen] = useState<{ userId?: string; id: string } | null>(
+    null
+  )
   const query = useQuery({
     queryKey: ["linked"],
     queryFn: () => fetchJSON<Status>("/api/linked"),
     enabled: active,
     refetchInterval: active ? 3000 : false,
   })
+  const subscriptions = useQuery({
+    queryKey: ["linked-subscriptions", query.data?.account.user?.id],
+    queryFn: () =>
+      fetchJSON<{
+        worktables: Array<{ id: string; name: string; access: string }>
+      }>("/api/linked/subscriptions"),
+    enabled: active && Boolean(query.data?.account.user),
+  })
+  const userId = query.data?.account.user?.id
+  const subscriptionId = chosen?.userId === userId ? (chosen?.id ?? null) : null
+  const setSubscriptionId = (id: string | null) =>
+    setChosen(id ? { userId, id } : null)
+  const selectedSubscription =
+    query.data?.billingWorkspaceId ??
+    subscriptionId ??
+    (subscriptions.data?.worktables.length === 1
+      ? subscriptions.data.worktables[0]!.id
+      : undefined)
   const invalidate = () => {
     void client.invalidateQueries({ queryKey: ["linked"] })
     void client.invalidateQueries({ queryKey: ["system", "deployment"] })
@@ -72,7 +103,12 @@ export function CloudSection() {
     mutationFn: (enabled: boolean) =>
       fetchJSON("/api/linked", {
         method: "PATCH",
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({
+          enabled,
+          ...(enabled && selectedSubscription
+            ? { workspaceId: selectedSubscription }
+            : {}),
+        }),
       }),
     onSettled: invalidate,
   })
@@ -127,18 +163,21 @@ export function CloudSection() {
   )
   const linkDisabled =
     !data.account.user ||
+    (!data.enabled && !selectedSubscription) ||
     toggle.isPending ||
     disconnect.isPending ||
     data.state === "unlinking"
   const linkTooltip = !data.account.user
     ? "Sign in to Worktable Cloud to enable this connection."
-    : disconnect.isPending || data.state === "unlinking"
-      ? "Unlinking this device…"
-      : toggle.isPending
-        ? "Updating connection…"
-        : data.enabled
-          ? "Turn off to pause AI connections and document sharing."
-          : "Enable AI connections and document sharing."
+    : !data.enabled && !selectedSubscription
+      ? "Choose a Worktable subscription for this device."
+      : disconnect.isPending || data.state === "unlinking"
+        ? "Unlinking this device…"
+        : toggle.isPending
+          ? "Updating connection…"
+          : data.enabled
+            ? "Turn off to pause AI connections and document sharing."
+            : "Enable AI connections and document sharing."
   return (
     <section className="flex min-w-0 flex-col gap-6">
       <SettingsGroup title="Account">
@@ -186,6 +225,65 @@ export function CloudSection() {
       </SettingsGroup>
       <SettingsGroup title="Connection">
         <div className="flex flex-col gap-4">
+          {data.teamAuthorizationRequired && (
+            <p className="text-sm text-muted-foreground">
+              Teams is enabled. Turn on Worktable Link to connect your Cloud
+              account to your member account.
+            </p>
+          )}
+          {data.account.user && !data.mcpUrl && (
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="link-subscription"
+                className="text-sm font-medium"
+              >
+                Worktable subscription
+              </label>
+              <Select
+                value={selectedSubscription ?? ""}
+                onValueChange={setSubscriptionId}
+                disabled={toggle.isPending}
+              >
+                <SelectTrigger id="link-subscription">
+                  <SelectValue placeholder="Choose a Worktable">
+                    {
+                      subscriptions.data?.worktables.find(
+                        (worktable) => worktable.id === selectedSubscription
+                      )?.name
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptions.data?.worktables.map((worktable) => (
+                    <SelectItem key={worktable.id} value={worktable.id}>
+                      {worktable.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Up to three linked devices across your Cloud account.
+              </p>
+              {subscriptions.isError && (
+                <Button
+                  variant="outline"
+                  onClick={() => void subscriptions.refetch()}
+                >
+                  Retry
+                </Button>
+              )}
+              {subscriptions.data?.worktables.length === 0 && (
+                <a
+                  className="text-sm text-primary-text underline underline-offset-4"
+                  href={data.cloudOrigin}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Create a Cloud Worktable
+                </a>
+              )}
+            </div>
+          )}
           <div className="flex items-start justify-between gap-6">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="worktable-link" className="text-sm font-medium">
@@ -242,7 +340,11 @@ export function CloudSection() {
           {subscriptionRequired && (
             <a
               className="text-sm text-primary-text underline underline-offset-4"
-              href={`${data.cloudOrigin}/signup`}
+              href={
+                selectedSubscription
+                  ? `${data.cloudOrigin}/t/${encodeURIComponent(selectedSubscription)}/signup`
+                  : data.cloudOrigin
+              }
               target="_blank"
               rel="noreferrer"
             >

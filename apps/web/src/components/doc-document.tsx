@@ -1,3 +1,5 @@
+import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
+import { browserTeamMemberId } from "@/lib/team-context"
 import {
   Suspense,
   useCallback,
@@ -113,7 +115,9 @@ import { IndexeddbPersistence } from "y-indexeddb"
 // Lazy-load the editor (pulls in BlockNote, Mermaid, Shiki)
 type LoadedEditorProps = ComponentProps<typeof import("@/components/editor/editor").Editor>
 const editor = preloadableComponent<LoadedEditorProps>(() =>
-  import("@/components/editor/editor").then((module) => ({ default: module.Editor }))
+  import("@/components/editor/editor").then((module) => ({
+    default: module.Editor,
+  }))
 )
 const Editor = editor.Component
 
@@ -251,6 +255,7 @@ function DocPageMeta({
   const shareable = Boolean(
     validated &&
       spaceDetail &&
+      spaceDetail.space.permissions?.manage !== false &&
       !spaceDetail.space.settings["archive"] &&
       !archived
   )
@@ -597,6 +602,7 @@ function DocEditorPage({
   if (formatId === "worktable.markdown") {
     return (
       <MarkdownDocPage
+        readOnly={!page || page.capabilities.edit === false}
         spaceId={spaceId}
         docPath={docPath}
         archived={archived}
@@ -604,7 +610,7 @@ function DocEditorPage({
         revision={revision}
         onRestore={handleRestore}
         restoring={restoring}
-        onConvert={handleConvert}
+        onConvert={page?.capabilities.edit === false ? undefined : handleConvert}
         converting={converting}
         onCopyMarkdown={handleCopyMarkdown}
         onDownload={handleDownload}
@@ -618,11 +624,12 @@ function DocEditorPage({
       spaceId={spaceId}
       docPath={docPath}
       archived={archived}
+      readOnly={!page || page.capabilities.edit === false}
       page={page}
       revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
-      onConvertToMarkdown={!archived ? handleConvertToMarkdown : undefined}
+      onConvertToMarkdown={!archived && page?.capabilities.edit !== false ? handleConvertToMarkdown : undefined}
       convertingToMarkdown={convertingToMarkdown}
       onCopyMarkdown={handleCopyMarkdown}
       onDownload={handleDownload}
@@ -651,9 +658,11 @@ function ArchivedDocBanner({
   archived,
   onRestore,
   restoring,
+  readOnly = false,
   disabled,
 }: {
   archived: boolean
+  readOnly?: boolean
   onRestore: () => void
   restoring: boolean
   /** Restoring waits for the route's check of this path. */
@@ -670,7 +679,7 @@ function ArchivedDocBanner({
             This doc is archived and hidden from the main doc list by default.
           </span>
         </div>
-        <Button
+        {!readOnly && <Button
           size="sm"
           variant="outline"
           onClick={() => void onRestore()}
@@ -678,13 +687,14 @@ function ArchivedDocBanner({
         >
           <RotateCcw className="mr-2 h-4 w-4" />
           {restoring ? "Restoring..." : "Restore"}
-        </Button>
+        </Button>}
       </div>
     </div>
   )
 }
 
 function MarkdownDocPage({
+  readOnly,
   spaceId,
   docPath,
   archived,
@@ -698,6 +708,7 @@ function MarkdownDocPage({
   onDownload,
   onRecoverOfflineEdits,
 }: {
+  readOnly?: boolean
   spaceId: string
   docPath: string
   archived: boolean
@@ -705,7 +716,7 @@ function MarkdownDocPage({
   revision: string | undefined
   onRestore: () => void
   restoring: boolean
-  onConvert: () => void
+  onConvert?: () => void
   converting: boolean
   onCopyMarkdown?: () => void
   onDownload?: () => void
@@ -713,7 +724,7 @@ function MarkdownDocPage({
 }) {
   const secondaryAction = useMemo<PageSecondaryAction | undefined>(
     () =>
-      validated
+      validated && onConvert
         ? {
             label: "Edit",
             displayLabel: "Edit",
@@ -828,6 +839,7 @@ function MarkdownDocPage({
         annotations={validated ? annotationsAction : undefined}
       />
       <ArchivedDocBanner
+        readOnly={readOnly}
         archived={archived}
         onRestore={onRestore}
         restoring={restoring}
@@ -889,6 +901,7 @@ function MarkdownDocPage({
           width={384}
         >
           <AnnotationPanel
+            readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={selectAnnotation}
@@ -962,6 +975,7 @@ function MarkdownDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+                readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
@@ -1016,6 +1030,7 @@ function BlockNoteDocPage({
   spaceId,
   docPath,
   archived,
+  readOnly = false,
   page,
   revision,
   onRestore,
@@ -1029,6 +1044,7 @@ function BlockNoteDocPage({
   spaceId: string
   docPath: string
   archived: boolean
+  readOnly?: boolean
   /** The route's check; the editor and its room wait for it. */
   page: DocumentPage | null
   revision: string | undefined
@@ -1145,10 +1161,10 @@ function BlockNoteDocPage({
   useEffect(() => {
     // A preview never opens the room or its browser cache: a path the tab
     // has not checked may now name another document.
-    if (!collaborationEpoch || !collaborationCacheEpoch) return
+    if (readOnly || !collaborationEpoch || !collaborationCacheEpoch) return
     const wsUrl =
       import.meta.env.VITE_WS_URL ??
-      `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
+      `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${RUNTIME_BASE_PATH}`
 
     // Fresh session for this doc: nothing to replay.
     pendingIntentRef.current = false
@@ -1175,6 +1191,8 @@ function BlockNoteDocPage({
         collaborationEpoch,
         collaborationCacheEpoch,
       }
+      const memberId = browserTeamMemberId()
+      if (memberId) params.memberId = memberId
       if (base?.versionId) params.baseVersionId = base.versionId
       if (base?.contentHash) params.baseContentHash = base.contentHash
 
@@ -1258,7 +1276,7 @@ function BlockNoteDocPage({
       setProvider(null)
       setCollabDoc(null)
     }
-  }, [spaceId, docPath, collaborationEpoch, collaborationCacheEpoch, queryClient])
+  }, [spaceId, docPath, collaborationEpoch, collaborationCacheEpoch, queryClient, readOnly])
 
   useEffect(() => {
     let cancelled = false
@@ -1335,6 +1353,7 @@ function BlockNoteDocPage({
         annotations={validated ? annotationsAction : undefined}
       />
       <ArchivedDocBanner
+        readOnly={readOnly}
         archived={archived}
         onRestore={onRestore}
         restoring={restoring}
@@ -1436,6 +1455,7 @@ function BlockNoteDocPage({
           width={384}
         >
           <AnnotationPanel
+            readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={selectAnnotation}
@@ -1509,6 +1529,7 @@ function BlockNoteDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+                readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
@@ -1531,7 +1552,7 @@ function BlockNoteDocPage({
 
       <AnnotationComposer
         draft={composerDraft}
-        open={composerOpen}
+        open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         onSubmit={(draft, body) => {
           annotationMutations.create.mutate({
@@ -1549,7 +1570,9 @@ function BlockNoteDocPage({
         }}
       />
 
-      <SyncStatusPill provider={provider} ready={editorReadable} />
+      {!readOnly && (
+        <SyncStatusPill provider={provider} ready={editorReadable} />
+      )}
     </div>
   )
 }
@@ -1714,6 +1737,7 @@ function VersionHistoryPanel({
 
   const content = (
     <DocVersionHistoryContent
+      spaceId={spaceId}
       versions={versions}
       showAll={showAll}
       setShowAll={setShowAll}
@@ -1882,6 +1906,7 @@ function VersionHistoryPanel({
 }
 
 function DocVersionHistoryContent({
+  spaceId,
   versions,
   showAll,
   setShowAll,
@@ -1894,6 +1919,7 @@ function DocVersionHistoryContent({
   onRestore,
   onExitCompare,
 }: {
+  spaceId: string
   versions: DocVersionEntry[]
   showAll: boolean
   setShowAll: (updater: (value: boolean) => boolean) => void
@@ -1906,6 +1932,8 @@ function DocVersionHistoryContent({
   onRestore: (version: DocVersionEntry) => void
   onExitCompare?: () => void
 }) {
+  const { data: spaceDetail } = useSpace(spaceId)
+  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   const scrollRef = useScrollFade<HTMLDivElement>()
 
   return (
@@ -1943,6 +1971,7 @@ function DocVersionHistoryContent({
           size="sm"
           variant="outline"
           className="gap-2"
+          disabled={!canEdit}
           onClick={onSaveCheckpoint}
         >
           <Save className="h-3.5 w-3.5" />
@@ -2023,6 +2052,7 @@ function DocVersionHistoryContent({
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={!canEdit}
                         onClick={() => onRestore(version)}
                       >
                         Restore

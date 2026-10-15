@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import fc from "fast-check"
 import {
+  readTeamDirectorySnapshot,
   ACTOR_HEADERS,
   AssertionKeyring,
   authorizationServerMetadataCandidates,
@@ -107,7 +108,7 @@ describe("buildTenantEnv", () => {
     )
     // The GATEWAY origin, never the sprite: it is the URL clients call, so it
     // is what the token audience names and what the 401 challenge points at.
-    expect(env[ENV.RESOURCE_URL]).toBe("https://app.worktable.cloud/api/mcp")
+    expect(env[ENV.RESOURCE_URL]).toBe(`https://app.worktable.cloud/api/mcp/w/${base.cloudWorkspaceId}`)
     expect(env[ENV.VERSION]).toBe("0.0.25")
     expect(env[ENV.PORT]).toBe("8080")
     expect(env[ENV.WORKSPACE]).toBe("/data/workspace")
@@ -318,4 +319,29 @@ describe("TenantProvisionInput", () => {
       }).success
     ).toBe(false)
   })
+})
+
+
+it("reads fragmented UTF-8 directories and cancels oversized tenant responses before consuming them", async () => {
+  const snapshot = { workspaceId: "team", name: "Équipe", portableWorkspaceId: "portable", epoch: "a".repeat(64), revision: 1, capturedAt: 1, members: [] }
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot))
+  const split = bytes.indexOf(0xc3) + 1
+  const body = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(bytes.slice(0, split))
+    controller.enqueue(bytes.slice(split))
+    controller.close()
+  } })
+  expect(await readTeamDirectorySnapshot(new Response(body))).toEqual(snapshot)
+  let cancelled = false
+  let remaining = 50
+  const oversized = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (remaining-- > 0) controller.enqueue(new Uint8Array(1024 * 1024))
+      else controller.close()
+    },
+    cancel() { cancelled = true },
+  })
+  await expect(readTeamDirectorySnapshot(new Response(oversized))).rejects.toThrow("Team directory too large")
+  expect(cancelled).toBe(true)
+  expect(remaining).toBeGreaterThan(0)
 })

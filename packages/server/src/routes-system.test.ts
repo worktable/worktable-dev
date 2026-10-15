@@ -56,7 +56,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {
@@ -80,6 +83,8 @@ describe("system version routes", () => {
         hasEmbeddedInstaller: false,
         latest: null,
         updateAvailable: false,
+        channel: null,
+        held: false,
         checkedAt: null,
         lastAttemptAt: null,
         checkTtlRemainingMs: null,
@@ -110,7 +115,10 @@ describe("system version routes", () => {
     // A real local release host, the same override contract install.sh honors.
     const releaseHost = Bun.serve({
       port: 0,
-      fetch: () => Response.json({ version: "9.9.9" }),
+      fetch: () => Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        }),
     });
     try {
       process.env["WORKTABLE_VERSION"] = "0.0.1";
@@ -145,7 +153,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {
@@ -174,7 +185,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {
@@ -188,7 +202,7 @@ describe("system version routes", () => {
       ).toISOString();
       writeFileSync(
         join(appDir, "update-check.json"),
-        JSON.stringify({ latest: "0.0.2", checkedAt: staleCheckedAt })
+        JSON.stringify({ channel: "stable", latest: "0.0.2", checkedAt: staleCheckedAt })
       );
       const res = await app().fetch(
         new Request("http://localhost/api/system/version?cached=1")
@@ -216,7 +230,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: published });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: published, held: false } },
+        });
       },
     });
     try {
@@ -257,7 +274,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {
@@ -293,7 +313,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {
@@ -333,7 +356,10 @@ describe("system version routes", () => {
       port: 0,
       fetch: () => {
         hits += 1;
-        return Response.json({ version: "9.9.9" });
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        });
       },
     });
     try {

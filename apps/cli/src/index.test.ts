@@ -594,7 +594,11 @@ describe("CLI command surface (shared command runtime)", () => {
     const releaseHost = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: () => Response.json({ version: "9.9.9" }),
+      fetch: () =>
+        Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        }),
     })
     try {
       const { stdout, exitCode } = await CLI_TEST_WORKER.runAsync(
@@ -807,6 +811,8 @@ describe("update target helpers", () => {
   it("maps a resolved semver to the v-prefixed release tag for install.sh", () => {
     expect(updateTargetForInstall("0.0.18")).toBe("v0.0.18")
     expect(updateTargetForInstall("v0.0.18")).toBe("v0.0.18")
+    // Beta builds name their commit; release tags omit it.
+    expect(updateTargetForInstall("0.1.24-dev.7+8737f53")).toBe("v0.1.24-dev.7")
     // Non-semver input passes through for install.sh to reject or handle.
     expect(updateTargetForInstall("latest")).toBe("latest")
   })

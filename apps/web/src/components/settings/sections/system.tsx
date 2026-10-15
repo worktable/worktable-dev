@@ -174,6 +174,18 @@ function AboutGroup({ cloud = false }: { cloud?: boolean }) {
           label="Version"
           value={versionQuery.data ? `v${versionQuery.data.current}` : null}
         />
+        {versionQuery.data?.channel ? (
+          <AboutRow
+            label="Channel"
+            value={versionQuery.data.channel === "beta" ? "Beta" : "Stable"}
+          />
+        ) : null}
+        {versionQuery.data?.sourceCommit ? (
+          <AboutRow
+            label="Commit"
+            value={versionQuery.data.sourceCommit.slice(0, 7)}
+          />
+        ) : null}
         <AboutRow
           label="Address"
           value={connectionQuery.data?.origin ?? null}
@@ -642,6 +654,7 @@ function SoftwareUpdateSection() {
             }
             latest={versionQuery.data?.latest ?? null}
             updateAvailable={versionQuery.data?.updateAvailable ?? false}
+            held={versionQuery.data?.held ?? false}
             checkStatus={
               versionQuery.data?.checkStatus === "fresh" &&
               !hasFreshVersionCheck(
@@ -674,6 +687,7 @@ function UpdateBody({
   hasEmbeddedInstaller,
   latest,
   updateAvailable,
+  held,
   checkStatus,
   checkedAt,
   lastAttemptAt,
@@ -691,6 +705,7 @@ function UpdateBody({
   hasEmbeddedInstaller: boolean
   latest: string | null
   updateAvailable: boolean
+  held: boolean
   checkStatus: SystemVersion["checkStatus"]
   checkedAt: string | null
   lastAttemptAt: string | null
@@ -777,6 +792,8 @@ function UpdateBody({
     message = "Updating isn’t available for this install."
   } else if (updateAvailable && latest) {
     message = `Version ${latest} is available. Worktable will briefly restart and this page will reconnect on its own.`
+  } else if (held) {
+    message = "Updates are paused for now."
   } else if (latest) {
     message = "No newer release was found."
   } else {

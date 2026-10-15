@@ -12,7 +12,9 @@ import {
   getUpdateCheckCachePath,
   isNewerVersion,
   normalizeVersion,
-  resolveLatestVersion,
+  releaseTagForVersion,
+  resolveUpdateTarget,
+  setUpdateChannel,
   setUpdateCheckCacheLockWaitHookForTests,
 } from "./update-check.ts"
 
@@ -25,6 +27,23 @@ let appDir: string
 let server: ReturnType<typeof Bun.serve> | null = null
 let requests = 0
 let lastPath = ""
+
+interface TestChannel {
+  version: string
+  held?: boolean
+}
+
+/** A channels.json body: stable plus an optional beta entry. */
+function channels(stable: string | TestChannel, beta?: TestChannel): string {
+  const entry = (value: string | TestChannel) =>
+    typeof value === "string"
+      ? { version: value, held: false }
+      : { version: value.version, held: value.held ?? false }
+  return JSON.stringify({
+    schema: 1,
+    channels: { stable: entry(stable), ...(beta ? { beta: entry(beta) } : {}) },
+  })
+}
 
 function serveManifest(body: string, status = 200): void {
   server = Bun.serve({
@@ -61,12 +80,26 @@ afterEach(() => {
 })
 
 describe("version comparison", () => {
-  it("normalizes tag and plain forms to X.Y.Z", () => {
+  it("normalizes tag and plain forms, keeping prerelease and build", () => {
     expect(normalizeVersion("v0.0.18")).toBe("0.0.18")
     expect(normalizeVersion(" 0.0.18 ")).toBe("0.0.18")
+    expect(normalizeVersion("v0.1.24-dev.7+8737f53")).toBe(
+      "0.1.24-dev.7+8737f53"
+    )
     expect(normalizeVersion("latest")).toBeNull()
     expect(normalizeVersion("1.2")).toBeNull()
     expect(normalizeVersion("")).toBeNull()
+    expect(releaseTagForVersion("0.1.24-dev.7+8737f53")).toBe("v0.1.24-dev.7")
+  })
+
+  it("orders beta builds after the release they follow and before the next", () => {
+    expect(isNewerVersion("0.1.24-dev.7+aaaaaaa", "0.1.23")).toBe(true)
+    expect(isNewerVersion("0.1.24", "0.1.24-dev.7+aaaaaaa")).toBe(true)
+    expect(isNewerVersion("0.1.24-dev.10", "0.1.24-dev.9")).toBe(true)
+    // Build metadata names a commit; it never orders versions.
+    expect(
+      compareVersions("0.1.24-dev.7+aaaaaaa", "0.1.24-dev.7+bbbbbbb")
+    ).toBe(0)
   })
 
   it("compares segments numerically, not lexically", () => {
@@ -81,10 +114,11 @@ describe("version comparison", () => {
 })
 
 describe("checkForUpdate", () => {
-  it("fetches latest/manifest.json, reports the newer version, and caches it", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+  it("fetches channels.json, reports the newer version, and caches it", async () => {
+    serveManifest(channels("0.0.11"))
     const result = await checkForUpdate()
-    expect(lastPath).toBe("/latest/manifest.json")
+    expect(lastPath).toBe("/channels.json")
+    expect(result.channel).toBe("stable")
     expect(result.current).toBe("0.0.10")
     expect(result.latest).toBe("0.0.11")
     expect(result.updateAvailable).toBe(true)
@@ -98,7 +132,7 @@ describe("checkForUpdate", () => {
   })
 
   it("serves from the cache within the TTL and refetches on force", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+    serveManifest(channels("0.0.11"))
     await checkForUpdate()
     const second = await checkForUpdate()
     expect(second.latest).toBe("0.0.11")
@@ -108,14 +142,14 @@ describe("checkForUpdate", () => {
   })
 
   it("reports up to date when the published version is not newer", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.10" }))
+    serveManifest(channels("0.0.10"))
     const result = await checkForUpdate()
     expect(result.latest).toBe("0.0.10")
     expect(result.updateAvailable).toBe(false)
   })
 
   it("falls back to the stale cache when the release server fails", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+    serveManifest(channels("0.0.11"))
     await checkForUpdate()
     server!.stop(true)
     serveManifest("oops", 500)
@@ -127,7 +161,7 @@ describe("checkForUpdate", () => {
   })
 
   it("records a failed first attempt for a malformed manifest", async () => {
-    serveManifest(JSON.stringify({ version: "latest" }))
+    serveManifest(channels("latest"))
     const result = await checkForUpdate()
     expect(result.latest).toBeNull()
     expect(result.updateAvailable).toBe(false)
@@ -151,7 +185,7 @@ describe("checkForUpdate", () => {
         requests += 1
         reportRequestStarted()
         await responseReleased
-        return Response.json({ version: "0.0.11" })
+        return new Response(channels("0.0.11"))
       },
     })
     process.env["WORKTABLE_RELEASE_BASE_URL"] =
@@ -171,7 +205,7 @@ describe("checkForUpdate", () => {
   })
 
   it("serializes cache writes across replacement lock owners", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+    serveManifest(channels("0.0.11"))
     const lockPath = `${getUpdateCheckCachePath()}.lock.sqlite`
     const firstOwner = new Database(lockPath, { create: true })
     firstOwner.exec("BEGIN IMMEDIATE")
@@ -212,7 +246,7 @@ describe("checkForUpdate", () => {
   })
 
   it("recovers the cache lock when its owning process exits", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+    serveManifest(channels("0.0.11"))
     const lockPath = `${getUpdateCheckCachePath()}.lock.sqlite`
     const readyPath = join(appDir, "lock-owner-ready")
     const locker = Bun.spawn(
@@ -272,7 +306,7 @@ describe("checkForUpdate", () => {
   })
 
   it("reports a successful fetch with failed persistence to the scheduler", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
+    serveManifest(channels("0.0.11"))
     const lockPath = `${getUpdateCheckCachePath()}.lock.sqlite`
     const lockOwner = new Database(lockPath, { create: true })
     lockOwner.exec("BEGIN IMMEDIATE")
@@ -303,6 +337,7 @@ describe("checkForUpdate", () => {
         writeFileSync(
           getUpdateCheckCachePath(),
           JSON.stringify({
+            channel: "stable",
             latest: "0.0.12",
             checkedAt,
             lastAttemptAt: checkedAt,
@@ -333,6 +368,7 @@ describe("checkForUpdate", () => {
         writeFileSync(
           getUpdateCheckCachePath(),
           JSON.stringify({
+            channel: "stable",
             latest: "0.0.12",
             checkedAt: new Date(Date.now() - 60_000).toISOString(),
             lastAttemptAt: newerAttemptAt,
@@ -356,7 +392,7 @@ describe("checkForUpdate", () => {
   })
 
   it("makes no network call for a source build (no WORKTABLE_VERSION)", async () => {
-    serveManifest(JSON.stringify({ version: "9.9.9" }))
+    serveManifest(channels("9.9.9"))
     delete process.env["WORKTABLE_VERSION"]
     const result = await checkForUpdate()
     expect(result.latest).toBeNull()
@@ -364,7 +400,7 @@ describe("checkForUpdate", () => {
   })
 
   it("makes no network call when WORKTABLE_NO_UPDATE_CHECK is set", async () => {
-    serveManifest(JSON.stringify({ version: "9.9.9" }))
+    serveManifest(channels("9.9.9"))
     process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
     const result = await checkForUpdate()
     expect(result.latest).toBeNull()
@@ -374,9 +410,13 @@ describe("checkForUpdate", () => {
   it("ignores a warm cache when checks are disabled or unsupported", async () => {
     writeFileSync(
       getUpdateCheckCachePath(),
-      JSON.stringify({ latest: "9.9.9", checkedAt: new Date().toISOString() })
+      JSON.stringify({
+        channel: "stable",
+        latest: "9.9.9",
+        checkedAt: new Date().toISOString(),
+      })
     )
-    serveManifest(JSON.stringify({ version: "9.9.10" }))
+    serveManifest(channels("9.9.10"))
 
     process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
     const disabled = await checkForUpdate()
@@ -398,40 +438,87 @@ describe("checkForUpdate", () => {
 
   it("survives a corrupt cache file", async () => {
     writeFileSync(getUpdateCheckCachePath(), "{not json")
-    serveManifest(JSON.stringify({ version: "0.0.12" }))
+    serveManifest(channels("0.0.12"))
     const result = await checkForUpdate()
     expect(result.latest).toBe("0.0.12")
   })
 })
 
-describe("resolveLatestVersion", () => {
-  it("fetches fresh (no TTL), persists the cache, and null-fails without clobbering it", async () => {
-    serveManifest(JSON.stringify({ version: "0.0.11" }))
-    expect(await resolveLatestVersion()).toBe("0.0.11")
-    expect(await resolveLatestVersion()).toBe("0.0.11")
+describe("release channels", () => {
+  it("offers nothing new from a held channel and says so", async () => {
+    serveManifest(channels({ version: "0.0.11", held: true }))
+    const result = await checkForUpdate()
+    expect(result.latest).toBeNull()
+    expect(result.updateAvailable).toBe(false)
+    expect(result.held).toBe(true)
+    expect(result.checkStatus).toBe("fresh")
+  })
+
+  it("rejects a manifest that doesn't say whether stable is held", async () => {
+    serveManifest(
+      JSON.stringify({ schema: 1, channels: { stable: { version: "0.0.11" } } })
+    )
+    const result = await checkForUpdate()
+    expect(result.latest).toBeNull()
+    expect(result.checkStatus).toBe("failed")
+  })
+
+  it("follows the newer of beta and stable on the beta channel", async () => {
+    setUpdateChannel("beta")
+    serveManifest(channels("0.0.10", { version: "0.0.11-dev.4+abc1234" }))
+    expect((await checkForUpdate()).latest).toBe("0.0.11-dev.4+abc1234")
+    server!.stop(true)
+    serveManifest(channels("0.0.11", { version: "0.0.11-dev.4+abc1234" }))
+    expect((await checkForUpdate({ force: true })).latest).toBe("0.0.11")
+    server!.stop(true)
+    // A held beta leaves beta installs on stable.
+    serveManifest(
+      channels("0.0.10", { version: "0.0.11-dev.5+abc1234", held: true })
+    )
+    const held = await checkForUpdate({ force: true })
+    expect(held.latest).toBe("0.0.10")
+    expect(held.held).toBe(true)
+  })
+
+  it("does not reuse another channel's cached answer", async () => {
+    serveManifest(channels("0.0.10", { version: "0.0.11-dev.1+abc1234" }))
+    expect((await checkForUpdate()).latest).toBe("0.0.10")
+    setUpdateChannel("beta")
+    expect(getCachedUpdateCheck().checkStatus).toBe("unchecked")
+    expect((await checkForUpdate()).latest).toBe("0.0.11-dev.1+abc1234")
+    expect(requests).toBe(2)
+  })
+})
+
+describe("resolveUpdateTarget", () => {
+  it("fetches fresh every time and fails closed when the manifest is unreachable", async () => {
+    serveManifest(channels("0.0.11"))
+    expect(await resolveUpdateTarget()).toEqual({
+      kind: "available",
+      version: "0.0.11",
+      channel: "stable",
+    })
+    expect((await resolveUpdateTarget()).kind).toBe("available")
     expect(requests).toBe(2) // no TTL — every call is a real fetch
     server!.stop(true)
     serveManifest("oops", 500)
-    expect(await resolveLatestVersion()).toBeNull()
+    expect((await resolveUpdateTarget()).kind).toBe("unreachable")
     // The failed resolve did not erase the last known answer.
     expect(getCachedUpdateCheck().latest).toBe("0.0.11")
   })
 
-  it("honors the opt-out and the installed-build gate (no network)", async () => {
-    serveManifest(JSON.stringify({ version: "9.9.9" }))
-    process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
-    expect(await resolveLatestVersion()).toBeNull()
-    expect(requests).toBe(0)
-    delete process.env["WORKTABLE_NO_UPDATE_CHECK"]
-    delete process.env["WORKTABLE_VERSION"]
-    expect(await resolveLatestVersion()).toBeNull()
-    expect(requests).toBe(0)
+  it("installs nothing from a held channel or when already current", async () => {
+    serveManifest(channels({ version: "0.0.11", held: true }))
+    expect((await resolveUpdateTarget()).kind).toBe("held")
+    server!.stop(true)
+    serveManifest(channels("0.0.10"))
+    expect((await resolveUpdateTarget()).kind).toBe("current")
   })
 })
 
 describe("getCachedUpdateCheck", () => {
   it("never touches the network", async () => {
-    serveManifest(JSON.stringify({ version: "9.9.9" }))
+    serveManifest(channels("9.9.9"))
     const result = getCachedUpdateCheck()
     expect(result.latest).toBeNull()
     expect(result.checkStatus).toBe("unchecked")
@@ -441,7 +528,11 @@ describe("getCachedUpdateCheck", () => {
   it("ignores cached latest data when checks are disabled or unsupported", () => {
     writeFileSync(
       getUpdateCheckCachePath(),
-      JSON.stringify({ latest: "9.9.9", checkedAt: new Date().toISOString() })
+      JSON.stringify({
+        channel: "stable",
+        latest: "9.9.9",
+        checkedAt: new Date().toISOString(),
+      })
     )
 
     process.env["WORKTABLE_NO_UPDATE_CHECK"] = "1"
@@ -464,6 +555,7 @@ describe("getCachedUpdateCheck", () => {
     writeFileSync(
       getUpdateCheckCachePath(),
       JSON.stringify({
+        channel: "stable",
         latest: "0.0.11",
         checkedAt: new Date(Date.now() - 24 * 60 * 60_000).toISOString(),
       })

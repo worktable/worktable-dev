@@ -60,8 +60,17 @@ export function getReleaseDir(): string | null {
   return dirname(dirname(executable))
 }
 
+/**
+ * The public commit this build was made from, read from its embedded source
+ * URL (`<repository>/tree/<commit>`). Absent for source checkouts.
+ */
+export const SOURCE_COMMIT = SOURCE_URL
+  ? (/\/tree\/([0-9a-f]{40})$/.exec(SOURCE_URL)?.[1] ?? undefined)
+  : undefined
+
 export interface ReleaseInfo {
   sourceUrl?: string
+  sourceCommit?: string
   version: string
   releaseDir: string | null
   /**
@@ -85,6 +94,7 @@ export function getReleaseInfo(): ReleaseInfo {
   return {
     version: VERSION,
     sourceUrl: SOURCE_URL,
+    sourceCommit: SOURCE_COMMIT,
     releaseDir,
     hasEmbeddedInstaller,
     canUpdate: hasEmbeddedInstaller && hasLauncher,

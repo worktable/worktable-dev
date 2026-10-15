@@ -92,7 +92,8 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          fetch-depth: 1
+          # Lab builds take their dev version from history and release tags.
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.3.14
@@ -121,6 +122,14 @@ jobs:
           bun run release:lab
       - name: Check bundle budgets
         run: bun run perf:bundle
+      - name: Keep the beta build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: beta-${{ github.run_attempt }}
+          path: dist/lab-releases/
+          if-no-files-found: error
+          retention-days: 1
   required:
     needs: plan
     if: needs.plan.outputs.required == 'true'
@@ -358,3 +367,60 @@ jobs:
           path: ${{ runner.temp }}/source-verification.json
           if-no-files-found: error
           retention-days: 30
+  # Every verified product change on main becomes a beta build: a prerelease
+  # tagged vX.Y.Z-dev.N that the beta release channel points at. Stable
+  # installs never see it. Older betas are pruned; the channel only moves
+  # forward, so a late-finishing older run cannot replace a newer build.
+  beta:
+    name: beta
+    needs:
+      - build
+      - verify
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.build.result == 'success' && needs.verify.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: beta-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - name: Download the beta build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: beta-${{ github.run_attempt }}
+          path: dist/lab-releases
+      - name: Publish the beta build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          set -euo pipefail
+          version="$(jq -r .version dist/lab-releases/manifest.json)"
+          commit="$(jq -r .sourceCommit dist/lab-releases/manifest.json)"
+          test "$commit" = "$GITHUB_SHA"
+          case "$version" in
+            *-dev.*+*) ;;
+            *) echo "::error::Beta builds carry a dev version, got $version" >&2; exit 1 ;;
+          esac
+          tag="v${version%%+*}"
+          (cd dist/lab-releases && sha256sum -c checksums.txt)
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" dist/lab-releases/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Worktable beta $version" \
+              --notes "Beta build of $GITHUB_SHA from main, for the beta release channel. Not a stable release." \
+              --prerelease \
+              --latest=false
+          fi
+          bun scripts/release-channels.ts publish beta "$version" "$GITHUB_SHA"
+          bun scripts/release-channels.ts prune-beta --keep 10

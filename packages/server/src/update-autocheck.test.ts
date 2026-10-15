@@ -31,7 +31,10 @@ beforeEach(() => {
     port: 0,
     fetch: () => {
       hits += 1
-      return Response.json({ version: "9.9.9" })
+      return Response.json({
+        schema: 1,
+        channels: { stable: { version: "9.9.9", held: false } },
+      })
     },
   })
   // Installed-build gate: without WORKTABLE_VERSION no surface phones home.
@@ -63,7 +66,10 @@ describe("background update check honors settings.updates.autoCheck", () => {
         hits += 1
         return hits === 1
           ? new Response("unavailable", { status: 503 })
-          : Response.json({ version: "9.9.9" })
+          : Response.json({
+              schema: 1,
+              channels: { stable: { version: "9.9.9", held: false } },
+            })
       },
     })
     process.env["WORKTABLE_RELEASE_BASE_URL"] = `http://127.0.0.1:${host.port}`
@@ -130,7 +136,10 @@ describe("background update check honors settings.updates.autoCheck", () => {
         hits += 1
         markStarted()
         await responseReleased
-        return Response.json({ version: "9.9.9" })
+        return Response.json({
+          schema: 1,
+          channels: { stable: { version: "9.9.9", held: false } },
+        })
       },
     })
     process.env["WORKTABLE_RELEASE_BASE_URL"] = `http://127.0.0.1:${host.port}`

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { oklchToHex } from "./oklch"
-import { THEME_MODES, themeConfig } from "./theme-config"
+import { THEME_MODES, oklchToHex, themeConfig } from "./theme-config"
 
 const REQUIRED_MODE_ROLES = [
   "canvas",

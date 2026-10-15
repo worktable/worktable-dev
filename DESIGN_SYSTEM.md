@@ -16,7 +16,7 @@ Run `bun run generate:theme` after changing the configuration. It generates thes
 - `packages/ui/src/theme/mermaid-theme.generated.ts`, Mermaid-compatible constants, consumed by `packages/ui/src/theme/mermaid-config.ts`.
 - `packages/types/src/drawing-theme.generated.ts`, shared Quickdraw canvas and ink palettes for the editor and agent previews.
 
-The hex values in those adapters, and the browser shell color, derive from the semantic surface and text roles through `oklchToHex`; do not type hex surfaces by hand. Content inks such as drawing strokes and Mermaid line colors remain explicit palettes.
+The browser shell color, the drawing and Mermaid canvases, drawing handles, and the BlockNote menu, hover, selection, and text colors derive from the semantic surface and text roles through `oklchToHex`; do not hand-type hex values for these. Content palettes stay explicit in the configuration: drawing inks, Mermaid node fills, and Mermaid line and text colors.
 
 `bun run check:theme` rejects drift. Product CSS consumes `@worktable/ui/theme.css`; React continues using standard Tailwind semantic utilities.
 

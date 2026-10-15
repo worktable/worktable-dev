@@ -4,7 +4,7 @@ Scripts that measure Worktable's server, web bundles and real clicks in a
 browser on synthetic workspaces, so a performance change can show its numbers
 before and after.
 They are tools, not tests: nothing here runs in the required test lanes except
-the bundle gate.
+the bundle gate and the static speed guards.
 
 Run them from the repository root after `bun install --frozen-lockfile`.
 Outputs go to `.local-dev/perf/`, which Git ignores.
@@ -17,6 +17,7 @@ Outputs go to `.local-dev/perf/`, which Git ignores.
 | `bun run perf:clicks --profile 1k`        | Clicks in Chromium under desktop and phone conditions |
 | `bun run perf:io --profile 1k`            | File I/O and SQL per hot request, against budgets     |
 | `bun run perf:bundle`                     | Bundle sizes against budgets (after a web build)      |
+| `bun run perf:guards`                     | Static speed guards (see `docs/performance.md`)       |
 
 ## Fixtures
 

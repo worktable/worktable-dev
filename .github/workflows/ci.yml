@@ -73,6 +73,10 @@ jobs:
           bun run typecheck:lab
           bun run typecheck:perf
           bun run test:policy
+      - name: Check speed guards
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bun run perf:guards --base "$BASE_SHA"
   build:
     needs: plan
     if: needs.plan.outputs.required == 'true'

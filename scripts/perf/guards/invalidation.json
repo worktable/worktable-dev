@@ -1,0 +1,40 @@
+{
+  "$comment": "Broad query invalidation in apps/web/src, one entry per site. Kinds: unkeyed (no filter), predicate (a predicate with no key visits every cached query), space-wide (a [\"spaces\"], [\"spaces\", id] or [\"annotations\", id] prefix without exact: true, which also refetches open documents). Invalidate the exact keys a change touched instead. Checked by bun run perf:guards; see docs/performance.md.",
+  "sites": [
+    {
+      "site": "apps/web/src/components/settings/sections/backups.tsx#BackupsSection",
+      "kind": "unkeyed",
+      "why": "A restore replaced the whole workspace: every cached query is stale."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/backups.tsx#BackupsSection",
+      "kind": "unkeyed",
+      "why": "A restore replaced the whole workspace, and its id could not be read: every cached query is stale."
+    },
+    {
+      "site": "apps/web/src/lib/ws.ts#reconcileSpaceThreadQueries",
+      "kind": "predicate",
+      "why": "After a Space's thread socket reconnects, its thread lists and details may have missed events; thread keys carry the Space inside a location key."
+    },
+    {
+      "site": "apps/web/src/lib/ws.ts#applySpaceEvent.annotations",
+      "kind": "space-wide",
+      "why": "Annotation events name the annotation, not its document, so the Space's annotation lists read again (only those on screen)."
+    },
+    {
+      "site": "apps/web/src/lib/ws.ts#revalidateSpaceAfterReconnect",
+      "kind": "space-wide",
+      "why": "After a reconnect the tab may have missed any change in the Space: mark it stale without refetching; content at a revision is excluded."
+    },
+    {
+      "site": "apps/web/src/lib/ws.ts#revalidateSpaceAfterReconnect",
+      "kind": "space-wide",
+      "why": "After a reconnect, annotation lists on screen read again; the events they missed are unknown."
+    },
+    {
+      "site": "apps/web/src/lib/ws.ts#subscribeShared",
+      "kind": "space-wide",
+      "why": "When the last subscriber leaves, nothing keeps the Space current: mark it stale without refetching; content at a revision is excluded."
+    }
+  ]
+}

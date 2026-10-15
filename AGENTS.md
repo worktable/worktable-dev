@@ -35,6 +35,15 @@ covered.
 Run focused checks during development and required checks on the final
 candidate. Test counts and coverage percentages are not objectives.
 
+## Speed
+
+Read `docs/performance.md` before changing how the app or server reads data.
+Keep one request per screen where possible and zero content requests on
+revisits. Do not add polling, broad invalidation, per-request catalog rebuilds
+or file scans, or monitoring work on the request hot path.
+`bun run perf:guards` enforces the registered exceptions. Measure speed changes
+on Namespace, never on a shared host.
+
 ## Code review
 
 - Treat every review finding as a hypothesis. Verify its premise, relevance,

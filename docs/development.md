@@ -99,7 +99,9 @@ describe what you verified in the PR.
 
 For a change meant to make Worktable faster, measure it with the
 [perf lane](../scripts/perf/README.md) and put the before and after numbers in
-the PR. The CI build fails when a web bundle grows past its budget.
+the PR. The CI build fails when a web bundle grows past its budget, and
+`bun run perf:guards` fails on unregistered polling, broad invalidation and
+catalog builds on the request path. See [Keep Worktable fast](performance.md).
 
 ## Documentation checks
 

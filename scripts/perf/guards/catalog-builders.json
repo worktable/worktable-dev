@@ -1,0 +1,260 @@
+{
+  "$comment": "Server functions that rebuild a Space's document catalog, or list or stat every document or thread file. This list can only shrink: read through the catalog snapshot, thread digests or other derived data instead of adding to it. A site is <file>#<function>[.<variable>]; kind is the builder it calls. Checked by bun run perf:guards; see docs/performance.md.",
+  "sites": [
+    {
+      "site": "packages/server/src/doc-markdown-projection.ts#grepDocs.paths",
+      "kind": "listDocs",
+      "why": "Docs grep (MCP) lists every doc file per request; should list from the snapshot."
+    },
+    {
+      "site": "packages/server/src/doc-rename.ts#renameDocsByPrefixAndSync.sourcePaths",
+      "kind": "listDocsByPrefix",
+      "why": "Folder rename: lists the folder's files before writing."
+    },
+    {
+      "site": "packages/server/src/document-annotation-service.ts#allAnnotationOwners.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Annotation reads and writes without a snapshot (one annotation, its context, reply, resolve). Reads should use the snapshot (Plan 15)."
+    },
+    {
+      "site": "packages/server/src/document-data-lifecycle-v2.ts#currentDurableDocuments.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-folder-archive.ts#planDocumentFolderArchive.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-folder-delete.ts#planDocumentFolderDelete.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-folder-move.ts#planDocumentFolderMove.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-identity-admission.ts#documentIdForManagedWrite.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#prepareExactRename.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#preparePrefixRename.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#preparePrefixArchive.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#preparePrefixDelete.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#prepareExactDelete.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#prepareFormatTransition.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#verifyCommittedCatalog.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: verifies the committed catalog after a lifecycle change."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#materializeHealthyHtmlSamePath.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-lifecycle-journal.ts#materializeHealthyHtmlSamePath.committed",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: verifies the catalog after materializing an HTML doc."
+    },
+    {
+      "site": "packages/server/src/document-query.ts#documentQueryContext.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "The query context build itself: the snapshot's rebuild and the fresh callers below."
+    },
+    {
+      "site": "packages/server/src/document-query.ts#snapshotDocumentQueryContext",
+      "kind": "documentQueryContext",
+      "why": "The snapshot: rebuilds only when a source fingerprint changed."
+    },
+    {
+      "site": "packages/server/src/document-query.ts#listDocumentLifetimeTargetsLocked.context",
+      "kind": "documentQueryContext",
+      "why": "Lifetime targets: fresh unless the caller passes snapshot: true (writers and the archive sweep do not)."
+    },
+    {
+      "site": "packages/server/src/document-query.ts#projectDocumentsForSearch.context",
+      "kind": "documentQueryContext",
+      "why": "Search index sync: a fresh catalog per slice; requests wait at most 3 s for it. Should use the snapshot."
+    },
+    {
+      "site": "packages/server/src/document-query.ts#prepareDocumentReadResult",
+      "kind": "documentQueryContext",
+      "why": "Document reads without snapshot: true, such as the doc annotations list behind conversionCheck. Should use the snapshot (Plan 15)."
+    },
+    {
+      "site": "packages/server/src/document-version-compatibility-v2.ts#resolveOwner.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Version history reads and restores. Reads should use the snapshot (Plan 15)."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#materializeRegisteredDocumentIdentity.current",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#replayRegisteredDocumentMutation.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#createRegisteredDocument.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#readRegisteredDocumentSourceLocked.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Editable source, previews and drawing reads. Should use the snapshot (Plan 15)."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#replaceRegisteredDocument.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#checkpointRegisteredDocument.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#restoreRegisteredDocumentVersion.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocument.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#moveRegisteredDocument.refreshed",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: re-reads the catalog after a move commits."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#setRegisteredDocumentArchived.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/document-write-service.ts#deleteRegisteredDocument.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/html-document-storage-v2.ts#resolveHtmlDocumentStorageV2.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "HTML doc reads and writes, including public shares. Reads should use the snapshot (Plan 15)."
+    },
+    {
+      "site": "packages/server/src/html-document-storage-v2.ts#listedHtmlDocumentsStorageV2.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Fallback when no catalog is passed; every read caller passes the snapshot today."
+    },
+    {
+      "site": "packages/server/src/link-graph.ts#buildSpaceLinks.docPaths",
+      "kind": "listDocs",
+      "why": "Link graph rebuild, only when marked dirty."
+    },
+    {
+      "site": "packages/server/src/participant-store.ts#recoverPortableParticipant.scan",
+      "kind": "scanAllThreadDigests",
+      "why": "Recovers a participant missing from the store; rare."
+    },
+    {
+      "site": "packages/server/src/routes/docs.ts#POST /.docPath",
+      "kind": "listDocs",
+      "why": "Doc create: lists the Space's doc files to pick a free name."
+    },
+    {
+      "site": "packages/server/src/routes/docs.ts#POST /*.folderDocuments",
+      "kind": "listDocsByPrefix",
+      "why": "Folder rename: checks the folder has documents."
+    },
+    {
+      "site": "packages/server/src/search-index.ts#syncLegacyDocuments.paths",
+      "kind": "listDocs",
+      "why": "Search index sync for legacy storage; requests wait at most 3 s for it."
+    },
+    {
+      "site": "packages/server/src/store.ts#setDocsArchivedByPrefix.paths",
+      "kind": "listDocs",
+      "why": "Writer: archives a folder's documents."
+    },
+    {
+      "site": "packages/server/src/store.ts#listDocsByPrefix",
+      "kind": "listDocs",
+      "why": "listDocsByPrefix filters listDocs; its callers are registered."
+    },
+    {
+      "site": "packages/server/src/store.ts#resolveDocGenerationOwnerLocked.catalog",
+      "kind": "buildDocumentCatalog",
+      "why": "Writer: checks the current files under the write lock; writers never read snapshots."
+    },
+    {
+      "site": "packages/server/src/thread-service.ts#listThreadSummaries.scan",
+      "kind": "scanAllThreadDigests",
+      "why": "Thread lists: stats every thread file and parses only changed ones (digest cache)."
+    },
+    {
+      "site": "packages/server/src/thread-service.ts#listPendingThreadWork",
+      "kind": "scanAllThreadDigests",
+      "why": "Pending thread work: stats every thread file and parses only changed ones."
+    },
+    {
+      "site": "packages/server/src/thread-service.ts#listPendingThreadWork",
+      "kind": "scanThreadDigests",
+      "why": "Pending thread work in one location: stats its thread files."
+    },
+    {
+      "site": "packages/server/src/thread-service.ts#reconcileParticipantDeliveries.scan",
+      "kind": "scanAllThreadDigests",
+      "why": "Thread read, wait and post: stats every thread file to reconcile deliveries. Should use derived data."
+    },
+    {
+      "site": "packages/server/src/thread-store.ts#scanAllThreadDigests.scans",
+      "kind": "scanThreadDigests",
+      "why": "scanAllThreadDigests walks each location; its callers are registered."
+    },
+    {
+      "site": "packages/server/src/thread-store.ts#threadsWithIdempotencyKey.scan",
+      "kind": "scanThreadDigests",
+      "why": "Post with an idempotency key: finds an earlier post in the location."
+    },
+    {
+      "site": "packages/server/src/thread-store.ts#renameThreadMember.scan",
+      "kind": "scanAllThreadDigests",
+      "why": "Writer: renames a participant in every thread."
+    }
+  ]
+}

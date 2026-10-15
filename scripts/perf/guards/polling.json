@@ -1,0 +1,125 @@
+{
+  "$comment": "Every refetchInterval and setInterval in apps/web/src, one entry per site. A site is <file>#<enclosing function or variable>; list a site twice if it occurs twice. Polling is the last resort: prefer a socket event, or a refetch when the user acts. Checked by bun run perf:guards; see docs/performance.md.",
+  "sites": [
+    {
+      "site": "apps/web/src/components/editor/editor.tsx#AnnotationBadges.timer",
+      "why": "Re-measures comment marker positions each second while annotations are shown; no request."
+    },
+    {
+      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.connections",
+      "why": "Waits every 3 s for a Cloud agent to finish signing in during setup; nothing pushes that event."
+    },
+    {
+      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.tokens",
+      "why": "Waits every 3 s for an agent to first use its new token during setup."
+    },
+    {
+      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.pairingStatus",
+      "why": "Follows a pairing code every 2 s until it is verified, failed or expired."
+    },
+    {
+      "site": "apps/web/src/components/onboarding/onboarding.tsx#ReadyStep.participants",
+      "why": "Waits every 3 s for an always-on agent to join during setup."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/agents.tsx#QuickConnectPanel.statusQuery",
+      "why": "Quick connect: follows a pairing code every 2 s until it is verified, failed or expired."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/agents.tsx#AlwaysOnSetupPanel.statusQuery",
+      "why": "Always-on setup: follows a pairing code every 2 s until it is verified, failed or expired."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/backups.tsx#BackupsSection.history",
+      "why": "Cloud backup history while Settings shows it: 5 s during a backup or restore, 30 s otherwise; the control plane has no socket."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/cloud.tsx#CloudSection.query",
+      "why": "Cloud link status every 3 s, only while the Cloud section is open, to catch a sign-in finished in another window."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/portability.tsx#ExportControls.job",
+      "why": "Export progress while a job is queued or running; stops when it ends."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/portability.tsx#ImportControls.job",
+      "why": "Import progress while a job is verifying, preparing or replacing; stops when it ends."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/system.tsx#AboutGroup.versionQuery",
+      "why": "Re-reads the version once its cached update check expires, only while the System section is open."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/system.tsx#SoftwareUpdateSection.statusQuery",
+      "why": "Follows a self-update every 2 s while it is in flight."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/system.tsx#SoftwareUpdateSection.healthQuery",
+      "why": "Waits for /health to return on the new version while a self-update restarts the server."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/workspace-clear.tsx#WorkspaceClearControls.timer",
+      "why": "Countdown clock in the clear-workspace dialog; no request."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/workspace-clear.tsx#WorkspaceClearControls.job",
+      "why": "Clear progress every second while a clear is preparing or replacing."
+    },
+    {
+      "site": "apps/web/src/components/workspace-operation-observer.tsx#WorkspaceOperationObserver.exported",
+      "why": "Export progress app-wide while a job runs, to announce it when done; stops when it ends."
+    },
+    {
+      "site": "apps/web/src/components/workspace-operation-observer.tsx#WorkspaceOperationObserver.imported",
+      "why": "Import progress app-wide while a job runs, to announce it when done; stops when it ends."
+    },
+    {
+      "site": "apps/web/src/components/workspace-operation-observer.tsx#WorkspaceOperationObserver.cleared",
+      "why": "Clear progress app-wide while a job runs, to announce it when done; stops when it ends."
+    },
+    {
+      "site": "apps/web/src/components/workspace-operation-observer.tsx#WorkspaceOperationObserver.timer",
+      "why": "Checks the workspace identity every 15 s only when no socket is live and the tab is visible."
+    },
+    {
+      "site": "apps/web/src/components/workspace-storage-gate.tsx#WorkspaceStorageGate.status",
+      "why": "Follows a storage upgrade at start until the workspace is ready; never polls after that."
+    },
+    {
+      "site": "apps/web/src/hooks/use-desktop-update.ts#useDesktopUpdate",
+      "why": "Desktop update state lives in the native shell, which cannot push to the page: 1.5 s during an update, 60 s otherwise."
+    },
+    {
+      "site": "apps/web/src/hooks/use-update-availability.ts#useUpdateAvailability.query",
+      "why": "Reads the server's cached update check: briefly fast at start until the first check lands, then slow."
+    },
+    {
+      "site": "apps/web/src/lib/activity.ts#useActivity",
+      "why": "Activity: 60 s check only while its Space has no live socket (Home and workspace-wide lists)."
+    },
+    {
+      "site": "apps/web/src/lib/activity.ts#useActivityPages",
+      "why": "Paged activity: 60 s check only while its Space has no live socket."
+    },
+    {
+      "site": "apps/web/src/lib/activity.ts#usePending",
+      "why": "Pending: 60 s check only while its Space has no live socket."
+    },
+    {
+      "site": "apps/web/src/lib/lifetime.ts#useRecentDocuments",
+      "why": "Recent: 60 s check only while its Space has no live socket."
+    },
+    {
+      "site": "apps/web/src/lib/queries.ts#spacesQueryOptions",
+      "why": "Only while there is no Space yet, so no socket to hear spaces_changed: 60 s."
+    },
+    {
+      "site": "apps/web/src/lib/queries.ts#searchQueryOptions",
+      "why": "Asks again every 2 s only while the server says its search index is still building."
+    },
+    {
+      "site": "apps/web/src/routes/index.tsx#useToday.timer",
+      "why": "Updates Home's date heading each minute; no request."
+    }
+  ]
+}

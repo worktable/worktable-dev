@@ -211,6 +211,7 @@ describe("desktop package contracts", () => {
         "allow-desktop-workspace-update-status",
         "allow-desktop-workspace-check-for-updates",
         "allow-desktop-workspace-restart-to-update",
+        "allow-desktop-workspace-set-update-channel",
       ],
     })
     // Remote workspace pages and the shell never get the workspace commands.

@@ -7,6 +7,7 @@ import {
   resolveDesktopUpdaterBundlePath,
   resolveDesktopUpdaterSignaturePath,
 } from "./release-paths"
+import { desktopBuildVersion, desktopReleaseTag } from "./desktop-version"
 
 function fail(message: string): never {
   throw new Error(message)
@@ -54,8 +55,9 @@ const config = JSON.parse(
   readFileSync(join(appRoot, "src-tauri", "tauri.conf.json"), "utf8")
 ) as {
   plugins?: { updater?: { pubkey?: unknown } }
-  version?: unknown
 }
+// A release's version, or the beta build version this bundle was built with.
+const version = desktopBuildVersion()
 const publicKey = config.plugins?.updater?.pubkey
 if (
   typeof publicKey !== "string" ||
@@ -106,9 +108,9 @@ if (
   fail("Prepared Desktop updater assets differ from Tauri's signed artifacts")
 }
 const feed = JSON.parse(readFileSync(feedPath, "utf8")) as DesktopUpdaterFeed
-if (feed.version !== config.version) {
+if (feed.version !== version) {
   fail(
-    `Desktop updater feed version ${String(feed.version)} does not match Tauri version ${String(config.version)}`
+    `Desktop updater feed version ${String(feed.version)} does not match Desktop version ${version}`
   )
 }
 const platformKeys = Object.keys(feed.platforms ?? {})
@@ -121,7 +123,7 @@ const platform = feed.platforms["darwin-aarch64"]
 if (platform.signature !== signature) {
   fail("Desktop updater feed signature does not match the detached signature")
 }
-const expectedUrl = `https://worktable.dev/releases/v${config.version}/worktable-desktop-darwin-arm64.app.tar.gz`
+const expectedUrl = `https://worktable.dev/releases/${desktopReleaseTag(version)}/worktable-desktop-darwin-arm64.app.tar.gz`
 if (platform.url !== expectedUrl) {
   fail(
     `Desktop updater feed URL is not the immutable versioned artifact URL: ${platform.url}`
@@ -166,9 +168,9 @@ try {
     "raw",
     join(extractedBundle, "Contents", "Info.plist"),
   ]).stdout
-  if (bundleVersion !== config.version) {
+  if (bundleVersion !== version) {
     fail(
-      `Desktop updater archive version ${bundleVersion} does not match ${String(config.version)}`
+      `Desktop updater archive version ${bundleVersion} does not match ${version}`
     )
   }
   console.log(

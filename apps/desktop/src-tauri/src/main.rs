@@ -44,7 +44,8 @@ use std::{
 };
 use tauri::{
     menu::{
-        Menu, MenuItemBuilder, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+        CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
+        WINDOW_SUBMENU_ID,
     },
     path::BaseDirectory,
     webview::{
@@ -83,6 +84,7 @@ const REVEAL_WORKSPACE_MENU_ID: &str = "workspace.reveal";
 const CLOUD_SIGN_OUT_MENU_ID: &str = "workspace.cloud-sign-out";
 const CLOUD_END_SESSION_MENU_ID: &str = "workspace.cloud-end-session";
 const CHECK_UPDATES_MENU_ID: &str = "app.check-updates";
+const BETA_UPDATES_MENU_ID: &str = "app.beta-updates";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(25);
 // The bundled server prints this line on stdout once it is listening. Desktop
 // verifies the instance as soon as it arrives and polls only as a fallback.
@@ -1008,6 +1010,8 @@ struct WorkspaceUpdateStatus {
     total_bytes: Option<u64>,
     can_restart: bool,
     last_check: Option<updater::LastUpdateCheck>,
+    /// The release channel Desktop follows: `stable` or `beta`.
+    channel: &'static str,
 }
 
 #[tauri::command]
@@ -1029,7 +1033,44 @@ fn desktop_workspace_update_status(
         downloaded_bytes: status.downloaded_bytes,
         total_bytes: status.total_bytes,
         last_check: updater_state.last_check()?,
+        channel: updater_state.channel()?.as_str(),
     })
+}
+
+/// Follows the stable or beta channel from now on, then checks it.
+#[tauri::command]
+fn desktop_workspace_set_update_channel(
+    webview: Webview,
+    app: AppHandle,
+    state: State<'_, DesktopHostState>,
+    channel: String,
+) -> Result<(), String> {
+    require_local_workspace_surface(&webview, &state, "update")?;
+    let channel = release_channel::UpdateChannel::parse(&channel)
+        .ok_or_else(|| format!("unknown release channel {channel:?}"))?;
+    change_update_channel(&app, channel)
+}
+
+/// Switches the followed channel from Settings or the app menu. An update
+/// prepared for the previous channel is dropped, and the new one is checked
+/// right away in the background.
+fn change_update_channel(
+    app: &AppHandle,
+    channel: release_channel::UpdateChannel,
+) -> Result<(), String> {
+    let changed = app.state::<DesktopUpdaterState>().set_channel(channel);
+    sync_update_menu(app);
+    if !changed? {
+        return Ok(());
+    }
+    #[cfg(all(target_os = "macos", not(feature = "staging")))]
+    let _ = set_pending_native_update(&app.state::<PendingNativeUpdate>(), None);
+    eprintln!(
+        "[Worktable Desktop] following the {} channel",
+        channel.as_str()
+    );
+    start_in_app_update_check(app.clone());
+    Ok(())
 }
 
 /// Starts a background check for the app's own update controls. It reports
@@ -1116,6 +1157,9 @@ fn desktop_open_update_download(webview: Webview, app: AppHandle) -> Result<(), 
         .map(|attempt| attempt.from_version.as_str());
     let download_version = recovery_version.unwrap_or(&updater_status.current_version);
     let expected_url = versioned_dmg_url(download_version);
+    let expected_tag = semver::Version::parse(download_version)
+        .map(|version| release_channel::release_tag(&version))
+        .map_err(|_| "Desktop recovery version is not valid".to_string())?;
     if download_url != expected_url {
         return Err("Desktop recovery download URL does not match the recorded release".into());
     }
@@ -1124,11 +1168,7 @@ fn desktop_open_update_download(webview: Webview, app: AppHandle) -> Result<(), 
         .map_err(|error| format!("invalid signed Desktop download URL: {error}"))?;
     if parsed.scheme() != "https"
         || parsed.host_str() != Some("worktable.dev")
-        || parsed.path()
-            != format!(
-                "/releases/v{}/worktable-desktop-darwin-arm64.dmg",
-                download_version
-            )
+        || parsed.path() != format!("/releases/{expected_tag}/worktable-desktop-darwin-arm64.dmg")
     {
         return Err("Desktop recovery download URL is outside worktable.dev".into());
     }
@@ -5297,21 +5337,28 @@ async fn run_updater_check(app: AppHandle, manual: bool) -> Result<(), String> {
             "[Worktable Desktop] checking for updates ({})",
             if manual { "manual" } else { "automatic" }
         );
-        // The stable channel decides the version; its signed feed supplies the
-        // update. A held channel offers nothing.
+        // The followed channel decides the version; its signed feed supplies
+        // the update. A held channel offers nothing.
         let result = async {
             let current = app.package_info().version.clone();
-            let feed_url =
-                match release_channel::fetch_stable_target(&current, RELEASE_CHANNEL_CHECK_TIMEOUT)
-                    .await?
-                {
-                    release_channel::StableTarget::Offer { feed_url, .. } => feed_url,
-                    release_channel::StableTarget::Held => {
-                        eprintln!("[Worktable Desktop] the stable channel is held");
-                        return Ok(None);
-                    }
-                    release_channel::StableTarget::Current => return Ok(None),
-                };
+            let channel = updater_state.channel()?;
+            let feed_url = match release_channel::fetch_channel_target(
+                &current,
+                channel,
+                RELEASE_CHANNEL_CHECK_TIMEOUT,
+            )
+            .await?
+            {
+                release_channel::ChannelTarget::Offer { feed_url, .. } => feed_url,
+                release_channel::ChannelTarget::Held => {
+                    eprintln!(
+                        "[Worktable Desktop] the {} channel is held",
+                        channel.as_str()
+                    );
+                    return Ok(None);
+                }
+                release_channel::ChannelTarget::Current => return Ok(None),
+            };
             let feed_url = feed_url
                 .parse::<tauri::Url>()
                 .map_err(|error| format!("invalid Desktop updater feed URL: {error}"))?;
@@ -5491,12 +5538,16 @@ fn install_prepared_update_on_exit<R: Runtime>(app: &AppHandle<R>) {
     if !prepared.installs_on_quit || !bundle_installs_without_authorization() {
         return;
     }
-    // Install only what stable still offers: a held or withdrawn release, or a
-    // manifest that can't be read, leaves the current app in place.
+    // Install only what the channel still offers: a held or withdrawn
+    // release, or a manifest that can't be read, leaves the current app.
     let current = app.package_info().version.clone();
+    let Ok(channel) = app.state::<DesktopUpdaterState>().channel() else {
+        return;
+    };
     if !tauri::async_runtime::block_on(release_channel::still_offered(
         &current,
         &prepared.version,
+        channel,
         RELEASE_CHANNEL_CONFIRM_TIMEOUT,
     )) {
         eprintln!(
@@ -5540,16 +5591,26 @@ fn sync_update_menu<R: Runtime>(app: &AppHandle<R>) {
     } else {
         "Check for Updates…"
     };
-    let item = app
+    let submenus = app
         .menu()
         .and_then(|menu| menu.items().ok())
         .into_iter()
         .flatten()
         .filter_map(|item| item.as_submenu().cloned())
+        .collect::<Vec<_>>();
+    let item = submenus
+        .iter()
         .find_map(|submenu| submenu.get(CHECK_UPDATES_MENU_ID))
         .and_then(|item| item.as_menuitem().cloned());
     if let Some(item) = item {
         let _ = item.set_text(label);
+    }
+    let beta = submenus
+        .iter()
+        .find_map(|submenu| submenu.get(BETA_UPDATES_MENU_ID))
+        .and_then(|item| item.as_check_menuitem().cloned());
+    if let (Some(beta), Ok(channel)) = (beta, app.state::<DesktopUpdaterState>().channel()) {
+        let _ = beta.set_checked(channel == release_channel::UpdateChannel::Beta);
     }
 }
 
@@ -5576,12 +5637,13 @@ async fn install_available_update(app: AppHandle) -> Result<(), String> {
             sync_update_menu(&app);
             return Ok(());
         };
-        // Install only what stable still offers. The prepared archive is
+        // Install only what the channel still offers. The prepared archive is
         // dropped either way; a later check downloads whatever is offered then.
         let current = app.package_info().version.clone();
         if !release_channel::still_offered(
             &current,
             &prepared.version,
+            updater_state.channel()?,
             RELEASE_CHANNEL_CONFIRM_TIMEOUT,
         )
         .await
@@ -6831,6 +6893,10 @@ fn build_desktop_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     menu.insert(&workspace, 2)?;
     let check_updates =
         MenuItemBuilder::with_id(CHECK_UPDATES_MENU_ID, "Check for Updates…").build(app)?;
+    // Checked once the updater state is loaded (sync_update_menu).
+    let beta_updates = CheckMenuItemBuilder::with_id(BETA_UPDATES_MENU_ID, "Beta Updates")
+        .checked(false)
+        .build(app)?;
     // macOS apps offer updates in the app menu, right after About.
     #[cfg(target_os = "macos")]
     if let Some(app_menu) = menu
@@ -6839,7 +6905,7 @@ fn build_desktop_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .next()
         .and_then(|item| item.as_submenu().cloned())
     {
-        app_menu.insert(&check_updates, 1)?;
+        app_menu.insert_items(&[&check_updates, &beta_updates], 1)?;
         return Ok(menu);
     }
     let update_separator = PredefinedMenuItem::separator(app)?;
@@ -6847,7 +6913,7 @@ fn build_desktop_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .get(HELP_SUBMENU_ID)
         .and_then(|item| item.as_submenu().cloned())
     {
-        help_menu.prepend_items(&[&check_updates, &update_separator])?;
+        help_menu.prepend_items(&[&check_updates, &beta_updates, &update_separator])?;
     }
     Ok(menu)
 }
@@ -6890,6 +6956,20 @@ fn handle_desktop_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                     eprintln!("[Worktable Desktop] Cloud sign-out failed: {error}");
                 }
             });
+        }
+        BETA_UPDATES_MENU_ID => {
+            let channel = match app.state::<DesktopUpdaterState>().channel() {
+                Ok(release_channel::UpdateChannel::Beta) => release_channel::UpdateChannel::Stable,
+                Ok(release_channel::UpdateChannel::Stable) => release_channel::UpdateChannel::Beta,
+                Err(error) => {
+                    eprintln!("[Worktable Desktop] could not read the update channel: {error}");
+                    sync_update_menu(app);
+                    return;
+                }
+            };
+            if let Err(error) = change_update_channel(app, channel) {
+                eprintln!("[Worktable Desktop] could not change the update channel: {error}");
+            }
         }
         CHECK_UPDATES_MENU_ID => {
             let app = app.clone();
@@ -6951,6 +7031,7 @@ fn main() {
             desktop_workspace_update_status,
             desktop_workspace_check_for_updates,
             desktop_workspace_restart_to_update,
+            desktop_workspace_set_update_channel,
             desktop_select_connection_provider,
             desktop_start_cloud_connection,
             desktop_cancel_cloud_connection,
@@ -6978,6 +7059,7 @@ fn main() {
                     app.package_info().version.to_string().as_str(),
                 )
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            sync_update_menu(app.handle());
             *app.state::<DesktopHostState>()
                 .runtime
                 .lock()

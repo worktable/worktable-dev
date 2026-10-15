@@ -5,17 +5,15 @@ import {
   resolveDesktopUpdaterBundlePath,
   resolveDesktopUpdaterSignaturePath,
 } from "./release-paths"
+import { desktopBuildVersion, desktopReleaseTag } from "./desktop-version"
 
 const updaterBundleName = "worktable-desktop-darwin-arm64.app.tar.gz"
 const updaterSignatureName = `${updaterBundleName}.sig`
 const updaterFeedName = "desktop-updater.json"
-const stableVersionPattern = /^\d+\.\d+\.\d+$/
+// A release (X.Y.Z) or a beta build of main (X.Y.Z-dev.N+<commit>).
+const desktopVersionPattern = /^\d+\.\d+\.\d+(?:-dev\.\d+\+[0-9a-f]{7})?$/
 const rfc3339Pattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
-
-interface DesktopPackage {
-  version: string
-}
 
 export interface DesktopUpdaterFeed {
   version: string
@@ -119,10 +117,13 @@ export function prepareDesktopUpdaterRelease(
   options: PrepareDesktopUpdaterReleaseOptions
 ): PreparedDesktopUpdaterRelease {
   const appVersion = options.appVersion.trim()
-  if (!stableVersionPattern.test(appVersion)) {
-    fail(`Desktop updater version must be stable semver: ${options.appVersion}`)
+  if (!desktopVersionPattern.test(appVersion)) {
+    fail(
+      `Desktop updater version must be a release or beta build: ${options.appVersion}`
+    )
   }
-  if (options.tag.trim() !== `v${appVersion}`) {
+  const tag = desktopReleaseTag(appVersion)
+  if (options.tag.trim() !== tag) {
     fail(
       `Desktop updater tag ${options.tag} does not match application version ${appVersion}`
     )
@@ -157,7 +158,7 @@ export function prepareDesktopUpdaterRelease(
     platforms: {
       "darwin-aarch64": {
         signature,
-        url: `https://worktable.dev/releases/v${appVersion}/${updaterBundleName}`,
+        url: `https://worktable.dev/releases/${tag}/${updaterBundleName}`,
       },
     },
   }
@@ -187,9 +188,7 @@ function run(command: string[]): string {
 if (import.meta.main) {
   const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
   const repoRoot = resolve(appRoot, "../..")
-  const desktopPackage = JSON.parse(
-    readFileSync(join(appRoot, "package.json"), "utf8")
-  ) as DesktopPackage
+  const appVersion = desktopBuildVersion()
   const releaseDirectory = resolve(
     process.env.WORKTABLE_RELEASE_DIRECTORY?.trim() ||
       join(repoRoot, "dist", "releases")
@@ -199,13 +198,13 @@ if (import.meta.main) {
       join(releaseDirectory, "RELEASE_NOTES.md")
   )
   const tag =
-    process.env.WORKTABLE_RELEASE_TAG?.trim() || `v${desktopPackage.version}`
+    process.env.WORKTABLE_RELEASE_TAG?.trim() || desktopReleaseTag(appVersion)
   const pubDate =
     process.env.WORKTABLE_UPDATER_PUB_DATE?.trim() ||
     run(["git", "show", "-s", "--format=%cI", "HEAD"])
 
   const prepared = prepareDesktopUpdaterRelease({
-    appVersion: desktopPackage.version,
+    appVersion,
     tag,
     pubDate,
     releaseNotes: readFileSync(releaseNotesPath, "utf8"),

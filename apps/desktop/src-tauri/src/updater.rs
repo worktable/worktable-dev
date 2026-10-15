@@ -1,5 +1,6 @@
 #![cfg_attr(any(not(target_os = "macos"), feature = "staging"), allow(dead_code))]
 
+use crate::release_channel::{release_tag, UpdateChannel};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -43,6 +44,9 @@ struct PersistedUpdaterState {
     /// The last check that reached the release feed. Failed checks are not
     /// recorded, so an offline launch never postpones the next attempt.
     last_checked_at: Option<u64>,
+    /// The release channel this Desktop follows. Older state has none: stable.
+    #[serde(default)]
+    channel: UpdateChannel,
 }
 
 impl Default for PersistedUpdaterState {
@@ -50,6 +54,7 @@ impl Default for PersistedUpdaterState {
         Self {
             schema_version: UPDATE_STATE_SCHEMA_VERSION,
             last_checked_at: None,
+            channel: UpdateChannel::Stable,
         }
     }
 }
@@ -725,6 +730,52 @@ impl DesktopUpdaterState {
         Ok(())
     }
 
+    /// The release channel this Desktop follows.
+    pub fn channel(&self) -> Result<UpdateChannel, String> {
+        Ok(self
+            .persisted
+            .lock()
+            .map_err(|_| "desktop updater persistence lock is poisoned".to_string())?
+            .channel)
+    }
+
+    /// Follows `channel` from now on. A different channel offers different
+    /// versions, so an update prepared for the old one is dropped and the next
+    /// check is due at once. Returns whether the channel changed.
+    pub fn set_channel(&self, channel: UpdateChannel) -> Result<bool, String> {
+        if self.channel()? == channel {
+            return Ok(false);
+        }
+        let status = self.snapshot()?;
+        if matches!(status.state, "checking" | "downloading" | "installing") {
+            return Err("Wait for the current update to finish, then try again.".into());
+        }
+        self.update_persisted(|persisted| {
+            persisted.channel = channel;
+            persisted.last_checked_at = None;
+        })?;
+        self.reset_automatic_failures()?;
+        if self.take_prepared()?.is_some() {
+            let mut status = self
+                .status
+                .lock()
+                .map_err(|_| "desktop updater status lock is poisoned".to_string())?;
+            if status.state == "ready" {
+                let current_version = status.current_version.clone();
+                let recovery = status.recovery.clone();
+                *status = DesktopUpdaterStatus::idle(current_version);
+                if let Some(recovery) = recovery {
+                    Self::apply_recovery_context(&mut status, recovery);
+                }
+            }
+        }
+        *self
+            .last_check
+            .lock()
+            .map_err(|_| "desktop updater last-check lock is poisoned".to_string())? = None;
+        Ok(true)
+    }
+
     /// A check that found no update, or a verified download, ends a failure run.
     fn record_check_success(&self, checked_at: u64) -> Result<(), String> {
         self.reset_automatic_failures()?;
@@ -854,8 +905,13 @@ pub fn now_rfc3339() -> Result<String, String> {
         .map_err(|error| format!("system clock cannot format Desktop update time: {error}"))
 }
 
+/// The signed disk image of `version`, under its release tag (a beta's tag
+/// carries no build metadata).
 pub fn versioned_dmg_url(version: &str) -> String {
-    format!("{RELEASE_BASE_URL}/v{version}/worktable-desktop-darwin-arm64.dmg")
+    let tag = Version::parse(version)
+        .map(|version| release_tag(&version))
+        .unwrap_or_else(|_| format!("v{version}"));
+    format!("{RELEASE_BASE_URL}/{tag}/worktable-desktop-darwin-arm64.dmg")
 }
 
 fn version_reaches_or_exceeds(current_version: &str, target_version: &str) -> bool {
@@ -1163,6 +1219,55 @@ mod tests {
         assert!(ready.can_install);
         assert!(ready.message.contains("next time you quit"));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_chosen_channel_persists_and_drops_an_update_prepared_for_the_other() {
+        let root = temporary_root("channel");
+        // State written before channels existed follows stable.
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(UPDATE_STATE_FILE),
+            br#"{"schemaVersion":1,"lastCheckedAt":100000}"#,
+        )
+        .unwrap();
+        let state = DesktopUpdaterState::default();
+        state.initialize(&root, "0.0.45").unwrap();
+        assert_eq!(state.channel().unwrap(), UpdateChannel::Stable);
+        assert!(!state.should_automatically_check(100_001).unwrap());
+
+        prepare(&state, "0.0.46", 100_000);
+        assert!(state.set_channel(UpdateChannel::Beta).unwrap());
+        assert!(!state.set_channel(UpdateChannel::Beta).unwrap());
+        assert_eq!(state.prepared_version().unwrap(), None);
+        assert_eq!(state.snapshot().unwrap().state, "idle");
+        assert_eq!(state.last_check().unwrap(), None);
+        // The new channel is checked straight away.
+        assert!(state.should_automatically_check(100_001).unwrap());
+
+        let relaunch = DesktopUpdaterState::default();
+        relaunch.initialize(&root, "0.0.45").unwrap();
+        assert_eq!(relaunch.channel().unwrap(), UpdateChannel::Beta);
+
+        // Switching waits for a download already under way.
+        relaunch
+            .record_update_found("0.0.47".into(), None, None, 100_002, false)
+            .unwrap();
+        assert!(relaunch.set_channel(UpdateChannel::Stable).is_err());
+        assert_eq!(relaunch.channel().unwrap(), UpdateChannel::Beta);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn beta_disk_images_live_under_their_release_tag() {
+        assert_eq!(
+            versioned_dmg_url("0.1.24-dev.5+abc1234"),
+            "https://worktable.dev/releases/v0.1.24-dev.5/worktable-desktop-darwin-arm64.dmg"
+        );
+        assert_eq!(
+            versioned_dmg_url("0.1.24"),
+            "https://worktable.dev/releases/v0.1.24/worktable-desktop-darwin-arm64.dmg"
+        );
     }
 
     #[test]

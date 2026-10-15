@@ -2438,7 +2438,14 @@ async function main() {
     throw new Error("--as must be solo, owner or member")
   const churn = args.has("churn")
   const backup = args.has("backup")
-  const allPasses: Pass[] = ["cold", "first", "warm", "revisit", "reopen", "idle"]
+  const allPasses: Pass[] = [
+    "cold",
+    "first",
+    "warm",
+    "revisit",
+    "reopen",
+    "idle",
+  ]
   const passes = (args.get("passes")?.split(",") ?? allPasses) as Pass[]
   for (const pass of passes)
     if (!allPasses.includes(pass))

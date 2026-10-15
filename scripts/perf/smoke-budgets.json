@@ -5,13 +5,13 @@
       "why": "Requests per click (API, HTML frame and page loads; cached assets aside). Each extra request is a round trip on a phone, 150 ms or more."
     },
     "chain": {
-      "why": "Requests the click's content waited for one after another. Plan 15 target: at most one on a click's critical path."
+      "why": "Requests a click's content waited for one after another once clicked (in-tab clicks and reopening the app; a hover's early requests aside). Plan 15 target: at most one on a click's critical path."
     },
     "revisit content": {
       "why": "Opening a document again reads its content from the browser cache (documents by revision, #113 and #117)."
     },
     "idle requests": {
-      "why": "An untouched tab makes no requests: changes arrive over the socket (Plan 15; perf:guards registers polling)."
+      "why": "Requests from an untouched tab at Home in 75 s. Plan 15 target: about one a minute; Home checks Pending, Recent and Activity every 60 s while it has no socket (registered in perf:guards)."
     },
     "redirects": {
       "why": "A redirect adds a round trip before anything loads (Plan 16 gate D5)."
@@ -36,5 +36,354 @@
       "slack": 0.5
     }
   },
-  "budgets": {}
+  "budgets": {
+    "requests, cold, open the app at Home": {
+      "max": 11
+    },
+    "cold js, open the app at Home": {
+      "max": 18
+    },
+    "dom, cold, open the app at Home": {
+      "max": 1330
+    },
+    "requests, cold, open Space": {
+      "max": 14
+    },
+    "cold js, open Space": {
+      "max": 17
+    },
+    "requests, cold, open Markdown doc": {
+      "max": 14
+    },
+    "cold js, open Markdown doc": {
+      "max": 27
+    },
+    "requests, cold, open rich doc": {
+      "max": 15
+    },
+    "cold js, open rich doc": {
+      "max": 32
+    },
+    "requests, cold, open rich doc (2,000 blocks)": {
+      "max": 15
+    },
+    "cold js, open rich doc (2,000 blocks)": {
+      "max": 32
+    },
+    "requests, cold, open HTML doc": {
+      "max": 14
+    },
+    "cold js, open HTML doc": {
+      "max": 27
+    },
+    "requests, cold, open Threads": {
+      "max": 9
+    },
+    "cold js, open Threads": {
+      "max": 27
+    },
+    "requests, cold, open a thread": {
+      "max": 10
+    },
+    "cold js, open a thread": {
+      "max": 27
+    },
+    "requests, first, open the app at Home": {
+      "max": 11
+    },
+    "chain, first, open the app at Home": {
+      "max": 1
+    },
+    "dom, first, open the app at Home": {
+      "max": 1330
+    },
+    "requests, first, open Space": {
+      "max": 7
+    },
+    "chain, first, open Space": {
+      "max": 1
+    },
+    "dom, first, open Space": {
+      "max": 1740
+    },
+    "requests, first, open Markdown doc": {
+      "max": 3
+    },
+    "chain, first, open Markdown doc": {
+      "max": 0
+    },
+    "dom, first, open Markdown doc": {
+      "max": 1445
+    },
+    "requests, first, open rich doc": {
+      "max": 4
+    },
+    "chain, first, open rich doc": {
+      "max": 0
+    },
+    "dom, first, open rich doc": {
+      "max": 1632
+    },
+    "requests, first, open rich doc (2,000 blocks)": {
+      "max": 3
+    },
+    "chain, first, open rich doc (2,000 blocks)": {
+      "max": 0
+    },
+    "dom, first, open rich doc (2,000 blocks)": {
+      "max": 12313
+    },
+    "requests, first, open HTML doc": {
+      "max": 3
+    },
+    "chain, first, open HTML doc": {
+      "max": 1
+    },
+    "dom, first, open HTML doc": {
+      "max": 1358
+    },
+    "requests, first, back to Home": {
+      "max": 4
+    },
+    "chain, first, back to Home": {
+      "max": 0
+    },
+    "dom, first, back to Home": {
+      "max": 1869
+    },
+    "requests, first, open Threads": {
+      "max": 1
+    },
+    "chain, first, open Threads": {
+      "max": 0
+    },
+    "dom, first, open Threads": {
+      "max": 1668
+    },
+    "requests, first, open a thread": {
+      "max": 2
+    },
+    "chain, first, open a thread": {
+      "max": 0
+    },
+    "dom, first, open a thread": {
+      "max": 1948
+    },
+    "requests, first, search": {
+      "max": 1
+    },
+    "chain, first, search": {
+      "max": 1
+    },
+    "dom, first, search": {
+      "max": 1724
+    },
+    "requests, warm, open Space": {
+      "max": 7
+    },
+    "chain, warm, open Space": {
+      "max": 1
+    },
+    "requests, warm, open Markdown doc": {
+      "max": 3
+    },
+    "chain, warm, open Markdown doc": {
+      "max": 0
+    },
+    "requests, warm, open rich doc": {
+      "max": 3
+    },
+    "chain, warm, open rich doc": {
+      "max": 0
+    },
+    "requests, warm, open HTML doc": {
+      "max": 3
+    },
+    "chain, warm, open HTML doc": {
+      "max": 1
+    },
+    "requests, warm, back to Home": {
+      "max": 4
+    },
+    "chain, warm, back to Home": {
+      "max": 0
+    },
+    "requests, warm, open Threads": {
+      "max": 0
+    },
+    "chain, warm, open Threads": {
+      "max": 0
+    },
+    "requests, warm, open a thread": {
+      "max": 2
+    },
+    "chain, warm, open a thread": {
+      "max": 0
+    },
+    "requests, warm, search": {
+      "max": 1
+    },
+    "chain, warm, search": {
+      "max": 1
+    },
+    "requests, revisit, open Space": {
+      "max": 7
+    },
+    "chain, revisit, open Space": {
+      "max": 0
+    },
+    "requests, revisit, open Markdown doc": {
+      "max": 2
+    },
+    "chain, revisit, open Markdown doc": {
+      "max": 0
+    },
+    "requests, revisit, open rich doc": {
+      "max": 2
+    },
+    "chain, revisit, open rich doc": {
+      "max": 0
+    },
+    "requests, revisit, open rich doc (2,000 blocks)": {
+      "max": 3
+    },
+    "chain, revisit, open rich doc (2,000 blocks)": {
+      "max": 0
+    },
+    "requests, revisit, open HTML doc": {
+      "max": 3
+    },
+    "chain, revisit, open HTML doc": {
+      "max": 1
+    },
+    "requests, revisit, back to Home": {
+      "max": 4
+    },
+    "chain, revisit, back to Home": {
+      "max": 0
+    },
+    "requests, revisit, open Threads": {
+      "max": 1
+    },
+    "chain, revisit, open Threads": {
+      "max": 0
+    },
+    "requests, revisit, open a thread": {
+      "max": 2
+    },
+    "chain, revisit, open a thread": {
+      "max": 0
+    },
+    "requests, revisit, search": {
+      "max": 1
+    },
+    "chain, revisit, search": {
+      "max": 0
+    },
+    "requests, reopen, open the app at Home": {
+      "max": 11
+    },
+    "chain, reopen, open the app at Home": {
+      "max": 1
+    },
+    "revisit content": {
+      "max": 0
+    },
+    "redirects": {
+      "max": 0
+    },
+    "idle requests, Home, 75 s": {
+      "max": 3
+    },
+    "io stat, spaces": {
+      "max": 8
+    },
+    "io read, spaces": {
+      "max": 15
+    },
+    "io sql, spaces": {
+      "max": 0
+    },
+    "io stat, space": {
+      "max": 3
+    },
+    "io read, space": {
+      "max": 6
+    },
+    "io sql, space": {
+      "max": 0
+    },
+    "io stat, documents": {
+      "max": 12
+    },
+    "io read, documents": {
+      "max": 6
+    },
+    "io sql, documents": {
+      "max": 0
+    },
+    "io stat, documents/page": {
+      "max": 11
+    },
+    "io read, documents/page": {
+      "max": 3
+    },
+    "io sql, documents/page": {
+      "max": 0
+    },
+    "io stat, documents/content": {
+      "max": 21
+    },
+    "io read, documents/content": {
+      "max": 6
+    },
+    "io sql, documents/content": {
+      "max": 0
+    },
+    "io stat, recent": {
+      "max": 65
+    },
+    "io read, recent": {
+      "max": 15
+    },
+    "io sql, recent": {
+      "max": 0
+    },
+    "io stat, pending": {
+      "max": 60
+    },
+    "io read, pending": {
+      "max": 37
+    },
+    "io sql, pending": {
+      "max": 0
+    },
+    "io stat, threads": {
+      "max": 31.6
+    },
+    "io read, threads": {
+      "max": 29
+    },
+    "io sql, threads": {
+      "max": 0
+    },
+    "io stat, search": {
+      "max": 25
+    },
+    "io read, search": {
+      "max": 3
+    },
+    "io sql, search": {
+      "max": 1
+    },
+    "io stat, workspace": {
+      "max": 6
+    },
+    "io read, workspace": {
+      "max": 6
+    },
+    "io sql, workspace": {
+      "max": 0
+    }
+  }
 }

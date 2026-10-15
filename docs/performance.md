@@ -45,6 +45,7 @@ in a few seconds, without a build or a browser. It fails when:
 | Unkeyed or Space-wide invalidation   | `scripts/perf/guards/invalidation.json`     | Invalidate exact keys, or add the site with a one-line `why`.                                    |
 | Catalog builders on the request path | `scripts/perf/guards/catalog-builders.json` | Read through the snapshot or derived data. This list can only shrink.                            |
 | A bundle budget rises                | `scripts/perf/bundle-budgets.json`          | Shrink the bundle, or add a `why` to the budget's entry saying what grew and why it is worth it. |
+| A perf-smoke budget rises            | `scripts/perf/smoke-budgets.json`           | Fix the regression, or add a `why` to the budget's entry saying what it costs and why.           |
 
 A site is its file and the enclosing function or variable, so moving lines
 does not break an entry. When a registered site goes away, remove its entry:
@@ -56,6 +57,39 @@ such as boot recovery, is listed with its reason in `BACKGROUND_FUNCTIONS` in
 with the pull request's base; locally they use the merge base with
 `origin/main`, or pass `--base <ref>`.
 
-The perf lane measures what static checks cannot: requests per click, revisit
-caching, render cost and server latency. See the
-[perf lane](../scripts/perf/README.md) for its commands.
+## Speed gates
+
+The perf lane measures what static checks cannot. Three gates run it:
+
+| Gate           | When                                     | Checks                                                                                               |
+| -------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `perf-smoke`   | Pull requests that touch the product     | Structural budgets in `scripts/perf/smoke-budgets.json`: counts, not timings                         |
+| `perf-nightly` | Every night, public `main` (maintainers) | Timed clicks and server timings against a stored baseline, paired; a regression must repeat to alert |
+| Release gate   | Every release (maintainers)              | The same timings, paired against the previous release; a waiver is recorded                          |
+
+`perf-smoke` runs the click lane once, untimed, on the 100-document fixture
+and io-count's counting run, in about 7 minutes beside the other checks. It
+fails when one of these rises above its budget:
+
+- requests per click, per journey and pass (API, frames and page loads);
+- requests a click's content waited on one after another (the chain);
+- document content requests on revisits (zero);
+- requests from an untouched tab at Home over 75 seconds;
+- redirects (zero);
+- JavaScript files a cold page load fetches before its content;
+- elements on each screen once it settles (10% headroom);
+- file stats, file reads and SQL statements per hot server request.
+
+These counts do not depend on the machine, so the gate has no timing noise.
+When it fails, its summary lists the requests or paths behind each number.
+Fix the regression, or, when the cost is worth it, run
+`bun scripts/perf/smoke.ts --update` locally or copy the measured value into
+the budget, and add a one-line `why` to each raised entry. `perf:guards`
+fails a raised budget without a new `why`. Lower budgets when they fall.
+
+Timings vary 15 to 17% between rounds, so they are never a pull request
+gate. The nightly and release gates pair a base and a head on one machine in
+alternating rounds and apply Plan 16's rules with `scripts/perf/gate.ts`: a
+journey's median time to content may rise by at most 10% or 30 ms, whichever
+is larger, and a route's p95 by at most 10%, or 1 ms on routes under 1 ms.
+See the [perf lane](../scripts/perf/README.md) for the commands.

@@ -28,8 +28,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        product: ["", "b46bfc52ed4704b63ec77d8ae37aa478f9492c86"]
-        attempt: [1, 2, 3]
+        product: [""]
+        attempt: [1, 2, 3, 4, 5]
     env:
       CI: "true"
     steps:

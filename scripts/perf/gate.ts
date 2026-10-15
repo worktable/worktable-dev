@@ -24,7 +24,13 @@
  * (`--out`) and a Markdown report to stdout and the GitHub step summary.
  * `--check` exits 1 when a regression remains.
  */
-import { appendFileSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import {
+  appendFileSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import type { ClickTraceResult } from "./click-trace.ts"
 import { markdownTable, median, parseArgs, round } from "./lib.ts"
@@ -49,7 +55,10 @@ export interface Comparison {
 export interface Verdict {
   base: string
   head: string
-  runs: { base: { clicks: number; io: number }; head: { clicks: number; io: number } }
+  runs: {
+    base: { clicks: number; io: number }
+    head: { clicks: number; io: number }
+  }
   comparisons: Comparison[]
   regressions: Comparison[]
   /** Set when a --confirm verdict filtered the regressions. */
@@ -80,7 +89,11 @@ function results(dir: string): unknown[] {
 }
 
 function sameCommit(left: string, right: string): boolean {
-  return left.length > 0 && right.length > 0 && (left.startsWith(right) || right.startsWith(left))
+  return (
+    left.length > 0 &&
+    right.length > 0 &&
+    (left.startsWith(right) || right.startsWith(left))
+  )
 }
 
 export function clickLimit(base: number): number {
@@ -88,21 +101,22 @@ export function clickLimit(base: number): number {
 }
 
 export function serverLimit(base: number): number {
-  return base < 1 ? Math.max(base * SERVER_RATIO, SERVER_FLOOR_MS) : base * SERVER_RATIO
+  return base < 1
+    ? Math.max(base * SERVER_RATIO, SERVER_FLOOR_MS)
+    : base * SERVER_RATIO
 }
 
-export function compare(
-  all: unknown[],
-  base: string,
-  head: string
-): Verdict {
+export function compare(all: unknown[], base: string, head: string): Verdict {
   const clicks = all.filter(
     (item): item is ClickTraceResult =>
       typeof item === "object" && item !== null && "clicks" in item
   )
   const io = all.filter(
     (item): item is IoResult =>
-      typeof item === "object" && item !== null && "timing" in item && Boolean((item as IoResult).timing)
+      typeof item === "object" &&
+      item !== null &&
+      "timing" in item &&
+      Boolean((item as IoResult).timing)
   )
   const side = <T extends { commit: string }>(items: T[], commit: string) =>
     items.filter((item) => sameCommit(item.commit, commit))
@@ -114,7 +128,10 @@ export function compare(
 
   // Clicks: one content time per run and key; a run is one round.
   const clickValues = (runs: ClickTraceResult[]) => {
-    const values = new Map<string, { label: string; times: (number | null)[] }>()
+    const values = new Map<
+      string,
+      { label: string; times: (number | null)[] }
+    >()
     for (const run of runs)
       for (const click of run.clicks) {
         const key = `${click.network}:${click.pass}:${slug(click.journey)}`
@@ -141,13 +158,18 @@ export function compare(
     const regressed =
       baseMedian !== null &&
       (headMissing ||
-        (headMedian !== null && headMedian - baseMedian > clickLimit(baseMedian)))
+        (headMedian !== null &&
+          headMedian - baseMedian > clickLimit(baseMedian)))
     comparisons.push({
       id: `click:${key}`,
       kind: "click",
       label: headEntry.label,
       base: baseMedian === null ? null : round(baseMedian, 1),
-      head: headMissing ? null : headMedian === null ? null : round(headMedian, 1),
+      head: headMissing
+        ? null
+        : headMedian === null
+          ? null
+          : round(headMedian, 1),
       runs: { base: baseEntry.times.length, head: headEntry.times.length },
       limit,
       regressed,
@@ -219,7 +241,10 @@ export function report(verdict: Verdict): string {
   if (verdict.comparisons.length === 0)
     lines.push("**Nothing to compare:** no runs matched both commits.", "")
   else if (verdict.regressions.length === 0)
-    lines.push(`No regressions in ${verdict.comparisons.length} comparisons.`, "")
+    lines.push(
+      `No regressions in ${verdict.comparisons.length} comparisons.`,
+      ""
+    )
   else
     lines.push(
       `### ${verdict.regressions.length} regressions`,
@@ -230,7 +255,9 @@ export function report(verdict: Verdict): string {
           item.label,
           item.base,
           item.head ?? "no content",
-          item.head === null || item.base === null ? null : `+${round(item.head - item.base, 1)}`,
+          item.head === null || item.base === null
+            ? null
+            : `+${round(item.head - item.base, 1)}`,
           `+${item.limit}`,
         ])
       ),
@@ -245,7 +272,9 @@ export function report(verdict: Verdict): string {
         `${item.regressed ? "**" : ""}${item.label}${item.regressed ? "**" : ""}`,
         item.base,
         item.head ?? "no content",
-        item.head === null || item.base === null ? null : round(item.head - item.base, 1),
+        item.head === null || item.base === null
+          ? null
+          : round(item.head - item.base, 1),
         item.limit,
         `${item.runs.base}/${item.runs.head}`,
       ])
@@ -263,11 +292,16 @@ async function main() {
   const base = args.get("base")
   const head = args.get("head")
   if (!dir || !base || !head)
-    throw new Error("usage: gate.ts --results <dir> --base <commit> --head <commit>")
+    throw new Error(
+      "usage: gate.ts --results <dir> --base <commit> --head <commit>"
+    )
   let verdict = compare(results(dir), base, head)
   const earlier = args.get("confirm")
   if (earlier)
-    verdict = confirm(verdict, JSON.parse(readFileSync(earlier, "utf8")) as Verdict)
+    verdict = confirm(
+      verdict,
+      JSON.parse(readFileSync(earlier, "utf8")) as Verdict
+    )
   const out = args.get("out")
   if (out) writeFileSync(out, JSON.stringify(verdict, null, 2))
   const text = report(verdict)

@@ -14,7 +14,8 @@
  * the machine's speed:
  *
  * - requests per click (API, HTML frame and page loads, not cached assets);
- * - the request chain a click's content waited for;
+ * - the requests a click's content waited for one after another, after the
+ *   click (in-tab clicks and reopening the app);
  * - document content requests on revisits;
  * - requests from an untouched tab at Home over a fixed window;
  * - HTTP redirects;
@@ -30,14 +31,25 @@
  * that rises needs a new `why`, which `bun run perf:guards` checks.
  */
 import { spawnSync } from "node:child_process"
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs"
 import { join, resolve } from "node:path"
 import type { ClickRecord, ClickTraceResult, Pass } from "./click-trace.ts"
 import { PERF_ROOT, REPO_ROOT, markdownTable, parseArgs } from "./lib.ts"
 
 export const SMOKE_BUDGETS_FILE = "scripts/perf/smoke-budgets.json"
 const PROFILE = "100"
-export const SMOKE_PASSES: Pass[] = ["cold", "first", "warm", "revisit", "reopen"]
+export const SMOKE_PASSES: Pass[] = [
+  "cold",
+  "first",
+  "warm",
+  "revisit",
+  "reopen",
+]
 /**
  * Home's 60 s checks (Pending, Recent, Activity) start when the reopened app
  * fetches them; the window opens once it settles and ends 15 s after their
@@ -119,13 +131,21 @@ export function measureClicks(result: ClickTraceResult): {
       value: requests.length,
       detail: requests.map((request) => shortLabel(request.label)),
     })
-    const chain = click.chain.filter((step) => API_KINDS.has(step.kind))
-    measurements.push({
-      key: `chain, ${name}`,
-      metric: "chain",
-      value: chain.length,
-      detail: chain.map((step) => shortLabel(step.label)),
-    })
+    // What the click waited on after it happened: requests a hover started
+    // early, and a cold load's page and script chain (see cold js), vary
+    // with timing and are left out.
+    if (click.pass !== "cold") {
+      const chain = click.chain.filter(
+        (step) =>
+          (step.kind === "api" || step.kind === "frame") && step.start >= 0
+      )
+      measurements.push({
+        key: `chain, ${name}`,
+        metric: "chain",
+        value: chain.length,
+        detail: chain.map((step) => shortLabel(step.label)),
+      })
+    }
     if (click.pass === "cold") {
       const scripts = click.requests.filter(
         (request) =>
@@ -230,7 +250,15 @@ export function measureIo(result: {
         key: `io stat, ${row.endpoint}`,
         metric: "io stat",
         value: counts.stat,
-        detail: paths(row, ["stat", "lstat", "fstat", "newfstatat", "statx", "access", "faccessat"]),
+        detail: paths(row, [
+          "stat",
+          "lstat",
+          "fstat",
+          "newfstatat",
+          "statx",
+          "access",
+          "faccessat",
+        ]),
       },
       {
         key: `io read, ${row.endpoint}`,
@@ -285,7 +313,10 @@ export function check(
   const passTotals = new Map<string, { value: number; max: number }>()
   for (const measurement of measurements) {
     if (measurement.metric !== "requests") continue
-    const total = passTotals.get(passOf(measurement.key)) ?? { value: 0, max: 0 }
+    const total = passTotals.get(passOf(measurement.key)) ?? {
+      value: 0,
+      max: 0,
+    }
     total.value += measurement.value
     total.max += budgets.budgets[measurement.key]?.max ?? 0
     passTotals.set(passOf(measurement.key), total)
@@ -301,13 +332,17 @@ export function check(
     if (!budget) return { ...base, max: null, status: "new" }
     if (measurement.value > budget.max + slack) {
       const total = passTotals.get(passOf(measurement.key))
-      if (measurement.metric === "requests" && total && total.value <= total.max)
+      if (
+        measurement.metric === "requests" &&
+        total &&
+        total.value <= total.max
+      )
         return { ...base, max: budget.max, status: "moved" }
       return { ...base, max: budget.max, status: "over" }
     }
     const total = passTotals.get(passOf(measurement.key))
     const lower =
-      measurement.value < budget.max - slack &&
+      budgetFor(measurement, budgets) < budget.max - slack &&
       (measurement.metric !== "requests" || !total || total.value < total.max)
     return { ...base, max: budget.max, status: lower ? "under" : "ok" }
   })

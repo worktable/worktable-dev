@@ -4,20 +4,24 @@ Scripts that measure Worktable's server, web bundles and real clicks in a
 browser on synthetic workspaces, so a performance change can show its numbers
 before and after.
 They are tools, not tests: nothing here runs in the required test lanes except
-the bundle gate and the static speed guards.
+the bundle gate and the static speed guards. `perf-smoke` runs a structural
+check on pull requests, and maintainers run timed gates nightly and before
+each release (see [Speed gates](../../docs/performance.md#speed-gates)).
 
 Run them from the repository root after `bun install --frozen-lockfile`.
 Outputs go to `.local-dev/perf/`, which Git ignores.
 
-| Command                                   | What it does                                          |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `bun run perf:fixtures --profile 1k`      | Generate a perf workspace                             |
-| `bun run perf:server --profile 1k`        | Boot, request and typing timings for one checkout     |
-| `bun run perf:compare --base origin/main` | Paired runs of a base ref against your working tree   |
-| `bun run perf:clicks --profile 1k`        | Clicks in Chromium under desktop and phone conditions |
-| `bun run perf:io --profile 1k`            | File I/O and SQL per hot request, against budgets     |
-| `bun run perf:bundle`                     | Bundle sizes against budgets (after a web build)      |
-| `bun run perf:guards`                     | Static speed guards (see `docs/performance.md`)       |
+| Command                                    | What it does                                          |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `bun run perf:fixtures --profile 1k`       | Generate a perf workspace                             |
+| `bun run perf:server --profile 1k`         | Boot, request and typing timings for one checkout     |
+| `bun run perf:compare --base origin/main`  | Paired runs of a base ref against your working tree   |
+| `bun run perf:clicks --profile 1k`         | Clicks in Chromium under desktop and phone conditions |
+| `bun run perf:io --profile 1k`             | File I/O and SQL per hot request, against budgets     |
+| `bun run perf:bundle`                      | Bundle sizes against budgets (after a web build)      |
+| `bun run perf:guards`                      | Static speed guards (see `docs/performance.md`)       |
+| `bun scripts/perf/smoke.ts`                | perf-smoke: structural budgets on the 100 fixture     |
+| `bun scripts/perf/gate.ts --results <dir>` | Paired timing gate over click and server results      |
 
 ## Fixtures
 
@@ -198,6 +202,13 @@ Two optional passes run after the others, in the same tab, as revisits:
 `summary.md` also counts document content requests on revisits, which should
 be zero.
 
+`--passes cold,first,warm,revisit,reopen,idle` runs only the listed passes
+(all by default). `--idle-window <seconds>` leaves the tab at Home after it
+reopens the app and records every request it makes in that time
+(`idleWindows` in `result.json`). Each click also records `domNodes`, the
+elements in the page once it settles, and each request how many redirects it
+followed.
+
 `summary.md` has the tables per profile, `waterfalls.md` every round-1 click
 with its requests, and `result.json` the raw records; round 1 also saves a
 screenshot of each settled screen and the phone's Chrome traces. Rewrite the
@@ -273,8 +284,9 @@ document content by revision, Recent, Pending, threads, search and
 `/api/workspace`) it sends 3 warm-up requests, then `--requests` (default 20)
 in sequence, then stays idle for as long; the per-request figure is the
 difference over the request count. Each endpoint is measured `--attempts`
-times (default 2) and the attempt with the quietest idle window is kept;
-`idleNoise` in `result.json` shows what was subtracted. Calls count when they
+times (default 2) and the attempt with the least activity in its two windows
+is kept, since background work only adds to a window; `idleNoise` in
+`result.json` shows what was subtracted. Calls count when they
 touch the workspace or the app directory:
 
 - **stat**: stat, lstat, newfstatat, statx, access, and fstat on a file;
@@ -288,7 +300,7 @@ code site of each statement. A calibration request (a document read through
 the legacy route after its file changed) must show the file's open and read,
 or the run fails.
 
-A second boot without strace records p50 and p95 per endpoint over
+A second boot without strace (skipped with `--no-timing`) records p50 and p95 per endpoint over
 `--samples` (default 50) requests, the time for one Space change to reach
 `--sockets` (default 20) WebSockets, and the server's CPU time, main-thread
 wake-ups and timer callbacks while idle with no sockets and with `--sockets`
@@ -339,3 +351,44 @@ build job in CI. When a bundle shrinks, or a growth is intended, run
 request. The Plan 15 targets (entry 180 KB, root CSS 25 KB and rich document
 600 KB, all gzip) are shown but not enforced yet. If the manifest no longer
 contains a listed module, the script fails and names it.
+
+## perf-smoke
+
+`smoke.ts` is the pull request gate (`.github/workflows/perf-smoke.yml`). It
+generates the `100` fixture if needed, runs the click lane once on the desktop
+profile with the passes cold, first, warm, revisit and reopen and a 75-second
+idle window, then io-count's counting run without timings, and checks the
+counts against `smoke-budgets.json`. What each budget guards is in
+[Speed gates](../../docs/performance.md#speed-gates). It needs a web build of
+the checkout, Playwright's Chromium, Caddy and strace, so run it on Namespace
+or in CI rather than on a shared machine:
+
+```sh
+WORKTABLE_BUILD_ID=smoke bun run --cwd apps/web build
+bun scripts/perf/smoke.ts                 # check
+bun scripts/perf/smoke.ts --update        # rewrite budgets to the measured counts
+bun scripts/perf/smoke.ts --clicks <clicks/result.json> --io <io/result.json>
+```
+
+Counts here are the same on every run of a commit, with two allowances: an
+io-count figure may exceed its budget by half a call (it is a mean over
+several requests), and a request that lands in the next click's window
+counts against that click only if the pass's total also rises. A raised
+budget needs a new `why`, which `bun run perf:guards` checks. A dispatch of
+the workflow with `sha` measures another commit with the dispatching ref's
+tooling and budgets.
+
+## Paired gate
+
+`gate.ts` compares paired timing runs of a base and a head: click-trace
+results (median time to content per network, pass and journey, against
+max(10%, 30 ms)) and io-count timing results (median solo p95 per endpoint,
+against 10%, at least 1 ms under 1 ms). It sorts every `result.json` under
+`--results` by its `commit`. `--confirm <verdict.json>` keeps only the
+regressions an earlier paired run also found; `--check` exits 1 on a
+regression. The private perf-nightly and release workflows run it after
+`perf-gates.sh` in its `paired` mode.
+
+```sh
+bun scripts/perf/gate.ts --results results/ --base <sha> --head <sha> --out verdict.json
+```

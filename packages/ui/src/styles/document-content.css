@@ -50,9 +50,24 @@
   color: var(--reading-foreground);
   font-size: 1rem;
   line-height: var(--doc-line-height);
+  /* The editor's tracking for all Doc text; headings set their own. */
+  letter-spacing: 0.02em;
   word-spacing: 0.02em;
   /* Long links and unbroken words wrap instead of widening the page. */
   overflow-wrap: break-word;
+  /* The editor turns ligatures off (ProseMirror does, for caret placement);
+     every rendering does the same, so words keep their width. */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+
+/* Inline text keeps its block's tracking. The app's base styles give every
+   span and link body tracking, which would widen a heading's styled words,
+   links, and the saved preview's text runs. */
+:is(.worktable-markdown, .bn-editor)
+  :is(h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption, summary)
+  :is(span, a, label) {
+  letter-spacing: inherit;
 }
 
 .worktable-markdown > :first-child,

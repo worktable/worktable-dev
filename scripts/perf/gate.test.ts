@@ -67,6 +67,22 @@ describe("paired speed gate", () => {
     ])
   })
 
+  test("a measure with more runs on one side does not pair", () => {
+    expect(
+      compare(
+        [
+          clicks("aaaa", 100, 400),
+          clicks("aaaa", 100, 400),
+          clicks("bbbb", 100, 400),
+          server("aaaa", 1, 1),
+          server("bbbb", 1, 1),
+        ],
+        "aaaa",
+        "bbbb"
+      ).incomplete
+    ).toEqual(["clicks:desktop: 2 base runs, 1 head runs"])
+  })
+
   test("a confirmation run keeps only the regressions found both times", () => {
     const first = compare(
       [clicks("aaaa", 100, 400), clicks("bbbb", 200, 500)],

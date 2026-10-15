@@ -4,7 +4,8 @@
  * over paired click-trace and io-count timing runs of a base and a head.
  *
  *   bun scripts/perf/gate.ts --results <dir> --base <commit> --head <commit>
- *     [--confirm <verdict.json>] [--out <verdict.json>] [--check]
+ *     [--require clicks:desktop,server] [--confirm <verdict.json>]
+ *     [--out <verdict.json>] [--check]
  *
  * Reads every result.json under `--results` (any depth) and sorts it by its
  * `commit` (PERF_COMMIT in the runs) into the base or the head. Each side
@@ -22,7 +23,9 @@
  * found: timings vary 15 to 17% between rounds, so a regression must repeat
  * in a second paired run before anyone is alerted. Writes the verdict as JSON
  * (`--out`) and a Markdown report to stdout and the GitHub step summary.
- * `--check` exits 1 when a regression remains.
+ * `--check` exits 1 when a regression remains. It exits 2 when it cannot
+ * judge: no comparable runs, a measure with more runs on one side than the
+ * other, or a measure named by `--require` without results.
  */
 import {
   appendFileSync,
@@ -61,8 +64,20 @@ export interface Verdict {
   }
   comparisons: Comparison[]
   regressions: Comparison[]
+  /**
+   * Measures one side has more runs of than the other (a run that failed or
+   * an artifact that is missing): the verdict does not count.
+   */
+  incomplete: string[]
   /** Set when a --confirm verdict filtered the regressions. */
   confirmedFrom?: string[]
+}
+
+/** The measures a run covers: `clicks:<network>` per network, or `server`. */
+function measuresOf(item: ClickTraceResult | IoResult): string[] {
+  if ("clicks" in item)
+    return [...new Set(item.clicks.map((click) => `clicks:${click.network}`))]
+  return ["server"]
 }
 
 interface IoResult {
@@ -125,6 +140,21 @@ export function compare(all: unknown[], base: string, head: string): Verdict {
     head: { clicks: side(clicks, head), io: side(io, head) },
   }
   const comparisons: Comparison[] = []
+  const tally = (items: (ClickTraceResult | IoResult)[]) => {
+    const counts = new Map<string, number>()
+    for (const item of items)
+      for (const measure of measuresOf(item))
+        counts.set(measure, (counts.get(measure) ?? 0) + 1)
+    return counts
+  }
+  const baseRuns = tally([...sides.base.clicks, ...sides.base.io])
+  const headRuns = tally([...sides.head.clicks, ...sides.head.io])
+  const incomplete = [...new Set([...baseRuns.keys(), ...headRuns.keys()])]
+    .filter((measure) => baseRuns.get(measure) !== headRuns.get(measure))
+    .map(
+      (measure) =>
+        `${measure}: ${baseRuns.get(measure) ?? 0} base runs, ${headRuns.get(measure) ?? 0} head runs`
+    )
 
   // Clicks: one content time per run and key; a run is one round.
   const clickValues = (runs: ClickTraceResult[]) => {
@@ -213,6 +243,7 @@ export function compare(all: unknown[], base: string, head: string): Verdict {
     },
     comparisons,
     regressions: comparisons.filter((item) => item.regressed),
+    incomplete,
   }
 }
 
@@ -236,6 +267,11 @@ export function report(verdict: Verdict): string {
   if (verdict.confirmedFrom)
     lines.push(
       `Confirmation run: a regression counts only if the first run found it too (${verdict.confirmedFrom.length} did).`,
+      ""
+    )
+  if (verdict.incomplete.length)
+    lines.push(
+      `**Incomplete:** the sides do not pair (${verdict.incomplete.join("; ")}). This verdict does not count.`,
       ""
     )
   if (verdict.comparisons.length === 0)
@@ -308,8 +344,25 @@ async function main() {
   console.log(text)
   const summary = process.env["GITHUB_STEP_SUMMARY"]
   if (summary) appendFileSync(summary, `${text}\n`)
-  if (verdict.comparisons.length === 0) {
-    console.error("[gate] no comparable runs")
+  const required = args.get("require")?.split(",") ?? []
+  const present = new Set(
+    verdict.comparisons.map((item) =>
+      item.kind === "server" ? "server" : `clicks:${item.id.split(":")[1]}`
+    )
+  )
+  const absent = required.filter((measure) => !present.has(measure))
+  if (
+    verdict.comparisons.length === 0 ||
+    verdict.incomplete.length > 0 ||
+    absent.length > 0
+  ) {
+    console.error(
+      `[gate] cannot judge: ${[
+        ...(verdict.comparisons.length ? [] : ["no comparable runs"]),
+        ...verdict.incomplete,
+        ...absent.map((measure) => `no ${measure} results`),
+      ].join("; ")}`
+    )
     process.exit(2)
   }
   if (args.has("check") && verdict.regressions.length > 0) process.exit(1)

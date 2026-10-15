@@ -5,6 +5,7 @@
  *   bun scripts/perf/smoke.ts [--checkout <dir>] [--network desktop]
  *     [--out <dir>] [--update]
  *   bun scripts/perf/smoke.ts --clicks <result.json> --io <result.json> [--update]
+ *     [--prune]
  *
  * Runs the click lane once, untimed, on the 100-document fixture (the
  * desktop profile by default: 40 ms round trips through the HTTP/2 proxy, so
@@ -28,7 +29,9 @@
  * Chromium, Caddy and strace. It generates the fixture if missing. With `--clicks`
  * and `--io` it only checks existing results. `--update` rewrites the budgets
  * to the measured values, keeping each unchanged budget's `why`; a budget
- * that rises needs a new `why`, which `bun run perf:guards` checks.
+ * that rises needs a new `why`, which `bun run perf:guards` checks. A budget
+ * the run did not measure fails the check, and `--update` keeps refusing
+ * until `--prune` says it went away on purpose.
  */
 import { spawnSync } from "node:child_process"
 import {
@@ -285,10 +288,28 @@ function round1(value: number): number {
 
 export interface Verdict {
   key: string
-  value: number
+  value: number | null
   max: number | null
-  status: "over" | "new" | "under" | "ok" | "moved"
+  status: "over" | "new" | "missing" | "under" | "ok" | "moved"
   detail?: string[]
+}
+
+/** Budgets the run did not measure: a journey, pass or endpoint went missing. */
+export function unmeasured(
+  measurements: Measurement[],
+  budgets: SmokeBudgets
+): string[] {
+  const measured = new Set(measurements.map((measurement) => measurement.key))
+  return Object.keys(budgets.budgets).filter((key) => !measured.has(key))
+}
+
+/** A verdict that fails the check. */
+export function failing(verdict: Verdict): boolean {
+  return (
+    verdict.status === "over" ||
+    verdict.status === "new" ||
+    verdict.status === "missing"
+  )
 }
 
 /** "requests, <pass>, <journey>" -> "<pass>" */
@@ -321,7 +342,15 @@ export function check(
     total.max += budgets.budgets[measurement.key]?.max ?? 0
     passTotals.set(passOf(measurement.key), total)
   }
-  return measurements.map((measurement) => {
+  const missing = unmeasured(measurements, budgets).map(
+    (key): Verdict => ({
+      key,
+      value: null,
+      max: budgets.budgets[key]!.max,
+      status: "missing",
+    })
+  )
+  const measured = measurements.map((measurement): Verdict => {
     const budget = budgets.budgets[measurement.key]
     const slack = budgets.metrics[measurement.metric]?.slack ?? 0
     const base = {
@@ -346,6 +375,7 @@ export function check(
       (measurement.metric !== "requests" || !total || total.value < total.max)
     return { ...base, max: budget.max, status: lower ? "under" : "ok" }
   })
+  return [...measured, ...missing]
 }
 
 /** The budget `--update` writes for a measured value. */
@@ -374,10 +404,16 @@ export function updateBudgets(
 function report(verdicts: Verdict[], failures: string[]): string {
   const over = verdicts.filter((verdict) => verdict.status === "over")
   const fresh = verdicts.filter((verdict) => verdict.status === "new")
+  const missing = verdicts.filter((verdict) => verdict.status === "missing")
   const under = verdicts.filter((verdict) => verdict.status === "under")
   const moved = verdicts.filter((verdict) => verdict.status === "moved")
   const lines = ["## perf-smoke", ""]
-  if (failures.length === 0 && over.length === 0 && fresh.length === 0)
+  if (
+    failures.length === 0 &&
+    over.length === 0 &&
+    fresh.length === 0 &&
+    missing.length === 0
+  )
     lines.push(`All ${verdicts.length} structural budgets hold.`, "")
   for (const failure of failures) lines.push(`- **Failed:** ${failure}`)
   if (failures.length) lines.push("")
@@ -407,6 +443,15 @@ function report(verdicts: Verdict[], failures: string[]): string {
       "A new journey, pass or endpoint: add budgets with `bun scripts/perf/smoke.ts --update`.",
       "",
       table(fresh),
+      ""
+    )
+  if (missing.length)
+    lines.push(
+      "### Not measured",
+      "",
+      "The run recorded nothing for these budgets: a click never reached its content, or a journey, pass or endpoint went away. If it went away on purpose, drop them with `bun scripts/perf/smoke.ts --update --prune`.",
+      "",
+      table(missing),
       ""
     )
   if (moved.length)
@@ -523,6 +568,11 @@ async function main() {
   if (args.has("update")) {
     if (failures.length)
       throw new Error(`not updating budgets:\n${failures.join("\n")}`)
+    const missing = unmeasured(measurements, budgets)
+    if (missing.length && !args.has("prune"))
+      throw new Error(
+        `not updating budgets: this run did not measure ${missing.join("; ")}. Pass --prune to drop them.`
+      )
     const next = updateBudgets(measurements, budgets)
     writeFileSync(budgetsPath, `${JSON.stringify(next, null, 2)}\n`)
     console.log(
@@ -536,11 +586,7 @@ async function main() {
   console.log(text)
   const summary = process.env["GITHUB_STEP_SUMMARY"]
   if (summary && existsSync(summary)) appendFileSync(summary, `${text}\n`)
-  const failed =
-    failures.length > 0 ||
-    verdicts.some(
-      (verdict) => verdict.status === "over" || verdict.status === "new"
-    )
+  const failed = failures.length > 0 || verdicts.some(failing)
   if (failed) process.exit(1)
 }
 

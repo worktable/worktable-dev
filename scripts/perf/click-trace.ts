@@ -2450,6 +2450,13 @@ async function main() {
   for (const pass of passes)
     if (!allPasses.includes(pass))
       throw new Error(`--passes takes ${allPasses.join(", ")}; not ${pass}`)
+  // Warm, revisit and idle clicks only mean what they say after the tab's
+  // first visits.
+  if (
+    !passes.includes("first") &&
+    passes.some((pass) => ["warm", "revisit", "idle"].includes(pass))
+  )
+    throw new Error("--passes with warm, revisit or idle needs first")
   const idleWindowSeconds = args.has("idle-window")
     ? numberArg(args, "idle-window", 60)
     : 0

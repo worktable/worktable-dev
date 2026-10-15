@@ -512,6 +512,7 @@ export function compareBudgets(head: Budgets, base: Budgets | null): Problem[] {
 }
 
 export interface SmokeBudgets {
+  metrics?: Record<string, { why: string; slack?: number; headroom?: number }>
   budgets: Record<string, { max: number; why?: string }>
 }
 
@@ -525,6 +526,19 @@ export function compareSmokeBudgets(
 ): Problem[] {
   if (!base) return []
   const problems: Problem[] = []
+  // Slack and headroom loosen every budget of a metric at once.
+  for (const [name, metric] of Object.entries(head.metrics ?? {})) {
+    const before = base.metrics?.[name]
+    if (!before) continue
+    const looser = (["slack", "headroom"] as const).filter(
+      (field) => (metric[field] ?? 0) > (before[field] ?? 0)
+    )
+    if (looser.length === 0 || metric.why.trim() !== before.why.trim()) continue
+    problems.push({
+      guard: "perf-smoke budgets",
+      message: `The "${name}" metric's ${looser.join(" and ")} rises without a new "why". Say why in its "why" in ${SMOKE_BUDGETS_FILE}, or keep the limit.`,
+    })
+  }
   for (const [name, budget] of Object.entries(head.budgets)) {
     const before = base.budgets[name]
     if (!before || budget.max <= before.max) continue

@@ -640,7 +640,8 @@ async function countingRun(options: {
           await request(server.url, session.cookies, endpoint.path)
         // Background work (a sweep, a watcher echo) can land in either
         // window; each endpoint is measured `attempts` times and the
-        // attempt with the least activity in both windows is reported.
+        // attempt with the quietest idle window, then the least request
+        // activity, is reported.
         for (let attempt = 0; attempt < options.attempts; attempt += 1) {
           await Bun.sleep(200)
           const busy: Window = {
@@ -743,7 +744,7 @@ async function countingRun(options: {
     }
     const pairs = new Map<
       string,
-      { busy: Window; idle: Window; noise: number; total: number }
+      { busy: Window; idle: Window; noise: number; busyActivity: number }
     >()
     for (let index = 0; index < windows.length; index += 1) {
       const busy = windows[index]!
@@ -751,12 +752,18 @@ async function countingRun(options: {
       if (busy.kind !== "requests" || !idle || idle.kind !== "idle") continue
       const key = `${busy.role} ${busy.name}`
       const noise = activity(idle)
-      // Background work only ever adds to a window: the attempt with the
-      // least activity in both windows together is the cleanest.
-      const total = activity(busy) + noise
+      // Background work only ever adds to a window. Prefer the quietest
+      // idle window, since its activity is subtracted and could hide the
+      // request's own work; among equally quiet ones, the attempt whose
+      // requests did the least (a scan can land in that window too).
+      const busyActivity = activity(busy)
       const best = pairs.get(key)
-      if (!best || total < best.total)
-        pairs.set(key, { busy, idle, noise, total })
+      if (
+        !best ||
+        noise < best.noise ||
+        (noise === best.noise && busyActivity < best.busyActivity)
+      )
+        pairs.set(key, { busy, idle, noise, busyActivity })
     }
     for (const { busy, idle, noise } of pairs.values()) {
       const { counts, evidence } = perRequest(calls, sql, busy, idle, roots)

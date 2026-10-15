@@ -224,5 +224,15 @@ docsRouter.get("/", async (c) => { const docs = await list(spaceId); return c.js
         base
       )
     ).toEqual([])
+    const metrics = { "io stat": { why: "Stats per request.", slack: 0.5 } }
+    expect(
+      compareSmokeBudgets(
+        {
+          metrics: { "io stat": { why: "Stats per request.", slack: 1.5 } },
+          budgets: base.budgets,
+        },
+        { metrics, budgets: base.budgets }
+      ).map((problem) => problem.message.split(" metric")[0])
+    ).toEqual(['The "io stat"'])
   })
 })

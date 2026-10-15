@@ -284,9 +284,10 @@ document content by revision, Recent, Pending, threads, search and
 `/api/workspace`) it sends 3 warm-up requests, then `--requests` (default 20)
 in sequence, then stays idle for as long; the per-request figure is the
 difference over the request count. Each endpoint is measured `--attempts`
-times (default 2) and the attempt with the least activity in its two windows
-is kept, since background work only adds to a window; `idleNoise` in
-`result.json` shows what was subtracted. Calls count when they
+times (default 2). The attempt with the quietest idle window is kept, and
+among equally quiet ones the attempt whose requests did the least, since
+background work only adds to a window; `idleNoise` in `result.json` shows
+what was subtracted. Calls count when they
 touch the workspace or the app directory:
 
 - **stat**: stat, lstat, newfstatat, statx, access, and fstat on a file;

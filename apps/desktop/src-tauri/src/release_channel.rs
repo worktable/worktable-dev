@@ -84,7 +84,7 @@ pub async fn fetch_stable_target(
         .timeout(timeout)
         .build()
         .map_err(|error| format!("could not prepare the release check: {error}"))?;
-    let response = client
+    let mut response = client
         .get(CHANNELS_URL)
         .send()
         .await
@@ -95,12 +95,23 @@ pub async fn fetch_stable_target(
             response.status()
         ));
     }
-    let body = response
-        .bytes()
-        .await
-        .map_err(|error| format!("could not read the release channel manifest: {error}"))?;
-    if body.len() > MAX_MANIFEST_BYTES {
+    // Read at most MAX_MANIFEST_BYTES, whatever the server sends.
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_MANIFEST_BYTES as u64)
+    {
         return Err(INVALID_MANIFEST.into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("could not read the release channel manifest: {error}"))?
+    {
+        if body.len() + chunk.len() > MAX_MANIFEST_BYTES {
+            return Err(INVALID_MANIFEST.into());
+        }
+        body.extend_from_slice(&chunk);
     }
     stable_target(&body, current)
 }

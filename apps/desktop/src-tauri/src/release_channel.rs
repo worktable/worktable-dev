@@ -86,7 +86,12 @@ struct DesktopBuild {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChannelTarget {
     /// A newer version, with the signed updater feed that publishes it.
-    Offer { version: Version, feed_url: String },
+    /// `channel_held` is set when beta is held and this is stable's release.
+    Offer {
+        version: Version,
+        feed_url: String,
+        channel_held: bool,
+    },
     /// The followed channel is held and offers nothing new.
     Held,
     /// Already on (or past) everything the channel offers.
@@ -149,6 +154,10 @@ pub fn channel_target(
     let newest = candidates
         .into_iter()
         .max_by(|left, right| left.cmp_precedence(right));
+    let followed_held = match &beta {
+        Some(beta) => beta.held,
+        None => stable.held,
+    };
     if let Some(version) = newest.filter(|version| version.cmp_precedence(current).is_gt()) {
         return Ok(ChannelTarget::Offer {
             feed_url: format!(
@@ -156,12 +165,9 @@ pub fn channel_target(
                 release_tag(&version)
             ),
             version,
+            channel_held: followed_held,
         });
     }
-    let followed_held = match &beta {
-        Some(beta) => beta.held,
-        None => stable.held,
-    };
     Ok(if followed_held {
         ChannelTarget::Held
     } else {
@@ -170,14 +176,19 @@ pub fn channel_target(
 }
 
 /// Whether a downloaded `prepared` version may still be installed, given what
-/// the channel offers now. Stable installs exactly what it offers. Beta also
-/// installs a build the channel has since moved past, because beta moves on
-/// often and only a hold withdraws a build.
+/// the channel offers now. Stable installs exactly what it offers. An unheld
+/// beta also installs a build it has since moved past, because beta moves on
+/// often and only a hold withdraws a build; while beta is held, only the
+/// stable release it still offers installs.
 pub fn may_install(target: &ChannelTarget, prepared: &Version, channel: UpdateChannel) -> bool {
     match target {
-        ChannelTarget::Offer { version, .. } => match channel {
-            UpdateChannel::Stable => version.cmp_precedence(prepared).is_eq(),
-            UpdateChannel::Beta => version.cmp_precedence(prepared).is_ge(),
+        ChannelTarget::Offer {
+            version,
+            channel_held,
+            ..
+        } => match channel {
+            UpdateChannel::Beta if !channel_held => version.cmp_precedence(prepared).is_ge(),
+            _ => version.cmp_precedence(prepared).is_eq(),
         },
         ChannelTarget::Held | ChannelTarget::Current => false,
     }
@@ -259,6 +270,20 @@ mod tests {
                 release_tag(&version)
             ),
             version,
+            channel_held: false,
+        }
+    }
+
+    fn held_offer(text: &str) -> ChannelTarget {
+        match offer(text) {
+            ChannelTarget::Offer {
+                version, feed_url, ..
+            } => ChannelTarget::Offer {
+                version,
+                feed_url,
+                channel_held: true,
+            },
+            other => other,
         }
     }
 
@@ -277,6 +302,7 @@ mod tests {
             ChannelTarget::Offer {
                 version: version("0.1.24"),
                 feed_url: "https://worktable.dev/releases/v0.1.24/desktop-updater.json".into(),
+                channel_held: false,
             }
         );
     }
@@ -291,6 +317,7 @@ mod tests {
                 version: version("0.1.24-dev.5+abc1234"),
                 feed_url: "https://worktable.dev/releases/v0.1.24-dev.5/desktop-updater.json"
                     .into(),
+                channel_held: false,
             }
         );
         // Stable never sees it.
@@ -357,7 +384,7 @@ mod tests {
                 UpdateChannel::Beta
             )
             .unwrap(),
-            offer("0.1.24")
+            held_offer("0.1.24")
         );
         // A held stable doesn't stop beta's own Desktop build.
         let stable_held_beta = br#"{"schema":1,"channels":{"stable":{"version":"0.1.24","held":true},"beta":{"version":"0.1.25-dev.2+abc1234","held":false,"desktop":{"version":"0.1.25-dev.2+abc1234"}}}}"#;
@@ -419,6 +446,18 @@ mod tests {
         assert!(!may_install(
             &offer("0.1.24-dev.3+0123abc"),
             &prepared,
+            UpdateChannel::Beta
+        ));
+        // A held beta that still lets stable through doesn't let its own
+        // downloaded build through with it.
+        assert!(!may_install(
+            &held_offer("0.1.24"),
+            &prepared,
+            UpdateChannel::Beta
+        ));
+        assert!(may_install(
+            &held_offer("0.1.24"),
+            &version("0.1.24"),
             UpdateChannel::Beta
         ));
         assert!(!may_install(

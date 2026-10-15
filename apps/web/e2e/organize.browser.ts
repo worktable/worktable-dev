@@ -10,6 +10,132 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder", async ({
+  page,
+}, testInfo) => {
+  const endpoint = `${harness.apiUrl}/api/spaces/folder-creation`
+  expect(
+    (
+      await page.request.post(`${harness.apiUrl}/api/spaces`, {
+        data: { name: "Folder creation", id: "folder-creation" },
+      })
+    ).ok()
+  ).toBe(true)
+  expect(
+    (
+      await page.request.post(`${endpoint}/docs`, {
+        data: { title: "Plans/Nested/Brief", content: [] },
+      })
+    ).ok()
+  ).toBe(true)
+  // The parent is both an HTML doc and a folder; its children use the same
+  // creation menu as an ordinary folder.
+  expect(
+    (
+      await page.request.post(`${endpoint}/widgets`, {
+        data: { id: "plans", name: "Plans", html: "<p>Existing plan</p>" },
+      })
+    ).ok()
+  ).toBe(true)
+  await page.goto(
+    `${harness.webUrl}/spaces/folder-creation/documents/plans/nested/brief`
+  )
+  const nestedNew = page.getByRole("button", {
+    name: "New in Nested",
+    exact: true,
+  })
+  await nestedNew.click()
+  for (const name of ["Doc", "Drawing", "HTML Doc"]) {
+    await expect(
+      page.getByRole("menuitem", { name, exact: true })
+    ).toBeVisible()
+  }
+  await expect(
+    page.getByRole("menuitem", { name: "Record Collection" })
+  ).toHaveCount(0)
+  await page
+    .getByRole("menuitemcheckbox", { name: "Start as Temporary" })
+    .click()
+  await expect(
+    page.getByRole("menuitemcheckbox", { name: "Start as Temporary" })
+  ).toHaveAttribute("aria-checked", "false")
+  await page.screenshot({
+    path: testInfo.outputPath("folder-menu-desktop.png"),
+  })
+  await page.getByRole("menuitem", { name: "Doc", exact: true }).click()
+  await expect(page).toHaveURL(/documents\/plans\/nested\/untitled$/)
+
+  await nestedNew.click()
+  await page.getByRole("menuitem", { name: "Drawing", exact: true }).click()
+  await page.getByLabel("Name", { exact: true }).fill("Sketch")
+  await page.getByRole("button", { name: "Create drawing" }).click()
+  await expect(page).toHaveURL(/documents\/plans\/nested\/sketch$/)
+  await expect(page.getByLabel("Drawing canvas")).toBeVisible()
+
+  await page.getByRole("button", { name: "New in Plans", exact: true }).click()
+  await page.getByRole("menuitem", { name: "HTML Doc", exact: true }).click()
+  await page.getByLabel("HTML doc name").fill("Status")
+  const widgetRoute = "**/api/spaces/folder-creation/widgets"
+  await page.route(widgetRoute, (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: "Temporarily unavailable" },
+    })
+  )
+  await page.getByRole("button", { name: "Create HTML doc" }).click()
+  await expect(
+    page.getByText("Failed to create HTML doc shell", { exact: true })
+  ).toBeVisible()
+  await expect(page.getByLabel("HTML doc name")).toHaveValue("Status")
+  await page.unroute(widgetRoute)
+  await page.getByRole("button", { name: "Create HTML doc" }).click()
+  await expect(page).toHaveURL(/documents\/plans\/status$/)
+  await expect(
+    page
+      .frameLocator("iframe[data-worktable-widget-frame]")
+      .getByRole("heading", { name: "Status", exact: true })
+  ).toBeVisible()
+
+  const catalog = await page.request.get(`${endpoint}/documents`)
+  const { documents } = await catalog.json()
+  for (const path of [
+    "plans/nested/untitled",
+    "plans/nested/sketch",
+    "plans/status",
+  ]) {
+    expect(
+      documents.find((document: { path: string }) => document.path === path)
+    ).toMatchObject({ lifetime: "durable" })
+  }
+  await page.reload()
+  await expect(
+    page.getByRole("button", { name: "New in Plans", exact: true })
+  ).toBeVisible()
+  const spaceRow = page
+    .getByRole("button", { name: "Collapse Folder creation", exact: true })
+    .locator("../..")
+  await spaceRow.getByRole("button", { name: "New", exact: true }).click()
+  await expect(
+    page.getByRole("menuitem", { name: "Record Collection" })
+  ).toBeVisible()
+  await page.keyboard.press("Escape")
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page
+    .getByRole("button", { name: "Toggle sidebar", exact: true })
+    .click()
+  const folderNew = page.getByRole("button", {
+    name: "New in Plans",
+    exact: true,
+  })
+  await expect(folderNew.locator("..")).toHaveCSS("opacity", "1")
+  await folderNew.click()
+  await expect(
+    page.getByRole("menuitem", { name: "Drawing", exact: true })
+  ).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("folder-menu-mobile.png") })
+})
+
 // Owns the organization journey a person relies on: new documents start
 // temporary and stay out of everyday browsing, Home shows them aside until
 // kept, Activity records what happened, and a pinned document leads its Space.

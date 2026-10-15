@@ -17,11 +17,13 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 
 export function NewDrawingDialog({
   spaceId,
+  folder = "drawings",
   lifetime,
   onClose,
   onCreated,
 }: {
   spaceId: string
+  folder?: string
   lifetime: "durable" | "temporary"
   onClose: () => void
   onCreated: () => void
@@ -47,9 +49,9 @@ export function NewDrawingDialog({
           item.kind === "document" ? item.path : item.pathKey
         )
       )
-      let path = `drawings/${slug}`
+      let path = `${folder}/${slug}`
       for (let suffix = 2; paths.has(path); suffix += 1)
-        path = `drawings/${slug}-${suffix}`
+        path = `${folder}/${slug}-${suffix}`
       const result = await writeDocumentSource(spaceId, {
         path,
         format: { id: QUICKDRAW_FORMAT, sourceVersion: 1 },

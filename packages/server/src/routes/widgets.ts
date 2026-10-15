@@ -62,6 +62,7 @@ function normalizeWidgetPermissions(input: z.infer<typeof WidgetPermissionsInput
 
 const CreateWidgetSchema = z.object({
   id: z.string().optional(),
+  folder: z.string().optional(),
   name: z.string().min(1),
   description: z.string().optional(),
   html: z.string().min(1),
@@ -286,6 +287,14 @@ widgetsRouter.post("/", async (c) => {
 
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (
+    parsed.data.folder !== undefined &&
+    (storageV2
+      ? !isHtmlDocumentPath(parsed.data.folder)
+      : !WidgetIdSchema.safeParse(parsed.data.folder).success)
+  ) {
+    return c.json({ error: "Invalid HTML document folder path.", code: "VALIDATION_ERROR" }, 400);
+  }
+  if (
     parsed.data.id !== undefined &&
     (storageV2
       ? !isHtmlDocumentPath(parsed.data.id)
@@ -307,6 +316,7 @@ widgetsRouter.post("/", async (c) => {
     outcome = await createHtmlDocument({
       spaceId,
       explicitId: parsed.data.id,
+      folder: parsed.data.folder,
       name: parsed.data.name,
       description: parsed.data.description,
       html: parsed.data.html,

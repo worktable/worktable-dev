@@ -21,6 +21,7 @@ import { usesHtmlDocumentStorageV2 } from "./html-document-storage-v2.ts"
 export interface CreateHtmlDocumentInput {
   spaceId: string
   explicitId?: string
+  folder?: string
   name: string
   description?: string
   html: string
@@ -76,7 +77,8 @@ export async function createHtmlDocument(
           includeArchived: true,
           includeAliasShadows: true,
         })
-        const base = slugify(input.name)
+        const slug = slugify(input.name)
+        const base = input.folder ? `${input.folder}/${slug}` : slug
         const taken = widgetIdDedupePool(existing)
         const { aliases } = await readDocAliases(input.spaceId)
         let candidate = await deduplicateSlug(base, taken)

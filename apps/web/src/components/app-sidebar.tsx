@@ -21,7 +21,6 @@ import {
   ChevronRight,
   ChevronDown,
   File,
-  FilePlus,
   History,
   Folder,
   AlertTriangle,
@@ -92,7 +91,6 @@ import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { SpaceContextMenuButton } from "@/components/spaces/space-context-menu"
 import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { useNewDoc } from "@/hooks/use-new-doc"
 import { DocContextMenuButton } from "@/components/docs/doc-context-menu"
 import {
   ResponsiveDialog,
@@ -515,8 +513,6 @@ const SpaceSection = memo(function SpaceSection({
     setExpanded(true)
     if (isMobile) setOpen(false)
   }
-  const newDoc = useNewDoc(space.id, afterCreate)
-  const handleNewDoc = useStableCallback(newDoc)
 
   return (
     <>
@@ -599,11 +595,7 @@ const SpaceSection = memo(function SpaceSection({
 
         <CollapsibleContent>
           <div className="ml-4 pl-2">
-            <SpaceContent
-              space={space}
-              onNavigate={handleNavigate}
-              onNewDoc={handleNewDoc}
-            />
+            <SpaceContent space={space} onNavigate={handleNavigate} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -616,11 +608,9 @@ const SpaceSection = memo(function SpaceSection({
 const SpaceContent = memo(function SpaceContent({
   space,
   onNavigate,
-  onNewDoc,
 }: {
   space: SpaceFile
   onNavigate: () => void
-  onNewDoc: (folder?: string) => void
 }) {
   const spaceId = space.id
   const { data: docs, refetch } = useSpaceDocs(spaceId)
@@ -674,7 +664,6 @@ const SpaceContent = memo(function SpaceContent({
         docs={docs ?? NO_DOCS}
         isLoading={documentsLoading}
         loadFailed={documentsError}
-        onNewDoc={onNewDoc}
         onNavigate={onNavigate}
         onRefresh={handleRefresh}
         onWidgetRefresh={refreshWidgets}
@@ -933,7 +922,6 @@ function WidgetTreeActions({
   documentName,
   archived,
   onRefresh,
-  onNewDoc,
   onRenameFolder,
   folderArchived,
   onArchiveFolder,
@@ -945,7 +933,6 @@ function WidgetTreeActions({
   documentName: string
   archived: boolean
   onRefresh: (widgetId?: string) => Promise<void>
-  onNewDoc?: () => void
   onRenameFolder?: () => void
   folderArchived?: boolean
   onArchiveFolder?: () => void
@@ -1038,7 +1025,6 @@ function WidgetTreeActions({
       <WidgetContextMenuButton
         documentName={documentName}
         archived={archived}
-        onNewDoc={onNewDoc}
         onRenameFolder={onRenameFolder}
         folderArchived={folderArchived}
         onArchiveFolder={onArchiveFolder}
@@ -1132,7 +1118,6 @@ function WidgetTreeItem({
 function WidgetContextMenuButton({
   documentName,
   archived,
-  onNewDoc,
   onRenameFolder,
   folderArchived,
   onArchiveFolder,
@@ -1146,7 +1131,6 @@ function WidgetContextMenuButton({
 }: {
   documentName: string
   archived?: boolean
-  onNewDoc?: () => void
   onRenameFolder?: () => void
   folderArchived?: boolean
   onArchiveFolder?: () => void
@@ -1159,11 +1143,7 @@ function WidgetContextMenuButton({
   onDelete: () => void
 }) {
   const hasFolderActions = Boolean(
-    onNewDoc ||
-    onRenameFolder ||
-    onArchiveFolder ||
-    onRestoreFolder ||
-    onDeleteFolder
+    onRenameFolder || onArchiveFolder || onRestoreFolder || onDeleteFolder
   )
   const isHybridPath = folderArchived !== undefined
 
@@ -1178,12 +1158,6 @@ function WidgetContextMenuButton({
         <MoreVertical className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="min-w-44">
-        {onNewDoc && (
-          <DropdownMenuItem onClick={onNewDoc}>
-            <FilePlus className="mr-2 h-4 w-4" />
-            New Doc
-          </DropdownMenuItem>
-        )}
         {onRenameFolder && (
           <DropdownMenuItem onClick={onRenameFolder}>
             <Pencil className="mr-2 h-4 w-4" />
@@ -1359,7 +1333,6 @@ function SpaceTreeSection({
   docs,
   isLoading,
   loadFailed,
-  onNewDoc,
   onNavigate,
   onRefresh,
   onWidgetRefresh,
@@ -1369,7 +1342,6 @@ function SpaceTreeSection({
   docs: DocListEntry[]
   isLoading: boolean
   loadFailed: boolean
-  onNewDoc: (folder?: string) => void
   onNavigate: () => void
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
@@ -1565,7 +1537,6 @@ function SpaceTreeSection({
   const rowProps = {
     spaceId,
     index,
-    onNewDoc,
     onNavigate,
     onRefresh,
     onWidgetRefresh,
@@ -1675,7 +1646,6 @@ interface TreeRowProps {
   spaceId: string
   index: SpaceDocumentIndex
   depth?: number
-  onNewDoc?: (folder?: string) => void
   onNavigate: () => void
   onRefresh: () => Promise<void>
   onWidgetRefresh: (widgetId?: string) => Promise<void>
@@ -1775,7 +1745,6 @@ function DocTreeItem({
   spaceId,
   index,
   depth = 0,
-  onNewDoc,
   onNavigate,
   onRefresh,
   onWidgetRefresh,
@@ -2044,7 +2013,21 @@ function DocTreeItem({
                 <span className="truncate">{node.label}</span>
               </CollapsibleTrigger>
             )}
-            <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/folder:opacity-100 has-[[data-popup-open]]:opacity-100">
+            <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
+              <SpaceNewMenu
+                spaceId={spaceId}
+                folder={node.path}
+                onCreated={onNavigate}
+                trigger={
+                  <button
+                    type="button"
+                    aria-label={`New in ${node.label}`}
+                    className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground has-[[data-popup-open]]:bg-sidebar-accent sm:size-6"
+                  >
+                    <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
+                  </button>
+                }
+              />
               {view === "html" ? (
                 <WidgetTreeActions
                   key={`${node.path}:${exactDocumentArchived ? "archived" : "active"}`}
@@ -2053,7 +2036,6 @@ function DocTreeItem({
                   documentName={node.label}
                   archived={exactDocumentArchived}
                   onRefresh={onWidgetRefresh}
-                  onNewDoc={onNewDoc ? () => onNewDoc(node.path) : undefined}
                   onRenameFolder={
                     folderMoveUnavailable
                       ? undefined
@@ -2087,7 +2069,6 @@ function DocTreeItem({
                       ? undefined
                       : () => setDeleteOpen(true)
                   }
-                  onNewDoc={onNewDoc ? () => onNewDoc(node.path) : undefined}
                   onArchive={
                     folderArchiveUnavailable ? undefined : handleArchiveFolder
                   }
@@ -2109,7 +2090,6 @@ function DocTreeItem({
                   spaceId={spaceId}
                   index={index}
                   depth={depth + 1}
-                  onNewDoc={onNewDoc}
                   onNavigate={onNavigate}
                   onRefresh={onRefresh}
                   onWidgetRefresh={onWidgetRefresh}

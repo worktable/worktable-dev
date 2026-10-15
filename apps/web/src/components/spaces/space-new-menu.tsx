@@ -54,16 +54,17 @@ const NewDrawingDialog = lazy(() =>
 )
 
 /**
- * Everything a Space can create, behind one menu. The sidebar and Space Home
- * pass their own trigger; creation and its dialogs behave the same in both.
+ * Shared creation menu for a Space or one of its document folders.
  */
 export function SpaceNewMenu({
   spaceId,
+  folder,
   trigger,
   align = "end",
   onCreated,
 }: {
   spaceId: string
+  folder?: string
   trigger: ReactElement
   align?: "start" | "end"
   onCreated?: () => void
@@ -132,6 +133,7 @@ export function SpaceNewMenu({
     try {
       const result = await createWidget(spaceId, {
         name,
+        folder,
         description,
         html: buildWidgetShellHtml(name),
         metadata: { source: "manual-shell" },
@@ -154,6 +156,7 @@ export function SpaceNewMenu({
     } catch (err) {
       toast.error("Failed to create HTML doc shell")
       console.error("Failed to create HTML doc shell:", err)
+      throw err
     }
   }
 
@@ -162,7 +165,7 @@ export function SpaceNewMenu({
       <DropdownMenu>
         <DropdownMenuTrigger render={trigger} />
         <DropdownMenuContent align={align} sideOffset={4} className="min-w-60">
-          <DropdownMenuItem onClick={() => newDoc()}>
+          <DropdownMenuItem onClick={() => newDoc(folder)}>
             <FileText className="mr-2 h-4 w-4" />
             Doc
           </DropdownMenuItem>
@@ -176,10 +179,12 @@ export function SpaceNewMenu({
             <AppWindow className="mr-2 h-4 w-4" />
             HTML Doc
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
-            <Database className="mr-2 h-4 w-4" />
-            Record Collection
-          </DropdownMenuItem>
+          {!folder && (
+            <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
+              <Database className="mr-2 h-4 w-4" />
+              Record Collection
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
             checked={lifetime === "temporary"}
@@ -197,6 +202,7 @@ export function SpaceNewMenu({
         <Suspense fallback={null}>
           <NewDrawingDialog
             spaceId={spaceId}
+            folder={folder}
             lifetime={lifetime}
             onClose={() => setDrawingOpen(false)}
             onCreated={() => onCreated?.()}
@@ -272,6 +278,8 @@ function NewWidgetDialog({
     try {
       await onCreate(sanitizedName, trimmedDescription || undefined)
       onClose()
+    } catch {
+      // The creator reports the failure; keep the entered details for retry.
     } finally {
       setPending(false)
     }

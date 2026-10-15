@@ -74,8 +74,13 @@ function lintWorkspaces(): { dir: string; scopes: string[] }[] {
     } catch {
       return []
     }
-    const match = script?.match(/^eslint((?:\s+[\w./-]+)*)\s*$/)
-    if (!match) return []
+    if (script === undefined) return []
+    const match = script.match(/^eslint((?:\s+(?!-)[\w./-]+)*)\s*$/)
+    // Fail closed rather than silently skipping a workspace that lints.
+    if (!match)
+      throw new Error(
+        `${dir}: lint:changed reads only "eslint [paths]" lint scripts, not "${script}"`
+      )
     const scopes = match[1]!.trim().split(/\s+/).filter(Boolean)
     return [{ dir, scopes: scopes.length > 0 ? scopes : ["."] }]
   })
@@ -111,13 +116,18 @@ async function lintWorkspace(
     if (await eslint.isPathIgnored(absolute)) continue
     result.checked++
     const [head] = await eslint.lintFiles([absolute])
-    const before = from
-      ? (
-          await eslint.lintText(git("show", `${base}:${from}`), {
-            filePath: absolute,
-          })
-        )[0]!.messages
-      : null
+    // A renamed file is judged at its old path, under that path's rules, so
+    // moving a file into a stricter override cannot hide what it breaks.
+    // From outside this workspace's lint scope, or an ignored path, it is new.
+    const basePath = from ? join(root, from) : null
+    const before =
+      basePath && !(await eslint.isPathIgnored(basePath))
+        ? (
+            await eslint.lintText(git("show", `${base}:${from}`), {
+              filePath: basePath,
+            })
+          )[0]!.messages
+        : null
     const added = addedLintErrors(before, head!.messages)
     if (added.length > 0) result.files.push([path, added])
   }
@@ -160,13 +170,14 @@ if (import.meta.main) {
   // typescript-eslint caches project roots per process, so each workspace
   // lints in its own process.
   const workspaces = lintWorkspaces().flatMap(({ dir, scopes }) => {
-    const files = [...changed].filter(
-      ([path]) =>
-        lintable.test(path) &&
-        scopes.some((scope) =>
-          path.startsWith(scope === "." ? `${dir}/` : `${dir}/${scope}/`)
-        )
-    )
+    const inScope = (path: string) =>
+      lintable.test(path) &&
+      scopes.some((scope) =>
+        path.startsWith(scope === "." ? `${dir}/` : `${dir}/${scope}/`)
+      )
+    const files = [...changed]
+      .filter(([path]) => inScope(path))
+      .map(([path, from]) => [path, from && inScope(from) ? from : null])
     if (files.length === 0) return []
     const child = Bun.spawn(
       [process.execPath, import.meta.path, "--workspace", dir, base],

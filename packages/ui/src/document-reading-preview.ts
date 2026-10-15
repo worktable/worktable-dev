@@ -349,9 +349,13 @@ function single(
             { viewBox: "0 0 24 24", "aria-hidden": true },
             h("path", { d: "m9 18 6-6-6-6" })
           ),
-          h("span", null, diagramName(props) ?? "Diagram"),
+          h(
+            "span",
+            { className: "worktable-diagram-name" },
+            diagramName(props) ?? "Diagram"
+          ),
           diagramName(props) &&
-            h("span", { className: "worktable-diagram-kind" }, "· Diagram")
+            h("span", { className: "worktable-diagram-kind" }, "Diagram")
         )
       return h(
         "div",

@@ -127,7 +127,12 @@ export function WorktableMermaidRenderer({
       data-editing={editing || undefined}
     >
       {(controls || svg) && (
-        <div className="worktable-diagram-controls mermaid-open-control">
+        <div
+          className="worktable-diagram-controls mermaid-open-control"
+          // Keep the browser from moving the editor's selection onto the
+          // block, which would highlight it and raise the formatting bar.
+          onMouseDown={(event) => event.preventDefault()}
+        >
           {controls}
           {svg && (
             <DocIconButton

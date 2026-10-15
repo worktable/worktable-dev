@@ -100,10 +100,13 @@ function ArchivedSpaceBanner({
 function PinnedSection({
   spaceId,
   pins,
+  onRetry,
 }: {
   spaceId: string
   /** Undefined while the Space's details load. */
   pins: ResolvedStartHerePin[] | undefined
+  /** Set when the details failed, so the pins show a retry, not a placeholder. */
+  onRetry?: () => void
 }) {
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
@@ -132,7 +135,18 @@ function PinnedSection({
       <h2 id="pinned-heading" className="mb-2 text-sm font-semibold text-foreground">
         Pinned
       </h2>
-      {!pins ? (
+      {!pins && onRetry ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn’t load pins.{" "}
+          <button
+            type="button"
+            className="text-primary-text hover:underline"
+            onClick={onRetry}
+          >
+            Try again
+          </button>
+        </p>
+      ) : !pins ? (
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           <div className="h-[3.375rem] animate-pulse rounded-xl bg-muted" />
         </div>
@@ -255,12 +269,14 @@ function SpaceOverview({
   spaceName,
   spaceDescription,
   pins,
+  onRetryPins,
 }: {
   spaceId: string
   /** Undefined only until the Space list or details arrive. */
   spaceName: string | undefined
   spaceDescription?: string
   pins: ResolvedStartHerePin[] | undefined
+  onRetryPins?: () => void
 }) {
   const [folder, setFolder] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -332,7 +348,7 @@ function SpaceOverview({
 
         <PendingSection spaceId={spaceId} />
 
-        <PinnedSection spaceId={spaceId} pins={pins} />
+        <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
 
         <section aria-labelledby="recent-heading">
           <div className="mb-2 flex items-center gap-2">
@@ -392,7 +408,7 @@ function SpaceOverview({
 
 function SpaceDetailPage() {
   const { spaceId } = Route.useParams()
-  const { data, isLoading } = useSpace(spaceId)
+  const { data, isLoading, isError, refetch } = useSpace(spaceId)
   // The sidebar's Space list already holds the name, description and
   // settings, so the overview renders in place while the details (pins)
   // load, instead of swapping in a differently shaped placeholder.
@@ -460,10 +476,13 @@ function SpaceDetailPage() {
         />
       )}
       <SpaceOverview
+        // A folder filter belongs to one Space; start each Space unfiltered.
+        key={spaceId}
         spaceId={spaceId}
         spaceName={space?.name}
         spaceDescription={space?.description}
         pins={data ? (data.pins ?? []) : undefined}
+        onRetryPins={isError ? () => void refetch() : undefined}
       />
     </div>
   )

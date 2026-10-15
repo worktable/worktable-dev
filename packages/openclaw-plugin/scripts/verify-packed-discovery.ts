@@ -17,10 +17,16 @@ const artifact = resolve(
       `${pkg.name.replace(/^@/, "").replaceAll("/", "-")}-${pkg.version}.tgz`
     )
 )
-const openClawEntrypoint = [
-  join(repositoryRoot, "node_modules", "openclaw", "openclaw.mjs"),
-  join(packageRoot, "node_modules", "openclaw", "openclaw.mjs"),
-].find((candidate) => Bun.file(candidate).size > 0)
+const configuredEntrypoint =
+  process.env["WORKTABLE_OPENCLAW_ENTRYPOINT"]?.trim()
+const openClawEntrypoint = (
+  configuredEntrypoint
+    ? [resolve(configuredEntrypoint)]
+    : [
+        join(repositoryRoot, "node_modules", "openclaw", "openclaw.mjs"),
+        join(packageRoot, "node_modules", "openclaw", "openclaw.mjs"),
+      ]
+).find((candidate) => Bun.file(candidate).size > 0)
 if (!openClawEntrypoint) {
   throw new Error("OpenClaw is not installed; run bun install first")
 }
@@ -63,8 +69,21 @@ try {
       stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
     }) as string
 
-  run(["plugins", "install", artifact, "--pin"])
+  const installHelp = run(["plugins", "install", "--help"], true)
+  run([
+    "plugins",
+    "install",
+    artifact,
+    "--force",
+    ...(installHelp.includes("--accept-capabilities")
+      ? ["--accept-capabilities"]
+      : []),
+  ])
   run(["plugins", "enable", "worktable"])
+  const connectHelp = run(["worktable", "connect", "--help"], true)
+  if (!connectHelp.includes("--pairing-code")) {
+    throw new Error("The installed plugin did not register its connect command")
+  }
   const payload = JSON.parse(run(["skills", "list", "--json"], true)) as {
     skills?: Array<{
       name?: string

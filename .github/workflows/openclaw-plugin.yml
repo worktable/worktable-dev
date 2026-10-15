@@ -41,6 +41,12 @@ jobs:
         with:
           bun-version: "1.3.14"
 
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          # Current OpenClaw rejects 24.15.0 because of its SQLite TEXT bug.
+          node-version: "24.16.0"
+
       - name: Select plugin distribution inputs
         id: scope
         working-directory: .
@@ -75,3 +81,21 @@ jobs:
             --runtime \
             --allow-execute \
             --json
+
+      - name: Verify packaged loading on supported OpenClaw hosts
+        if: steps.scope.outputs.plugin == 'true'
+        run: |
+          set -euo pipefail
+          bun run verify:discovery
+          for target in latest beta; do
+            host=$(mktemp -d)
+            trap 'rm -rf "$host"' EXIT
+            npm install --prefix "$host" --ignore-scripts --no-audit --no-fund "openclaw@$target"
+            WORKTABLE_OPENCLAW_ENTRYPOINT="$host/node_modules/openclaw/openclaw.mjs" \
+              bun run verify:discovery
+            bunx @openclaw/plugin-inspector@0.4.0 check --plugin-root . \
+              --author-facing \
+              --openclaw "$host/node_modules/openclaw" \
+              --json
+            rm -rf "$host"
+          done

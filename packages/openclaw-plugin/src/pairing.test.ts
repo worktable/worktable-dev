@@ -10,6 +10,17 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot"
+import {
+  loadAgentCredential,
+  promotePendingAgentAuth,
+  saveAgentCredential,
+} from "./agent-auth-config.js"
+import { WorktableAgentCredentialProvider } from "./agent-auth.js"
+import type { WorktableAgentAuth } from "./types.js"
+import {
   completePairingWithRetry,
   ensureOpenClawInstallationId,
   pairWorktableChannel,
@@ -46,6 +57,7 @@ async function createDiscoveredPluginFixture(
 }
 
 afterEach(async () => {
+  clearRuntimeConfigSnapshot()
   await Promise.all(servers.splice(0).map((server) => server.stop(true)))
   await Promise.all(
     tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))
@@ -177,6 +189,89 @@ describe("OpenClaw asking Worktable to connect", () => {
 })
 
 describe("OpenClaw Worktable pairing completion", () => {
+  it(
+    "reloads rotated credentials from storage even while the runtime snapshot is stale",
+    async () => {
+      const configDir = await mkdtemp(join(tmpdir(), "worktable-credentials-"))
+      tempDirs.push(configDir)
+      const configPath = join(configDir, "openclaw.json")
+      const pluginDir = await createDiscoveredPluginFixture(configDir)
+      process.env.OPENCLAW_CONFIG_PATH = configPath
+      process.env.OPENCLAW_STATE_DIR = configDir
+      const credential: WorktableAgentAuth = {
+        registrationId: "agent_reg_rotating",
+        authorizationServer: "https://example.authkit.app",
+        identityEndpoint: "https://example.authkit.app/agent/identity",
+        tokenEndpoint: "https://example.authkit.app/oauth2/token",
+        resource: "https://app.worktable.cloud/api/mcp",
+        assertion: "expired",
+        assertionExpiresAt: "2000-01-01T00:00:00.000Z",
+        refreshToken: "refresh_old",
+        refreshTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+      }
+      const section = {
+        enabled: true,
+        server: "https://app.worktable.cloud",
+        authMode: "agent-registration",
+        participantName: "Atlas",
+        pendingAgentAuth: credential,
+      }
+      const config = {
+        plugins: { allow: ["worktable"], load: { paths: [pluginDir] } },
+        channels: { worktable: section },
+      }
+      await writeFile(configPath, JSON.stringify(config))
+      let refreshes = 0
+      const fetchImpl = (async (input, init) => {
+        if (String(input) === credential.identityEndpoint) {
+          refreshes += 1
+          expect(JSON.parse(String(init?.body))).toEqual({
+            type: "refresh",
+            refresh_token: "refresh_old",
+          })
+          return Response.json({
+            identity: {
+              assertion: "assertion_new",
+              expires_at: "2099-01-01T00:00:00.000Z",
+              refresh_token: {
+                value: "refresh_new",
+                expires_at: "2099-02-01T00:00:00.000Z",
+              },
+            },
+          })
+        }
+        expect(new URLSearchParams(String(init?.body)).get("assertion")).toBe(
+          "assertion_new"
+        )
+        return Response.json({ access_token: "access_new", expires_in: 300 })
+      }) as typeof fetch
+      const provider = () =>
+        new WorktableAgentCredentialProvider({
+          credential: { ...credential },
+          load: () => loadAgentCredential(credential.registrationId),
+          save: (next) => saveAgentCredential(credential.registrationId, next),
+          fetch: fetchImpl,
+        })
+      expect(await provider().accessToken()).toBe("access_new")
+      // A second client must use the persisted rotation, even before a runtime
+      // config reload has replaced the original expired credential snapshot.
+      setRuntimeConfigSnapshot(config)
+      expect(await provider().accessToken()).toBe("access_new")
+      expect(refreshes).toBe(1)
+      await promotePendingAgentAuth(credential.registrationId)
+      expect(
+        await loadAgentCredential(credential.registrationId)
+      ).toMatchObject({
+        assertion: "assertion_new",
+        refreshToken: "refresh_new",
+      })
+      const stored = JSON.parse(await readFile(configPath, "utf8"))
+      expect(stored.channels.worktable.pendingAgentAuth).toBeUndefined()
+      expect(stored.channels.worktable.participantName).toBe("Atlas")
+    },
+    OPENCLAW_RUNTIME_TIMEOUT_MS
+  )
+
   it("rejects an empty participant name before starting Agent Registration", async () => {
     let requested = false
     globalThis.fetch = (async () => {

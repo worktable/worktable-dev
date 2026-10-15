@@ -103,8 +103,7 @@ type WorkspaceResult = {
 async function lintWorkspace(
   dir: string,
   base: string,
-  files: [path: string, from: string | null][],
-  configProbe: string | null
+  files: [path: string, from: string | null][]
 ): Promise<WorkspaceResult> {
   const require = createRequire(join(root, dir, "package.json"))
   const { ESLint } = (await import(require.resolve("eslint"))) as {
@@ -112,15 +111,6 @@ async function lintWorkspace(
   }
   const eslint = new ESLint({ cwd: join(root, dir) })
   const result: WorkspaceResult = { checked: 0, files: [] }
-  if (configProbe) {
-    // A changed config must still load and name real rules, even when no
-    // source file in scope changed. A config that fails to load throws.
-    const [probe] = await eslint.lintText("export {}\n", {
-      filePath: join(root, configProbe),
-    })
-    const added = addedLintErrors(null, probe!.messages)
-    if (added.length > 0) result.files.push([configProbe, added])
-  }
   for (const [path, from] of files) {
     const absolute = join(root, path)
     if (await eslint.isPathIgnored(absolute)) continue
@@ -147,12 +137,8 @@ async function lintWorkspace(
 if (import.meta.main) {
   const args = process.argv.slice(2)
   if (args[0] === "--workspace") {
-    const { files, configProbe } = JSON.parse(await Bun.stdin.text())
-    console.log(
-      JSON.stringify(
-        await lintWorkspace(args[1]!, args[2]!, files, configProbe)
-      )
-    )
+    const files = JSON.parse(await Bun.stdin.text())
+    console.log(JSON.stringify(await lintWorkspace(args[1]!, args[2]!, files)))
     process.exit(0)
   }
   const baseIndex = args.indexOf("--base")
@@ -181,6 +167,11 @@ if (import.meta.main) {
     }
   }
 
+  // Every touched path, deletions included.
+  const touched = git("diff", "--name-only", "-z", base)
+    .split("\0")
+    .filter(Boolean)
+
   // typescript-eslint caches project roots per process, so each workspace
   // lints in its own process.
   const workspaces = lintWorkspaces().flatMap(({ dir, scopes }) => {
@@ -189,23 +180,29 @@ if (import.meta.main) {
       scopes.some((scope) =>
         path.startsWith(scope === "." ? `${dir}/` : `${dir}/${scope}/`)
       )
-    const files = [...changed]
-      .filter(([path]) => inScope(path))
-      .map(([path, from]) => [path, from && inScope(from) ? from : null])
-    const configChanged = [...changed.keys()].some(
+    // A changed, added or deleted config can affect every file it lints, so
+    // lint the whole scope. Unchanged files compare with themselves: the
+    // config must load and apply, and only edited files can add errors.
+    const configChanged = touched.some(
       (path) =>
         path.startsWith(`${dir}/`) &&
         /^eslint\.config\.[cm]?[jt]s$/.test(path.slice(dir.length + 1))
     )
-    const configProbe = configChanged
-      ? join(dir, scopes[0] === "." ? "" : scopes[0]!, "lint-config-probe.ts")
-      : null
-    if (files.length === 0 && !configProbe) return []
+    const candidates = configChanged
+      ? git("ls-files", "-z", "--", dir)
+          .split("\0")
+          .filter(Boolean)
+          .map((path) => [path, changed.has(path) ? changed.get(path)! : path])
+      : [...changed]
+    const files = candidates
+      .filter(([path]) => inScope(path!))
+      .map(([path, from]) => [path, from && inScope(from) ? from : null])
+    if (files.length === 0) return []
     const child = Bun.spawn(
       [process.execPath, import.meta.path, "--workspace", dir, base],
       { cwd: root, stdin: "pipe", stdout: "pipe", stderr: "inherit" }
     )
-    child.stdin.write(JSON.stringify({ files, configProbe }))
+    child.stdin.write(JSON.stringify(files))
     child.stdin.end()
     return [
       (async () => {

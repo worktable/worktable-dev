@@ -29,8 +29,18 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
     sidebar.getByRole("button", { name: "Research", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
+  const saved = () =>
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/profile/navigation") &&
+        response.request().method() === "PUT" &&
+        response.ok()
+    )
+
   await sidebar.getByRole("link", { name: "Beta" }).hover()
+  const pinned = saved()
   await sidebar.getByRole("button", { name: "Pin Beta" }).click()
+  await pinned
   await expect(sidebar.getByText("Pinned", { exact: true })).toBeVisible()
 
   await sidebar.getByRole("link", { name: "Beta" }).last().hover()
@@ -43,7 +53,9 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
   await page.getByRole("menuitem", { name: "Change Group" }).hover()
   await page.getByRole("menuitem", { name: "New Group" }).click()
   await page.getByLabel("Name").fill("Clients")
+  const grouped = saved()
   await page.getByRole("button", { name: "Create" }).click()
+  await grouped
   await expect(sidebar.getByRole("button", { name: "Clients", exact: true })).toBeVisible()
 
   await sidebar.getByRole("button", { name: "Showing all Spaces" }).click()

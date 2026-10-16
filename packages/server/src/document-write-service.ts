@@ -39,6 +39,7 @@ import {
   commitDocumentAgentMutationV2,
   listCompatibleDocumentVersionsV2,
   readCompatibleDocumentVersionV2,
+  retireReplacedGenerationV2,
   writeDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
 import {
@@ -1233,11 +1234,15 @@ export async function replaceRegisteredDocument(options: {
             }),
           }
         : undefined
-      await writeDocumentGenerationV2({
+      // The newest version holds the content this save replaces; when it is
+      // the same actor's open version, this save continues it.
+      const coalesceWith = baseline.created ? undefined : baseline.generationId
+      const written = await writeDocumentGenerationV2({
         workspaceRoot,
         spaceId: options.spaceId,
         documentId,
         generationId: versionId,
+        ...(coalesceWith ? { coalesceWith } : {}),
         logicalPath: current.path,
         format: current.format,
         operation: options.checkpoint ? "checkpoint" : "update",
@@ -1289,6 +1294,22 @@ export async function replaceRegisteredDocument(options: {
           ? { remove: [current.documentId] }
           : {}),
       })
+      if (coalesceWith) {
+        // Only now that the save has committed: a failed save keeps the
+        // version it would have replaced.
+        await retireReplacedGenerationV2({
+          workspaceRoot,
+          spaceId: options.spaceId,
+          documentId,
+          replacement: written,
+          replaced: coalesceWith,
+        }).catch((error) => {
+          console.warn(
+            "[document-write] replaced version cleanup failed:",
+            logError(error)
+          )
+        })
+      }
       await publishLegacyDocProjection({
         registration: current.registration,
         spaceId: options.spaceId,

@@ -187,7 +187,8 @@ function documentWriteAttribution(principal: {
   type: "human" | "agent" | "system"
 }): { actor: string; source: string } {
   if (principal.type === "human") {
-    return { actor: "user", source: "rest-api" }
+    // On a team, each person is their own author, as restWriteActor records.
+    return { actor: teamsEnabled() ? principal.id : "user", source: "rest-api" }
   }
   if (principal.type === "agent") {
     return { actor: `agent:${principal.id}`, source: "rest-api" }

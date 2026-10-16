@@ -1781,6 +1781,7 @@ async function preservePendingDocVersion(
     { updatedBy: provenance.updatedBy, source: provenance.source },
     {
       force: true,
+      editedAt: provenance.updatedAt,
       ...(beforeBytes
         ? { sourceBytes: { before: beforeBytes, after: beforeBytes } }
         : {}),
@@ -1830,6 +1831,7 @@ export async function recordPendingDocVersion(
       { updatedBy: provenance.updatedBy, source: provenance.source },
       {
         force: true,
+        editedAt: provenance.updatedAt,
         ...(snapshot.bytes
           ? { sourceBytes: { before: snapshot.bytes, after: snapshot.bytes } }
           : {}),
@@ -2024,6 +2026,8 @@ async function recordDocVersionInner(
       before?: Uint8Array;
       after?: Uint8Array;
     };
+    /** When a session saved the content this records, if earlier than now. */
+    editedAt?: string;
   }
 ): Promise<DocProvenance | undefined> {
   const {
@@ -2081,6 +2085,7 @@ async function recordDocVersionInner(
       beforeBytes: opts?.sourceBytes?.before,
       afterBytes: opts?.sourceBytes?.after,
       previousProvenance,
+      ...(opts?.editedAt ? { editedAt: opts.editedAt } : {}),
     });
     if (provenance) await updateDocProvenance(spaceId, docPath, provenance);
     return provenance;

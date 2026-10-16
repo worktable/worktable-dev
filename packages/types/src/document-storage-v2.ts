@@ -228,6 +228,12 @@ export const DocumentGenerationManifestV2Schema = z
     format: DocumentFormatClaimSchema,
     operation: z.enum(["create", "update", "checkpoint"]),
     createdAt: z.string().datetime(),
+    /**
+     * When a later save by the same actor last replaced this version's
+     * content. createdAt stays when the version started; absent means the
+     * content is from createdAt.
+     */
+    updatedAt: z.string().datetime().optional(),
     createdBy: z.string().min(1).max(512),
     source: z.string().min(1).max(512),
     reason: z.string().max(500).optional(),

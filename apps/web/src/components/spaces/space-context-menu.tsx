@@ -44,7 +44,7 @@ import {
 import { IconSearchGrid } from "@/components/icon-search-grid"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { PersonalGroup } from "@worktable/types"
-import { sortedGroups } from "@/components/sidebar/space-groups"
+import { sortedGroups } from "@/lib/personal-navigation"
 import type { DocSortMode } from "@/lib/tree"
 
 const SpaceAccessEditor = lazy(() => import("./space-access-editor").then(module => ({default: module.SpaceAccessEditor})))

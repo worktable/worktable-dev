@@ -66,6 +66,12 @@ import {
 } from "./service.ts"
 import { startServiceLogRotation } from "./service-logs.ts"
 import {
+  appArmorProfileName,
+  checkInstalledPreviews,
+  previewBrowserExecutable,
+  renderAppArmorProfile,
+} from "./preview-host.ts"
+import {
   classifyRuntimeReadiness,
   describeRuntimeReadinessFailure,
   localHostServiceStartMode,
@@ -790,6 +796,70 @@ function readConfigOrFail(): WorktableConfig | null {
   }
 }
 
+async function commandPreviewSetup(): Promise<void> {
+  if (process.platform !== "linux") {
+    console.log("Previews need no setup on this platform.")
+    return
+  }
+  if (process.getuid?.() === 0) {
+    fail(
+      "Run this as the user that runs Worktable, not as root. It asks for sudo when it needs to."
+    )
+    return
+  }
+  const releaseDir = getReleaseDir()
+  const executable = previewBrowserExecutable(releaseDir)
+  const before = await checkInstalledPreviews()
+  if (!before || !releaseDir || !executable) {
+    fail(
+      "This Worktable has no packaged preview browser. Reinstall Worktable, then try again."
+    )
+    return
+  }
+  if (before.ok) {
+    console.log("Previews already work on this host.")
+    return
+  }
+  if (before.failure !== "apparmor") {
+    fail(before.reason)
+    return
+  }
+  const profilePath = `/etc/apparmor.d/${appArmorProfileName(releaseDir)}`
+  console.log(
+    `Adding an AppArmor rule at ${profilePath}. It lets programs at this install's preview browser path, which this account can write, create the user namespaces Chromium's sandbox needs. sudo may ask for your password.`
+  )
+  const write = Bun.spawnSync(["sudo", "tee", profilePath], {
+    stdin: new TextEncoder().encode(
+      renderAppArmorProfile(releaseDir, executable)
+    ),
+    stdout: "ignore",
+    stderr: "inherit",
+  })
+  if (write.exitCode !== 0) {
+    fail(`Couldn't write ${profilePath}.`)
+    return
+  }
+  const parser = existsSync("/usr/sbin/apparmor_parser")
+    ? "/usr/sbin/apparmor_parser"
+    : "apparmor_parser"
+  const load = Bun.spawnSync(["sudo", parser, "-r", profilePath], {
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  if (load.exitCode !== 0) {
+    fail(`Couldn't load ${profilePath} with apparmor_parser.`)
+    return
+  }
+  const after = await checkInstalledPreviews()
+  if (!after?.ok) {
+    fail(
+      `The rule is loaded, but previews still can't start. ${after?.reason ?? ""}`.trim()
+    )
+    return
+  }
+  console.log("Previews work now.")
+}
+
 async function printDoctor(check = false): Promise<void> {
   const config = readConfigOrFail()
   if (!config) return
@@ -870,6 +940,15 @@ async function printDoctor(check = false): Promise<void> {
   console.log(`MCP endpoint:         ${config.mcp.endpoint}`)
   for (const status of mcp) {
     console.log(`MCP ${status.label}:`.padEnd(22) + status.state)
+  }
+  const previews = await checkInstalledPreviews()
+  if (previews) {
+    console.log(
+      previews.ok
+        ? "Previews:             working"
+        : style.yellow(`Previews:             unavailable. ${previews.reason}`)
+    )
+    if (!previews.ok && check) process.exitCode = 1
   }
   if (!paths.staticDir) {
     console.log()
@@ -4748,6 +4827,12 @@ async function commandUninstall(opts: {
   } = loadStableConfigForUninstall()
   const purge = opts.purge === true
   const appDir = getAppDir()
+  // `preview setup` may have added a system AppArmor rule; removing it needs
+  // sudo, which an unattended uninstall can't prompt for, so name the commands.
+  const uninstallReleaseDir = getReleaseDir()
+  const previewProfile = uninstallReleaseDir
+    ? `/etc/apparmor.d/${appArmorProfileName(uninstallReleaseDir)}`
+    : null
   const initialAuthorityState = snapshotLocalAuthorityState()
   if (initialAuthorityState.config !== initialConfigFile) {
     throw new UsageError(
@@ -4927,6 +5012,11 @@ async function commandUninstall(opts: {
     } else {
       console.log(`Workspace preserved: ${config.workspace}`)
     }
+    if (previewProfile && existsSync(previewProfile)) {
+      console.log(
+        `Remove the preview AppArmor rule with: sudo apparmor_parser -R ${previewProfile} && sudo rm ${previewProfile}`
+      )
+    }
   } finally {
     authorityLock.release()
   }
@@ -5103,6 +5193,13 @@ export function buildProgram(): Command {
     .description("Diagnose installation problems")
     .option("--check", "exit non-zero if the install is degraded")
     .action((opts) => printDoctor(opts.check === true))
+
+  program
+    .command("preview")
+    .description("Set up document previews on this machine")
+    .command("setup")
+    .description("Let the preview browser start its sandbox on this host")
+    .action(() => commandPreviewSetup())
 
   program
     .command("paths")

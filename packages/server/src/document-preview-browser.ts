@@ -2,6 +2,12 @@ import {
   launchPreviewBrowserProcess,
   resolveHeadlessPreviewExecutable,
 } from "./document-preview-process.ts"
+import { isHosted } from "./hosted.ts"
+import {
+  classifyPreviewSandboxFailure,
+  userNamespacesRestricted,
+  type PreviewSandboxFailure,
+} from "./preview-sandbox.ts"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -25,6 +31,7 @@ export class PreviewBrowserError extends Error {
 const DRIVER_VERSION = "1.61.1"
 let launchStatus: "not_checked" | "ready" | "failed" = "not_checked"
 let launchFailure: string | undefined
+let launchFailureKind: PreviewSandboxFailure | undefined
 const localRequire = createRequire(import.meta.url)
 interface Runtime {
   driver: typeof import("playwright-core")
@@ -112,6 +119,8 @@ export function previewBrowserAvailability(): {
   sandboxRequired: true
   source?: string
   reason?: string
+  /** Why the browser couldn't start, when it couldn't. */
+  failure?: PreviewSandboxFailure
   launchStatus: "not_checked" | "ready" | "failed"
 } {
   try {
@@ -122,12 +131,14 @@ export function previewBrowserAvailability(): {
       source: runtime.source,
       launchStatus,
       ...(launchFailure ? { reason: launchFailure } : {}),
+      ...(launchFailureKind ? { failure: launchFailureKind } : {}),
     }
   } catch (error) {
     return {
       available: false,
       sandboxRequired: true,
-      reason: String(error),
+      reason: error instanceof Error ? error.message : String(error),
+      failure: "other",
       launchStatus,
     }
   }
@@ -180,15 +191,36 @@ async function launchWorker(): Promise<Worker> {
     const worker = await launchPreviewBrowserProcess(driver, executablePath)
     launchStatus = "ready"
     launchFailure = undefined
+    launchFailureKind = undefined
     return worker
   } catch (error) {
     launchStatus = "failed"
-    const details = String(error)
-    launchFailure = /No usable sandbox|Chromium sandboxing failed/.test(details)
-      ? "This host cannot start Chromium with its OS sandbox. Preview rendering requires a host with sandbox support."
-      : `Managed preview browser could not start: ${details.split("\n")[0]}`
+    launchFailureKind = classifyPreviewSandboxFailure(String(error))
+    launchFailure = describePreviewLaunchFailure(String(error))
     throw new PreviewBrowserError("PREVIEW_UNAVAILABLE", launchFailure)
   }
+}
+
+/** Names the host change that lets the sandboxed browser start. */
+export function describePreviewLaunchFailure(
+  details: string,
+  host: { hosted: boolean; userNamespacesRestricted: boolean } = {
+    hosted: isHosted(),
+    userNamespacesRestricted: userNamespacesRestricted(),
+  }
+): string {
+  const failure = classifyPreviewSandboxFailure(
+    details,
+    host.userNamespacesRestricted
+  )
+  // Cloud operators fix the host themselves, so tenants get the generic message.
+  if (failure === "root" && !host.hosted)
+    return "Worktable is running as root, and its preview browser can't start its sandbox as root. Run Worktable as a regular user."
+  if (failure === "apparmor" && !host.hosted)
+    return "This host's AppArmor policy blocks the preview browser's sandbox. Run `worktable preview setup` to allow it."
+  if (failure !== "other")
+    return "This host cannot start Chromium with its OS sandbox. Preview rendering requires a host with sandbox support."
+  return `Managed preview browser could not start: ${details.split("\n")[0]}`
 }
 
 /** Injectable lifecycle boundaries support deterministic tests without an unsafe production launch mode. */
@@ -496,6 +528,21 @@ export function withPreviewPage<T>(
   options: { signal?: AbortSignal } = {}
 ): Promise<T> {
   return (scopedPools.getStore() ?? pool).run(kind, task, options)
+}
+/** Starts the preview browser once, so availability reflects this host now. */
+export async function checkPreviewBrowser(): Promise<
+  ReturnType<typeof previewBrowserAvailability>
+> {
+  try {
+    await withPreviewPage(
+      "html",
+      (page) => page.setContent("<p>Worktable</p>"),
+      { signal: AbortSignal.timeout(20_000) }
+    )
+  } catch {
+    // A failed launch is recorded in the availability returned below.
+  }
+  return previewBrowserAvailability()
 }
 export async function closePreviewBrowsers(): Promise<void> {
   const closing = pool

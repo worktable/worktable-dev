@@ -6,6 +6,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -1279,13 +1280,29 @@ export function uninstallService(): ServiceStatus {
   return getServiceStatus();
 }
 
+function homeOwnerIsRoot(): boolean {
+  try {
+    return statSync(serviceHome()).uid === 0;
+  } catch {
+    return false;
+  }
+}
+
 function statusWith(state: ServiceState, message?: string): ServiceStatus {
   const paths = getServicePaths();
   const warnings = splitBrainWarnings();
+  const installed = Boolean(paths.file && existsSync(paths.file));
+  // Chromium won't start its sandbox as root, and Worktable never disables it.
+  // A user service runs as the owner of the home that holds its unit.
+  if (installed && process.platform === "linux" && homeOwnerIsRoot()) {
+    warnings.push(
+      "The service runs as root, so document previews can't start. Install it as a regular user instead."
+    );
+  }
   return {
     platform: paths.platform,
     state,
-    installed: Boolean(paths.file && existsSync(paths.file)),
+    installed,
     startsAtLogin: false,
     serviceFile: paths.file,
     logs: { stdout: paths.stdout, stderr: paths.stderr },

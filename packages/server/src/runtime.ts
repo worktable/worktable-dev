@@ -165,3 +165,4 @@ export {
   issueTeamPasswordReset,
   setTeamOperator,
 } from "./team-recovery.ts"
+export type { PreviewSandboxFailure } from "./preview-sandbox.ts"

@@ -66,6 +66,13 @@ import {
 } from "./service.ts"
 import { startServiceLogRotation } from "./service-logs.ts"
 import {
+  APPARMOR_PROFILE_PATH,
+  describePreviewProbe,
+  previewBrowserExecutable,
+  probePreviewBrowser,
+  renderAppArmorProfile,
+} from "./preview-host.ts"
+import {
   classifyRuntimeReadiness,
   describeRuntimeReadinessFailure,
   localHostServiceStartMode,
@@ -790,6 +797,63 @@ function readConfigOrFail(): WorktableConfig | null {
   }
 }
 
+async function commandPreviewSetup(): Promise<void> {
+  if (process.platform !== "linux") {
+    console.log("Previews need no setup on this platform.")
+    return
+  }
+  if (process.getuid?.() === 0) {
+    fail(
+      "Run this as the user that runs Worktable, not as root. It asks for sudo when it needs to."
+    )
+    return
+  }
+  const releaseDir = getReleaseDir()
+  const executable = previewBrowserExecutable(releaseDir)
+  if (!releaseDir || !executable) {
+    fail("This Worktable has no packaged preview browser. Reinstall Worktable, then try again.")
+    return
+  }
+  const before = probePreviewBrowser(executable)
+  if (before.ok) {
+    console.log("Previews already work on this host.")
+    return
+  }
+  if (before.reason !== "apparmor") {
+    fail(`Previews are ${describePreviewProbe(before)}`)
+    return
+  }
+  console.log(
+    `Adding an AppArmor rule at ${APPARMOR_PROFILE_PATH} that lets only Worktable's preview browser use its sandbox. sudo may ask for your password.`
+  )
+  const write = Bun.spawnSync(["sudo", "tee", APPARMOR_PROFILE_PATH], {
+    stdin: new TextEncoder().encode(renderAppArmorProfile(releaseDir, executable)),
+    stdout: "ignore",
+    stderr: "inherit",
+  })
+  if (write.exitCode !== 0) {
+    fail(`Couldn't write ${APPARMOR_PROFILE_PATH}.`)
+    return
+  }
+  const parser = existsSync("/usr/sbin/apparmor_parser")
+    ? "/usr/sbin/apparmor_parser"
+    : "apparmor_parser"
+  const load = Bun.spawnSync(["sudo", parser, "-r", APPARMOR_PROFILE_PATH], {
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  if (load.exitCode !== 0) {
+    fail(`Couldn't load ${APPARMOR_PROFILE_PATH} with apparmor_parser.`)
+    return
+  }
+  const probe = probePreviewBrowser(executable)
+  if (!probe.ok) {
+    fail(`The rule is loaded, but previews are still ${describePreviewProbe(probe)}`)
+    return
+  }
+  console.log("Previews work now.")
+}
+
 async function printDoctor(check = false): Promise<void> {
   const config = readConfigOrFail()
   if (!config) return
@@ -870,6 +934,13 @@ async function printDoctor(check = false): Promise<void> {
   console.log(`MCP endpoint:         ${config.mcp.endpoint}`)
   for (const status of mcp) {
     console.log(`MCP ${status.label}:`.padEnd(22) + status.state)
+  }
+  const previewExecutable = previewBrowserExecutable(getReleaseDir())
+  if (previewExecutable) {
+    const probe = probePreviewBrowser(previewExecutable)
+    const line = `Previews:             ${describePreviewProbe(probe)}`
+    console.log(probe.ok ? line : style.yellow(line))
+    if (!probe.ok && check) process.exitCode = 1
   }
   if (!paths.staticDir) {
     console.log()
@@ -5103,6 +5174,13 @@ export function buildProgram(): Command {
     .description("Diagnose installation problems")
     .option("--check", "exit non-zero if the install is degraded")
     .action((opts) => printDoctor(opts.check === true))
+
+  program
+    .command("preview")
+    .description("Set up document previews on this machine")
+    .command("setup")
+    .description("Let the preview browser start its sandbox on this host")
+    .action(() => commandPreviewSetup())
 
   program
     .command("paths")

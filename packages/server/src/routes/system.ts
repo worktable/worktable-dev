@@ -33,6 +33,10 @@ import {
   type WorkspaceOriginSource,
 } from "../workspace-origin.ts";
 import { logError } from "../debug-log.ts";
+import {
+  checkPreviewBrowser,
+  previewBrowserAvailability,
+} from "../document-preview-browser.ts";
 
 // ============================================================
 // System / install control surface
@@ -152,6 +156,7 @@ export interface DeploymentInfo {
     softwareUpdates: boolean;
     workspaceClear?: boolean;
     updateChecks: boolean;
+    previewStatus?: boolean;
     documentSharing: boolean;
   };
 }
@@ -171,6 +176,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       softwareUpdates: !cloud,
       workspaceClear: !cloud,
       updateChecks: !cloud,
+      previewStatus: !cloud,
       documentSharing: getDocumentSharingConfig() !== null,
     },
   };
@@ -189,6 +195,7 @@ systemRouter.get("/deployment", (c) => {
       workspacePortability: owner, editorSettings: owner, historySettings: owner,
       softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
       workspaceClear: deployment.mode !== "cloud" && owner,
+      previewStatus: deployment.mode !== "cloud" && operator,
     });
   }
   return c.json(deployment);
@@ -253,6 +260,36 @@ systemRouter.get("/connection", async (c) => {
       originSource === "config" ||
       originSource === "resource",
   });
+});
+
+type PreviewAvailability = ReturnType<typeof previewBrowserAvailability>;
+
+function previewStatusPayload(availability: PreviewAvailability) {
+  if (!availability.available) {
+    return { status: "unavailable" as const, reason: availability.reason ?? null };
+  }
+  return {
+    status: availability.launchStatus === "ready" ? ("ready" as const) : ("not_checked" as const),
+    reason: null,
+  };
+}
+
+// GET /api/system/previews — whether this host could start the sandboxed
+// preview browser when it last tried. Reading never starts the browser.
+systemRouter.get("/previews", (c) => {
+  if (!canOperateHost(c)) {
+    return c.json({ error: "Forbidden", required: "owner" }, 403);
+  }
+  return c.json(previewStatusPayload(previewBrowserAvailability()));
+});
+
+// POST /api/system/previews/check — start the browser once and report the
+// result. Same-origin like other owner actions, since it spends host resources.
+systemRouter.post("/previews/check", async (c) => {
+  if (!canOperateHost(c) || !sameOriginOrNonBrowserRequest(c)) {
+    return c.json({ error: "Forbidden", required: "owner + same-origin" }, 403);
+  }
+  return c.json(previewStatusPayload(await checkPreviewBrowser()));
 });
 
 function enablesPublicUrl(patch: ServerSettingsPatch): boolean {

@@ -144,8 +144,15 @@ export interface DeploymentInfo {
     historySettings: boolean
     softwareUpdates: boolean
     updateChecks: boolean
+    previewStatus?: boolean
     documentSharing: boolean
   }
+}
+
+/** Whether this host can start the sandboxed browser that renders previews. */
+export interface PreviewStatus {
+  status: "ready" | "not_checked" | "unavailable"
+  reason: string | null
 }
 
 /** How an agent connects to this install, from GET /api/system/connection. */
@@ -261,6 +268,18 @@ export function getHealth() {
 /** How to connect an agent to this install (endpoint, reachability, origin). */
 export function getConnection() {
   return fetchJSON<ConnectionInfo>("/api/system/connection")
+}
+
+/** The preview browser's last observed availability. Never starts it. */
+export function getPreviewStatus() {
+  return fetchJSON<PreviewStatus>("/api/system/previews")
+}
+
+/** Start the preview browser once and report whether it works. */
+export function checkPreviewStatus() {
+  return fetchJSON<PreviewStatus>("/api/system/previews/check", {
+    method: "POST",
+  })
 }
 
 /** Read the persisted server settings that back the Settings dialog toggles. */

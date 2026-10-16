@@ -477,6 +477,34 @@ describe("POST /api/system/update", () => {
   });
 });
 
+describe("/api/system/previews", () => {
+  it("reports why previews can't run, to owners only", async () => {
+    // The temp release has no packaged preview runtime, so the browser can't
+    // start; reading the status says so without trying to launch anything.
+    let res = await app().fetch(
+      new Request("http://localhost/api/system/previews")
+    );
+    expect(res.status).toBe(200);
+    const status = (await res.json()) as { status: string; reason: string };
+    expect(status.status).toBe("unavailable");
+    expect(status.reason).toContain("preview runtime");
+
+    const { token } = await createToken({ scopes: ["docs:read"], agent: "ci" });
+    for (const request of [
+      new Request("http://localhost/api/system/previews", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      new Request("http://localhost/api/system/previews/check", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ]) {
+      res = await app().fetch(request);
+      expect(res.status).toBe(403);
+    }
+  });
+});
+
 describe("GET /api/system/deployment", () => {
   it("returns the self-managed capability matrix", async () => {
     const expected: DeploymentInfo = {
@@ -492,6 +520,7 @@ describe("GET /api/system/deployment", () => {
         softwareUpdates: true,
         workspaceClear: true,
         updateChecks: true,
+        previewStatus: true,
         documentSharing: false,
       },
     };
@@ -517,6 +546,7 @@ describe("GET /api/system/deployment", () => {
         softwareUpdates: false,
         workspaceClear: false,
         updateChecks: false,
+        previewStatus: false,
         documentSharing: false,
       },
     };

@@ -172,8 +172,11 @@ child-process transport issue; each job still receives a fresh isolated context.
 Preview workers require Chromium's OS sandbox. A host without the necessary
 sandbox or Linux shared libraries reports preview unavailable; Worktable does
 not retry with sandboxing disabled. Provision Linux browser dependencies and
-sandbox support when preparing the host. The runtime manifest records its
-installed size and browser executable checksum; the release archive checksum
+sandbox support when preparing the host. The browser can't sandbox itself as
+root, so run the server as a regular user. On Ubuntu 23.10 and later,
+`worktable preview setup` adds the AppArmor rule that lets only the packaged
+browser create the user namespaces its sandbox needs. The runtime manifest
+records its installed size and browser executable checksum; the release archive checksum
 covers the complete driver and browser. Release assembly also requires the
 unmodified local General Sans WOFF2 described in
 [the font provisioning guide](../apps/desktop/ui/fonts/README.md). It packages

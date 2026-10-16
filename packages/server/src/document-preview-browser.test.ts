@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Browser, BrowserServer, Page } from "playwright-core"
-import { PreviewBrowserPool } from "./document-preview-browser"
+import {
+  describePreviewLaunchFailure,
+  PreviewBrowserPool,
+} from "./document-preview-browser"
 
 function fakeWorkers() {
   const events: string[] = []
@@ -186,5 +189,34 @@ describe("isolated preview browser lifecycle", () => {
     await expect(
       pool.run("drawing", async () => "later")
     ).rejects.toMatchObject({ code: "PREVIEW_CANCELLED" })
+  })
+})
+
+describe("preview launch failures", () => {
+  const selfHosted = { hosted: false, userNamespacesRestricted: true }
+
+  test("name the host change that lets the sandbox start", () => {
+    expect(
+      describePreviewLaunchFailure(
+        "Preview browser exited: [ERROR:zygote_host_impl_linux.cc:101] Running as root without --no-sandbox is not supported.",
+        selfHosted
+      )
+    ).toContain("Run Worktable as a regular user")
+    expect(
+      describePreviewLaunchFailure("FATAL: No usable sandbox!", selfHosted)
+    ).toContain("`worktable preview setup`")
+    // Cloud tenants and hosts without Ubuntu's restriction have no CLI fix to offer.
+    for (const host of [
+      { hosted: true, userNamespacesRestricted: true },
+      { hosted: false, userNamespacesRestricted: false },
+    ])
+      expect(
+        describePreviewLaunchFailure("FATAL: No usable sandbox!", host)
+      ).toBe(
+        "This host cannot start Chromium with its OS sandbox. Preview rendering requires a host with sandbox support."
+      )
+    expect(
+      describePreviewLaunchFailure("Error: spawn ENOENT\nstack", selfHosted)
+    ).toBe("Managed preview browser could not start: Error: spawn ENOENT")
   })
 })

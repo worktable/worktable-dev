@@ -180,7 +180,7 @@ const SYSTEM: SettingsSection = {
   id: "system",
   group: "Support",
   label: "System",
-  description: "Version, address, and software updates.",
+  description: "Version, address, previews, and software updates.",
   icon: MonitorCog,
   component: SystemSection,
 }

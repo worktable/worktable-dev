@@ -10,9 +10,11 @@ import { SettingRow } from "@worktable/ui/components/setting-row"
 import { Switch } from "@worktable/ui/components/switch"
 import {
   getConnection,
+  checkPreviewStatus,
   checkSystemVersionNow,
   CACHED_SYSTEM_VERSION_QUERY_KEY,
   getHealth,
+  getPreviewStatus,
   getSystemVersion,
   getUpdateStatus,
   UPDATE_CHECK_FRESH_MS,
@@ -87,6 +89,7 @@ export function SystemSection() {
   return (
     <div className="flex flex-col gap-6">
       <AboutGroup />
+      {deployment?.capabilities.previewStatus ? <PreviewsGroup /> : null}
       {inDesktop && desktopUpdate.isError ? (
         <DesktopUpdateFrame>
           <StatusRow
@@ -222,6 +225,82 @@ function AboutRow({ label, value }: { label: string; value: string | null }) {
         {value ?? "—"}
       </span>
     </div>
+  )
+}
+
+// ── Previews ────────────────────────────────────────────────────────────────
+
+const PREVIEW_STATUS_QUERY_KEY = ["system", "previews"] as const
+
+// Agents see Drawings and HTML Docs through a sandboxed browser on this host.
+// Reading the status never starts that browser; Check starts it once.
+function PreviewsGroup() {
+  const sectionActive = useSettingsSectionActive()
+  const queryClient = useQueryClient()
+  const statusQuery = useQuery({
+    queryKey: PREVIEW_STATUS_QUERY_KEY,
+    queryFn: getPreviewStatus,
+    staleTime: 30_000,
+    enabled: sectionActive,
+  })
+  const check = useMutation({
+    mutationFn: checkPreviewStatus,
+    onSuccess: (status) =>
+      queryClient.setQueryData(PREVIEW_STATUS_QUERY_KEY, status),
+  })
+  const status = check.isError ? undefined : statusQuery.data
+  const description = check.isPending
+    ? "Checking…"
+    : statusQuery.isError || check.isError
+      ? "Couldn’t get the preview status."
+      : status?.status === "ready"
+        ? "Working. Agents can see Drawings and HTML Docs."
+        : status?.status === "unavailable"
+          ? "Unavailable on this host."
+          : status
+            ? "Lets agents see Drawings and HTML Docs. Not checked yet."
+            : undefined
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
+        <SettingRow label="Previews" description={description}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Check previews"
+            onClick={() => check.mutate()}
+            disabled={check.isPending}
+          >
+            {check.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
+            Check
+          </Button>
+        </SettingRow>
+        {!check.isPending && status?.status === "unavailable" && status.reason ? (
+          <p className="text-sm text-muted-foreground">
+            {withInlineCode(status.reason)}
+          </p>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+/** Shows `command` spans from server text as technical notation. */
+function withInlineCode(text: string): ReactNode[] {
+  return text.split("`").map((part, index) =>
+    index % 2 === 1 ? (
+      <code key={index} className="inline-code-accent font-mono">
+        {part}
+      </code>
+    ) : (
+      part
+    )
   )
 }
 

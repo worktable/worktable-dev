@@ -61,6 +61,22 @@ current terminal.
 To make a server reachable from another machine, finish the local setup first,
 then follow [Remote access](/guides/remote-access/).
 
+## Linux servers
+
+Run Worktable as a regular user, not root. Agents see Drawings and HTML Docs
+through previews, which Worktable renders in a sandboxed browser, and that
+browser can't start its sandbox as root.
+
+Ubuntu 23.10 and later block the sandbox until AppArmor allows it. Run this
+once, as the user that runs Worktable:
+
+```sh
+worktable preview setup
+```
+
+It asks for sudo to add an AppArmor rule that covers only Worktable's preview
+browser. `worktable doctor` and Settings → System show whether previews work.
+
 ## Verify the install
 
 ```sh

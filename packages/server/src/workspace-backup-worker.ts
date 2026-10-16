@@ -32,6 +32,25 @@ const DIGEST = /^[a-f0-9]{64}$/
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
 
 /**
+ * A server command's result. The command prints it as one JSON object line;
+ * anything a dependency printed around it is not part of the result.
+ */
+export function commandResult(stdout: string): unknown {
+  const lines = stdout.split("\n").filter((line) => line.trim().startsWith("{"))
+  for (const line of lines.reverse()) {
+    try {
+      return JSON.parse(line)
+    } catch {
+      // Not the result line.
+    }
+  }
+  // Says how much arrived and whether it stopped mid-line, never what it was.
+  throw new Error(
+    `server command printed no JSON result (${Buffer.byteLength(stdout)} bytes${stdout.endsWith("\n") ? "" : ", cut off mid-line"})`
+  )
+}
+
+/**
  * Subprocess output is bounded. Stderr is discarded unless `stderrLimit` asks
  * for its first bytes. Restic stderr is never kept: paths and backend
  * credentials can appear in it.
@@ -444,7 +463,7 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = JSON.parse(inspected)
+          manifest = commandResult(inspected) as WorkspaceSnapshotManifest
           await advance("upload", "uploading")
           const backup = await restic(
             [
@@ -544,7 +563,7 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = JSON.parse(inspected)
+          manifest = commandResult(inspected) as WorkspaceSnapshotManifest
           await advance("verify")
           if (manifest.sourceCheckpoint !== input.sourceCheckpoint)
             throw new Error("downloaded checkpoint does not match the catalog")

@@ -24,6 +24,18 @@ import {
 export type WorkspaceExportMaintenanceResult = LiveOperatorWorkspaceExportResult
 
 /**
+ * Print a command's result and wait until it is written. A pipe takes a large
+ * result in pieces, and the process must not end before the last one.
+ */
+function writeStdoutLine(value: string): Promise<void> {
+  return new Promise((resolve, reject) =>
+    process.stdout.write(`${value}\n`, (error) =>
+      error ? reject(error) : resolve()
+    )
+  )
+}
+
+/**
  * Handle deployment-neutral maintenance commands for the compiled server.
  *
  * The hosted provisioner can execute the same server binary beside a running
@@ -32,7 +44,7 @@ export type WorkspaceExportMaintenanceResult = LiveOperatorWorkspaceExportResult
  */
 export async function runServerMaintenance(
   argv: string[],
-  writeResult: (value: string) => void = console.log,
+  writeResult: (value: string) => unknown = writeStdoutLine,
   requestExport: (
     destination: string
   ) => Promise<WorkspaceExportMaintenanceResult> = requestLiveOperatorWorkspaceExport
@@ -58,7 +70,7 @@ export async function runServerMaintenance(
     )
     if (!response.ok)
       throw new Error(`backup audit failed: HTTP ${response.status}`)
-    writeResult(JSON.stringify(await response.json()))
+    await writeResult(JSON.stringify(await response.json()))
     return true
   }
   const statusIndex = argv.lastIndexOf("workspace-snapshot-restore-status")
@@ -67,7 +79,7 @@ export async function runServerMaintenance(
       throw new Error(
         "usage: worktable-server workspace-snapshot-restore-status <operation-id> <workspace-id> <source-checkpoint> <safety-checkpoint>"
       )
-    writeResult(
+    await writeResult(
       JSON.stringify(
         await readWorkspaceSnapshotRestoreStatus({
           operationId: argv[statusIndex + 1]!,
@@ -109,7 +121,7 @@ export async function runServerMaintenance(
     )
     if (!response.ok)
       throw new Error(`live snapshot restore failed: HTTP ${response.status}`)
-    writeResult(JSON.stringify(await response.json()))
+    await writeResult(JSON.stringify(await response.json()))
     return true
   }
   const recoverIndex = argv.lastIndexOf("workspace-snapshot-recover")
@@ -118,7 +130,7 @@ export async function runServerMaintenance(
       throw new Error(
         "usage: worktable-server workspace-snapshot-recover <operation-id> <workspace-id> <source-checkpoint>"
       )
-    writeResult(
+    await writeResult(
       JSON.stringify(
         await recoverMissingWorkspaceSnapshot(
           argv[recoverIndex + 1]!,
@@ -172,7 +184,7 @@ export async function runServerMaintenance(
       const reason = typeof body?.error === "string" ? `: ${body.error}` : ""
       throw new Error(`live snapshot failed: HTTP ${response.status}${reason}`)
     }
-    writeResult(JSON.stringify(await response.json()))
+    await writeResult(JSON.stringify(await response.json()))
     return true
   }
   const inspectIndex = argv.lastIndexOf("workspace-snapshot-inspect")
@@ -184,7 +196,7 @@ export async function runServerMaintenance(
     const result = await inspectWorkspaceSnapshot(argv[inspectIndex + 1]!, {
       workspaceId: argv[inspectIndex + 2]!,
     })
-    writeResult(JSON.stringify(result))
+    await writeResult(JSON.stringify(result))
     return true
   }
   const identityIndex = argv.lastIndexOf("workspace-inspect")
@@ -194,7 +206,7 @@ export async function runServerMaintenance(
     const layout = await readWorkspaceStorageLayoutAt(getWorkspaceRoot())
     if (layout.kind !== "v1" && layout.kind !== "v2")
       throw new Error("workspace manifest is invalid or unsupported")
-    writeResult(
+    await writeResult(
       JSON.stringify({
         command: "workspace-inspect",
         workspaceId: layout.manifest["id"],
@@ -211,6 +223,6 @@ export async function runServerMaintenance(
 
   const destination = argv[commandIndex + 1]!
   const result = await requestExport(destination)
-  writeResult(JSON.stringify(result))
+  await writeResult(JSON.stringify(result))
   return true
 }

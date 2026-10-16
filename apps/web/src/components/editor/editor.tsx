@@ -352,7 +352,7 @@ function EditorInner({
                 group: "Collaboration",
                 aliases: ["note", "annotation"],
                 subtext: "Attach a comment to this block",
-                icon: <MessageSquarePlus className="h-4 w-4" />,
+                icon: <MessageSquarePlus className="size-4.5" />,
                 onItemClick: () => {
                   const block = editor.getTextCursorPosition().block
                   const selectedText = editor.getSelectedText?.() ?? undefined
@@ -369,7 +369,7 @@ function EditorInner({
                 group: "Collaboration",
                 aliases: ["instruct", "agent", "todo"],
                 subtext: "Attach an agent-visible instruction",
-                icon: <Sparkles className="h-4 w-4" />,
+                icon: <Sparkles className="size-4.5" />,
                 onItemClick: () => {
                   const block = editor.getTextCursorPosition().block
                   const selectedText = editor.getSelectedText?.() ?? undefined
@@ -862,7 +862,7 @@ function AnnotationToolbarButton({
       onClick={() => createAnnotationFromEditor(editor, onAnnotate)}
       label="Annotate"
       mainTooltip="Annotate"
-      icon={<MessageSquarePlus className="h-4 w-4" />}
+      icon={<MessageSquarePlus className="size-3.5" />}
     />
   )
 }

@@ -206,13 +206,12 @@ describe("preview launch failures", () => {
       describePreviewLaunchFailure("FATAL: No usable sandbox!", selfHosted)
     ).toContain("`worktable preview setup`")
     // Cloud tenants and hosts without Ubuntu's restriction have no CLI fix to offer.
-    for (const host of [
-      { hosted: true, userNamespacesRestricted: true },
-      { hosted: false, userNamespacesRestricted: false },
-    ])
-      expect(
-        describePreviewLaunchFailure("FATAL: No usable sandbox!", host)
-      ).toBe(
+    for (const [details, host] of [
+      ["FATAL: No usable sandbox!", { hosted: true, userNamespacesRestricted: true }],
+      ["FATAL: No usable sandbox!", { hosted: false, userNamespacesRestricted: false }],
+      ["Running as root without --no-sandbox is not supported.", { hosted: true, userNamespacesRestricted: false }],
+    ] as const)
+      expect(describePreviewLaunchFailure(details, host)).toBe(
         "This host cannot start Chromium with its OS sandbox. Preview rendering requires a host with sandbox support."
       )
     expect(

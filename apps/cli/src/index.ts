@@ -4827,6 +4827,12 @@ async function commandUninstall(opts: {
   } = loadStableConfigForUninstall()
   const purge = opts.purge === true
   const appDir = getAppDir()
+  // `preview setup` may have added a system AppArmor rule; removing it needs
+  // sudo, which an unattended uninstall can't prompt for, so name the commands.
+  const uninstallReleaseDir = getReleaseDir()
+  const previewProfile = uninstallReleaseDir
+    ? `/etc/apparmor.d/${appArmorProfileName(uninstallReleaseDir)}`
+    : null
   const initialAuthorityState = snapshotLocalAuthorityState()
   if (initialAuthorityState.config !== initialConfigFile) {
     throw new UsageError(
@@ -5005,6 +5011,11 @@ async function commandUninstall(opts: {
       console.log(`Workspace deleted: ${config.workspace}`)
     } else {
       console.log(`Workspace preserved: ${config.workspace}`)
+    }
+    if (previewProfile && existsSync(previewProfile)) {
+      console.log(
+        `Remove the preview AppArmor rule with: sudo apparmor_parser -R ${previewProfile} && sudo rm ${previewProfile}`
+      )
     }
   } finally {
     authorityLock.release()

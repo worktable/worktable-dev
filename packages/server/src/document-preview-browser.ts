@@ -213,9 +213,9 @@ export function describePreviewLaunchFailure(
     details,
     host.userNamespacesRestricted
   )
-  if (failure === "root")
+  // Cloud operators fix the host themselves, so tenants get the generic message.
+  if (failure === "root" && !host.hosted)
     return "Worktable is running as root, and its preview browser can't start its sandbox as root. Run Worktable as a regular user."
-  // Cloud operators fix the host itself; there's no CLI command to point at.
   if (failure === "apparmor" && !host.hosted)
     return "This host's AppArmor policy blocks the preview browser's sandbox. Run `worktable preview setup` to allow it."
   if (failure !== "other")

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -9,7 +9,11 @@ import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { writeSpace } from "./store.ts"
 import { createToken } from "./token-store.ts"
-import { prepareWorkspaceTarget, setWorkspaceRootOverride } from "./workspace.ts"
+import {
+  prepareWorkspaceTarget,
+  setWorkspaceRootOverride,
+  workspaceCacheKey,
+} from "./workspace.ts"
 
 let root: string
 
@@ -28,12 +32,12 @@ async function summary(headers: HeadersInit = {}) {
   return (await response.json()) as { navigation?: unknown }
 }
 
-function save(body: unknown, headers: HeadersInit = {}) {
+function save(body: Record<string, unknown>, headers: HeadersInit = {}) {
   return app().fetch(
     new Request("http://localhost/api/profile/navigation", {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ knownSpaces: ["atlas"], ...body }),
     })
   )
 }
@@ -86,13 +90,34 @@ describe("personal navigation", () => {
     })
     expect(await readFile(spaceFile, "utf8")).toBe(before)
 
+    // A Space that no longer exists is not kept.
+    const gone = await save({
+      expectedRevision: 1,
+      ...arrangement,
+      pins: ["atlas", "deleted"],
+      knownSpaces: ["atlas", "deleted"],
+    })
+    expect((await gone.json()).navigation.pins).toEqual(["atlas"])
+
     // A device that read an older revision gets the current one back.
     const stale = await save({ expectedRevision: 0, ...arrangement, pins: [] })
     expect(stale.status).toBe(409)
     expect(await stale.json()).toMatchObject({
       code: "NAVIGATION_CONFLICT",
-      navigation: { revision: 1, pins: ["atlas"] },
+      navigation: { revision: 2, pins: ["atlas"] },
     })
+  })
+
+  it("keeps the app working, and refuses saves, while the file can't be read", async () => {
+    await mkdir(join(root, "app", "participants"), { recursive: true })
+    await writeFile(
+      join(root, "app", "participants", `${workspaceCacheKey()}.preferences.json`),
+      "{ not json"
+    )
+    expect((await summary()).navigation).toBeNull()
+    const refused = await save({ expectedRevision: 0, ...arrangement })
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ code: "PREFERENCES_UNREADABLE" })
   })
 
   it("refuses agents and inconsistent arrangements", async () => {

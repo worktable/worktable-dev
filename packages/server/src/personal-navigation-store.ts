@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { chmod, mkdir, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
@@ -48,19 +48,31 @@ function parsePreferences(text: string): PreferencesFile {
   return { type: "worktable.personal-preferences", version: 1, people }
 }
 
-// Every write replaces the file through a rename, so a new inode marks a new
-// version and the read path costs one stat.
-let cached: { path: string; stamp: string; file: PreferencesFile } | null = null
+function readFromDisk(path: string): PreferencesFile {
+  try {
+    return parsePreferences(readFileSync(path, "utf8"))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyFile()
+    throw new PreferencesUnreadableError()
+  }
+}
+
+/** The preferences file exists but cannot be read or parsed. */
+export class PreferencesUnreadableError extends Error {
+  readonly code = "PREFERENCES_UNREADABLE"
+  constructor() {
+    super("Personal preferences can't be read")
+  }
+}
+
+// Only this server writes the file, so it is read once and then kept current
+// by its own saves: the summary every page carries costs no file I/O.
+let cached: { path: string; file: PreferencesFile } | null = null
 
 function readPreferences(): PreferencesFile {
   const path = preferencesPath()
-  const info = statSync(path, { throwIfNoEntry: false })
-  if (!info) return emptyFile()
-  const stamp = `${info.ino}:${info.size}:${info.mtimeMs}`
-  if (cached?.path === path && cached.stamp === stamp) return cached.file
-  const file = parsePreferences(readFileSync(path, "utf8"))
-  cached = { path, stamp, file }
-  return file
+  if (cached?.path !== path) cached = { path, file: readFromDisk(path) }
+  return cached.file
 }
 
 let tmpCounter = 0
@@ -72,7 +84,7 @@ async function savePreferences(file: PreferencesFile): Promise<void> {
   await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf8")
   await chmod(tmp, 0o600)
   await rename(tmp, path)
-  cached = null
+  cached = { path: preferencesPath(), file }
 }
 
 let mutationQueue: Promise<unknown> = Promise.resolve()
@@ -132,40 +144,51 @@ export type SavePersonalNavigationResult =
 
 /**
  * Replace the person's navigation if nobody saved since `expectedRevision`.
- * Entries for Spaces they cannot read right now are kept, so access that
- * returns brings their arrangement back.
+ * `knownSpaces` are the Spaces the client could show when it made the
+ * change. Entries for any other Space, such as one the person cannot read
+ * now or could not read when the client loaded, are kept, so access that
+ * returns brings their arrangement back. Entries for Spaces that no longer
+ * exist are dropped, so a later Space with the same id starts fresh.
  */
 export function savePersonalNavigation(
   personKey: string,
   expectedRevision: number,
   next: Omit<PersonalNavigation, "revision">,
-  canRead: (spaceId: string) => boolean
+  knownSpaces: readonly string[],
+  canRead: (spaceId: string) => boolean,
+  existingSpaces: readonly string[]
 ): Promise<SavePersonalNavigationResult> {
   return serialized(async () => {
-    cached = null
-    const file = readPreferences()
+    const path = preferencesPath()
+    const file = readFromDisk(path)
+    cached = { path, file }
     const stored =
       file.people[personKey]?.navigation ?? EMPTY_PERSONAL_NAVIGATION
     if (stored.revision !== expectedRevision) {
       return { saved: false, current: visible(stored, canRead) }
     }
+    const exists = new Set(existingSpaces)
+    const known = new Set(knownSpaces)
+    const kept = (spaceId: string) =>
+      exists.has(spaceId) && (!canRead(spaceId) || !known.has(spaceId))
+    const chosen = (spaceId: string) =>
+      exists.has(spaceId) && canRead(spaceId) && known.has(spaceId)
     const groupIds = new Set(next.groups.map((group) => group.id))
-    const hiddenAssignments = Object.entries(stored.spaceGroups).filter(
-      ([spaceId, groupId]) => !canRead(spaceId) && groupIds.has(groupId)
-    )
-    const pins = next.pins.filter(canRead)
+    const pins = next.pins.filter(chosen)
     for (const spaceId of stored.pins) {
-      if (!canRead(spaceId) && !pins.includes(spaceId)) pins.push(spaceId)
+      if (kept(spaceId) && !pins.includes(spaceId)) pins.push(spaceId)
     }
     const navigation: PersonalNavigation = {
       revision: stored.revision + 1,
       groups: next.groups,
       spaceGroups: {
-        ...Object.fromEntries(hiddenAssignments),
         ...Object.fromEntries(
-          Object.entries(next.spaceGroups).filter(([spaceId]) =>
-            canRead(spaceId)
+          Object.entries(stored.spaceGroups).filter(
+            ([spaceId, groupId]) => kept(spaceId) && groupIds.has(groupId)
           )
+        ),
+        ...Object.fromEntries(
+          Object.entries(next.spaceGroups).filter(([spaceId]) => chosen(spaceId))
         ),
       },
       pins,

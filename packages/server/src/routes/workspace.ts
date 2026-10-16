@@ -806,10 +806,10 @@ workspaceRouter.put("/", async (c) => {
   return chainManifestWrite(() => applyWorkspacePatch(c, body))
 })
 
-function applyWorkspacePatch(
+async function applyWorkspacePatch(
   c: Context,
   body: { name?: unknown; onboarding?: unknown }
-) {
+): Promise<Response> {
   const current = ensureWorkspaceManifest()
   const next: WorkspaceManifest = { ...current }
 
@@ -847,7 +847,7 @@ function applyWorkspacePatch(
   }
 
   writeWorkspaceManifest(next)
-  // Hosted browser owners may rename but never receive the filesystem root.
-  // Local owners retain the existing owner-gated PUT response.
-  return c.json(publicView(next, { includeRoot: canReadWorkspaceRoot(c) }))
+  // The whole summary, so a client replacing its copy keeps the person's
+  // navigation and team context. The root stays owner and same-origin only.
+  return c.json(await workspaceSummary(c))
 }

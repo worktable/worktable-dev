@@ -2,6 +2,7 @@ import { getTeamAuth } from "../team-auth.ts";
 import { requireTeamDatabase, currentTeamWorktable } from "../team-database.ts";
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { Hono } from "hono"
+import { z } from "zod"
 import { canManageUserSettings } from "../auth.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { teamsEnabled } from "../team-database.ts"
@@ -11,7 +12,11 @@ import {
   personalNavigationProblem,
 } from "@worktable/types"
 import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
-import { savePersonalNavigation } from "../personal-navigation-store.ts"
+import {
+  PreferencesUnreadableError,
+  savePersonalNavigation,
+} from "../personal-navigation-store.ts"
+import { occupiedSpaceIds } from "../store.ts"
 import { wsManager } from "../ws.ts"
 
 export const profileRouter = new Hono()
@@ -59,7 +64,11 @@ profileRouter.put("/", async (c) => {
 
 const SaveNavigationSchema = PersonalNavigationSchema.omit({
   revision: true,
-}).extend({ expectedRevision: PersonalNavigationSchema.shape.revision })
+}).extend({
+  expectedRevision: PersonalNavigationSchema.shape.revision,
+  /** The Spaces the client could show; entries for others are kept. */
+  knownSpaces: z.array(z.string().min(1).max(200)).max(5000),
+})
 
 // The person's own groups and pins. Reads arrive with the workspace summary.
 profileRouter.put("/navigation", async (c) => {
@@ -71,13 +80,23 @@ profileRouter.put("/navigation", async (c) => {
   if (!parsed.success) return c.json({ error: "Invalid navigation" }, 400)
   const problem = personalNavigationProblem(parsed.data)
   if (problem) return c.json({ error: problem }, 400)
-  const { expectedRevision, ...next } = parsed.data
-  const result = await savePersonalNavigation(
-    person,
-    expectedRevision,
-    next,
-    canReadSpaceFor(c)
-  )
+  const { expectedRevision, knownSpaces, ...next } = parsed.data
+  let result
+  try {
+    result = await savePersonalNavigation(
+      person,
+      expectedRevision,
+      next,
+      knownSpaces,
+      canReadSpaceFor(c),
+      await occupiedSpaceIds()
+    )
+  } catch (error) {
+    if (error instanceof PreferencesUnreadableError) {
+      return c.json({ error: error.message, code: error.code }, 503)
+    }
+    throw error
+  }
   if (!result.saved) {
     return c.json(
       {

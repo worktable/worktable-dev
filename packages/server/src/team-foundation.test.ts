@@ -746,12 +746,12 @@ describe("team foundation", () => {
       next.route("/api/profile", profileRouter)
       return next
     }
-    const save = (identity: TokenIdentity, body: unknown) =>
+    const save = (identity: TokenIdentity, body: Record<string, unknown>) =>
       as(identity).fetch(
         new Request("http://localhost/api/profile/navigation", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ knownSpaces: ["original"], ...body }),
         })
       )
     const navigation = async (identity: TokenIdentity) =>
@@ -791,6 +791,13 @@ describe("team foundation", () => {
 
     grantBob("read")
     expect(await navigation(member)).toEqual({ ...arrangement, revision: 2, groups: more })
+
+    // A tab that loaded while the Space was hidden doesn't know it, so its
+    // change leaves the Space's placement alone.
+    expect(
+      (await save(member, { expectedRevision: 2, groups: more, spaceGroups: {}, pins: [], knownSpaces: [] })).status
+    ).toBe(200)
+    expect(await navigation(member)).toEqual({ ...arrangement, revision: 3, groups: more })
     expect(await navigation(owner)).toEqual({ revision: 1, ...arrangement })
   })
 

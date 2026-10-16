@@ -14,6 +14,7 @@ import {
 import type { Context, MiddlewareHandler, Next } from "hono"
 import { routePath } from "hono/route"
 import { debugLogging, logError } from "./debug-log.ts"
+import { isHosted } from "./hosted.ts"
 import { noteServerActivity, recordRouteLatency } from "./perf-diagnostics.ts"
 
 /**
@@ -144,9 +145,13 @@ export function timedMiddleware(
 
 /**
  * The Cloud gateway's id for this request, so a log line can be matched to
- * the gateway's record of it. Only a well-formed opaque id is logged.
+ * the gateway's record of it. Only a hosted tenant logs it: there every
+ * request passed gateway admission, and the gateway generates the id. A
+ * local or self-hosted server ignores the header, since any client could set
+ * it.
  */
 function requestIdOf(c: Context): string {
+  if (!isHosted()) return ""
   const id = c.req.header(REQUEST_ID_HEADER)
   return id && REQUEST_ID_PATTERN.test(id) ? ` request=${id}` : ""
 }

@@ -17,7 +17,10 @@
       "gzip": 321600,
       "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
     },
-    "rich document": { "gzip": 785000 },
+    "rich document": {
+      "gzip": 801900,
+      "why": "The sidebar footer shows who is signed in, with a menu for Profile, Preferences, the theme and Sign Out, and Settings groups into You, the Worktable and Support."
+    },
     "html document": {
       "gzip": 349200,
       "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu."

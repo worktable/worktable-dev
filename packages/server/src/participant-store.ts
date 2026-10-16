@@ -7,7 +7,7 @@ import {
   defaultAgentNameForLabel,
   ParticipantRefSchema,
 } from "@worktable/types"
-import { ensureAppDir } from "./app-storage.ts"
+import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
 import { renameThreadMember, scanAllThreadDigests } from "./thread-store.ts"
@@ -61,8 +61,8 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
   return next
 }
 
-function bindingsPath(): string {
-  return join(ensureAppDir(), "participants", `${workspaceCacheKey()}.json`)
+function bindingsPath(appDir = ensureAppDir()): string {
+  return join(appDir, "participants", `${workspaceCacheKey()}.json`)
 }
 
 async function loadBindings(): Promise<ParticipantBindingsFile> {
@@ -382,7 +382,8 @@ let namesCache: { path: string; names: Map<string, string> } | null = null
 
 /** A participant's current name, for summaries that ride along with every page. */
 export function participantNameForKey(key: string): string | null {
-  const path = bindingsPath()
+  // Reading creates nothing, so it costs no directory check.
+  const path = bindingsPath(getAppDir())
   if (namesCache?.path !== path) {
     const names = new Map<string, string>()
     try {

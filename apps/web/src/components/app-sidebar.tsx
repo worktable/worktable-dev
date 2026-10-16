@@ -285,7 +285,7 @@ const SpaceSection = memo(function SpaceSection({
   const spaceRoute = `/spaces/${space.id}`
   const relation = useRouteRelation(spaceRoute)
   const isInSpace = relation !== null
-  const [expanded, setExpanded] = useState(isInSpace)
+  const [expanded, setExpanded] = useState(followRoute && isInSpace)
   const userCollapsedRef = useRef(false)
 
   useEffect(() => {

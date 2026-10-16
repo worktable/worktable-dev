@@ -30,6 +30,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Cloud backups:** Backups of Worktables with many files no longer fail while reading their own record of what was saved.
 - **Shared Docs:** Checklists and toggles display correctly, and wide tables no longer make the page scroll sideways on phones. Footnotes, links and table alignment in shared Markdown Docs are kept.
 - **Thread messages:** While you type in a thread, the cursor stays with your text instead of falling behind it or sitting on a different line.
 - **Opening rich text Docs:** Nothing moves when a Doc becomes editable. Its title stays put, and while it opens, its images, checklists, toggles, colors and tables already look as they will.

@@ -32,6 +32,32 @@ const DIGEST = /^[a-f0-9]{64}$/
 const sha = (value: string) => createHash("sha256").update(value).digest("hex")
 
 /**
+ * The snapshot manifest a server command printed. The command prints it as
+ * one JSON line; anything a dependency printed around it, JSON or not, is
+ * not the manifest.
+ */
+export function snapshotManifestResult(stdout: string): unknown {
+  const lines = stdout.split("\n").filter((line) => line.trim().startsWith("{"))
+  for (const line of lines.reverse()) {
+    try {
+      const value: unknown = JSON.parse(line)
+      if (
+        value !== null &&
+        typeof value === "object" &&
+        (value as { type?: unknown }).type === "worktable.workspace-snapshot"
+      )
+        return value
+    } catch {
+      // Not the manifest line.
+    }
+  }
+  // Says how much arrived and whether it stopped mid-line, never what it was.
+  throw new Error(
+    `server command printed no snapshot manifest (${Buffer.byteLength(stdout)} bytes${stdout.endsWith("\n") ? "" : ", cut off mid-line"})`
+  )
+}
+
+/**
  * Subprocess output is bounded. Stderr is discarded unless `stderrLimit` asks
  * for its first bytes. Restic stderr is never kept: paths and backend
  * credentials can appear in it.
@@ -444,7 +470,7 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = JSON.parse(inspected)
+          manifest = snapshotManifestResult(inspected) as WorkspaceSnapshotManifest
           await advance("upload", "uploading")
           const backup = await restic(
             [
@@ -544,7 +570,7 @@ async function runBackupSteps(
             input.workspaceId,
           ])
           await advance("parse-manifest")
-          manifest = JSON.parse(inspected)
+          manifest = snapshotManifestResult(inspected) as WorkspaceSnapshotManifest
           await advance("verify")
           if (manifest.sourceCheckpoint !== input.sourceCheckpoint)
             throw new Error("downloaded checkpoint does not match the catalog")

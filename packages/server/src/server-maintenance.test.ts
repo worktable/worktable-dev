@@ -23,7 +23,10 @@ import {
   setWorkspaceRootOverride,
 } from "./workspace.ts"
 import { writeDoc } from "./store.ts"
-import { inspectWorkspaceSnapshot } from "./workspace-snapshot.ts"
+import {
+  inspectWorkspaceSnapshot,
+  writeWorkspaceSnapshot,
+} from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 
@@ -290,4 +293,38 @@ describe("server maintenance entrypoint", () => {
       destination,
     })
   })
+
+  it("delivers a large result whole through a pipe", async () => {
+    // A manifest of a few thousand files is larger than a pipe takes at once.
+    const docs = join(workspace, "spaces", "notes", "docs")
+    for (let index = 0; index < 3000; index++)
+      await writeFile(join(docs, `note-${index}-with-a-longer-name.md`), "#\n")
+    const capture = join(root, "capture")
+    const manifest = await writeWorkspaceSnapshot(capture)
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "index.ts"),
+        "workspace-snapshot-inspect",
+        capture,
+        manifest.workspaceId,
+      ],
+      {
+        env: {
+          ...process.env,
+          WORKTABLE_WORKSPACE: workspace,
+          WORKTABLE_APP_DIR: join(root, "app"),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    )
+    const [exitCode, stdout] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+    ])
+    expect(exitCode).toBe(0)
+    expect(stdout.length).toBeGreaterThan(200_000)
+    expect(JSON.parse(stdout).files).toHaveLength(manifest.files.length)
+  }, 60_000)
 })

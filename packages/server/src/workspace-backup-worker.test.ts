@@ -133,6 +133,7 @@ describe("backup worker failures", () => {
 
   it("records a failed upload by step and exit code only", async () => {
     const manifest = JSON.stringify({
+      type: "worktable.workspace-snapshot",
       workspaceId: "ws_backup_test",
       files: [],
     })
@@ -147,5 +148,32 @@ describe("backup worker failures", () => {
       message: "backup upload failed (exit 3)",
     })
     expect(job.progress).toMatchObject({ phase: "uploading", step: "upload" })
+  })
+
+  it("reads the manifest from among other lines the server printed", async () => {
+    const manifest = JSON.stringify({
+      type: "worktable.workspace-snapshot",
+      workspaceId: "ws_backup_test",
+      files: [],
+    })
+    const job = await runJob({
+      restic: await fakeRestic(3),
+      server: await fakeServer(
+        `echo 'a dependency notice'; echo '${manifest}'; echo '{"level":"info"}'`
+      ),
+    })
+    // The manifest parsed: the job reached the upload.
+    expect(job.failure.detail.step).toBe("upload")
+  })
+
+  it("says how much of a cut-off result arrived, without quoting it", async () => {
+    const job = await runJob({
+      restic: await fakeRestic(0),
+      server: await fakeServer(`printf '{"workspaceId":"ws_backup_test","fi'`),
+    })
+    expect(job.failure.detail).toMatchObject({
+      step: "parse-manifest",
+      message: "server command printed no snapshot manifest (35 bytes, cut off mid-line)",
+    })
   })
 })

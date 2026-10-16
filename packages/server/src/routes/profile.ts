@@ -97,6 +97,15 @@ profileRouter.put("/navigation", async (c) => {
     }
     throw error
   }
+  if (!result.saved && "tooLarge" in result) {
+    return c.json(
+      {
+        error: "Too many pins or grouped Spaces to save",
+        code: "NAVIGATION_TOO_LARGE",
+      },
+      400
+    )
+  }
   if (!result.saved) {
     return c.json(
       {

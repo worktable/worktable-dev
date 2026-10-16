@@ -66,10 +66,9 @@ import {
 } from "./service.ts"
 import { startServiceLogRotation } from "./service-logs.ts"
 import {
-  APPARMOR_PROFILE_PATH,
-  describePreviewProbe,
+  appArmorProfileName,
+  checkInstalledPreviews,
   previewBrowserExecutable,
-  probePreviewBrowser,
   renderAppArmorProfile,
 } from "./preview-host.ts"
 import {
@@ -810,45 +809,52 @@ async function commandPreviewSetup(): Promise<void> {
   }
   const releaseDir = getReleaseDir()
   const executable = previewBrowserExecutable(releaseDir)
-  if (!releaseDir || !executable) {
-    fail("This Worktable has no packaged preview browser. Reinstall Worktable, then try again.")
+  const before = await checkInstalledPreviews()
+  if (!before || !releaseDir || !executable) {
+    fail(
+      "This Worktable has no packaged preview browser. Reinstall Worktable, then try again."
+    )
     return
   }
-  const before = probePreviewBrowser(executable)
   if (before.ok) {
     console.log("Previews already work on this host.")
     return
   }
-  if (before.reason !== "apparmor") {
-    fail(`Previews are ${describePreviewProbe(before)}`)
+  if (before.failure !== "apparmor") {
+    fail(before.reason)
     return
   }
+  const profilePath = `/etc/apparmor.d/${appArmorProfileName(releaseDir)}`
   console.log(
-    `Adding an AppArmor rule at ${APPARMOR_PROFILE_PATH} that lets only Worktable's preview browser use its sandbox. sudo may ask for your password.`
+    `Adding an AppArmor rule at ${profilePath}. It lets programs at this install's preview browser path, which this account can write, create the user namespaces Chromium's sandbox needs. sudo may ask for your password.`
   )
-  const write = Bun.spawnSync(["sudo", "tee", APPARMOR_PROFILE_PATH], {
-    stdin: new TextEncoder().encode(renderAppArmorProfile(releaseDir, executable)),
+  const write = Bun.spawnSync(["sudo", "tee", profilePath], {
+    stdin: new TextEncoder().encode(
+      renderAppArmorProfile(releaseDir, executable)
+    ),
     stdout: "ignore",
     stderr: "inherit",
   })
   if (write.exitCode !== 0) {
-    fail(`Couldn't write ${APPARMOR_PROFILE_PATH}.`)
+    fail(`Couldn't write ${profilePath}.`)
     return
   }
   const parser = existsSync("/usr/sbin/apparmor_parser")
     ? "/usr/sbin/apparmor_parser"
     : "apparmor_parser"
-  const load = Bun.spawnSync(["sudo", parser, "-r", APPARMOR_PROFILE_PATH], {
+  const load = Bun.spawnSync(["sudo", parser, "-r", profilePath], {
     stdout: "inherit",
     stderr: "inherit",
   })
   if (load.exitCode !== 0) {
-    fail(`Couldn't load ${APPARMOR_PROFILE_PATH} with apparmor_parser.`)
+    fail(`Couldn't load ${profilePath} with apparmor_parser.`)
     return
   }
-  const probe = probePreviewBrowser(executable)
-  if (!probe.ok) {
-    fail(`The rule is loaded, but previews are still ${describePreviewProbe(probe)}`)
+  const after = await checkInstalledPreviews()
+  if (!after?.ok) {
+    fail(
+      `The rule is loaded, but previews still can't start. ${after?.reason ?? ""}`.trim()
+    )
     return
   }
   console.log("Previews work now.")
@@ -935,12 +941,14 @@ async function printDoctor(check = false): Promise<void> {
   for (const status of mcp) {
     console.log(`MCP ${status.label}:`.padEnd(22) + status.state)
   }
-  const previewExecutable = previewBrowserExecutable(getReleaseDir())
-  if (previewExecutable) {
-    const probe = probePreviewBrowser(previewExecutable)
-    const line = `Previews:             ${describePreviewProbe(probe)}`
-    console.log(probe.ok ? line : style.yellow(line))
-    if (!probe.ok && check) process.exitCode = 1
+  const previews = await checkInstalledPreviews()
+  if (previews) {
+    console.log(
+      previews.ok
+        ? "Previews:             working"
+        : style.yellow(`Previews:             unavailable. ${previews.reason}`)
+    )
+    if (!previews.ok && check) process.exitCode = 1
   }
   if (!paths.staticDir) {
     console.log()

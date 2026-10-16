@@ -245,8 +245,11 @@ function PreviewsGroup() {
   })
   const check = useMutation({
     mutationFn: checkPreviewStatus,
-    onSuccess: (status) =>
-      queryClient.setQueryData(PREVIEW_STATUS_QUERY_KEY, status),
+    onSuccess: async (status) => {
+      // An older status read must not land on top of this result.
+      await queryClient.cancelQueries({ queryKey: PREVIEW_STATUS_QUERY_KEY })
+      queryClient.setQueryData(PREVIEW_STATUS_QUERY_KEY, status)
+    },
   })
   const status = check.isError ? undefined : statusQuery.data
   const description = check.isPending

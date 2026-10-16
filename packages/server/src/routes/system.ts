@@ -274,9 +274,15 @@ function previewStatusPayload(availability: PreviewAvailability) {
   };
 }
 
+const PREVIEW_HOST_MANAGED = {
+  error: "Preview hosts are managed by Worktable Cloud.",
+  code: "HOSTED_DISABLED",
+} as const;
+
 // GET /api/system/previews — whether this host could start the sandboxed
 // preview browser when it last tried. Reading never starts the browser.
 systemRouter.get("/previews", (c) => {
+  if (isHosted()) return c.json(PREVIEW_HOST_MANAGED, 403);
   if (!canOperateHost(c)) {
     return c.json({ error: "Forbidden", required: "owner" }, 403);
   }
@@ -286,6 +292,7 @@ systemRouter.get("/previews", (c) => {
 // POST /api/system/previews/check — start the browser once and report the
 // result. Same-origin like other owner actions, since it spends host resources.
 systemRouter.post("/previews/check", async (c) => {
+  if (isHosted()) return c.json(PREVIEW_HOST_MANAGED, 403);
   if (!canOperateHost(c) || !sameOriginOrNonBrowserRequest(c)) {
     return c.json({ error: "Forbidden", required: "owner + same-origin" }, 403);
   }

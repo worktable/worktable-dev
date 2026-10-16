@@ -503,6 +503,18 @@ describe("/api/system/previews", () => {
       expect(res.status).toBe(403);
     }
   });
+
+  it("leaves Cloud preview hosts to the operator", async () => {
+    process.env["WORKTABLE_HOSTED"] = "1";
+    const res = await routeApp().fetch(
+      new Request("http://localhost/api/system/previews/check", {
+        method: "POST",
+        headers: { Origin: "http://localhost", "Sec-Fetch-Site": "same-origin" },
+      })
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("HOSTED_DISABLED");
+  });
 });
 
 describe("GET /api/system/deployment", () => {

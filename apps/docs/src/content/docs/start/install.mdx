@@ -74,8 +74,10 @@ once, as the user that runs Worktable:
 worktable preview setup
 ```
 
-It asks for sudo to add an AppArmor rule that covers only Worktable's preview
-browser. `worktable doctor` and Settings → System show whether previews work.
+It asks for sudo to add an AppArmor rule for this install's preview browser.
+The rule matches the browser's path under your account, so anything your
+account puts at that path can also create user namespaces. `worktable doctor`
+and Settings → System show whether previews work.
 
 ## Verify the install
 

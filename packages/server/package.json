@@ -8,7 +8,8 @@
     "./store": "./src/store.ts",
     "./start": "./src/start.ts",
     "./mcp": "./src/mcp/index.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./preview": "./src/document-preview-browser.ts"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",

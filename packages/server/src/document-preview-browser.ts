@@ -6,6 +6,7 @@ import { isHosted } from "./hosted.ts"
 import {
   classifyPreviewSandboxFailure,
   userNamespacesRestricted,
+  type PreviewSandboxFailure,
 } from "./preview-sandbox.ts"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { existsSync, readFileSync } from "node:fs"
@@ -30,6 +31,7 @@ export class PreviewBrowserError extends Error {
 const DRIVER_VERSION = "1.61.1"
 let launchStatus: "not_checked" | "ready" | "failed" = "not_checked"
 let launchFailure: string | undefined
+let launchFailureKind: PreviewSandboxFailure | undefined
 const localRequire = createRequire(import.meta.url)
 interface Runtime {
   driver: typeof import("playwright-core")
@@ -117,6 +119,8 @@ export function previewBrowserAvailability(): {
   sandboxRequired: true
   source?: string
   reason?: string
+  /** Why the browser couldn't start, when it couldn't. */
+  failure?: PreviewSandboxFailure
   launchStatus: "not_checked" | "ready" | "failed"
 } {
   try {
@@ -127,12 +131,14 @@ export function previewBrowserAvailability(): {
       source: runtime.source,
       launchStatus,
       ...(launchFailure ? { reason: launchFailure } : {}),
+      ...(launchFailureKind ? { failure: launchFailureKind } : {}),
     }
   } catch (error) {
     return {
       available: false,
       sandboxRequired: true,
-      reason: String(error),
+      reason: error instanceof Error ? error.message : String(error),
+      failure: "other",
       launchStatus,
     }
   }
@@ -185,9 +191,11 @@ async function launchWorker(): Promise<Worker> {
     const worker = await launchPreviewBrowserProcess(driver, executablePath)
     launchStatus = "ready"
     launchFailure = undefined
+    launchFailureKind = undefined
     return worker
   } catch (error) {
     launchStatus = "failed"
+    launchFailureKind = classifyPreviewSandboxFailure(String(error))
     launchFailure = describePreviewLaunchFailure(String(error))
     throw new PreviewBrowserError("PREVIEW_UNAVAILABLE", launchFailure)
   }

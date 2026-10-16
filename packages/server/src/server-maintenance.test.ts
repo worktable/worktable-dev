@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test"
 import {
   cp,
   mkdir,
@@ -15,6 +22,7 @@ import { setAppDirOverride } from "./app-storage.ts"
 import {
   importWorkspaceExportV2,
   inspectWorkspaceExportV2,
+  setWorkspaceExportCaptureHookForTests,
 } from "./workspace-transfer-v2.ts"
 import { setWorkspaceExportFlush } from "./workspace-export-coordinator.ts"
 import { startServer, stopActiveServer } from "./index.ts"
@@ -29,6 +37,7 @@ import {
 } from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
+import { isWorkspaceRequestAdmissionOpen } from "./workspace-request-lifecycle.ts"
 
 let root: string
 let workspace: string
@@ -56,6 +65,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopActiveServer()
+  setSystemTime()
+  setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportFlush(null)
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -166,6 +177,33 @@ describe("server maintenance entrypoint", () => {
       )
     ).toContain("Hello")
   })
+  it("admits edits while a live capture copies the workspace and holds them only to record changes", async () => {
+    for (let index = 0; index < 50; index += 1)
+      await writeFile(
+        join(workspace, "spaces", "notes", "docs", `note-${index}.md`),
+        `# Note ${index}\n`
+      )
+    // Settled files are copied beside live writers.
+    setSystemTime(new Date(Date.now() + 60_000))
+    const server = startServer(0, "127.0.0.1")
+    process.env["PORT"] = String(server.port)
+    const copies: Array<{ path: string; held: boolean; admitted: boolean }> = []
+    setWorkspaceExportCaptureHookForTests(async ({ path, held }) => {
+      copies.push({ path, held, admitted: isWorkspaceRequestAdmissionOpen() })
+    })
+    const output: string[] = []
+    await runServerMaintenance(
+      ["workspace-snapshot", "live-delta-test", "30000"],
+      (value) => output.push(value)
+    )
+    const saved = JSON.parse(output[0]!)
+    const notes = copies.filter((copy) => copy.path.includes("/note-"))
+    expect(notes).toHaveLength(50)
+    expect(notes.every((copy) => !copy.held && copy.admitted)).toBe(true)
+    expect(copies.every((copy) => copy.held !== copy.admitted)).toBe(true)
+    expect(saved.captureBarrierMs).toBeGreaterThan(0)
+  })
+
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(
       root,

@@ -66,11 +66,11 @@ function buildApp(): Hono {
   return hono
 }
 
-async function call(
+async function call<T = unknown>(
   method: string,
   path: string,
   options: { actor?: string; body?: unknown } = {}
-): Promise<any> {
+): Promise<T> {
   const response = await app.fetch(
     new Request(`http://localhost/api/spaces/${spaceId}/docs/${path}`, {
       method,
@@ -83,7 +83,7 @@ async function call(
   )
   const json = await response.json()
   expect({ status: response.status, json }).toMatchObject({ status: 200 })
-  return json
+  return json as T
 }
 
 function save(at: Date, actor: string, text: string): Promise<unknown> {
@@ -99,12 +99,15 @@ function save(at: Date, actor: string, text: string): Promise<unknown> {
 }
 
 async function history(): Promise<Version[]> {
-  return (await call("GET", "notes/versions?all=true")).versions
+  return (await call<{ versions: Version[] }>("GET", "notes/versions?all=true"))
+    .versions
 }
 
 async function contentOf(versionId: string): Promise<string> {
-  const blocks = (await call("GET", `notes/versions/${versionId}`)).version
-    .after.content as Array<{ content: Array<{ text: string }> }>
+  const { version } = await call<{
+    version: { after: { content: Array<{ content: Array<{ text: string }> }> } }
+  }>("GET", `notes/versions/${versionId}`)
+  const blocks = version.after.content
   return blocks
     .map((block) => block.content.map((inline) => inline.text).join(""))
     .join("\n")

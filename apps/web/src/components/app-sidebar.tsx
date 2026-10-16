@@ -51,7 +51,6 @@ import {
   GroupLabel,
   GroupNameDialog,
   SpacesHeading,
-  sortedGroups,
 } from "@/components/sidebar/space-groups"
 import {
   addGroup,
@@ -60,6 +59,7 @@ import {
   removeGroup,
   renameGroup,
   restoreGroup,
+  sortedGroups,
   togglePin,
   usePersonalNavigation,
 } from "@/lib/personal-navigation"

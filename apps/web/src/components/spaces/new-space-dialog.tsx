@@ -13,7 +13,7 @@ import { Input } from "@worktable/ui/components/input"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { LayoutGrid, Layers, FolderOpen } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
-import { sortedGroups } from "@/components/sidebar/space-groups"
+import { sortedGroups } from "@/lib/personal-navigation"
 import { moveToGroup, usePersonalNavigation } from "@/lib/personal-navigation"
 
 interface NewSpaceDialogProps {

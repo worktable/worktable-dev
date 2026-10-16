@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   Check,
   ChevronDown,
@@ -31,14 +31,9 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { sortedGroups } from "@/lib/personal-navigation"
 
 const MAX_GROUP_NAME = 60
-
-export function sortedGroups(groups: readonly PersonalGroup[]): PersonalGroup[] {
-  return [...groups].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-  )
-}
 
 /** Names a new group or renames one; names are unique, ignoring case. */
 export function GroupNameDialog({
@@ -57,9 +52,13 @@ export function GroupNameDialog({
 }) {
   const isMobile = useIsMobile()
   const [name, setName] = useState(group?.name ?? "")
-  useEffect(() => {
+  // Each opening starts from the group's current name, or empty.
+  const [openedFor, setOpenedFor] = useState<PersonalGroup | null | undefined>()
+  const openKey = open ? (group ?? null) : undefined
+  if (openKey !== openedFor) {
+    setOpenedFor(openKey)
     if (open) setName(group?.name ?? "")
-  }, [open, group])
+  }
 
   const trimmed = name.trim()
   const taken = groups.some(

@@ -155,7 +155,17 @@ export function noteNavigationChanged(
 
 // ── Changes ───────────────────────────────────────────────────
 
-const rest = ({ revision: _revision, ...value }: PersonalNavigation) => value
+const rest = ({ groups, spaceGroups, pins }: PersonalNavigation) => ({
+  groups,
+  spaceGroups,
+  pins,
+})
+
+export function sortedGroups<T extends { name: string }>(groups: readonly T[]): T[] {
+  return [...groups].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+  )
+}
 
 export const togglePin =
   (spaceId: string): NavigationChange =>

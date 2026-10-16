@@ -12,7 +12,8 @@ import { trustedLocalIdentity, verifyBearer } from "./auth.ts"
 import { teamRouter } from "./routes/team.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
-import { DEFAULT_AGENT_ACCESS } from "@worktable/types"
+import { DEFAULT_AGENT_ACCESS, type DocumentId } from "@worktable/types"
+import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
   createTeamAgentConnection,
   disconnectTeamAgentConnection,
@@ -946,6 +947,18 @@ test("HTTP requires named members, admits an invitation once, and binds minted c
     }
   )
   expect(document.status).toBe(201)
+  // Each person authors their own versions, so one member's saves never
+  // continue another's version.
+  const { documentId } = (await document.json()) as { documentId: DocumentId }
+  expect(
+    (
+      await listDocumentGenerationsV2({
+        workspaceRoot: join(root, "workspace"),
+        spaceId,
+        documentId,
+      })
+    ).map((generation) => generation.createdBy)
+  ).toEqual([member.principal.id])
   setSpaceAccessPolicy({ spaceId, visibility: "shared", grants: [] }, owner)
   expect(canAccessSpace(spaceId, "manage", member)).toBe(false)
   const order = () =>

@@ -94,5 +94,10 @@ export function selectReleaseTargets(options: {
   )
   if (!target)
     throw new Error(`No Linux guest release target is registered for ${arch}.`)
-  return { cli: [target], server: [] }
+  // Beta builds come from this profile. Worktable Cloud staging can run a
+  // beta, and its tenants install the hosted server artifact.
+  return {
+    cli: [target],
+    server: SERVER_RELEASE_TARGETS.filter((server) => server.arch === arch),
+  }
 }

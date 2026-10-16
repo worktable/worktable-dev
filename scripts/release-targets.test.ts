@@ -31,7 +31,7 @@ describe("release target profiles", () => {
     ])
   })
 
-  test("builds the Linux guest CLI matching the host architecture", () => {
+  test("builds the Linux guest CLI matching the host architecture, and the hosted server on x64", () => {
     expect(parseReleaseProfile(["--profile", "lab"])).toBe("lab")
     expect(releaseOutputNames("lab")).toEqual({
       artifacts: "lab-releases",
@@ -41,20 +41,27 @@ describe("release target profiles", () => {
       artifacts: "releases",
       work: "release-work",
     })
-    expect(
-      selectReleaseTargets({
-        profile: "lab",
-        platform: "linux",
-        arch: "x86_64",
-      }).cli.map((target) => target.artifact)
-    ).toEqual(["worktable-linux-x64.tar.gz"])
-    expect(
-      selectReleaseTargets({
-        profile: "lab",
-        platform: "darwin",
-        arch: "arm64",
-      }).cli.map((target) => target.artifact)
-    ).toEqual(["worktable-linux-arm64.tar.gz"])
+    const x64 = selectReleaseTargets({
+      profile: "lab",
+      platform: "linux",
+      arch: "x86_64",
+    })
+    expect(x64.cli.map((target) => target.artifact)).toEqual([
+      "worktable-linux-x64.tar.gz",
+    ])
+    // Beta builds carry what Worktable Cloud tenants install.
+    expect(x64.server.map((target) => target.artifact)).toEqual([
+      "worktable-server-linux-x64.tar.gz",
+    ])
+    const arm64 = selectReleaseTargets({
+      profile: "lab",
+      platform: "darwin",
+      arch: "arm64",
+    })
+    expect(arm64.cli.map((target) => target.artifact)).toEqual([
+      "worktable-linux-arm64.tar.gz",
+    ])
+    expect(arm64.server).toEqual([])
   })
 
   test("rejects ambiguous profiles and unsupported hosts", () => {

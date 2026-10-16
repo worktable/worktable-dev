@@ -77,12 +77,16 @@ function put(
   next: Omit<PersonalNavigation, "revision">,
   knownSpaces: readonly string[]
 ): Promise<PersonalNavigation> {
+  // The server keeps entries for Spaces this tab can't show.
+  const body = JSON.stringify({ expectedRevision: revision, knownSpaces, ...next })
   return fetchJSON<{ navigation: PersonalNavigation }>(
     "/api/profile/navigation",
     {
       method: "PUT",
-      // The server keeps entries for Spaces this tab can't show.
-      body: JSON.stringify({ expectedRevision: revision, knownSpaces, ...next }),
+      body,
+      // A change made just before leaving the page still saves. Browsers
+      // allow this only for small bodies, which this nearly always is.
+      keepalive: body.length < 60_000,
     }
   ).then((result) => result.navigation)
 }

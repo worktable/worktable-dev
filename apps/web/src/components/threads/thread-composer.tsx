@@ -175,7 +175,7 @@ export function ThreadComposer({
           {replyContext ? (
             <InputGroupAddon
               align="block-start"
-              className="items-start gap-2.5 px-4 pt-3.5 pb-0 text-xs font-normal"
+              className="items-start gap-2.5 px-4 pt-3.5 pb-0 text-sm font-normal"
             >
               <CornerUpLeftIcon
                 className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"

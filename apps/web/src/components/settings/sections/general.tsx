@@ -1,4 +1,4 @@
-import { recognitionColor, type RecognitionColor } from "@worktable/types"
+import { recognitionColor, type RecognitionColor } from "@worktable/types/recognition"
 import { RecognitionSwatches } from "@/components/recognition-swatches"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"

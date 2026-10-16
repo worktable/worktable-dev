@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react"
-import type { RecognitionColor } from "@worktable/types"
+import type { RecognitionColor } from "@worktable/types/recognition"
 
 /** A solid tile or avatar carrying white initials. */
 export function recognitionSolid(color: RecognitionColor): CSSProperties {

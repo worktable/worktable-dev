@@ -1,4 +1,4 @@
-import { recognitionColor } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import { recognitionChip } from "@/lib/recognition"
 import { AGENT_PLATFORMS, type AgentPlatformId } from "@worktable/types"
 import {

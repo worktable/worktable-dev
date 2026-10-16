@@ -6,7 +6,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
-import { recognitionColor, type RecognitionColor } from "@worktable/types"
+import { recognitionColor, type RecognitionColor } from "@worktable/types/recognition"
 import { ProvenanceChip } from "@/components/provenance-chip"
 import { recognitionSolid } from "@/lib/recognition"
 import { useWorkspace } from "@/lib/queries"

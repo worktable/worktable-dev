@@ -1,4 +1,4 @@
-import { recognitionColor } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import { useRouterState } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { usePageMeta } from "@/hooks/use-page-meta"

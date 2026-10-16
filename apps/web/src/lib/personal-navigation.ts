@@ -6,6 +6,7 @@ import type { SpaceView, WorkspaceInfo } from "./api"
 import { fetchJSON, HttpError } from "./http"
 import { queryKeys, useSpaces, useWorkspace } from "./queries"
 import { formatGroupLabel } from "./spaces"
+import { createClientId } from "./client-id"
 import { toast } from "@worktable/ui/components/sonner"
 
 const EMPTY_PERSONAL_NAVIGATION: PersonalNavigation = {
@@ -22,39 +23,32 @@ export type NavigationChange = (
 
 /**
  * Before someone arranges anything, they start from the groups Spaces
- * already name. It is a copy: later changes are theirs alone.
+ * already name. It is a copy: later changes are theirs alone. Names that
+ * match ignoring case become one group, trimmed to what a group allows.
  */
 export function startingNavigation(
   spaces: readonly Pick<SpaceView, "id" | "group">[]
 ): PersonalNavigation {
-  const groups = new Map<string, string>()
+  const byName = new Map<string, { id: string; name: string }>()
   const spaceGroups: Record<string, string> = {}
   for (const space of spaces) {
-    if (!space.group) continue
-    const id = `shared-${space.group.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 56)}`
-    if (!groups.has(id)) groups.set(id, formatGroupLabel(space.group))
-    spaceGroups[space.id] = id
-  }
-  const names = new Set<string>()
-  const unique = [...groups].filter(([, name]) => {
+    const name = space.group
+      ? formatGroupLabel(space.group.trim()).slice(0, 60).trim()
+      : ""
+    if (!name) continue
     const key = name.toLocaleLowerCase()
-    if (names.has(key)) return false
-    names.add(key)
-    return true
-  })
-  const kept = new Set(unique.map(([id]) => id))
-  return {
-    revision: 0,
-    groups: unique.map(([id, name]) => ({ id, name })),
-    spaceGroups: Object.fromEntries(
-      Object.entries(spaceGroups).filter(([, id]) => kept.has(id))
-    ),
-    pins: [],
+    let group = byName.get(key)
+    if (!group) {
+      group = { id: `shared-${byName.size + 1}`, name }
+      byName.set(key, group)
+    }
+    spaceGroups[space.id] = group.id
   }
+  return { revision: 0, groups: [...byName.values()], spaceGroups, pins: [] }
 }
 
 export function newGroupId(): string {
-  return `g-${crypto.randomUUID().slice(0, 12)}`
+  return createClientId("g")
 }
 
 function savedNavigation(
@@ -80,13 +74,15 @@ function conflictNavigation(error: unknown): PersonalNavigation | null {
 
 function put(
   revision: number,
-  next: Omit<PersonalNavigation, "revision">
+  next: Omit<PersonalNavigation, "revision">,
+  knownSpaces: readonly string[]
 ): Promise<PersonalNavigation> {
   return fetchJSON<{ navigation: PersonalNavigation }>(
     "/api/profile/navigation",
     {
       method: "PUT",
-      body: JSON.stringify({ expectedRevision: revision, ...next }),
+      // The server keeps entries for Spaces this tab can't show.
+      body: JSON.stringify({ expectedRevision: revision, knownSpaces, ...next }),
     }
   ).then((result) => result.navigation)
 }
@@ -116,23 +112,31 @@ export function usePersonalNavigation() {
           )
         const before = read()
         if (!before) return
+        const known = (
+          queryClient.getQueryData<SpaceView[]>(queryKeys.spaces) ?? []
+        ).map((space) => space.id)
         adopt(queryClient, { ...change(before), revision: before.revision })
         try {
-          adopt(queryClient, await put(before.revision, change(before)))
+          adopt(queryClient, await put(before.revision, change(before), known))
+          return
         } catch (error) {
           const current = conflictNavigation(error)
           if (current) {
             try {
-              adopt(queryClient, await put(current.revision, change(current)))
+              adopt(queryClient, await put(current.revision, change(current), known))
               return
             } catch {
-              adopt(queryClient, current)
+              // Read it again below.
             }
-          } else {
-            adopt(queryClient, before)
           }
-          toast.error(failure)
         }
+        // Read the saved arrangement again rather than guess which copy is
+        // newest; another device may have saved meanwhile.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.workspace,
+          exact: true,
+        })
+        toast.error(failure)
       }
       const next = queue.then(run, run)
       queue = next.catch(() => undefined)

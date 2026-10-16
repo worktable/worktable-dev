@@ -287,6 +287,12 @@ const SpaceSection = memo(function SpaceSection({
   const isInSpace = relation !== null
   const [expanded, setExpanded] = useState(followRoute && isInSpace)
   const userCollapsedRef = useRef(false)
+  // Pinning the open Space hands its tree to the pinned copy.
+  const [followedRoute, setFollowedRoute] = useState(followRoute)
+  if (followRoute !== followedRoute) {
+    setFollowedRoute(followRoute)
+    if (!followRoute) setExpanded(false)
+  }
 
   useEffect(() => {
     if (followRoute && isInSpace && !expanded && !userCollapsedRef.current) {
@@ -2154,10 +2160,13 @@ function useSpaceFocus(navigation: PersonalNavigation | null) {
  */
 function FollowSpaceFocus({
   navigation,
+  pinnedIds,
   focus,
   onFocus,
 }: {
   navigation: PersonalNavigation | null
+  /** Pinned Spaces the sidebar shows; an archived pin is not among them. */
+  pinnedIds: readonly string[]
   focus: PersonalGroup | null
   onFocus: (groupId: string | null) => void
 }) {
@@ -2168,10 +2177,10 @@ function FollowSpaceFocus({
     prevPathRef.current = currentPath
     if (!navigation || !focus) return
     const spaceId = currentPath.match(/^\/spaces\/([^/]+)/)?.[1]
-    if (!spaceId || navigation.pins.includes(spaceId)) return
+    if (!spaceId || pinnedIds.includes(spaceId)) return
     const groupId = navigation.spaceGroups[spaceId] ?? null
     if (groupId !== focus.id) onFocus(groupId)
-  }, [currentPath, navigation, focus, onFocus])
+  }, [currentPath, navigation, pinnedIds, focus, onFocus])
   return null
 }
 
@@ -2410,6 +2419,7 @@ export function AppSidebar() {
     >
       <FollowSpaceFocus
         navigation={navigation}
+        pinnedIds={pinnedSpaces.map((space) => space.id)}
         focus={focus}
         onFocus={setFocus}
       />

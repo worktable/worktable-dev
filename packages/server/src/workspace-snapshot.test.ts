@@ -13,12 +13,13 @@ import {
   readFile,
   readdir,
   rm,
+  stat,
   symlink,
   utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import {
   ensureWorkspaceManifest,
@@ -34,6 +35,8 @@ import {
 } from "./workspace-replacement.ts"
 import {
   calculateWorkspaceContentCheckpoint,
+  inspectPortableWorkspaceTree,
+  portableWorkspaceCheckpoint,
   setWorkspaceExportCaptureHookForTests,
   setWorkspaceExportCaptureRemovalHookForTests,
 } from "./workspace-transfer-v2.ts"
@@ -50,6 +53,7 @@ beforeEach(async () => {
   ensureWorkspaceManifest()
 })
 afterEach(async () => {
+  setSystemTime()
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportCaptureRemovalHookForTests(null)
   setWorkspaceRootOverride(null)
@@ -58,7 +62,104 @@ afterEach(async () => {
 })
 
 describe("portable workspace snapshots", () => {
+  it("records inside the hold only what changed since the pre-copy", async () => {
+    const write = async (path: string, content: string) => {
+      await mkdir(dirname(join(workspace, path)), { recursive: true })
+      await writeFile(join(workspace, path), content)
+    }
+    for (let index = 0; index < 100; index += 1)
+      await write(`spaces/notes/docs/unchanged-${index}.md`, `Note ${index}`)
+    await write("modified.md", "before")
+    await write("same-size.md", "aaaa")
+    await write("deleted.md", "deleted later")
+    await write("removed/nested/file.md", "removed later")
+    let held: string[] = []
+    setWorkspaceExportCaptureHookForTests(async (entry) => {
+      if (entry.held) held.push(entry.path)
+    })
+    const quiet = <R>(capture: () => Promise<R>) => capture()
+
+    // Files written within the timestamp window could be rewritten in the
+    // same tick without changing their metadata, so the hold reads them again.
+    await writeWorkspaceSnapshot(join(root, "recent"), {
+      withCaptureBarrier: quiet,
+    })
+    expect(held).toContain("modified.md")
+    expect(held).toHaveLength(105)
+
+    setSystemTime(new Date(Date.now() + 60_000))
+    held = []
+    const saved = await writeWorkspaceSnapshot(join(root, "snapshot"), {
+      withCaptureBarrier: async (capture) => {
+        // Edits between the pre-copy and the hold.
+        await write("modified.md", "after, and longer")
+        const sameSize = join(workspace, "same-size.md")
+        const before = await stat(sameSize)
+        await writeFile(sameSize, "bbbb")
+        await utimes(sameSize, before.atime, before.mtime)
+        await rm(join(workspace, "deleted.md"))
+        await rm(join(workspace, "removed"), { recursive: true })
+        await write("added/new.md", "new")
+        return capture()
+      },
+    })
+    expect(held.sort()).toEqual([
+      "added",
+      "added/new.md",
+      "modified.md",
+      "same-size.md",
+    ])
+    // The same capture a full copy of the final tree makes.
+    const tree = await inspectPortableWorkspaceTree(workspace)
+    expect({ directories: saved.directories, files: saved.files }).toEqual(tree)
+    expect(saved.sourceCheckpoint).toBe(portableWorkspaceCheckpoint(tree))
+    await expect(
+      inspectWorkspaceSnapshot(join(root, "snapshot"))
+    ).resolves.toEqual(saved)
+    expect(
+      await readFile(
+        join(root, "snapshot", "workspace", "same-size.md"),
+        "utf8"
+      )
+    ).toBe("bbbb")
+
+    // An unchanged tree keeps its checkpoints.
+    held = []
+    const again = await writeWorkspaceSnapshot(join(root, "again"), {
+      withCaptureBarrier: quiet,
+    })
+    expect(held).toEqual([])
+    expect(again.sourceCheckpoint).toBe(saved.sourceCheckpoint)
+    expect(again.contentCheckpoint).toBe(saved.contentCheckpoint)
+    expect(again.files).toEqual(saved.files)
+  })
+
+  it("stops a cancelled pre-copy before holding writers and removes its scratch", async () => {
+    await writeFile(join(workspace, "settled.md"), "settled")
+    setSystemTime(new Date(Date.now() + 60_000))
+    const cancellation = new AbortController()
+    setWorkspaceExportCaptureHookForTests(async (entry) => {
+      if (!entry.held) cancellation.abort(new Error("capture cancelled"))
+    })
+    let held = false
+    await expect(
+      writeWorkspaceSnapshot(join(root, "cancelled"), {
+        signal: cancellation.signal,
+        withCaptureBarrier: async (capture) => {
+          held = true
+          return capture()
+        },
+      })
+    ).rejects.toThrow("capture cancelled")
+    expect(held).toBe(false)
+    expect(
+      await readdir(join(root, "app", "workspace-transfers", "captures"))
+    ).toEqual([])
+    expect((await readdir(root)).sort()).toEqual(["app", "workspace"])
+  })
+
   it("drains cancelled copies before releasing writers and then cleans scratch outside the barrier", async () => {
+    // Both were just written, so the hold copies them.
     await writeFile(join(workspace, "held.md"), "held copy")
     await writeFile(join(workspace, "failed.md"), "failed copy")
     const cancellation = new AbortController()

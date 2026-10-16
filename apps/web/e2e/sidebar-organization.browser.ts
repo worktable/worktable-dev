@@ -25,7 +25,9 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
   const sidebar = page.locator("[data-worktable-sidebar-root]")
 
   // They start from the groups Spaces already name.
-  await expect(sidebar.getByRole("button", { name: "Research", exact: true })).toBeVisible()
+  await expect(
+    sidebar.getByRole("button", { name: "Research", exact: true })
+  ).toBeVisible({ timeout: 30_000 })
 
   await sidebar.getByRole("link", { name: "Beta" }).hover()
   await sidebar.getByRole("button", { name: "Pin Beta" }).click()

@@ -1,17 +1,26 @@
 {
   "$comment": "Gzip bytes. Budgets sit 2% above the sizes at the time they were set; lower them as bundles shrink (bun scripts/perf/bundle.ts --update). A budget that rises needs a \"why\" on its entry, such as { \"gzip\": 290000, \"why\": \"...\" }; bun run perf:guards checks it. Targets are Plan 15 goals and are not enforced yet.",
   "budgets": {
-    "entry": { "gzip": 278000 },
+    "entry": {
+      "gzip": 284700,
+      "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
+    },
     "root css": {
       "gzip": 37500,
       "why": "Docs share one reading stylesheet (document-content.css), which the saved preview needs before the app's JavaScript loads so nothing moves when a Doc opens. It replaces markdown.css and the preview overrides, and adds lists, checklists, code headers, tables, toggles, diagrams and the text color palette; controls that only appear once a Doc is interactive load with the viewer and editor instead."
     },
-    "home": { "gzip": 323000 },
-    "space": { "gzip": 313000 },
+    "home": {
+      "gzip": 331400,
+      "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
+    },
+    "space": {
+      "gzip": 321600,
+      "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
+    },
     "rich document": { "gzip": 785000 },
     "html document": {
-      "gzip": 342000,
-      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16)."
+      "gzip": 349200,
+      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu."
     }
   },
   "targets": {

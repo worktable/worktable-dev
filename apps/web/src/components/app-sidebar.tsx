@@ -51,6 +51,7 @@ import {
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
+import { SpaceIcon } from "@/components/spaces/space-icon"
 import { ProfileMenu } from "@/components/sidebar/profile-menu"
 import {
   GroupActions,
@@ -69,8 +70,7 @@ import {
   togglePin,
   usePersonalNavigation,
 } from "@/lib/personal-navigation"
-import type { PersonalGroup } from "@worktable/types"
-import { resolveIcon } from "@/lib/icons"
+import { recognitionColor, type PersonalGroup } from "@worktable/types"
 import {
   useSpaces,
   useRecordCollections,
@@ -517,7 +517,7 @@ const SpaceSection = memo(function SpaceSection({
             }`}
             render={<button type="button" aria-expanded={expanded} />}
           >
-            {resolveIcon(space.icon, "size-4")}
+            <SpaceIcon space={space} />
             <span className="min-w-0 truncate">{space.name}</span>
           </CollapsibleTrigger>
           {/* Always visible on touch (no hover exists) and on keyboard focus;
@@ -551,6 +551,7 @@ const SpaceSection = memo(function SpaceSection({
                   canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
                   spaceName={space.name}
                   spaceIcon={space.icon}
+                  spaceColor={recognitionColor(space.settings?.color, space.id)}
                   archived={archived}
                   personal={
                     navigation && onNewGroup
@@ -577,6 +578,17 @@ const SpaceSection = memo(function SpaceSection({
                       })
                     } catch {
                       toast.error("Failed to change icon")
+                    }
+                  }}
+                  onChangeColor={async (color) => {
+                    try {
+                      await updateSpace(space.id, { color })
+                      await queryClient.invalidateQueries({
+                        queryKey: queryKeys.spaces,
+                        exact: true,
+                      })
+                    } catch {
+                      toast.error("Failed to change color")
                     }
                   }}
                   onArchive={handleArchive}

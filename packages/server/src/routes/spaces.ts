@@ -4,6 +4,7 @@ import { accessSnapshot, spaceAccessKey } from "../team-access.ts";
 import { requireScope, requireWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
+import { RECOGNITION_COLORS } from "@worktable/types";
 import {
   listSpaces,
   occupiedSpaceIds,
@@ -258,6 +259,8 @@ const UpdateSpaceSchema = z.object({
   description: z.string().optional(),
   icon: z.string().optional(),
   group: z.string().optional(),
+  /** A recognition color, or "" to return to the default. */
+  color: z.union([z.enum(RECOGNITION_COLORS), z.literal("")]).optional(),
 });
 
 spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
@@ -276,19 +279,26 @@ spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
   }
 
   // Treat empty-string group as "no group"
-  const fields = { ...parsed.data };
+  const { color, ...fields } = parsed.data;
   if (fields.group === "") {
     fields.group = undefined;
   }
 
-  // Name, description, icon and group change the Space for everyone.
+  // Name, description, icon, color and group change the Space for everyone.
+  // The color lives in settings, outside the Space schema agents read.
   const { data: updated, error: mutationError } = await mutateSpace(
     spaceId,
-    (space) => ({
-      ...space,
-      ...fields,
-      updatedAt: new Date().toISOString(),
-    }),
+    (space) => {
+      const settings = { ...space.settings };
+      if (color) settings.color = color;
+      else if (color === "") delete settings.color;
+      return {
+        ...space,
+        ...fields,
+        settings,
+        updatedAt: new Date().toISOString(),
+      };
+    },
     "manage"
   );
   if (mutationError || !updated) {

@@ -1,3 +1,5 @@
+import type { SpaceView } from "@/lib/api"
+import { SpaceIcon } from "@/components/spaces/space-icon"
 import {
   createFileRoute,
   Link,
@@ -270,6 +272,7 @@ const RECENT_ROWS = 8
 
 function SpaceOverview({
   spaceId,
+  space,
   spaceName,
   spaceDescription,
   pins,
@@ -277,6 +280,7 @@ function SpaceOverview({
   canEdit,
 }: {
   spaceId: string
+  space: SpaceView | undefined
   /** Undefined only until the Space list or details arrive. */
   spaceName: string | undefined
   spaceDescription?: string
@@ -331,9 +335,12 @@ function SpaceOverview({
             {spaceName === undefined ? (
               <div className="h-[2.1rem] w-56 animate-pulse rounded-lg bg-muted sm:h-10" />
             ) : (
-              <h1 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
-                {spaceName}
-              </h1>
+              <div className="flex items-center gap-3">
+                {space && <SpaceIcon space={space} size="lg" />}
+                <h1 className="min-w-0 font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[2rem]">
+                  {spaceName}
+                </h1>
+              </div>
             )}
             {spaceDescription && (
               <p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted-foreground">
@@ -490,6 +497,7 @@ function SpaceDetailPage() {
         // A folder filter belongs to one Space; start each Space unfiltered.
         key={spaceId}
         spaceId={spaceId}
+        space={space}
         spaceName={space?.name}
         spaceDescription={space?.description}
         pins={data ? (data.pins ?? []) : undefined}

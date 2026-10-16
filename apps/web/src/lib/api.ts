@@ -34,6 +34,8 @@ export interface WorkspaceInfo {
   navigation?: PersonalNavigation | null
   /** Who is using this Worktable; absent with `navigation`. */
   person?: {
+    /** Their participant id, which Threads also show. */
+    id: string
     name: string
     role: "owner" | "member"
     /** How they sign out here; null without a session, such as on this computer. */
@@ -41,6 +43,8 @@ export interface WorkspaceInfo {
   } | null
   id: string
   name: string
+  /** The chosen recognition color, or null for the default from `id`. */
+  color?: string | null
   createdAt: string
   /** Absent on older servers; generic document authoring requires V2. */
   storageVersion?: 1 | 2
@@ -85,6 +89,8 @@ export async function acceptWorkspace(workspace: WorkspaceInfo) {
  */
 export function updateWorkspace(patch: {
   name?: string
+  /** A recognition color, or "" for the default. */
+  color?: string
   onboarding?: { status: "complete" }
 }) {
   return fetchJSON<WorkspaceInfo>("/api/workspace", {
@@ -133,7 +139,14 @@ export function createSpace(data: {
 
 export function updateSpace(
   spaceId: string,
-  data: { name?: string; description?: string; icon?: string; group?: string }
+  data: {
+    name?: string
+    description?: string
+    icon?: string
+    group?: string
+    /** A recognition color, or "" for the default. */
+    color?: string
+  }
 ) {
   return fetchJSON<{ space: SpaceFile }>(`/api/spaces/${spaceId}`, {
     method: "PUT",

@@ -42,6 +42,8 @@ import {
   FolderPlus,
 } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
+import { RecognitionSwatches } from "@/components/recognition-swatches"
+import type { RecognitionColor } from "@worktable/types"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { PersonalGroup } from "@worktable/types"
 import { sortedGroups } from "@/lib/personal-navigation"
@@ -58,6 +60,8 @@ interface SpaceContextMenuProps {
   canManageAccess?: boolean
   spaceName: string
   spaceIcon?: string
+  /** The Space's color, chosen or default. */
+  spaceColor: RecognitionColor
   archived?: boolean
   /** Creation choices, listed first where the row has no + of its own. */
   newItems?: ReactNode
@@ -77,6 +81,7 @@ interface SpaceContextMenuProps {
   onChangeDocSort: (sort: DocSortMode) => void
   onRename: (newName: string) => void
   onChangeIcon: (icon: string) => void
+  onChangeColor: (color: RecognitionColor) => void
   onArchive?: () => void
   onRestore?: () => void
   onDelete: () => void
@@ -98,6 +103,7 @@ export function SpaceContextMenuButton({
   canManageAccess = false,
   spaceName,
   spaceIcon,
+  spaceColor,
   archived,
   newItems,
   personal,
@@ -105,6 +111,7 @@ export function SpaceContextMenuButton({
   onChangeDocSort,
   onRename,
   onChangeIcon,
+  onChangeColor,
   onArchive,
   onRestore,
   onDelete,
@@ -180,7 +187,7 @@ export function SpaceContextMenuButton({
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!canAdminister} onClick={() => setIconPickerOpen(true)}>
             <Smile className="mr-2 h-4 w-4" />
-            Change Icon
+            Icon and Color
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!canEdit}>
@@ -245,6 +252,8 @@ export function SpaceContextMenuButton({
         onClose={() => setIconPickerOpen(false)}
         onSelect={onChangeIcon}
         currentIcon={spaceIcon}
+        currentColor={spaceColor}
+        onSelectColor={onChangeColor}
       />
     </>
   )
@@ -410,11 +419,15 @@ function IconPickerDialog({
   onClose,
   onSelect,
   currentIcon,
+  currentColor,
+  onSelectColor,
 }: {
   open: boolean
   onClose: () => void
   onSelect: (icon: string) => void
   currentIcon?: string
+  currentColor: RecognitionColor
+  onSelectColor: (color: RecognitionColor) => void
 }) {
   const handleSelect = (icon: string) => {
     onSelect(icon)
@@ -428,13 +441,18 @@ function IconPickerDialog({
           <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-tint">
             <Smile className="h-5 w-5 text-primary" />
           </div>
-          <ResponsiveDialogTitle>Change Icon</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>Icon and Color</ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
-            Search icons or pick from popular ones below.
+            Everyone sees the Space this way.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
         <ResponsiveDialogBody>
+          <RecognitionSwatches
+            label="Color"
+            value={currentColor}
+            onChange={onSelectColor}
+          />
           <IconSearchGrid
             selected={currentIcon}
             onSelect={handleSelect}

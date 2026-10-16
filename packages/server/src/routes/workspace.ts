@@ -22,6 +22,7 @@ import {
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
 import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
+import { isRecognitionColor } from "@worktable/types"
 import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
 import {
@@ -65,6 +66,7 @@ function publicView(m: WorkspaceManifest, opts: { includeRoot: boolean }) {
   return {
     id: m.id,
     name: m.name,
+    color: isRecognitionColor(m.color) ? m.color : null,
     createdAt: m.createdAt,
     storageVersion: m.version,
     mode: workspaceProvenanceMode(m),
@@ -797,6 +799,7 @@ workspaceRouter.put("/", async (c) => {
 
   const body = (await c.req.json().catch(() => null)) as {
     name?: unknown
+    color?: unknown
     onboarding?: unknown
   } | null
   if (!body || typeof body !== "object") {
@@ -808,7 +811,7 @@ workspaceRouter.put("/", async (c) => {
 
 async function applyWorkspacePatch(
   c: Context,
-  body: { name?: unknown; onboarding?: unknown }
+  body: { name?: unknown; color?: unknown; onboarding?: unknown }
 ): Promise<Response> {
   const current = ensureWorkspaceManifest()
   const next: WorkspaceManifest = { ...current }
@@ -828,6 +831,12 @@ async function applyWorkspacePatch(
       )
     }
     next.name = trimmed
+  }
+
+  if (body.color !== undefined) {
+    if (body.color === "") delete next.color
+    else if (isRecognitionColor(body.color)) next.color = body.color
+    else return c.json({ error: "color must be a recognition color" }, 400)
   }
 
   if (body.onboarding !== undefined) {

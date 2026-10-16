@@ -15,6 +15,8 @@ import { toast } from "@worktable/ui/components/sonner"
 import { useTheme } from "@/components/theme-provider"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { WorkspaceInfo } from "@/lib/api"
+import { recognitionColor } from "@worktable/types"
+import { recognitionSolid } from "@/lib/recognition"
 import { submitCloudLogout } from "@/lib/cloud-logout"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { runtimePath } from "@/lib/runtime-path"
@@ -45,18 +47,21 @@ const SIGN_OUT: Record<SignOut, () => Promise<void>> = {
 }
 
 export function PersonAvatar({
+  id,
   name,
   size = "sm",
 }: {
+  id: string
   name: string
   size?: "sm" | "lg"
 }) {
   return (
     <span
       aria-hidden
-      className={`flex shrink-0 items-center justify-center rounded-full bg-surface-tint font-semibold text-sidebar-foreground ${
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${
         size === "lg" ? "size-9 text-sm" : "size-6 text-[11px]"
       }`}
+      style={recognitionSolid(recognitionColor(null, id))}
     >
       {name.trim().charAt(0).toUpperCase() || "?"}
     </span>
@@ -106,7 +111,7 @@ export function ProfileMenu() {
             />
           }
         >
-          <PersonAvatar name={person.name} />
+          <PersonAvatar id={person.id} name={person.name} />
           <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
               {person.name}
@@ -118,7 +123,7 @@ export function ProfileMenu() {
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-60">
           <div className="flex items-center gap-2.5 px-2 py-2">
-            <PersonAvatar name={person.name} size="lg" />
+            <PersonAvatar id={person.id} name={person.name} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{person.name}</p>
               <p className="truncate text-xs text-muted-foreground">

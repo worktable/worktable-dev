@@ -1,7 +1,7 @@
 import type { Context } from "hono"
 import { authRequired, canManageUserSettings } from "./auth.ts"
 import { isHosted } from "./hosted.ts"
-import { participantKey, participantNameForKey } from "./participant-store.ts"
+import { cachedParticipantForKey, participantKey } from "./participant-store.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, teamMemberForIdentity } from "./team-policy.ts"
 
@@ -26,6 +26,8 @@ export function canReadSpaceFor(c: Context): (spaceId: string) => boolean {
 }
 
 export interface PersonSummary {
+  /** Their participant id where they have one, which Threads also show. */
+  id: string
   name: string
   role: "owner" | "member"
   /** How this person signs out here, or null when there is no session. */
@@ -36,16 +38,19 @@ export interface PersonSummary {
 export function personSummary(c: Context): PersonSummary | null {
   if (!personalPreferencesKey(c)) return null
   const identity = c.get("identity")!
+  const participant = cachedParticipantForKey(participantKey(identity))
   const member = teamsEnabled() ? teamMemberForIdentity(identity) : null
   if (member) {
     return {
+      id: participant?.id ?? member.actorId,
       name: member.name,
       role: member.role,
       signOut: isHosted() ? "cloud" : "team",
     }
   }
   return {
-    name: participantNameForKey(participantKey(identity)) ?? "Owner",
+    id: participant?.id ?? identity.principal.id,
+    name: participant?.name ?? "Owner",
     role: "owner",
     signOut: isHosted() ? "cloud" : authRequired() ? "password" : null,
   }

@@ -36,7 +36,10 @@ import {
   type RetentionPolicy,
 } from "./settings-store.ts";
 import { getSpacesDir, getVersionsDir, getWorkspaceRoot } from "./workspace.ts";
-import { withWorkspaceWriteAdmission } from "./workspace-request-lifecycle.ts";
+import {
+  WorkspaceAdmissionClosedError,
+  withWorkspaceWriteAdmission,
+} from "./workspace-request-lifecycle.ts";
 import {
   versionIdTimestamp,
   versionKeyDir,
@@ -655,6 +658,8 @@ export async function runRetentionSweep(
         .filter((manifest) => !afterIds.has(manifest.id))
         .reduce((total, manifest) => total + manifest.totalBytes, 0);
     } catch (error) {
+      // The workspace is being replaced: stop instead of failing every doc.
+      if (error instanceof WorkspaceAdmissionClosedError) throw error;
       console.warn(
         `[version-retention] failed to prune V2 generations for ${spaceId}/${documentId}:`,
         logError(error),

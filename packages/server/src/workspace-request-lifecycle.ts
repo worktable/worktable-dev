@@ -121,15 +121,28 @@ export function admitWorkspaceRequest(
   }
 }
 
+/** The workspace stopped admitting requests until it is replaced or reopened. */
+export class WorkspaceAdmissionClosedError extends Error {
+  constructor() {
+    super("workspace is closed for replacement")
+    this.name = "WorkspaceAdmissionClosedError"
+  }
+}
+
 /**
  * Run background work that changes the workspace as an admitted write: a
  * capture holding writes waits for it to finish, and it waits for the capture.
+ * When the workspace closes for replacement it throws
+ * WorkspaceAdmissionClosedError instead, so the caller can stop. Never call
+ * it from an admitted request: a capture would wait for the request while
+ * this waits for the capture.
  */
 export async function withWorkspaceWriteAdmission<T>(
   work: () => Promise<T>
 ): Promise<T> {
   let release = admitWorkspaceRequest("write")
   while (!release) {
+    if (!accepting.read) throw new WorkspaceAdmissionClosedError()
     await new Promise<void>((resolve) => reopenWaiters.push(resolve))
     release = admitWorkspaceRequest("write")
   }
@@ -142,6 +155,13 @@ export async function withWorkspaceWriteAdmission<T>(
 
 async function drain(kinds: WorkspaceRequestKind[]): Promise<void> {
   for (const kind of kinds) accepting[kind] = false
+  // A replacement does not reopen soon: whatever waits for admission answers
+  // now instead.
+  if (kinds.includes("read")) {
+    const waiters = reopenWaiters
+    reopenWaiters = []
+    for (const resolve of waiters) resolve()
+  }
   // Long polls answer now instead of holding the drain.
   for (const listener of [...drainListeners]) listener()
   while (kinds.some((kind) => active[kind].size > 0)) {

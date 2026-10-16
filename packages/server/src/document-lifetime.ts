@@ -25,7 +25,10 @@ import {
   getSpaceArchiveInfo,
 } from "./store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
-import { withWorkspaceWriteAdmission } from "./workspace-request-lifecycle.ts"
+import {
+  WorkspaceAdmissionClosedError,
+  withWorkspaceWriteAdmission,
+} from "./workspace-request-lifecycle.ts"
 import { logDocument, logError } from "./debug-log.ts"
 
 /** Actor recorded on documents archived because their date passed. */
@@ -276,6 +279,8 @@ export async function runLifetimeSweep(
         )
         if (!outcome.notDue) receipt.archived.push(path)
       } catch (error) {
+        // The workspace is being replaced: stop instead of failing the rest.
+        if (error instanceof WorkspaceAdmissionClosedError) throw error
         receipt.failed.push(path)
         console.error(
           `[document-lifetime] could not archive ${logDocument(space.id, path)}:`,

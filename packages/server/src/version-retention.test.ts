@@ -53,6 +53,9 @@ import {
 import {
   resumeWorkspaceRequestAdmission,
   stopWorkspaceMutationsAndDrain,
+  stopWorkspaceRequestAdmissionAndDrain,
+  withWorkspaceWriteAdmission,
+  WorkspaceAdmissionClosedError,
 } from "./workspace-request-lifecycle.ts"
 
 let appDir: string
@@ -412,7 +415,7 @@ describe("runRetentionSweep — integration", () => {
     expect(ageVersions[0]?.createdAt).toBe(new Date(now - DAY).toISOString())
   })
 
-  it("waits for a capture holding workspace writes before pruning", async () => {
+  it("waits for a capture holding writes and stops for a replacement", async () => {
     const documentId = "doc_CCCCCCCCCCCCCCCCCCCCCC" as DocumentId
     const now = Date.now()
     for (let index = 0; index < 3; index += 1)
@@ -432,14 +435,24 @@ describe("runRetentionSweep — integration", () => {
       ).length
     await stopWorkspaceMutationsAndDrain()
     try {
+      // Nothing is pruned while a capture holds writes.
       const sweep = runRetentionSweep({ mode: "count", maxPerDoc: 1 })
-      await Bun.sleep(200)
+      let ran = false
+      const waiting = withWorkspaceWriteAdmission(async () => {
+        ran = true
+      })
+      expect(ran).toBe(false)
+      // A replacement does not reopen until the server restarts, so waiting
+      // work stops instead.
+      await stopWorkspaceRequestAdmissionAndDrain()
+      await expect(waiting).rejects.toThrow(WorkspaceAdmissionClosedError)
+      await expect(sweep).rejects.toThrow(WorkspaceAdmissionClosedError)
+      expect(ran).toBe(false)
       expect(await versions()).toBe(3)
-      resumeWorkspaceRequestAdmission()
-      await sweep
     } finally {
       resumeWorkspaceRequestAdmission()
     }
+    await runRetentionSweep({ mode: "count", maxPerDoc: 1 })
     expect(await versions()).toBe(1)
   })
 

@@ -103,7 +103,15 @@ export function gatewayAdmits(req: Request): boolean {
   if (!isHosted()) return true
   const path = new URL(req.url).pathname
   if (path === "/health") return true
+  return cameThroughGateway(req)
+}
 
+/**
+ * Whether a hosted request presents this tenant's gateway secret, on any path.
+ * Unlike admission, `/health` gets no exemption.
+ */
+export function cameThroughGateway(req: Request): boolean {
+  if (!isHosted()) return false
   const expected = gatewaySecret()
   if (!expected) return false
 

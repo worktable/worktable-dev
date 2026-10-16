@@ -96,6 +96,55 @@ describe("request timing", () => {
     }
   })
 
+  it("logs the request id only from the Cloud gateway on a hosted tenant", async () => {
+    const logged: string[] = []
+    const error = spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args.join(" "))
+    })
+    const saved = {
+      hosted: process.env["WORKTABLE_HOSTED"],
+      secret: process.env["WORKTABLE_GATEWAY_SECRET"],
+    }
+    const failWith = (id: string, admission = "tenant-gateway-secret") =>
+      fixture().request("/api/spaces/alpha/docs/x", {
+        headers: {
+          "X-Worktable-Request-Id": id,
+          "X-Worktable-Gateway": admission,
+        },
+      })
+    try {
+      process.env["WORKTABLE_HOSTED"] = "1"
+      process.env["WORKTABLE_GATEWAY_SECRET"] = "tenant-gateway-secret"
+      await failWith("gateway-request-1")
+      // Both lines carry it, so the request can be traced from the gateway.
+      expect(logged.join("\n").match(/ request=gateway-request-1\b/g)).toHaveLength(2)
+
+      logged.length = 0
+      await failWith("user@example.com")
+      expect(logged.join("\n")).not.toContain("request=")
+
+      // A caller that skipped the gateway chose its own id.
+      logged.length = 0
+      await failWith("gateway-request-1", "guessed")
+      expect(logged.join("\n")).not.toContain("request=")
+
+      // Elsewhere any client could set the header, so it is never logged.
+      delete process.env["WORKTABLE_HOSTED"]
+      logged.length = 0
+      await failWith("gateway-request-1")
+      expect(logged.join("\n")).not.toContain("request=")
+    } finally {
+      for (const [name, value] of [
+        ["WORKTABLE_HOSTED", saved.hosted],
+        ["WORKTABLE_GATEWAY_SECRET", saved.secret],
+      ] as const) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+      error.mockRestore()
+    }
+  })
+
   it("keeps timings from callers without an identity", async () => {
     const response = await fixture().request("/api/spaces/alpha/documents")
     expect(response.status).toBe(200)

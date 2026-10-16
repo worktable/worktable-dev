@@ -140,6 +140,16 @@ export const GATEWAY_HEADER = "x-worktable-gateway"
 /** Capability forwarded privately after the gateway strips it from the URL. */
 export const SHARE_CAPABILITY_HEADER = "x-worktable-share-capability"
 
+/**
+ * Correlates one request across the Cloud gateway and the tenant's request
+ * log. The gateway generates a random id for every request it proxies and
+ * replaces any value a client sent, so it never carries client data.
+ */
+export const REQUEST_ID_HEADER = "x-worktable-request-id"
+
+/** The shape a tenant accepts before logging an id. */
+export const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/
+
 const publicSourceUrl = z
   .string()
   .url()

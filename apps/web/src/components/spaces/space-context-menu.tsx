@@ -43,7 +43,7 @@ import {
 } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
 import { RecognitionSwatches } from "@/components/recognition-swatches"
-import type { RecognitionColor } from "@worktable/types"
+import type { RecognitionColor } from "@worktable/types/recognition"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { PersonalGroup } from "@worktable/types"
 import { sortedGroups } from "@/lib/personal-navigation"

@@ -1,4 +1,4 @@
-import type { RecognitionColor } from "@worktable/types"
+import type { RecognitionColor } from "@worktable/types/recognition"
 import { humanizeSegment } from "./tree"
 import type { TreeNode } from "./tree"
 import { findTreeNode } from "./space-document-tree"

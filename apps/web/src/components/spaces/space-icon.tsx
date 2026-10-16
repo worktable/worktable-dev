@@ -1,4 +1,4 @@
-import { recognitionColor } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import { cn } from "@worktable/ui/lib/utils"
 import { resolveIcon } from "@/lib/icons"
 import { recognitionChip } from "@/lib/recognition"

@@ -70,7 +70,8 @@ import {
   togglePin,
   usePersonalNavigation,
 } from "@/lib/personal-navigation"
-import { recognitionColor, type PersonalGroup } from "@worktable/types"
+import type { PersonalGroup } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import {
   useSpaces,
   useRecordCollections,

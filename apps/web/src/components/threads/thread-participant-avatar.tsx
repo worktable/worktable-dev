@@ -1,4 +1,5 @@
-import { platformForName, recognitionColor, type ParticipantRef } from "@worktable/types"
+import { platformForName, type ParticipantRef } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import { Avatar, AvatarFallback } from "@worktable/ui/components/avatar"
 import { cn } from "@worktable/ui/lib/utils"
 

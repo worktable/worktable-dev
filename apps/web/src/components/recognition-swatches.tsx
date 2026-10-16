@@ -1,5 +1,5 @@
 import { Check } from "lucide-react"
-import { RECOGNITION_COLORS, type RecognitionColor } from "@worktable/types"
+import { RECOGNITION_COLORS, type RecognitionColor } from "@worktable/types/recognition"
 import { recognitionSolid } from "@/lib/recognition"
 
 const NAMES: Record<RecognitionColor, string> = {

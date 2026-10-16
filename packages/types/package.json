@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
     "./views-vnext": "./src/views-vnext.ts",
-    "./mcp-clients": "./src/mcp-clients.ts"
+    "./mcp-clients": "./src/mcp-clients.ts",
+    "./recognition": "./src/recognition.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

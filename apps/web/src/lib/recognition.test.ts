@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { RECOGNITION_COLORS } from "@worktable/types"
+import { RECOGNITION_COLORS } from "@worktable/types/recognition"
 import { themeConfig } from "@worktable/ui/theme"
 
 describe("recognition colors", () => {

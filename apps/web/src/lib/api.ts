@@ -2,6 +2,7 @@ import { applySpaceAccess, initializeBrowserTeamContext } from "./team-context";
 import { rememberOneSpaceAccess } from "./team-access";
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
+  PersonalNavigation,
   ResolvedStartHerePin,
   SearchResult,
   SpaceFile,
@@ -26,6 +27,11 @@ export interface WorkspaceInfo {
     accessKeys?: Record<string, string>;
   };
   canManage?: boolean
+  /**
+   * The person's own groups and pins. null until they arrange anything;
+   * absent for agents and anyone who is not a member or the owner.
+   */
+  navigation?: PersonalNavigation | null
   id: string
   name: string
   createdAt: string

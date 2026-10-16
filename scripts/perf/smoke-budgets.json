@@ -388,8 +388,8 @@
       "max": 1
     },
     "io stat, workspace": {
-      "max": 10,
-      "why": "Worktable Teams checks the selected Worktable's team state once per request: one stat each of the team marker, the workspace manifest and the team database (Plan 16 gate D4 allows exactly these 3 on solo). The person's own groups and pins ride along with one stat of their preferences file, read again only when it changes, instead of a request of their own."
+      "max": 9,
+      "why": "Worktable Teams checks the selected Worktable's team state once per request: one stat each of the team marker, the workspace manifest and the team database (Plan 16 gate D4 allows exactly these 3 on solo)."
     },
     "io read, workspace": {
       "max": 6

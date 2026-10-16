@@ -19,7 +19,11 @@ export const PersonalNavigationSchema = z.object({
   revision: z.number().int().min(0),
   groups: z.array(PersonalGroupSchema).max(100),
   /** Space id to group id. A Space sits in at most one group. */
-  spaceGroups: z.record(z.string().min(1).max(200), z.string().min(1).max(64)),
+  spaceGroups: z
+    .record(z.string().min(1).max(200), z.string().min(1).max(64))
+    .refine((value) => Object.keys(value).length <= 2000, {
+      message: "Too many Space assignments",
+    }),
   /** Pinned Space ids, in the order they were pinned. */
   pins: z.array(z.string().min(1).max(200)).max(500),
 });

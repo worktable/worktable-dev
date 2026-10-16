@@ -10,6 +10,11 @@ export interface UserProfile {
   name: string;
 }
 
+/** Where this tab mirrors the current person's profile. */
+export function profileStorageKey(): string {
+  return storageKey()
+}
+
 function storageKey(): string {
   const team = browserTeamCacheKey();
   return team ? `worktable-profile:${team}` : "worktable-profile";

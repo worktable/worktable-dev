@@ -141,6 +141,8 @@ export function readPersonalNavigation(
 export type SavePersonalNavigationResult =
   | { saved: true; navigation: PersonalNavigation }
   | { saved: false; current: PersonalNavigation }
+  /** With the entries kept for other Spaces, it would exceed the limits. */
+  | { saved: false; tooLarge: true }
 
 /**
  * Replace the person's navigation if nobody saved since `expectedRevision`.
@@ -192,6 +194,11 @@ export function savePersonalNavigation(
         ),
       },
       pins,
+    }
+    // Kept entries count too; a file that breaks the schema would be dropped
+    // on its next read, so refuse instead of writing it.
+    if (!PersonalNavigationSchema.safeParse(navigation).success) {
+      return { saved: false, tooLarge: true }
     }
     file.people[personKey] = { ...file.people[personKey], navigation }
     await savePreferences(file)

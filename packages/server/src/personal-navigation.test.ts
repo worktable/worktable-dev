@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
+import { savePersonalNavigation } from "./personal-navigation-store.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { writeSpace } from "./store.ts"
@@ -118,6 +119,30 @@ describe("personal navigation", () => {
     const refused = await save({ expectedRevision: 0, ...arrangement })
     expect(refused.status).toBe(503)
     expect(await refused.json()).toMatchObject({ code: "PREFERENCES_UNREADABLE" })
+  })
+
+  it("refuses a save that the kept entries would push past the limits", async () => {
+    const ids = Array.from({ length: 501 }, (_, index) => `space-${index}`)
+    const all = () => true
+    const first = await savePersonalNavigation(
+      "person",
+      0,
+      { groups: [], spaceGroups: {}, pins: ids.slice(0, 500) },
+      ids,
+      all,
+      ids
+    )
+    expect(first.saved).toBe(true)
+    // A tab that knows none of those Spaces pins another one.
+    const second = await savePersonalNavigation(
+      "person",
+      1,
+      { groups: [], spaceGroups: {}, pins: [ids[500]!] },
+      [ids[500]!],
+      all,
+      ids
+    )
+    expect(second).toEqual({ saved: false, tooLarge: true })
   })
 
   it("refuses agents and inconsistent arrangements", async () => {

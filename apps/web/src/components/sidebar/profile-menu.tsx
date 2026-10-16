@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { LogOut, Monitor, Moon, SlidersHorizontal, Sun, UserRound } from "lucide-react"
 import {
   DropdownMenu,
@@ -15,7 +16,8 @@ import { useTheme } from "@/components/theme-provider"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { WorkspaceInfo } from "@/lib/api"
 import { submitCloudLogout } from "@/lib/cloud-logout"
-import { useWorkspace } from "@/lib/queries"
+import { queryKeys, useWorkspace } from "@/lib/queries"
+import { profileStorageKey } from "@/lib/profile"
 import { runtimePath } from "@/lib/runtime-path"
 import { openSettings } from "@/lib/settings-open"
 import { signOutLocalTeam } from "@/lib/team-context"
@@ -64,7 +66,21 @@ export function PersonAvatar({
 
 /** Who is signed in here, opening what concerns them. */
 export function ProfileMenu() {
+  const queryClient = useQueryClient()
   const { data: workspace } = useWorkspace()
+  // A rename in another tab updates this person's profile mirror; read the
+  // name the sidebar shows again.
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key !== profileStorageKey()) return
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.workspace,
+        exact: true,
+      })
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [queryClient])
   const { data: deployment } = useDeploymentInfo()
   const { theme, setTheme } = useTheme()
   const [confirming, setConfirming] = useState(false)

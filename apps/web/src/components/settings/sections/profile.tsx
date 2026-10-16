@@ -5,6 +5,7 @@ import { toast } from "@worktable/ui/components/sonner"
 import {
   fetchUserProfile,
   getCurrentUser,
+  profileStorageKey,
   setCurrentUser,
   updateUserProfile,
 } from "@/lib/profile"
@@ -48,7 +49,9 @@ function DisplayNameGroup() {
   // Keep the field in sync if another tab changed the profile while open.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key?.startsWith("worktable-profile") && !hasLocalEdit.current) {
+      // Only this person's profile in this Worktable, not another tab's.
+      if (e.key !== profileStorageKey()) return
+      if (!hasLocalEdit.current) {
         editRevision.current += 1
         setValue(getCurrentUser().name)
       }

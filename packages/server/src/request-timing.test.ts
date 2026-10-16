@@ -75,7 +75,8 @@ describe("request timing", () => {
     })
     try {
       const response = await fixture().request(
-        "/api/spaces/alpha/docs/plans/quarterly-plan"
+        "/api/spaces/alpha/docs/plans/quarterly-plan",
+        { headers: { "X-Worktable-Request-Id": "gateway-request-1" } }
       )
       expect(response.status).toBe(500)
       const body = (await response.json()) as Record<string, string>
@@ -86,11 +87,20 @@ describe("request timing", () => {
       const log = logged.join("\n")
       expect(log).toContain(body.errorId)
       expect(log).toContain("GET /api/spaces/:spaceId/docs/* 500")
+      // Both lines carry the gateway's id, so the request can be traced.
+      expect(log.match(/request=gateway-request-1/g)).toHaveLength(2)
       // Stack frames stay, so the failure can still be traced.
       expect(log).toContain("request-timing.test.ts")
       for (const secret of ["alpha", "quarterly", "Quarterly plan"]) {
         expect(log).not.toContain(secret)
       }
+
+      // Anything but an opaque id stays out of the log.
+      logged.length = 0
+      await fixture().request("/api/spaces/alpha/docs/x", {
+        headers: { "X-Worktable-Request-Id": "user@example.com" },
+      })
+      expect(logged.join("\n")).not.toContain("request=")
     } finally {
       error.mockRestore()
     }

@@ -3,10 +3,14 @@
 // Code anywhere below a request records into that request's spans through
 // `timing`; outside a request the calls cost one AsyncLocalStorage lookup.
 // The same middleware feeds the per-route latency histograms and logs slow or
-// failed requests.
+// failed requests, with the Cloud gateway's request id when it sent one.
 
 import { AsyncLocalStorage } from "node:async_hooks"
 import { randomBytes } from "node:crypto"
+import {
+  REQUEST_ID_HEADER,
+  REQUEST_ID_PATTERN,
+} from "@worktable/hosted-contract"
 import type { Context, MiddlewareHandler, Next } from "hono"
 import { routePath } from "hono/route"
 import { debugLogging, logError } from "./debug-log.ts"
@@ -138,6 +142,15 @@ export function timedMiddleware(
   }
 }
 
+/**
+ * The Cloud gateway's id for this request, so a log line can be matched to
+ * the gateway's record of it. Only a well-formed opaque id is logged.
+ */
+function requestIdOf(c: Context): string {
+  const id = c.req.header(REQUEST_ID_HEADER)
+  return id && REQUEST_ID_PATTERN.test(id) ? ` request=${id}` : ""
+}
+
 function isMcpPath(path: string): boolean {
   return (
     path === "/mcp" ||
@@ -183,15 +196,15 @@ async function timeRequest(
   }
   if (status >= 500) {
     console.error(
-      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
+      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}${requestIdOf(c)}`
     )
   } else if (totalMs - current.duration("wait") > SLOW_REQUEST_MS) {
     console.warn(
-      `[http] slow ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}`
+      `[http] slow ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}${requestIdOf(c)}`
     )
   } else if (debugLogging) {
     console.debug(
-      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()} ${path}`
+      `[http] ${method} ${route} ${status} ${totalMs.toFixed(0)}ms${current.summary()}${requestIdOf(c)} ${path}`
     )
   }
 }
@@ -214,7 +227,7 @@ export const serverTiming: MiddlewareHandler = (c, next) => {
 export function unexpectedErrorResponse(c: Context, error: Error): Response {
   const errorId = randomBytes(4).toString("hex")
   console.error(
-    `[server] unexpected error ${errorId} in ${c.req.method} ${routePath(c)}: ${logError(error)}`
+    `[server] unexpected error ${errorId} in ${c.req.method} ${routePath(c)}${requestIdOf(c)}: ${logError(error)}`
   )
   return c.json(
     {

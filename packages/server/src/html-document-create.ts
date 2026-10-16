@@ -1,6 +1,9 @@
 import type { WidgetFile } from "@worktable/types"
-import { readDocAliases, reservedByAliasIn } from "./doc-aliases.ts"
-import { admitManagedDocumentWrite } from "./document-identity-admission.ts"
+import { reservedByAliasIn } from "./doc-aliases.ts"
+import {
+  admitManagedDocumentWrite,
+  ManagedDocumentAdmissionError,
+} from "./document-identity-admission.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
 import { deduplicateSlug, slugify } from "./store.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
@@ -10,7 +13,6 @@ import {
   versionableWidget,
 } from "./widget-version-store.ts"
 import {
-  listWidgets,
   widgetIdDedupePool,
   withWidgetTopologyLock,
   withWidgetWriteLock,
@@ -72,17 +74,28 @@ export async function createHtmlDocument(
     spaceId: input.spaceId,
     path:
       input.explicitId ??
-      (async () => {
-        const existing = await listWidgets(input.spaceId, {
-          includeArchived: true,
-          includeAliasShadows: true,
-        })
+      (async (catalog) => {
+        const folderReservation = input.folder
+          ? reservedByAliasIn(catalog.aliases, input.folder)
+          : null
+        // Suffixing a leaf cannot escape a moved folder's prefix reservation.
+        if (folderReservation?.kind === "prefix") {
+          throw new ManagedDocumentAdmissionError(
+            `This path is reserved by another document: ${folderReservation.path}`
+          )
+        }
         const slug = slugify(input.name)
         const base = input.folder ? `${input.folder}/${slug}` : slug
-        const taken = widgetIdDedupePool(existing)
-        const { aliases } = await readDocAliases(input.spaceId)
+        const taken = widgetIdDedupePool(
+          catalog.entries.map((entry) => ({
+            id: (entry.kind === "document"
+              ? entry.descriptor.path
+              : entry.pathKey
+            ).normalize("NFC"),
+          }))
+        )
         let candidate = await deduplicateSlug(base, taken)
-        while (aliases && reservedByAliasIn(aliases, candidate)) {
+        while (reservedByAliasIn(catalog.aliases, candidate)) {
           taken.push(candidate)
           candidate = await deduplicateSlug(base, taken)
         }

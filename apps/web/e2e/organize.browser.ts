@@ -44,6 +44,10 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
     harness.workspacePath("spaces/folder-creation/docs/plans/nested/Sketch.md"),
     "# Existing sketch\n"
   )
+  await writeFile(
+    harness.workspacePath("spaces/folder-creation/docs/plans/Status.md"),
+    "# Existing status\n"
+  )
   await page.goto(
     `${harness.webUrl}/spaces/folder-creation/documents/plans/nested/brief`
   )
@@ -96,7 +100,7 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   await expect(page.getByLabel("HTML doc name")).toHaveValue("Status")
   await page.unroute(widgetRoute)
   await page.getByRole("button", { name: "Create HTML doc" }).click()
-  await expect(page).toHaveURL(/documents\/plans\/status$/)
+  await expect(page).toHaveURL(/documents\/plans\/status-2$/)
   await expect(
     page
       .frameLocator("iframe[data-worktable-widget-frame]")
@@ -108,7 +112,7 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   for (const path of [
     "plans/nested/untitled",
     "plans/nested/sketch-2",
-    "plans/status",
+    "plans/status-2",
   ]) {
     expect(
       documents.find((document: { path: string }) => document.path === path)
@@ -117,6 +121,11 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   expect(
     documents.find(
       (document: { path: string }) => document.path === "plans/nested/Sketch"
+    )
+  ).toMatchObject({ format: { id: "worktable.markdown" } })
+  expect(
+    documents.find(
+      (document: { path: string }) => document.path === "plans/Status"
     )
   ).toMatchObject({ format: { id: "worktable.markdown" } })
   await page.reload()

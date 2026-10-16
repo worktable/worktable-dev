@@ -561,7 +561,8 @@ describe("path-style widget ids", () => {
     expect(res.json.widgetId).toBe("plans-2");
 
     // Choosing a folder keeps automatic naming inside it, including concurrent
-    // same-name creates, without replacing the HTML doc already at that path.
+    // same-name creates and other formats, without replacing existing content.
+    expect((await writeDoc("meta", "plans/Q3-2", "# Existing Doc\n")).ok).toBe(true);
     const created = await Promise.all(["First", "Second"].map((label) =>
       req(app, "POST", "/api/spaces/meta/widgets", {
         folder: "plans",
@@ -570,13 +571,20 @@ describe("path-style widget ids", () => {
       })
     ));
     expect(created.map((result) => result.status)).toEqual([201, 201]);
-    expect(created.map((result) => result.json.widgetId).sort()).toEqual(["plans/q3-2", "plans/q3-3"]);
+    expect(created.map((result) => result.json.widgetId).sort()).toEqual(["plans/q3-3", "plans/q3-4"]);
     const original = await req(app, "GET", "/api/spaces/meta/widgets/plans/q3/content?format=raw");
     expect(original.text).toBe(VALID_HTML);
+    expect((await readDoc("meta", "plans/Q3-2")).data).toBe("# Existing Doc\n");
     for (const [index, result] of created.entries()) {
       const content = await req(app, "GET", `/api/spaces/meta/widgets/${result.json.widgetId}/content?format=raw`);
       expect(content.text).toBe(VALID_HTML.replace("<p>hi</p>", `<p>${["First", "Second"][index]}</p>`));
     }
+    await recordDocAlias("meta", "old-plans", "plans", "prefix");
+    const movedFolder = await req(app, "POST", "/api/spaces/meta/widgets", {
+      folder: "old-plans", name: "Q3", html: VALID_HTML,
+    });
+    expect(movedFolder.status).toBe(409);
+    expect(movedFolder.json.error).toContain("reserved");
   });
 
   it("supports a document beside a folder with the same name", async () => {

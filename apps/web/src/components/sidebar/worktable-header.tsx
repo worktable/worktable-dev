@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, Cloud, Laptop, Settings } from "lucide-react"
+import { ArrowLeftRight, Check, ChevronsUpDown, Cloud, Laptop, Settings } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +12,8 @@ import { recognitionSolid } from "@/lib/recognition"
 import { useWorkspace } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
+import { insideDesktop, switchDesktopWorktable } from "@/lib/desktop-connection"
+import { toast } from "@worktable/ui/components/sonner"
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"])
 
@@ -79,6 +81,24 @@ export function WorktableHeader() {
             <Check className="size-3.5 shrink-0 text-primary" />
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {desktop && insideDesktop() && (
+            <DropdownMenuItem
+              onClick={() =>
+                void switchDesktopWorktable().then((outcome) => {
+                  if (outcome === "unsaved") {
+                    toast.error("Couldn’t save the drawing. Try again.")
+                  } else if (outcome === "unavailable") {
+                    toast.error(
+                      "Choose Change Connection from the Workspace menu to switch."
+                    )
+                  }
+                })
+              }
+            >
+              <ArrowLeftRight className="mr-2 size-4" />
+              Switch Worktable
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => openSettings("general")}>
             <Settings className="mr-2 size-4" />
             Worktable Settings

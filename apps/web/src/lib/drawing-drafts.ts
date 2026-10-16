@@ -57,6 +57,11 @@ export function registerDrawingSave(
   }
 }
 
+/** Saves the open drawing, if any, before the page goes away. */
+export async function saveOpenDrawing() {
+  await activeDrawing?.save()
+}
+
 export async function flushDrawingBeforeMove(spaceId: string, path: string) {
   if (
     activeDrawing?.spaceId === spaceId &&

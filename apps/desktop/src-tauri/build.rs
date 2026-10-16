@@ -43,6 +43,7 @@ fn main() {
             "desktop_workspace_check_for_updates",
             "desktop_workspace_restart_to_update",
             "desktop_workspace_set_update_channel",
+            "desktop_workspace_show_chooser",
             "desktop_select_connection_provider",
             "desktop_start_cloud_connection",
             "desktop_cancel_cloud_connection",

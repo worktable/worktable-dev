@@ -1,12 +1,5 @@
 import { WorkspaceExportPathError } from "./workspace-package-path.ts"
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  setSystemTime,
-} from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   chmod,
   mkdir,
@@ -185,7 +178,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  setSystemTime()
   setHistoryClassificationHookForTests(null)
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportCaptureRemovalHookForTests(null)
@@ -844,57 +836,6 @@ describe("workspace export v2", () => {
     await exporting
 
     expect(maximum).toBe(8)
-  })
-
-  it("selects history from the held tree after it changes under the pre-copy", async () => {
-    const older = await addVersion("2020-01-01T00:00:00.000Z", "older")
-    const replaced = await addVersion("2020-01-02T00:00:00.000Z", "replaced")
-    await addV2Generation("2020-01-01T00:00:00.000Z", "gen-old")
-    const generation = await addV2Generation(
-      "2020-01-02T00:00:00.000Z",
-      "gen-new"
-    )
-    // Everything has settled, so the hold trusts what the pre-copy read.
-    setSystemTime(new Date(Date.now() + 60_000))
-    const history = { mode: "count", maxPerItem: 1 } as const
-    const held: string[] = []
-    let newest = ""
-    const result = await writeWorkspaceExportV2(join(root, "held"), {
-      history,
-      withCaptureBarrier: async (capture) => {
-        // A newer version displaces the selected one, and an older one
-        // becomes a checkpoint, between the pre-copy and the hold.
-        newest = await addVersion("2020-01-03T00:00:00.000Z", "newest")
-        await writeFile(
-          join(source, older),
-          `${JSON.stringify({
-            createdAt: "2020-01-01T00:00:00.000Z",
-            checkpoint: { meaningful: true },
-            content: "Version older",
-          })}\n`
-        )
-        setWorkspaceExportCaptureHookForTests(async (entry) => {
-          if (entry.held && entry.kind === "file") held.push(entry.path)
-        })
-        return capture()
-      },
-    })
-    setWorkspaceExportCaptureHookForTests(null)
-
-    expect(held.sort()).toEqual([newest, older].sort())
-    const paths = result.manifest.integrity.files.map((file) => file.path)
-    expect(paths).toEqual(expect.arrayContaining([older, newest]))
-    expect(paths).not.toContain(replaced)
-    expect(paths.filter((path) => path.startsWith(generation))).toHaveLength(2)
-    const reference = await writeWorkspaceExportV2(join(root, "reference"), {
-      history,
-    })
-    expect(result.manifest.integrity).toEqual(reference.manifest.integrity)
-    expect(result.manifest.history).toEqual(reference.manifest.history)
-    await importWorkspaceExportV2(result.destination, join(root, "restored"))
-    expect(await readFile(join(root, "restored", older), "utf8")).toContain(
-      '"meaningful":true'
-    )
   })
 
   it("refuses unsafe sources and destinations", async () => {

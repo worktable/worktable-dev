@@ -1,7 +1,4 @@
-import {
-  createConcurrencyLimit,
-  mapWithConcurrency,
-} from "./bounded-concurrency.ts"
+import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import {
   analyzePackagePath,
   WorkspaceExportPathError,
@@ -237,13 +234,9 @@ interface ArchiveEntry {
 let historyClassificationHookForTests:
   | ((entry: { path: string; size: number }) => Promise<void>)
   | null = null
-type CaptureEntryHook = (entry: {
-  path: string
-  kind: "directory" | "file"
-  /** False for the pre-copy beside live writers, true inside the hold. */
-  held: boolean
-}) => Promise<void>
-let captureEntryHookForTests: CaptureEntryHook | null = null
+let captureEntryHookForTests:
+  | ((entry: { path: string; kind: "directory" | "file" }) => Promise<void>)
+  | null = null
 let beforePublishHookForTests: (() => Promise<void>) | null = null
 let viewerGeneratedLimitForTests: number | null = null
 let archiveLimitForTests: number | null = null
@@ -258,7 +251,9 @@ export function setHistoryClassificationHookForTests(
 }
 
 export function setWorkspaceExportCaptureHookForTests(
-  hook: CaptureEntryHook | null
+  hook:
+    | ((entry: { path: string; kind: "directory" | "file" }) => Promise<void>)
+    | null
 ): void {
   captureEntryHookForTests = hook
 }
@@ -537,22 +532,6 @@ function isWorkspaceTransactionArtifact(path: string): boolean {
   )
 }
 
-/** Metadata reads in flight while listing; serial reads made the hold slow. */
-const SOURCE_LISTING_CONCURRENCY = 16
-
-interface ListedChild {
-  path?: string
-  collisionPath?: string
-  entry?: SourceEntry
-  failure?: { error: unknown }
-  children?: Array<ListedChild | null>
-}
-
-/**
- * List the tree in portable path order. Directories are read concurrently,
- * but the entries and the failure reported follow that order, as in a serial
- * walk.
- */
 async function listSourceEntries(
   root: string,
   options: { paths?: "portable" | "local"; signal?: AbortSignal } = {}
@@ -562,30 +541,29 @@ async function listSourceEntries(
   if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
     throw new Error("workspace export requires a real workspace directory")
   }
-  const limit = createConcurrencyLimit(SOURCE_LISTING_CONCURRENCY)
-  let failed = false
-  let discovered = 0
+  const entries: SourceEntry[] = []
+  const collisionPaths = new Set<string>()
 
-  const describe = async (
-    directory: string,
-    name: string
-  ): Promise<ListedChild | null> => {
-    options.signal?.throwIfAborted()
-    const absolute = join(directory, name)
-    const info = await lstat(absolute)
-    const localPath = portablePath(root, absolute)
-    if (isWorkspaceTransactionArtifact(localPath)) return null
-    const path =
-      options.paths === "local"
-        ? localPath
-        : validateWorkspaceExportV2Path(localPath)
-    const listed: ListedChild = {
-      path,
-      ...(options.paths === "local"
-        ? {}
-        : { collisionPath: path.toLocaleLowerCase("en-US") }),
-    }
-    try {
+  const visit = async (directory: string): Promise<void> => {
+    const children = await readdir(directory, { withFileTypes: true })
+    children.sort((left, right) => comparePortableText(left.name, right.name))
+    for (const child of children) {
+      options.signal?.throwIfAborted()
+      const absolute = join(directory, child.name)
+      const info = await lstat(absolute)
+      const localPath = portablePath(root, absolute)
+      if (isWorkspaceTransactionArtifact(localPath)) continue
+      const path =
+        options.paths === "local"
+          ? localPath
+          : validateWorkspaceExportV2Path(localPath)
+      if (options.paths !== "local") {
+        const collisionPath = path.toLocaleLowerCase("en-US")
+        if (collisionPaths.has(collisionPath)) {
+          throw new Error(`workspace contains case-colliding paths: ${path}`)
+        }
+        collisionPaths.add(collisionPath)
+      }
       if (info.isSymbolicLink()) {
         throw new Error(`workspace export refuses symlink: ${path}`)
       }
@@ -594,7 +572,7 @@ async function listSourceEntries(
         throw new Error(`workspace path escaped during export: ${path}`)
       }
       if (info.isDirectory()) {
-        listed.entry = {
+        entries.push({
           path,
           absolute,
           kind: "directory",
@@ -605,104 +583,43 @@ async function listSourceEntries(
           ino: info.ino,
           ctimeMs: info.ctimeMs,
           mtimeMs: info.mtimeMs,
+        })
+        await visit(absolute)
+      } else if (info.isFile()) {
+        if (
+          options.paths !== "local" &&
+          info.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
+        ) {
+          throw new Error(`workspace file exceeds the v2 limit: ${path}`)
         }
-        return listed
-      }
-      if (!info.isFile()) {
+        if (
+          path === "worktable.workspace.json" &&
+          info.size > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES
+        ) {
+          throw new Error("workspace manifest exceeds the portable size limit")
+        }
+        entries.push({
+          path,
+          absolute,
+          kind: "file",
+          size: info.size,
+          mode: info.mode & 0o777,
+          mtime: info.mtime,
+          dev: info.dev,
+          ino: info.ino,
+          ctimeMs: info.ctimeMs,
+          mtimeMs: info.mtimeMs,
+        })
+      } else {
         throw new Error(`workspace export refuses special file: ${path}`)
       }
-      if (
-        options.paths !== "local" &&
-        info.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
-      ) {
-        throw new Error(`workspace file exceeds the v2 limit: ${path}`)
-      }
-      if (
-        path === "worktable.workspace.json" &&
-        info.size > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES
-      ) {
-        throw new Error("workspace manifest exceeds the portable size limit")
-      }
-      listed.entry = {
-        path,
-        absolute,
-        kind: "file",
-        size: info.size,
-        mode: info.mode & 0o777,
-        mtime: info.mtime,
-        dev: info.dev,
-        ino: info.ino,
-        ctimeMs: info.ctimeMs,
-        mtimeMs: info.mtimeMs,
-      }
-      return listed
-    } catch (error) {
-      // A case collision on this path is still reported before its failure.
-      listed.failure = { error }
-      return listed
-    }
-  }
-
-  // Every started read settles before the listing returns or fails. After a
-  // failure, reads not yet started are skipped.
-  const visit = async (
-    directory: string
-  ): Promise<Array<ListedChild | null>> => {
-    const children = await limit(() =>
-      readdir(directory, { withFileTypes: true })
-    )
-    children.sort((left, right) => comparePortableText(left.name, right.name))
-    return Promise.all(
-      children.map(async (child): Promise<ListedChild | null> => {
-        let listed: ListedChild | null = null
-        try {
-          listed = await limit(async () =>
-            failed ? null : describe(directory, child.name)
-          )
-          if (!listed) return null
-          if (listed.failure) {
-            failed = true
-            return listed
-          }
-          discovered += 1
-          if (discovered > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES)
-            throw new Error("workspace exceeds the v2 entry limit")
-          if (listed.entry!.kind === "directory")
-            listed.children = await visit(listed.entry!.absolute)
-          return listed
-        } catch (error) {
-          failed = true
-          if (!listed) return { failure: { error } }
-          listed.failure = { error }
-          return listed
-        }
-      })
-    )
-  }
-
-  const listed = await visit(root)
-  const entries: SourceEntry[] = []
-  const collisionPaths = new Set<string>()
-  const flatten = (children: Array<ListedChild | null>): void => {
-    for (const child of children) {
-      if (!child) continue
-      if (child.collisionPath !== undefined) {
-        if (collisionPaths.has(child.collisionPath)) {
-          throw new Error(
-            `workspace contains case-colliding paths: ${child.path}`
-          )
-        }
-        collisionPaths.add(child.collisionPath)
-      }
-      if (child.failure) throw child.failure.error
-      entries.push(child.entry!)
       if (entries.length > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES) {
         throw new Error("workspace exceeds the v2 entry limit")
       }
-      if (child.children) flatten(child.children)
     }
   }
-  flatten(listed)
+
+  await visit(root)
   return {
     root: {
       absolute: root,
@@ -717,36 +634,16 @@ async function listSourceEntries(
   }
 }
 
-/**
- * "exact" proves no directory on the path changed since the inventory.
- * "placement" proves only that each is still the same real directory inside
- * the workspace. The pre-copy beside live writers uses it so that edits to
- * siblings do not discard its work; the hold trusts a pre-copied file only by
- * that file's own identity.
- */
-type AncestorCheck = "exact" | "placement"
-
-function sameAncestor(
-  check: AncestorCheck,
-  expected: Parameters<typeof sameSourceIdentity>[0],
-  actual: Stats
-): boolean {
-  return check === "exact"
-    ? sameSourceIdentity(expected, actual)
-    : actual.dev === expected.dev && actual.ino === expected.ino
-}
-
 async function assertSourceAncestors(
   entry: SourceEntry,
   inventory: SourceInventory,
-  directories: Map<string, SourceEntry>,
-  check: AncestorCheck = "exact"
+  directories: Map<string, SourceEntry>
 ): Promise<void> {
   const rootInfo = await lstat(inventory.root.absolute)
   if (
     !rootInfo.isDirectory() ||
     rootInfo.isSymbolicLink() ||
-    !sameAncestor(check, inventory.root, rootInfo) ||
+    !sameSourceIdentity(inventory.root, rootInfo) ||
     (await realpath(inventory.root.absolute)) !== inventory.root.canonical
   ) {
     throw new WorkspaceChangedDuringExportError("workspace root")
@@ -762,7 +659,7 @@ async function assertSourceAncestors(
     if (
       !info.isDirectory() ||
       info.isSymbolicLink() ||
-      !sameAncestor(check, expected, info)
+      !sameSourceIdentity(expected, info)
     ) {
       throw new WorkspaceChangedDuringExportError(path)
     }
@@ -776,10 +673,9 @@ async function assertSourceAncestors(
 async function readSourceFile(
   entry: SourceEntry,
   inventory: SourceInventory,
-  directories: Map<string, SourceEntry>,
-  check: AncestorCheck = "exact"
+  directories: Map<string, SourceEntry>
 ): Promise<Buffer> {
-  await assertSourceAncestors(entry, inventory, directories, check)
+  await assertSourceAncestors(entry, inventory, directories)
   const before = await lstat(entry.absolute)
   if (
     !before.isFile() ||
@@ -799,61 +695,10 @@ async function readSourceFile(
     if (bytes.byteLength !== entry.size || !sameSourceIdentity(entry, after)) {
       throw new WorkspaceChangedDuringExportError(entry.path)
     }
-    await assertSourceAncestors(entry, inventory, directories, check)
+    await assertSourceAncestors(entry, inventory, directories)
     return bytes
   } finally {
     await handle.close()
-  }
-}
-
-type VersionClassification = Pick<
-  VersionCandidate,
-  "group" | "unit" | "id" | "timestamp" | "meaningful" | "classified"
->
-
-/**
- * Classifications made by the pre-copy beside live writers, reused inside the
- * write hold for history whose files have not changed since. As with content
- * hashes, only files last written before `settledBefore` are trusted by
- * identity, so a rewrite within one timestamp tick never reuses a stale answer.
- */
-interface ClassificationReuse {
-  cache: Map<
-    string,
-    { identity: string; classification: VersionClassification }
-  >
-  settledBefore: number
-  /** The pre-copy leaves what changed under it to the hold instead of failing. */
-  precopy: boolean
-}
-
-/** Null when a file may still change without changing its identity. */
-function settledIdentity(
-  entries: readonly SourceEntry[],
-  settledBefore: number
-): string | null {
-  const parts: string[] = []
-  for (const entry of entries) {
-    if (entry.kind === "directory") {
-      parts.push(`${entry.path}\0directory`)
-      continue
-    }
-    if (Math.max(entry.mtimeMs, entry.ctimeMs) >= settledBefore) return null
-    parts.push(`${entry.path}\0${sourceContentIdentity(entry)}`)
-  }
-  return parts.join("\n")
-}
-
-function rememberedClassification(
-  reuse: ClassificationReuse | undefined,
-  key: string,
-  entries: readonly SourceEntry[]
-): { identity: string | null; cached?: VersionClassification } {
-  const identity = reuse ? settledIdentity(entries, reuse.settledBefore) : null
-  const cached = identity === null ? undefined : reuse?.cache.get(key)
-  return {
-    identity,
-    cached: cached?.identity === identity ? cached?.classification : undefined,
   }
 }
 
@@ -863,113 +708,85 @@ async function classifyVersion(
   directories: Map<string, SourceEntry>,
   files: Map<string, SourceEntry>,
   v2EntriesByUnit: Map<string, SourceEntry[]>,
-  v2Classifications: Map<string, Promise<VersionClassification>>,
-  reuse?: ClassificationReuse
+  v2Classifications: Map<
+    string,
+    Promise<
+      Pick<
+        VersionCandidate,
+        "group" | "unit" | "id" | "timestamp" | "meaningful" | "classified"
+      >
+    >
+  >
 ): Promise<VersionCandidate> {
   await historyClassificationHookForTests?.({
     path: entry.path,
     size: entry.size,
   })
-  const check: AncestorCheck = reuse?.precopy ? "placement" : "exact"
-  // Bytes read under a verified identity give a stable answer even when they
-  // do not parse. Only a failed read is left to classify again.
-  const reader = () => {
-    let failed = false
-    return {
-      read: (source: SourceEntry) =>
-        readSourceFile(source, inventory, directories, check).catch(
-          (error: unknown) => {
-            failed = true
-            throw error
-          }
-        ),
-      stable: (error: unknown): boolean => {
-        if (!failed) return true
-        if (
-          error instanceof WorkspaceChangedDuringExportError &&
-          !reuse?.precopy
-        )
-          throw error
-        return false
-      },
-    }
-  }
   const parts = entry.path.split("/")
   const v2 = v2GenerationLocation(entry.path)
   if (v2) {
     const { group, unit, id } = v2
     let classification = v2Classifications.get(unit)
     if (!classification) {
-      const key = `generation:${unit}`
-      const unitEntries = v2EntriesByUnit.get(unit) ?? []
-      const { identity, cached } = rememberedClassification(
-        reuse,
-        key,
-        unitEntries
-      )
-      classification = cached
-        ? Promise.resolve(cached)
-        : (async () => {
-            let stable = true
-            const { read, stable: settled } = reader()
-            const result = await (async () => {
-              const fallback = {
-                group,
-                unit,
-                id,
-                timestamp: versionIdTimestamp(id),
-                meaningful: false,
-                classified: false,
-              }
-              const manifestEntry = files.get(`${unit}/manifest.json`)
-              if (
-                !manifestEntry ||
-                manifestEntry.kind !== "file" ||
-                manifestEntry.size > HISTORY_CLASSIFICATION_MAX_BYTES
-              ) {
-                return fallback
-              }
-              try {
-                const manifest = DocumentGenerationManifestV2Schema.parse(
-                  JSON.parse((await read(manifestEntry)).toString("utf8"))
-                )
-                if (
-                  manifest.spaceId !== v2.spaceId ||
-                  manifest.documentId !== v2.documentId ||
-                  manifest.id !== id
-                ) {
-                  return fallback
-                }
-                if (
-                  !(await verifyV2GenerationForClassification(
-                    unit,
-                    manifest,
-                    unitEntries,
-                    read
-                  ))
-                ) {
-                  return fallback
-                }
-                const createdAt = Date.parse(manifest.createdAt)
-                return {
-                  group,
-                  unit,
-                  id,
-                  timestamp: Number.isNaN(createdAt)
-                    ? versionIdTimestamp(id)
-                    : createdAt,
-                  meaningful: manifest.checkpoint?.meaningful === true,
-                  classified: true,
-                }
-              } catch (error) {
-                stable = settled(error)
-                return fallback
-              }
-            })()
-            if (reuse && identity !== null && stable)
-              reuse.cache.set(key, { identity, classification: result })
-            return result
-          })()
+      classification = (async () => {
+        const fallback = {
+          group,
+          unit,
+          id,
+          timestamp: versionIdTimestamp(id),
+          meaningful: false,
+          classified: false,
+        }
+        const manifestEntry = files.get(`${unit}/manifest.json`)
+        if (
+          !manifestEntry ||
+          manifestEntry.kind !== "file" ||
+          manifestEntry.size > HISTORY_CLASSIFICATION_MAX_BYTES
+        ) {
+          return fallback
+        }
+        try {
+          const manifest = DocumentGenerationManifestV2Schema.parse(
+            JSON.parse(
+              (
+                await readSourceFile(manifestEntry, inventory, directories)
+              ).toString("utf8")
+            )
+          )
+          if (
+            manifest.spaceId !== v2.spaceId ||
+            manifest.documentId !== v2.documentId ||
+            manifest.id !== id
+          ) {
+            return fallback
+          }
+          if (
+            !(await verifyV2GenerationForClassification(
+              unit,
+              manifest,
+              v2EntriesByUnit.get(unit) ?? [],
+              inventory,
+              directories
+            ))
+          ) {
+            return fallback
+          }
+          const createdAt = Date.parse(manifest.createdAt)
+          return {
+            group,
+            unit,
+            id,
+            timestamp: Number.isNaN(createdAt)
+              ? versionIdTimestamp(id)
+              : createdAt,
+            meaningful: manifest.checkpoint?.meaningful === true,
+            classified: true,
+          }
+        } catch (error) {
+          if (error instanceof WorkspaceChangedDuringExportError) throw error
+          return fallback
+        }
+      })()
       v2Classifications.set(unit, classification)
     }
     return { ...entry, kind: "file", ...(await classification) }
@@ -986,17 +803,11 @@ async function classifyVersion(
   if (entry.size > HISTORY_CLASSIFICATION_MAX_BYTES) {
     classified = false
   }
-  const key = `version:${entry.path}`
-  const { identity, cached } = classified
-    ? rememberedClassification(reuse, key, [entry])
-    : { identity: null }
-  if (cached) {
-    ;({ timestamp, meaningful, classified } = cached)
-  } else if (classified) {
-    let stable = true
-    const { read, stable: settled } = reader()
+  if (classified) {
     try {
-      const parsed = JSON.parse((await read(entry)).toString("utf8")) as {
+      const parsed = JSON.parse(
+        (await readSourceFile(entry, inventory, directories)).toString("utf8")
+      ) as {
         createdAt?: unknown
         checkpoint?: { meaningful?: unknown }
       }
@@ -1006,21 +817,9 @@ async function classifyVersion(
         timestamp = Number.isNaN(parsedTimestamp) ? null : parsedTimestamp
       }
     } catch (error) {
-      stable = settled(error)
+      if (error instanceof WorkspaceChangedDuringExportError) throw error
       classified = false
     }
-    if (reuse && identity !== null && stable)
-      reuse.cache.set(key, {
-        identity,
-        classification: {
-          group: dirname(entry.path),
-          unit: entry.path,
-          id,
-          timestamp,
-          meaningful,
-          classified,
-        },
-      })
   }
   return {
     ...entry,
@@ -1078,7 +877,8 @@ async function verifyV2GenerationForClassification(
   unit: string,
   manifest: DocumentGenerationManifestV2,
   unitEntries: SourceEntry[],
-  read: (entry: SourceEntry) => Promise<Buffer>
+  inventory: SourceInventory,
+  directories: Map<string, SourceEntry>
 ): Promise<boolean> {
   // Classification is advisory. Large histories remain included
   // conservatively rather than turning a bounded export into a full-history
@@ -1117,7 +917,7 @@ async function verifyV2GenerationForClassification(
     if (!entry || entry.kind !== "file" || entry.size !== declared.bytes) {
       return false
     }
-    const bytes = await read(entry)
+    const bytes = await readSourceFile(entry, inventory, directories)
     if (
       bytes.byteLength !== declared.bytes ||
       createHash("sha256").update(bytes).digest("hex") !== declared.sha256
@@ -1150,8 +950,7 @@ async function selectEntries(
   inventory: SourceInventory,
   policy: WorkspaceExportHistoryPolicy,
   exportedAt: Date,
-  recoveryFingerprint?: string,
-  reuse?: ClassificationReuse
+  recoveryFingerprint?: string
 ): Promise<{
   entries: SourceEntry[]
   history: WorkspaceExportV2Manifest["history"]
@@ -1184,7 +983,15 @@ async function selectEntries(
     grouped.push(entry)
     v2EntriesByUnit.set(v2.unit, grouped)
   }
-  const v2Classifications = new Map<string, Promise<VersionClassification>>()
+  const v2Classifications = new Map<
+    string,
+    Promise<
+      Pick<
+        VersionCandidate,
+        "group" | "unit" | "id" | "timestamp" | "meaningful" | "classified"
+      >
+    >
+  >()
   // "none" only needs inventory totals. Avoid loading history content merely
   // to omit it, especially when this policy is chosen for a large workspace.
   const versionFiles =
@@ -1199,8 +1006,7 @@ async function selectEntries(
               directories,
               versionFileEntries,
               v2EntriesByUnit,
-              v2Classifications,
-              reuse
+              v2Classifications
             )
         )
       : rawVersionFiles.map(unclassifiedVersion)
@@ -1426,11 +1232,10 @@ async function copyAndHash(
   destination: string,
   inventory: SourceInventory,
   directories: Map<string, SourceEntry>,
-  signal?: AbortSignal,
-  check: AncestorCheck = "exact"
+  signal?: AbortSignal
 ): Promise<string> {
   signal?.throwIfAborted()
-  await assertSourceAncestors(source, inventory, directories, check)
+  await assertSourceAncestors(source, inventory, directories)
   const before = await lstat(source.absolute)
   if (
     !before.isFile() ||
@@ -1475,7 +1280,7 @@ async function copyAndHash(
     ) {
       throw new WorkspaceChangedDuringExportError(source.path)
     }
-    await assertSourceAncestors(source, inventory, directories, check)
+    await assertSourceAncestors(source, inventory, directories)
     await chmod(destination, source.mode)
     await utimes(destination, source.mtime, source.mtime)
     return hash.digest("hex")
@@ -1533,160 +1338,33 @@ interface CapturedWorkspace {
 }
 interface CaptureOptions {
   signal?: AbortSignal
-  /**
-   * Runs work while workspace writers are held. The capture copies the tree
-   * beside live writers first, so the hold only records what changed since.
-   */
-  withCaptureBarrier?: <R>(work: () => Promise<R>) => Promise<R>
+  deferCleanup?: (capture: CapturedWorkspace) => void
 }
 
-/** What a private capture directory holds so far, by portable path. */
-interface CaptureState {
-  root: string
-  /** Files written at or after this time are never trusted by identity. */
-  settledBefore: number
-  classifications: ClassificationReuse["cache"]
-  files: Map<string, { source: SourceEntry; sha256: string }>
-  directories: Set<string>
-}
-
-function captureOutput(state: CaptureState, path: string): string {
-  return join(state.root, ...path.split("/"))
-}
-
-function sourceDirectoryMap(
-  inventory: SourceInventory
-): Map<string, SourceEntry> {
-  return new Map(
-    inventory.entries
-      .filter((entry) => entry.kind === "directory")
-      .map((entry) => [entry.path, entry])
-  )
-}
-
-function assertCapturable(entries: readonly SourceEntry[]): void {
-  for (const entry of entries) {
-    validateWorkspaceExportV2Path(entry.path)
-    if (
-      entry.kind === "file" &&
-      entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
-    )
-      throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
-  }
-  const expandedBytes = entries.reduce(
-    (sum, entry) => sum + (entry.kind === "file" ? entry.size : 0),
-    0
-  )
-  if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
-    throw new Error("workspace export exceeds the v2 expanded-size limit")
-  }
-}
-
-/**
- * Copy the selected tree beside live writers. A file that fails to copy, or
- * that was written too recently to be trusted by its identity, is left for
- * the hold. If listing or selection fails, everything is: the hold repeats
- * them and reports any error from a quiet tree. Only cancellation stops here.
- */
-async function precopyWorkspace(
-  state: CaptureState,
-  sourceRoot: string,
-  historyPolicy: WorkspaceExportHistoryPolicy,
-  exportedAt: Date,
-  options: CaptureOptions & WorkspaceExportV2WriteOptions
-): Promise<void> {
-  const { signal } = options
-  const attempt = async <T>(work: () => Promise<T>) => {
-    try {
-      return await work()
-    } catch {
-      signal?.throwIfAborted()
-      return undefined
-    }
-  }
-  await options.onProgress?.("inventory")
-  const inventory = await attempt(() =>
-    listSourceEntries(sourceRoot, { paths: "local", signal })
-  )
-  if (!inventory) return
-  await options.onProgress?.("history")
-  const selected = await attempt(async () => {
-    const result = await selectEntries(
-      inventory,
-      historyPolicy,
-      exportedAt,
-      options.recoveryFingerprint,
-      {
-        cache: state.classifications,
-        settledBefore: state.settledBefore,
-        precopy: true,
-      }
-    )
-    assertCapturable(result.entries)
-    return result
-  })
-  if (!selected) return
-  await options.onProgress?.("capture")
-  const directories = sourceDirectoryMap(inventory)
-  await mapWithConcurrency(selected.entries, 8, async (entry) => {
-    signal?.throwIfAborted()
-    const output = captureOutput(state, entry.path)
-    if (entry.kind === "directory") {
-      await mkdir(output, { recursive: true, mode: 0o700 })
-      state.directories.add(entry.path)
-    } else {
-      if (Math.max(entry.mtimeMs, entry.ctimeMs) >= state.settledBefore) return
-      const sha256 = await attempt(() =>
-        copyAndHash(entry, output, inventory, directories, signal, "placement")
-      )
-      if (sha256 === undefined) {
-        await rm(output, { force: true })
-        return
-      }
-      state.files.set(entry.path, { source: entry, sha256 })
-    }
-    await captureEntryHookForTests?.({
-      path: entry.path,
-      kind: entry.kind,
-      held: false,
-    })
-    signal?.throwIfAborted()
-  })
-}
-
-/**
- * Complete the capture from the current tree: drop what is no longer
- * selected, keep pre-copied files whose identity is unchanged, and copy the
- * rest. With nothing pre-copied this copies everything.
- */
 async function captureEntries(
-  state: CaptureState,
   entries: SourceEntry[],
   inventory: SourceInventory,
-  signal?: AbortSignal
+  options: CaptureOptions = {}
 ): Promise<CapturedWorkspace> {
-  const kinds = new Map(entries.map((entry) => [entry.path, entry.kind]))
-  // Every ancestor of a selected entry is selected, so removing a directory
-  // the selection no longer keeps never removes a file it does.
-  for (const path of state.files.keys()) {
-    if (kinds.get(path) === "file") continue
-    await rm(captureOutput(state, path), { force: true })
-    state.files.delete(path)
-  }
-  for (const path of state.directories) {
-    if (kinds.get(path) === "directory") continue
-    await rm(captureOutput(state, path), { recursive: true, force: true })
-    state.directories.delete(path)
-  }
+  const transfers = workspaceExportCapturesRoot()
+  await mkdir(transfers, { recursive: true, mode: 0o700 })
+  const root = await mkdtemp(join(transfers, "export-"))
   const directories: WorkspaceExportV2Directory[] = []
   const files: CapturedEntry[] = []
-  const sourceDirectories = sourceDirectoryMap(inventory)
-  await mapWithConcurrency(entries, 8, async (entry) => {
-    signal?.throwIfAborted()
-    try {
-      const output = captureOutput(state, entry.path)
-      if (entry.kind === "directory") {
-        if (!state.directories.has(entry.path)) {
+  const sourceDirectories = new Map(
+    inventory.entries
+      .filter(
+        (entry): entry is SourceEntry & { kind: "directory" } =>
+          entry.kind === "directory"
+      )
+      .map((entry) => [entry.path, entry])
+  )
+  try {
+    await mapWithConcurrency(entries, 8, async (entry) => {
+      options.signal?.throwIfAborted()
+      try {
+        const output = join(root, ...entry.path.split("/"))
+        if (entry.kind === "directory") {
           await assertSourceAncestors(entry, inventory, sourceDirectories)
           const current = await lstat(entry.absolute)
           if (
@@ -1697,89 +1375,73 @@ async function captureEntries(
             throw new WorkspaceChangedDuringExportError(entry.path)
           }
           await mkdir(output, { recursive: true, mode: 0o700 })
-          state.directories.add(entry.path)
-          await captureEntryHookForTests?.({
+          directories.push({
             path: entry.path,
-            kind: entry.kind,
-            held: true,
+            mode: entry.mode,
+            mtime: entry.mtime.toISOString(),
           })
-        }
-        directories.push({
-          path: entry.path,
-          mode: entry.mode,
-          mtime: entry.mtime.toISOString(),
-        })
-      } else {
-        const precopied = state.files.get(entry.path)
-        let sha256 =
-          precopied &&
-          precopied.source.mode === entry.mode &&
-          sourceContentIdentity(precopied.source) ===
-            sourceContentIdentity(entry)
-            ? precopied.sha256
-            : undefined
-        if (sha256 === undefined) {
-          if (precopied) {
-            state.files.delete(entry.path)
-            await rm(output, { force: true })
-          }
-          sha256 = await copyAndHash(
+        } else {
+          const hash = await copyAndHash(
             entry,
             output,
             inventory,
             sourceDirectories,
-            signal
+            options.signal
           )
-          state.files.set(entry.path, { source: entry, sha256 })
-          await captureEntryHookForTests?.({
+          files.push({
             path: entry.path,
-            kind: entry.kind,
-            held: true,
+            absolute: output,
+            size: entry.size,
+            mode: entry.mode,
+            mtime: entry.mtime.toISOString(),
+            sha256: hash,
           })
         }
-        files.push({
+        await captureEntryHookForTests?.({
           path: entry.path,
-          absolute: output,
-          size: entry.size,
-          mode: entry.mode,
-          mtime: entry.mtime.toISOString(),
-          sha256,
+          kind: entry.kind,
         })
-      }
-      signal?.throwIfAborted()
-    } catch (error) {
-      if (
-        ["ENOENT", "ENOTDIR", "ELOOP"].includes(
-          (error as NodeJS.ErrnoException).code ?? ""
+        options.signal?.throwIfAborted()
+      } catch (error) {
+        if (
+          ["ENOENT", "ENOTDIR", "ELOOP"].includes(
+            (error as NodeJS.ErrnoException).code ?? ""
+          )
         )
-      )
-        throw new WorkspaceChangedDuringExportError(entry.path)
+          throw new WorkspaceChangedDuringExportError(entry.path)
+        throw error
+      }
+    })
+    for (const directory of [...directories].sort(
+      (left, right) =>
+        right.path.split("/").length - left.path.split("/").length
+    )) {
+      const output = join(root, ...directory.path.split("/"))
+      await chmod(output, directory.mode)
+      const mtime = new Date(directory.mtime)
+      await utimes(output, mtime, mtime)
+    }
+    directories.sort((left, right) =>
+      comparePortableText(left.path, right.path)
+    )
+    files.sort((left, right) => comparePortableText(left.path, right.path))
+    return { root, directories, files }
+  } catch (error) {
+    if (options.deferCleanup) {
+      options.deferCleanup({ root, directories, files })
       throw error
     }
-  })
-  // A restored mode can deny traversal, so each level waits for deeper ones.
-  const levels = new Map<number, WorkspaceExportV2Directory[]>()
-  for (const directory of directories) {
-    const depth = directory.path.split("/").length
-    const level = levels.get(depth)
-    if (level) level.push(directory)
-    else levels.set(depth, [directory])
+    for (const directory of [...directories].sort(
+      (left, right) =>
+        left.path.split("/").length - right.path.split("/").length
+    )) {
+      await chmod(join(root, ...directory.path.split("/")), 0o700).catch(
+        () => undefined
+      )
+    }
+    await rm(root, { recursive: true, force: true })
+    throw error
   }
-  for (const depth of [...levels.keys()].sort((left, right) => right - left)) {
-    await mapWithConcurrency(
-      levels.get(depth)!,
-      SOURCE_LISTING_CONCURRENCY,
-      async (directory) => {
-        const output = captureOutput(state, directory.path)
-        await chmod(output, directory.mode)
-        const mtime = new Date(directory.mtime)
-        await utimes(output, mtime, mtime)
-      }
-    )
-  }
-  directories.sort((left, right) => comparePortableText(left.path, right.path))
-  files.sort((left, right) => comparePortableText(left.path, right.path))
-  return { root: state.root, directories, files }
 }
 
 function workspaceExportCapturesRoot(): string {
@@ -1790,23 +1452,25 @@ function workspaceExportCaptureLockPath(): string {
   return join(ensureAppDir(), "workspace-transfers", "capture.lock")
 }
 
-/** Captures keep source directory modes, which may deny the owner writes. */
-async function removeCaptureTree(root: string): Promise<void> {
+async function removeCapture(
+  capture: Awaited<ReturnType<typeof captureEntries>>
+): Promise<void> {
+  await captureRemovalHookForTests?.()
+  for (const directory of [...capture.directories].sort(
+    (left, right) => left.path.split("/").length - right.path.split("/").length
+  )) {
+    await chmod(join(capture.root, ...directory.path.split("/")), 0o700).catch(
+      () => undefined
+    )
+  }
+  await rm(capture.root, { recursive: true, force: true })
+}
+
+async function removeAbandonedCapture(root: string): Promise<void> {
   const pending = [root]
   while (pending.length > 0) {
     const directory = pending.pop()!
-    let info: Stats
-    try {
-      info = await lstat(directory)
-    } catch (error) {
-      // A consumer may have taken custody by moving the capture away.
-      if (
-        directory === root &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      )
-        return
-      throw error
-    }
+    const info = await lstat(directory)
     if (!info.isDirectory() || info.isSymbolicLink()) {
       throw new Error("workspace export capture must be a real directory")
     }
@@ -1818,11 +1482,6 @@ async function removeCaptureTree(root: string): Promise<void> {
     }
   }
   await rm(root, { recursive: true, force: true })
-}
-
-async function removeCapture(root: string): Promise<void> {
-  await captureRemovalHookForTests?.()
-  await removeCaptureTree(root)
 }
 
 /**
@@ -1854,7 +1513,7 @@ export async function cleanupAbandonedWorkspaceExportCaptures(): Promise<number>
           ) {
             continue
           }
-          await removeCaptureTree(join(captures, entry.name))
+          await removeAbandonedCapture(join(captures, entry.name))
           removed += 1
         }
         return removed
@@ -1905,66 +1564,6 @@ function assertSourceInventoryUnchanged(
   }
 }
 
-/**
- * Inside the hold: list the tree again, which reads only metadata, select
- * from it, copy what changed since the pre-copy, and prove nothing changed
- * while doing so. The result is the capture a full copy inside the hold makes.
- */
-async function captureHeld(
-  state: CaptureState,
-  sourceRoot: string,
-  historyPolicy: WorkspaceExportHistoryPolicy,
-  exportedAt: Date,
-  options: CaptureOptions & WorkspaceExportV2WriteOptions,
-  reportProgress: boolean
-): Promise<{
-  selected: Awaited<ReturnType<typeof selectEntries>>
-  capture: CapturedWorkspace
-}> {
-  const { signal } = options
-  signal?.throwIfAborted()
-  if (reportProgress) await options.onProgress?.("inventory")
-  const inventory = await listSourceEntries(sourceRoot, {
-    paths: "local",
-    signal,
-  })
-  if (reportProgress) await options.onProgress?.("history")
-  const selected = await selectEntries(
-    inventory,
-    historyPolicy,
-    exportedAt,
-    options.recoveryFingerprint,
-    {
-      cache: state.classifications,
-      settledBefore: state.settledBefore,
-      precopy: false,
-    }
-  )
-  assertCapturable(selected.entries)
-  if (reportProgress) await options.onProgress?.("capture")
-  const capture = await captureEntries(
-    state,
-    selected.entries,
-    inventory,
-    signal
-  )
-  let current: SourceInventory
-  try {
-    current = await listSourceEntries(sourceRoot, { paths: "local", signal })
-  } catch (error) {
-    throw new WorkspaceChangedDuringExportError(
-      error instanceof Error ? error.message : "workspace inventory"
-    )
-  }
-  assertSourceInventoryUnchanged(inventory, current)
-  return { selected, capture }
-}
-
-/**
- * With a barrier, copy the workspace beside live writers first, then hold
- * writers only to record what changed since. The hold scales with changes
- * rather than with the size of the workspace.
- */
 async function captureConsistentWorkspace(
   sourceRoot: string,
   historyPolicy: WorkspaceExportHistoryPolicy,
@@ -1972,42 +1571,58 @@ async function captureConsistentWorkspace(
   options: CaptureOptions & WorkspaceExportV2WriteOptions = {}
 ): Promise<{
   selected: Awaited<ReturnType<typeof selectEntries>>
-  capture: CapturedWorkspace
+  capture: Awaited<ReturnType<typeof captureEntries>>
 }> {
-  options.signal?.throwIfAborted()
-  const transfers = workspaceExportCapturesRoot()
-  await mkdir(transfers, { recursive: true, mode: 0o700 })
-  const state: CaptureState = {
-    root: await mkdtemp(join(transfers, "export-")),
-    settledBefore: Date.now() - CONTENT_HASH_SETTLED_MS,
-    classifications: new Map(),
-    files: new Map(),
-    directories: new Set(),
-  }
+  let capture: Awaited<ReturnType<typeof captureEntries>> | null = null
   try {
-    const { withCaptureBarrier } = options
-    if (!withCaptureBarrier)
-      return await captureHeld(
-        state,
-        sourceRoot,
-        historyPolicy,
-        exportedAt,
-        options,
-        true
-      )
-    await precopyWorkspace(
-      state,
-      sourceRoot,
+    options.signal?.throwIfAborted()
+    await options.onProgress?.("inventory")
+    const inventory = await listSourceEntries(sourceRoot, {
+      paths: "local",
+      signal: options.signal,
+    })
+    await options.onProgress?.("history")
+    const selected = await selectEntries(
+      inventory,
       historyPolicy,
       exportedAt,
-      options
+      options.recoveryFingerprint
     )
-    return await withCaptureBarrier(() =>
-      captureHeld(state, sourceRoot, historyPolicy, exportedAt, options, false)
+    for (const entry of selected.entries) {
+      validateWorkspaceExportV2Path(entry.path)
+      if (
+        entry.kind === "file" &&
+        entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
+      )
+        throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
+    }
+    const expandedBytes = selected.entries.reduce(
+      (sum, entry) => sum + (entry.kind === "file" ? entry.size : 0),
+      0
     )
+    if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
+      throw new Error("workspace export exceeds the v2 expanded-size limit")
+    }
+    await options.onProgress?.("capture")
+    capture = await captureEntries(selected.entries, inventory, options)
+    let current: SourceInventory
+    try {
+      current = await listSourceEntries(sourceRoot, {
+        paths: "local",
+        signal: options.signal,
+      })
+    } catch (error) {
+      throw new WorkspaceChangedDuringExportError(
+        error instanceof Error ? error.message : "workspace inventory"
+      )
+    }
+    assertSourceInventoryUnchanged(inventory, current)
+    return { selected, capture }
   } catch (error) {
-    // Writers are released by now; the original failure is the one to report.
-    await removeCapture(state.root).catch(() => undefined)
+    if (capture) {
+      if (options.deferCleanup) options.deferCleanup(capture)
+      else await removeCapture(capture)
+    }
     throw error
   }
 }
@@ -2124,9 +1739,8 @@ export async function calculateWorkspaceContentCheckpoint(
 
 /**
  * Share export's exact full-history capture with directory snapshot consumers.
- * The mutation barrier covers only the flush and recording what changed since
- * the pre-copy. The capture lock protects its private lifetime from the export
- * janitor until the consumer finishes.
+ * The mutation barrier covers only flush/capture. The capture lock protects its
+ * private lifetime from the export janitor until the consumer finishes.
  */
 export async function withPortableWorkspaceCapture<T>(
   consume: (
@@ -2157,16 +1771,19 @@ export async function withPortableWorkspaceCapture<T>(
       timeoutMs: EXPORT_CAPTURE_LOCK_TIMEOUT_MS,
     },
     async () => {
-      const { capture } = await captureConsistentWorkspace(
-        sourceRoot,
-        { mode: "all" },
-        new Date(),
-        {
+      let pendingCleanup: CapturedWorkspace | undefined
+      const work = () =>
+        captureConsistentWorkspace(sourceRoot, { mode: "all" }, new Date(), {
           signal: options.signal,
-          withCaptureBarrier: options.withCaptureBarrier,
-        }
-      )
+          deferCleanup: (capture) => {
+            pendingCleanup = capture
+          },
+        })
       try {
+        const { capture } = options.withCaptureBarrier
+          ? await options.withCaptureBarrier(work)
+          : await work()
+        pendingCleanup = capture
         const manifestFile = capture.files.find(
           (file) => file.path === "worktable.workspace.json"
         )
@@ -2196,7 +1813,7 @@ export async function withPortableWorkspaceCapture<T>(
           files,
         })
       } finally {
-        await removeCapture(capture.root)
+        if (pendingCleanup) await removeCapture(pendingCleanup)
       }
     }
   )
@@ -2827,12 +2444,11 @@ async function writeWorkspaceExportV2WithCaptureLock(
   }
 
   const exportedAt = new Date()
-  const { selected, capture } = await captureConsistentWorkspace(
-    sourceRoot,
-    historyPolicy,
-    exportedAt,
-    options
-  )
+  const captureWorkspace = () =>
+    captureConsistentWorkspace(sourceRoot, historyPolicy, exportedAt, options)
+  const { selected, capture } = options.withCaptureBarrier
+    ? await options.withCaptureBarrier(captureWorkspace)
+    : await captureWorkspace()
   const temporary = join(
     outputParent,
     `.${basename(output)}.${randomBytes(8).toString("hex")}.partial`
@@ -3006,7 +2622,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     }
   } finally {
     try {
-      await removeCapture(capture.root)
+      await removeCapture(capture)
     } finally {
       await rm(temporary, { force: true })
     }
@@ -3655,8 +3271,7 @@ export async function importWorkspaceExportV2(
       staging,
       `${JSON.stringify(newManifest, null, 2)}\n`
     )
-    const { convertStagedWorkspaceStorageV2 } =
-      await import("./document-storage-migration-v2.ts")
+    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
     await convertStagedWorkspaceStorageV2(staging)
     newManifest.version = 2
     if (classification.outcome === "empty") {

@@ -66,8 +66,6 @@ export async function writeLiveOperatorWorkspaceSnapshot(
           : await writeWorkspaceSnapshot(destination, {
               captureTeamState: true,
               signal: cancellation?.signal,
-              // The budget covers only the write hold. The pre-copy before it
-              // runs beside live writers and is not timed.
               withCaptureBarrier: async (capture) => {
                 const timer = cancellation
                   ? setTimeout(

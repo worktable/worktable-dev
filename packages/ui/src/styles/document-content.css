@@ -8,6 +8,15 @@
    Share pages embed this file through document-content.generated.ts
    (bun run generate:theme). */
 
+:where(
+  .worktable-document-content,
+  .shared-document,
+  .typeset-thread,
+  .thread-quote
+) {
+  --doc-quote-rule: color-mix(in oklch, var(--primary), transparent 60%);
+}
+
 :where(.worktable-document-content, .shared-document) {
   /* Line heights land on whole pixels (30px body, 21px code), so every
      renderer puts each wrapped line on the same pixel row. */
@@ -43,7 +52,6 @@
   --doc-table-line-height: 1.6;
   --doc-table-header: var(--surface-inset);
   --doc-table-column-rule: color-mix(in oklch, var(--border), transparent 50%);
-  --doc-quote-rule: color-mix(in oklch, var(--primary), transparent 60%);
   --doc-caption-size: 0.875rem;
   --doc-strong-weight: 600;
   --doc-motion: 250ms cubic-bezier(0.33, 1, 0.68, 1);

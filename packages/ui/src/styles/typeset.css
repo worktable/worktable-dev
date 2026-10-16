@@ -498,6 +498,11 @@
 
     :where(blockquote) {
       font-size: 0.875rem;
+      border-inline-start-color: var(--doc-quote-rule);
     }
+  }
+
+  .thread-quote {
+    border-inline-start-color: var(--doc-quote-rule);
   }
 }

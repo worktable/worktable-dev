@@ -1,5 +1,5 @@
 import { recognitionColor } from "@worktable/types/recognition"
-import { recognitionChip } from "@/lib/recognition"
+import { recognitionChip, recognitionSolid } from "@/lib/recognition"
 import { AGENT_PLATFORMS, type AgentPlatformId } from "@worktable/types"
 import {
   Avatar,
@@ -65,7 +65,12 @@ export function AgentAvatar({
       ) : null}
       <AvatarFallback
         className="text-xs font-medium"
-        style={recognitionChip(recognitionColor(null, name))}
+        // A chosen icon sits on its soft color; initials on the solid one.
+        style={
+          icon
+            ? recognitionChip(recognitionColor(null, name))
+            : recognitionSolid(recognitionColor(null, name))
+        }
       >
         {icon ? (
           <NamedIcon

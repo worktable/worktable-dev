@@ -13,6 +13,8 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Your own groups and pins:** Organize the sidebar your way without changing it for anyone else. Pin a Space to keep it at the top, and sort Spaces into groups from **Change Group** in the Space menu or the **+** beside Spaces. Groups show as sections you can collapse, rename or remove, and **All** next to the Spaces heading shows one group at a time. Your arrangement follows you to your other devices. Anyone who can see a Space can pin it or group it. You start with the groups your Spaces already had.
+- **Worktable menu:** The top of the sidebar shows your Worktable's name and opens a menu with where it lives and **Worktable Settings**.
 
 ### Changed
 

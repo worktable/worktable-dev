@@ -1,7 +1,7 @@
 import type { SpaceView } from "@/lib/api"
-import { browserTeamMemberId } from "@/lib/team-context"
+import { browserTeamCacheKey, browserTeamMemberId } from "@/lib/team-context"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
-import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
+import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
   lazy,
@@ -21,19 +21,13 @@ import {
 } from "@tanstack/react-router"
 import {
   ChevronRight,
-  ChevronDown,
   File,
   History,
   Folder,
   AlertTriangle,
   LayoutDashboard,
   Plus,
-  Briefcase,
-  Rocket,
-  Church,
-  Target,
-  LayoutGrid,
-  Check,
+  Pin,
   Archive,
   Clock3,
   AppWindow,
@@ -52,13 +46,30 @@ import {
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
-import { WorktableAppIcon } from "@/components/worktable-app-icon"
-import { ProvenanceChip } from "@/components/provenance-chip"
+import { WorktableHeader } from "@/components/sidebar/worktable-header"
+import {
+  GroupLabel,
+  GroupNameDialog,
+  SpacesHeading,
+  sortedGroups,
+} from "@/components/sidebar/space-groups"
+import {
+  addGroup,
+  moveToGroup,
+  newGroupId,
+  removeGroup,
+  renameGroup,
+  restoreGroup,
+  togglePin,
+  usePersonalNavigation,
+} from "@/lib/personal-navigation"
+import type { PersonalGroup, PersonalNavigation } from "@worktable/types"
 import { resolveIcon } from "@/lib/icons"
 import {
   useSpaces,
   useRecordCollections,
   useSpace,
+  useWorkspace,
   queryKeys,
 } from "@/lib/queries"
 import { useSpaceDocs } from "@/lib/docs-queries"
@@ -161,24 +172,6 @@ import {
   type SpaceDocumentIndex,
 } from "@/lib/space-document-tree"
 
-// ── Group Definitions ────────────────────────────────────────
-
-// Icon hints for known group slugs; unknown groups use LayoutGrid
-const GROUP_ICONS: Record<string, typeof Briefcase> = {
-  work: Briefcase,
-  "main-quest": Target,
-  "side-quests": Rocket,
-  church: Church,
-}
-
-function getGroupDef(id: string) {
-  return {
-    id,
-    label: formatGroupLabel(id),
-    icon: GROUP_ICONS[id] ?? LayoutGrid,
-  }
-}
-
 function isSpaceArchived(space: SpaceFile) {
   return !!getSpaceArchiveInfo(space)
 }
@@ -264,132 +257,24 @@ function SettingsButton() {
   )
 }
 
-// ── Group Switcher (bottom of sidebar) ───────────────────────
-
-function GroupSwitcher({
-  activeGroup,
-  onGroupChange,
-}: {
-  activeGroup: string | null
-  onGroupChange: (group: string | null) => void
-}) {
-  const { data: spaces } = useSpaces()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  // Derive groups dynamically from spaces data
-  const availableGroups = (() => {
-    const groups = new Set<string>()
-    if (spaces) {
-      for (const s of spaces) {
-        if (s.group) groups.add(s.group)
-      }
-    }
-    return [...groups].sort()
-  })()
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClick)
-    return () => document.removeEventListener("mousedown", handleClick)
-  }, [open])
-
-  const activeDef = activeGroup ? getGroupDef(activeGroup) : null
-  const ActiveIcon = activeDef?.icon ?? LayoutGrid
-  const activeLabel = activeDef?.label ?? "All Spaces"
-
-  return (
-    <div ref={ref} className="relative">
-      {/* Dropdown menu (opens upward) */}
-      {open && (
-        <div className="overlay-floating absolute right-0 bottom-full left-0 mb-1.5 animate-in overflow-hidden rounded-lg bg-popover duration-150 fade-in slide-in-from-bottom-2">
-          <div className="p-1.5">
-            {/* All option */}
-            <button
-              type="button"
-              onClick={() => {
-                onGroupChange(null)
-                setOpen(false)
-              }}
-              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                activeGroup === null
-                  ? "bg-accent text-accent-foreground"
-                  : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
-              }`}
-            >
-              <LayoutGrid className="size-4 shrink-0" />
-              <span className="flex-1 text-left font-medium">All Spaces</span>
-              {activeGroup === null && (
-                <Check className="size-3.5 text-sidebar-primary" />
-              )}
-            </button>
-
-            <div className="my-1.5 border-t border-border/50" />
-
-            {/* Group options */}
-            {availableGroups.map((groupId) => {
-              const def = getGroupDef(groupId)
-              const Icon = def.icon
-              const isActive = activeGroup === groupId
-              return (
-                <button
-                  key={groupId}
-                  type="button"
-                  onClick={() => {
-                    onGroupChange(groupId)
-                    setOpen(false)
-                  }}
-                  className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                    isActive
-                      ? "bg-accent text-accent-foreground"
-                      : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
-                  }`}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="flex-1 text-left font-medium">
-                    {def.label}
-                  </span>
-                  {isActive && (
-                    <Check className="size-3.5 text-sidebar-primary" />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Trigger button */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="sidebar-selector flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-sidebar-space-foreground transition-colors duration-180"
-      >
-        <ActiveIcon className="size-4 shrink-0 text-sidebar-primary" />
-        <span className="flex-1 truncate text-left">{activeLabel}</span>
-        <ChevronDown
-          className={`size-3.5 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-    </div>
-  )
-}
-
 // ── Space Section ────────────────────────────────────────────
 
 const SpaceSection = memo(function SpaceSection({
   space,
+  followRoute = true,
+  onNewGroup,
 }: {
   space: SpaceView
+  /**
+   * A pinned Space is listed twice. Only one copy opens itself when the
+   * route enters the Space, so its tree is not shown twice.
+   */
+  followRoute?: boolean
+  /** Opens New Group for this Space, when the person has groups to keep. */
+  onNewGroup?: (spaceId: string) => void
 }) {
+  const { navigation, update } = usePersonalNavigation()
+  const pinned = navigation?.pins.includes(space.id) ?? false
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
   const queryClient = useQueryClient()
@@ -404,14 +289,14 @@ const SpaceSection = memo(function SpaceSection({
   const userCollapsedRef = useRef(false)
 
   useEffect(() => {
-    if (isInSpace && !expanded && !userCollapsedRef.current) {
+    if (followRoute && isInSpace && !expanded && !userCollapsedRef.current) {
       setExpanded(true)
     }
     // Reset manual collapse flag when navigating away from the space
     if (!isInSpace) {
       userCollapsedRef.current = false
     }
-  }, [isInSpace, expanded])
+  }, [followRoute, isInSpace, expanded])
 
   const handleToggleExpanded = (open: boolean) => {
     if (!open && isInSpace) {
@@ -435,19 +320,6 @@ const SpaceSection = memo(function SpaceSection({
     } catch (err) {
       toast.error("Failed to rename space")
       console.error("Failed to rename space:", err)
-    }
-  }
-
-  const handleChangeGroup = async (group: string | undefined) => {
-    try {
-      await updateSpace(space.id, { group: group ?? "" })
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.spaces,
-        exact: true,
-      })
-    } catch (err) {
-      toast.error("Failed to change group")
-      console.error("Failed to change group:", err)
     }
   }
 
@@ -555,6 +427,19 @@ const SpaceSection = memo(function SpaceSection({
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
           <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/space:opacity-100">
+            {navigation && (
+              // Touch screens keep Pin in the menu instead.
+              <button
+                type="button"
+                aria-label={pinned ? `Unpin ${space.name}` : `Pin ${space.name}`}
+                title={pinned ? "Unpin" : "Pin"}
+                aria-pressed={pinned}
+                onClick={() => void update(togglePin(space.id))}
+                className="hidden size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:flex"
+              >
+                <Pin className={`size-3.5 ${pinned ? "fill-current" : ""}`} />
+              </button>
+            )}
             {space.permissions?.edit !== false && <SpaceNewMenu
               spaceId={space.id}
               onCreated={afterCreate}
@@ -575,8 +460,20 @@ const SpaceSection = memo(function SpaceSection({
               canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
               spaceName={space.name}
               spaceIcon={space.icon}
-              currentGroup={space.group}
               archived={archived}
+              personal={
+                navigation && onNewGroup
+                  ? {
+                      pinned,
+                      groups: navigation.groups,
+                      groupId: navigation.spaceGroups[space.id] ?? null,
+                      onTogglePin: () => void update(togglePin(space.id)),
+                      onChangeGroup: (groupId) =>
+                        void update(moveToGroup(space.id, groupId)),
+                      onNewGroup: () => onNewGroup(space.id),
+                    }
+                  : undefined
+              }
               docSort={getDocSort(space)}
               onChangeDocSort={handleChangeDocSort}
               onRename={handleRename}
@@ -591,7 +488,6 @@ const SpaceSection = memo(function SpaceSection({
                   toast.error("Failed to change icon")
                 }
               }}
-              onChangeGroup={handleChangeGroup}
               onArchive={handleArchive}
               onRestore={handleRestore}
               onDelete={handleDelete}
@@ -2195,8 +2091,6 @@ function DocTreeItem({
 
 // ── Main Sidebar Component ───────────────────────────────────
 
-const STORAGE_KEY = "worktable-active-group"
-
 type ShellSection = "home" | "threads" | "activity" | null
 
 function shellSection(pathname: string): ShellSection {
@@ -2205,36 +2099,79 @@ function shellSection(pathname: string): ShellSection {
   return pathname === "/activity" ? "activity" : null
 }
 
+const LEGACY_GROUP_FILTER_KEY = "worktable-active-group"
+
+function focusStorageKey(workspaceId: string | undefined): string | null {
+  const scope = browserTeamCacheKey() ?? workspaceId
+  return scope ? `worktable-space-focus:${scope}` : null
+}
+
+function readFocus(key: string | null): string | null {
+  if (!key) return null
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/** The group the Spaces list shows, kept per device for each person. */
+function useSpaceFocus(navigation: PersonalNavigation | null) {
+  const { data: workspace } = useWorkspace()
+  const key = focusStorageKey(workspace?.id)
+  const [focusId, setFocusId] = useState<string | null>(() => readFocus(key))
+  useEffect(() => {
+    setFocusId(readFocus(key))
+    try {
+      localStorage.removeItem(LEGACY_GROUP_FILTER_KEY)
+    } catch {
+      // localStorage unavailable
+    }
+  }, [key])
+  const setFocus = useCallback(
+    (groupId: string | null) => {
+      setFocusId(groupId)
+      if (!key) return
+      try {
+        if (groupId) localStorage.setItem(key, groupId)
+        else localStorage.removeItem(key)
+      } catch {
+        // localStorage unavailable
+      }
+    },
+    [key]
+  )
+  const focus =
+    navigation?.groups.find((group) => group.id === focusId) ?? null
+  return { focus, setFocus }
+}
+
 /**
- * Auto-switch group when navigating to a space in a different group.
- * Only triggers on path changes (not manual group switches) by tracking
- * the previous path. This prevents the effect from fighting the user
- * when they switch groups while viewing a doc in the old group. Its own
+ * Opening a Space outside the focused group focuses that Space's group, or
+ * every Space, unless it is pinned and already in view. It only reacts to
+ * route changes, so choosing a group while a document is open sticks. Its own
  * component, so following the route does not re-render the sidebar.
  */
-function FollowSpaceGroup({
-  spaces,
-  activeGroup,
-  onGroupChange,
+function FollowSpaceFocus({
+  navigation,
+  focus,
+  onFocus,
 }: {
-  spaces: SpaceFile[] | undefined
-  activeGroup: string | null
-  onGroupChange: (group: string) => void
+  navigation: PersonalNavigation | null
+  focus: PersonalGroup | null
+  onFocus: (groupId: string | null) => void
 }) {
   const currentPath = useRouterState({ select: (s) => s.location.pathname })
   const prevPathRef = useRef(currentPath)
   useEffect(() => {
     if (currentPath === prevPathRef.current) return
     prevPathRef.current = currentPath
-    if (!spaces || !activeGroup) return
-    const match = currentPath.match(/^\/spaces\/([^/]+)/)
-    if (!match) return
-    const spaceId = match[1]
-    const space = spaces.find((s) => s.id === spaceId)
-    if (space?.group && space.group !== activeGroup) {
-      onGroupChange(space.group)
-    }
-  }, [currentPath, spaces, activeGroup, onGroupChange])
+    if (!navigation || !focus) return
+    const spaceId = currentPath.match(/^\/spaces\/([^/]+)/)?.[1]
+    if (!spaceId || navigation.pins.includes(spaceId)) return
+    const groupId = navigation.spaceGroups[spaceId] ?? null
+    if (groupId !== focus.id) onFocus(groupId)
+  }, [currentPath, navigation, focus, onFocus])
   return null
 }
 
@@ -2258,8 +2195,17 @@ function SidebarSearchPanel({
   )
 }
 
+const OTHER_SPACES = "__other"
+
+type GroupDialogState =
+  | { mode: "new"; spaceId?: string }
+  | { mode: "rename"; group: PersonalGroup }
+  | null
+
 export function AppSidebar() {
   const { data: spaces, isLoading: spacesLoading } = useSpaces()
+  const { navigation, update } = usePersonalNavigation()
+  const { focus, setFocus } = useSpaceFocus(navigation)
   // Select only what the shell shows, so navigating between documents does
   // not re-render the sidebar: rows follow the route themselves.
   const section = useRouterState({
@@ -2272,51 +2218,40 @@ export function AppSidebar() {
   const { setOpen } = useSidebar()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [newSpaceOpen, setNewSpaceOpen] = useState(false)
+  const [newSpace, setNewSpace] = useState<{ groupId: string | null } | null>(
+    null
+  )
+  const [groupDialog, setGroupDialog] = useState<GroupDialogState>(null)
+  const [closedGroups, setClosedGroups] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
   // Kept across navigation so multiple results can be triaged; cleared only
   // via the input's clear button or Escape.
   const [searchQuery, setSearchQuery] = useState("")
   const searching = searchQuery.trim().length > 0
   const searchResultsRef = useRef<SidebarSearchResultsHandle>(null)
 
-  // Active group filter (persisted in localStorage)
-  const [activeGroup, setActiveGroup] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY)
-    } catch {
-      return null
-    }
-  })
-
-  const handleGroupChange = useCallback((group: string | null) => {
-    setActiveGroup(group)
-    try {
-      if (group) {
-        localStorage.setItem(STORAGE_KEY, group)
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // localStorage unavailable
-    }
-  }, [])
-
   // Every Space socket hears spaces_changed; keeping the first Space's socket
   // open lets the shared socket refresh the Spaces list when any Space changes.
   const firstSpaceId = spaces?.[0]?.id
   useSpaceEvents(firstSpaceId)
 
-  // Filter spaces by active group
-  const filteredSpaces = spaces
-    ? activeGroup
-      ? spaces.filter((s) => s.group === activeGroup)
-      : spaces
-    : undefined
+  const groupOf = (spaceId: string) =>
+    navigation?.spaceGroups[spaceId] ?? null
+  const inFocus = (space: SpaceView) => !focus || groupOf(space.id) === focus.id
   const activeSpaces =
-    filteredSpaces?.filter((space) => !isSpaceArchived(space as SpaceFile)) ??
-    []
+    spaces?.filter((space) => !isSpaceArchived(space as SpaceFile)) ?? []
   const archivedSpaces =
-    filteredSpaces?.filter((space) => isSpaceArchived(space as SpaceFile)) ?? []
+    spaces?.filter(
+      (space) => isSpaceArchived(space as SpaceFile) && inFocus(space)
+    ) ?? []
+  const pinnedSpaces = navigation
+    ? navigation.pins.flatMap(
+        (id) => activeSpaces.find((space) => space.id === id) ?? []
+      )
+    : []
+  const isPinned = (space: SpaceView) => pinnedSpaces.includes(space)
+  const groups = navigation ? sortedGroups(navigation.groups) : []
   const [archivedSpacesOpen, setArchivedSpacesOpen] = useState(
     !!currentSpaceId &&
       archivedSpaces.some((space) => space.id === currentSpaceId)
@@ -2335,11 +2270,7 @@ export function AppSidebar() {
     if (isMobile) setOpen(false)
   }
 
-  const handleCreateSpace = async (data: {
-    name: string
-    icon?: string
-    group?: string
-  }) => {
+  const handleCreateSpace = async (data: { name: string; icon?: string }) => {
     try {
       const { spaceId } = await createSpace(data)
       await queryClient.invalidateQueries({
@@ -2348,10 +2279,123 @@ export function AppSidebar() {
       })
       navigate({ to: "/spaces/$spaceId", params: { spaceId } })
       if (isMobile) setOpen(false)
+      return spaceId
     } catch (err) {
+      toast.error("Failed to create space")
       console.error("Failed to create space:", err)
+      return undefined
     }
   }
+
+  const openNewGroup = useStableCallback((spaceId?: string) =>
+    setGroupDialog({ mode: "new", spaceId })
+  )
+
+  const toggleGroup = (key: string) =>
+    setClosedGroups((closed) => {
+      const next = new Set(closed)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  const handleRemoveGroup = (group: PersonalGroup) => {
+    if (!navigation) return
+    const index = navigation.groups.findIndex(({ id }) => id === group.id)
+    const spaceIds = Object.entries(navigation.spaceGroups).flatMap(
+      ([spaceId, groupId]) => (groupId === group.id ? [spaceId] : [])
+    )
+    if (focus?.id === group.id) setFocus(null)
+    void update(removeGroup(group.id))
+    toast(`${group.name} removed`, {
+      action: {
+        label: "Undo",
+        onClick: () => void update(restoreGroup(group, index, spaceIds)),
+      },
+    })
+  }
+
+  const spaceRow = (space: SpaceView, key = space.id) => (
+    <SpaceSection
+      key={key}
+      space={space}
+      followRoute={!isPinned(space)}
+      onNewGroup={navigation ? openNewGroup : undefined}
+    />
+  )
+
+  const groupSection = (
+    key: string,
+    name: string,
+    members: SpaceView[],
+    group?: PersonalGroup
+  ) => {
+    const open = !closedGroups.has(key)
+    return (
+      <div key={key}>
+        <GroupLabel
+          name={name}
+          open={open}
+          onToggle={() => toggleGroup(key)}
+          onNewSpace={
+            group ? () => setNewSpace({ groupId: group.id }) : undefined
+          }
+          onRename={
+            group ? () => setGroupDialog({ mode: "rename", group }) : undefined
+          }
+          onRemove={group ? () => handleRemoveGroup(group) : undefined}
+        />
+        {open &&
+          (members.length > 0 ? (
+            <div className="ml-2 space-y-0.5">{members.map((space) => spaceRow(space))}</div>
+          ) : (
+            <p className="px-3 py-1 pl-9 text-[11px] text-sidebar-foreground/30">
+              No Spaces
+            </p>
+          ))}
+      </div>
+    )
+  }
+
+  const spaceList = (() => {
+    if (focus) {
+      const members = activeSpaces.filter(inFocus)
+      return members.length > 0 ? (
+        <div className="space-y-0.5">{members.map((space) => spaceRow(space))}</div>
+      ) : (
+        <p className="px-3 py-4 text-center text-xs text-sidebar-foreground/40">
+          No Spaces in {focus.name}
+        </p>
+      )
+    }
+    if (groups.length === 0) {
+      return (
+        activeSpaces.length > 0 && (
+          <div className="space-y-0.5">
+            {activeSpaces.map((space) => spaceRow(space))}
+          </div>
+        )
+      )
+    }
+    const ungrouped = activeSpaces.filter((space) => {
+      const groupId = groupOf(space.id)
+      return !groupId || !groups.some((group) => group.id === groupId)
+    })
+    return (
+      <div className="space-y-1">
+        {groups.map((group) =>
+          groupSection(
+            group.id,
+            group.name,
+            activeSpaces.filter((space) => groupOf(space.id) === group.id),
+            group
+          )
+        )}
+        {ungrouped.length > 0 &&
+          groupSection(OTHER_SPACES, "Other", ungrouped)}
+      </div>
+    )
+  })()
 
   return (
     // select-none: the sidebar is navigation chrome — a page-wide Cmd+A must
@@ -2364,32 +2408,15 @@ export function AppSidebar() {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <FollowSpaceGroup
-        spaces={spaces}
-        activeGroup={activeGroup}
-        onGroupChange={handleGroupChange}
+      <FollowSpaceFocus
+        navigation={navigation}
+        focus={focus}
+        onFocus={setFocus}
       />
-      {/* Header */}
-      <div
-        data-tauri-drag-region="deep"
-        data-worktable-sidebar-header
-        className="flex h-12 shrink-0 items-center px-3"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <Link
-            to="/"
-            onClick={handleNavigateHome}
-            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity duration-180 hover:opacity-80"
-          >
-            <WorktableAppIcon className="size-6" />
-            <span>Worktable</span>
-          </Link>
-          <ProvenanceChip />
-        </div>
-      </div>
+      <WorktableHeader />
 
-      {/* Workspace search (global scope, not group-filtered) */}
-      <div className="shrink-0 px-3 pt-3 pb-1">
+      {/* Workspace search (every Space, whatever the list shows) */}
+      <div className="shrink-0 px-3 pt-1 pb-1">
         <SidebarSearchInput
           query={searchQuery}
           onQueryChange={setSearchQuery}
@@ -2460,21 +2487,31 @@ export function AppSidebar() {
               <span>Activity</span>
             </Link>
 
-            {/* Section label */}
-            <div className="mb-2 flex items-center justify-between px-3 pr-1">
-              <p className="text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-                Spaces
-              </p>
-              <button
-                type="button"
-                className="flex size-6 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
-                aria-label="Create new space"
-                title="New space"
-                onClick={() => setNewSpaceOpen(true)}
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </div>
+            {/* The person's pinned Spaces, whatever the list below shows */}
+            {pinnedSpaces.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 px-3 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
+                  Pinned
+                </p>
+                <div className="space-y-0.5">
+                  {pinnedSpaces.map((space) =>
+                    <SpaceSection
+                      key={`pinned:${space.id}`}
+                      space={space}
+                      onNewGroup={navigation ? openNewGroup : undefined}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            <SpacesHeading
+              groups={navigation ? navigation.groups : null}
+              focus={focus}
+              onFocus={setFocus}
+              onNewSpace={() => setNewSpace({ groupId: focus?.id ?? null })}
+              onNewGroup={navigation ? () => openNewGroup() : null}
+            />
 
             {/* Spaces */}
             {spacesLoading && (
@@ -2488,10 +2525,10 @@ export function AppSidebar() {
               </div>
             )}
 
-            {filteredSpaces && filteredSpaces.length === 0 && (
+            {spaces && spaces.length === 0 && (
               <div className="px-2 py-6 text-center">
                 <p className="text-xs text-sidebar-foreground/40">
-                  {activeGroup ? "No spaces in this group" : "No spaces yet"}
+                  No spaces yet
                 </p>
                 <p className="mt-1 text-[11px] text-sidebar-foreground/30">
                   Ask your AI agent to create one
@@ -2499,15 +2536,9 @@ export function AppSidebar() {
               </div>
             )}
 
-            {filteredSpaces && filteredSpaces.length > 0 && (
+            {spaces && spaces.length > 0 && (
               <div className="space-y-2">
-                {activeSpaces.length > 0 && (
-                  <div className="space-y-0.5">
-                    {activeSpaces.map((space) => (
-                      <SpaceSection key={space.id} space={space} />
-                    ))}
-                  </div>
-                )}
+                {spaceList}
 
                 {archivedSpaces.length > 0 && (
                   <Collapsible
@@ -2528,9 +2559,7 @@ export function AppSidebar() {
                     </div>
                     <CollapsibleContent>
                       <div className="space-y-0.5">
-                        {archivedSpaces.map((space) => (
-                          <SpaceSection key={space.id} space={space} />
-                        ))}
+                        {archivedSpaces.map((space) => spaceRow(space))}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -2541,32 +2570,41 @@ export function AppSidebar() {
         )}
       </ScrollFadeArea>
 
-      {/* Footer: group switcher takes the row, settings rides along as an
-          icon so the footer is one composed line instead of stacked rows. */}
       <div
-        className="flex shrink-0 items-center gap-1.5 px-3 py-2.5"
+        className="flex shrink-0 items-center justify-end gap-1.5 px-3 py-2.5"
         style={{
           paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="min-w-0 flex-1">
-          <GroupSwitcher
-            activeGroup={activeGroup}
-            onGroupChange={handleGroupChange}
-          />
-        </div>
         <SettingsButton />
       </div>
 
       {/* New space dialog */}
-      <DeferredMount active={newSpaceOpen}>
+      <DeferredMount active={newSpace !== null}>
         <NewSpaceDialog
-          open={newSpaceOpen}
-          onClose={() => setNewSpaceOpen(false)}
+          open={newSpace !== null}
+          onClose={() => setNewSpace(null)}
           onCreate={handleCreateSpace}
-          defaultGroup={activeGroup}
+          defaultGroup={newSpace?.groupId ?? null}
         />
       </DeferredMount>
+
+      {navigation && (
+        <GroupNameDialog
+          open={groupDialog !== null}
+          group={groupDialog?.mode === "rename" ? groupDialog.group : undefined}
+          groups={navigation.groups}
+          onClose={() => setGroupDialog(null)}
+          onSubmit={(name) => {
+            if (!groupDialog) return
+            void update(
+              groupDialog.mode === "rename"
+                ? renameGroup(groupDialog.group.id, name)
+                : addGroup(newGroupId(), name, groupDialog.spaceId)
+            )
+          }}
+        />
+      )}
     </div>
   )
 }

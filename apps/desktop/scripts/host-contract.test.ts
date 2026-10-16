@@ -108,6 +108,12 @@ const workspaceUpdatesCapability = JSON.parse(
     "utf8"
   )
 ) as Capability
+const workspaceSwitchCapability = JSON.parse(
+  readFileSync(
+    join(nativeRoot, "capabilities", "workspace-switch-worktable.json"),
+    "utf8"
+  )
+) as Capability
 const desktopPackage = JSON.parse(
   readFileSync(join(appRoot, "package.json"), "utf8")
 ) as DesktopPackage
@@ -141,6 +147,7 @@ describe("desktop package contracts", () => {
       "workspace-window-chrome",
       "workspace-agent-skills",
       "workspace-desktop-updates",
+      "workspace-switch-worktable",
     ])
     expect(trustedShellCapability.identifier).toBe("trusted-shell")
     expect(trustedShellCapability.webviews).toEqual(["trusted-shell"])
@@ -214,6 +221,18 @@ describe("desktop package contracts", () => {
         "allow-desktop-workspace-set-update-channel",
       ],
     })
+    // Any active workspace page may ask for the chooser; Rust checks it is the
+    // active connection's origin, and the command returns nothing.
+    expect(workspaceSwitchCapability).toMatchObject({
+      identifier: "workspace-switch-worktable",
+      local: false,
+      remote: workspaceChromeCapability.remote,
+      webviews: ["workspace"],
+      permissions: ["allow-desktop-workspace-show-chooser"],
+    })
+    expect(trustedShellCapability.permissions).not.toContain(
+      "allow-desktop-workspace-show-chooser"
+    )
     // Remote workspace pages and the shell never get the workspace commands.
     for (const permission of workspaceUpdatesCapability.permissions) {
       expect(trustedShellCapability.permissions).not.toContain(permission)

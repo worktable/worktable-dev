@@ -16,6 +16,10 @@ interface WorkspaceSnapshotManifest {
   contentCheckpoint: string
   workspaceStorageVersion: 1 | 2
   capturedAt: string
+  teamState?: {
+    authentication: { size: number }
+    participants?: { size: number }
+  }
   files: Array<{ size: number }>
 }
 
@@ -455,6 +459,7 @@ async function runBackupSteps(
               "--",
               "workspace",
               "snapshot.json",
+              ...(manifest.teamState ? ["team"] : []),
             ],
             capture
           )
@@ -564,7 +569,10 @@ async function runBackupSteps(
         contentCheckpoint: manifest.contentCheckpoint,
         workspaceStorageVersion: manifest.workspaceStorageVersion,
         capturedAt: manifest.capturedAt,
-        bytes: manifest.files.reduce((total, file) => total + file.size, 0),
+        bytes:
+          manifest.files.reduce((total, file) => total + file.size, 0) +
+          (manifest.teamState?.authentication.size ?? 0) +
+          (manifest.teamState?.participants?.size ?? 0),
         completedAt: new Date().toISOString(),
       }
       await publishWorkerJson(directory, "result.json", result)

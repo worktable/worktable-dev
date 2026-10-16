@@ -1,3 +1,4 @@
+import { assertSpaceAccess } from "./team-policy.ts";
 // ============================================================
 // Shared version store — kind-parameterized snapshot primitives.
 //
@@ -153,6 +154,7 @@ export function versionKeyDir(
   kind: VersionKind,
   key: string
 ): string {
+  assertSpaceAccess(spaceId);
   return join(getVersionsDir(), spaceId, kind, sanitizeVersionKey(key))
 }
 
@@ -162,6 +164,7 @@ export function retiredVersionGenerationDir(
   key: string,
   generationId: string
 ): string {
+  assertSpaceAccess(spaceId);
   if (!/^dlc_[A-Za-z0-9_-]{22}$/.test(generationId)) {
     throw new Error("Invalid retired version generation id")
   }
@@ -179,6 +182,7 @@ export async function retireVersionHistoryLocked(
   key: string,
   generationId: string
 ): Promise<string | null> {
+  assertSpaceAccess(spaceId, "edit");
   const active = versionKeyDir(spaceId, kind, key)
   if (!existsSync(active)) return null
   const retired = retiredVersionGenerationDir(spaceId, kind, key, generationId)
@@ -421,6 +425,7 @@ export async function writeVersionSnapshot(
   key: string,
   snapshot: VersionSnapshotBase
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   const path = versionFilePath(spaceId, kind, key, snapshot.id)
   await mkdir(dirname(path), { recursive: true })
   await withVersionWriteLock(path, () => atomicWriteJson(path, snapshot))
@@ -433,6 +438,7 @@ export async function markVersionCheckpoint(
   versionId: string,
   checkpoint: VersionCheckpoint
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   const snapshot = await readVersionSnapshot(spaceId, kind, key, versionId)
   if (!snapshot) return
   // A version that is already a meaningful checkpoint keeps its kind and

@@ -1,4 +1,10 @@
-import { noteServerBuild } from "./build-version";
+import { RUNTIME_BASE_PATH, runtimePath } from "./runtime-path"
+import {
+  acceptTeamResponse,
+  browserTeamMemberId,
+  clearTeamBrowserData,
+} from "./team-context"
+import { noteServerBuild } from "./build-version"
 import {
   workspaceContentEpoch,
   workspaceContentChanged,
@@ -16,7 +22,7 @@ import {
 // On loopback / flag-off this is a no-op: there is no cookie to send and the
 // server never returns 401, so behavior is byte-for-byte today.
 
-export const BASE_URL = import.meta.env.VITE_API_URL ?? "";
+export const BASE_URL = import.meta.env.VITE_API_URL ?? RUNTIME_BASE_PATH;
 
 /**
  * Redirect to the login page, preserving the current location as ?next (so the
@@ -29,8 +35,10 @@ export function redirectToLogin(): void {
     window.location.pathname + window.location.search
   );
   // Avoid a redirect loop if we're already on /login.
-  if (window.location.pathname === "/login") return;
-  window.location.assign(`/login?next=${next}`);
+  if (window.location.pathname === runtimePath("/login")) return
+  void clearTeamBrowserData().finally(() =>
+    window.location.assign(RUNTIME_BASE_PATH ? `/login?return_to=${next}` : `${runtimePath("/login")}?next=${next}`)
+  )
 }
 
 export class UnauthorizedError extends Error {
@@ -162,6 +170,22 @@ async function currentCsrfToken(
   }
 }
 
+/** Resolves true after `ms`, or false at once if the request was aborted. */
+function pause(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", stop);
+      resolve(true);
+    }, ms);
+    function stop() {
+      clearTimeout(timer);
+      resolve(false);
+    }
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
 /** Shared credentialed fetch with one Cloud-CSRF retry after a refusal. */
 export async function authenticatedFetch(
   input: RequestInfo | URL,
@@ -181,27 +205,72 @@ export async function authenticatedFetch(
   // Capture once: a CSRF retry must not silently rebase an old mutation.
   const epoch = workspaceContentEpoch();
   const send = (token: string | null) => {
-    const headers = new Headers(init.headers);
-    if (contentMutation && epoch) headers.set("X-Worktable-Content-Epoch", epoch);
-    if (unsafe(method) && token) headers.set("X-Worktable-CSRF", token);
-    return fetch(input, { ...init, method, headers, credentials: "include" });
-  };
+    const headers = new Headers(init.headers)
+    const member = browserTeamMemberId()
+    if (member) headers.set("X-Worktable-Member", member)
+    if (contentMutation && epoch)
+      headers.set("X-Worktable-Content-Epoch", epoch)
+    if (unsafe(method) && token) headers.set("X-Worktable-CSRF", token)
+    return fetch(input, { ...init, method, headers, credentials: "include" })
+  }
 
-  const token = unsafe(method)
+  let token = unsafe(method)
     ? await currentCsrfToken(
         init.signal ?? (input instanceof Request ? input.signal : undefined)
       )
     : csrfToken;
   let response = await send(token);
   noteServerBuild(response);
-  if (unsafe(method) && (await csrfFailure(response))) {
-    const token = await acquireCsrfToken();
-    if (token) response = await send(token);
+  // One CSRF recovery per request, whichever attempt first meets the refusal.
+  let csrfRecovered = false;
+  const recoverCsrf = async () => {
+    if (csrfRecovered || !unsafe(method) || !(await csrfFailure(response))) return;
+    csrfRecovered = true;
+    const fresh = await acquireCsrfToken();
+    if (fresh) {
+      token = fresh;
+      response = await send(token);
+    }
+  };
+  await recoverCsrf();
+  // A backup or restore refuses requests before any handler runs, so even a
+  // write can be retried. Waits stay short and follow the request's signal.
+  const signal =
+    init.signal ?? (input instanceof Request ? input.signal : undefined);
+  for (let attempt = 0; attempt < 3 && response.status === 503; attempt++) {
+    const code = await response
+      .clone()
+      .json()
+      .then((body: { code?: unknown } | null) => body?.code)
+      .catch(() => null);
+    if (code !== "WORKSPACE_REPLACING" && code !== "WORKTABLE_BUSY") break;
+    const seconds = Number(response.headers.get("Retry-After") ?? "1");
+    const delay = Math.min(
+      5_000,
+      Math.max(250, (Number.isFinite(seconds) ? seconds : 1) * 1_000)
+    );
+    if (!(await pause(delay, signal))) break;
+    response = await send(token);
+    await recoverCsrf();
   }
-  if (contentMutation && response.status === 409) {
-    const body = await response.clone().json().catch(() => null);
-    if (body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace();
+  if (response.status === 403 || response.status === 409) {
+    const body = await response
+      .clone()
+      .json()
+      .catch(() => null)
+    if (contentMutation && body?.code === "WORKSPACE_CHANGED") fenceChangedWorkspace()
+    if (body?.code === "MEMBERSHIP_REQUIRED") {
+      fenceChangedWorkspace()
+      void clearTeamBrowserData().finally(() =>
+        window.location.replace(runtimePath("/"))
+      )
+    }
+    if (body?.code === "MEMBER_CHANGED") {
+      fenceChangedWorkspace()
+      void clearTeamBrowserData().finally(() => window.location.replace(runtimePath("/")))
+    }
   }
+  acceptTeamResponse(response);
   return response;
 }
 

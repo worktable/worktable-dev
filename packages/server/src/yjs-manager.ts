@@ -1,3 +1,5 @@
+import { runAsActivityActor } from "./activity-log.ts";
+import type { RequestPrincipal } from "./token-store.ts";
 import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
@@ -98,6 +100,7 @@ const PING_FRAME = (() => {
 // ── Types ────────────────────────────────────────────────────
 
 interface WsClient {
+  data?: { canAccess?: (spaceId?: string, edit?: boolean) => boolean; actorId?: string; actorName?: string };
   send(data: string | ArrayBuffer | Uint8Array): void;
   close(): void;
 }
@@ -148,6 +151,7 @@ interface LiveDoc {
   emptySince: number | null; // when the room last lost its final client
   lastPersistMs: number; // disk mtime (ms) the in-memory Y.Doc is based on
   protectedUntilMs: number; // briefly block browser persists over agent/filesystem versions
+  humanActor?: RequestPrincipal;
   humanEdited: boolean; // a connected client has signaled a genuine local edit this session
   contentGeneration: number; // bumped by every applied Y.Doc content update
   // Bumped on every MESSAGE_INTENT. Consumers snapshot it before their awaits
@@ -659,7 +663,7 @@ export class YjsDocManager {
       const msg = encoding.toUint8Array(encoder);
 
       for (const client of liveDoc.clients) {
-        if (client !== origin) {
+        if (client !== origin && (!client.data?.canAccess || client.data.canAccess(spaceId))) {
           try {
             client.send(msg);
           } catch {
@@ -747,6 +751,7 @@ export class YjsDocManager {
         );
       }
 
+      if (ws.data?.canAccess && !ws.data.canAccess(pending.spaceId, true)) throw new Error("Space access has been revoked");
       liveDoc.clients.add(ws);
       this.clientDocs.set(ws, liveDoc);
 
@@ -915,6 +920,10 @@ export class YjsDocManager {
     liveDoc: LiveDoc,
     frame: AcceptedClientFrame
   ): void {
+    if (ws.data?.canAccess && !ws.data.canAccess(liveDoc.spaceId, true)) {
+      this.detachClient(ws, { close: true, keepPending: false, scheduleUnload: true });
+      return;
+    }
     if (!this.frameMutationIsPaused(liveDoc, frame)) {
       this.processMessage(ws, liveDoc, frame.bytes);
       return;
@@ -976,6 +985,10 @@ export class YjsDocManager {
       // while the flag still lives only in this process's memory, so a crash
       // before the debounced persist would lose the attribution for good.
       liveDoc.humanEdited = true;
+      // The first person with unsaved edits is credited until that save; a
+      // later editor does not take over earlier, unsaved work.
+      if (!liveDoc.humanActor && ws.data?.actorId)
+        liveDoc.humanActor = { id: ws.data.actorId, type: "human", displayName: ws.data.actorName ?? "Member" };
       liveDoc.intentGeneration += 1;
     } else if (messageType === MESSAGE_AWARENESS) {
       // Single-user app; awareness not needed. Ignore.
@@ -1485,6 +1498,7 @@ export class YjsDocManager {
       liveDoc.intentGeneration === intentAtStart.generation
     ) {
       liveDoc.humanEdited = false;
+      liveDoc.humanActor = undefined;
       this.sendIntentAck(liveDoc);
     }
     try {
@@ -2363,10 +2377,12 @@ export class YjsDocManager {
     // this snapshot and must neither attribute this write nor be cleared/acked
     // by it — the generation check below leaves it for the next persist.
     const hadIntent = liveDoc.humanEdited;
+    const humanActor = liveDoc.humanActor;
     const intentGen = liveDoc.intentGeneration;
     const spendIntent = () => {
       if (hadIntent && liveDoc.intentGeneration === intentGen) {
         liveDoc.humanEdited = false;
+        liveDoc.humanActor = undefined;
         this.sendIntentAck(liveDoc);
       }
     };
@@ -2499,7 +2515,7 @@ export class YjsDocManager {
     // was exported; otherwise it is machine normalization drift and must not
     // read as human-reviewed.
     const source = hadIntent ? SOURCE_BROWSER_HUMAN : SOURCE_BROWSER_SYNC;
-    const updatedBy = hadIntent ? "user" : "system";
+    const updatedBy = hadIntent ? humanActor?.id ?? "user" : "system";
 
     // A room's export is already in canonical form, so the store writes it
     // as is. The exception is a Mermaid code block the room still holds:
@@ -2510,13 +2526,13 @@ export class YjsDocManager {
     const filePath = getDocPath(spaceId, docPath);
     suppressPath(filePath);
     try {
-      const writeResult = await writeDoc(spaceId, docPath, blocks, {
+      const writeResult = await runAsActivityActor(hadIntent ? humanActor : undefined, () => writeDoc(spaceId, docPath, blocks, {
         updatedBy,
         source,
         managedIdentity: true,
         canonical: mermaidNormalized,
         continueSession,
-      });
+      }));
       if (!writeResult.ok) {
         throw new Error(writeResult.error ?? "Yjs document persist failed");
       }

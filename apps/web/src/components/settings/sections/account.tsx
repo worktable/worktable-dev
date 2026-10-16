@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/http"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { CLOUD_PERSONAL_PLAN } from "@worktable/hosted-contract"
@@ -90,6 +91,8 @@ export function AccountSection() {
               </p>
             </CardContent>
           </Card>
+        ) : billingQuery.error instanceof HttpError && billingQuery.error.status === 403 && (billingQuery.error.body as {code?: string})?.code === "BILLING_PAYER_REQUIRED" ? (
+          <p className="text-sm text-muted-foreground">Billing is managed by this Worktable&rsquo;s payer.</p>
         ) : billingQuery.isError || !billingQuery.data ? (
           <Card size="sm">
             <CardContent className="flex items-start gap-2">

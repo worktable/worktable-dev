@@ -106,6 +106,8 @@ export const ENV = {
   AUTH_SERVER_URL: "WORKTABLE_AUTH_SERVER_URL",
   /** This tenant's canonical MCP resource URL; AS tokens bind to it. */
   RESOURCE_URL: "WORKTABLE_RESOURCE_URL",
+  /** The shared `/api/mcp` resource the gateway routes only to an account's default Worktable. */
+  LEGACY_RESOURCE_URL: "WORKTABLE_LEGACY_RESOURCE_URL",
   /** The AS subject (WorkOS user id) that owns this instance. */
   OWNER_SUBJECT: "WORKTABLE_OWNER_SUBJECT",
   /** Stable control-plane workspace identity used by browser assertions. */
@@ -422,6 +424,11 @@ export const BrowserAssertionClaims = z.object({
   jti: z.string().uuid(),
   wt: z.object({
     credential: z.literal("browser"),
+    worktableName: z.string().trim().min(1).max(4096).optional(),
+    identity: z.object({
+      issuer: z.string().url(), subject: z.string().min(1), email: z.string().email(),
+      companyId: z.string().min(1).optional(),
+    }).optional(),
     workspaceId: z.string().min(1),
     requestHash: z
       .string()
@@ -462,8 +469,8 @@ export function browserRequestBinding(method: string, url: URL): string {
  * tenant ALSO pins the token's `sub` to its owner (M1): audience alone cannot
  * isolate tenants on a shared authorization server, and never could.
  */
-export function tenantResourceUrl(publicBaseUrl: string): string {
-  return `${publicBaseUrl.replace(/\/+$/, "")}${MCP_RESOURCE_PATH}`
+export function tenantResourceUrl(publicBaseUrl: string, worktableId?: string): string {
+  return `${publicBaseUrl.replace(/\/+$/, "")}${MCP_RESOURCE_PATH}${worktableId ? `/w/${encodeURIComponent(worktableId)}` : ""}`
 }
 
 const httpUrl = z.string().refine(
@@ -577,7 +584,8 @@ export function buildTenantEnv(
     [ENV.NO_UPDATE_CHECK]: "1",
     [ENV.VERSION]: parsed.version,
     [ENV.AUTH_SERVER_URL]: parsed.authServerUrl,
-    [ENV.RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl),
+    [ENV.RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl, parsed.cloudWorkspaceId),
+    [ENV.LEGACY_RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl),
     [ENV.OWNER_SUBJECT]: parsed.ownerSubject,
     [ENV.CLOUD_WORKSPACE_ID]: parsed.cloudWorkspaceId,
     [ENV.BROWSER_ASSERTION_KEYRING]: JSON.stringify(
@@ -608,3 +616,50 @@ export {
   type BackupWorkerInput,
   type BackupWorkerResult,
 } from "./backups.ts"
+
+/** A derived Cloud directory snapshot. It never grants access to runtime content. */
+export const TeamDirectorySnapshot = z.object({
+  workspaceId: z.string().min(1).max(128),
+  name: z.string().trim().min(1).max(4096).optional(),
+  portableWorkspaceId: z.string().min(1).max(128),
+  epoch: z.string().regex(/^[a-f0-9]{64}$/),
+  revision: z.number().int().nonnegative(),
+  capturedAt: z.number().int().nonnegative(),
+  members: z.array(z.object({
+    subject: z.string().min(1).max(128),
+    memberId: z.string().min(1).max(128),
+    actorId: z.string().min(1).max(128),
+    role: z.enum(["owner", "member"]),
+  }).strict()).max(10000),
+}).strict()
+export type TeamDirectorySnapshot = z.infer<typeof TeamDirectorySnapshot>
+
+
+/** Bound tenant-controlled bytes before either shared Cloud service decodes them. */
+export async function readTeamDirectorySnapshot(response: Response): Promise<TeamDirectorySnapshot> {
+  if (!response.body) throw new Error("Team directory has no body")
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > 4 * 1024 * 1024) {
+        await reader.cancel()
+        throw new Error("Team directory too large")
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return TeamDirectorySnapshot.parse(JSON.parse(new TextDecoder().decode(bytes)))
+}

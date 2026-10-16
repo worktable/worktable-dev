@@ -1,6 +1,10 @@
+import { assertSpaceAccess } from "./team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { noteDocumentEdited, recordActivity } from "./activity-log.ts"
-import { noteDocumentActivity, noteDocumentCreated } from "./document-activity.ts"
+import {
+  noteDocumentActivity,
+  noteDocumentCreated,
+} from "./document-activity.ts"
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
 import { createHash } from "node:crypto"
 import { lstat, rm } from "node:fs/promises"
@@ -467,6 +471,7 @@ export async function materializeRegisteredDocumentIdentity(options: {
   path: string
   format: DocumentFormatClaim
 }> {
+  assertSpaceAccess(options.spaceId);
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   return withDocPathLock(options.spaceId, async () => {
@@ -750,6 +755,7 @@ export async function replayRegisteredDocumentMutation(options: {
   requestId: string
   requestHash: string
 }): Promise<DocumentWriteResult | null> {
+  assertSpaceAccess(options.spaceId);
   const workspaceRoot = getWorkspaceRoot()
   const registry = createBuiltinDocumentFormatRegistry()
   return withDocPathLock(options.spaceId, async () => {
@@ -802,6 +808,7 @@ export async function createRegisteredDocument(options: {
   agentMutation?: DocumentAgentMutationInput
   registry?: DocumentFormatRegistry
 }): Promise<DocumentWriteResult> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const path = requirePortablePath(options.path)
@@ -809,6 +816,7 @@ export async function createRegisteredDocument(options: {
   const bytes = await preparedBytes(registration, options.format, options.bytes)
 
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     const created = await (async () => {
       await requireV2Workspace(workspaceRoot)
       const catalog = await buildDocumentCatalog({
@@ -1061,6 +1069,7 @@ export async function readRegisteredDocumentSource(options: {
   /** When the source last changed, as the document catalog records it. */
   updatedAt?: string
 }> {
+  assertSpaceAccess(options.spaceId);
   return withDocPathLock(options.spaceId, () =>
     readRegisteredDocumentSourceLocked(options)
   )
@@ -1079,6 +1088,7 @@ export async function readRegisteredDocumentSourceLocked(options: {
   sourceRevision: string
   updatedAt?: string
 }> {
+  assertSpaceAccess(options.spaceId);
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   await requireV2Workspace(workspaceRoot)
@@ -1124,9 +1134,11 @@ export async function replaceRegisteredDocument(options: {
     label?: string
   }
 }): Promise<DocumentWriteResult> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,
@@ -1400,9 +1412,11 @@ export async function checkpointRegisteredDocument(options: {
   reason?: string
   registry?: DocumentFormatRegistry
 }): Promise<DocumentWriteResult> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,
@@ -1524,11 +1538,13 @@ export async function restoreRegisteredDocumentVersion(options: {
   reason?: string
   registry?: DocumentFormatRegistry
 }): Promise<DocumentWriteResult> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const store = options.store ?? "v2"
   requireValidVersionId(options.versionId, store)
   const plan = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,
@@ -1723,10 +1739,12 @@ export async function moveRegisteredDocument(options: {
   to: string
   registry?: DocumentFormatRegistry
 }): Promise<DocumentMoveResult> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const to = requirePortablePath(options.to)
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,
@@ -1795,10 +1813,12 @@ export async function setRegisteredDocumentArchived(options: {
   archived: boolean
   notDue?: true
 }> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   let stateChanged = false
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,
@@ -1896,9 +1916,11 @@ export async function deleteRegisteredDocument(options: {
   path: string
   registry?: DocumentFormatRegistry
 }): Promise<{ documentId: DocumentId; path: string }> {
+  assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   const result = await withDocPathLock(options.spaceId, async () => {
+    assertSpaceAccess(options.spaceId, "edit");
     await requireV2Workspace(workspaceRoot)
     const catalog = await buildDocumentCatalog({
       workspaceRoot,

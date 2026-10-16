@@ -1,3 +1,4 @@
+import { assertSpaceAccess } from "./team-policy.ts";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -80,6 +81,7 @@ function parseAliases(value: unknown): DocAliases | null {
 export async function readDocAliases(
   spaceId: string
 ): Promise<{ aliases: DocAliases | null; error: string | null }> {
+  assertSpaceAccess(spaceId);
   return readDocAliasesAt(getDocAliasesPath(spaceId));
 }
 
@@ -572,6 +574,7 @@ export async function resolveDocAlias(
   spaceId: string,
   path: string
 ): Promise<{ path: string | null; error: string | null }> {
+  assertSpaceAccess(spaceId);
   const { aliases, error } = await readDocAliases(spaceId);
   if (!aliases) return { path: null, error };
   const resolved = resolveDocAliasIn(aliases, path);
@@ -862,6 +865,7 @@ export async function recordDocAlias(
   to: string,
   kind: AliasKind
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   return recordDocAliasBatch(spaceId, [{ from, to, kind }]);
 }
 
@@ -869,6 +873,7 @@ export async function recordDocAliasBatch(
   spaceId: string,
   entries: Array<{ from: string; to: string; kind: AliasKind }>
 ): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   for (const { from, to } of entries) {
   if (!isStoreCanonicalPath(from) || !isStoreCanonicalPath(to) || from === to) {
     throw new Error("Document alias paths must be distinct canonical paths");
@@ -894,6 +899,7 @@ export async function retireDocAlias(
   path: string,
   kind: AliasKind
 ): Promise<boolean> {
+  assertSpaceAccess(spaceId, "edit");
   let removed = false;
   await withDocAliasLock(spaceId, async () => {
     const { aliases, error } = await readDocAliases(spaceId);

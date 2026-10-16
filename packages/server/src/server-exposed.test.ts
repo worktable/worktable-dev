@@ -29,6 +29,11 @@ import {
 } from "./settings-store.ts"
 import { Hono } from "hono"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { activateLocalTeams } from "./team-activation.ts"
+import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
+import { closeTeamDatabases, currentTeamWorktable } from "./team-database.ts"
+import { findTeamMember } from "./team-members.ts"
+import { ownerIdentity } from "./auth.ts"
 
 // Real-socket coverage of the exposed-surface gates: the WS/yjs upgrade gate, the
 // CORS split, and the server-refuses-without-password rule. Boots startServer on
@@ -71,6 +76,8 @@ afterEach(async () => {
   if (savedPublicUrl === undefined) delete process.env["WORKTABLE_PUBLIC_URL"]
   else process.env["WORKTABLE_PUBLIC_URL"] = savedPublicUrl
   invalidateServerSettingsCache()
+  clearTeamAuthInstances()
+  closeTeamDatabases()
   setAppDirOverride(null)
   setWorkspaceRootOverride(null)
   for (const dir of [appDir, workspaceDir]) {
@@ -83,6 +90,32 @@ function boot(): { port: number } {
   servers.push(server)
   return { port: server.port ?? 0 }
 }
+
+it("boots an exposed Teams Worktable without reopening ambient owner authority", async () => {
+  ensureWorkspaceManifest()
+  await activateLocalTeams("http://127.0.0.1", { name: "Alice", email: "alice@example.test", password: "Synthetic-realtime-team-123" }, ownerIdentity())
+  process.env["WORKTABLE_PUBLIC_URL"] = "https://team.example.test"
+  const { port } = boot()
+  expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200)
+  expect((await fetch(`http://127.0.0.1:${port}/api/spaces`)).status).toBe(401)
+})
+
+it("fences browser realtime reconnects to the named member whose drafts the tab holds", async () => {
+  ensureWorkspaceManifest()
+  const password = "Synthetic-realtime-team-123"
+  const authOrigin = "http://127.0.0.1"
+  await activateLocalTeams(authOrigin, { name: "Alice", email: "alice@example.test", password }, ownerIdentity())
+  const auth = await getTeamAuth(authOrigin)
+  const signedIn = await auth.api.signInEmail({body: {email: "alice@example.test", password}, returnHeaders: true})
+  const memberId = findTeamMember(signedIn.response.user.id)!.id
+  const cookie = signedIn.headers.getSetCookie().map(value => value.split(";", 1)[0]).join("; ")
+  const { port } = boot()
+  const headers = { Cookie: cookie, Origin: `http://127.0.0.1:${port}` }
+  expect((await tryUpgrade(port, "/ws?scope=threads", headers)).ok).toBe(false)
+  expect((await tryUpgrade(port, "/ws?scope=threads&memberId=another-member", headers)).ok).toBe(false)
+  expect((await tryUpgrade(port, `/ws?scope=threads&memberId=${memberId}`, headers)).ok).toBe(true)
+  expect(currentTeamWorktable()).not.toBeNull()
+})
 
 // Produce a valid session cookie value through the production issuer.
 async function makeCookie(): Promise<string> {

@@ -1,4 +1,6 @@
+import { ENV } from "@worktable/hosted-contract"
 import { documentReferenceHref } from "@worktable/types"
+import { isHosted } from "../hosted.ts"
 import { sanitizeDocPath } from "../store.ts"
 import type { ResultLinkKind } from "./operations.ts"
 
@@ -7,9 +9,20 @@ import type { ResultLinkKind } from "./operations.ts"
 export function mcpContentUrl(origin: string, path: string): string {
   const url = new URL(origin)
   const destination = /^\/api\/mcp\/d\/([a-f0-9]{32})$/.exec(url.pathname)?.[1]
-  return destination
-    ? `${url.origin}/linked/open/${destination}`
-    : new URL(path, origin).href
+  if (destination) return `${url.origin}/linked/open/${destination}`
+  return new URL(`${cloudWorktablePrefix(url.origin)}${path}`, origin).href
+}
+
+/** On Cloud, links open in this Worktable's own `/t/<id>` address. */
+function cloudWorktablePrefix(origin: string): string {
+  if (!isHosted()) return ""
+  try {
+    const resource = new URL(process.env[ENV.RESOURCE_URL] ?? "")
+    const worktable = /^\/api\/mcp\/w\/([A-Za-z0-9_-]+)$/.exec(resource.pathname)?.[1]
+    return worktable && resource.origin === origin ? `/t/${worktable}` : ""
+  } catch {
+    return ""
+  }
 }
 
 export function docUrlToSendInChat(

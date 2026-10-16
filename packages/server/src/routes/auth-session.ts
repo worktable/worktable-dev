@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { authRequired } from "../auth.ts";
 import { isHosted } from "../hosted.ts";
+import { noteTeamSessionsChanged, teamsEnabled } from "../team-database.ts";
+import { verifyTeamSession } from "../team-session.ts";
 import {
   clearSessionCookie,
   hasOwnerPassword,
@@ -33,6 +35,9 @@ export const authSessionRouter = new Hono();
 // owner password and take over the cookie surface. Close the whole surface:
 // every mutating route 403s in hosted mode (GET /status stays readable).
 authSessionRouter.use(async (c, next) => {
+  if (teamsEnabled() && c.req.method !== "GET" && c.req.path !== "/auth/logout") {
+    return c.json({ error: "Use your individual account to sign in", code: "TEAM_AUTH_REQUIRED" }, 403);
+  }
   if (isHosted() && c.req.method !== "GET") {
     return c.json(
       {
@@ -92,10 +97,12 @@ authSessionRouter.post("/logout", (c) => {
 
 // GET /auth/status — unauthenticated-safe surface state for the login page.
 authSessionRouter.get("/status", async (c) => {
+  const team = teamsEnabled();
   return c.json({
-    exposed: authRequired(),
+    exposed: team || authRequired(),
     hasOwnerPassword: await hasOwnerPassword(),
-    authenticated: await verifyOwnerSessionCookie(c),
+    authenticated: team ? Boolean(await verifyTeamSession(c.req.raw)) : await verifyOwnerSessionCookie(c),
+    ...(team ? { teamsEnabled: true } : {}),
   });
 });
 
@@ -154,6 +161,8 @@ authSessionRouter.post("/logout-everywhere", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
   await rotateSessionSecret();
+  // Open sockets were authorized by the old secret; recheck them now.
+  noteTeamSessionsChanged();
   clearSessionCookie(c);
   return c.json({ ok: true });
 });

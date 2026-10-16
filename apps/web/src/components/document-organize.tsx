@@ -1,3 +1,4 @@
+import { useSpace } from "@/lib/queries"
 import { Suspense, useEffect, useRef, useState } from "react"
 import type { ComponentProps, ReactNode } from "react"
 import {
@@ -56,6 +57,7 @@ export function DocumentLifetimeChip({
   spaceId: string
   path: string
 }) {
+  const { data: space } = useSpace(spaceId)
   const label = useTemporaryArchiveLabel(spaceId, path)
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
@@ -74,6 +76,7 @@ export function DocumentLifetimeChip({
           <button
             type="button"
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            disabled={space?.space.permissions?.edit === false}
             aria-label={`Temporary. ${label}`}
           />
         }
@@ -127,6 +130,7 @@ export function DocumentLifetimeControls({
   onPendingChange?: (pending: boolean) => void
   heading?: (step: "overview" | "date") => ReactNode
 }) {
+  const { data: space } = useSpace(spaceId)
   const summary = useDocumentSummary(spaceId, path)
   const actions = useLifetimeActions(spaceId, path)
   const archiveOn = summary?.archiveOn
@@ -158,7 +162,7 @@ export function DocumentLifetimeControls({
       restoreDateFocus.current = false
     }
   }, [editingDate])
-  if (!archiveOn) return null
+  if (!archiveOn || space?.space.permissions?.edit === false) return null
   const currentDate = localDay(archiveOn)
   // Today's midnight has already passed. Immediate archiving has its own action.
   const tomorrow = localDay(new Date().toISOString())

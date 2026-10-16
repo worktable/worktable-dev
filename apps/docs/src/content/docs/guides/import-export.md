@@ -8,10 +8,20 @@ another installation. Cloud also provides hosted backups.
 
 Exports contain workspace content. Installation credentials and live agent
 connections do not travel with them.
+Team memberships and Space permissions are rebuilt manually after a content
+transfer. A full operator backup preserves people and permissions; after a full
+restore, people sign in again and agents reconnect.
+
+Importing content into an existing team Worktable keeps its members. Replacement
+Spaces remain restricted until an owner shares them or grants access again.
 
 ## Hosted backups
 
-In Worktable Cloud, open **Settings → Backups** to see available backups and the
+Full backup and restore requires explicit operator access. Becoming a Worktable
+owner does not grant that access.
+
+In Worktable Cloud, choose **Backups** beside the Worktable in **Your
+Worktables** to see available backups and the
 configured schedule and retention. Choose **Back up now** for a current backup,
 and check the last successful capture.
 

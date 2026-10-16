@@ -4,7 +4,7 @@ import { codeWrapScript } from "@/lib/code-wrap"
 
 export const documentOpeningLayoutScript = `(()=>{try{const w=Number(localStorage.getItem("worktable-sidebar-width")??288);document.documentElement.style.setProperty("--worktable-opening-sidebar",(Number.isFinite(w)?Math.min(480,Math.max(220,w)):288)+"px")}catch{}${codeWrapScript}})()`
 
-export const documentOpeningPreloadScript = `requestAnimationFrame(()=>requestAnimationFrame(()=>{try{const d=JSON.parse(document.getElementById("worktable-opening-data").textContent);for(const href of d?.preloads??[]){if(!/^\\/assets\\/[\\w./-]+\\.js$/.test(href)||href.includes(".."))continue;const l=document.createElement("link");l.rel="modulepreload";l.href=href;l.crossOrigin="";l.fetchPriority="low";document.head.appendChild(l)}}catch{}}))`
+export const documentOpeningPreloadScript = `requestAnimationFrame(()=>requestAnimationFrame(()=>{try{const d=JSON.parse(document.getElementById("worktable-opening-data").textContent);for(const href of d?.preloads??[]){if(!/^\\/assets\\/[\\w./-]+\\.js$/.test(href)||href.includes(".."))continue;const l=document.createElement("link");l.rel="modulepreload";l.href=(document.querySelector('script[type="module"][src]')?.getAttribute("src")?.match(/^\\/t\\/[A-Za-z0-9_-]+(?=\\/assets\\/)/)?.[0]??"")+href;l.crossOrigin="";l.fetchPriority="low";document.head.appendChild(l)}}catch{}}))`
 
 type Opening = { pathname: string; html: string }
 

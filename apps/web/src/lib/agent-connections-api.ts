@@ -1,3 +1,4 @@
+import { browserTeamMemberId } from "./team-context"
 import {
   isAgentPlatformId,
   platformForAdapter,
@@ -19,7 +20,7 @@ import { fetchJSON } from "./http"
 export async function listAgentConnections(
   options: { workspaceAgentsOnCloud?: boolean } = {}
 ): Promise<AgentConnectionInventory> {
-  if (!options.workspaceAgentsOnCloud) {
+  if (!options.workspaceAgentsOnCloud || browserTeamMemberId()) {
     return fetchJSON("/api/agent-connections")
   }
   const [signIns, paired] = await Promise.all([
@@ -66,6 +67,7 @@ export function updateAgentConnection(
     displayName?: string
     icon?: string | null
     access?: AgentAccess
+    spaceIds?: string[] | null
   }
 ): Promise<{ ok: true; connection: AgentConnection }> {
   return fetchJSON(
@@ -141,14 +143,19 @@ function sameAccess(a: AgentAccess | null, b: AgentAccess | null): boolean {
  */
 export async function saveAgentChanges(
   connection: AgentConnection,
-  changes: { name: string; icon: string | null; access: AgentAccess | null }
+  changes: {
+    name: string
+    icon: string | null
+    access: AgentAccess | null
+    spaceIds?: string[] | null
+  }
 ): Promise<void> {
   const name = changes.name.trim()
   const renamed = name !== connection.displayName
   const iconChanged = changes.icon !== (connection.icon ?? null)
   const shownPlatform = agentConnectionPlatform(connection)
   const signInClient =
-    connection.authKind === "oauth" && connection.target.kind === "mcp-client"
+    connection.ownership === undefined && connection.authKind === "oauth" && connection.target.kind === "mcp-client"
       ? connection.target.clientId
       : null
   if (signInClient) {
@@ -164,9 +171,14 @@ export async function saveAgentChanges(
     changes.access !== null &&
     connection.access != null &&
     !sameAccess(changes.access, connection.access)
-  if (renamed || iconChanged || accessChanged) {
+  const spacesChanged =
+    changes.spaceIds !== undefined &&
+    JSON.stringify(changes.spaceIds) !==
+      JSON.stringify(connection.spaceIds ?? null)
+  if (renamed || iconChanged || accessChanged || spacesChanged) {
     await updateAgentConnection(connection.id, {
       ...(renamed ? { displayName: name } : {}),
+      ...(spacesChanged ? { spaceIds: changes.spaceIds } : {}),
       ...(iconChanged ? { icon: changes.icon } : {}),
       ...(accessChanged && changes.access ? { access: changes.access } : {}),
     })

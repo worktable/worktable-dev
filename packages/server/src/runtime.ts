@@ -159,3 +159,9 @@ export {
   type WorkspaceExportV2Manifest,
   type WorkspaceExportV2Result,
 } from "./workspace-transfer-v2.ts"
+
+export { teamsEnabled } from "./team-database.ts"
+export {
+  issueTeamPasswordReset,
+  setTeamOperator,
+} from "./team-recovery.ts"

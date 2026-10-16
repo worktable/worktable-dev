@@ -66,8 +66,10 @@ export interface WorkspaceManifest {
   name: string;
   createdAt: string;
   cloud: {
-    status: "unlinked";
-  };
+    status: "unlinked"
+  }
+  /** Fail closed when protected Teams state is unavailable, including loss of the application directory. */
+  teamAccessRequired?: boolean
   /** A deliberately cleared workspace must not recreate starter content. */
   starterSeed?: { version: 1; status: "suppressed" };
   /**
@@ -177,11 +179,17 @@ export function getWorkspaceRoot(): string {
 // Stable per-workspace key for machine-local caches (Yjs state, record index).
 // Keying app-data state by workspace root means a moved or copied workspace
 // gets fresh caches instead of inheriting another copy's state.
+let cacheKeyMemo: { root: string; key: string } | null = null;
 export function workspaceCacheKey(): string {
-  return createHash("sha256")
-    .update(getWorkspaceRoot())
-    .digest("hex")
-    .slice(0, 16);
+  // Called on hot paths (every team access check names files by this key).
+  const root = getWorkspaceRoot();
+  if (cacheKeyMemo?.root !== root) {
+    cacheKeyMemo = {
+      root,
+      key: createHash("sha256").update(root).digest("hex").slice(0, 16),
+    };
+  }
+  return cacheKeyMemo.key;
 }
 
 export function getSpacesDir(): string {

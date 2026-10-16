@@ -1,3 +1,9 @@
+import { TeamAccessError } from "./team-policy.ts"
+import { APIError } from "better-auth/api"
+import { TeamStateError } from "./team-database.ts"
+import { resolveVerifiedCloudMember } from "./team-cloud.ts";
+import { teamsEnabled } from "./team-database.ts";
+import { resolveWorkspaceOriginForRequest } from "./workspace-origin.ts";
 import {
   AssertionKeyring,
   BROWSER_ASSERTION_TYPE,
@@ -121,9 +127,9 @@ export async function verifyHostedBrowserAssertion(
     const claims = parsed.data
     const now = Math.floor(Date.now() / 1000)
     if (
-      claims.sub !== ownerSubject ||
+      (!teamsEnabled() && !claims.wt.identity && claims.sub !== ownerSubject) ||
       claims.wt.workspaceId !== workspaceId ||
-      claims.wt.principal.id !== `workos:${ownerSubject}` ||
+      claims.wt.principal.id !== `workos:${claims.sub}` ||
       claims.exp !== claims.iat + 60 ||
       claims.nbf !== claims.iat - 5 ||
       claims.iat > now + 5 ||
@@ -143,6 +149,12 @@ export async function verifyHostedBrowserAssertion(
       return null
     }
     if (consumesReplayEntry(request)) consumeJti(claims.jti)
+    if (claims.wt.identity) {
+      if (claims.wt.identity.subject !== claims.sub || claims.wt.identity.issuer !== process.env[ENV.AUTH_SERVER_URL]?.trim()) return null;
+      return await resolveVerifiedCloudMember(resolveWorkspaceOriginForRequest(request).origin, { ...claims.wt.identity, name: claims.wt.principal.displayName },
+        request.method === "POST" && new URL(request.url).pathname === "/api/team/accept-invitation", claims.wt.worktableName);
+    }
+    if (teamsEnabled()) return null;
     return {
       user: "owner",
       workspace: getWorkspaceRoot(),
@@ -152,7 +164,7 @@ export async function verifyHostedBrowserAssertion(
       principal: claims.wt.principal,
     }
   } catch (error) {
-    if (error instanceof HostedCredentialError) throw error
+    if (error instanceof APIError || error instanceof HostedCredentialError || error instanceof TeamAccessError || error instanceof TeamStateError) throw error
     return null
   }
 }

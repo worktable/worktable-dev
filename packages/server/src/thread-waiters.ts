@@ -3,6 +3,10 @@ import { threadLocationKey } from "@worktable/types"
 import { onWorkspaceChange, threadEventLocation } from "./workspace-events.ts"
 import { readThread } from "./thread-store.ts"
 import { timing } from "./request-timing.ts"
+import {
+  isWorkspaceDraining,
+  onWorkspaceDrain,
+} from "./workspace-request-lifecycle.ts"
 
 type Resolve = () => void
 
@@ -72,10 +76,11 @@ function wait(
   timeoutMs: number,
   afterRevision: number
 ): Promise<boolean> {
-  if (timeoutMs <= 0) return Promise.resolve(false)
   if ((revisions.get(key) ?? 0) !== afterRevision) {
     return Promise.resolve(true)
   }
+  // A backup or replacement is waiting on admitted requests: answer now.
+  if (timeoutMs <= 0 || isWorkspaceDraining()) return Promise.resolve(false)
   // A held long-poll is reported as `wait`, not counted as a slow request.
   return timing.span("wait", () => new Promise<boolean>((resolve) => {
     const waiters = map.get(key) ?? new Set<Resolve>()
@@ -84,6 +89,7 @@ function wait(
       if (settled) return
       settled = true
       clearTimeout(timer)
+      stopOnDrain()
       waiters.delete(onChange)
       if (waiters.size === 0) map.delete(key)
       resolve(changed)
@@ -92,6 +98,7 @@ function wait(
     waiters.add(onChange)
     map.set(key, waiters)
     const timer = setTimeout(() => finish(false), timeoutMs)
+    const stopOnDrain = onWorkspaceDrain(() => finish(false))
   }))
 }
 

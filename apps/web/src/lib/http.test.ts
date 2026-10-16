@@ -7,6 +7,7 @@ import {
   getFreshBrowserCsrfToken,
   prefetchBrowserCsrfToken,
 } from "./http.ts"
+import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 
 const realFetch = globalThis.fetch
 
@@ -62,6 +63,41 @@ afterEach(() => {
 })
 
 describe("authenticatedFetch", () => {
+  it("retries a request refused while a backup holds the workspace", async () => {
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls += 1
+      return calls === 1
+        ? Response.json(
+            { code: "WORKSPACE_REPLACING" },
+            { status: 503, headers: { "Retry-After": "0" } }
+          )
+        : Response.json({ ok: true })
+    }) as typeof fetch
+    const response = await authenticatedFetch("http://localhost/api/spaces")
+    expect(response.status).toBe(200)
+    expect(calls).toBe(2)
+  })
+
+  it("recovers removed and switched members on ordinary reads", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "window")
+    const location = {pathname: "/spaces/private", replace: jest.fn()}
+    Object.defineProperty(globalThis, "window", {configurable: true, value: {location, dispatchEvent: () => true}})
+    try {
+      for (const [code, status] of [["MEMBERSHIP_REQUIRED", 403], ["MEMBER_CHANGED", 409]] as const) {
+        location.replace.mockClear()
+        globalThis.fetch = (async () => Response.json({code}, {status})) as typeof fetch
+        expect((await authenticatedFetch("https://app.worktable.cloud/api/spaces")).status).toBe(status)
+        await settle(() => location.replace.mock.calls.length > 0)
+        expect(location.replace).toHaveBeenCalledWith("/")
+        await acceptWorkspaceContentEpoch("recovery-test", "same-content")
+      }
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, "window", descriptor)
+      else Reflect.deleteProperty(globalThis, "window")
+    }
+  })
+
   it("acquires Cloud CSRF and retries an unsafe request exactly once", async () => {
     const requests: Request[] = []
     globalThis.fetch = (async (input, init) => {
@@ -98,6 +134,40 @@ describe("authenticatedFetch", () => {
     expect(requests[2]?.headers.get("X-Worktable-CSRF")).toBe(
       "csrf-from-session"
     )
+  })
+
+  it("recovers Cloud CSRF when a backup's refusal comes first", async () => {
+    const posts: Request[] = []
+    globalThis.fetch = (async (input, init) => {
+      const request = new Request(
+        input instanceof Request
+          ? input
+          : new URL(String(input), "https://app.worktable.cloud"),
+        init
+      )
+      if (new URL(request.url).pathname === "/gateway/session")
+        return Response.json({ authenticated: true, csrfToken: "csrf-after-backup" })
+      posts.push(request)
+      if (posts.length === 1)
+        return Response.json(
+          { code: "WORKSPACE_REPLACING" },
+          { status: 503, headers: { "Retry-After": "0" } }
+        )
+      return request.headers.get("X-Worktable-CSRF") === "csrf-after-backup"
+        ? Response.json({ ok: true })
+        : Response.json({ code: "CSRF_REQUIRED" }, { status: 403 })
+    }) as typeof fetch
+
+    const response = await authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}" }
+    )
+    expect(response.status).toBe(200)
+    expect(posts.map((post) => post.headers.get("X-Worktable-CSRF"))).toEqual([
+      null,
+      null,
+      "csrf-after-backup",
+    ])
   })
 
   it("sends the first change on Cloud with the token read at boot", async () => {

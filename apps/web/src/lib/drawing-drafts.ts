@@ -1,8 +1,9 @@
+import { browserTeamCacheKey } from "./team-context"
 import { currentWorkspaceContentEpoch } from "./workspace-content-state"
 // Drawings share the origin's storage, but drafts belong to a Worktable and
 // durable document identity. Moving a path must not strand unsaved ink.
 function draftPrefix(workspaceId: string) {
-  return `worktable:drawing-draft:${workspaceId}/`
+  return `worktable:drawing-draft:${workspaceId}/${browserTeamCacheKey() ? `member:${browserTeamCacheKey()}/` : ""}`
 }
 
 export function drawingDraftKey(workspaceId: string, documentId: string) {

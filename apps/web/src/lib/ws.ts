@@ -1,3 +1,9 @@
+import {
+  acceptTeamContext,
+  browserTeamMemberId,
+  reconcileTeamAccess,
+} from "./team-context"
+import { RUNTIME_BASE_PATH } from "./runtime-path"
 import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
@@ -48,7 +54,7 @@ const WS_BASE =
   import.meta.env.VITE_WS_URL ??
   (typeof window === "undefined"
     ? "ws://localhost:7480"
-    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`)
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}${RUNTIME_BASE_PATH}`)
 
 export interface WsMessage {
   type: string
@@ -63,6 +69,8 @@ export interface WsMessage {
   recordId?: string
   threadId?: string
   data?: unknown
+  /** An `error` message's reason. */
+  error?: string
 }
 
 export type WsStatus = SocketStatus
@@ -773,7 +781,10 @@ function connectShared(
     connection.reconnectTimer = null
   }
   publishStatus(connection, "connecting")
-  const ws = new WebSocket(connection.url)
+  const url = new URL(connection.url)
+  const memberId = browserTeamMemberId()
+  if (memberId) url.searchParams.set("memberId", memberId)
+  const ws = new WebSocket(url)
   connection.ws = ws
   let opened = false
 
@@ -791,6 +802,15 @@ function connectShared(
     } catch {
       // Ignore malformed messages without disrupting the live connection.
       return
+    }
+    if (message.type === "team_access") {
+      // This member's access changed: apply it in place, without a request.
+      acceptTeamContext(message)
+      return
+    }
+    if (message.type === "error" && message.error === "Credential revoked") {
+      // The server detaches a socket whose Space this member lost.
+      reconcileTeamAccess()
     }
     if (message.type === "subscribed") {
       // The server now delivers every change: the stream is caught up.

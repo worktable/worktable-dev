@@ -1,6 +1,22 @@
-import { basename } from "node:path";
-import { Hono, type Context } from "hono";
-import { requestSource } from "../request-source.ts";
+import { teamsEnabled } from "../team-database.ts"
+import { findTeamMemberById } from "../team-members.ts"
+import { identityForTeamMember } from "../team-identity.ts"
+import {
+  registerTeamPairing,
+  bindTeamPairingCredential,
+  retireFailedTeamPairingCredential,
+  requireTeamPairingAdministrator,
+  finalizeTeamCredentialRotation,
+} from "../team-pairing.ts"
+import {
+  requireTeamAgentAdministrator,
+  requireTeamHuman,
+  resolveTeamAgentCredential,
+  TeamAccessError,
+} from "../team-policy.ts"
+import { basename } from "node:path"
+import { Hono, type Context } from "hono"
+import { requestSource } from "../request-source.ts"
 import {
   type AgentAccess,
   AGENT_PLATFORMS,
@@ -10,10 +26,8 @@ import {
   DEFAULT_AGENT_TOKEN_SCOPES,
   platformForClient,
   scopesForAccess,
-} from "@worktable/types";
-import {
-  requireAgentManager,
-} from "../auth.ts";
+} from "@worktable/types"
+import { requireAgentManager } from "../auth.ts"
 import {
   CONNECTOR_PROGRESS_EVENTS,
   completePairingSession,
@@ -244,6 +258,7 @@ ownerSurface.use("*", requireAgentManager());
 ownerSurface.post("/", async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     client?: unknown;
+    agentId?: unknown;
     displayName?: unknown;
     scopes?: unknown;
     target?: unknown;
@@ -277,7 +292,10 @@ ownerSurface.post("/", async (c) => {
   }
   if (access && body?.scopes !== undefined) {
     return c.json(
-      { error: "access and scopes cannot both be supplied", code: "BAD_REQUEST" },
+      {
+        error: "access and scopes cannot both be supplied",
+        code: "BAD_REQUEST",
+      },
       400
     );
   }
@@ -399,6 +417,15 @@ ownerSurface.post("/", async (c) => {
     }
     scopes = body.scopes;
   }
+  // Check the agent before saving a session the caller could never use.
+  if (teamsEnabled() && body?.agentId !== undefined) {
+    if (typeof body.agentId !== "string")
+      return c.json(
+        { error: "agentId must identify a registered agent", code: "BAD_REQUEST" },
+        400
+      );
+    requireTeamAgentAdministrator(body.agentId, c.get("identity"));
+  }
 
   const { origin, originSource, mcpUrl } = agentEndpoint(c);
   const { code, session } = await createPairingSession({
@@ -415,6 +442,19 @@ ownerSurface.post("/", async (c) => {
     mcpUrl,
   });
 
+  if (teamsEnabled()) {
+    registerTeamPairing(
+      session.id,
+      {
+        expiresAt: session.expiresAt,
+        name: target?.participantName ?? displayName ?? client ?? "Agent",
+        platform: target?.adapter ?? client ?? "agent",
+        mode: target ? "always-on" : "on-demand",
+        ...(typeof body?.agentId === "string" ? { agentId: body.agentId } : {}),
+      },
+      c.get("identity")
+    )
+  }
   return c.json(
     {
       id: session.id,
@@ -435,6 +475,7 @@ ownerSurface.post("/", async (c) => {
 
 // GET /api/pairing/:id — status polling for the Settings flow.
 ownerSurface.get("/:id", async (c) => {
+  if (teamsEnabled()) requireTeamPairingAdministrator(c.req.param("id"), c.get("identity"));
   const session = await getPairingSession(c.req.param("id"));
   if (!session) {
     return c.json(
@@ -653,12 +694,32 @@ pairingRouter.post("/redeem", async (c) => {
   // The pairing's name only names a new agent. Reconnecting an installation
   // keeps the name its owner gave it, and the adapter learns that name here.
   let participantName = adapterTarget?.participantName;
+  let teamBinding: ReturnType<typeof bindTeamPairingCredential> | null = null;
   try {
-    await attachPairingToken(session.id, metadata.id);
+    if (teamsEnabled()) {
+      const previousCredentialKeys = (await listTokens())
+        .filter(
+          (token) =>
+            !token.revokedAt &&
+            token.id !== metadata.id &&
+            token.agent === metadata.agent &&
+            token.workspace === metadata.workspace
+        )
+        // Oldest first, so the installation's newest credential comes last.
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((token) => token.principal.id);
+      teamBinding = bindTeamPairingCredential(session.id, metadata.principal.id, {
+        previousCredentialKeys,
+        icon: session.target.icon ?? null,
+      });
+    }
+    await attachPairingToken(session.id, metadata.id, teamBinding
+      ? { ...teamBinding, credentialKey: metadata.principal.id }
+      : undefined);
     if (adapterTarget) {
       participantName = (
         await resolveParticipant(
-          { agent: metadata.agent, principal: metadata.principal },
+          teamsEnabled() ? resolveTeamAgentCredential(metadata)! : { agent: metadata.agent, principal: metadata.principal },
           {
             initialName: adapterTarget.participantName,
             defaultSpaceId: adapterTarget.defaultSpaceId ?? null,
@@ -671,6 +732,7 @@ pairingRouter.post("/redeem", async (c) => {
       ? "the adapter participant"
       : "the pairing credential";
     await revokeToken(metadata.id).catch(() => false);
+    if (teamBinding) retireFailedTeamPairingCredential(teamBinding, metadata.principal.id);
     await recordPairingProgress(
       body.code,
       "failed_no_config",
@@ -738,6 +800,13 @@ pairingRouter.post("/complete", async (c) => {
     body.code,
     tokenId,
     async (session) => {
+      if (teamsEnabled()) {
+        const identity = resolveTeamAgentCredential(metadata);
+        if (!identity?.team?.agentId) throw new TeamAccessError("This agent connection has been revoked");
+        await resolveParticipant(identity);
+        await finalizeTeamCredentialRotation(tokenId, identity.team.agentId);
+        return;
+      }
       const target = session.target;
       let connectionStored = true;
       if (target.kind === "agent-adapter") {
@@ -903,6 +972,17 @@ pairingRouter.post("/progress", async (c) => {
       !session.events.some((e) => e.event === "config_written"))
   ) {
     await revokeToken(session.tokenId);
+    if (teamsEnabled()) {
+      // Older sessions lack rollback custody. Retire their credential mapping
+      // without assuming that the existing agent was created by this pairing.
+      const token = (await listTokens()).find((item) => item.id === session.tokenId);
+      const agentId = token
+        ? resolveTeamAgentCredential({ ...token, credentialClass: "local" })?.team?.agentId
+        : undefined;
+      const binding = session.teamBinding ?? (agentId ? { agentId, createdAgent: false } : null);
+      const credentialKey = session.teamBinding?.credentialKey ?? token?.principal.id;
+      if (binding && credentialKey) retireFailedTeamPairingCredential(binding, credentialKey);
+    }
   }
 
   return c.json({ ok: true });
@@ -946,12 +1026,24 @@ function parseRequestTarget(value: unknown): ConnectionRequestTarget | null {
  */
 function agentRequestOnly(c: Context): Response | null {
   if (c.req.header("Origin") !== undefined) {
-    return c.json({ error: "Agents ask to connect from their own process", code: "FORBIDDEN" }, 403);
+    return c.json(
+      {
+        error: "Agents ask to connect from their own process",
+        code: "FORBIDDEN",
+      },
+      403
+    )
   }
   const type = c.req.header("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
   return type === "application/json"
     ? null
-    : c.json({ error: "Content-Type must be application/json", code: "JSON_REQUIRED" }, 415);
+    : c.json(
+        {
+          error: "Content-Type must be application/json",
+          code: "JSON_REQUIRED",
+        },
+        415
+      )
 }
 
 pairingRouter.post("/requests", async (c) => {
@@ -968,7 +1060,11 @@ pairingRouter.post("/requests", async (c) => {
   const target = parseRequestTarget(body?.target);
   if (!target) {
     return c.json(
-      { error: "target must name an agent adapter installation or an MCP client", code: "BAD_REQUEST" },
+      {
+        error:
+          "target must name an agent adapter installation or an MCP client",
+        code: "BAD_REQUEST",
+      },
       400
     );
   }
@@ -1017,7 +1113,7 @@ pairingRouter.post("/requests/poll", async (c) => {
     body.pollToken,
     async (target, approval) => {
       const icon = approval.icon ? { icon: approval.icon } : {};
-      const { code } = await createPairingSession({
+      const { code, session } = await createPairingSession({
         client: target.kind === "mcp-client" ? target.client : null,
         target:
           target.kind === "agent-adapter"
@@ -1036,6 +1132,28 @@ pairingRouter.post("/requests/poll", async (c) => {
         scopes: scopesForAccess(approval.access),
         mcpUrl,
       });
+      if (teamsEnabled()) {
+        const member = approval.teamMemberId
+          ? findTeamMemberById(approval.teamMemberId)
+          : null
+        if (!member)
+          throw new TeamAccessError(
+            "The approving member is no longer available"
+          )
+        registerTeamPairing(
+          session.id,
+          {
+            expiresAt: session.expiresAt,
+            name: approval.displayName,
+            platform:
+              target.kind === "agent-adapter"
+                ? target.adapter
+                : (target.client ?? "agent"),
+            mode: target.kind === "agent-adapter" ? "always-on" : "on-demand",
+          },
+          identityForTeamMember(member)
+        )
+      }
       return code;
     }
   );
@@ -1051,7 +1169,10 @@ ownerSurface.get("/requests/:code", async (c) => {
   const request = await getConnectionRequest(c.req.param("code"));
   if (!request) {
     return c.json(
-      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      {
+        error: "This request expired or was already answered",
+        code: "NOT_FOUND",
+      },
       404
     );
   }
@@ -1080,7 +1201,10 @@ ownerSurface.post("/requests/:code/approve", async (c) => {
   const access = parseAccess(body?.access);
   if (!access) {
     return c.json(
-      { error: "access must have boolean threads, read, and edit", code: "BAD_REQUEST" },
+      {
+        error: "access must have boolean threads, read, and edit",
+        code: "BAD_REQUEST",
+      },
       400
     );
   }
@@ -1098,13 +1222,17 @@ ownerSurface.post("/requests/:code/approve", async (c) => {
     );
   }
   const settled = await settleConnectionRequest(c.req.param("code"), {
+    ...(teamsEnabled() ? { teamMemberId: requireTeamHuman(c.get("identity")).id } : {}),
     displayName,
     icon: typeof body?.icon === "string" ? body.icon : null,
     access,
   });
   if (!settled) {
     return c.json(
-      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      {
+        error: "This request expired or was already answered",
+        code: "NOT_FOUND",
+      },
       404
     );
   }
@@ -1116,7 +1244,10 @@ ownerSurface.post("/requests/:code/deny", async (c) => {
   const settled = await settleConnectionRequest(c.req.param("code"), null);
   if (!settled) {
     return c.json(
-      { error: "This request expired or was already answered", code: "NOT_FOUND" },
+      {
+        error: "This request expired or was already answered",
+        code: "NOT_FOUND",
+      },
       404
     );
   }

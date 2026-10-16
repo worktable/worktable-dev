@@ -107,6 +107,12 @@ export function accessFromScopes(scopes: readonly string[]): AgentAccess {
 }
 
 export interface AgentConnection {
+  ownership?: "personal" | "team"
+  memberId?: string | null
+  /** null follows current and future member Space access; an array narrows it. */
+  spaceIds?: string[] | null
+  canManage?: boolean
+  canReconnect?: boolean
   id: string
   authKind: AgentConnectionAuthKind
   /** The agent's name, which is also its name in threads. The owner can change it. */

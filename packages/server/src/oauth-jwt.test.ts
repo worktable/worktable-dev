@@ -74,6 +74,7 @@ const ENV_KEYS = [
   "WORKTABLE_AUTH_SERVER_URL",
   "WORKTABLE_OWNER_SUBJECT",
   "WORKTABLE_RESOURCE_URL",
+  "WORKTABLE_LEGACY_RESOURCE_URL",
   "WORKTABLE_MCP_TOKEN",
   "HOST",
   "WORKTABLE_REQUIRE_AUTH",
@@ -263,6 +264,18 @@ describe("verifyAuthServerJwt", () => {
   it("rejects a wrong audience", async () => {
     const jwt = await signJwt({ aud: "https://other-tenant.example.test/mcp" })
     expect(await verifyAuthServerJwt(jwt)).toBeNull()
+  })
+
+  it("accepts the shared Cloud MCP audience only on Cloud", async () => {
+    const shared = "https://cloud.example.test/api/mcp"
+    process.env["WORKTABLE_LEGACY_RESOURCE_URL"] = shared
+    const jwt = await signJwt({ aud: shared })
+    expect(await verifyAuthServerJwt(jwt)).toBeNull()
+    process.env["WORKTABLE_HOSTED"] = "1"
+    expect((await verifyAuthServerJwt(jwt))?.principal.id).toBeDefined()
+    expect(
+      await verifyAuthServerJwt(await signJwt({ aud: "https://cloud.example.test/api/mcp/w/other" }))
+    ).toBeNull()
   })
 
   it("rejects a wrong subject (another user of the same AS)", async () => {

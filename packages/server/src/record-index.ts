@@ -1057,8 +1057,9 @@ class RecordIndex {
   // FTS query can't hide behind the scan fallback returning the same results.
   lastSearchEngine: "fts" | "scan" | null = null;
 
-  searchRecords(term: string, limit: number, spaceId?: string): RecordSearchHit[] | null {
+  searchRecords(term: string, limit: number, spaceId?: string, allowedSpaces?: readonly string[]): RecordSearchHit[] | null {
     if (!this.isReady()) return null;
+    if (allowedSpaces && (allowedSpaces.length === 0 || (spaceId && !allowedSpaces.includes(spaceId)))) return [];
     const trimmed = term.trim();
     if (!trimmed) return [];
     if (this.ftsAvailable) {
@@ -1074,8 +1075,9 @@ class RecordIndex {
         // turned archived/invalid can never surface as a search result. The
         // space scope must live in the SQL too — filtering after LIMIT would
         // let other spaces' matches crowd out in-scope hits.
-        const scope = spaceId ? " AND f.space_id = ?" : "";
-        const params: (string | number)[] = spaceId ? [match, spaceId, limit] : [match, limit];
+        const scope = (spaceId ? " AND f.space_id = ?" : "") +
+          (allowedSpaces ? ` AND f.space_id IN (${allowedSpaces.map(() => "?").join(",")})` : "");
+        const params: (string | number)[] = [match, ...(spaceId ? [spaceId] : []), ...(allowedSpaces ?? []), limit];
         const rows = this.db!.query(
           "SELECT f.title AS title, f.space_id AS space_id, f.collection_id AS collection_id, f.record_id AS record_id, r.json AS json " +
             "FROM records_fts f JOIN records r ON r.space_id = f.space_id AND r.collection_id = f.collection_id AND r.record_id = f.record_id " +
@@ -1096,10 +1098,10 @@ class RecordIndex {
     }
     this.lastSearchEngine = "scan";
     const needle = trimmed.toLowerCase();
-    const scanSql = spaceId
-      ? "SELECT json, space_id, collection_id, record_id FROM records WHERE valid = 1 AND archived = 0 AND space_id = ?"
-      : "SELECT json, space_id, collection_id, record_id FROM records WHERE valid = 1 AND archived = 0";
-    const rows = (spaceId ? this.db!.query(scanSql).all(spaceId) : this.db!.query(scanSql).all()) as { json: string; space_id: string; collection_id: string; record_id: string }[];
+    const scanSql = "SELECT json, space_id, collection_id, record_id FROM records WHERE valid = 1 AND archived = 0" +
+      (spaceId ? " AND space_id = ?" : "") +
+      (allowedSpaces ? ` AND space_id IN (${allowedSpaces.map(() => "?").join(",")})` : "");
+    const rows = this.db!.query(scanSql).all(...(spaceId ? [spaceId] : []), ...(allowedSpaces ?? [])) as { json: string; space_id: string; collection_id: string; record_id: string }[];
     const hits: RecordSearchHit[] = [];
     for (const row of rows) {
       const record = JSON.parse(row.json) as RecordFile;

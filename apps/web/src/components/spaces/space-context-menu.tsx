@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { browserTeamMemberId } from "@/lib/team-context"
+import { lazy, Suspense, useState, useEffect } from "react"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -42,9 +43,14 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useSpaces } from "@/lib/queries"
 import type { DocSortMode } from "@/lib/tree"
 
+const SpaceAccessEditor = lazy(() => import("./space-access-editor").then(module => ({default: module.SpaceAccessEditor})))
+
 // ── Context Menu Button ──────────────────────────────────────
 
 interface SpaceContextMenuProps {
+  spaceId?: string
+  canEdit?: boolean
+  canManageAccess?: boolean
   spaceName: string
   spaceIcon?: string
   currentGroup?: string
@@ -92,6 +98,9 @@ function formatGroupLabel(group: string): string {
 }
 
 export function SpaceContextMenuButton({
+  spaceId,
+  canEdit = true,
+  canManageAccess = false,
   spaceName,
   spaceIcon,
   currentGroup,
@@ -105,10 +114,14 @@ export function SpaceContextMenuButton({
   onRestore,
   onDelete,
 }: SpaceContextMenuProps) {
+  const [accessOpen, setAccessOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
   const groups = useAvailableGroups(currentGroup)
+  // On a team, renaming, archiving and deleting a Space affect everyone, so
+  // they follow access management. Solo keeps the edit rule.
+  const canAdminister = browserTeamMemberId() ? canManageAccess : canEdit
 
   return (
     <>
@@ -120,16 +133,17 @@ export function SpaceContextMenuButton({
           <MoreVertical className="h-3.5 w-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
-          <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+          {canManageAccess && spaceId && <DropdownMenuItem onClick={() => setAccessOpen(true)}>Manage access</DropdownMenuItem>}
+          <DropdownMenuItem disabled={!canAdminister} onClick={() => setRenameOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setIconPickerOpen(true)}>
+          <DropdownMenuItem disabled={!canAdminister} onClick={() => setIconPickerOpen(true)}>
             <Smile className="mr-2 h-4 w-4" />
             Change Icon
           </DropdownMenuItem>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger disabled={!canAdminister}>
               <FolderOpen className="mr-2 h-4 w-4" />
               Change Group
             </DropdownMenuSubTrigger>
@@ -156,7 +170,7 @@ export function SpaceContextMenuButton({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger disabled={!canEdit}>
               <ArrowUpDown className="mr-2 h-4 w-4" />
               Sort
             </DropdownMenuSubTrigger>
@@ -176,7 +190,8 @@ export function SpaceContextMenuButton({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           {(archived ? onRestore : onArchive) && (
-            <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
+            <DropdownMenuItem disabled={!canAdminister}
+              onClick={archived ? onRestore : onArchive}>
               {archived ? (
                 <RotateCcw className="mr-2 h-4 w-4" />
               ) : (
@@ -188,6 +203,7 @@ export function SpaceContextMenuButton({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
+            disabled={!canAdminister}
             onClick={() => setDeleteOpen(true)}
           >
             <Trash className="mr-2 h-4 w-4" />
@@ -196,6 +212,7 @@ export function SpaceContextMenuButton({
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {accessOpen && spaceId && <Suspense fallback={null}><SpaceAccessEditor spaceId={spaceId} onClose={() => setAccessOpen(false)} /></Suspense>}
       <SpaceRenameDialog
         open={renameOpen}
         onClose={() => setRenameOpen(false)}

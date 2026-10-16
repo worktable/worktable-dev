@@ -118,6 +118,7 @@ async function notifyParticipantsChanged(): Promise<void> {
 export function participantKey(
   identity: Pick<TokenIdentity, "agent" | "principal">
 ): string {
+  if (identity.principal.participantKey) return identity.principal.participantKey
   return identity.agent
     ? `agent:${identity.agent}`
     : `principal:${identity.principal.id}`
@@ -170,7 +171,7 @@ function createParticipant(
     kind: kindForPrincipal(identity.principal),
     name:
       name?.trim() ||
-      defaultAgentNameForLabel(identity.agent) ||
+      (identity.principal.participantKey ? identity.principal.displayName : defaultAgentNameForLabel(identity.agent)) ||
       identity.principal.displayName,
     identityFingerprint: participantIdentityFingerprint(identity),
   }

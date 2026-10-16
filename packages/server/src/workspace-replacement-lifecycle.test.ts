@@ -1,3 +1,8 @@
+import { activateLocalTeams } from "./team-activation.ts"
+import { clearTeamAuthInstances } from "./team-auth.ts"
+import { closeTeamDatabases } from "./team-database.ts"
+import { canAccessSpace, createTeamAgent, bindTeamAgentCredential, setSpaceAccessPolicy, resolveTeamAgentCredential } from "./team-policy.ts"
+import type { TokenIdentity } from "./token-store.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import {
   mkdir,
@@ -32,10 +37,17 @@ import {
   setWorkspaceReplacementRenameHookForTests,
 } from "./workspace-replacement.ts"
 import {
+  admitWorkspaceRequest,
+  classifyWorkspaceRequest,
   isWorkspaceRequest,
   resetWorkspaceRequestLifecycleForTests,
+  resumeWorkspaceRequestAdmission,
   setWorkspaceRequestAdmissionHookForTests,
+  stopWorkspaceMutationsAndDrain,
+  stopWorkspaceRequestAdmissionAndDrain,
+  waitForWorkspaceAdmission,
 } from "./workspace-request-lifecycle.ts"
+import { waitForThreadSignal } from "./thread-waiters.ts"
 import {
   setWorkspaceExportBeforePublishHookForTests,
   setWorkspaceExportCaptureHookForTests,
@@ -58,7 +70,7 @@ import {
 } from "./workspace-transfer-jobs.ts"
 import { seedStarterWorkspace } from "./seed.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
-import { onWorkspaceChange } from "./workspace-events.ts"
+import { onWorkspaceChange, notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
 import { createDocumentShare, resolveDocumentShare } from "./share-store.ts"
 
 const originalEnv = { ...process.env }
@@ -88,13 +100,15 @@ async function seed(workspace: string, body: string): Promise<void> {
 async function uploadAndPrepareImport(
   origin: string,
   id: string,
-  packageBytes: Buffer
+  packageBytes: Buffer,
+  cookie?: string
 ): Promise<void> {
   const upload = await fetch(
     `${origin}/api/workspace/transfers/imports/${id}/content`,
     {
       method: "PUT",
       headers: {
+        ...(cookie ? {Cookie: cookie} : {}),
         "Content-Type": "application/octet-stream",
         "Content-Range": `bytes 0-${packageBytes.byteLength - 1}/${packageBytes.byteLength}`,
       },
@@ -111,7 +125,7 @@ async function uploadAndPrepareImport(
     `${origin}/api/workspace/transfers/imports/${id}/prepare`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(cookie ? {Cookie: cookie} : {}) },
       body: "{}",
     }
   )
@@ -157,6 +171,7 @@ beforeEach(async () => {
   await seed(source, "# After\n\nAfterOnly [new](new.md)\n")
   await writeFile(join(source, "spaces", "notes", "docs", "new.md"), "# New\n")
   setWorkspaceRootOverride(active)
+  await notifyWorkspaceChangeAndWaitOrThrow({type: "workspaceReset"})
 })
 
 afterEach(async () => {
@@ -171,6 +186,8 @@ afterEach(async () => {
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceRequestAdmissionHookForTests(null)
   resetWorkspaceRequestLifecycleForTests()
+  clearTeamAuthInstances()
+  closeTeamDatabases()
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
   process.env = { ...originalEnv }
@@ -178,6 +195,38 @@ afterEach(async () => {
 })
 
 describe("live workspace replacement", () => {
+  it("lets reads continue during a capture, holds writes briefly, and releases long polls", async () => {
+    expect(classifyWorkspaceRequest("GET", "/api/spaces", true)).toBe("read")
+    expect(classifyWorkspaceRequest("GET", "/assets/app.js", true)).toBeNull()
+    expect(classifyWorkspaceRequest("GET", "/spaces/notes", true)).toBeNull()
+    expect(classifyWorkspaceRequest("POST", "/mcp")).toBe("write")
+
+    const heldWrite = admitWorkspaceRequest("write")!
+    const poll = waitForThreadSignal("thread-held", 25_000)
+    let captured = false
+    const capture = stopWorkspaceMutationsAndDrain().then(() => {
+      captured = true
+    })
+    // The long poll answers at once instead of holding the capture.
+    expect(await poll).toBe(false)
+    const read = admitWorkspaceRequest("read")
+    expect(read).not.toBeNull()
+    read!()
+    expect(admitWorkspaceRequest("write")).toBeNull()
+    expect(captured).toBe(false)
+    heldWrite()
+    await capture
+    const waiting = waitForWorkspaceAdmission("write", 5_000)
+    resumeWorkspaceRequestAdmission()
+    expect(await waiting).toBe(true)
+
+    // Replacing the tree refuses reads too.
+    await stopWorkspaceRequestAdmissionAndDrain()
+    expect(admitWorkspaceRequest("read")).toBeNull()
+    expect(await waitForWorkspaceAdmission("write", 5_000)).toBe(false)
+    resumeWorkspaceRequestAdmission()
+  })
+
   it("upgrades V1 before admitting edits, preserving collaboration identity and a rollback copy", async () => {
     const original = { ...ensureWorkspaceManifest(), version: 1 as const }
     writeWorkspaceManifest(original)
@@ -304,7 +353,9 @@ describe("live workspace replacement", () => {
         body: JSON.stringify({ content: [] }),
       }
     )
+    // Writes wait out a short capture, then are refused with a retry hint.
     expect(blockedWrite.status).toBe(503)
+    expect(blockedWrite.headers.get("Retry-After")).toBe("1")
     releaseCapture()
     await packaging
 
@@ -334,10 +385,10 @@ describe("live workspace replacement", () => {
     await expect(
       readFile(join(active, "spaces", "notes", "docs", "during-export.json"))
     ).rejects.toThrow()
-  })
+  }, 15_000)
 
-  it("drains, swaps, restarts on the same port, and remains queryable", async () => {
-    const originalManifest = await readFile(
+  it.each([false, true])("drains, swaps and remains queryable (Teams=%s)", async (teams) => {
+    let originalManifest = await readFile(
       join(active, "worktable.workspace.json")
     )
     const originalCollaborationEpoch = await getWorkspaceCollaborationEpoch()
@@ -351,8 +402,21 @@ describe("live workspace replacement", () => {
     const packageBytes = await readFile(archive.destination)
     const server = startServer(0, "127.0.0.1")
     const origin = `http://127.0.0.1:${server.port}`
+    let cookie = ""
+    let agentIdentity: TokenIdentity | undefined
+    if (teams) {
+      const setup = await activateLocalTeams(origin, {name: "Alice", email: "alice@example.test", password: "Synthetic-team-import-123"}, {user: "owner", workspace: active, credentialClass: "local", scopes: ["*"], agent: null, principal: {id: "local:owner", type: "human", displayName: "Alice"}})
+      cookie = setup.headers.getSetCookie().map(value => value.split(";", 1)[0]).join("; ")
+      const agent = createTeamAgent({name: "Before import", platform: "codex", ownership: "team"}, setup.identity)
+      bindTeamAgentCredential(agent.id, "local-token:before-import", setup.identity)
+      setSpaceAccessPolicy({spaceId: "notes", visibility: "shared", grants: [{subjectType: "agent", subjectId: agent.id, access: "edit"}]}, setup.identity)
+      agentIdentity = resolveTeamAgentCredential({...setup.identity, team: undefined, agent: "codex", principal: {id: "local-token:before-import", type: "agent", displayName: "Before import"}})!
+      expect(canAccessSpace("notes", "edit", agentIdentity)).toBe(true)
+      originalManifest = await readFile(join(active, "worktable.workspace.json"))
+    }
+    const request = (input: string, init: RequestInit = {}) => fetch(input, {...init, headers: {...Object.fromEntries(new Headers(init.headers)), ...(cookie ? {Cookie: cookie} : {})}})
 
-    const createdResponse = await fetch(
+    const createdResponse = await request(
       `${origin}/api/workspace/transfers/imports`,
       {
         method: "POST",
@@ -367,8 +431,31 @@ describe("live workspace replacement", () => {
     const created = (await createdResponse.json()) as { id: string }
     expect(createdResponse.status).toBe(201)
 
-    await uploadAndPrepareImport(origin, created.id, packageBytes)
-    const replacing = await fetch(
+    await uploadAndPrepareImport(origin, created.id, packageBytes, cookie)
+    if (teams) setWorkspaceReplacementCommitHookForTests(async () => {
+      const earlyRead = await request(`${origin}/api/spaces/notes/docs/note`)
+      expect(earlyRead.status).toBe(503)
+      await earlyRead.body?.cancel()
+    })
+    let releaseRead = () => {}
+    let oldRead: Promise<string> | undefined
+    if (teams) {
+      let reached!: () => void
+      const reading = new Promise<void>(resolve => {reached = resolve})
+      const held = new Promise<void>(resolve => {releaseRead = resolve})
+      setWorkspaceRequestAdmissionHookForTests(async ({method, pathname}) => {
+        if (method === "GET" && pathname === "/api/spaces/notes/docs/note") {
+          setWorkspaceRequestAdmissionHookForTests(null)
+          reached()
+          await held
+        }
+      })
+      oldRead = request(`${origin}/api/spaces/notes/docs/note`).then(response => response.text())
+      await withDeadline(reading, 5000, "member read was not admitted into the drain barrier")
+    }
+    let replacing: Response
+    try {
+    replacing = await request(
       `${origin}/api/workspace/transfers/imports/${created.id}/replace`,
       {
         method: "POST",
@@ -377,6 +464,8 @@ describe("live workspace replacement", () => {
       }
     )
     expect(replacing.status).toBe(202)
+    } finally {releaseRead()}
+    if (oldRead) expect(await oldRead).toContain("BeforeOnly")
 
     const deadline = Date.now() + 10_000
     let state = "replacing"
@@ -388,13 +477,14 @@ describe("live workspace replacement", () => {
       await Bun.sleep(20)
     }
     expect(state).toBe("complete")
+    if (agentIdentity) expect(canAccessSpace("notes", "read", agentIdentity)).toBe(false)
     const replacementCollaborationEpoch = await getWorkspaceCollaborationEpoch()
     expect(replacementCollaborationEpoch).not.toBe(originalCollaborationEpoch)
 
-    const health = await fetch(`${origin}/health`)
+    const health = await request(`${origin}/health`)
     expect(health.status).toBe(200)
     const currentDoc = (await (
-      await fetch(`${origin}/api/spaces/notes/docs/note`)
+      await request(`${origin}/api/spaces/notes/docs/note`)
     ).json()) as { collaborationEpoch: string }
     expect(currentDoc.collaborationEpoch).toBe(replacementCollaborationEpoch)
     expect(await readFile(join(active, "worktable.workspace.json"))).toEqual(
@@ -785,7 +875,7 @@ describe("live workspace replacement", () => {
     ).toContain("BeforeOnly")
   }, 15_000)
 
-  it("waits for an overlapping real HTTP write before swapping roots", async () => {
+  it.each(["/api/profile", "/api/spaces/notes/docs/late"])("waits for an overlapping real HTTP write to %s before swapping roots", async (writePath) => {
     expect(isWorkspaceRequest("POST", "/api/shares")).toBe(true)
     expect(isWorkspaceRequest("POST", "/api/linked")).toBe(true)
 
@@ -820,15 +910,15 @@ describe("live workspace replacement", () => {
       release = resolve
     })
     setWorkspaceRequestAdmissionHookForTests(async ({ pathname }) => {
-      if (pathname.endsWith("/docs/late")) {
+      if (pathname === writePath) {
         entered()
         await gate
       }
     })
-    const overlappingWrite = fetch(`${origin}/api/spaces/notes/docs/late`, {
+    const overlappingWrite = fetch(`${origin}${writePath}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: [] }),
+      body: JSON.stringify(writePath === "/api/profile" ? {name: "Before capture"} : { content: [] }),
     })
     await admitted
 

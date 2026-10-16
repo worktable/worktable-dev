@@ -1,3 +1,4 @@
+import { spaceAccessKey } from "@/lib/team-access"
 import {
   AlertTriangle,
   Archive,
@@ -159,6 +160,11 @@ function WidgetDetailPage({
   preview: DocumentOpenHint | null
 }) {
   const navigate = useNavigate()
+  const readOnly = !page || page.capabilities.edit === false
+  // Permission checks use the latest validation without resetting the frame's
+  // navigation handshake when its preview becomes a checked document.
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   const spaceEvents = useSpaceEvents(spaceId)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // The frame may load from a row's revision before the route's check. Its
@@ -257,7 +263,11 @@ function WidgetDetailPage({
     !page && !frameBeforeCheck
       ? null
       : frameRevision
-        ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}`
+        ? `${contentUrl}&rev=${encodeURIComponent(frameRevision)}${
+            spaceAccessKey(spaceId)
+              ? `&a=${encodeURIComponent(spaceAccessKey(spaceId)!)}`
+              : ""
+          }`
         : `${contentUrl}&v=${encodeURIComponent(
             page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
           )}`
@@ -568,6 +578,10 @@ function WidgetDetailPage({
           { type: "worktable.api.response", id: data.id, ...payload },
           "*"
         )
+      if (readOnlyRef.current && !["GET", "HEAD"].includes((data.method || "GET").toUpperCase())) {
+        reply({ok: false, status: 403, body: {error: "You have read access to this Space", code: "FORBIDDEN"}})
+        return
+      }
       const target = resolveWidgetApiTarget(
         data.path,
         spaceId,
@@ -786,8 +800,9 @@ function WidgetDetailPage({
       }
     )
 
-    return actions
+    return readOnly ? actions.filter(action => !["edit-details", "restore", "archive", "delete"].includes(action.id)) : actions
   }, [
+    readOnly,
     archived,
     handleArchive,
     handleCopyHtml,
@@ -808,14 +823,14 @@ function WidgetDetailPage({
         spaceId={spaceId}
         widgetId={widgetId}
         spaceShareable={Boolean(
-          validated && spaceDetail && !spaceDetail.space.settings["archive"]
+          validated && spaceDetail && !spaceDetail.space.settings["archive"] && spaceDetail.space.permissions?.manage !== false
         )}
         title={title}
         archived={archived}
         annotations={validated ? annotationsAction : undefined}
         overflowActions={overflowActions}
       />
-      {archived ? (
+      {archived && !readOnly ? (
         <ArchivedWidgetBanner
           onRestore={handleRestore}
           restoring={restoring}
@@ -906,6 +921,7 @@ function WidgetDetailPage({
           width={384}
         >
           <AnnotationPanel
+            readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
             onSelectAnnotation={selectAnnotation}
@@ -979,6 +995,7 @@ function WidgetDetailPage({
                 Annotations for this HTML doc.
               </DrawerDescription>
               <AnnotationPanel
+            readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
@@ -1003,7 +1020,7 @@ function WidgetDetailPage({
       )}
 
       <WidgetAnnotationComposer
-        open={composerOpen}
+        open={composerOpen && !readOnly}
         onOpenChange={setComposerOpen}
         onSubmit={(category, body) => {
           annotationMutations.create.mutate({
@@ -1613,6 +1630,7 @@ function useWidgetVersionList(
 }
 
 function WidgetVersionRow({
+  canRestore,
   version,
   showAll,
   active,
@@ -1620,6 +1638,7 @@ function WidgetVersionRow({
   onRestore,
   onExitCompare,
 }: {
+  canRestore: boolean
   version: WidgetVersionEntry
   showAll: boolean
   active: boolean
@@ -1664,7 +1683,7 @@ function WidgetVersionRow({
       </button>
       {active && (
         <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-          <Button size="sm" variant="outline" onClick={onRestore}>
+          <Button disabled={!canRestore} size="sm" variant="outline" onClick={onRestore}>
             Restore
           </Button>
           {onExitCompare && (
@@ -1679,6 +1698,7 @@ function WidgetVersionRow({
 }
 
 function WidgetVersionList({
+  spaceId,
   versions,
   showAll,
   setShowAll,
@@ -1689,6 +1709,7 @@ function WidgetVersionList({
   onRestore,
   onExitCompare,
 }: {
+  spaceId: string
   versions: WidgetVersionEntry[]
   showAll: boolean
   setShowAll: (updater: (value: boolean) => boolean) => void
@@ -1699,6 +1720,8 @@ function WidgetVersionList({
   onRestore: (version: WidgetVersionEntry) => void
   onExitCompare?: () => void
 }) {
+  const { data: spaceDetail } = useSpace(spaceId)
+  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   const scrollRef = useScrollFade<HTMLDivElement>()
   return (
     <>
@@ -1707,6 +1730,7 @@ function WidgetVersionList({
           size="sm"
           variant="outline"
           className="gap-2"
+          disabled={!canEdit}
           onClick={onSaveCheckpoint}
         >
           <Save className="h-3.5 w-3.5" />
@@ -1747,6 +1771,7 @@ function WidgetVersionList({
             {versions.map((version) => (
               <WidgetVersionRow
                 key={version.id}
+                canRestore={canEdit}
                 version={version}
                 showAll={showAll}
                 active={version.id === selectedVersionId}
@@ -1886,6 +1911,7 @@ function WidgetVersionHistoryPanel({
                 </div>
               </div>
               <WidgetVersionList
+                spaceId={spaceId}
                 versions={versions}
                 showAll={showAll}
                 setShowAll={setShowAll}
@@ -2003,6 +2029,7 @@ function WidgetVersionHistoryDrawer({
               </h2>
             </div>
             <WidgetVersionList
+                spaceId={spaceId}
               versions={versions}
               showAll={showAll}
               setShowAll={setShowAll}

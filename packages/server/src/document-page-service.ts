@@ -1,3 +1,5 @@
+import { teamsEnabled } from "./team-database.ts"
+import { canAccessSpace } from "./team-policy.ts"
 import { extname, resolve } from "node:path"
 import type {
   Annotation,
@@ -255,6 +257,7 @@ async function pageForHandle(
     ...(handle.resolvedFrom ? { resolvedFrom: handle.resolvedFrom } : {}),
     renderer,
     capabilities: {
+      ...(teamsEnabled() ? { edit: canAccessSpace(spaceId, "edit") } : {}),
       rawSource: rawSourceAuthorized && handle.document.health !== "invalid",
       versions:
         (storageV2 && handle.identity === "durable") || Boolean(integration),
@@ -319,36 +322,40 @@ export async function readDocumentVersions(options: {
   includeArchived?: boolean
   checkpointsOnly?: boolean
 }): Promise<DocumentVersionsResolution> {
-  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
-    if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
-      const versions = await listCompatibleDocumentVersionsV2({
-        workspaceRoot: getWorkspaceRoot(),
-        spaceId: options.spaceId,
-        documentId: handle.documentId,
-        legacy: legacyVersionLocator(handle),
-        checkpointsOnly: options.checkpointsOnly,
-      })
+  return useResolvedDocumentHandle(
+    { ...options, snapshot: true },
+    async (handle) => {
+      if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
+        const versions = await listCompatibleDocumentVersionsV2({
+          workspaceRoot: getWorkspaceRoot(),
+          spaceId: options.spaceId,
+          documentId: handle.documentId,
+          legacy: legacyVersionLocator(handle),
+          checkpointsOnly: options.checkpointsOnly,
+        })
+        return {
+          kind: "versions" as const,
+          versions: versions.map(publicVersion),
+        }
+      }
+      const integration = await pageIntegration(handle)
+      if (!integration) return { kind: "unsupported" } as const
+      const versions = await integration.listVersions(
+        options.spaceId,
+        handle.document.path
+      )
       return {
         kind: "versions" as const,
-        versions: versions.map(publicVersion),
+        versions: versions
+          .filter(
+            (version) =>
+              !options.checkpointsOnly ||
+              version.checkpoint?.meaningful === true
+          )
+          .map(publicVersion),
       }
     }
-    const integration = await pageIntegration(handle)
-    if (!integration) return { kind: "unsupported" } as const
-    const versions = await integration.listVersions(
-      options.spaceId,
-      handle.document.path
-    )
-    return {
-      kind: "versions" as const,
-      versions: versions
-        .filter(
-          (version) =>
-            !options.checkpointsOnly || version.checkpoint?.meaningful === true
-        )
-        .map(publicVersion),
-    }
-  })
+  )
 }
 
 export type DocumentAnnotationsResolution =
@@ -369,36 +376,39 @@ export async function readDocumentAnnotations(options: {
   limit?: number
   offset?: number
 }): Promise<DocumentAnnotationsResolution> {
-  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
-    if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
-      const listed = await listDocumentAnnotationsForHandle({
-        spaceId: options.spaceId,
-        documentId: handle.documentId,
-        path: handle.document.path,
-        formatId: handle.document.format.id,
+  return useResolvedDocumentHandle(
+    { ...options, snapshot: true },
+    async (handle) => {
+      if ((await usesDocumentStorageV2()) && handle.identity === "durable") {
+        const listed = await listDocumentAnnotationsForHandle({
+          spaceId: options.spaceId,
+          documentId: handle.documentId,
+          path: handle.document.path,
+          formatId: handle.document.format.id,
+          includeResolved: options.includeResolved,
+          limit: options.limit,
+          offset: options.offset,
+        })
+        return { kind: "annotations" as const, ...listed }
+      }
+      const integration = await pageIntegration(handle)
+      if (!integration) return { kind: "unsupported" } as const
+      const listed = await listAnnotations(options.spaceId, {
+        target: integration.annotationTarget(handle.document.path),
         includeResolved: options.includeResolved,
         limit: options.limit,
         offset: options.offset,
       })
-      return { kind: "annotations" as const, ...listed }
+      return {
+        kind: "annotations" as const,
+        annotations: listed.annotations,
+        total: listed.total,
+        ...(listed.nextOffset !== undefined
+          ? { nextOffset: listed.nextOffset }
+          : {}),
+      }
     }
-    const integration = await pageIntegration(handle)
-    if (!integration) return { kind: "unsupported" } as const
-    const listed = await listAnnotations(options.spaceId, {
-      target: integration.annotationTarget(handle.document.path),
-      includeResolved: options.includeResolved,
-      limit: options.limit,
-      offset: options.offset,
-    })
-    return {
-      kind: "annotations" as const,
-      annotations: listed.annotations,
-      total: listed.total,
-      ...(listed.nextOffset !== undefined
-        ? { nextOffset: listed.nextOffset }
-        : {}),
-    }
-  })
+  )
 }
 
 export interface RawDocumentSource {
@@ -426,23 +436,26 @@ export async function readRawDocumentSource(options: {
   path: string
   includeArchived?: boolean
 }): Promise<RawDocumentSourceResolution> {
-  return useResolvedDocumentHandle({ ...options, snapshot: true }, async (handle) => {
-    if (handle.document.health === "invalid") {
-      return { kind: "unavailable" } as const
+  return useResolvedDocumentHandle(
+    { ...options, snapshot: true },
+    async (handle) => {
+      if (handle.document.health === "invalid") {
+        return { kind: "unavailable" } as const
+      }
+      const bytes = await readDocumentSource({
+        spaceRoot: resolve(getWorkspaceRoot(), "spaces", options.spaceId),
+        documentId: handle.documentId,
+        format: handle.document.format,
+        source: handle.source,
+        maxBytes: RAW_SOURCE_MAX_BYTES,
+        signal: AbortSignal.timeout(RAW_SOURCE_TIMEOUT_MS),
+      })
+      return {
+        kind: "source" as const,
+        source: { bytes, fileName: sourceFileName(handle) },
+      }
     }
-    const bytes = await readDocumentSource({
-      spaceRoot: resolve(getWorkspaceRoot(), "spaces", options.spaceId),
-      documentId: handle.documentId,
-      format: handle.document.format,
-      source: handle.source,
-      maxBytes: RAW_SOURCE_MAX_BYTES,
-      signal: AbortSignal.timeout(RAW_SOURCE_TIMEOUT_MS),
-    })
-    return {
-      kind: "source" as const,
-      source: { bytes, fileName: sourceFileName(handle) },
-    }
-  })
+  )
 }
 
 export type DocumentContentResolution =

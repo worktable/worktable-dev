@@ -1,3 +1,8 @@
+import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
+import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
+import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
+import { identityForTeamMember } from "./team-identity.ts"
+import { agentWorktableThreadAccess, canAccessSpace, canAccessWorktableThreads, resolveTeamAgentCredential, TeamAccessError, teamAgentHasSpaceAccess } from "./team-policy.ts"
 import { currentActivityActor, recordActivity } from "./activity-log.ts"
 import type {
   AgentPlatformId,
@@ -210,6 +215,66 @@ function otherParticipant(
   return others[0]!
 }
 
+async function assertCurrentThreadRecipients(
+  location: ThreadLocation,
+  actorId: string,
+  recipient: ParticipantRef | undefined,
+  input: Pick<
+    PostThreadInput,
+    "notifyIdentityIds" | "responseIdentityId" | "expectsReply" | "responseTo"
+  >,
+  thread?: ThreadReadResult["thread"]
+): Promise<void> {
+  if (!currentTeamWorktable()) return
+  const available = await listThreadParticipants(undefined, location, false)
+  const eligible = new Set([
+    actorId,
+    ...available.map((participant) => participant.id),
+  ])
+  const byIdentity = new Map(
+    available.map((participant) => [
+      defaultConversationIdentityId(participant.id),
+      participant.id,
+    ])
+  )
+  const memberForIdentity = (id: string) =>
+    thread?.identities.find((identity) => identity.id === id)?.memberId ??
+    byIdentity.get(id)
+  const addressed = [
+    ...(recipient ? [recipient.id] : []),
+    ...[
+      ...(input.notifyIdentityIds ?? []),
+      ...(input.responseIdentityId ? [input.responseIdentityId] : []),
+    ].map(memberForIdentity),
+  ]
+  if (addressed.some((id) => !id || !eligible.has(id)))
+    throw new ThreadError(
+      "FORBIDDEN",
+      "Choose a recipient who can read and reply in this location"
+    )
+  const requested = [
+    ...(recipient && input.expectsReply !== false && !input.responseTo
+      ? [recipient.id]
+      : []),
+    ...(input.responseIdentityId
+      ? [memberForIdentity(input.responseIdentityId)]
+      : []),
+  ]
+  if (requested.length) {
+    const respondents = new Set([
+      actorId,
+      ...(await listThreadParticipants(undefined, location)).map(
+        (participant) => participant.id
+      ),
+    ])
+    if (requested.some((id) => !id || !respondents.has(id)))
+      throw new ThreadError(
+        "FORBIDDEN",
+        "Choose a recipient who can reply in this location"
+      )
+  }
+}
+
 async function participantContextForUnknownDefaultIdentities(
   thread: ThreadReadResult["thread"],
   identityIds: string[]
@@ -229,7 +294,9 @@ async function participantContextForUnknownDefaultIdentities(
     return { participants: [], availableParticipants: [] }
   }
 
-  const availableParticipants = (await listParticipantBindings()).map(
+  const availableParticipants = currentTeamWorktable()
+    ? await listThreadParticipants(undefined, threadLocation(thread), false)
+    : (await listParticipantBindings()).map(
     (binding) => binding.participant
   )
   const participantsByIdentity = new Map(
@@ -437,6 +504,7 @@ export async function postThreadMessageWithStored(
             input.responseIdentityId === undefined
           ? otherParticipant(existing.members, actor.id)
           : undefined
+      await assertCurrentThreadRecipients(location, actor.id, recipient, input, existing)
       result = await appendThreadMessage(location, existing.id, {
         author: actor,
         authorIdentityId: input.authorIdentityId,
@@ -490,6 +558,7 @@ export async function postThreadMessageWithStored(
       result = replay
     } else {
       recipient = await requireParticipant(input.to)
+      await assertCurrentThreadRecipients(location, actor.id, recipient, input)
       result = await createThread(location, {
         author: actor,
         authorIdentityId: input.authorIdentityId,
@@ -622,13 +691,174 @@ export async function postThreadMessageWithStored(
 }
 
 export async function listThreadParticipants(
-  identity?: ThreadIdentity
+  identity?: ThreadIdentity,
+  location?: ThreadLocation,
+  replyRequired = true
 ): Promise<
   Array<ParticipantRef & { defaultIdentityId: string; alwaysOn: boolean }>
 > {
   const actorId = identity
     ? (await participantForIdentity(identity)).participant.id
     : undefined
+  const team = currentTeamWorktable()
+  if (team) {
+    const humans = await Promise.all(
+      listTeamMembers()
+        .filter(
+          (member) =>
+            location?.kind !== "space" ||
+            canAccessSpace(
+              location.spaceId,
+              replyRequired ? "edit" : "read",
+              identityForTeamMember(member)
+            )
+        )
+        .map((member) =>
+          resolveParticipant(identityForTeamMember(member), {
+            initialName: member.name,
+          })
+        )
+    )
+    const agents = requireTeamDatabase()
+      .query<
+        {
+          participant_key: string
+          id: string
+          actor_id: string
+          name: string
+          platform: string
+          space_ids: string | null
+          member_id: string | null
+          ownership: string
+          scope_ceiling: string | null
+          mode: string
+          worktable_threads: "none" | "read" | "edit"
+        },
+        [string]
+      >(
+        "SELECT a.* FROM wt_agents a WHERE a.worktable_id = ? AND a.active = 1 AND EXISTS (SELECT 1 FROM wt_agent_credentials c WHERE c.agent_id = a.id AND c.active = 1)"
+      )
+      .all(team.id)
+      .filter(
+        (agent) =>
+          agent.ownership === "team" ||
+          (agent.member_id && findTeamMemberById(agent.member_id))
+      )
+    const tokens = await listTokens()
+    const credentials = requireTeamDatabase()
+      .query<
+        {
+          credential_key: string
+          agent_id: string
+          sponsor_member_id: string | null
+        },
+        []
+      >("SELECT credential_key, agent_id, sponsor_member_id FROM wt_agent_credentials WHERE active = 1")
+      .all()
+    const eligibleAgents = agents.filter((agent) => {
+      // The unscoped list serves composers in every location; only an
+      // explicit Worktable thread applies the Worktable-thread grant.
+      if (location?.kind === "worktable") {
+        const level = agentWorktableThreadAccess({
+          ownership: agent.ownership as "team" | "personal",
+          spaceIds:
+            agent.space_ids === null ? null : JSON.parse(agent.space_ids),
+          worktableThreads: agent.worktable_threads,
+        })
+        if (level === "none" || (replyRequired && level !== "edit"))
+          return false
+      }
+      if (
+        location?.kind === "space" &&
+        !teamAgentHasSpaceAccess(
+          {
+            id: agent.id,
+            ownership: agent.ownership as "team" | "personal",
+            memberId: agent.member_id,
+            spaceIds:
+              agent.space_ids === null ? null : JSON.parse(agent.space_ids),
+          },
+          location.spaceId,
+          replyRequired ? "edit" : "read"
+        )
+      )
+        return false
+      const bound = credentials.filter(
+        (credential) =>
+          credential.agent_id === agent.id &&
+          (!credential.sponsor_member_id ||
+            findTeamMemberById(credential.sponsor_member_id))
+      )
+      const keys = new Set(bound.map((credential) => credential.credential_key))
+      const local = tokens.some((token) => {
+        if (
+          token.revokedAt ||
+          token.workspace !== getWorkspaceRoot() ||
+          !keys.has(token.principal.id)
+        )
+          return false
+        const resolved = resolveTeamAgentCredential(token)
+        return (
+          resolved &&
+          hasScope(resolved.scopes, "threads:read") &&
+          (!replyRequired || hasScope(resolved.scopes, "threads:write"))
+        )
+      })
+      const ceiling: string[] | null =
+        agent.scope_ceiling === null ? null : JSON.parse(agent.scope_ceiling)
+      return (
+        local ||
+        Boolean(
+          ceiling &&
+          hasScope(ceiling, "threads:read") &&
+          (!replyRequired || hasScope(ceiling, "threads:write")) &&
+          bound.some((credential) =>
+            /^(oauth:|workos-agent:)/.test(credential.credential_key)
+          )
+        )
+      )
+    })
+    await Promise.all(
+      eligibleAgents.map((agent) =>
+        resolveParticipant({
+          agent: agent.platform,
+          principal: {
+            id: agent.actor_id,
+            type: "agent",
+            displayName: agent.name,
+            participantKey: agent.participant_key,
+          },
+        })
+      )
+    )
+    const alwaysOnKeys = new Set(
+      eligibleAgents
+        .filter((agent) => agent.mode === "always-on")
+        .map((agent) => agent.participant_key)
+    )
+    const byKey = await participantsByKey()
+    const alwaysOnIds = new Set(
+      [...byKey]
+        .filter(([key]) => alwaysOnKeys.has(key))
+        .map(([, participant]) => participant.id)
+    )
+    const agentKeys = new Set(
+      eligibleAgents.map((agent) => agent.participant_key)
+    )
+    const members = [
+      ...humans.map((binding) => binding.participant),
+      ...[...byKey]
+        .filter(([key]) => agentKeys.has(key))
+        .map(([, participant]) => participant),
+    ]
+    return members
+      .filter((participant) => participant.id !== actorId)
+      .map((participant) => ({
+        ...participant,
+        defaultIdentityId: defaultConversationIdentityId(participant.id),
+        alwaysOn: alwaysOnIds.has(participant.id),
+      }))
+  }
   const [bindings, connections, tokens, participants, signIns] =
     await Promise.all([
       listParticipantBindings(),
@@ -687,6 +917,7 @@ export async function listThreadParticipants(
 }
 
 /** How a connected agent looks: where it comes from and its chosen icon. */
+
 export interface AgentPresentation {
   platform?: AgentPlatformId
   icon?: string | null
@@ -699,7 +930,8 @@ export interface AgentPresentation {
  * keeps its avatar in the threads it is already in.
  */
 export async function listThreadParticipantsForDisplay(
-  identity?: ThreadIdentity
+  identity?: ThreadIdentity,
+  location?: ThreadLocation
 ): Promise<{
   participants: Array<
     ParticipantRef & {
@@ -710,7 +942,7 @@ export async function listThreadParticipantsForDisplay(
   presentations: Record<string, AgentPresentation>
 }> {
   const [participants, connections] = await Promise.all([
-    listThreadParticipants(identity),
+    listThreadParticipants(identity, location),
     listAgentConnections(),
   ])
   const presentations: Record<string, AgentPresentation> = Object.fromEntries(
@@ -1030,6 +1262,7 @@ export async function assignResponseRequest(
         ])
       : undefined
   const addedParticipant = participantContext?.participants[0]
+  if (input.identityId) await assertCurrentThreadRecipients(input.location, actor.id, undefined, {responseIdentityId: input.identityId}, thread)
   const { thread: updated, replacedIdentityId } = await assignThreadMessage(
     input.location,
     input.threadId,
@@ -1248,6 +1481,7 @@ async function reconcileParticipantDeliveries(
   }
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
+    scannedLocations: scan.locations,
     threads: scan.threads.map(({ summary: thread }) => ({
       threadId: thread.id,
       location: thread.location,
@@ -1279,14 +1513,36 @@ export async function claimNextThreadDelivery(
   let signalRevision = inboxSignalRevision(participant.id)
   await reconcileParticipantDeliveries(participant.id)
   const deadline = Date.now() + boundedWaitSeconds(waitSeconds) * 1000
+  // Requests in threads this identity cannot currently reply in stay queued;
+  // they arrive if access returns.
+  const isDeliverable = (location: ThreadLocation) =>
+    location.kind === "space"
+      ? canAccessSpace(location.spaceId, "edit")
+      : canAccessWorktableThreads("edit")
   while (true) {
     const allowWorktable = threadLocationVersion === 2
-    const claim = await claimThreadDelivery(participant.id, { allowWorktable })
+    const claim = await claimThreadDelivery(participant.id, {
+      allowWorktable,
+      isDeliverable,
+    })
     if (claim) {
       let thread: Awaited<ReturnType<typeof readThread>>
       try {
         thread = await readThread(claim.location, claim.threadId)
       } catch (error) {
+        if (error instanceof TeamAccessError) {
+          // Access changed after the claim; release it to wait for access.
+          await failThreadDelivery({
+            messageId: claim.messageId,
+            leaseId: claim.leaseId,
+            participantId: participant.id,
+            retryable: true,
+            spendAttempt: false,
+            code: "ACCESS_CHANGED",
+            message: "Access to this thread changed while it was being delivered.",
+          })
+          continue
+        }
         if (
           error instanceof ThreadError &&
           (error.code === "THREAD_NOT_FOUND" ||
@@ -1351,6 +1607,7 @@ export async function claimNextThreadDelivery(
     if (remaining <= 0) return null
     const eligibleAt = await nextThreadDeliveryEligibleAt(participant.id, {
       allowWorktable,
+      isDeliverable,
     })
     if (eligibleAt !== undefined && eligibleAt <= Date.now()) continue
     const waitMs = Math.min(
@@ -1362,7 +1619,7 @@ export async function claimNextThreadDelivery(
       waitMs,
       signalRevision
     )
-    if (!changed && waitMs >= remaining) return null
+    if (!changed && (waitMs >= remaining || isWorkspaceDraining())) return null
     if (changed) {
       signalRevision = inboxSignalRevision(participant.id)
       await reconcileParticipantDeliveries(participant.id)

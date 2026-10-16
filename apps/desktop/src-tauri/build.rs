@@ -1,8 +1,16 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=WORKTABLE_DESKTOP_STAGING_ORIGIN");
+    println!("cargo:rerun-if-env-changed=WORKTABLE_DESKTOP_STAGING_ENVIRONMENT");
     if std::env::var_os("CARGO_FEATURE_STAGING").is_some() {
         let origin = std::env::var("WORKTABLE_DESKTOP_STAGING_ORIGIN")
             .expect("Staging builds require WORKTABLE_DESKTOP_STAGING_ORIGIN");
+        let environment = std::env::var("WORKTABLE_DESKTOP_STAGING_ENVIRONMENT")
+            .unwrap_or_else(|_| "staging".into());
+        assert!(
+            matches!(environment.as_str(), "staging" | "integration"),
+            "Staging builds require a staging or integration environment"
+        );
+        println!("cargo:rustc-env=WORKTABLE_DESKTOP_STAGING_ENVIRONMENT={environment}");
         let url = url::Url::parse(&origin).expect("Staging origin must be an HTTPS origin");
         assert!(
             url.scheme() == "https"

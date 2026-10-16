@@ -110,3 +110,21 @@ def test_a_cut_off_error_answer_keeps_its_status(monkeypatch):
     with pytest.raises(pairing.PairingError) as error:
         pairing._request("http://w/api/pairing/requests/poll", {"pollToken": "x"})
     assert error.value.status == 503
+
+
+def test_oauth_discovery_preserves_the_selected_worktable_and_refuses_a_different_resource(monkeypatch):
+    endpoint = "https://app.worktable.cloud/api/mcp/w/team_one"
+    urls = []
+    resource = endpoint
+    def request(url):
+        urls.append(url)
+        return {"resource": resource, "authorization_servers": ["https://auth.example"]}
+    monkeypatch.setattr(pairing, "_request", request)
+    assert pairing.mcp_resource(endpoint) == endpoint
+    assert urls == ["https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"]
+    resource = "https://app.worktable.cloud/api/mcp/w/another_team"
+    assert pairing.mcp_resource(endpoint) is None
+    # The Worktable's browser address finds the same endpoint.
+    resource = endpoint
+    assert pairing.mcp_resource("https://app.worktable.cloud/t/team_one") == endpoint
+    assert urls[-1] == "https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"

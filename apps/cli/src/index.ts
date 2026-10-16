@@ -94,6 +94,9 @@ import {
   readUpdateStatus,
   writeUpdateStatus,
   type UpdateStatus,
+  issueTeamPasswordReset,
+  setTeamOperator,
+  teamsEnabled,
 } from "@worktable/server/runtime"
 import {
   asHttpOrigin,
@@ -574,6 +577,42 @@ function resolveInviteOrigin(config: WorktableConfig): {
 }
 
 const INVITE_CLIENTS = CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS
+
+/** Access to this machine is the authority for team recovery commands. */
+function teamWorktableConfig(): WorktableConfig | null {
+  const config = readConfigOrFail()
+  if (!config) return null
+  applyRuntimeConfig(config)
+  if (!teamsEnabled())
+    throw new UsageError("Teams is not enabled on this Worktable.")
+  return config
+}
+
+async function commandTeamResetPassword(email: string): Promise<void> {
+  const config = teamWorktableConfig()
+  if (!config) return
+  const { origin, configured } = resolveInviteOrigin(config)
+  const link = await issueTeamPasswordReset(origin, { email }, "machine")
+  console.log("Send this link to the person directly. It works once and")
+  console.log(`expires ${new Date(link.expiresAt).toLocaleString()}:`)
+  console.log(link.url)
+  if (!configured)
+    console.log(
+      style.yellow(
+        `No Workspace URL is configured, so the link points at ${origin}, which other machines may not reach. Set one in Settings -> General (or WORKTABLE_PUBLIC_URL).`
+      )
+    )
+}
+
+function commandTeamOperator(email: string, operator: boolean): void {
+  if (!teamWorktableConfig()) return
+  setTeamOperator({ email }, operator, "machine")
+  console.log(
+    operator
+      ? `${email} can now operate this Worktable's machine.`
+      : `${email} can no longer operate this Worktable's machine.`
+  )
+}
 
 async function agentInvite(opts: { client?: string }): Promise<void> {
   const config = readConfigOrFail()
@@ -5260,6 +5299,26 @@ export function buildProgram(): Command {
     .option("-f, --follow", "stream new log lines")
     .option("-n, --lines <n>", "number of lines to show", parseLinesOption)
     .action((opts) => commandServiceLogs(opts))
+
+  const team = program
+    .command("team")
+    .description("Recover access to a team Worktable from its machine")
+  team
+    .command("reset-password")
+    .description("Print a single-use link that sets a new password for an account")
+    .argument("<email>", "the account's email")
+    .action((email) => commandTeamResetPassword(email))
+  const teamOperator = team
+    .command("operator")
+    .description("Grant or remove machine operation for a member")
+  teamOperator
+    .command("grant")
+    .argument("<email>", "the member's email")
+    .action((email) => commandTeamOperator(email, true))
+  teamOperator
+    .command("revoke")
+    .argument("<email>", "the member's email")
+    .action((email) => commandTeamOperator(email, false))
 
   const agent = program
     .command("agent")

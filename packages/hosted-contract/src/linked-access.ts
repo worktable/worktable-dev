@@ -82,6 +82,7 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
       kind: z.literal("mcp"),
       principalId: identifier,
       displayName: z.string().min(1).max(256),
+      credentialIssuedAt: z.number().int().positive().optional(),
       scopes: z.array(z.string().min(1).max(128)).max(128),
     })
     .strict(),

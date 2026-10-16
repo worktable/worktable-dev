@@ -1,3 +1,8 @@
+import {
+  captureTeamBackupState,
+  inspectTeamBackupState,
+  TeamBackupStateSchema,
+} from "./team-backup.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { createHash, randomBytes } from "node:crypto"
 import { lstat, mkdir, open, realpath, rename } from "node:fs/promises"
@@ -58,6 +63,7 @@ export const WorkspaceSnapshotManifestSchema = z.object({
       })
     )
     .max(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES),
+  teamState: TeamBackupStateSchema.optional(),
   directories: z
     .array(z.object(metadata))
     .max(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES),
@@ -85,7 +91,9 @@ async function sync(path: string): Promise<void> {
 /** Snapshot publication is separate from the short live-writer capture barrier. */
 export async function writeWorkspaceSnapshot(
   destination: string,
-  options: Parameters<typeof withPortableWorkspaceCapture>[1] = {}
+  options: Parameters<typeof withPortableWorkspaceCapture>[1] & {
+    captureTeamState?: boolean
+  } = {}
 ): Promise<WorkspaceSnapshotManifest> {
   const sourceRoot = await realpath(options.workspaceRoot ?? getWorkspaceRoot())
   const output = resolve(destination)
@@ -110,45 +118,63 @@ export async function writeWorkspaceSnapshot(
   await mkdir(temporary, { mode: 0o700 })
   let published = false
   try {
-    const manifest = await withPortableWorkspaceCapture(async (capture) => {
-      const inventory: PortableWorkspaceInventory = {
-        files: capture.files,
-        directories: capture.directories,
-      }
-      const result: WorkspaceSnapshotManifest = {
-        type: "worktable.workspace-snapshot",
-        backupFormatVersion: 1,
-        snapshotId: `snap_${randomBytes(16).toString("base64url")}`,
-        capturedAt: new Date().toISOString(),
-        workspaceId: capture.manifest.id,
-        workspaceStorageVersion: capture.manifest.version,
-        sourceRelease:
-          process.env["WORKTABLE_VERSION"]?.trim() || "development",
-        sourceCheckpoint: portableWorkspaceCheckpoint(inventory),
-        contentCheckpoint: portableWorkspaceCheckpoint({
+    let teamState: Awaited<ReturnType<typeof captureTeamBackupState>>
+    const manifest = await withPortableWorkspaceCapture(
+      async (capture) => {
+        const inventory: PortableWorkspaceInventory = {
+          files: capture.files,
+          directories: capture.directories,
+        }
+        const result: WorkspaceSnapshotManifest = {
+          ...(teamState ? { teamState } : {}),
+          type: "worktable.workspace-snapshot",
+          backupFormatVersion: 1,
+          snapshotId: `snap_${randomBytes(16).toString("base64url")}`,
+          capturedAt: new Date().toISOString(),
+          workspaceId: capture.manifest.id,
+          workspaceStorageVersion: capture.manifest.version,
+          sourceRelease:
+            process.env["WORKTABLE_VERSION"]?.trim() || "development",
+          sourceCheckpoint: portableWorkspaceCheckpoint(inventory),
+          contentCheckpoint: portableWorkspaceCheckpoint({
+            ...inventory,
+            files: inventory.files.filter(
+              (file) => file.path !== "worktable.workspace.json"
+            ),
+          }),
           ...inventory,
-          files: inventory.files.filter(
-            (file) => file.path !== "worktable.workspace.json"
-          ),
-        }),
-        ...inventory,
+        }
+        const bytes = JSON.stringify(result)
+        WorkspaceSnapshotManifestSchema.parse(result)
+        if (Buffer.byteLength(bytes) > WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES)
+          throw new Error("snapshot manifest exceeds the supported size")
+        // Both roots are app-owned staging on the same filesystem. Moving gives
+        // the job custody before export scratch cleanup can reclaim the capture.
+        await rename(capture.root, join(temporary, "workspace"))
+        const handle = await open(join(temporary, "snapshot.json"), "wx", 0o600)
+        try {
+          await handle.writeFile(bytes)
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+        return result
+      },
+      {
+        ...options,
+        withCaptureBarrier: async (work) => {
+          const capture = async () => {
+            const result = await work()
+            if (options.captureTeamState)
+              teamState = await captureTeamBackupState(temporary)
+            return result
+          }
+          return options.withCaptureBarrier
+            ? options.withCaptureBarrier(capture)
+            : capture()
+        },
       }
-      const bytes = JSON.stringify(result)
-      WorkspaceSnapshotManifestSchema.parse(result)
-      if (Buffer.byteLength(bytes) > WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES)
-        throw new Error("snapshot manifest exceeds the supported size")
-      // Both roots are app-owned staging on the same filesystem. Moving gives
-      // the job custody before export scratch cleanup can reclaim the capture.
-      await rename(capture.root, join(temporary, "workspace"))
-      const handle = await open(join(temporary, "snapshot.json"), "wx", 0o600)
-      try {
-        await handle.writeFile(bytes)
-        await handle.sync()
-      } finally {
-        await handle.close()
-      }
-      return result
-    }, options)
+    )
     await mapWithConcurrency(manifest.files, 8, (file) =>
       sync(join(temporary, "workspace", file.path))
     )
@@ -191,6 +217,11 @@ export async function inspectWorkspaceSnapshot(
     WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES
   )
   const manifest = WorkspaceSnapshotManifestSchema.parse(JSON.parse(raw))
+  if (manifest.teamState) {
+    if (manifest.teamState.worktableId !== manifest.workspaceId)
+      throw new Error("Team state belongs to another snapshot")
+    await inspectTeamBackupState(root, manifest.teamState)
+  }
   if (
     expected &&
     (manifest.workspaceId !== expected.workspaceId ||

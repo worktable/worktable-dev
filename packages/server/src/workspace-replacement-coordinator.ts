@@ -22,6 +22,10 @@ let replacementScheduled = false
 let activeExports = 0
 let exportDrainWaiters: Array<() => void> = []
 
+export function isWorkspaceReplacementScheduled(): boolean {
+  return replacementScheduled
+}
+
 export function setWorkspaceReplacementExecutor(next: Executor | null): void {
   executor = next
 }

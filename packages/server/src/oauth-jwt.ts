@@ -1,3 +1,7 @@
+import { isHosted } from "./hosted.ts";
+import { teamsEnabled } from "./team-database.ts";
+import { cloudTeamMemberForSubject } from "./team-cloud.ts";
+import { hostedOAuthPrincipalId } from "@worktable/hosted-contract";
 import { createRemoteJWKSet, jwtVerify } from "jose"
 import {
   authorizationServerMetadataCandidates,
@@ -52,6 +56,16 @@ export function getOwnerSubject(): string | null {
 export function getExpectedAudience(): string | null {
   const aud = process.env["WORKTABLE_RESOURCE_URL"]?.trim()
   return aud ? aud : null
+}
+
+/**
+ * Audiences this instance accepts: its own resource, plus on Cloud the shared
+ * `/api/mcp` resource of existing directory connectors. The gateway forwards
+ * a shared-resource token only to the account's default or only Worktable.
+ */
+function acceptedAudiences(audience: string): string | string[] {
+  const shared = process.env["WORKTABLE_LEGACY_RESOURCE_URL"]?.trim()
+  return isHosted() && shared && shared !== audience ? [audience, shared] : audience
 }
 
 /**
@@ -296,7 +310,7 @@ export async function verifyAuthServerJwt(
     const jwks = await jwksFor(authServer)
     const { payload } = await jwtVerify(raw, jwks, {
       issuer,
-      audience,
+      audience: acceptedAudiences(audience),
       algorithms: ["RS256"],
       // jose validates exp only when present; a token template that omits
       // it would otherwise mint a NEVER-expiring owner bearer. This path
@@ -312,14 +326,18 @@ export async function verifyAuthServerJwt(
         ? (payload.act as { sub: string }).sub
         : null
     const workspaceOwner = delegatedBy ?? subject
-    if (workspaceOwner !== ownerSubject) return null
+    const team = isHosted() && teamsEnabled();
+    if (team ? !cloudTeamMemberForSubject(authServer, workspaceOwner) : workspaceOwner !== ownerSubject) return null
+    if (team && !delegatedBy && (typeof payload.client_id !== "string" || !payload.client_id)) return null
     const isDelegatedAgent = delegatedBy !== null
     return {
       user: "owner",
       workspace: getWorkspaceRoot(),
       credentialClass: "resource",
+      credentialExpiresAt: (payload.exp as number) * 1000,
+      ...(typeof payload.iat === "number" ? { credentialIssuedAt: payload.iat * 1000 } : {}),
       scopes: AS_BEARER_SCOPES,
-      agent: isDelegatedAgent ? subject : null,
+      agent: isDelegatedAgent ? subject : team ? payload.client_id as string : null,
       principal: isDelegatedAgent
         ? {
             id: `workos-agent:${subject}`,
@@ -327,7 +345,7 @@ export async function verifyAuthServerJwt(
             displayName: "Connected agent",
             authorizedBy: `workos:${delegatedBy}`,
           }
-        : {
+        : team ? { id: hostedOAuthPrincipalId(payload.client_id as string, subject), type: "agent", displayName: typeof payload.client_name === "string" && payload.client_name ? payload.client_name : "Connected agent", authorizedBy: `workos:${subject}` } : {
             id: `workos:${subject}`,
             type: "human",
             displayName: "Worktable user",

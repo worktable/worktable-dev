@@ -47,3 +47,12 @@ export const HERMES: AlwaysOnAgent = {
 }
 
 export const ALWAYS_ON_AGENTS = [OPENCLAW, HERMES] as const
+
+/** Keep the selected Worktable's complete OAuth resource in every copied install command. */
+export function cloudConnectorCommand(
+  mcpUrl: string,
+  client: string = "auto"
+): string {
+  const origin = new URL(mcpUrl).origin
+  return `curl -fsSL ${origin}/connect.sh | sh -s -- --oauth --server ${origin} --mcp-url ${shellQuote(mcpUrl)}${client === "auto" ? "" : ` --client ${client}`}`
+}

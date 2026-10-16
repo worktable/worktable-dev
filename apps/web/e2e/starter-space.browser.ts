@@ -300,6 +300,20 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     exact: true,
   })
   await expect(treeLink).toBeVisible()
+  // Open from the sidebar's revision first, then validate the path. The
+  // checked permissions must not reset the running frame's navigation token.
+  let releaseHtmlCheck!: () => void
+  const htmlCheckHeld = new Promise<void>((resolve) => {
+    releaseHtmlCheck = resolve
+  })
+  const htmlCheckPattern = "**/api/spaces/welcome/documents/page?path=plans%2Flive-status"
+  await page.route(htmlCheckPattern, async (route) => {
+    await htmlCheckHeld
+    await route.continue()
+  })
+  const htmlCheck = page.waitForResponse((response) =>
+    response.url().endsWith("/documents/page?path=plans%2Flive-status")
+  )
   await treeLink.click()
 
   await expect(page).toHaveURL(
@@ -310,6 +324,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     timeout: 30_000,
   })
   await expect(frame.getByText("Automatic navigation attempted")).toBeVisible()
+  releaseHtmlCheck()
+  expect((await htmlCheck).status()).toBe(200)
+  // The route stays: once released it passes every check straight through.
+  // Removing it could strand a re-check intercepted while it was removed.
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>

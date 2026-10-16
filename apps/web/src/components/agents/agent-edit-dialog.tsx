@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AGENT_PLATFORMS,
   type AgentAccess,
   type AgentConnection,
 } from "@worktable/types"
+import { Checkbox } from "@worktable/ui/components/checkbox"
+import { getSpaces } from "@/lib/api"
 import { Button } from "@worktable/ui/components/button"
 import {
   ResponsiveDialog,
@@ -37,12 +39,19 @@ export function AgentEditDialog({
 }) {
   const { isMobile } = useResponsiveDialog()
   const queryClient = useQueryClient()
+  const spaces = useQuery({
+    queryKey: ["spaces"],
+    queryFn: getSpaces,
+    enabled: connection?.ownership === "personal",
+  })
+  const [spaceIds, setSpaceIds] = useState<string[] | null>(null)
   const [name, setName] = useState("")
   const [icon, setIcon] = useState<string | null>(null)
   const [access, setAccess] = useState<AgentAccess | null>(null)
 
   useEffect(() => {
     if (!connection) return
+    setSpaceIds(connection.spaceIds ?? null)
     setName(connection.displayName)
     setIcon(connection.icon ?? null)
     setAccess(connection.access ?? null)
@@ -51,7 +60,12 @@ export function AgentEditDialog({
   const save = useMutation({
     mutationFn: async () => {
       if (!connection) throw new Error("No agent selected")
-      await saveAgentChanges(connection, { name, icon, access })
+      await saveAgentChanges(connection, {
+        name,
+        icon,
+        access,
+        ...(connection.ownership === "personal" ? { spaceIds } : {}),
+      })
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
@@ -71,7 +85,9 @@ export function AgentEditDialog({
   const changed =
     trimmed !== connection.displayName ||
     icon !== (connection.icon ?? null) ||
-    !sameAccess(access, connection.access)
+    !sameAccess(access, connection.access) ||
+    (connection.ownership === "personal" &&
+      JSON.stringify(spaceIds) !== JSON.stringify(connection.spaceIds ?? null))
   const canSave =
     trimmed.length > 0 && trimmed.length <= 100 && changed && !save.isPending
 
@@ -104,6 +120,46 @@ export function AgentEditDialog({
             alwaysOn={connection.mode === "always-on"}
             autoFocus={!isMobile}
           />
+          {connection.ownership === "personal" && (
+            <div className="mt-5 flex flex-col gap-3">
+              <p className="text-sm font-medium">Space access</p>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={spaceIds === null}
+                  disabled={save.isPending}
+                  onCheckedChange={(checked) =>
+                    setSpaceIds(checked ? null : [])
+                  }
+                />
+                Follow my current and future Space access
+              </label>
+              {spaceIds !== null &&
+                spaces.data?.map((space) => (
+                  <label
+                    key={space.id}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={spaceIds.includes(space.id)}
+                      disabled={save.isPending}
+                      onCheckedChange={(checked) =>
+                        setSpaceIds((previous) =>
+                          checked
+                            ? [...(previous ?? []), space.id]
+                            : (previous ?? []).filter((id) => id !== space.id)
+                        )
+                      }
+                    />
+                    {space.name}
+                  </label>
+                ))}
+              {spaces.isError && (
+                <p role="alert" className="text-sm text-destructive">
+                  Could not load Spaces.
+                </p>
+              )}
+            </div>
+          )}
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

@@ -213,6 +213,7 @@ export const DocumentRendererSchema = z.object({
 })
 
 export const DocumentPageCapabilitiesSchema = z.object({
+  edit: z.boolean().optional(),
   rawSource: z.boolean(),
   versions: z.boolean(),
   annotations: z.boolean(),

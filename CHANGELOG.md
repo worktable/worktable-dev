@@ -16,6 +16,7 @@ infrastructure and personal context out of release notes.
 - **HTML in Markdown:** Markdown Docs show formatting HTML such as `<details>`, `<kbd>`, `<sub>`, `<sup>` and `<mark>`. Scripts, styles, frames and forms are left out.
 - **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
 - **Desktop beta updates:** Desktop can follow the beta channel too. Turn on **Settings → System → Beta updates**, or choose **Worktable → Beta Updates**, and Desktop installs signed beta builds as they are published, a few times a day at most.
+- **Worktable for Teams:** Invite named members, restrict Space access, and connect personal or team agents on local, self-hosted, and Cloud Worktables.
 
 ### Changed
 

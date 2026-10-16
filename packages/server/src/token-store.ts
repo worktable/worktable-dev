@@ -35,6 +35,8 @@ export interface RequestPrincipal {
   displayName: string
   /** Human principal that delegated authority to an agent. */
   authorizedBy?: string
+  /** Protected runtime binding; preserves a participant across credential changes. */
+  participantKey?: string
 }
 
 export interface TokenIdentity {
@@ -50,11 +52,35 @@ export interface TokenIdentity {
   /** Agent label ("claude-code", ...) or null for human/owner credentials. */
   agent: string | null
   principal: RequestPrincipal
+  /** Verified credential expiry, retained for live-session authorization. */
+  credentialIssuedAt?: number
+  credentialExpiresAt?: number
+  /** Better Auth session handle, never a session token or cookie. */
+  sessionId?: string
+  /** Trusted gateway proof, populated only after assertion verification. */
+  cloudIdentity?: { issuer: string; subject: string; email: string; name: string; companyId?: string };
+  /** Resolved from protected team state after credential verification. */
+  team?: {
+    worktableId: string
+    userId?: string
+    memberId?: string
+    agentId?: string
+    credentialKey?: string
+  }
+  /** Ephemeral native-host verification authority, never a minted credential. */
+  operatorVerification?: boolean
 }
 
 export interface TokenMetadata extends Omit<
   TokenIdentity,
-  "principal" | "credentialClass"
+  | "principal"
+  | "credentialClass"
+  | "team"
+  | "operatorVerification"
+  | "cloudIdentity"
+  | "credentialExpiresAt"
+  | "credentialIssuedAt"
+  | "sessionId"
 > {
   principal: RequestPrincipal
   id: string
@@ -130,6 +156,11 @@ export function hasScope(granted: string[], required: string): boolean {
 
 function tokensFile(): string {
   return join(ensureAppDir(), "tokens.json")
+}
+
+/** The token store's path, for cheap change detection (a stat, not a read). */
+export function tokenStorePath(): string {
+  return tokensFile()
 }
 
 async function loadTokens(): Promise<StoredToken[]> {
@@ -379,7 +410,11 @@ export async function rotateAgentToken(options: {
  */
 export async function finalizeAgentTokenRotations(
   ids: string[],
-  options: { retireAgentLabels?: string[] } = {}
+  options: {
+    retireAgentLabels?: string[]
+    /** Narrows which earlier same-label tokens a winner replaces, by principal ID. */
+    retireIf?: (principalId: string) => boolean
+  } = {}
 ): Promise<boolean> {
   const result = await serialized(async () => {
     const tokens = await loadTokens()
@@ -415,12 +450,15 @@ export async function finalizeAgentTokenRotations(
     for (let index = 0; index < tokens.length; index++) {
       const token = tokens[index]!
       if (winnerIds.has(token.id) || token.revokedAt) continue
-      const replacedByWinner = winners.some(
-        ({ index: winnerIndex, token: winner }) =>
-          index < winnerIndex &&
-          token.agent === winner!.agent &&
-          token.workspace === winner!.workspace
-      )
+      const replacedByWinner =
+        winners.some(
+          ({ index: winnerIndex, token: winner }) =>
+            index < winnerIndex &&
+            token.agent === winner!.agent &&
+            token.workspace === winner!.workspace
+        ) &&
+        (!options.retireIf ||
+          options.retireIf(principalForStoredToken(token).id))
       const retirementBoundary = retirementBoundaries.get(token.workspace)
       const retiredLegacyLabel =
         token.agent !== null &&

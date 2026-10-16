@@ -1,3 +1,4 @@
+import { withCrossProcessLock } from "./cross-process-lock.ts";
 import { copyFile, link, mkdir, readFile, readdir, rename, rm, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { effectiveArchiveOn } from "./lifetime-rules.ts";
 import { constants, existsSync, lstatSync } from "node:fs";
@@ -6,6 +7,7 @@ import { dirname, join, relative, sep } from "node:path";
 import type { ArchiveInfo, DocListEntry, DocSourceCategory, DocumentId, SpaceFile } from "@worktable/types";
 import { SpaceFileSchema, sourceCategory } from "@worktable/types";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts";
+import { assertSpaceAccess, canAccessSpace, canCreateTeamSpace, registerTeamSpace, retireTeamSpacePolicy, TeamAccessError } from "./team-policy.ts";
 
 // Moved to @worktable/types so the web UI shares the same categorization;
 // re-exported to keep this module the server-side home of the concept.
@@ -21,7 +23,9 @@ import {
 import { canonicalizeBlocksForWrite, inheritBlockIds } from "./blocknote.ts";
 import { extractMarkdownMermaid } from "./mermaid-document.ts";
 
-import { getSpacesDir } from "./workspace.ts";
+import { getSpacesDir, workspaceCacheKey } from "./workspace.ts";
+import { refreshTeamStateForWrite } from "./team-database.ts";
+import { ensureAppDir } from "./app-storage.ts";
 import {
   automaticCheckpointLabel,
   listVersionEntries,
@@ -76,6 +80,7 @@ function baseDir(): string {
 }
 
 function spaceDir(spaceId: string): string {
+  assertSpaceAccess(spaceId);
   return join(baseDir(), spaceId);
 }
 
@@ -431,9 +436,14 @@ async function replaySuppressedDocChange(
 
 const writeLocks = new Map<string, Promise<void>>();
 
+/**
+ * Serialize work on one store path. Paths inside a Space require edit access
+ * unless a reader that only needs a consistent view passes "read".
+ */
 export async function withStoreWriteLock<T>(
   filePath: string,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  access: "read" | "edit" | "manage" = "edit"
 ): Promise<T> {
   const current = writeLocks.get(filePath) ?? Promise.resolve();
   let release!: () => void;
@@ -444,6 +454,17 @@ export async function withStoreWriteLock<T>(
   await current;
   try {
     assertWorkspaceAvailable();
+    const ownedPrefix = `${getSpacesDir()}${sep}`;
+    const position = filePath.indexOf(ownedPrefix);
+    if (position !== -1) {
+      const spaceId = filePath.slice(position + ownedPrefix.length).split(sep)[0];
+      if (spaceId && spaceId !== ".trash") {
+        // Access is checked again at commit, so a change made while this
+        // request waited for the lock applies to this write.
+        if (access !== "read") refreshTeamStateForWrite();
+        assertSpaceAccess(spaceId, access);
+      }
+    }
     return await fn();
   } finally {
     release();
@@ -456,13 +477,14 @@ export async function withStoreWriteLock<T>(
 /** Acquire several store-file locks in canonical order for one transaction. */
 export async function withStoreWriteLocks<T>(
   filePaths: string[],
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  access: "read" | "edit" = "edit"
 ): Promise<T> {
   const ordered = [...new Set(filePaths)].sort((a, b) => a.localeCompare(b))
   const acquire = (index: number): Promise<T> => {
     const path = ordered[index]
     if (!path) return fn()
-    return withStoreWriteLock(path, () => acquire(index + 1))
+    return withStoreWriteLock(path, () => acquire(index + 1), access)
   }
   return acquire(0)
 }
@@ -606,6 +628,13 @@ export async function deduplicateSlug(
 // Space operations
 // ============================================================
 
+/** Namespace reservations include hidden and incomplete entries, without exposing their metadata. */
+export async function occupiedSpaceIds(): Promise<string[]> {
+  const base = baseDir()
+  if (!existsSync(base)) return []
+  return (await readdir(base, {withFileTypes: true})).map(entry => entry.name)
+}
+
 export async function listSpaces(): Promise<SpaceFile[]> {
   const base = baseDir();
   if (!existsSync(base)) return [];
@@ -615,6 +644,7 @@ export async function listSpaces(): Promise<SpaceFile[]> {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (!canAccessSpace(entry.name)) continue;
     const result = await readSpace(entry.name);
     // The directory name is the portable space identity. Ignore mismatched
     // metadata so a prepared directory can carry its final manifest without
@@ -628,6 +658,7 @@ export async function listSpaces(): Promise<SpaceFile[]> {
 export async function readSpace(
   spaceId: string
 ): Promise<{ data: SpaceFile | null; error: string | null }> {
+  if (!canAccessSpace(spaceId)) return { data: null, error: "Space not found" };
   const path = spacePath(spaceId);
   if (!existsSync(path)) {
     return { data: null, error: `Space not found: ${spaceId}` };
@@ -646,18 +677,47 @@ export async function readSpace(
 }
 
 export async function writeSpace(space: SpaceFile): Promise<void> {
-  const path = spacePath(space.id);
-  await ensureSpaceDirs(space.id);
-  await withWriteLock(path, () => atomicWrite(path, space));
+  if (!space.id || space.id === "." || space.id === ".." || /[\\/\0]/.test(space.id)) throw new TeamAccessError("Invalid Space ID");
+  const path = join(baseDir(), space.id, "space.json");
+  // Refuse before reserving anything, so a denied creation leaves no folder.
+  if (!existsSync(path) && !canCreateTeamSpace()) throw new TeamAccessError();
+  // Space creation needs its own reservation: an unpublished file must not
+  // leave behind a manager grant if filesystem creation fails. The lock lives
+  // in app storage, so taking it never creates the Space's folder.
+  const creationLock = join(
+    ensureAppDir(),
+    "space-locks",
+    workspaceCacheKey(),
+    `${space.id}.creation.lock`
+  );
+  await withCrossProcessLock(creationLock, { label: "Space creation" }, async () => {
+    const existing = existsSync(path);
+    let registered = false;
+    if (existing) assertSpaceAccess(space.id, "edit");
+    else {
+      if (!canCreateTeamSpace()) throw new TeamAccessError();
+      registered = registerTeamSpace(space.id);
+    }
+    try {
+      await ensureSpaceDirs(space.id);
+      await withWriteLock(path, () => atomicWrite(path, space));
+    } catch (error) {
+      if (registered && !existsSync(path)) retireTeamSpacePolicy(space.id);
+      throw error;
+    }
+  });
 }
 
 /** Read and replace one existing Space while holding its file write lock. */
 export async function mutateSpace(
   spaceId: string,
-  mutation: (space: SpaceFile) => SpaceFile | null
+  mutation: (space: SpaceFile) => SpaceFile | null,
+  access: "edit" | "manage" = "edit"
 ): Promise<{ data: SpaceFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, access);
   const path = spacePath(spaceId);
-  return withWriteLock(path, async () => {
+  // The lock re-checks this access once it is held.
+  return withStoreWriteLock(path, async () => {
     const current = await readSpace(spaceId);
     if (!current.data || current.error) return current;
 
@@ -669,7 +729,7 @@ export async function mutateSpace(
     const updated = SpaceFileSchema.parse(candidate);
     await atomicWrite(path, updated);
     return { data: updated, error: null };
-  });
+  }, access);
 }
 
 export const PREPARED_SPACE_MARKER = ".worktable-internal-seed";
@@ -950,6 +1010,8 @@ export async function setSpaceArchived(
   archivedBy = "user",
   reason?: string
 ): Promise<{ space: SpaceFile | null; error: string | null }> {
+  // Archiving hides the Space from everyone, so it takes the same authority as
+  // managing its access.
   const { data: updated, error } = await mutateSpace(spaceId, (space) => {
     const settings = { ...space.settings };
     if (archived) {
@@ -966,7 +1028,7 @@ export async function setSpaceArchived(
       settings,
       updatedAt: new Date().toISOString(),
     };
-  });
+  }, "manage");
   if (error || !updated) {
     return { space: null, error: error ?? `Space not found: ${spaceId}` };
   }
@@ -978,8 +1040,10 @@ export async function setSpaceArchived(
 }
 
 export async function deleteSpace(spaceId: string): Promise<void> {
+  assertSpaceAccess(spaceId, "manage");
   await withDocPathLock(spaceId, async () => {
     await withWriteLock(spacePath(spaceId), async () => {
+      assertSpaceAccess(spaceId, "manage");
       const dir = spaceDir(spaceId);
       const trashBase = join(baseDir(), ".trash");
       await mkdir(trashBase, { recursive: true });
@@ -990,6 +1054,7 @@ export async function deleteSpace(spaceId: string): Promise<void> {
         // rename fails across devices; fall back to hard delete
         await rm(dir, { recursive: true, force: true });
       }
+      retireTeamSpacePolicy(spaceId);
       await invalidateHostedDocumentSharesForSpace(spaceId);
       await notifyWorkspaceChangeAndWait({ type: "space", spaceId });
     });
@@ -2836,6 +2901,7 @@ export async function writeDoc(
   content: unknown[] | string,
   options?: DocWriteOptions
 ): Promise<DocWriteResult> {
+  assertSpaceAccess(spaceId, "edit");
   const sanitizedDocPath = sanitizeDocPath(docPath);
   const pathError = options?.managedIdentity
     ? managedDocPathError(docPath)
@@ -3731,6 +3797,7 @@ async function deleteDocOnce(
   docPath: string,
   pending: InFlightDocDelete
 ): Promise<DeleteDocResult> {
+  assertSpaceAccess(spaceId, "edit");
   const {
     admitManagedDocumentWrite,
     ManagedDocumentAdmissionError,

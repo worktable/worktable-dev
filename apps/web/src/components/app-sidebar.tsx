@@ -1,3 +1,5 @@
+import type { SpaceView } from "@/lib/api"
+import { browserTeamMemberId } from "@/lib/team-context"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
@@ -386,7 +388,7 @@ function GroupSwitcher({
 const SpaceSection = memo(function SpaceSection({
   space,
 }: {
-  space: SpaceFile
+  space: SpaceView
 }) {
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
@@ -553,7 +555,7 @@ const SpaceSection = memo(function SpaceSection({
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
           <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/space:opacity-100">
-            <SpaceNewMenu
+            {space.permissions?.edit !== false && <SpaceNewMenu
               spaceId={space.id}
               onCreated={afterCreate}
               trigger={
@@ -566,7 +568,11 @@ const SpaceSection = memo(function SpaceSection({
                 </button>
               }
             />
+            }
             <SpaceContextMenuButton
+              spaceId={space.id}
+              canEdit={space.permissions?.edit !== false}
+              canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
               spaceName={space.name}
               spaceIcon={space.icon}
               currentGroup={space.group}
@@ -609,7 +615,7 @@ const SpaceContent = memo(function SpaceContent({
   space,
   onNavigate,
 }: {
-  space: SpaceFile
+  space: SpaceView
   onNavigate: () => void
 }) {
   const spaceId = space.id
@@ -1337,7 +1343,7 @@ function SpaceTreeSection({
   onRefresh,
   onWidgetRefresh,
 }: {
-  space: SpaceFile
+  space: SpaceView
   documents: DocumentListItem[]
   docs: DocListEntry[]
   isLoading: boolean
@@ -1540,6 +1546,7 @@ function SpaceTreeSection({
     onNavigate,
     onRefresh,
     onWidgetRefresh,
+    canEdit: space.permissions?.edit !== false,
   }
 
   return (
@@ -1565,7 +1572,7 @@ function SpaceTreeSection({
                   node={node}
                   {...rowProps}
                   folderArchived={false}
-                  reorder={reorder}
+                  reorder={space.permissions?.edit !== false ? reorder : undefined}
                 />
               ))}
             </nav>
@@ -1651,6 +1658,8 @@ interface TreeRowProps {
   onWidgetRefresh: (widgetId?: string) => Promise<void>
   folderArchived: boolean
   reorder?: DocReorder
+  /** Whether this person can create in the Space (false for read access). */
+  canEdit: boolean
 }
 
 /**
@@ -1750,6 +1759,7 @@ function DocTreeItem({
   onWidgetRefresh,
   folderArchived,
   reorder,
+  canEdit,
 }: TreeRowProps) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -2014,7 +2024,7 @@ function DocTreeItem({
               </CollapsibleTrigger>
             )}
             <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
-              <SpaceNewMenu
+              {canEdit && <SpaceNewMenu
                 spaceId={spaceId}
                 folder={node.path}
                 onCreated={onNavigate}
@@ -2027,7 +2037,7 @@ function DocTreeItem({
                     <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
                   </button>
                 }
-              />
+              />}
               {view === "html" ? (
                 <WidgetTreeActions
                   key={`${node.path}:${exactDocumentArchived ? "archived" : "active"}`}
@@ -2095,6 +2105,7 @@ function DocTreeItem({
                   onWidgetRefresh={onWidgetRefresh}
                   folderArchived={folderArchived}
                   reorder={reorder}
+                  canEdit={canEdit}
                 />
               ))}
             </div>

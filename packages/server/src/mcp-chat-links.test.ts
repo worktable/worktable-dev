@@ -22,6 +22,7 @@ const ENV_KEYS = [
   "WORKTABLE_RESOURCE_URL",
   "WORKTABLE_REQUIRE_AUTH",
   "WORKTABLE_MCP_TOKEN",
+  "WORKTABLE_HOSTED",
 ] as const
 
 let tempDir: string
@@ -414,6 +415,15 @@ describe("MCP URLs to send in chat", () => {
       },
     })
     expect(read["content"]).toBe("# Safe")
+  })
+
+  it("opens Cloud links in their own Worktable", () => {
+    process.env["WORKTABLE_HOSTED"] = "1"
+    process.env["WORKTABLE_RESOURCE_URL"] =
+      "https://cloud.example.test/api/mcp/w/ws_team_1"
+    expect(
+      docUrlToSendInChat("https://cloud.example.test", "plans", "launch")
+    ).toBe("https://cloud.example.test/t/ws_team_1/spaces/plans/documents/launch")
   })
 
   it("uses the renamed document destination", () => {

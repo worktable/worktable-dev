@@ -14,9 +14,16 @@ import {
 } from "@worktable/hosted-contract"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
-import { admitWorkspaceRequest } from "./workspace-request-lifecycle.ts"
+import {
+  admitWorkspaceRequest,
+  waitForWorkspaceAdmission,
+  WRITE_ADMISSION_WAIT_MS,
+} from "./workspace-request-lifecycle.ts"
 import { handleRemoteMcpRequest } from "./routes/mcp.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
+import { currentTeamWorktable } from "./team-database.ts"
+import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
+import type { TokenIdentity } from "./token-store.ts"
 
 async function readBody(
   request: Request,
@@ -68,6 +75,8 @@ export async function createLinkedIngress(options: {
   key: Uint8Array
   scopes: readonly string[]
   publicOrigin: string
+  /** The Cloud origin the link's identity bindings were recorded under. */
+  identityIssuer?: string
   shareOrigin?: string
   bootNonce?: string
 }) {
@@ -81,6 +90,7 @@ export async function createLinkedIngress(options: {
   }
   const key = new Uint8Array(options.key)
   const { publicOrigin } = options
+  const identityIssuer = options.identityIssuer ?? publicOrigin
   let shareOrigin = options.shareOrigin ?? null
   const scopes = new Set(options.scopes)
   const workspace = getWorkspaceRoot()
@@ -104,8 +114,13 @@ export async function createLinkedIngress(options: {
         headers: { "Cache-Control": "no-store" },
       })
     // Admission precedes all asynchronous work, fencing workspace replacements.
-    const release = admitWorkspaceRequest()
-    if (!release) return new Response(null, { status: 503 })
+    const release =
+      admitWorkspaceRequest() ??
+      ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
+        ? admitWorkspaceRequest()
+        : null)
+    if (!release)
+      return new Response(null, { status: 503, headers: { "Retry-After": "1" } })
     if (inFlight >= 8) {
       release()
       return new Response(null, {
@@ -197,27 +212,35 @@ export async function createLinkedIngress(options: {
         )
       }
       const grant = claims.grant
+      const credential: TokenIdentity = {
+        credentialClass: "resource",
+        credentialIssuedAt: grant.credentialIssuedAt,
+        user: binding.ownerSubject,
+        workspace,
+        agent: grant.displayName,
+        scopes: HOSTED_OAUTH_SCOPES.filter(
+          (scope) => scopes.has(scope) && grant.scopes.includes(scope)
+        ),
+        principal: {
+          id: grant.principalId,
+          type: "agent",
+          displayName: grant.displayName,
+          authorizedBy: `workos:${binding.ownerSubject}`,
+        },
+      }
+      const identity = currentTeamWorktable()
+        ? grant.credentialIssuedAt
+          ? await resolveCloudTeamAgentCredential(credential, identityIssuer)
+          : null
+        : credential
+      if (!identity) return denied()
       return await handleRemoteMcpRequest(
         new Request(request.url, {
           method: request.method,
           headers,
           ...(request.method === "POST" ? { body: new Uint8Array(body) } : {}),
         }),
-        {
-          credentialClass: "resource",
-          user: binding.ownerSubject,
-          workspace,
-          agent: grant.displayName,
-          scopes: HOSTED_OAUTH_SCOPES.filter(
-            (scope) => scopes.has(scope) && grant.scopes.includes(scope)
-          ),
-          principal: {
-            id: grant.principalId,
-            type: "agent",
-            displayName: grant.displayName,
-            authorizedBy: `workos:${binding.ownerSubject}`,
-          },
-        },
+        identity,
         `${publicOrigin}/api/mcp/d/${binding.destinationId}`
       )
     } finally {

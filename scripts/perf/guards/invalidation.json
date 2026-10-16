@@ -35,6 +35,26 @@
       "site": "apps/web/src/lib/ws.ts#subscribeShared",
       "kind": "space-wide",
       "why": "When the last subscriber leaves, nothing keeps the Space current: mark it stale without refetching; content at a revision is excluded."
+    },
+    {
+      "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
+      "kind": "space-wide",
+      "why": "A team member lost read access to these Spaces: everything cached under them is removed so it can't be shown again. Runs only when this member's own access changes."
+    },
+    {
+      "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
+      "kind": "space-wide",
+      "why": "A team member's access level in these Spaces changed or was granted: their permissions and content keys change, so the Space's queries (only those on screen) read again. Runs only when this member's own access changes."
+    },
+    {
+      "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
+      "kind": "predicate",
+      "why": "A team member gained Spaces: lists that gather items from every readable Space (recent, activity, pending, threads, search) read again, only those on screen. Runs only when this member's own access changes."
+    },
+    {
+      "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
+      "kind": "predicate",
+      "why": "A team member lost Spaces: lists that gather items from every readable Space are removed, so the lost Space's titles leave the screen at once, and read again when shown. Runs only when this member's own access changes."
     }
   ]
 }

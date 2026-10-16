@@ -29,7 +29,7 @@ import { verifyMcpEndpoint } from "./verify.ts"
 //
 // Usage:
 //   connect.mjs <code-or-pairing-url> [--client <id>] [--all] [--replace]
-//   connect.mjs --oauth --server <origin> [--client <id>] [--all] [--replace]
+//   connect.mjs --oauth --server <origin> [--mcp-url <endpoint>] [--client <id>] [--all] [--replace]
 
 interface ConnectorArgs {
   code: string | null
@@ -38,6 +38,7 @@ interface ConnectorArgs {
   all: boolean
   replace: boolean
   oauth: boolean
+  mcpUrl?: string
 }
 
 export interface ConnectorIo {
@@ -49,7 +50,7 @@ function usage(): string {
   return [
     "Usage:",
     "  connect.mjs <code-or-pairing-url> [--client <id>] [--all] [--replace] [--server <origin>]",
-    "  connect.mjs --oauth --server <origin> [--client <id>] [--all] [--replace]",
+    "  connect.mjs --oauth --server <origin> [--mcp-url <endpoint>] [--client <id>] [--all] [--replace]",
     `Clients: ${CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS.join(", ")}`,
   ].join("\n")
 }
@@ -61,11 +62,16 @@ export function parseConnectorArgs(argv: string[]): ConnectorArgs {
   let all = false
   let replace = false
   let oauth = false
+  let mcpUrl: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (arg === "--server") {
       origin = argv[++i] ?? null
+    } else if (arg === "--mcp-url") {
+      mcpUrl = argv[++i]
+      if (!mcpUrl)
+        throw new Error("Pass the Worktable’s MCP URL after --mcp-url")
     } else if (arg === "--client") {
       const value = argv[++i] ?? ""
       if (
@@ -121,9 +127,28 @@ export function parseConnectorArgs(argv: string[]): ConnectorArgs {
     )
   }
 
+  const server = new URL(origin)
+  if (mcpUrl) {
+    const endpoint = new URL(mcpUrl)
+    if (
+      !oauth ||
+      endpoint.origin !== server.origin ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.search ||
+      endpoint.hash ||
+      !["http:", "https:"].includes(endpoint.protocol) ||
+      !/^\/api\/mcp(?:\/[wd]\/[A-Za-z0-9_-]+)?\/?$/.test(endpoint.pathname)
+    )
+      throw new Error(
+        "--mcp-url must be an OAuth MCP endpoint on the chosen Worktable server"
+      )
+    mcpUrl = endpoint.href.replace(/\/+$/, "")
+  }
   return {
     code,
-    origin: new URL(origin).origin,
+    ...(mcpUrl ? { mcpUrl } : {}),
+    origin: server.origin,
     client,
     all,
     replace,
@@ -391,7 +416,7 @@ async function runOAuthConnector(
   const configured = configureClients(
     selected,
     preflight,
-    { endpoint: `${args.origin}/api/mcp` },
+    { endpoint: args.mcpUrl ?? `${args.origin}/api/mcp` },
     args.replace,
     io,
     dependencies

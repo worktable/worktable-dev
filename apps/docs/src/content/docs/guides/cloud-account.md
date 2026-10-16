@@ -7,6 +7,12 @@ Open **Settings → Account** to see your subscription status or choose
 **Manage billing**. Checkout and the billing portal show the current price,
 taxes, and renewal terms.
 
+Each Cloud Worktable has a separate subscription. Billing stays with the payer;
+becoming a Worktable owner does not grant billing access. The billing portal
+includes the payer's subscriptions across their Worktables. Open **Your
+subscriptions** from **Your Worktables** to manage billing even after leaving
+a team.
+
 ## Cancel or recover
 
 Cancellation stops future renewals and takes effect at the end of your paid

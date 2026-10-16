@@ -56,7 +56,7 @@ import {
   type DocLifetimeFacts,
 } from "./store.ts"
 import { effectiveArchiveOn } from "./lifetime-rules.ts"
-import { withWidgetWriteLock } from "./widget-store.ts"
+import { withWidgetReadLock } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { FINGERPRINT_TREE_MAX_ENTRIES } from "./file-fingerprint.ts"
 import { readSpaceSnapshot } from "./workspace-read-model.ts"
@@ -983,7 +983,7 @@ async function usePreparedDocumentTransactionally<T>(
   const widgetId = legacyHtmlWidgetId(prepared.classified)
   if (!widgetId) return use(prepared)
 
-  return withWidgetWriteLock(options.spaceId, widgetId, async () => {
+  return withWidgetReadLock(options.spaceId, widgetId, async () => {
     const currentClaim = await readLegacyHtmlClaim(
       resolve(getWorkspaceRoot(), "spaces", options.spaceId),
       widgetId

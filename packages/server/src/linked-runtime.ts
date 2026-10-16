@@ -1,4 +1,8 @@
-import { cloudLinkRequest, linkedCloudOrigin } from "./cloud-account.ts"
+import {
+  cloudAccountStatus,
+  cloudLinkRequest,
+  linkedCloudOrigin,
+} from "./cloud-account.ts"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
@@ -18,6 +22,12 @@ import { linkedConnectorBinary } from "./linked-connector.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
 import { isHosted } from "./hosted.ts"
+import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
+import {
+  currentRequestIdentity,
+  requireTeamHuman,
+  TeamAccessError,
+} from "./team-policy.ts"
 
 const StoredLink = z
   .object({
@@ -28,6 +38,8 @@ const StoredLink = z
     label: z.string(),
     bootSequence: z.number().int().nonnegative(),
     disabled: z.boolean(),
+    billingWorkspaceId: z.string().optional(),
+    teamAuthorizationRequired: z.boolean().optional(),
   })
   .strict()
 type StoredLink = z.infer<typeof StoredLink>
@@ -47,6 +59,8 @@ export type LinkedStatus = {
   enabled: boolean | null
   mcpUrl?: string
   label?: string
+  billingWorkspaceId?: string
+  teamAuthorizationRequired?: boolean
 }
 let status: LinkedStatus = {
   state: "connecting",
@@ -153,19 +167,62 @@ export async function beginLink(): Promise<{ url: string }> {
       state: "awaiting_approval",
       enabled: false,
       cloudOrigin: link.cloudOrigin,
+      billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
     }
     return data
   })
 }
 
-async function enableLink(): Promise<LinkedStatus> {
+async function enableLink(billingWorkspaceId?: string): Promise<LinkedStatus> {
+  const worktable = currentTeamWorktable()
+  const member = worktable ? requireTeamHuman(currentRequestIdentity()!) : null
   return change(async () => {
     const link = await prepareLink()
+    const selected = billingWorkspaceId ?? link.billingWorkspaceId
+    const account = worktable ? await cloudAccountStatus() : null
+    if (worktable && member && account?.user) {
+      const binding = requireTeamDatabase()
+        .query<
+          { user_id: string },
+          [string, string, string]
+        >("SELECT user_id FROM wt_identity_bindings WHERE worktable_id = ? AND issuer = ? AND subject = ?")
+        .get(worktable.id, link.cloudOrigin, account.user.id)
+      if (binding && binding.user_id !== member.userId)
+        throw new TeamAccessError(
+          "This Cloud account is connected to another member"
+        )
+    }
     const data = await cloudLinkRequest(link.cloudOrigin, {
       action: "enable",
+      ...(selected ? { workspaceId: selected } : {}),
       enrollment: enrollment(link),
     })
+    if (worktable && member) {
+      const subject = z.string().min(1).parse(data["ownerSubject"])
+      if (
+        !account?.user ||
+        account.user.id !== subject ||
+        currentTeamWorktable()?.id !== worktable.id
+      )
+        throw new TeamAccessError("Cloud account changed. Sign in again.")
+      requireTeamHuman(currentRequestIdentity()!)
+      const db = requireTeamDatabase()
+      const binding = db
+        .query<
+          { user_id: string },
+          [string, string, string]
+        >("SELECT user_id FROM wt_identity_bindings WHERE worktable_id = ? AND issuer = ? AND subject = ?")
+        .get(worktable.id, link.cloudOrigin, subject)
+      if (binding && binding.user_id !== member.userId)
+        throw new TeamAccessError(
+          "This Cloud account is connected to another member"
+        )
+      db.query(
+        "INSERT OR IGNORE INTO wt_identity_bindings(worktable_id, issuer, subject, user_id) VALUES (?, ?, ?, ?)"
+      ).run(worktable.id, link.cloudOrigin, subject, member.userId)
+    }
+    const approvedWorkspaceId = z.string().min(1).parse(data["workspaceId"])
     const destinationId = z
       .string()
       .regex(/^[a-f0-9]{32}$/)
@@ -176,10 +233,16 @@ async function enableLink(): Promise<LinkedStatus> {
         enrollment: enrollment(link),
         paused: false,
       })
+    // Record the authorization only once Cloud has accepted the resume, so a
+    // failed attempt still starts paused next time.
+    delete link.teamAuthorizationRequired
+    link.billingWorkspaceId = approvedWorkspaceId
+    await saveLink(path(), link)
     status = {
       state: "connecting",
       enabled: true,
       cloudOrigin: link.cloudOrigin,
+      billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
       mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
     }
@@ -187,8 +250,29 @@ async function enableLink(): Promise<LinkedStatus> {
   })
 }
 
-export async function setLinkEnabled(enabled: boolean): Promise<LinkedStatus> {
-  if (enabled) return enableLink()
+/** Activation replaces implicit owner authority with explicit member authorization. */
+export async function pauseLinkForTeamActivation(): Promise<void> {
+  await change(async () => {
+    const link = await readLink(path())
+    if (!link || link.disabled) return
+    link.teamAuthorizationRequired = true
+    await saveLink(path(), link)
+    status = {
+      state: "paused",
+      enabled: false,
+      cloudOrigin: link.cloudOrigin,
+      label: link.label,
+      billingWorkspaceId: link.billingWorkspaceId,
+      teamAuthorizationRequired: true,
+    }
+  })
+}
+
+export async function setLinkEnabled(
+  enabled: boolean,
+  billingWorkspaceId?: string
+): Promise<LinkedStatus> {
+  if (enabled) return enableLink(billingWorkspaceId)
   return change(async () => {
     const link = await readLink(path())
     if (!link || link.disabled) throw new Error("This device is not linked.")
@@ -205,6 +289,7 @@ export async function setLinkEnabled(enabled: boolean): Promise<LinkedStatus> {
       state: "paused",
       enabled: false,
       cloudOrigin: link.cloudOrigin,
+      billingWorkspaceId: link.billingWorkspaceId,
       label: link.label,
       mcpUrl: `${link.cloudOrigin}/api/mcp/d/${destinationId}`,
     }
@@ -223,6 +308,7 @@ export async function disconnectLink(): Promise<void> {
         state: "unlinking",
         enabled: false,
         cloudOrigin: link.cloudOrigin,
+        billingWorkspaceId: link.billingWorkspaceId,
       }
     } else
       status = { state: "unlinked", enabled: false, cloudOrigin: cloudOrigin() }
@@ -312,6 +398,17 @@ function launch(): void {
       status = { state: "unlinked", enabled: false, cloudOrigin: cloudOrigin() }
       return
     }
+    if (initial.teamAuthorizationRequired) {
+      status = {
+        state: "paused",
+        enabled: false,
+        cloudOrigin: initial.cloudOrigin,
+        label: initial.label,
+        billingWorkspaceId: initial.billingWorkspaceId,
+        teamAuthorizationRequired: true,
+      }
+      return
+    }
     await withCrossProcessLock(
       `${file}.runtime-lock`,
       { label: "linked installation host" },
@@ -341,6 +438,7 @@ function launch(): void {
                 state: "unlinking",
                 enabled: false,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
               }
               const response = await fetch(
                 `${link.cloudOrigin}/linked/disconnect`,
@@ -352,6 +450,7 @@ function launch(): void {
                 state: "unlinked",
                 enabled: false,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
               }
               return
             }
@@ -418,6 +517,7 @@ function launch(): void {
                 state: "revoked",
                 enabled: false,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
               }
               return
             }
@@ -433,6 +533,7 @@ function launch(): void {
                 state: reply.state,
                 enabled: reply.state !== "paused" && !reply.paused,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
                 ...(reply.destinationId
                   ? {
                       mcpUrl: `${link.cloudOrigin}/api/mcp/d/${reply.destinationId}`,
@@ -445,6 +546,7 @@ function launch(): void {
                 state: "awaiting_approval",
                 enabled: false,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
                 label: link.label,
               }
             } else {
@@ -482,6 +584,7 @@ function launch(): void {
                   key: Buffer.from(reply.signingKey, "hex"),
                   scopes: HOSTED_OAUTH_SCOPES,
                   publicOrigin: reply.publicOrigin,
+                  identityIssuer: link.cloudOrigin,
                   bootNonce,
                 })
               ingress.setSharingOrigin(
@@ -543,6 +646,7 @@ function launch(): void {
                 state: connected && reply.ready ? "online" : "connecting",
                 enabled: true,
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
                 mcpUrl,
                 label: link.label,
               }
@@ -562,6 +666,7 @@ function launch(): void {
                 ...status,
                 state: link.disabled ? "unlinking" : "offline",
                 cloudOrigin: link.cloudOrigin,
+                billingWorkspaceId: link.billingWorkspaceId,
               }
           }
           await wait(connected ? 20_000 : 5_000)

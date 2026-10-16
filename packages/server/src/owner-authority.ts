@@ -1,6 +1,8 @@
 import type { TokenIdentity } from "./token-store.ts"
 import { isHosted } from "./hosted.ts"
 import { getOwnerSubject } from "./oauth-jwt.ts"
+import { teamsEnabled } from "./team-database.ts"
+import { currentRequestIdentity, teamMemberForIdentity } from "./team-policy.ts"
 
 /**
  * Whether a resolved identity may inspect owner-wide collaboration state.
@@ -15,6 +17,10 @@ export function hasWorkspaceOwnerAuthority(
     "agent" | "credentialClass" | "principal" | "scopes"
   >
 ): boolean {
+  if (teamsEnabled()) {
+    const current = currentRequestIdentity()
+    return Boolean(current && current.principal.id === identity.principal.id && teamMemberForIdentity(current)?.role === "owner")
+  }
   if (identity.scopes.includes("*")) return true
   if (
     !isHosted() ||

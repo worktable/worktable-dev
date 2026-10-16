@@ -1,3 +1,4 @@
+import { browserTeamCacheKey } from "./team-context"
 import {
   workspaceWritesFrozen,
   currentWorkspaceContentEpoch,
@@ -71,7 +72,7 @@ interface SessionStorageLike {
 
 export function threadDraftsStorageKey(workspaceId: string): string {
   const epoch = currentWorkspaceContentEpoch()
-  return `${THREAD_DRAFTS_STORAGE_KEY}:${encodeURIComponent(workspaceId)}${epoch ? `:${epoch}` : ""}`
+  return `${THREAD_DRAFTS_STORAGE_KEY}:${encodeURIComponent(workspaceId)}${browserTeamCacheKey() ? `:member:${browserTeamCacheKey()}` : ""}${epoch ? `:${epoch}` : ""}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

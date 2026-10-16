@@ -7,6 +7,7 @@ import { isHosted } from "../hosted.ts"
 import { createWorktableMcpServer } from "../mcp/server.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
+import { runWithTeamIdentity } from "../team-policy.ts"
 
 // ============================================================
 // Server factory — creates a fresh server per request (stateless)
@@ -164,7 +165,7 @@ export async function handleRemoteMcpRequest(
 
   let response: Response
   try {
-    response = await transport.handleRequest(request)
+    response = await runWithTeamIdentity(identity, () => transport.handleRequest(request))
   } catch (error) {
     release()
     throw error

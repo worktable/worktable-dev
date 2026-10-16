@@ -12,7 +12,10 @@ import {
   PencilLine,
   Settings2,
   UserRound,
+  UsersRound,
 } from "lucide-react"
+const TeamSection = lazy(() => import("./sections/team").then((module) => ({ default: module.TeamSection })));
+const TEAM: SettingsSection = { id: "team", group: "Workspace", label: "Team", description: "People, invitations and Space access.", icon: UsersRound, component: TeamSection };
 const AccountSection = lazy(() =>
   import("./sections/account").then((module) => ({
     default: module.AccountSection,
@@ -68,6 +71,7 @@ const PortabilitySection = lazy(() =>
 )
 
 export type SettingsSectionId =
+  | "team"
   | "general"
   | "account"
   | "cloud"
@@ -99,6 +103,15 @@ const GENERAL: SettingsSection = {
   description: "Worktable name, URL, and local folder.",
   icon: Settings2,
   component: GeneralSection,
+}
+
+const LINK: SettingsSection = {
+  id: "cloud",
+  group: "Workspace",
+  label: "Worktable Cloud",
+  description: "AI connections and document sharing.",
+  icon: UserRound,
+  component: CloudSection,
 }
 
 const ACCOUNT: SettingsSection = {
@@ -192,7 +205,8 @@ export function getSettingsSections(
     return [
       ...(capabilities.workspaceName ? [CLOUD_GENERAL] : []),
       ...(capabilities.cloudAccount ? [ACCOUNT] : []),
-      APPEARANCE,
+      TEAM,
+    APPEARANCE,
       ...(capabilities.editorSettings ? [EDITOR] : []),
       ...(capabilities.historySettings ? [HISTORY] : []),
       {
@@ -211,14 +225,8 @@ export function getSettingsSections(
   }
   return [
     ...(capabilities.workspaceName ? [GENERAL] : []),
-    {
-      id: "cloud",
-      group: "Workspace",
-      label: "Worktable Cloud",
-      description: "AI connections and document sharing.",
-      icon: UserRound,
-      component: CloudSection,
-    },
+    ...(capabilities.workspaceUrl ? [LINK] : []),
+    TEAM,
     APPEARANCE,
     ...(capabilities.editorSettings ? [EDITOR] : []),
     ...(capabilities.historySettings ? [HISTORY] : []),

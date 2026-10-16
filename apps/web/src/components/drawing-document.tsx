@@ -59,7 +59,16 @@ function DrawingEditor({
   workspaceId,
   spaceId,
   documentPath,
+  page,
 }: DocumentRendererProps & { workspaceId: string }) {
+  const readOnly = !page || page.capabilities.edit === false
+  // The editor reads access through refs: it opens read-only from the preview
+  // and becomes editable when the page check allows, without being rebuilt.
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+  const knownReadOnly = useRef(false)
+  knownReadOnly.current = page?.capabilities.edit === false
+  const applyAccess = useRef<(() => void) | null>(null)
   const container = useRef<HTMLDivElement>(null)
   const editor = useRef<Editor | null>(null)
   const dirty = useRef(false)
@@ -159,6 +168,7 @@ function DrawingEditor({
       clearTimeout(timer)
       if (
         disposed ||
+        readOnlyRef.current ||
         saving ||
         loading ||
         conflict ||
@@ -332,7 +342,7 @@ function DrawingEditor({
         setError(null)
         setConflictError(false)
         setStatus("Saved")
-        if (recoverDraft) {
+        if (recoverDraft && !knownReadOnly.current) {
           try {
             const raw = localStorage.getItem(draftKey)
             if (raw) {
@@ -374,7 +384,8 @@ function DrawingEditor({
         console.error("Drawing load failed", cause)
       } finally {
         loading = false
-        if (!disposed && drawing) instance.editor.setReadonly(false)
+        if (!disposed && drawing)
+          instance.editor.setReadonly(readOnlyRef.current)
         void refreshExternal()
       }
       if (recoverDraft && dirty.current && !conflict) scheduleSave()
@@ -429,7 +440,7 @@ function DrawingEditor({
           } finally {
             saving = false
             if (!disposed) {
-              instance.editor.setReadonly(false)
+              instance.editor.setReadonly(readOnlyRef.current)
               node.inert = false
             }
           }
@@ -446,10 +457,17 @@ function DrawingEditor({
       }
     )
     const markChanged = () => {
+      if (readOnlyRef.current) return
       dirty.current = true
       change += 1
       setStatus("Unsaved changes")
       scheduleSave()
+    }
+    applyAccess.current = () => {
+      if (disposed || loading || saving || !drawing) return
+      instance.editor.setReadonly(readOnlyRef.current)
+      // Changes recovered while the page was being checked save once allowed.
+      if (!readOnlyRef.current && dirty.current) scheduleSave()
     }
     const unsubscribe = instance.editor.store.listen(markChanged, {
       source: "user",
@@ -545,11 +563,23 @@ function DrawingEditor({
       window.removeEventListener("pagehide", onPageHide)
       window.removeEventListener("beforeunload", onPageHide)
       actions.current = null
+      applyAccess.current = null
       editor.current = null
       node.removeEventListener("keydown", stopKeys)
       instance.destroy()
     }
-  }, [workspaceId, spaceId, documentPath, queryClient, navigate, subscribe])
+  }, [
+    workspaceId,
+    spaceId,
+    documentPath,
+    queryClient,
+    navigate,
+    subscribe,
+  ])
+
+  useEffect(() => {
+    applyAccess.current?.()
+  }, [readOnly])
 
   useEffect(() => {
     editor.current?.setTheme(resolvedTheme)
@@ -592,10 +622,10 @@ function DrawingEditor({
           icon: RotateCw,
           onSelect: () => actions.current?.reload(),
         },
-      ],
+      ].filter((action) => !readOnly || action.id !== "drawing-copy"),
     })
     return () => setPageMeta(null)
-  }, [title, spaceId, documentPath, setPageMeta])
+  }, [title, spaceId, documentPath, setPageMeta, readOnly])
 
   return (
     <section

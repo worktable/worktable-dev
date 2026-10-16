@@ -1,9 +1,10 @@
+import { teamsEnabled } from "../team-database.ts";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
   authRequired,
-  isHostedBrowserOwner,
-  isLocalOwner,
+  canOperateHost,
+  canManageUserSettings,
   mcpBearerRequired,
   publicSurfaceAuthRequired,
 } from "../auth.ts";
@@ -129,7 +130,7 @@ systemRouter.get("/version", async (c) => {
 // checks prevent an arbitrary website from spending the implicit loopback
 // owner's authority on repeated release-host requests.
 systemRouter.post("/version/check", async (c) => {
-  if (!isLocalOwner(c) || !sameOriginOrNonBrowserRequest(c)) {
+  if (!canOperateHost(c) || !sameOriginOrNonBrowserRequest(c)) {
     return c.json({ error: "Forbidden", required: "owner + same-origin" }, 403);
   }
   const check = await checkForUpdate({ force: true });
@@ -177,7 +178,21 @@ export function getDeploymentInfo(): DeploymentInfo {
 
 // GET /api/system/deployment — authoritative product capabilities for this
 // process. The web app uses this instead of inferring deployment from agent auth.
-systemRouter.get("/deployment", (c) => c.json(getDeploymentInfo()));
+systemRouter.get("/deployment", (c) => {
+  const deployment = getDeploymentInfo();
+  if (teamsEnabled()) {
+    const owner = canManageUserSettings(c);
+    const operator = canOperateHost(c);
+    Object.assign(deployment.capabilities, {
+      cloudAccount: deployment.mode === "cloud" && owner, workspaceName: owner,
+      workspacePath: deployment.mode !== "cloud" && operator, workspaceUrl: deployment.mode !== "cloud" && operator,
+      workspacePortability: owner, editorSettings: owner, historySettings: owner,
+      softwareUpdates: deployment.mode !== "cloud" && operator, updateChecks: deployment.mode !== "cloud" && operator,
+      workspaceClear: deployment.mode !== "cloud" && owner,
+    });
+  }
+  return c.json(deployment);
+});
 
 // GET /api/system/update — the current/last update job's status. Read-only and
 // non-sensitive (it's just lifecycle state), so it mirrors /version's open gate.
@@ -269,7 +284,7 @@ systemRouter.post("/update", async (c) => {
       403,
     );
   }
-  if (!isLocalOwner(c)) {
+  if (!canOperateHost(c)) {
     return c.json({ error: "Forbidden", required: "owner" }, 403);
   }
   const body = (await c.req.json().catch(() => null)) as
@@ -298,13 +313,15 @@ systemRouter.get("/settings", (c) => {
 // POST /update). Strict: unknown keys or wrong-typed fields → 400. Returns the
 // merged settings.
 systemRouter.put("/settings", async (c) => {
-  if (isHosted() ? !isHostedBrowserOwner(c) : !isLocalOwner(c)) {
-    return c.json({ error: "Forbidden", required: "owner" }, 403);
+  if (!canManageUserSettings(c) && !canOperateHost(c)) {
+    return c.json({ error: "Forbidden" }, 403);
   }
   const body = (await c.req.json().catch(() => null)) as ServerSettingsPatch | null;
   if (!body || typeof body !== "object") {
     return c.json({ error: "Expected a JSON object body" }, 400);
   }
+  if (("updates" in body || "network" in body) && !canOperateHost(c)) return c.json({ error: "Operator authority is required" }, 403);
+  if (!canManageUserSettings(c) && Object.keys(body).some((key) => key !== "updates" && key !== "network")) return c.json({ error: "Owner authority is required" }, 403);
   if (isHosted() && ("updates" in body || "network" in body)) {
     const updateSettings = "updates" in body;
     return c.json(
@@ -318,7 +335,7 @@ systemRouter.put("/settings", async (c) => {
     );
   }
   try {
-    if (enablesPublicUrl(body) && !(await hasOwnerPassword())) {
+    if (enablesPublicUrl(body) && !teamsEnabled() && !(await hasOwnerPassword())) {
       return c.json(
         { error: "Set an owner password before configuring a public URL" },
         409,

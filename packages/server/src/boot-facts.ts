@@ -19,7 +19,7 @@ boot.get("*", async (c) => {
     storageUpgrade,
     // The workspace is not read while its storage is being upgraded.
     ...(storageUpgrade.state === "ready"
-      ? { workspace: await workspaceSummary(c) }
+      ? { workspace: await workspaceSummary(c, { accessKeys: true }) }
       : {}),
   })
 })

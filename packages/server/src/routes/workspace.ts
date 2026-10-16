@@ -1,3 +1,6 @@
+import { teamsEnabled } from "../team-database.ts"
+import { currentTeamWorktable } from "../team-database.ts";
+import { teamMemberForIdentity } from "../team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "../collaboration-epoch.ts"
 import { isHosted } from "../hosted.ts"
 import { retryWorkspaceStorageUpgrade, workspaceStorageUpgradeState } from "../workspace-storage-upgrade.ts"
@@ -16,7 +19,8 @@ import {
   writeWorkspaceManifest,
   type WorkspaceManifest,
 } from "../workspace.ts"
-import { canManageUserSettings, isLocalOwner } from "../auth.ts"
+import { canManageUserSettings, canOperateHost } from "../auth.ts"
+import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
 import {
   appendWorkspaceImportChunk,
@@ -106,7 +110,7 @@ function hasExplicitBearerAuthorization(c: Context): boolean {
 }
 
 function canReadWorkspaceRoot(c: Context): boolean {
-  return isLocalOwner(c) && sameOriginOrNonBrowserRequest(c)
+  return !isHosted() && canOperateHost(c) && sameOriginOrNonBrowserRequest(c)
 }
 
 /**
@@ -115,8 +119,20 @@ function canReadWorkspaceRoot(c: Context): boolean {
  * (source label/path, snapshotAt, one-way/disposable flags) for non-daily workspaces.
  * The served page carries the same summary for its first render (boot-facts.ts).
  */
-export async function workspaceSummary(c: Context) {
+export async function workspaceSummary(
+  c: Context,
+  options: { accessKeys?: boolean } = {}
+) {
+  const identity = c.get("identity");
+  const member = identity?.team ? teamMemberForIdentity(identity) : null;
+  const team = member ? currentTeamWorktable() : null;
+  const access = member && team ? memberAccess(member.id) : null;
+  // The page carries each Space's content key, so the first render addresses
+  // content once instead of again after the spaces list arrives. Later reads
+  // take them from the spaces list, which keeps this summary small.
+  const accessKeys = options.accessKeys && member && access ? Object.fromEntries([...access.levels.keys()].flatMap((spaceId) => { const key = spaceAccessKey(member.id, spaceId); return key ? [[spaceId, key]] : []; })) : undefined;
   return {
+    ...(member && team ? { teamContext: { worktableId: team.id, memberId: member.id, policyRevision: team.policyRevision, access: access?.fingerprint ?? null, ...(accessKeys ? { accessKeys } : {}) } } : {}),
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
@@ -227,6 +243,7 @@ function workspaceExportReader(c: Context): Response | null {
   const identity = c.get("identity")
   return identity?.principal.type === "human" &&
     hasScope(identity.scopes, "workspace:export") &&
+    (!teamsEnabled() || canManageUserSettings(c)) &&
     (hasExplicitBearerAuthorization(c) || sameOriginOrNonBrowserRequest(c))
     ? null
     : c.json({ error: "Forbidden", required: "human + workspace:export" }, 403)
@@ -679,6 +696,7 @@ workspaceRouter.get("/export", async (c) => {
   const identity = c.get("identity")
   if (
     identity.principal.type !== "human" ||
+    (teamsEnabled() && !canManageUserSettings(c)) ||
     !hasScope(identity.scopes, "workspace:export") ||
     // Bare loopback requests inherit the implicit owner identity for local
     // compatibility. They must still be same-origin (or non-browser) before
@@ -825,5 +843,5 @@ function applyWorkspacePatch(
   writeWorkspaceManifest(next)
   // Hosted browser owners may rename but never receive the filesystem root.
   // Local owners retain the existing owner-gated PUT response.
-  return c.json(publicView(next, { includeRoot: isLocalOwner(c) }))
+  return c.json(publicView(next, { includeRoot: canReadWorkspaceRoot(c) }))
 }

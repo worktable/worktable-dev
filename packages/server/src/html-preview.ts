@@ -13,7 +13,7 @@ import {
   readRegisteredDocumentSourceLocked,
   registeredDocumentSourceRevision,
 } from "./document-write-service.ts"
-import { readWidgetDocument, withWidgetWriteLock } from "./widget-store.ts"
+import { readWidgetDocument, withWidgetReadLock } from "./widget-store.ts"
 import { getWidgetVersion } from "./widget-version-store.ts"
 import {
   readWidgetState,
@@ -169,7 +169,7 @@ export async function freezeHtmlPreviewSnapshot(input: {
   return withDocPathLock(input.spaceId, async () => {
     const alias = await resolveDocAlias(input.spaceId, input.path)
     if (!alias.path) throw new Error(alias.error ?? "Document not found")
-    return withWidgetWriteLock(input.spaceId, alias.path, () =>
+    return withWidgetReadLock(input.spaceId, alias.path, () =>
       freezeHtmlPreviewSnapshotLocked({ ...input, path: alias.path! })
     )
   })

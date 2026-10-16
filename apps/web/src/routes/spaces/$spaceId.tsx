@@ -8,6 +8,7 @@ import {
 import { useCallback, useMemo, useState } from "react"
 import { Archive, Database, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
+import { browserTeamMemberId } from "@/lib/team-context"
 import type {
   DocumentSummary,
   RecordCollectionSummary,
@@ -76,7 +77,7 @@ function ArchivedSpaceBanner({
   restoring,
 }: {
   archivedAt: string
-  onRestore: () => void
+  onRestore?: () => void
   restoring: boolean
 }) {
   return (
@@ -88,10 +89,12 @@ function ArchivedSpaceBanner({
             This space is archived. Archived <RelativeTime iso={archivedAt} />.
           </span>
         </div>
-        <Button size="sm" variant="outline" onClick={onRestore} disabled={restoring}>
-          <RotateCcw className="mr-2 size-4" />
-          {restoring ? "Restoring..." : "Restore"}
-        </Button>
+        {onRestore && (
+          <Button size="sm" variant="outline" onClick={onRestore} disabled={restoring}>
+            <RotateCcw className="mr-2 size-4" />
+            {restoring ? "Restoring..." : "Restore"}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -108,6 +111,7 @@ function PinnedSection({
   /** Set when the details failed, so the pins show a retry, not a placeholder. */
   onRetry?: () => void
 }) {
+  const { data: spaceDetail } = useSpace(spaceId)
   const queryClient = useQueryClient()
   const unpin = async (path: string) => {
     try {
@@ -182,14 +186,14 @@ function PinnedSection({
                     {pin.status === "archived" ? "Archived" : "Missing"}
                   </span>
                 )}
-                <Button
+                {spaceDetail?.space.permissions?.edit !== false && <Button
                   size="xs"
                   variant="ghost"
                   className="relative -my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                   onClick={() => void unpin(pin.path)}
                 >
                   Unpin
-                </Button>
+                </Button>}
               </div>
               {pin.note && (
                 <p className="mt-1.5 text-[0.8rem] leading-5 text-muted-foreground">
@@ -270,6 +274,7 @@ function SpaceOverview({
   spaceDescription,
   pins,
   onRetryPins,
+  canEdit,
 }: {
   spaceId: string
   /** Undefined only until the Space list or details arrive. */
@@ -277,6 +282,7 @@ function SpaceOverview({
   spaceDescription?: string
   pins: ResolvedStartHerePin[] | undefined
   onRetryPins?: () => void
+  canEdit: boolean
 }) {
   const [folder, setFolder] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -335,15 +341,17 @@ function SpaceOverview({
               </p>
             )}
           </div>
-          <SpaceNewMenu
-            spaceId={spaceId}
-            trigger={
-              <Button variant="outline" size="sm" className="shrink-0">
-                <Plus className="size-4" />
-                New
-              </Button>
-            }
-          />
+          {canEdit && (
+            <SpaceNewMenu
+              spaceId={spaceId}
+              trigger={
+                <Button variant="outline" size="sm" className="shrink-0">
+                  <Plus className="size-4" />
+                  New
+                </Button>
+              }
+            />
+          )}
         </header>
 
         <PendingSection spaceId={spaceId} />
@@ -434,6 +442,9 @@ function SpaceDetailPage() {
   })
 
   const archiveInfo = space ? getSpaceArchiveInfo(space.settings) : undefined
+  // On a team, restoring a Space follows access management.
+  const canRestore =
+    !browserTeamMemberId() || space?.permissions?.manage === true
 
   const handleRestore = async () => {
     setRestoring(true)
@@ -455,7 +466,7 @@ function SpaceDetailPage() {
         {archiveInfo && (
           <ArchivedSpaceBanner
             archivedAt={archiveInfo.archivedAt}
-            onRestore={() => void handleRestore()}
+            onRestore={canRestore ? () => void handleRestore() : undefined}
             restoring={restoring}
           />
         )}
@@ -471,7 +482,7 @@ function SpaceDetailPage() {
       {archiveInfo && (
         <ArchivedSpaceBanner
           archivedAt={archiveInfo.archivedAt}
-          onRestore={() => void handleRestore()}
+          onRestore={canRestore ? () => void handleRestore() : undefined}
           restoring={restoring}
         />
       )}
@@ -483,6 +494,7 @@ function SpaceDetailPage() {
         spaceDescription={space?.description}
         pins={data ? (data.pins ?? []) : undefined}
         onRetryPins={isError ? () => void refetch() : undefined}
+        canEdit={space?.permissions?.edit !== false}
       />
     </div>
   )

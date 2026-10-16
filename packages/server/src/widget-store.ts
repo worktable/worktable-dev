@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rmdir } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import {
@@ -42,6 +43,7 @@ function invalidIdError(kind: string, id: string): string {
 }
 
 function spaceDir(spaceId: string): string {
+  assertSpaceAccess(spaceId);
   return join(getSpacesBaseDir(), spaceId);
 }
 
@@ -69,6 +71,11 @@ export function withWidgetWriteLock<T>(spaceId: string, widgetId: string, fn: ()
   return withStoreWriteLock(`widget-txn:${widgetDir(spaceId, widgetId)}`, fn);
 }
 
+/** Read a consistent widget (YAML and HTML from one write) without requiring edit access. */
+export function withWidgetReadLock<T>(spaceId: string, widgetId: string, fn: () => Promise<T>): Promise<T> {
+  return withStoreWriteLock(`widget-txn:${widgetDir(spaceId, widgetId)}`, fn, "read");
+}
+
 /** Acquire several widget transaction locks in canonical order. */
 export function withWidgetWriteLocks<T>(spaceId: string, widgetIds: string[], fn: () => Promise<T>): Promise<T> {
   return withStoreWriteLocks(
@@ -92,10 +99,12 @@ function widgetContentPath(spaceId: string, widgetId: string): string {
 }
 
 export function getWidgetPath(spaceId: string, widgetId: string): string {
+  assertSpaceAccess(spaceId, "read");
   return widgetPath(spaceId, widgetId);
 }
 
 export function getWidgetContentPath(spaceId: string, widgetId: string): string {
+  assertSpaceAccess(spaceId, "read");
   return widgetContentPath(spaceId, widgetId);
 }
 
@@ -151,6 +160,7 @@ export async function listWidgets(
     catalog?: () => Promise<DocumentCatalog>;
   } = {}
 ): Promise<WidgetFile[]> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return [];
   if (await usesHtmlDocumentStorageV2()) {
     return listHtmlDocumentsStorageV2({
@@ -195,6 +205,7 @@ export async function listWidgets(
 }
 
 export async function readWidget(spaceId: string, widgetId: string): Promise<{ data: WidgetFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (storageV2 ? !isHtmlDocumentPath(widgetId) : !isWidgetId(widgetId)) {
@@ -236,6 +247,7 @@ export async function readWidgetDocument(
   data: { widget: WidgetFile; html: string; sourceBytes: Uint8Array } | null;
   error: string | null;
 }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId))
     return { data: null, error: invalidIdError("space", spaceId) };
   if (await usesHtmlDocumentStorageV2()) {
@@ -291,6 +303,7 @@ export async function readWidgetDocument(
 }
 
 export async function readWidgetHtml(spaceId: string, widgetId: string): Promise<{ data: string | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (storageV2 ? !isHtmlDocumentPath(widgetId) : !isWidgetId(widgetId)) {
@@ -349,6 +362,7 @@ export async function writeWidget(
   html: string,
   options?: { documentId?: DocumentId }
 ): Promise<{ data: WidgetFile | null; error: string | null; release?: () => void }> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
   let parsedWidget: WidgetFile;
@@ -440,6 +454,7 @@ export async function updateWidgetMetadata(
     now?: string;
   }
 ): Promise<{ data: WidgetFile | null; error: string | null; release?: () => void }> {
+  assertSpaceAccess(spaceId, "edit");
   const { data: existing, error } = await readWidget(spaceId, widgetId);
   if (error || !existing) return { data: null, error: error ?? `Widget not found: ${widgetId}` };
   const next: WidgetFile = {
@@ -537,6 +552,7 @@ export async function setWidgetArchived(
   archivedBy = "user",
   reason?: string
 ): Promise<{ data: WidgetFile | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
   if (storageV2 ? !isHtmlDocumentPath(widgetId) : !isWidgetId(widgetId)) {
@@ -574,6 +590,7 @@ export async function setWidgetArchived(
 
 /** Remove only empty implicit folders left above a deleted nested widget. */
 export async function pruneEmptyWidgetParents(spaceId: string, widgetId: string): Promise<void> {
+  assertSpaceAccess(spaceId, "edit");
   if (!isCanonicalId(spaceId) || !isWidgetId(widgetId)) return;
   const root = widgetsDir(spaceId);
   let parent = dirname(widgetDir(spaceId, widgetId));

@@ -16,7 +16,7 @@ import {
 import { DocumentReferenceScope } from "@/components/records/field-value"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
-import { queryKeys, useRecordCollectionHealth } from "@/lib/queries"
+import { queryKeys, useSpace, useRecordCollectionHealth } from "@/lib/queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
 import { indexDanglingRelations, recordTitle } from "@/lib/records"
@@ -31,6 +31,8 @@ export const Route = createFileRoute(
 function FullRecordPage() {
   const { spaceId, collectionId, recordId } = Route.useParams()
   const navigate = Route.useNavigate()
+  const { data: spaceDetail } = useSpace(spaceId)
+  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   const valid =
     CanonicalIdSchema.safeParse(collectionId).success &&
     CanonicalIdSchema.safeParse(recordId).success
@@ -50,6 +52,7 @@ function FullRecordPage() {
     })
   const actions = useMemo<RecordPeekActions>(
     () => ({
+      readOnly: !canEdit,
       onCommitField: async (id, key, value) => {
         await mutations.updateField.mutateAsync({ recordId: id, data: { [key]: value } })
       },
@@ -66,7 +69,7 @@ function FullRecordPage() {
       // Mutation handles are stable for this collection.
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [spaceId, collectionId, recordQuery.data]
+    [spaceId, collectionId, recordQuery.data, canEdit]
   )
   const danglingByRecordField = useMemo(
     () => indexDanglingRelations(health?.integrityWarnings ?? []),

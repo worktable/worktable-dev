@@ -115,7 +115,8 @@
       "max": 0
     },
     "dom, first, open Markdown doc": {
-      "max": 1445
+      "max": 1655,
+      "why": "Each Space row in the sidebar carries its pin button (hover-revealed on desktop), and groups add their labels: about 60 elements on the fixture."
     },
     "requests, first, open rich doc": {
       "max": 4

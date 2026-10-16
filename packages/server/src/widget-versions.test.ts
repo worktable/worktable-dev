@@ -414,22 +414,23 @@ describe("widget version history", () => {
     expect(latest?.after.content.html).toContain("<p>v3</p>");
   });
 
-  it("captures prior HTML when an AUTO-id create collides with a corrupt-yaml widget dropped from the dedupe pool", async () => {
+  it("preserves existing HTML and recovery history when automatic creation finds corrupt metadata", async () => {
     const { writeFile } = await import("node:fs/promises");
     await req(app, "POST", "/api/spaces/meta/widgets", { id: "tracker", name: "Tracker", html: HTML_V2 });
-    // Corrupt widget.yaml → listWidgets omits it, so the dedupe pool no longer
-    // knows "tracker" exists. A create WITHOUT an explicit id whose name slugs to
-    // "tracker" derives the same id and would overwrite it.
+    // A damaged document still occupies its name. Automatic creation leaves it
+    // recoverable; the explicit-id repair path is covered above.
     await writeFile(join(testDir, "spaces", "meta", "widgets", "tracker", "widget.yaml"), "{{{ not yaml", "utf8");
     const HTML_V3 = HTML_V1.replace("<p>v1</p>", "<p>v3</p>");
     const create = await req(app, "POST", "/api/spaces/meta/widgets", { name: "Tracker", html: HTML_V3 });
     expect(create.status).toBe(201);
-    expect(create.json.widgetId).toBe("tracker");
-    // The prior (v2) HTML is preserved as `before`, not silently dropped.
+    expect(create.json.widgetId).toBe("tracker-2");
+    expect(await Bun.file(join(testDir, "spaces", "meta", "widgets", "tracker", "index.html")).text()).toBe(HTML_V2);
     const versions = (await req(app, "GET", "/api/spaces/meta/widgets/tracker/versions?all=true")).json.versions;
+    expect(versions).toHaveLength(1);
     const latest = await getWidgetVersion("meta", "tracker", versions[0].id);
-    expect(latest?.before?.content.html).toContain("<p>v2</p>");
-    expect(latest?.after.content.html).toContain("<p>v3</p>");
+    expect(latest?.after.content.html).toContain("<p>v2</p>");
+    const createdHtml = await req(app, "GET", "/api/spaces/meta/widgets/tracker-2/content?format=raw");
+    expect(createdHtml.text).toBe(HTML_V3);
   });
 
   it("serializes concurrent updates so a snapshot never mixes one writer's metadata with another's HTML", async () => {

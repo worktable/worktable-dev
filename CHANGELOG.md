@@ -15,10 +15,12 @@ infrastructure and personal context out of release notes.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
 - **Your own groups and pins:** Organize the sidebar your way without changing it for anyone else. Pin a Space to keep it at the top, and sort Spaces into groups from **Change Group** in the Space menu or the **+** beside Spaces. Groups show as sections you can collapse, rename or remove, and **All** next to the Spaces heading shows one group at a time. Your arrangement follows you to your other devices. Anyone who can see a Space can pin it or group it. You start with the groups your Spaces already had.
 - **Worktable menu:** The top of the sidebar shows your Worktable's name and opens a menu with where it lives and **Worktable Settings**.
+- **You in the sidebar:** The bottom of the sidebar shows who is signed in and their role. Its menu opens your **Profile** and **Preferences**, switches the theme, and has **Sign Out** wherever you have a session, including for team members on Worktable Cloud and on self-hosted Worktables with an owner password.
 
 ### Changed
 
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
 
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 - **Backups:** Backups and exports pause edits only for the moment it takes to record what changed, and cleaning up old versions no longer makes them fail.

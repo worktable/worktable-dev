@@ -32,6 +32,13 @@ export interface WorkspaceInfo {
    * absent for agents and anyone who is not a member or the owner.
    */
   navigation?: PersonalNavigation | null
+  /** Who is using this Worktable; absent with `navigation`. */
+  person?: {
+    name: string
+    role: "owner" | "member"
+    /** How they sign out here; null without a session, such as on this computer. */
+    signOut: "team" | "cloud" | "password" | null
+  } | null
   id: string
   name: string
   createdAt: string

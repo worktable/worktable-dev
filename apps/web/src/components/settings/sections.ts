@@ -11,11 +11,12 @@ import {
   Palette,
   PencilLine,
   Settings2,
+  CreditCard,
   UserRound,
   UsersRound,
 } from "lucide-react"
 const TeamSection = lazy(() => import("./sections/team").then((module) => ({ default: module.TeamSection })));
-const TEAM: SettingsSection = { id: "team", group: "Workspace", label: "Team", description: "People, invitations and Space access.", icon: UsersRound, component: TeamSection };
+const TEAM: SettingsSection = { id: "team", group: "Worktable", label: "Team", description: "People, invitations and Space access.", icon: UsersRound, component: TeamSection };
 const AccountSection = lazy(() =>
   import("./sections/account").then((module) => ({
     default: module.AccountSection,
@@ -29,6 +30,11 @@ const CloudSection = lazy(() =>
 const GeneralSection = lazy(() =>
   import("./sections/general").then((module) => ({
     default: module.GeneralSection,
+  }))
+)
+const ProfileSection = lazy(() =>
+  import("./sections/profile").then((module) => ({
+    default: module.ProfileSection,
   }))
 )
 const AppearanceSection = lazy(() =>
@@ -71,6 +77,7 @@ const PortabilitySection = lazy(() =>
 )
 
 export type SettingsSectionId =
+  | "profile"
   | "team"
   | "general"
   | "account"
@@ -86,7 +93,8 @@ export type SettingsSectionId =
 
 export interface SettingsSection {
   id: SettingsSectionId
-  group: "Workspace" | "Preferences" | "Data" | "Support"
+  /** You: the person's own settings. Worktable: settings for everyone here. */
+  group: "You" | "Worktable" | "Support"
   label: string
   /** One-liner under the section title in the content-pane header. */
   description?: string
@@ -98,7 +106,7 @@ export const DEFAULT_SETTINGS_SECTION_ID: SettingsSectionId = "general"
 
 const GENERAL: SettingsSection = {
   id: "general",
-  group: "Workspace",
+  group: "Worktable",
   label: "General",
   description: "Worktable name, URL, and local folder.",
   icon: Settings2,
@@ -107,7 +115,7 @@ const GENERAL: SettingsSection = {
 
 const LINK: SettingsSection = {
   id: "cloud",
-  group: "Workspace",
+  group: "Worktable",
   label: "Worktable Cloud",
   description: "AI connections and document sharing.",
   icon: UserRound,
@@ -116,25 +124,34 @@ const LINK: SettingsSection = {
 
 const ACCOUNT: SettingsSection = {
   id: "account",
-  group: "Workspace",
-  label: "Account",
-  description: "Subscription and sign-in.",
-  icon: UserRound,
+  group: "Worktable",
+  label: "Subscription",
+  description: "Plan and billing.",
+  icon: CreditCard,
   component: AccountSection,
+}
+
+const PROFILE: SettingsSection = {
+  id: "profile",
+  group: "You",
+  label: "Profile",
+  description: "How you appear to people and agents.",
+  icon: UserRound,
+  component: ProfileSection,
 }
 
 const APPEARANCE: SettingsSection = {
   id: "appearance",
-  group: "Preferences",
+  group: "You",
   label: "Appearance",
-  description: "Theme and display name.",
+  description: "Theme.",
   icon: Palette,
   component: AppearanceSection,
 }
 
 const EDITOR: SettingsSection = {
   id: "editor",
-  group: "Preferences",
+  group: "Worktable",
   label: "Editor",
   description: "Writing preferences.",
   icon: PencilLine,
@@ -143,7 +160,7 @@ const EDITOR: SettingsSection = {
 
 const HISTORY: SettingsSection = {
   id: "history",
-  group: "Data",
+  group: "Worktable",
   label: "History",
   description: "Choose how long to keep doc versions.",
   icon: History,
@@ -152,7 +169,7 @@ const HISTORY: SettingsSection = {
 
 const PORTABILITY: SettingsSection = {
   id: "portability",
-  group: "Data",
+  group: "Worktable",
   label: "Import & Export",
   icon: PackageOpen,
   component: PortabilitySection,
@@ -160,7 +177,7 @@ const PORTABILITY: SettingsSection = {
 
 const AGENTS: SettingsSection = {
   id: "agents",
-  group: "Workspace",
+  group: "Worktable",
   label: "Agents",
   description: "Connect agents and manage their access.",
   icon: Bot,
@@ -203,15 +220,16 @@ export function getSettingsSections(
   const { capabilities } = deployment
   if (deployment.mode === "cloud") {
     return [
+      PROFILE,
+      APPEARANCE,
       ...(capabilities.workspaceName ? [CLOUD_GENERAL] : []),
       ...(capabilities.cloudAccount ? [ACCOUNT] : []),
       TEAM,
-    APPEARANCE,
       ...(capabilities.editorSettings ? [EDITOR] : []),
       ...(capabilities.historySettings ? [HISTORY] : []),
       {
         id: "backups",
-        group: "Data",
+        group: "Worktable",
         label: "Backups",
         description: "",
         icon: Archive,
@@ -224,10 +242,11 @@ export function getSettingsSections(
     ]
   }
   return [
+    PROFILE,
+    APPEARANCE,
     ...(capabilities.workspaceName ? [GENERAL] : []),
     ...(capabilities.workspaceUrl ? [LINK] : []),
     TEAM,
-    APPEARANCE,
     ...(capabilities.editorSettings ? [EDITOR] : []),
     ...(capabilities.historySettings ? [HISTORY] : []),
     ...(capabilities.workspacePortability ? [PORTABILITY] : []),

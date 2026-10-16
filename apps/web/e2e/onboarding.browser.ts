@@ -362,7 +362,7 @@ test("new owner can name, connect multiple real agent identities, leave an alway
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
   await settings
-    .getByRole("button", { name: "Appearance", exact: true })
+    .getByRole("button", { name: "Profile", exact: true })
     .click()
   await profileStarted
   const displayName = settings.getByLabel("Display name")

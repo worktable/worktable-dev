@@ -36,8 +36,10 @@ The artifact CI job runs this step explicitly. Release assembly itself remains
 offline for fonts and rejects a missing local asset. Rendering never downloads fonts.
 
 `release:lab` builds Linux CLI and skill-installer bundles for the host architecture,
-plus connector and plugin artifacts, in `dist/lab-releases`. Run
-`bun run release:local` for the full release matrix in `dist/releases`.
+plus connector and plugin artifacts, in `dist/lab-releases`. On x64 hosts it
+also builds the hosted server artifact, so betas carry what Worktable Cloud
+tenants install. Run `bun run release:local` for the full release matrix in
+`dist/releases`.
 Archive packaging also requires Python 3 and unzip. Release builds write phase
 timings to `dist/release-timings-<profile>.json`, outside the published assets.
 `release:lab` already builds and verifies the OpenClaw package; callers should

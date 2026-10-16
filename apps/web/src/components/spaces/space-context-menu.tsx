@@ -133,7 +133,7 @@ export function SpaceContextMenuButton({
           <MoreVertical className="h-3.5 w-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
-          {canManageAccess && spaceId && <DropdownMenuItem onClick={() => setAccessOpen(true)}>Manage access</DropdownMenuItem>}
+          {canManageAccess && spaceId && <DropdownMenuItem onClick={() => setAccessOpen(true)}>Manage Access</DropdownMenuItem>}
           <DropdownMenuItem disabled={!canAdminister} onClick={() => setRenameOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Rename

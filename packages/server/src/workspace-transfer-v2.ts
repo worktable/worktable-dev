@@ -871,11 +871,28 @@ async function classifyVersion(
     size: entry.size,
   })
   const check: AncestorCheck = reuse?.precopy ? "placement" : "exact"
-  // Returns whether the failed read is still a stable answer worth keeping.
-  const unreadable = (error: unknown): false => {
-    if (error instanceof WorkspaceChangedDuringExportError && !reuse?.precopy)
-      throw error
-    return false
+  // Bytes read under a verified identity give a stable answer even when they
+  // do not parse. Only a failed read is left to classify again.
+  const reader = () => {
+    let failed = false
+    return {
+      read: (source: SourceEntry) =>
+        readSourceFile(source, inventory, directories, check).catch(
+          (error: unknown) => {
+            failed = true
+            throw error
+          }
+        ),
+      stable: (error: unknown): boolean => {
+        if (!failed) return true
+        if (
+          error instanceof WorkspaceChangedDuringExportError &&
+          !reuse?.precopy
+        )
+          throw error
+        return false
+      },
+    }
   }
   const parts = entry.path.split("/")
   const v2 = v2GenerationLocation(entry.path)
@@ -894,6 +911,7 @@ async function classifyVersion(
         ? Promise.resolve(cached)
         : (async () => {
             let stable = true
+            const { read, stable: settled } = reader()
             const result = await (async () => {
               const fallback = {
                 group,
@@ -913,16 +931,7 @@ async function classifyVersion(
               }
               try {
                 const manifest = DocumentGenerationManifestV2Schema.parse(
-                  JSON.parse(
-                    (
-                      await readSourceFile(
-                        manifestEntry,
-                        inventory,
-                        directories,
-                        check
-                      )
-                    ).toString("utf8")
-                  )
+                  JSON.parse((await read(manifestEntry)).toString("utf8"))
                 )
                 if (
                   manifest.spaceId !== v2.spaceId ||
@@ -936,9 +945,7 @@ async function classifyVersion(
                     unit,
                     manifest,
                     unitEntries,
-                    inventory,
-                    directories,
-                    check
+                    read
                   ))
                 ) {
                   return fallback
@@ -955,7 +962,7 @@ async function classifyVersion(
                   classified: true,
                 }
               } catch (error) {
-                stable = unreadable(error)
+                stable = settled(error)
                 return fallback
               }
             })()
@@ -987,12 +994,9 @@ async function classifyVersion(
     ;({ timestamp, meaningful, classified } = cached)
   } else if (classified) {
     let stable = true
+    const { read, stable: settled } = reader()
     try {
-      const parsed = JSON.parse(
-        (await readSourceFile(entry, inventory, directories, check)).toString(
-          "utf8"
-        )
-      ) as {
+      const parsed = JSON.parse((await read(entry)).toString("utf8")) as {
         createdAt?: unknown
         checkpoint?: { meaningful?: unknown }
       }
@@ -1002,7 +1006,7 @@ async function classifyVersion(
         timestamp = Number.isNaN(parsedTimestamp) ? null : parsedTimestamp
       }
     } catch (error) {
-      stable = unreadable(error)
+      stable = settled(error)
       classified = false
     }
     if (reuse && identity !== null && stable)
@@ -1074,9 +1078,7 @@ async function verifyV2GenerationForClassification(
   unit: string,
   manifest: DocumentGenerationManifestV2,
   unitEntries: SourceEntry[],
-  inventory: SourceInventory,
-  directories: Map<string, SourceEntry>,
-  check: AncestorCheck
+  read: (entry: SourceEntry) => Promise<Buffer>
 ): Promise<boolean> {
   // Classification is advisory. Large histories remain included
   // conservatively rather than turning a bounded export into a full-history
@@ -1115,7 +1117,7 @@ async function verifyV2GenerationForClassification(
     if (!entry || entry.kind !== "file" || entry.size !== declared.bytes) {
       return false
     }
-    const bytes = await readSourceFile(entry, inventory, directories, check)
+    const bytes = await read(entry)
     if (
       bytes.byteLength !== declared.bytes ||
       createHash("sha256").update(bytes).digest("hex") !== declared.sha256

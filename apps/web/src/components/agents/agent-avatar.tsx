@@ -10,8 +10,8 @@ import { NamedIcon } from "@/lib/icons"
 import { participantInitials } from "@/lib/thread-presentation"
 
 /**
- * Hermes fills its avatar. OpenAI's artwork already includes its own inset;
- * other marks need padding. Keep monochrome marks on white in both themes.
+ * Hermes fills its avatar. Enlarge OpenAI's generously inset artwork inside
+ * the circle; other marks need padding. Keep monochrome marks on white.
  */
 const FULL_BLEED_LOGOS = new Set<AgentPlatformId>(["hermes"])
 const PRE_PADDED_LOGOS = new Set<AgentPlatformId>(["chatgpt", "codex"])
@@ -41,7 +41,10 @@ export function AgentAvatar({
   const logo = icon ? null : agentLogoUrl(platform)
   const initials = participantInitials(name)
   return (
-    <Avatar className={cn("size-8", className)} aria-label={name}>
+    <Avatar
+      className={cn("size-8 overflow-hidden", className)}
+      aria-label={name}
+    >
       {logo ? (
         <AvatarImage
           src={logo}
@@ -50,6 +53,7 @@ export function AgentAvatar({
             platform && FULL_BLEED_LOGOS.has(platform)
               ? "object-cover"
               : "bg-white object-contain",
+            platform && PRE_PADDED_LOGOS.has(platform) && "scale-125",
             platform &&
               !FULL_BLEED_LOGOS.has(platform) &&
               !PRE_PADDED_LOGOS.has(platform) &&

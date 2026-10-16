@@ -12,15 +12,6 @@
     --typeset-leading: 1.75;
     --typeset-flow: 1.25em;
   }
-
-  .typeset-thread {
-    --typeset-font-body: var(--font-sans);
-    --typeset-font-heading: var(--font-sans);
-    --typeset-font-mono: var(--font-mono);
-    --typeset-size: 0.875rem;
-    --typeset-leading: 1.65;
-    --typeset-flow: 1em;
-  }
 }
 
 @layer components {
@@ -493,5 +484,25 @@
       )
     ) {
     margin-block-start: 0;
+  }
+
+  .typeset-thread {
+    --typeset-font-body: var(--font-sans);
+    --typeset-font-heading: var(--font-sans);
+    --typeset-font-mono: var(--font-mono);
+    --typeset-size: 0.9375rem;
+    --typeset-leading: 1.65;
+    --typeset-flow: 1em;
+
+    font-size: var(--typeset-size);
+
+    :where(blockquote) {
+      font-size: 0.875rem;
+      border-inline-start-color: var(--doc-quote-rule);
+    }
+  }
+
+  .thread-quote {
+    border-inline-start-color: var(--doc-quote-rule);
   }
 }

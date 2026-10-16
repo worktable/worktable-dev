@@ -632,7 +632,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
               {hideOwnDefaultAuthorLabel ? (
                 <span className="sr-only">You</span>
               ) : (
-                <span className="truncate font-semibold text-foreground">
+                <span className="truncate text-[0.9375rem] leading-5 font-semibold text-foreground">
                   {authorLabel}
                 </span>
               )}
@@ -640,7 +640,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
             </span>
           ) : (
             <>
-              <span className="truncate font-semibold text-foreground">
+              <span className="truncate text-[0.9375rem] leading-5 font-semibold text-foreground">
                 {authorLabel}
               </span>
               <MessageTime iso={message.createdAt} />
@@ -933,8 +933,8 @@ function ReplyContext({
         disabled={!onLoadTarget}
         className={
           own
-            ? "mb-2 block w-full border-s-2 border-border ps-2.5 text-left text-xs text-muted-foreground transition-colors enabled:hover:text-foreground"
-            : "mb-1.5 flex items-center gap-1.5 text-left text-xs text-muted-foreground/80 transition-colors enabled:hover:text-foreground"
+            ? "thread-quote mb-2 block w-full border-s-2 ps-2.5 text-left text-sm text-muted-foreground transition-colors enabled:hover:text-foreground"
+            : "mb-1.5 flex items-center gap-1.5 text-left text-sm text-muted-foreground/80 transition-colors enabled:hover:text-foreground"
         }
         onClick={() =>
           void onLoadTarget?.(targetId).then(() =>
@@ -988,8 +988,8 @@ function ReplyContextButton({
             aria-label={`Replying to ${authorName}: ${excerpt}`}
             className={
               own
-                ? "mb-2 block w-full border-s-2 border-border ps-2.5 text-left text-xs leading-5 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                : "mb-2 block max-w-full border-s-2 border-border ps-2.5 text-left text-xs leading-5 text-muted-foreground/80 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                ? "thread-quote mb-2 block w-full border-s-2 ps-2.5 text-left text-sm leading-5 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+                : "thread-quote mb-2 block max-w-full border-s-2 ps-2.5 text-left text-sm leading-5 text-muted-foreground/80 transition-colors outline-none hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
             }
             onClick={() =>
               jumpToMessage(targetId, {

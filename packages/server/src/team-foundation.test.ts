@@ -1081,6 +1081,218 @@ test("HTTP requires named members, admits an invitation once, and binds minted c
   expect(canAccessSpace("original", "read", identity!)).toBe(false)
 })
 
+test("invitations carry a starting Space, report their email, and grant a restricted Space only while the inviter manages it", async () => {
+  const { bobHeaders, member, owner, ownerHeaders } = await setup()
+  const app = new Hono()
+  app.onError(
+    (error) =>
+      new Response(error.message, {
+        status: error instanceof TeamAccessError ? 403 : 500,
+      })
+  )
+  app.use("/api/*", trustedLocalIdentity())
+  app.route("/api/team", teamRouter)
+  app.route("/auth/team", teamAuthRouter)
+  const asOwner = new Headers({
+    Cookie: ownerHeaders.get("Cookie")!,
+    "Content-Type": "application/json",
+  })
+  const asBob = new Headers({
+    Cookie: bobHeaders.get("Cookie")!,
+    "Content-Type": "application/json",
+  })
+  const invite = (headers: Headers, body: object) =>
+    app.request(`${origin}/api/team/invitations`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    })
+  const enroll = (invitationId: string, name: string) =>
+    app.request(`${origin}/auth/team/enroll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invitationId, name, password }),
+    })
+  const identityFor = (email: string) => {
+    const userId = requireTeamDatabase()
+      .query<{ id: string }, [string]>('SELECT id FROM "user" WHERE email = ?')
+      .get(email)!.id
+    return identityForTeamMember(findTeamMember(userId)!)
+  }
+
+  // "original" existed before Teams, so it is restricted and Bob can't see
+  // it: naming it reads exactly like naming a Space that doesn't exist.
+  expect(
+    (await invite(asBob, { email: "nobody@example.test", spaceId: "original" }))
+      .status
+  ).toBe(404)
+
+  const variables = {
+    WORKTABLE_INVITATION_MAIL_URL: "https://control.example.test/runtime/invitations/email",
+    WORKTABLE_INVITATION_MAIL_RUNTIME_ID: "runtime_test",
+    WORKTABLE_GATEWAY_SECRET: "synthetic-gateway-secret-for-invitation-email",
+  } as const
+  const saved = Object.keys(variables).map((key) => process.env[key])
+  Object.assign(process.env, variables)
+  const sent: Array<{ headers: Headers; body: Record<string, unknown> }> = []
+  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+    input: RequestInfo | URL,
+    init?: RequestInit
+  ) => {
+    expect(String(input)).toBe(variables.WORKTABLE_INVITATION_MAIL_URL)
+    sent.push({
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+    })
+    return Response.json({ status: "sent" })
+  }) as typeof fetch)
+  try {
+    writeWorkspaceManifest({ ...ensureWorkspaceManifest(), name: "Northwind" })
+    const created = await invite(asOwner, {
+      email: "carol@example.test",
+      spaceId: "original",
+    })
+    expect(created.status).toBe(201)
+    const carolInvite = (await created.json()) as {
+      invitation: { id: string }
+      email: string
+    }
+    expect(carolInvite.email).toBe("sent")
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.headers.get("Authorization")).toBe(
+      `Bearer ${variables.WORKTABLE_GATEWAY_SECRET}`
+    )
+    expect(sent[0]!.headers.get("X-Worktable-Runtime")).toBe("runtime_test")
+    expect(sent[0]!.body).toMatchObject({
+      invitationId: carolInvite.invitation.id,
+      email: "carol@example.test",
+      inviterName: "Alice",
+      worktableName: "Northwind",
+      spaceName: "Original",
+    })
+    // A just-emailed invitation can't be emailed again straight away.
+    const again = await app.request(
+      `${origin}/api/team/invitations/${carolInvite.invitation.id}/email`,
+      { method: "POST", headers: asOwner }
+    )
+    expect(again.status).toBe(429)
+    expect(sent).toHaveLength(1)
+    const listed = (await (
+      await app.request(`${origin}/api/team/invitations`, { headers: asOwner })
+    ).json()) as {
+      email: boolean
+      invitations: Array<{
+        id: string
+        startSpaceId: string | null
+        emailed: boolean
+        url: string
+      }>
+    }
+    expect(listed.email).toBe(true)
+    expect(
+      listed.invitations.find((item) => item.id === carolInvite.invitation.id)
+    ).toMatchObject({
+      startSpaceId: "original",
+      emailed: true,
+      url: `${origin}/login?invite=${carolInvite.invitation.id}`,
+    })
+
+    // An expired invitation is never emailed again.
+    requireTeamDatabase()
+      .query("UPDATE invitation SET expiresAt = ? WHERE id = ?")
+      .run(Date.now() - 1000, carolInvite.invitation.id)
+    expect(
+      (
+        await app.request(
+          `${origin}/api/team/invitations/${carolInvite.invitation.id}/email`,
+          { method: "POST", headers: asOwner }
+        )
+      ).status
+    ).toBe(410)
+    expect(sent).toHaveLength(1)
+
+    // A provider failure is reported, and the invitation still exists.
+    fetchSpy.mockImplementation((async () =>
+      new Response("unavailable", { status: 502 })) as unknown as typeof fetch)
+    const failed = await invite(asOwner, { email: "erin@example.test" })
+    expect(failed.status).toBe(201)
+    expect(((await failed.json()) as { email: string }).email).toBe("failed")
+  } finally {
+    fetchSpy.mockRestore()
+    for (const [index, key] of Object.keys(variables).entries()) {
+      const value = saved[index]
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+
+  const { invitation: carolInvitation } = (await (
+    await invite(asOwner, { email: "carol2@example.test", spaceId: "original" })
+  ).json()) as { invitation: { id: string } }
+  const joined = await enroll(carolInvitation.id, "Carol")
+  expect(joined.status).toBe(200)
+  expect(await joined.json()).toEqual({ ok: true, spaceId: "original" })
+  expect(canAccessSpace("original", "edit", identityFor("carol2@example.test"))).toBe(
+    true
+  )
+
+  // Retiring a Space's policy clears it from pending invitations, so a Space
+  // that later takes the same id is never granted through them.
+  const { invitation: ginaInvitation } = (await (
+    await invite(asOwner, { email: "gina@example.test", spaceId: "original" })
+  ).json()) as { invitation: { id: string } }
+  const { retireTeamSpacePolicy } = await import("./team-policy.ts")
+  retireTeamSpacePolicy("original")
+  const afterRetire = (await (
+    await app.request(`${origin}/api/team/invitations`, { headers: asOwner })
+  ).json()) as { invitations: Array<{ id: string; startSpaceId: string | null }> }
+  expect(
+    afterRetire.invitations.find((item) => item.id === ginaInvitation.id)
+      ?.startSpaceId
+  ).toBeNull()
+
+  // Bob manages a restricted Space, invites Dave into it, then loses that
+  // authority before Dave accepts: Dave joins without access to it.
+  setSpaceAccessPolicy(
+    {
+      spaceId: "original",
+      visibility: "restricted",
+      grants: [
+        { subjectType: "member", subjectId: member.team!.memberId!, access: "manage" },
+      ],
+    },
+    owner
+  )
+  const daveInvite = await invite(asBob, {
+    email: "dave@example.test",
+    spaceId: "original",
+  })
+  expect(daveInvite.status).toBe(201)
+  const { invitation: daveInvitation } = (await daveInvite.json()) as {
+    invitation: { id: string }
+  }
+  setSpaceAccessPolicy(
+    {
+      spaceId: "original",
+      visibility: "restricted",
+      grants: [
+        { subjectType: "member", subjectId: member.team!.memberId!, access: "read" },
+      ],
+    },
+    owner
+  )
+  // Reading a restricted Space is not enough to invite someone into it.
+  expect(
+    (await invite(asBob, { email: "frank@example.test", spaceId: "original" }))
+      .status
+  ).toBe(403)
+  const daveJoined = await enroll(daveInvitation.id, "Dave")
+  expect(await daveJoined.json()).toEqual({ ok: true })
+  expect(canAccessSpace("original", "read", identityFor("dave@example.test"))).toBe(
+    false
+  )
+})
+
 test("content replacement retires old Space grants and lets a reused Space acquire its new creator", async () => {
   const { owner, member } = await setup()
   const agent = createTeamAgent(
@@ -1704,7 +1916,34 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
         role: "member",
       },
     })
-    await acceptCloudTeamInvitation(origin, bob, invitation.id)
+    // The invitation was emailed to one address; a forwarded link does not
+    // admit a different account.
+    await expect(
+      acceptCloudTeamInvitation(origin, bob, invitation.id)
+    ).rejects.toMatchObject({
+      code: "INVITATION_EMAIL_MISMATCH",
+      message:
+        "This invitation is for b•••@company.test. Sign in with that address to join.",
+    })
+    // A refused attempt leaves no account behind, and the hosted request
+    // path admits Bob to the acceptance route without binding him first.
+    const bindings = () =>
+      requireTeamDatabase()
+        .query<{ count: number }, [string]>(
+          "SELECT COUNT(*) AS count FROM wt_identity_bindings WHERE subject = ?"
+        )
+        .get(bob.subject)!.count
+    expect(bindings()).toBe(0)
+    expect(
+      (await resolveVerifiedCloudMember(origin, bob, "deferred"))?.cloudIdentity
+        ?.subject
+    ).toBe(bob.subject)
+    expect(bindings()).toBe(0)
+    const invitedBob = { ...bob, email: "Bob@Company.test" }
+    await acceptCloudTeamInvitation(origin, invitedBob, invitation.id)
+    await expect(
+      acceptCloudTeamInvitation(origin, invitedBob, invitation.id)
+    ).rejects.toMatchObject({ code: "INVITATION_USED" })
     const member = await resolveVerifiedCloudMember(origin, bob)
     expect(member?.team?.memberId).toBeDefined()
     expect(findTeamMember(member!.team!.userId!)?.role).toBe("member")

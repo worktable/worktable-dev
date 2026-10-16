@@ -11,6 +11,7 @@ import {
   activateTeams,
   cancelTeamInvitation,
   changeMemberRole,
+  emailTeamInvitation,
   getTeamInvitations,
   getTeamMembers,
   getTeamAgents,
@@ -137,6 +138,8 @@ function EnableTeams() {
   )
 }
 
+const NO_START_SPACE = "__none__"
+
 function TeamMembers({
   owner,
   operator,
@@ -150,7 +153,12 @@ function TeamMembers({
 }) {
   const client = useQueryClient()
   const [email, setEmail] = useState("")
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [startSpace, setStartSpace] = useState<string>(NO_START_SPACE)
+  const [invited, setInvited] = useState<{
+    email: string
+    url: string
+    emailed: boolean | null
+  } | null>(null)
   const [resetLink, setResetLink] = useState<{ name: string; url: string } | null>(null)
   const [removing, setRemoving] = useState<TeamMember | null>(null)
   const [selectedSpace, setSelectedSpace] = useState<string | null>(null)
@@ -165,13 +173,40 @@ function TeamMembers({
   const spaces = useQuery({ queryKey: ["spaces"], queryFn: getSpaces })
   const refresh = () => client.invalidateQueries({ queryKey: ["team"] })
   const invite = useMutation({
-    mutationFn: () => inviteTeamMember(email),
-    onSuccess: (result) => {
-      setInviteUrl(result.url)
-      setEmail("")
+    mutationFn: (input: { email: string; spaceId?: string }) =>
+      inviteTeamMember(input.email, input.spaceId),
+    onSuccess: (result, input) => {
+      const emailed = result.email === null ? null : result.email === "sent"
+      if (emailed) {
+        toast.success(`Invitation sent to ${input.email}`)
+        setInvited(null)
+      } else setInvited({ email: input.email, url: result.url, emailed })
+      setEmail((current) => (current === input.email ? "" : current))
       void refresh()
     },
   })
+  const resend = useMutation({
+    mutationFn: emailTeamInvitation,
+    onSuccess: (result) => {
+      if (result.email === "sent") toast.success("Invitation sent again")
+      else toast.error("Couldn't send the invitation. Copy the link instead.")
+      void refresh()
+    },
+  })
+  const copyInvitation = (url: string) =>
+    void navigator.clipboard.writeText(url).then(
+      () => toast.success("Invitation link copied"),
+      () => toast.error("Select and copy the invitation link")
+    )
+  // A shared Space is open to every member; inviting someone into a
+  // restricted one gives them access, which needs managing it.
+  const startSpaces =
+    spaces.data?.filter(
+      (space) =>
+        !space.permissions ||
+        space.permissions.manage ||
+        space.permissions.shared === true
+    ) ?? []
   const cancel = useMutation({
     mutationFn: cancelTeamInvitation,
     onSuccess: refresh,
@@ -204,6 +239,7 @@ function TeamMembers({
   const logout = useMutation({ mutationFn: signOutLocalTeam })
   const error =
     invite.error ??
+    resend.error ??
     cancel.error ??
     role.error ??
     remove.error ??
@@ -297,7 +333,10 @@ function TeamMembers({
           className="flex flex-wrap gap-2"
           onSubmit={(event) => {
             event.preventDefault()
-            invite.mutate()
+            invite.mutate({
+              email,
+              ...(startSpace === NO_START_SPACE ? {} : { spaceId: startSpace }),
+            })
           }}
         >
           <Input
@@ -309,31 +348,51 @@ function TeamMembers({
             required
             className="min-w-0 flex-1"
           />
+          {startSpaces.length > 0 && (
+            <Select
+              value={startSpace}
+              onValueChange={(value) => {
+                if (value) setStartSpace(value)
+              }}
+            >
+              <SelectTrigger aria-label="Starting Space" className="w-44">
+                <SelectValue>
+                  {startSpace === NO_START_SPACE
+                    ? "No starting Space"
+                    : (startSpaces.find((space) => space.id === startSpace)
+                        ?.name ?? "No starting Space")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_START_SPACE}>No starting Space</SelectItem>
+                {startSpaces.map((space) => (
+                  <SelectItem key={space.id} value={space.id}>
+                    {space.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button type="submit" disabled={invite.isPending}>
             {invite.isPending ? "Creating invite…" : "Invite member"}
           </Button>
         </form>
-        {inviteUrl && (
+        {invited && (
           <div className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground">
-              Anyone with this invitation can join. Send it directly to the
-              person you intend to invite.
+              {!cloud
+                ? "Anyone with this invitation can join. Send it directly to the person you intend to invite."
+                : invited.emailed === false
+                  ? `Couldn't email ${invited.email}. Copy the link and send it to them. It only works for that address.`
+                  : `Send this link to ${invited.email}. It only works for that address.`}
             </p>
             <Input
               aria-label="Invitation link"
-              value={inviteUrl}
+              value={invited.url}
               readOnly
               onFocus={(event) => event.target.select()}
             />
-            <Button
-              variant="outline"
-              onClick={() =>
-                void navigator.clipboard.writeText(inviteUrl).then(
-                  () => toast.success("Invitation copied"),
-                  () => toast.error("Select and copy the invitation link")
-                )
-              }
-            >
+            <Button variant="outline" onClick={() => copyInvitation(invited.url)}>
               Copy invitation
             </Button>
           </div>
@@ -364,16 +423,42 @@ function TeamMembers({
             </Button>
           </div>
         )}
-        {invitations.data
-          ?.filter((invitation) => invitation.status === "pending")
+        {invitations.data?.invitations
+          .filter((invitation) => invitation.status === "pending")
           .map((invitation) => (
             <div
               key={invitation.id}
               className="flex items-center justify-between gap-3 text-sm"
             >
               <span className="min-w-0 flex-1 truncate">
-                {invitation.email} · Invited
+                {invitation.email} ·{" "}
+                {invitation.expired
+                  ? "Expired"
+                  : invitations.data?.email
+                    ? invitation.emailed
+                      ? "Emailed"
+                      : "Not emailed"
+                    : "Invited"}
               </span>
+              {!invitation.expired && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => copyInvitation(invitation.url)}
+                >
+                  Copy link
+                </Button>
+              )}
+              {invitations.data?.email && !invitation.expired && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={resend.isPending}
+                  onClick={() => resend.mutate(invitation.id)}
+                >
+                  {invitation.emailed ? "Resend" : "Send email"}
+                </Button>
+              )}
               {!cloud && owner && (
                 <Button
                   variant="ghost"

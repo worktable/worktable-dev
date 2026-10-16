@@ -194,6 +194,11 @@ export function openTeamDatabase(create = false): Database | null {
         worktable_id TEXT NOT NULL, invitation_id TEXT NOT NULL, invited_email TEXT NOT NULL, recipient_user_id TEXT NOT NULL, accepted_at INTEGER,
         PRIMARY KEY (worktable_id, invitation_id)
       );
+      CREATE TABLE IF NOT EXISTS wt_invitation_details (
+        worktable_id TEXT NOT NULL, invitation_id TEXT NOT NULL, start_space_id TEXT,
+        email_status TEXT, email_sends INTEGER NOT NULL DEFAULT 0, last_emailed_at INTEGER, last_attempt_at INTEGER,
+        PRIMARY KEY (worktable_id, invitation_id)
+      );
       CREATE INDEX IF NOT EXISTS wt_enrollments_user ON wt_enrollments(worktable_id, user_id, active);
     `)
     const agentColumns = new Set(db.query<{name: string}, []>("PRAGMA table_info(wt_agents)").all().map(column => column.name))

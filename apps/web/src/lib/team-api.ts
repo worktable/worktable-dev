@@ -36,11 +36,26 @@ export const activateTeams = (owner: {
     method: "POST",
     body: JSON.stringify(owner),
   })
-export const inviteTeamMember = (email: string) =>
-  fetchJSON<{ url: string }>("/api/team/invitations", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  })
+export type InvitationEmailStatus =
+  | "sent"
+  | "limited"
+  | "not_allowed"
+  | "unavailable"
+  | "failed"
+/** `email` is `null` where this Worktable doesn't email invitations. */
+export const inviteTeamMember = (email: string, spaceId?: string) =>
+  fetchJSON<{ url: string; email: InvitationEmailStatus | null }>(
+    "/api/team/invitations",
+    {
+      method: "POST",
+      body: JSON.stringify(spaceId ? { email, spaceId } : { email }),
+    }
+  )
+export const emailTeamInvitation = (id: string) =>
+  fetchJSON<{ email: InvitationEmailStatus }>(
+    `/api/team/invitations/${encodeURIComponent(id)}/email`,
+    { method: "POST" }
+  )
 export const changeMemberRole = (id: string, role: TeamMember["role"]) =>
   fetchJSON(`/api/team/members/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -52,10 +67,15 @@ export interface TeamInvitation {
   id: string
   email: string
   status: string
+  url: string
+  startSpaceId: string | null
+  /** Whether an email for it was accepted for delivery. */
+  emailed: boolean
+  expired: boolean
 }
 export const getTeamInvitations = () =>
-  fetchJSON<{ invitations: TeamInvitation[] }>("/api/team/invitations").then(
-    (result) => result.invitations
+  fetchJSON<{ email: boolean; invitations: TeamInvitation[] }>(
+    "/api/team/invitations"
   )
 export const cancelTeamInvitation = (id: string) =>
   fetchJSON(`/api/team/invitations/${encodeURIComponent(id)}`, {

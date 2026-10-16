@@ -34,6 +34,11 @@ import {
   writeWorkspaceManifest,
 } from "./workspace.ts"
 import { findTeamMember } from "./team-members.ts"
+import {
+  invitationLandingSpace,
+  maskEmail,
+  unavailableInvitation,
+} from "./team-invitations.ts"
 import { accessSnapshot } from "./team-access.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { listSpaces } from "./store.ts"
@@ -53,10 +58,15 @@ export function setCloudTeamInitializationHookForTests(
   initializationHookForTests = hook
 }
 
+/**
+ * `enrollment` admits a verified non-member. `"deferred"` admits one without
+ * binding their identity yet, for the acceptance route, which binds only
+ * after the invitation is checked.
+ */
 export async function resolveVerifiedCloudMember(
   origin: string,
   proof: NonNullable<TokenIdentity["cloudIdentity"]>,
-  enrollment = false,
+  enrollment: boolean | "deferred" = false,
   initialWorktableName?: string
 ): Promise<TokenIdentity | null> {
   if (!isHosted()) return null
@@ -142,7 +152,21 @@ export async function resolveVerifiedCloudMember(
     known !== undefined &&
     known.email?.toLowerCase() === proof.email.toLowerCase() &&
     (!proof.companyId || proof.companyId === known.companyId)
-  if (enrollment || (binding && !unchanged)) {
+  if (enrollment === "deferred" && !binding)
+    return {
+      user: `pending:${proof.subject}`,
+      workspace: getWorkspaceRoot(),
+      credentialClass: "browser",
+      scopes: [],
+      agent: null,
+      principal: {
+        id: `workos:${proof.subject}`,
+        type: "human",
+        displayName: proof.name,
+      },
+      cloudIdentity: proof,
+    }
+  if (enrollment === true || (binding && !unchanged)) {
     const release =
       admitWorkspaceRequest() ??
       ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
@@ -186,23 +210,22 @@ export async function resolveVerifiedCloudMember(
   }
 }
 
-/** Only the invitation acceptance route admits an identified non-member. */
+/**
+ * Only the invitation acceptance route admits an identified non-member. A
+ * Cloud invitation is emailed to one address and only that verified address
+ * can accept it; a forwarded link does not make someone else a member.
+ */
 export async function acceptCloudTeamInvitation(
   origin: string,
   proof: NonNullable<TokenIdentity["cloudIdentity"]>,
   invitationId: string
-): Promise<void> {
+): Promise<{ spaceId?: string }> {
   return withCrossProcessLock(
     `${teamDatabasePath()}.members.lock`,
     { label: "Team invitation" },
     async () => {
-      const identity = await resolveVerifiedCloudMember(origin, proof, true)
-      if (!identity) throw new TeamAccessError()
-      const auth = await getTeamAuth(origin)
-      const headers = await cloudTeamSessionHeaders(
-        auth,
-        identity.team?.userId ?? identity.user
-      )
+      // Refuse an unusable invitation or a different address before this
+      // identity is bound, so a wrong-account attempt leaves nothing behind.
       const db = requireTeamDatabase()
       const invitation = db
         .query<
@@ -217,44 +240,32 @@ export async function acceptCloudTeamInvitation(
           "SELECT email, status, expiresAt, organizationId FROM invitation WHERE id = ?"
         )
         .get(invitationId)
-      if (
-        !invitation ||
-        invitation.status !== "pending" ||
-        (typeof invitation.expiresAt === "number"
-          ? invitation.expiresAt
-          : Date.parse(invitation.expiresAt)) <= Date.now() ||
-        invitation.organizationId !== currentTeamWorktable()!.organizationId
+      const unavailable = unavailableInvitation(
+        invitation &&
+          invitation.organizationId === currentTeamWorktable()!.organizationId
+          ? invitation
+          : null
       )
-        throw new TeamAccessError("This invitation is no longer available")
-      // A Cloud invitation is a joining capability. Preserve the intended
-      // address for audit while Better Auth enrolls the actual verified account.
+      if (unavailable) throw unavailable
+      if (invitation!.email.toLowerCase() !== proof.email.toLowerCase())
+        throw new TeamAccessError(
+          `This invitation is for ${maskEmail(invitation!.email)}. Sign in with that address to join.`,
+          "INVITATION_EMAIL_MISMATCH"
+        )
+      const identity = await resolveVerifiedCloudMember(origin, proof, true)
+      if (!identity) throw new TeamAccessError()
+      const userId = identity.team?.userId ?? identity.user
+      const auth = await getTeamAuth(origin)
+      const headers = await cloudTeamSessionHeaders(auth, userId)
       db.query(
         "INSERT OR IGNORE INTO wt_invitation_recipients(worktable_id, invitation_id, invited_email, recipient_user_id) VALUES (?, ?, ?, ?)"
-      ).run(
-        currentTeamWorktable()!.id,
-        invitationId,
-        invitation.email,
-        identity.team?.userId ?? identity.user
-      )
+      ).run(currentTeamWorktable()!.id, invitationId, invitation!.email, userId)
+      await auth.api.acceptInvitation({ headers, body: { invitationId } })
       db.query(
-        "UPDATE invitation SET email = ? WHERE id = ? AND status = 'pending'"
-      ).run(proof.email.toLowerCase(), invitationId)
-      try {
-        await auth.api.acceptInvitation({ headers, body: { invitationId } })
-        db.query(
-          "UPDATE wt_invitation_recipients SET recipient_user_id = ?, accepted_at = ? WHERE worktable_id = ? AND invitation_id = ?"
-        ).run(
-          identity.team?.userId ?? identity.user,
-          Date.now(),
-          currentTeamWorktable()!.id,
-          invitationId
-        )
-      } catch (error) {
-        db.query(
-          "UPDATE invitation SET email = ? WHERE id = ? AND status = 'pending'"
-        ).run(invitation.email, invitationId)
-        throw error
-      }
+        "UPDATE wt_invitation_recipients SET recipient_user_id = ?, accepted_at = ? WHERE worktable_id = ? AND invitation_id = ?"
+      ).run(userId, Date.now(), currentTeamWorktable()!.id, invitationId)
+      const spaceId = invitationLandingSpace(invitationId, userId)
+      return spaceId ? { spaceId } : {}
     }
   )
 }

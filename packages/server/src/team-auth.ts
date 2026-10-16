@@ -23,6 +23,7 @@ import {
   retireTeamEnrollment,
 } from "./team-members.ts"
 import { isHosted } from "./hosted.ts"
+import { applyInvitationStartSpace } from "./team-invitations.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { resolveConfiguredWorkspaceOrigin } from "./workspace-origin.ts"
 import type { Database } from "bun:sqlite"
@@ -132,8 +133,10 @@ function teamAuthOptions(origin: string) {
           },
           afterAddMember: async ({ member, user }) =>
             recordTeamEnrollment(member, user.name),
-          afterAcceptInvitation: async ({ member, user }) =>
-            recordTeamEnrollment(member, user.name),
+          afterAcceptInvitation: async ({ invitation, member, user }) => {
+            recordTeamEnrollment(member, user.name)
+            applyInvitationStartSpace(invitation, member.id)
+          },
           afterRemoveMember: async ({ member }) =>
             retireTeamEnrollment(member.id, member.organizationId),
           afterUpdateMemberRole: async ({ member }) => {

@@ -13,6 +13,7 @@ import { withCrossProcessLock } from "../cross-process-lock.ts"
 import { sameOriginRequestAllowed } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
+import { invitationLandingSpace } from "../team-invitations.ts"
 
 export const teamAuthRouter = new Hono()
 const enrollment = z
@@ -164,7 +165,11 @@ teamAuthRouter.post("/enroll", async (c) => {
       })
       for (const cookie of signedIn.headers.getSetCookie())
         c.header("Set-Cookie", cookie, { append: true })
-      return c.json({ ok: true })
+      const spaceId = invitationLandingSpace(
+        parsed.data.invitationId,
+        signedIn.response.user.id
+      )
+      return c.json({ ok: true, ...(spaceId ? { spaceId } : {}) })
     }
   )
 })

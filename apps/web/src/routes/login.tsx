@@ -129,9 +129,17 @@ function LoginPage() {
           return;
         }
         if (res.ok) {
+          // A new member opens the Space they were invited into.
+          const joined = invitationId
+            ? ((await res.json().catch(() => ({}))) as { spaceId?: unknown })
+            : {};
           if (status?.teamsEnabled) {
             notifyBrowserAccountChanged();
             await clearTeamBrowserData();
+          }
+          if (typeof joined.spaceId === "string" && joined.spaceId) {
+            window.location.assign(runtimePath(`/spaces/${encodeURIComponent(joined.spaceId)}`));
+            return;
           }
           redirectNext();
           return;

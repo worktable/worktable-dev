@@ -10,7 +10,11 @@ import {
   teamAdministrativeContext,
 } from "../team-administration.ts"
 import { currentTeamWorktable, currentWorktableId } from "../team-database.ts"
-import { hasTeamOperatorAuthority, listTeamMembers } from "../team-members.ts"
+import {
+  findTeamMember,
+  hasTeamOperatorAuthority,
+  listTeamMembers,
+} from "../team-members.ts"
 import {
   createTeamAgent,
   reconnectCloudPersonalAgent,
@@ -28,8 +32,42 @@ import { sameOriginRequestAllowed } from "../auth.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import { readSpace } from "../store.ts"
 import { issueTeamPasswordReset, setTeamOperator } from "../team-recovery.ts"
+import {
+  allInvitationDetails,
+  assertInvitationStartSpace,
+  claimInvitationEmail,
+  invitationDetails,
+  recordInvitationDetails,
+  recordInvitationEmail,
+} from "../team-invitations.ts"
+import {
+  invitationEmailConfigured,
+  sendInvitationEmail,
+} from "../team-invitation-email.ts"
+import { ensureWorkspaceManifest } from "../workspace.ts"
 
 export const teamRouter = new Hono()
+
+function invitationUrl(c: Context, invitationId: string): string {
+  return `${origin(c)}${isHosted() ? `/t/${process.env[ENV.CLOUD_WORKSPACE_ID]}/join` : "/login"}?invite=${encodeURIComponent(invitationId)}`
+}
+
+async function emailInvitation(
+  invitation: { id: string; email: string; expiresAt: Date | string | number },
+  inviterName: string,
+  spaceName?: string
+) {
+  const status = await sendInvitationEmail({
+    invitationId: invitation.id,
+    email: invitation.email,
+    inviterName: inviterName.slice(0, 100) || "A teammate",
+    worktableName: ensureWorkspaceManifest().name.slice(0, 100) || "Worktable",
+    ...(spaceName ? { spaceName: spaceName.slice(0, 200) } : {}),
+    expiresAt: new Date(invitation.expiresAt).getTime(),
+  })
+  recordInvitationEmail(invitation.id, status)
+  return status
+}
 const origin = (c: Context) =>
   resolveWorkspaceOriginForRequest(c.req.raw).origin
 const setup = z
@@ -96,12 +134,12 @@ teamRouter.post("/accept-invitation", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid invitation" }, 400)
-  await acceptCloudTeamInvitation(
+  const accepted = await acceptCloudTeamInvitation(
     origin(c),
     identity.cloudIdentity,
     parsed.data.invitationId
   )
-  return c.json({ ok: true })
+  return c.json({ ok: true, ...accepted })
 })
 teamRouter.use("*", async (c, next) => {
   requireTeamHuman(c.get("identity"))
@@ -178,23 +216,46 @@ teamRouter.get("/invitations", async (c) => {
     headers,
     query: { organizationId: worktable.organizationId },
   })
+  const details = allInvitationDetails()
   return c.json({
-    invitations: invitations.filter(
-      (item) => member.role === "owner" || item.inviterId === member.userId
-    ),
+    email: invitationEmailConfigured(),
+    invitations: invitations
+      .filter(
+        (item) => member.role === "owner" || item.inviterId === member.userId
+      )
+      .map((item) => {
+        const extra = details.get(item.id)
+        return {
+          ...item,
+          url: invitationUrl(c, item.id),
+          startSpaceId: extra?.startSpaceId ?? null,
+          emailed: (extra?.emailSends ?? 0) > 0,
+          expired: !(new Date(item.expiresAt).getTime() > Date.now()),
+        }
+      }),
   })
 })
 teamRouter.post("/invitations", async (c) => {
   const parsed = z
-    .object({ email: z.string().email().max(254) })
+    .object({
+      email: z.string().email().max(254),
+      spaceId: z.string().min(1).max(200).optional(),
+    })
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Enter an email address" }, 400)
-  const { auth, headers, worktable } = await teamAdministrativeContext(
+  const { auth, headers, member, worktable } = await teamAdministrativeContext(
     origin(c),
     c.req.raw,
     c.get("identity")
   )
+  const space = parsed.data.spaceId
+    ? (await readSpace(parsed.data.spaceId)).data
+    : null
+  if (parsed.data.spaceId) {
+    if (!space) return c.json({ error: "Space not found" }, 404)
+    assertInvitationStartSpace(member, parsed.data.spaceId)
+  }
   const invitation = await auth.api.createInvitation({
     headers,
     body: {
@@ -203,13 +264,51 @@ teamRouter.post("/invitations", async (c) => {
       role: "member",
     },
   })
+  recordInvitationDetails(invitation.id, parsed.data.spaceId ?? null)
+  const email = invitationEmailConfigured()
+    ? claimInvitationEmail(invitation.id) === null
+      ? await emailInvitation(invitation, member.name, space?.name)
+      : "limited"
+    : null
   return c.json(
-    {
-      invitation,
-      url: `${origin(c)}${isHosted() ? `/t/${process.env[ENV.CLOUD_WORKSPACE_ID]}/join` : "/login"}?invite=${encodeURIComponent(invitation.id)}`,
-    },
+    { invitation, url: invitationUrl(c, invitation.id), email },
     201
   )
+})
+teamRouter.post("/invitations/:id/email", async (c) => {
+  if (!invitationEmailConfigured())
+    return c.json({ error: "This Worktable can't send email" }, 409)
+  const { auth, headers, member, worktable } = await teamAdministrativeContext(
+    origin(c),
+    c.req.raw,
+    c.get("identity")
+  )
+  const invitations = await auth.api.listInvitations({
+    headers,
+    query: { organizationId: worktable.organizationId },
+  })
+  const invitation = invitations.find((item) => item.id === c.req.param("id"))
+  if (
+    !invitation ||
+    invitation.status !== "pending" ||
+    (member.role !== "owner" && invitation.inviterId !== member.userId)
+  )
+    return c.json({ error: "Invitation not found" }, 404)
+  if (!(new Date(invitation.expiresAt).getTime() > Date.now()))
+    return c.json({ error: "This invitation has expired" }, 410)
+  const blocked = claimInvitationEmail(invitation.id)
+  if (blocked) return c.json({ error: blocked }, 429)
+  const spaceId = invitationDetails(invitation.id)?.startSpaceId
+  const space = spaceId ? (await readSpace(spaceId)).data : null
+  // The email names whoever sent the invitation, not whoever resends it.
+  const inviter = findTeamMember(invitation.inviterId)
+  return c.json({
+    email: await emailInvitation(
+      invitation,
+      inviter?.name ?? member.name,
+      space?.name
+    ),
+  })
 })
 teamRouter.delete("/invitations/:id", async (c) => {
   const { auth, headers, member, worktable } = await teamAdministrativeContext(

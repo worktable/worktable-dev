@@ -9,7 +9,14 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
+- **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+
 ### Changed
+
+- **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
 
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 - **Backups:** Backups and exports pause edits only for the moment it takes to record what changed, and cleaning up old versions no longer makes them fail.

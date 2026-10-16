@@ -1,6 +1,6 @@
 import { teamsEnabled } from "../team-database.ts";
 import { canAccessSpace, currentRequestIdentity, teamMemberForIdentity } from "../team-policy.ts";
-import { spaceAccessKey } from "../team-access.ts";
+import { accessSnapshot, spaceAccessKey } from "../team-access.ts";
 import { requireScope, requireWorkspaceOwner, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -42,6 +42,7 @@ function spaceView(space: SpaceFile) {
     permissions: {
       edit: canAccessSpace(space.id, "edit"),
       manage: canAccessSpace(space.id, "manage"),
+      shared: accessSnapshot()?.visibility.get(space.id) === "shared",
       ...(accessKey ? { accessKey } : {}),
     },
   };

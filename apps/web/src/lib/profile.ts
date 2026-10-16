@@ -1,4 +1,4 @@
-import { browserTeamCacheKey } from "./team-context";
+import { browserTeamCacheKey, profileStorageKey } from "./team-context";
 import type { AnnotationAuthor } from "@worktable/types";
 import { fetchJSON } from "./http";
 
@@ -10,14 +10,8 @@ export interface UserProfile {
   name: string;
 }
 
-/** Where this tab mirrors the current person's profile. */
-export function profileStorageKey(): string {
-  return storageKey()
-}
-
 function storageKey(): string {
-  const team = browserTeamCacheKey();
-  return team ? `worktable-profile:${team}` : "worktable-profile";
+  return profileStorageKey();
 }
 
 const DEFAULT_PROFILE: UserProfile = { id: "user", name: "User" };

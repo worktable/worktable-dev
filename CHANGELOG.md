@@ -9,10 +9,6 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-### Changed
-
-- **Backups:** Backups and exports pause edits only for the moment it takes to record what changed.
-
 ## [0.1.24] - 2026-10-16
 
 ### Added

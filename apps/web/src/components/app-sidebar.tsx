@@ -49,7 +49,6 @@ import { ScrollFadeArea } from "@/components/scroll-fade-area"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
 import {
   GroupLabel,
-  GroupNameDialog,
   SpacesHeading,
 } from "@/components/sidebar/space-groups"
 import {
@@ -88,6 +87,12 @@ import {
   archiveSpace,
   restoreSpace,
 } from "@/lib/api"
+// Loaded when first opened, like New Space.
+const GroupNameDialog = lazy(() =>
+  import("@/components/sidebar/group-name-dialog").then((module) => ({
+    default: module.GroupNameDialog,
+  }))
+)
 const NewSpaceDialog = lazy(() =>
   import("@/components/spaces/new-space-dialog").then((module) => ({
     default: module.NewSpaceDialog,
@@ -2600,6 +2605,7 @@ export function AppSidebar() {
       </DeferredMount>
 
       {navigation && (
+        <DeferredMount active={groupDialog !== null}>
         <GroupNameDialog
           open={groupDialog !== null}
           group={groupDialog?.mode === "rename" ? groupDialog.group : undefined}
@@ -2614,6 +2620,7 @@ export function AppSidebar() {
             )
           }}
         />
+        </DeferredMount>
       )}
     </div>
   )

@@ -5,11 +5,11 @@ import { toast } from "@worktable/ui/components/sonner"
 import {
   fetchUserProfile,
   getCurrentUser,
-  profileStorageKey,
   setCurrentUser,
   updateUserProfile,
 } from "@/lib/profile"
 import { queryKeys } from "@/lib/queries"
+import { profileStorageKey } from "@/lib/team-context"
 
 export function ProfileSection() {
   return (

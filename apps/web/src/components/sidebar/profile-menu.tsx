@@ -17,10 +17,9 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { WorkspaceInfo } from "@/lib/api"
 import { submitCloudLogout } from "@/lib/cloud-logout"
 import { queryKeys, useWorkspace } from "@/lib/queries"
-import { profileStorageKey } from "@/lib/profile"
 import { runtimePath } from "@/lib/runtime-path"
 import { openSettings } from "@/lib/settings-open"
-import { signOutLocalTeam } from "@/lib/team-context"
+import { profileStorageKey, signOutLocalTeam } from "@/lib/team-context"
 
 type SignOut = NonNullable<NonNullable<WorkspaceInfo["person"]>["signOut"]>
 

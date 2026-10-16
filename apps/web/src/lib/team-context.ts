@@ -43,6 +43,12 @@ export function browserTeamCacheKey(): string | null {
   return context ? `${context.worktableId}:${context.memberId}` : null
 }
 
+/** Where this tab mirrors the current person's profile. */
+export function profileStorageKey(): string {
+  const team = browserTeamCacheKey()
+  return team ? `worktable-profile:${team}` : "worktable-profile"
+}
+
 function parseContext(value: unknown): BrowserTeamContext | null {
   if (!value || typeof value !== "object") return null
   const next = value as Partial<BrowserTeamContext>

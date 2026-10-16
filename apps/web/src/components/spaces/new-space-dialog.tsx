@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -11,38 +11,17 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { useIsMobile } from "@/hooks/use-mobile"
-import {
-  Briefcase,
-  LayoutGrid,
-  Layers,
-  FolderOpen,
-  Rocket,
-  Target,
-  Church,
-} from "lucide-react"
+import { LayoutGrid, Layers, FolderOpen } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
-import { useSpaces } from "@/lib/queries"
-
-// Icon hints for known group slugs
-const GROUP_ICONS: Record<string, typeof Briefcase> = {
-  work: Briefcase,
-  career: Briefcase,
-  "side-quests": Rocket,
-  church: Church,
-  meta: Target,
-}
-
-function formatGroupLabel(slug: string): string {
-  return slug
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ")
-}
+import { sortedGroups } from "@/components/sidebar/space-groups"
+import { moveToGroup, usePersonalNavigation } from "@/lib/personal-navigation"
 
 interface NewSpaceDialogProps {
   open: boolean
   onClose: () => void
-  onCreate: (data: { name: string; icon?: string; group?: string }) => void
+  /** Creates the Space and resolves with its id, or undefined if it failed. */
+  onCreate: (data: { name: string; icon?: string }) => Promise<string | undefined>
+  /** One of the person's own groups to place the new Space in. */
   defaultGroup?: string | null
 }
 
@@ -59,41 +38,37 @@ export function NewSpaceDialog({
   )
   const [creating, setCreating] = useState(false)
   const isMobile = useIsMobile()
-  const { data: spaces } = useSpaces()
+  const { navigation, update } = usePersonalNavigation()
+  const groups = navigation ? sortedGroups(navigation.groups) : []
 
-  // Derive groups from existing spaces
-  const availableGroups = (() => {
-    const groups = new Set<string>()
-    if (spaces) {
-      for (const s of spaces) {
-        if (s.group) groups.add(s.group)
-      }
-    }
-    return [...groups].sort()
-  })()
-
-  useEffect(() => {
+  // Each opening starts fresh, in the group it was opened for.
+  const [openedFor, setOpenedFor] = useState<string | null | undefined>()
+  const openKey = open ? (defaultGroup ?? null) : undefined
+  if (openKey !== openedFor) {
+    setOpenedFor(openKey)
     if (open) {
       setName("")
       setSelectedIcon("rocket")
       setSelectedGroup(defaultGroup ?? null)
       setCreating(false)
     }
-  }, [open, defaultGroup])
+  }
 
   const handleCreate = async () => {
     if (!name.trim() || creating) return
     setCreating(true)
-    try {
-      onCreate({
-        name: name.trim(),
-        icon: selectedIcon,
-        group: selectedGroup ?? undefined,
-      })
-      setName("")
-      onClose()
-    } finally {
-      setCreating(false)
+    const group = groups.some((g) => g.id === selectedGroup) ? selectedGroup : null
+    const created = onCreate({ name: name.trim(), icon: selectedIcon })
+    setName("")
+    onClose()
+    setCreating(false)
+    // The Space is shared; the group it sits in is the creator's own choice.
+    const spaceId = await created
+    if (spaceId && group) {
+      void update(
+        moveToGroup(spaceId, group),
+        "The Space was created, but couldn't be added to the group"
+      )
     }
   }
 
@@ -134,7 +109,7 @@ export function NewSpaceDialog({
           </div>
 
           {/* Group */}
-          <div className="space-y-2">
+          {groups.length > 0 && <div className="space-y-2">
             <label className="text-sm font-medium">Group</label>
             <div className="flex flex-wrap gap-1.5">
               <button
@@ -149,27 +124,26 @@ export function NewSpaceDialog({
                 <LayoutGrid className="size-3.5" />
                 None
               </button>
-              {availableGroups.map((groupId) => {
-                const Icon = GROUP_ICONS[groupId] ?? FolderOpen
-                const isActive = selectedGroup === groupId
+              {groups.map((group) => {
+                const isActive = selectedGroup === group.id
                 return (
                   <button
-                    key={groupId}
+                    key={group.id}
                     type="button"
-                    onClick={() => setSelectedGroup(groupId)}
+                    onClick={() => setSelectedGroup(group.id)}
                     className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-150 ${
                       isActive
                         ? "bg-surface-selected text-primary"
                         : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     }`}
                   >
-                    <Icon className="size-3.5" />
-                    {formatGroupLabel(groupId)}
+                    <FolderOpen className="size-3.5" />
+                    {group.name}
                   </button>
                 )
               })}
             </div>
-          </div>
+          </div>}
 
           {/* Icon */}
           <div className="space-y-2">

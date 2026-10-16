@@ -497,8 +497,9 @@ test("mobile navigation opens the new-space sheet and returns to navigation", as
   await expect(sidebarToggle).toBeVisible({ timeout: 30_000 })
   await sidebarToggle.click()
 
-  await expect(page.getByRole("button", { name: "All Spaces" })).toBeVisible()
-  await page.getByRole("button", { name: "Create new space" }).click()
+  await expect(page.getByRole("button", { name: /Worktable menu$/ })).toBeVisible()
+  await page.getByRole("button", { name: "New Space or Group" }).click()
+  await page.getByRole("menuitem", { name: "Space", exact: true }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toBeVisible()
   await page.getByRole("button", { name: "Cancel" }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toHaveCount(0)

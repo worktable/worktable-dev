@@ -37,10 +37,14 @@ import {
   ArrowDownAZ,
   Clock3,
   GripVertical,
+  Pin,
+  PinOff,
+  FolderPlus,
 } from "lucide-react"
 import { IconSearchGrid } from "@/components/icon-search-grid"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useSpaces } from "@/lib/queries"
+import type { PersonalGroup } from "@worktable/types"
+import { sortedGroups } from "@/components/sidebar/space-groups"
 import type { DocSortMode } from "@/lib/tree"
 
 const SpaceAccessEditor = lazy(() => import("./space-access-editor").then(module => ({default: module.SpaceAccessEditor})))
@@ -53,13 +57,23 @@ interface SpaceContextMenuProps {
   canManageAccess?: boolean
   spaceName: string
   spaceIcon?: string
-  currentGroup?: string
   archived?: boolean
+  /**
+   * The person's own arrangement, when they have one: pinning and groups
+   * change only their sidebar, so they need no Space permission.
+   */
+  personal?: {
+    pinned: boolean
+    groups: readonly PersonalGroup[]
+    groupId: string | null
+    onTogglePin: () => void
+    onChangeGroup: (groupId: string | null) => void
+    onNewGroup: () => void
+  }
   docSort: DocSortMode
   onChangeDocSort: (sort: DocSortMode) => void
   onRename: (newName: string) => void
   onChangeIcon: (icon: string) => void
-  onChangeGroup: (group: string | undefined) => void
   onArchive?: () => void
   onRestore?: () => void
   onDelete: () => void
@@ -75,41 +89,18 @@ const DOC_SORT_OPTIONS: {
   { mode: "updated", label: "Last Updated", icon: Clock3 },
 ]
 
-/** Derive available groups from existing spaces (plus "None") */
-function useAvailableGroups(currentGroup?: string): string[] {
-  const { data: spaces } = useSpaces()
-  const groups = new Set<string>()
-  if (spaces) {
-    for (const s of spaces) {
-      if (s.group) groups.add(s.group)
-    }
-  }
-  // Ensure the current group is always listed even if no other space uses it
-  if (currentGroup) groups.add(currentGroup)
-  return [...groups].sort()
-}
-
-/** Pretty-print a group slug: "side-quests" → "Side Quests" */
-function formatGroupLabel(group: string): string {
-  return group
-    .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ")
-}
-
 export function SpaceContextMenuButton({
   spaceId,
   canEdit = true,
   canManageAccess = false,
   spaceName,
   spaceIcon,
-  currentGroup,
   archived,
+  personal,
   docSort,
   onChangeDocSort,
   onRename,
   onChangeIcon,
-  onChangeGroup,
   onArchive,
   onRestore,
   onDelete,
@@ -118,7 +109,6 @@ export function SpaceContextMenuButton({
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
-  const groups = useAvailableGroups(currentGroup)
   // On a team, renaming, archiving and deleting a Space affect everyone, so
   // they follow access management. Solo keeps the edit rule.
   const canAdminister = browserTeamMemberId() ? canManageAccess : canEdit
@@ -133,6 +123,51 @@ export function SpaceContextMenuButton({
           <MoreVertical className="h-3.5 w-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
+          {personal && (
+            <>
+              <DropdownMenuItem onClick={personal.onTogglePin}>
+                {personal.pinned ? (
+                  <PinOff className="mr-2 h-4 w-4" />
+                ) : (
+                  <Pin className="mr-2 h-4 w-4" />
+                )}
+                {personal.pinned ? "Unpin" : "Pin"}
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <FolderOpen className="mr-2 h-4 w-4" />
+                  Change Group
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => personal.onChangeGroup(null)}>
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    None
+                    {!personal.groupId && (
+                      <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                    )}
+                  </DropdownMenuItem>
+                  {sortedGroups(personal.groups).map((group) => (
+                    <DropdownMenuItem
+                      key={group.id}
+                      onClick={() => personal.onChangeGroup(group.id)}
+                    >
+                      <FolderOpen className="mr-2 h-4 w-4" />
+                      <span className="min-w-0 truncate">{group.name}</span>
+                      {personal.groupId === group.id && (
+                        <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={personal.onNewGroup}>
+                    <FolderPlus className="mr-2 h-4 w-4" />
+                    New Group
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+            </>
+          )}
           {canManageAccess && spaceId && <DropdownMenuItem onClick={() => setAccessOpen(true)}>Manage Access</DropdownMenuItem>}
           <DropdownMenuItem disabled={!canAdminister} onClick={() => setRenameOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
@@ -142,33 +177,6 @@ export function SpaceContextMenuButton({
             <Smile className="mr-2 h-4 w-4" />
             Change Icon
           </DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!canAdminister}>
-              <FolderOpen className="mr-2 h-4 w-4" />
-              Change Group
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuItem onClick={() => onChangeGroup(undefined)}>
-                <LayoutGrid className="mr-2 h-4 w-4" />
-                None
-                {!currentGroup && (
-                  <Check className="ml-auto h-3.5 w-3.5 text-primary" />
-                )}
-              </DropdownMenuItem>
-              {groups.map((group) => (
-                <DropdownMenuItem
-                  key={group}
-                  onClick={() => onChangeGroup(group)}
-                >
-                  <FolderOpen className="mr-2 h-4 w-4" />
-                  {formatGroupLabel(group)}
-                  {currentGroup === group && (
-                    <Check className="ml-auto h-3.5 w-3.5 text-primary" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!canEdit}>
               <ArrowUpDown className="mr-2 h-4 w-4" />

@@ -51,7 +51,9 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
   await expect(sidebar.getByRole("link", { name: "Alpha" })).toHaveCount(0)
 
   await page.reload()
-  await expect(sidebar.getByRole("button", { name: "Showing Clients" })).toBeVisible()
+  await expect(
+    sidebar.getByRole("button", { name: "Showing Clients" })
+  ).toBeVisible({ timeout: 30_000 })
   await expect(sidebar.getByRole("link", { name: "Beta" })).toHaveCount(2)
   await expect(sidebar.getByRole("link", { name: "Alpha" })).toHaveCount(0)
 

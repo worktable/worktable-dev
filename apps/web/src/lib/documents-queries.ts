@@ -263,8 +263,9 @@ export function rememberDocumentContent(
     queryKey: documentQueryKeys.contentIn(spaceId, path),
   })
   if (read.length === 0) return
+  // The same address the reader uses, access key included on a team.
   queryClient.setQueryData(
-    documentQueryKeys.content(spaceId, path, content.revision),
+    contentQueryKey(spaceId, path, content.revision),
     content
   )
 }

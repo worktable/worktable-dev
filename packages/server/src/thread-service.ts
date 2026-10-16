@@ -1535,6 +1535,7 @@ export async function claimNextThreadDelivery(
             leaseId: claim.leaseId,
             participantId: participant.id,
             retryable: true,
+            spendAttempt: false,
             code: "ACCESS_CHANGED",
             message: "Access to this thread changed while it was being delivered.",
           })

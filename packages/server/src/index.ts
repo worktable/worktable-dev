@@ -696,6 +696,8 @@ interface WsData {
   /** The token's scopes at the handshake, which fixed this socket's reads. */
   localTokenScopes?: string;
   credentialRevoked?: boolean;
+  /** The socket's access, decided once at open; the credential sweep revokes it after a policy change. */
+  frameAccessDenied?: boolean;
   sessionStillValid?: () => Promise<boolean>;
   /** The member's access fingerprint last reported on this socket. */
   teamAccess?: string;
@@ -2069,6 +2071,11 @@ export function startServer(
             ws.data.sessionStillValid
           )
             trackCredentialSocket(ws)
+          if (ws.data.canAccess)
+            ws.data.frameAccessDenied = !ws.data.canAccess(
+              ws.data.spaceId === THREADS_SCOPE ? undefined : ws.data.spaceId,
+              ws.data.type === "yjs"
+            )
           if (workspaceRejected || workspaceRecoveryRequired()) {
             ws.close()
             return
@@ -2117,15 +2124,9 @@ export function startServer(
         },
         message(ws, message) {
           noteServerActivity()
-          if (
-            ws.data.credentialRevoked ||
-            (ws.data.canAccess &&
-              !ws.data.canAccess(
-                ws.data.spaceId === THREADS_SCOPE ? undefined : ws.data.spaceId,
-                ws.data.type === "yjs"
-              ))
-          )
-            return
+          // Frames arrive at keystroke rate: they read the decision made at
+          // open, which the credential sweep withdraws when access changes.
+          if (ws.data.credentialRevoked || ws.data.frameAccessDenied) return
           if (ws.data.type === "yjs") {
             if (workspaceRecoveryRequired()) {
               ws.close()

@@ -1,4 +1,4 @@
-import { runtimePath } from "@/lib/runtime-path"
+import { RUNTIME_BASE_PATH, runtimePath } from "@/lib/runtime-path"
 /// <reference types="vite/client" />
 import {
   DocumentLifetimeChip,
@@ -459,9 +459,13 @@ function RootLayout() {
       onBrowserLogout(() => {
         const deployment =
           queryClient.getQueryData<DeploymentInfo>(DEPLOYMENT_QUERY_KEY)
-        // Navigation unloads this tab and closes its /ws and /yjs connections.
+        // A Worktable mounted under /t/<id> is on Cloud even before the
+        // deployment is read. Navigation unloads this tab and closes its /ws
+        // and /yjs connections.
         window.location.replace(
-          deployment?.mode === "cloud" ? "/signed-out" : runtimePath("/login")
+          deployment?.mode === "cloud" || RUNTIME_BASE_PATH
+            ? "/signed-out"
+            : runtimePath("/login")
         )
       }),
     [queryClient]

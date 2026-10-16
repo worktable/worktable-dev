@@ -986,6 +986,11 @@ export async function failThreadDelivery(input: {
   participantId: string
   canonicalThreadRevision?: number
   retryable: boolean
+  /**
+   * False when the failure was not the delivery's: the claim's attempt is
+   * returned and it queues again at once, for as long as it takes.
+   */
+  spendAttempt?: boolean
   code: string
   message: string
 }): Promise<ThreadActivity> {
@@ -1009,7 +1014,9 @@ export async function failThreadDelivery(input: {
       )
     }
     const nowMs = Date.now()
-    const retry = input.retryable && record.attempts < MAX_ATTEMPTS
+    const refund = input.retryable && input.spendAttempt === false
+    if (refund) record.attempts = Math.max(0, record.attempts - 1)
+    const retry = refund || (input.retryable && record.attempts < MAX_ATTEMPTS)
     record.state = retry ? "queued" : "failed"
     record.error = {
       code: input.code,
@@ -1018,11 +1025,13 @@ export async function failThreadDelivery(input: {
     }
     record.leaseId = undefined
     record.leaseExpiresAt = undefined
-    record.nextAttemptAt = retry
-      ? new Date(
-          nowMs + 1_000 * 2 ** Math.max(0, record.attempts - 1)
-        ).toISOString()
-      : undefined
+    record.nextAttemptAt = refund
+      ? new Date(nowMs).toISOString()
+      : retry
+        ? new Date(
+            nowMs + 1_000 * 2 ** Math.max(0, record.attempts - 1)
+          ).toISOString()
+        : undefined
     record.revision += 1
     record.updatedAt = new Date(nowMs).toISOString()
     await saveFile(file)

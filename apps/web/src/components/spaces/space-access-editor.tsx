@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type {
   SpaceAccessGrant,
   SpaceAccessLevel,
@@ -59,9 +59,15 @@ export function SpaceAccessEditor({
     setEdited((previous) =>
       typeof next === "function" ? next(previous ?? policy.data ?? null) : next
     )
+  const queryClient = useQueryClient()
   const save = useMutation({
     mutationFn: () => setSpaceAccess(draft!),
-    onSuccess: onClose,
+    onSuccess: (saved) => {
+      // The next open starts from what was saved, not the policy read before.
+      queryClient.setQueryData(["team", "spaces", spaceId], saved)
+      setEdited(null)
+      onClose()
+    },
   })
   const changeGrant = (
     subjectType: SpaceAccessGrant["subjectType"],

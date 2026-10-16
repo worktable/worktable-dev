@@ -36,10 +36,11 @@ function safeNext(): string {
 
 function LoginPage() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
-  const invitationId = new URLSearchParams(window.location.search).get("invite");
+  const search = typeof window === "undefined" ? "" : window.location.search;
+  const invitationId = new URLSearchParams(search).get("invite");
   // A password reset link from an owner or the Worktable's machine.
   const [resetToken, setResetToken] = useState(() =>
-    new URLSearchParams(window.location.search).get("reset")
+    new URLSearchParams(search).get("reset")
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [email, setEmail] = useState("");

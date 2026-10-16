@@ -429,6 +429,10 @@ function TeamMembers({
                     body: JSON.stringify({ spaceIds: restricted }),
                   })
                 )
+                .then(() => {
+                  void client.invalidateQueries({ queryKey: ["team", "spaces"] })
+                  toast.success("Every Space is shared with the team")
+                })
                 .catch((error: Error) => toast.error(error.message))
             }}
           >

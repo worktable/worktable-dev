@@ -584,6 +584,7 @@ function launch(): void {
                   key: Buffer.from(reply.signingKey, "hex"),
                   scopes: HOSTED_OAUTH_SCOPES,
                   publicOrigin: reply.publicOrigin,
+                  identityIssuer: link.cloudOrigin,
                   bootNonce,
                 })
               ingress.setSharingOrigin(

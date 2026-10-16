@@ -124,3 +124,7 @@ def test_oauth_discovery_preserves_the_selected_worktable_and_refuses_a_differen
     assert urls == ["https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"]
     resource = "https://app.worktable.cloud/api/mcp/w/another_team"
     assert pairing.mcp_resource(endpoint) is None
+    # The Worktable's browser address finds the same endpoint.
+    resource = endpoint
+    assert pairing.mcp_resource("https://app.worktable.cloud/t/team_one") == endpoint
+    assert urls[-1] == "https://app.worktable.cloud/.well-known/oauth-protected-resource/api/mcp/w/team_one"

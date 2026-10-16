@@ -85,7 +85,13 @@ def mcp_resource(origin: str) -> Optional[str]:
     """The MCP endpoint a Worktable advertises for OAuth sign-in, if any."""
     try:
         parts = urlsplit(origin)
-        resource_path = parts.path.rstrip("/") if re.fullmatch(r"/api/mcp/[wd]/[A-Za-z0-9_-]+/?", parts.path) else ""
+        # A Cloud Worktable's own endpoint, also when given its browser address
+        # (/t/<id>, or /w/<id>): the shared host endpoint names another one.
+        endpoint = re.fullmatch(r"/api/mcp/[wd]/[A-Za-z0-9_-]+/?", parts.path)
+        browser = re.fullmatch(r"/[tw]/([A-Za-z0-9_-]+)/?", parts.path)
+        resource_path = (
+            parts.path.rstrip("/") if endpoint else f"/api/mcp/w/{browser.group(1)}" if browser else ""
+        )
         metadata = _request(f"{parts.scheme}://{parts.netloc}/.well-known/oauth-protected-resource{resource_path}")
     except PairingError:
         return None

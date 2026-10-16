@@ -75,6 +75,8 @@ export async function createLinkedIngress(options: {
   key: Uint8Array
   scopes: readonly string[]
   publicOrigin: string
+  /** The Cloud origin the link's identity bindings were recorded under. */
+  identityIssuer?: string
   shareOrigin?: string
   bootNonce?: string
 }) {
@@ -88,6 +90,7 @@ export async function createLinkedIngress(options: {
   }
   const key = new Uint8Array(options.key)
   const { publicOrigin } = options
+  const identityIssuer = options.identityIssuer ?? publicOrigin
   let shareOrigin = options.shareOrigin ?? null
   const scopes = new Set(options.scopes)
   const workspace = getWorkspaceRoot()
@@ -227,7 +230,7 @@ export async function createLinkedIngress(options: {
       }
       const identity = currentTeamWorktable()
         ? grant.credentialIssuedAt
-          ? await resolveCloudTeamAgentCredential(credential, publicOrigin)
+          ? await resolveCloudTeamAgentCredential(credential, identityIssuer)
           : null
         : credential
       if (!identity) return denied()

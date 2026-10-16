@@ -203,6 +203,36 @@ describe("thread delivery state versions", () => {
     ).toMatchObject({ state: "queued" })
   })
 
+  it("waits out access changes without spending delivery attempts", async () => {
+    const location = { kind: "worktable" } as const
+    await queueThreadDelivery({
+      location,
+      threadId: "thr_access_change",
+      messageId: "msg_access_change",
+      authorId: "ptc_author",
+      participantId: "ptc_agent",
+      identityId: "idt_agent",
+      threadRevision: 1,
+    })
+    // More releases than the three attempts a delivery gets.
+    for (let release = 0; release < 4; release++) {
+      const claim = await claimThreadDelivery("ptc_agent")
+      expect(claim?.messageId).toBe("msg_access_change")
+      await failThreadDelivery({
+        messageId: claim!.messageId,
+        leaseId: claim!.leaseId,
+        participantId: "ptc_agent",
+        retryable: true,
+        spendAttempt: false,
+        code: "ACCESS_CHANGED",
+        message: "Access changed while it was being delivered.",
+      })
+    }
+    expect(
+      await getThreadActivity(location, "thr_access_change", "msg_access_change", "idt_agent")
+    ).toMatchObject({ state: "queued" })
+  })
+
   it("schedules separate conversation identities independently", async () => {
     const location = { kind: "worktable" } as const
     for (const [index, identityId] of [

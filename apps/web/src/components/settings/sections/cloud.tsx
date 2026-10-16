@@ -71,9 +71,11 @@ export function CloudSection() {
   const subscriptionId = chosen?.userId === userId ? (chosen?.id ?? null) : null
   const setSubscriptionId = (id: string | null) =>
     setChosen(id ? { userId, id } : null)
+  // A choice made here wins over the stored one, so a paused or locked link
+  // can move to another subscription.
   const selectedSubscription =
-    query.data?.billingWorkspaceId ??
     subscriptionId ??
+    query.data?.billingWorkspaceId ??
     (subscriptions.data?.worktables.length === 1
       ? subscriptions.data.worktables[0]!.id
       : undefined)

@@ -9,20 +9,32 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-10-16
+
 ### Added
 
+- **Worktable for Teams:** Share one Worktable with your team, on local, self-hosted or Cloud Worktable. Invite people from **Settings → Team** by copying an invitation link for each of them. On local and self-hosted Worktable, choose **Enable Teams** there first and create your account. No email service is needed, and your content and history are kept. Everyone then signs in with their own account, in the browser and in Desktop. Owners can open and manage every Space. Members can invite others and manage the Spaces they create.
+- **Space access:** A Space is open to the whole team with **Everyone can read and edit**, or limited to **Only selected people and agents**, each with **Read**, **Read and edit** or **Manage access**. Change it from **Manage access** in the Space menu or in **Settings → Team**. New Spaces are open to the team. When you turn on Teams, existing Spaces stay restricted until an owner shares them. Threads follow their Space's access, and renaming, archiving or deleting a Space needs **Manage access**.
+- **Agents on a team:** An agent you connect from **Settings → Agents** is yours and follows your Space access. You can limit it to some Spaces, but then it can't use Worktable threads. Owners register team agents in **Settings → Team**. A team agent has its own Space access, given by the people who manage each Space, and an owner chooses whether it can read or post in Worktable threads. Agents can't invite people or change access. Removing a member signs them out and disconnects their agents. On a team, connect agents from Settings rather than with `worktable mcp setup` or `worktable agent invite`, which are for one-person Worktables.
+- **Password resets:** On a local or self-hosted team, an owner creates a **Password reset link** in **Settings → Team** for someone who forgot their password. The link works once, expires after 24 hours and signs that person out everywhere. An owner's own password is reset on the machine Worktable runs on, where `worktable team reset-password <email>` prints a reset link.
+- **Operators:** Owning a team Worktable doesn't give access to the machine it runs on. Operators can reach its files and make full backups, which keep people and their Space access. After a full restore, everyone signs in again and agents reconnect. An operator can make another member an operator from **Settings → Team**, and `worktable team operator grant <email>` does it on the machine.
+- **Teams on Worktable Cloud:** After you sign in, choose a Worktable or create one. Each Worktable has its own subscription, and Desktop remembers the one you open. Billing stays with whoever pays: becoming an owner doesn't give access to billing, and **Your subscriptions** in **Your Worktables** manages billing even after you leave a team. Agents connected through the shared Cloud MCP address keep working with your default Worktable.
+- **Worktable Link:** Choose which Worktable subscription a device uses when you turn on Worktable Link. Turning on Teams pauses Link. Turn it on again in **Settings → Worktable Cloud** to connect your Cloud account to your member account. AI apps connected through Link get that member's Space access.
+- **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
+- **Desktop beta updates:** Desktop can follow the beta channel too. Turn on **Settings → System → Beta updates**, or choose **Worktable → Beta Updates**, and Desktop installs signed beta builds as they are published, a few times a day at most.
+- **New in folders:** A folder's **New** menu creates Drawings and HTML Docs as well as Docs.
 - **Code blocks:** Every code block shows its language with Wrap and Copy buttons. Wrap applies to all code on this device.
 - **Wide tables:** A table wider than the page can expand to fill the reading area.
 - **HTML in Markdown:** Markdown Docs show formatting HTML such as `<details>`, `<kbd>`, `<sub>`, `<sup>` and `<mark>`. Scripts, styles, frames and forms are left out.
-- **Release channels:** A local or self-hosted service can follow the beta channel with `worktable update --channel beta` to get changes before they are released. Beta builds are published for Linux x64. **Settings → System** shows the channel and the commit the running version was built from.
-- **Desktop beta updates:** Desktop can follow the beta channel too. Turn on **Settings → System → Beta updates**, or choose **Worktable → Beta Updates**, and Desktop installs signed beta builds as they are published, a few times a day at most.
-- **Worktable for Teams:** Invite named members, restrict Space access, and connect personal or team agents on local, self-hosted, and Cloud Worktables.
 
 ### Changed
 
 - **One look for every Doc:** Markdown and rich text Docs now read the same, with more space between paragraphs, quieter quotes and tables, a lighter bold, and no rule under section headings. Share pages match.
-- **Diagrams:** A diagram sits on the page without a card. Its name shows as a caption, and its controls appear when you point at it.
+- **Diagrams:** A diagram sits on the page without a card. Its name shows as a caption, and its controls appear when you point at it. A collapsed diagram is a single framed row.
 - **Toggles:** Toggles open and close smoothly.
+- **Opening a Space:** A Space shows its title, description and Activity right away. Its pins, docs and record collections load together instead of one after another.
+- **Cards and dark mode:** Cards are quieter in light mode. In dark mode, drawings, diagrams and the editor use the same greys as the rest of the app, and the menu item you point at stands out.
+- **Drawings:** New drawings start without a grid.
 - **Updates:** If Worktable can't reach the release server, `worktable update` and the **Software update** panel keep the installed version instead of installing whatever is newest. When releases are paused, Worktable offers no new version until they resume.
 - **Desktop updates:** Desktop installs only the release currently offered. When releases are paused, it offers no new version and doesn't install one it already downloaded. If it can't reach the release server before installing, it keeps the current app.
 - **Private logs:** Worktable's logs no longer name your documents. Requests are logged by route, documents by an opaque id, and errors without their messages, unless you set `WORKTABLE_DEBUG=1`. When something goes wrong on the server, Worktable shows a short error ID that matches the log line.
@@ -30,12 +42,15 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
-- **Cloud backups:** Backups of Worktables with many files no longer fail while reading their own record of what was saved.
+- **Cloud backups:** Backing up a Worktable with many files no longer fails.
 - **Shared Docs:** Checklists and toggles display correctly, and wide tables no longer make the page scroll sideways on phones. Footnotes, links and table alignment in shared Markdown Docs are kept.
-- **Thread messages:** While you type in a thread, the cursor stays with your text instead of falling behind it or sitting on a different line.
 - **Opening rich text Docs:** Nothing moves when a Doc becomes editable. Its title stays put, and while it opens, its images, checklists, toggles, colors and tables already look as they will.
 - **Block handles:** The add and drag handles beside a block line up with its first line of text, including headings.
 - **Wide Markdown tables:** A table wider than the page scrolls inside its own box, and long links wrap, so a Markdown Doc no longer scrolls sideways.
+- **Drawings:** Text you type in a drawing stays in view instead of wrapping onto a hidden line. Double-clicking inside a hollow shape edits its label, and the label stays where it is when you finish.
+- **Annotations:** A new annotation starts blank, even on a block you annotated before. The **Annotate** button is the same size as the controls beside it.
+- **Threads:** While you type a message, the cursor stays with your text instead of falling behind it or sitting on a different line. Sender names line up with their avatars, and the ChatGPT and Codex logos fill theirs.
+- **OpenClaw:** Version 0.0.17 of the Worktable plugin loads on current OpenClaw releases.
 
 ## [0.1.23] - 2026-10-14
 

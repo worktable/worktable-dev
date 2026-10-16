@@ -14,7 +14,7 @@ import {
 import type { Context, MiddlewareHandler, Next } from "hono"
 import { routePath } from "hono/route"
 import { debugLogging, logError } from "./debug-log.ts"
-import { isHosted } from "./hosted.ts"
+import { gatewayAdmits, isHosted } from "./hosted.ts"
 import { noteServerActivity, recordRouteLatency } from "./perf-diagnostics.ts"
 
 /**
@@ -145,15 +145,19 @@ export function timedMiddleware(
 
 /**
  * The Cloud gateway's id for this request, so a log line can be matched to
- * the gateway's record of it. Only a hosted tenant logs it: there every
- * request passed gateway admission, and the gateway generates the id. A
- * local or self-hosted server ignores the header, since any client could set
- * it.
+ * the gateway's record of it. The gateway generates the id, so it is logged
+ * only for a request the gateway admitted on a hosted tenant. Anywhere else a
+ * client could have set it. Admission is checked here because this runs
+ * before the admission guard, and earlier middleware can already answer.
  */
 function requestIdOf(c: Context): string {
-  if (!isHosted()) return ""
   const id = c.req.header(REQUEST_ID_HEADER)
-  return id && REQUEST_ID_PATTERN.test(id) ? ` request=${id}` : ""
+  return id &&
+    REQUEST_ID_PATTERN.test(id) &&
+    isHosted() &&
+    gatewayAdmits(c.req.raw)
+    ? ` request=${id}`
+    : ""
 }
 
 function isMcpPath(path: string): boolean {

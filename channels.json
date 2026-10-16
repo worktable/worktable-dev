@@ -13,7 +13,13 @@
       "tag": "v0.1.24-dev.149",
       "commit": "224546873c69792000bb4a2573014c5ebef62069",
       "publishedAt": "2026-10-16T00:14:56.786Z",
-      "held": false
+      "held": false,
+      "desktop": {
+        "version": "0.1.24-dev.148+5d1b08d",
+        "tag": "v0.1.24-dev.148",
+        "commit": "5d1b08de1b9acb2bca7af977880227c61a9a853f",
+        "publishedAt": "2026-10-16T00:16:09.521Z"
+      }
     }
   }
 }

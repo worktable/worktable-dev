@@ -119,6 +119,10 @@ export const ENV = {
   BACKUP_REPORT_URL: "WORKTABLE_BACKUP_REPORT_URL",
   BACKUP_RUNTIME_ID: "WORKTABLE_BACKUP_RUNTIME_ID",
   BACKUP_PROVIDER_ID: "WORKTABLE_BACKUP_PROVIDER_ID",
+  /** Control-plane endpoint that emails team invitations. Unset outside Cloud. */
+  INVITATION_MAIL_URL: "WORKTABLE_INVITATION_MAIL_URL",
+  /** Registry id the tenant presents with its gateway secret to that endpoint. */
+  INVITATION_MAIL_RUNTIME_ID: "WORKTABLE_INVITATION_MAIL_RUNTIME_ID",
   /** Public origin where unlisted document links are opened. */
   SHARE_BASE_URL: "WORKTABLE_SHARE_BASE_URL",
   /** Separate, disposable origin used only for executable shared HTML. */
@@ -537,6 +541,18 @@ export const TenantProvisionInput = z
         providerId: z.string().min(1),
       })
       .optional(),
+    invitationMail: z
+      .object({
+        url: z
+          .string()
+          .url()
+          .refine((value) => {
+            const url = new URL(value)
+            return url.protocol === "https:" && !url.username && !url.password
+          }),
+        runtimeId: z.string().min(1),
+      })
+      .optional(),
   })
   .superRefine((input, ctx) => {
     if (
@@ -609,6 +625,12 @@ export function buildTenantEnv(
           [ENV.BACKUP_PROVIDER_ID]: parsed.backupReporting.providerId,
         }
       : {}),
+    ...(parsed.invitationMail
+      ? {
+          [ENV.INVITATION_MAIL_URL]: parsed.invitationMail.url,
+          [ENV.INVITATION_MAIL_RUNTIME_ID]: parsed.invitationMail.runtimeId,
+        }
+      : {}),
     ...(parsed.shareBaseUrl && parsed.htmlShareBaseUrl
       ? {
           [ENV.SHARE_BASE_URL]: new URL(parsed.shareBaseUrl).origin,
@@ -618,6 +640,44 @@ export function buildTenantEnv(
   }
 }
 export * from "./linked-access.ts"
+
+/** The control-plane route a tenant calls to email one team invitation. */
+export const INVITATION_EMAIL_PATH = "/runtime/invitations/email"
+
+/**
+ * What a tenant may say about an invitation it wants emailed. The control
+ * plane builds the join link itself and renders only these plain fields, so a
+ * tenant can never place its own links or markup in an email.
+ */
+export const InvitationEmailRequest = z
+  .object({
+    invitationId: z.string().min(1).max(200),
+    email: z.string().email().max(254),
+    inviterName: z.string().trim().min(1).max(100),
+    worktableName: z.string().trim().min(1).max(100),
+    spaceName: z.string().trim().min(1).max(200).optional(),
+    expiresAt: z.number().int().positive(),
+  })
+  .strict()
+export type InvitationEmailRequest = z.infer<typeof InvitationEmailRequest>
+
+/**
+ * `sent`: the provider accepted it. `limited`: a sending limit applies.
+ * `not_allowed`: this environment does not email that recipient. `unavailable`:
+ * email is not configured. `failed`: the provider refused or did not answer.
+ */
+export const InvitationEmailStatus = z.enum([
+  "sent",
+  "limited",
+  "not_allowed",
+  "unavailable",
+  "failed",
+])
+export type InvitationEmailStatus = z.infer<typeof InvitationEmailStatus>
+export const InvitationEmailResult = z
+  .object({ status: InvitationEmailStatus })
+  .strict()
+export type InvitationEmailResult = z.infer<typeof InvitationEmailResult>
 
 export * from "./public-share-policy.ts"
 

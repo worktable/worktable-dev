@@ -52,7 +52,8 @@ details.
 ## Invite teammates
 
 Enable Teams from **Settings → Team**, then copy an invitation link for each
-member. Everyone uses a named account. Existing Spaces remain restricted until
+member. Choose a starting Space to open it for them when they join. Everyone
+uses a named account. Existing Spaces remain restricted until
 you share them; newly created Spaces are shared by default. The
 [security model](/reference/security/) explains owners and restricted Spaces.
 

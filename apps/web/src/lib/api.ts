@@ -10,7 +10,7 @@ import type {
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
 export type SpaceView = SpaceFile & {
-  permissions?: { edit: boolean; manage: boolean; accessKey?: string };
+  permissions?: { edit: boolean; manage: boolean; shared?: boolean; accessKey?: string };
 };
 
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"

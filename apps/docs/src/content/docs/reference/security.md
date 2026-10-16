@@ -24,6 +24,8 @@ Enable Teams from **Settings → Team** on a local or self-hosted Worktable.
 Create the first named account, then invite members by copying invitation links.
 No email service is required. A link authorizes joining; it does not verify
 ownership of the invited email address. Everyone signs in after Teams is enabled.
+On Worktable Cloud, invitations are emailed and only an account with the
+invited address can accept one.
 
 Existing Spaces remain restricted until an owner shares them. New Spaces let
 members read and edit by default. Owners can read and administer every Space.

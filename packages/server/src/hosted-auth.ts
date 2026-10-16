@@ -152,7 +152,8 @@ export async function verifyHostedBrowserAssertion(
     if (claims.wt.identity) {
       if (claims.wt.identity.subject !== claims.sub || claims.wt.identity.issuer !== process.env[ENV.AUTH_SERVER_URL]?.trim()) return null;
       return await resolveVerifiedCloudMember(resolveWorkspaceOriginForRequest(request).origin, { ...claims.wt.identity, name: claims.wt.principal.displayName },
-        request.method === "POST" && new URL(request.url).pathname === "/api/team/accept-invitation", claims.wt.worktableName);
+        // Acceptance binds the identity itself, once the invitation checks out.
+        request.method === "POST" && new URL(request.url).pathname === "/api/team/accept-invitation" ? "deferred" : false, claims.wt.worktableName);
     }
     if (teamsEnabled()) return null;
     return {

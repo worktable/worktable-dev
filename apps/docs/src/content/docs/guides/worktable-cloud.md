@@ -19,10 +19,13 @@ portable format as local and self-hosted Worktable.
 Cloud is optional. To run Worktable on your own computer or server instead,
 use [Desktop](/start/desktop/) or the [CLI installer](/start/install/).
 
-Invite people from **Settings → Team**. Invitations can be accepted with
-personal accounts or another email domain. Newly created Spaces are shared by
-default; owners can access every Space and Space creators manage their Spaces.
-Threads follow the access rules of their containing Space.
+Invite people from **Settings → Team**. Each invitation is emailed and can be
+accepted only by an account with that email address, personal or on another
+domain. Choose a starting Space to open it for them when they join. If the
+email doesn't arrive, copy the invitation link and send it yourself. Newly
+created Spaces are shared by default; owners can access every Space and Space
+creators manage their Spaces. Threads follow the access rules of their
+containing Space.
 
 ## Connect an agent
 

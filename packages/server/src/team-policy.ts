@@ -386,6 +386,10 @@ function resetTeamSpacePolicyRows(worktableId: string): void {
     db.query("DELETE FROM wt_space_policy WHERE worktable_id = ?").run(
       worktableId
     )
+    // A pending invitation must never reach a Space that replaced its own.
+    db.query(
+      "UPDATE wt_invitation_details SET start_space_id = NULL WHERE worktable_id = ?"
+    ).run(worktableId)
     db.query(
       "DELETE FROM wt_config WHERE key = 'content-policy-reset' AND value = ?"
     ).run(worktableId)
@@ -449,6 +453,9 @@ export function retireTeamSpacePolicy(spaceId: string): void {
     ).run(worktable.id, spaceId)
     db.query(
       "DELETE FROM wt_space_policy WHERE worktable_id = ? AND space_id = ?"
+    ).run(worktable.id, spaceId)
+    db.query(
+      "UPDATE wt_invitation_details SET start_space_id = NULL WHERE worktable_id = ? AND start_space_id = ?"
     ).run(worktable.id, spaceId)
     advanceTeamPolicy(worktable.id)
   })()

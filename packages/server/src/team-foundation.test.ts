@@ -22,6 +22,8 @@ import {
 } from "./team-agent-connections.ts"
 import { updateTeamAgent } from "./team-policy.ts"
 import { spacesRouter } from "./routes/spaces.ts"
+import { profileRouter } from "./routes/profile.ts"
+import { workspaceRouter } from "./routes/workspace.ts"
 import { tokensRouter } from "./routes/tokens.ts"
 import { TeamAccessError } from "./team-policy.ts"
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
@@ -730,6 +732,66 @@ describe("team foundation", () => {
     )
     expect(policy.grants).toEqual([])
     expect(() => setSpaceAccessPolicy(policy, member)).not.toThrow()
+  })
+
+  test("each member arranges their own Spaces, and an arrangement never names a Space they cannot read", async () => {
+    const { owner, member } = await setup()
+    const as = (identity: TokenIdentity) => {
+      const next = new Hono()
+      next.use("*", async (c, go) => {
+        c.set("identity", identity)
+        await go()
+      })
+      next.route("/api/workspace", workspaceRouter)
+      next.route("/api/profile", profileRouter)
+      return next
+    }
+    const save = (identity: TokenIdentity, body: unknown) =>
+      as(identity).fetch(
+        new Request("http://localhost/api/profile/navigation", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      )
+    const navigation = async (identity: TokenIdentity) =>
+      (
+        (await (
+          await as(identity).fetch(new Request("http://localhost/api/workspace"))
+        ).json()) as { navigation?: unknown }
+      ).navigation
+    const groups = [{ id: "g1", name: "Old work" }]
+    const arrangement = { groups, spaceGroups: { original: "g1" }, pins: ["original"] }
+
+    const grantBob = (access: "read" | null) =>
+      setSpaceAccessPolicy(
+        {
+          spaceId: "original",
+          visibility: "restricted",
+          grants: access
+            ? [{ subjectType: "member", subjectId: member.team!.memberId!, access }]
+            : [],
+        },
+        owner
+      )
+
+    expect((await save(owner, { expectedRevision: 0, ...arrangement })).status).toBe(200)
+    expect(await navigation(member)).toBeNull()
+
+    grantBob("read")
+    expect((await save(member, { expectedRevision: 0, ...arrangement })).status).toBe(200)
+
+    // Losing access hides the Space from Bob's arrangement without forgetting it.
+    grantBob(null)
+    expect(await navigation(member)).toEqual({ revision: 1, groups, spaceGroups: {}, pins: [] })
+    const more = [...groups, { id: "g2", name: "New work" }]
+    expect(
+      (await save(member, { expectedRevision: 1, groups: more, spaceGroups: {}, pins: [] })).status
+    ).toBe(200)
+
+    grantBob("read")
+    expect(await navigation(member)).toEqual({ ...arrangement, revision: 2, groups: more })
+    expect(await navigation(owner)).toEqual({ revision: 1, ...arrangement })
   })
 
   test("removing and reinviting a member preserves their actor but never restores old credentials or Space grants", async () => {

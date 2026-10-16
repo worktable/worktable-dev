@@ -20,6 +20,7 @@ export * from "./agent-connections";
 export * from "./agent-platforms";
 export * from "./activity";
 export * from "./teams";
+export * from "./personal-navigation";
 
 export type SpaceId = string;
 export type AgentId = string;

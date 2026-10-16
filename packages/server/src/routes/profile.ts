@@ -6,6 +6,13 @@ import { canManageUserSettings } from "../auth.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { teamsEnabled } from "../team-database.ts"
 import { requireTeamHuman } from "../team-policy.ts"
+import {
+  PersonalNavigationSchema,
+  personalNavigationProblem,
+} from "@worktable/types"
+import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
+import { savePersonalNavigation } from "../personal-navigation-store.ts"
+import { wsManager } from "../ws.ts"
 
 export const profileRouter = new Hono()
 
@@ -48,4 +55,42 @@ profileRouter.put("/", async (c) => {
     name,
   })
   return c.json({ id: participant.id, name: participant.name })
+})
+
+const SaveNavigationSchema = PersonalNavigationSchema.omit({
+  revision: true,
+}).extend({ expectedRevision: PersonalNavigationSchema.shape.revision })
+
+// The person's own groups and pins. Reads arrive with the workspace summary.
+profileRouter.put("/navigation", async (c) => {
+  const person = personalPreferencesKey(c)
+  if (!person) return c.json(forbidden(), 403)
+  const parsed = SaveNavigationSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) return c.json({ error: "Invalid navigation" }, 400)
+  const problem = personalNavigationProblem(parsed.data)
+  if (problem) return c.json({ error: problem }, 400)
+  const { expectedRevision, ...next } = parsed.data
+  const result = await savePersonalNavigation(
+    person,
+    expectedRevision,
+    next,
+    canReadSpaceFor(c)
+  )
+  if (!result.saved) {
+    return c.json(
+      {
+        error: "Navigation changed since it was read",
+        code: "NAVIGATION_CONFLICT",
+        navigation: result.current,
+      },
+      409
+    )
+  }
+  wsManager.sendToPerson(person, {
+    type: "navigation_changed",
+    data: { revision: result.navigation.revision },
+  })
+  return c.json({ navigation: result.navigation })
 })

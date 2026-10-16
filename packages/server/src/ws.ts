@@ -12,6 +12,8 @@ import { readRecord } from "./record-store.ts"
 import { readThread } from "./thread-store.ts"
 import { getThreadActivity } from "./thread-delivery-store.ts"
 import { logError } from "./debug-log.ts"
+import { participantKey } from "./participant-store.ts"
+import type { TokenIdentity } from "./token-store.ts"
 
 // ============================================================
 // Types
@@ -22,6 +24,7 @@ interface WsClient {
   send(message: string): void
   close(): void
   data: {
+    identity?: Pick<TokenIdentity, "agent" | "principal">
     spaceId: string
     canAccess?: (spaceId?: string, edit?: boolean) => boolean
     /** Threads outside every Space; agents need an explicit grant. */
@@ -54,6 +57,7 @@ interface OutgoingMessage {
     | "thread_activity"
     | "participants_update"
     | "spaces_changed"
+    | "navigation_changed"
     | "error"
     | "subscribed"
   spaceId?: string
@@ -372,6 +376,29 @@ export class WsManager {
     }
   }
 
+  /** One person's own sockets, wherever they are subscribed. */
+  sendToPerson(personKey: string, msg: OutgoingMessage): void {
+    const json = JSON.stringify(msg)
+    const sent = new Set<WsClient>()
+    const dead: WsClient[] = []
+    for (const clients of this.subscriptions.values()) {
+      for (const ws of clients) {
+        const identity = ws.data.identity
+        if (sent.has(ws) || ws.data.credentialRevoked || !identity) continue
+        if (identity.agent || participantKey(identity) !== personKey) continue
+        sent.add(ws)
+        try {
+          ws.send(json)
+        } catch {
+          dead.push(ws)
+        }
+      }
+    }
+    for (const ws of dead) {
+      this.unsubscribe(ws)
+    }
+  }
+
   closeAll(): void {
     for (const clients of this.subscriptions.values()) {
       for (const ws of clients) {
@@ -435,6 +462,7 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
         ws.data.canReadRecords === true ||
         ws.data.canReadAnnotations === true
       )
+    case "navigation_changed":
     case "error":
     case "subscribed":
       return true

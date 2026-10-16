@@ -82,8 +82,7 @@ the channel is held:
 Every verified product change on public `main` publishes its Linux x64 lab build
 as a beta prerelease and moves `beta` forward. The release workflow moves
 `stable`. `bun scripts/release-channels.ts` shows, publishes, holds and
-releases channels, and reports how long a commit has been the unheld beta
-build (`soak <commit>`); writes need a token with contents access. A held channel
+releases channels; writes need a token with contents access. A held channel
 offers nothing new, and installing fails closed when the manifest can't be
 read, so holding a channel stops CLI, self-hosted and Desktop updates without
 touching published releases.

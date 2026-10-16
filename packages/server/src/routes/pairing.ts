@@ -705,6 +705,8 @@ pairingRouter.post("/redeem", async (c) => {
             token.agent === metadata.agent &&
             token.workspace === metadata.workspace
         )
+        // Oldest first, so the installation's newest credential comes last.
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((token) => token.principal.id);
       teamBinding = bindTeamPairingCredential(session.id, metadata.principal.id, {
         previousCredentialKeys,

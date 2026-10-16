@@ -591,14 +591,17 @@ function teamWorktableConfig(): WorktableConfig | null {
 async function commandTeamResetPassword(email: string): Promise<void> {
   const config = teamWorktableConfig()
   if (!config) return
-  const link = await issueTeamPasswordReset(
-    resolveInviteOrigin(config).origin,
-    { email },
-    "machine"
-  )
+  const { origin, configured } = resolveInviteOrigin(config)
+  const link = await issueTeamPasswordReset(origin, { email }, "machine")
   console.log("Send this link to the person directly. It works once and")
   console.log(`expires ${new Date(link.expiresAt).toLocaleString()}:`)
   console.log(link.url)
+  if (!configured)
+    console.log(
+      style.yellow(
+        `No Workspace URL is configured, so the link points at ${origin}, which other machines may not reach. Set one in Settings -> General (or WORKTABLE_PUBLIC_URL).`
+      )
+    )
 }
 
 function commandTeamOperator(email: string, operator: boolean): void {

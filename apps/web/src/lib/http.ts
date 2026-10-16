@@ -214,17 +214,25 @@ export async function authenticatedFetch(
     return fetch(input, { ...init, method, headers, credentials: "include" })
   }
 
-  const token = unsafe(method)
+  let token = unsafe(method)
     ? await currentCsrfToken(
         init.signal ?? (input instanceof Request ? input.signal : undefined)
       )
     : csrfToken;
   let response = await send(token);
   noteServerBuild(response);
-  if (unsafe(method) && (await csrfFailure(response))) {
-    const token = await acquireCsrfToken();
-    if (token) response = await send(token);
-  }
+  // One CSRF recovery per request, whichever attempt first meets the refusal.
+  let csrfRecovered = false;
+  const recoverCsrf = async () => {
+    if (csrfRecovered || !unsafe(method) || !(await csrfFailure(response))) return;
+    csrfRecovered = true;
+    const fresh = await acquireCsrfToken();
+    if (fresh) {
+      token = fresh;
+      response = await send(token);
+    }
+  };
+  await recoverCsrf();
   // A backup or restore refuses requests before any handler runs, so even a
   // write can be retried. Waits stay short and follow the request's signal.
   const signal =
@@ -243,6 +251,7 @@ export async function authenticatedFetch(
     );
     if (!(await pause(delay, signal))) break;
     response = await send(token);
+    await recoverCsrf();
   }
   if (response.status === 403 || response.status === 409) {
     const body = await response

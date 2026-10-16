@@ -136,6 +136,40 @@ describe("authenticatedFetch", () => {
     )
   })
 
+  it("recovers Cloud CSRF when a backup's refusal comes first", async () => {
+    const posts: Request[] = []
+    globalThis.fetch = (async (input, init) => {
+      const request = new Request(
+        input instanceof Request
+          ? input
+          : new URL(String(input), "https://app.worktable.cloud"),
+        init
+      )
+      if (new URL(request.url).pathname === "/gateway/session")
+        return Response.json({ authenticated: true, csrfToken: "csrf-after-backup" })
+      posts.push(request)
+      if (posts.length === 1)
+        return Response.json(
+          { code: "WORKSPACE_REPLACING" },
+          { status: 503, headers: { "Retry-After": "0" } }
+        )
+      return request.headers.get("X-Worktable-CSRF") === "csrf-after-backup"
+        ? Response.json({ ok: true })
+        : Response.json({ code: "CSRF_REQUIRED" }, { status: 403 })
+    }) as typeof fetch
+
+    const response = await authenticatedFetch(
+      "https://app.worktable.cloud/api/spaces",
+      { method: "POST", body: "{}" }
+    )
+    expect(response.status).toBe(200)
+    expect(posts.map((post) => post.headers.get("X-Worktable-CSRF"))).toEqual([
+      null,
+      null,
+      "csrf-after-backup",
+    ])
+  })
+
   it("sends the first change on Cloud with the token read at boot", async () => {
     const { requests, releaseSession } = slowCloudSession("csrf-boot")
 

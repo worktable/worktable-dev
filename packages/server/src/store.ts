@@ -443,7 +443,7 @@ const writeLocks = new Map<string, Promise<void>>();
 export async function withStoreWriteLock<T>(
   filePath: string,
   fn: () => Promise<T>,
-  access: "read" | "edit" = "edit"
+  access: "read" | "edit" | "manage" = "edit"
 ): Promise<T> {
   const current = writeLocks.get(filePath) ?? Promise.resolve();
   let release!: () => void;
@@ -461,7 +461,7 @@ export async function withStoreWriteLock<T>(
       if (spaceId && spaceId !== ".trash") {
         // Access is checked again at commit, so a change made while this
         // request waited for the lock applies to this write.
-        if (access === "edit") refreshTeamStateForWrite();
+        if (access !== "read") refreshTeamStateForWrite();
         assertSpaceAccess(spaceId, access);
       }
     }
@@ -716,7 +716,8 @@ export async function mutateSpace(
 ): Promise<{ data: SpaceFile | null; error: string | null }> {
   assertSpaceAccess(spaceId, access);
   const path = spacePath(spaceId);
-  return withWriteLock(path, async () => {
+  // The lock re-checks this access once it is held.
+  return withStoreWriteLock(path, async () => {
     const current = await readSpace(spaceId);
     if (!current.data || current.error) return current;
 
@@ -728,7 +729,7 @@ export async function mutateSpace(
     const updated = SpaceFileSchema.parse(candidate);
     await atomicWrite(path, updated);
     return { data: updated, error: null };
-  });
+  }, access);
 }
 
 export const PREPARED_SPACE_MARKER = ".worktable-internal-seed";

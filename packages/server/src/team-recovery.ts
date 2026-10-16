@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto"
+import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { getTeamAuth } from "./team-auth.ts"
 import {
   advanceTeamPolicy,
   currentTeamWorktable,
+  refreshTeamStateForWrite,
   requireTeamDatabase,
+  teamDatabasePath,
   TeamStateError,
 } from "./team-database.ts"
 import {
@@ -47,10 +50,14 @@ async function resolveResetUser(
     if (!member) throw new TeamAccessError("This person is no longer a member")
     if (owner && member.id === owner.id)
       throw new TeamAccessError("Change your own password in Settings")
-    // One owner must not be able to take over another owner's account.
-    if (owner && member.role === "owner")
+    // An owner must not be able to take over another owner's account, or an
+    // operator's, which can control the machine.
+    if (
+      owner &&
+      (member.role === "owner" || hasTeamOperatorAuthority(member.userId))
+    )
       throw new TeamAccessError(
-        "Reset an owner's password from the Worktable's machine"
+        "Reset an owner's or operator's password from the Worktable's machine"
       )
     return member.userId
   }
@@ -58,11 +65,16 @@ async function resolveResetUser(
     // A person invited back may have forgotten the password of their earlier
     // account; the invitation names that account by email.
     const invitation = requireTeamDatabase()
-      .query<{ email: string }, [string, string]>(
-        "SELECT email FROM invitation WHERE id = ? AND organizationId = ? AND status = 'pending'"
+      .query<{ email: string; expiresAt: number | string }, [string, string]>(
+        "SELECT email, expiresAt FROM invitation WHERE id = ? AND organizationId = ? AND status = 'pending'"
       )
       .get(target.invitationId, worktable.organizationId)
-    if (!invitation)
+    const expiresAt = invitation
+      ? typeof invitation.expiresAt === "number"
+        ? invitation.expiresAt
+        : Date.parse(String(invitation.expiresAt))
+      : 0
+    if (!invitation || !(expiresAt > Date.now()))
       throw new TeamAccessError("This invitation is no longer available")
     const user = requireTeamDatabase()
       .query<{ id: string }, [string]>(
@@ -94,17 +106,26 @@ export async function issueTeamPasswordReset(
   target: PasswordResetTarget,
   issuer: TeamRecoveryIssuer
 ): Promise<{ url: string; expiresAt: string }> {
-  const userId = await resolveResetUser(target, issuer)
   const auth = await getTeamAuth(origin)
   const context = await auth.$context
   const token = randomBytes(32).toString("base64url")
   const expiresAt = new Date(Date.now() + RESET_LINK_LIFETIME_MS)
-  retirePasswordResets(userId)
-  await context.internalAdapter.createVerificationValue({
-    identifier: `reset-password:${token}`,
-    value: userId,
-    expiresAt,
-  })
+  // Membership changes take the same lock, so a link is never left for an
+  // account that was removed or promoted while it was being issued.
+  await withCrossProcessLock(
+    `${teamDatabasePath()}.members.lock`,
+    { label: "Password reset" },
+    async () => {
+      refreshTeamStateForWrite()
+      const userId = await resolveResetUser(target, issuer)
+      retirePasswordResets(userId)
+      await context.internalAdapter.createVerificationValue({
+        identifier: `reset-password:${token}`,
+        value: userId,
+        expiresAt,
+      })
+    }
+  )
   return {
     url: `${origin}/login?reset=${encodeURIComponent(token)}`,
     expiresAt: expiresAt.toISOString(),
@@ -140,6 +161,8 @@ export function setTeamOperator(
           return user ? findTeamMember(user.id) : null
         })()
   if (!member) throw new TeamAccessError("This person is not a member")
+  // An operator is recovered only from the machine: older links stop working.
+  if (operator) retirePasswordResets(member.userId)
   db.transaction(() => {
     if (operator) {
       db.query(

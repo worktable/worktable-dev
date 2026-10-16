@@ -20,6 +20,8 @@ import {
   requireTeamOwner,
   setSpaceAccessPolicy,
   teamMemberForIdentity,
+  requireTeamAgentAdministrator,
+  TeamAccessError,
   updateTeamAgent,
 } from "../team-policy.ts"
 import { sameOriginRequestAllowed } from "../auth.ts"
@@ -293,6 +295,13 @@ teamRouter.patch("/agents/:id", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid agent settings" }, 400)
+  // Every field is checked before any is saved, so a refused request
+  // changes nothing.
+  const agent = requireTeamAgentAdministrator(c.req.param("id"), c.get("identity"))
+  if (parsed.data.worktableThreads !== undefined && agent.ownership !== "team")
+    throw new TeamAccessError("Personal agents follow their member's thread access")
+  if (parsed.data.spaceIds !== undefined && agent.ownership !== "personal")
+    throw new TeamAccessError("Team agents use explicit Space grants")
   if (parsed.data.worktableThreads !== undefined)
     updateTeamAgent(
       c.req.param("id"),

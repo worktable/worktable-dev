@@ -98,17 +98,22 @@ export function bindTeamPairingCredential(
     // Re-pairing the same installation keeps that member's agent, so its
     // name, access and history survive; never across members.
     const previous = installation.previousCredentialKeys ?? []
-    const reused =
+    const candidates =
       !existing && !pending?.agent_id && previous.length
         ? db
-            .query<{ id: string }, string[]>(
-              `SELECT a.id FROM wt_agents a JOIN wt_agent_credentials c ON c.agent_id = a.id
+            .query<{ id: string; credential_key: string }, string[]>(
+              `SELECT a.id, c.credential_key FROM wt_agents a JOIN wt_agent_credentials c ON c.agent_id = a.id
                WHERE a.worktable_id = ? AND a.ownership = 'personal' AND a.member_id = ? AND a.active = 1
-                 AND c.active = 1 AND c.credential_key IN (${previous.map(() => "?").join(",")})
-               LIMIT 1`
+                 AND c.active = 1 AND c.credential_key IN (${previous.map(() => "?").join(",")})`
             )
-            .get(worktableId, member.id, ...previous)?.id
-        : undefined
+            .all(worktableId, member.id, ...previous)
+        : []
+    // The key list ends with the newest credential: keep the agent the
+    // installation used last.
+    const reused = [...previous]
+      .reverse()
+      .map((key) => candidates.find((row) => row.credential_key === key)?.id)
+      .find(Boolean)
     const agentId =
       existing?.agent_id ??
       pending!.agent_id ??

@@ -120,8 +120,9 @@ describe("team context", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(queryClient.getQueryData(["spaces", "research", "documents"])).toBeUndefined()
     expect(queryClient.getQueryData(["spaces", "design", "documents"])).toEqual(["brief"])
-    // Lists spanning Spaces refresh; unrelated queries stay as they are.
-    expect(stale(["recent", {}])).toBe(true)
+    // Lists spanning Spaces drop the lost Space's items at once; unrelated
+    // queries stay as they are.
+    expect(queryClient.getQueryData(["recent", {}])).toBeUndefined()
     expect(stale(["system", "version"])).toBe(false)
     expect(deleted).toEqual(["worktable-team:wt_a%3Amem_1:research:plan-yjs-v1-e"])
     expect(replace).toHaveBeenCalledWith("/")

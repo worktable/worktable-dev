@@ -1750,7 +1750,13 @@ export function startServer(
   let lastCredentialKey: string | null = null;
   let lastFullCredentialCheck = 0;
   const credentialChangeKey = (): string => {
-    const tokens = statSync(tokenStorePath(), { bigint: true, throwIfNoEntry: false });
+    let tokens: ReturnType<typeof statSync> | undefined;
+    try {
+      tokens = statSync(tokenStorePath(), { bigint: true, throwIfNoEntry: false });
+    } catch {
+      // An unreadable token store forces a full check, which fails closed.
+      return `unreadable:${Date.now()}`;
+    }
     let team = "solo";
     try {
       const worktable = currentTeamWorktable();
@@ -2071,6 +2077,16 @@ export function startServer(
             ws.data.sessionStillValid
           )
             trackCredentialSocket(ws)
+          // A member's socket starts from their current access, so the first
+          // change after it opens is reported.
+          const memberId = ws.data.identity?.team?.memberId
+          if (ws.data.type === "space" && memberId && ws.data.identity?.principal.type === "human") {
+            try {
+              ws.data.teamAccess = memberAccess(memberId)?.fingerprint
+            } catch {
+              // Team state is unavailable; the sweep reports it.
+            }
+          }
           if (ws.data.canAccess)
             ws.data.frameAccessDenied = !ws.data.canAccess(
               ws.data.spaceId === THREADS_SCOPE ? undefined : ws.data.spaceId,

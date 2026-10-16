@@ -1,4 +1,8 @@
-import { acceptTeamContext, browserTeamMemberId } from "./team-context"
+import {
+  acceptTeamContext,
+  browserTeamMemberId,
+  reconcileTeamAccess,
+} from "./team-context"
 import { RUNTIME_BASE_PATH } from "./runtime-path"
 import { activityQueryKeys } from "./activity.ts"
 import { useEffect, useLayoutEffect, useRef } from "react"
@@ -65,6 +69,8 @@ export interface WsMessage {
   recordId?: string
   threadId?: string
   data?: unknown
+  /** An `error` message's reason. */
+  error?: string
 }
 
 export type WsStatus = SocketStatus
@@ -801,6 +807,10 @@ function connectShared(
       // This member's access changed: apply it in place, without a request.
       acceptTeamContext(message)
       return
+    }
+    if (message.type === "error" && message.error === "Credential revoked") {
+      // The server detaches a socket whose Space this member lost.
+      reconcileTeamAccess()
     }
     if (message.type === "subscribed") {
       // The server now delivers every change: the stream is caught up.

@@ -1,7 +1,12 @@
 import type { TeamRole } from "@worktable/types"
 import type { TokenIdentity } from "./token-store.ts"
 import { cloudTeamSessionHeaders, getTeamAuth } from "./team-auth.ts"
-import { currentTeamWorktable, teamDatabasePath } from "./team-database.ts"
+import {
+  currentTeamWorktable,
+  refreshTeamStateForWrite,
+  teamDatabasePath,
+} from "./team-database.ts"
+import { retirePasswordResets } from "./team-recovery.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
 import {
   requireTeamHuman,
@@ -36,6 +41,8 @@ export async function changeTeamMembership(
     `${teamDatabasePath()}.members.lock`,
     { label: "Team membership" },
     async () => {
+      // Another process may have changed roles while this request waited.
+      refreshTeamStateForWrite()
       requireTeamOwner(identity)
       const member = findTeamMemberById(memberId)
       if (!member)
@@ -60,11 +67,14 @@ export async function changeTeamMembership(
             memberIdOrEmail: memberId,
           },
         })
-      else
+      else {
+        // A new owner is recovered only from the machine.
+        if (role === "owner") retirePasswordResets(member.userId)
         await auth.api.updateMemberRole({
           headers,
           body: { organizationId: worktable.organizationId, memberId, role },
         })
+      }
     }
   )
 }

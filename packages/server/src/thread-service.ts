@@ -756,7 +756,9 @@ export async function listThreadParticipants(
       >("SELECT credential_key, agent_id, sponsor_member_id FROM wt_agent_credentials WHERE active = 1")
       .all()
     const eligibleAgents = agents.filter((agent) => {
-      if (location?.kind !== "space") {
+      // The unscoped list serves composers in every location; only an
+      // explicit Worktable thread applies the Worktable-thread grant.
+      if (location?.kind === "worktable") {
         const level = agentWorktableThreadAccess({
           ownership: agent.ownership as "team" | "personal",
           spaceIds:

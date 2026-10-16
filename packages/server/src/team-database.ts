@@ -489,8 +489,13 @@ export function currentTeamWorktable(): TeamWorktable | null {
 /** For writers at commit: re-read team state so a revocation mid-request applies. */
 export function refreshTeamStateForWrite(): void {
   const scope = requestScope.getStore()
-  if (scope) scope.resolved = undefined
+  if (scope) {
+    scope.resolved = undefined
+    // A session ended while this request waited must not authorize it.
+    scope.memo.clear()
+  }
   turnState = null
+  turnMemo = null
 }
 
 /** Called by every in-process writer of team state, whether or not it succeeded. */

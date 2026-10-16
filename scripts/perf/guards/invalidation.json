@@ -49,7 +49,12 @@
     {
       "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
       "kind": "predicate",
-      "why": "A team member gained or lost Spaces: lists that gather items from every readable Space (recent, activity, pending, threads, search) read again, only those on screen. Runs only when this member's own access changes."
+      "why": "A team member gained Spaces: lists that gather items from every readable Space (recent, activity, pending, threads, search) read again, only those on screen. Runs only when this member's own access changes."
+    },
+    {
+      "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
+      "kind": "predicate",
+      "why": "A team member lost Spaces: lists that gather items from every readable Space are removed, so the lost Space's titles leave the screen at once, and read again when shown. Runs only when this member's own access changes."
     }
   ]
 }

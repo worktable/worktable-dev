@@ -75,7 +75,12 @@ export function acceptTeamContext(value: unknown): void {
   // A response that was delayed or replayed must not move the tab backwards.
   if (previous && sameMember && next.policyRevision < previous.policyRevision)
     return
-  context = next
+  // `access` stays the last one applied until its refresh succeeds, so a
+  // failed refresh is retried by the next response that carries it.
+  const changed = Boolean(
+    sameMember && next.access && previous?.access && next.access !== previous.access
+  )
+  context = changed ? { ...next, access: previous!.access } : next
   if (!previous || resetting) return
   if (!sameMember) {
     resetting = true
@@ -85,8 +90,12 @@ export function acceptTeamContext(value: unknown): void {
     )
     return
   }
-  if (next.access && previous.access && next.access !== previous.access)
-    void refreshTeamAccess()
+  if (changed) void refreshTeamAccess(next.access!)
+}
+
+/** The server detached a realtime socket: check this member's access now. */
+export function reconcileTeamAccess(): void {
+  if (context?.access && !resetting) void refreshTeamAccess(null)
 }
 
 /** Human identity and access are supplied by the authenticated runtime. */
@@ -124,7 +133,13 @@ export function applySpaceAccess(spaces: SpaceView[]): SpaceAccessChange | null 
     queryClient?.removeQueries({ queryKey: ["spaces", spaceId] })
   for (const spaceId of [...change.changed, ...change.gained])
     void queryClient?.invalidateQueries({ queryKey: ["spaces", spaceId] })
-  if (change.lost.length || change.gained.length)
+  // A lost Space's titles leave every list at once; a gained one's arrive
+  // with the next read.
+  if (change.lost.length)
+    queryClient?.removeQueries({
+      predicate: (query) => CROSS_SPACE_LISTS.has(String(query.queryKey[0])),
+    })
+  else if (change.gained.length)
     void queryClient?.invalidateQueries({
       predicate: (query) => CROSS_SPACE_LISTS.has(String(query.queryKey[0])),
     })
@@ -136,13 +151,17 @@ export function applySpaceAccess(spaces: SpaceView[]): SpaceAccessChange | null 
   return change
 }
 
-/** This member's access changed: refresh what it affects, stay on the page. */
-function refreshTeamAccess(): Promise<void> {
+/**
+ * This member's access changed: refresh what it affects, stay on the page.
+ * `applied` becomes the recorded access once the refresh succeeded.
+ */
+function refreshTeamAccess(applied: string | null): Promise<void> {
   refreshingAccess ??= (async () => {
     const spaces = await fetchSpaces().catch(() => null)
     if (!spaces) return // The server stays authoritative; keep drafts on an outage.
     applySpaceAccess(spaces)
     teamQueryClient()?.setQueryData(["spaces"], spaces)
+    if (applied && context) context = { ...context, access: applied }
   })().finally(() => {
     refreshingAccess = null
   })

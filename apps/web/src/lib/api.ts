@@ -1,4 +1,5 @@
 import { applySpaceAccess, initializeBrowserTeamContext } from "./team-context";
+import { rememberOneSpaceAccess } from "./team-access";
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
   ResolvedStartHerePin,
@@ -98,7 +99,11 @@ export function getSpace(spaceId: string, options?: ReadOptions) {
   return fetchJSON<{
     space: SpaceView
     pins?: WithContentRevision<ResolvedStartHerePin>[]
-  }>(`/api/spaces/${spaceId}`, options)
+  }>(`/api/spaces/${spaceId}`, options).then((result) => {
+    // A document opened directly learns its Space's content key here.
+    rememberOneSpaceAccess(result.space)
+    return result
+  })
 }
 
 export function createSpace(data: {

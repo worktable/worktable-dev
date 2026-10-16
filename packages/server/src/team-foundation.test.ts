@@ -1466,6 +1466,10 @@ test("self-hosted recovery issues single-use reset links and explicit operator g
   ).toThrow(TeamAccessError)
   setTeamOperator({ memberId: member.team!.memberId! }, true, owner)
   expect(hasTeamOperatorAuthority(member.team!.userId!)).toBe(true)
+  // An operator can control the machine, so only the machine resets them.
+  await expect(
+    issueTeamPasswordReset(origin, { memberId: member.team!.memberId! }, owner)
+  ).rejects.toThrow("from the Worktable's machine")
   setTeamOperator({ memberId: owner.team!.memberId! }, false, owner)
   expect(() =>
     setTeamOperator({ memberId: member.team!.memberId! }, false, member)

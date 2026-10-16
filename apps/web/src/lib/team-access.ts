@@ -63,6 +63,16 @@ export function rememberSpaceAccess(spaces: SpaceView[]): SpaceAccessChange {
   return change
 }
 
+/** One Space's key, from a read of that Space; other Spaces are left as they are. */
+export function rememberOneSpaceAccess(space: SpaceView): void {
+  const key = space.permissions?.accessKey
+  if (!key || accessKeys.get(space.id) === key) return
+  // A changed key is the spaces list's to apply, with what it invalidates.
+  if (accessKeys.has(space.id)) return
+  accessKeys.set(space.id, key)
+  editable.set(space.id, space.permissions?.edit !== false)
+}
+
 /** The `a` cache key for a Space's content, or null when none is known. */
 export function spaceAccessKey(spaceId: string): string | null {
   return accessKeys.get(spaceId) ?? null

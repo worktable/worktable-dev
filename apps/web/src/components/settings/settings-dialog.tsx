@@ -112,8 +112,12 @@ function SettingsBody({
   const sections = deploymentQuery.data
     ? getSettingsSections(deploymentQuery.data)
     : []
+  // An unavailable section opens the Worktable's General section, which the
+  // Settings button opens too, before anything else.
   const active =
-    sections.find((section) => section.id === activeId) ?? sections[0]
+    sections.find((section) => section.id === activeId) ??
+    sections.find((section) => section.id === DEFAULT_SETTINGS_SECTION_ID) ??
+    sections[0]
   // Callback ref (survives conditional rendering) drives the vertical edge fade.
   const scrollRef = useScrollFade<HTMLDivElement>()
 

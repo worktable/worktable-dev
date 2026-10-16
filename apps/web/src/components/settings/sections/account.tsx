@@ -1,5 +1,4 @@
 import { HttpError } from "@/lib/http"
-import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { CLOUD_PERSONAL_PLAN } from "@worktable/hosted-contract"
 import { Button } from "@worktable/ui/components/button"
@@ -12,17 +11,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@worktable/ui/components/card"
-import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
   CreditCard,
   Download,
   ExternalLink,
   Gift,
-  LogOut,
   TriangleAlert,
 } from "lucide-react"
 import { getConnection } from "@/lib/system-api"
-import { submitCloudLogout } from "@/lib/cloud-logout"
 import {
   downloadCloudWorkspace,
   getCloudBillingStatus,
@@ -33,8 +29,6 @@ import { useSettingsSectionActive } from "../settings-dialog"
 
 export function AccountSection() {
   const sectionActive = useSettingsSectionActive()
-  const [signOutOpen, setSignOutOpen] = useState(false)
-  const [signingOut, setSigningOut] = useState(false)
   const connectionQuery = useQuery({
     queryKey: ["system", "connection"],
     queryFn: getConnection,
@@ -123,39 +117,8 @@ export function AccountSection() {
           />
         )}
 
-        <h3 className="text-sm font-medium text-foreground">Session</h3>
-        <div className="flex flex-col gap-4 rounded-xl card-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              Signed in on this browser
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => setSignOutOpen(true)}>
-            <LogOut className="size-4" />
-            Sign out
-          </Button>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Your agents stay connected when you sign out.
-        </p>
       </section>
 
-      <ConfirmDialog
-        open={signOutOpen}
-        onOpenChange={(open) => {
-          if (!signingOut) setSignOutOpen(open)
-        }}
-        title="Sign out of Worktable?"
-        description="This signs you out on this browser. Your agents stay connected and your data stays intact."
-        confirmLabel="Sign out"
-        loadingLabel="Signing out…"
-        loading={signingOut}
-        icon={<LogOut className="size-5 text-primary" />}
-        onConfirm={async () => {
-          setSigningOut(true)
-          await submitCloudLogout()
-        }}
-      />
     </>
   )
 }

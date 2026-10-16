@@ -22,7 +22,7 @@ import {
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
 import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
-import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
+import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
 import {
   appendWorkspaceImportChunk,
@@ -141,7 +141,7 @@ export async function workspaceSummary(
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
-    ...(person ? { navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
+    ...(person ? { person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",

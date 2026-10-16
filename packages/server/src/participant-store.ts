@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { readFileSync, statSync } from "node:fs"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { ParticipantKind, ParticipantRef } from "@worktable/types"
@@ -371,6 +372,35 @@ function reconcileThreadNames(participantId: string): Promise<void> {
     }
   })
   return next
+}
+
+// Bindings are replaced through a rename, so a new inode marks a new version.
+let namesCache: { path: string; stamp: string; names: Map<string, string> } | null = null
+
+/**
+ * A participant's current name without reading the file again while it is
+ * unchanged, for summaries that ride along with every page.
+ */
+export function participantNameForKey(key: string): string | null {
+  const path = bindingsPath()
+  try {
+    const info = statSync(path, { throwIfNoEntry: false })
+    if (!info) return null
+    const stamp = `${info.ino}:${info.size}:${info.mtimeMs}`
+    if (namesCache?.path !== path || namesCache.stamp !== stamp) {
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ParticipantBindingsFile>
+      const names = new Map<string, string>()
+      for (const binding of Array.isArray(parsed.bindings) ? parsed.bindings : []) {
+        if (typeof binding?.key === "string" && typeof binding.participant?.name === "string") {
+          names.set(binding.key, binding.participant.name)
+        }
+      }
+      namesCache = { path, stamp, names }
+    }
+    return namesCache.names.get(key) ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Each identity's current participant, keyed like `participantKey`. */

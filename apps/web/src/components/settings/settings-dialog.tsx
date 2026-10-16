@@ -21,6 +21,7 @@ import { Skeleton } from "@worktable/ui/components/skeleton"
 import { Badge } from "@worktable/ui/components/badge"
 import { cn } from "@worktable/ui/lib/utils"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
+import { useWorkspace } from "@/lib/queries"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
@@ -305,7 +306,8 @@ function SettingsNavRail({
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null)
   const scrollRef = useScrollFade<HTMLElement>()
   const sectionIds = sections.map((section) => section.id).join(",")
-  const groups = ["Workspace", "Preferences", "Data", "Support"] as const
+  const groups = ["You", "Worktable", "Support"] as const
+  const worktableName = useWorkspace().data?.name ?? "Worktable"
 
   useLayoutEffect(() => {
     const el = itemRefs.current.get(activeId)
@@ -339,11 +341,11 @@ function SettingsNavRail({
           return (
             <section
               key={group}
-              aria-label={group}
+              aria-label={group === "Worktable" ? worktableName : group}
               className="flex flex-col gap-0.5"
             >
-              <h3 className="px-2.5 pt-1 pb-1.5 text-sm font-medium text-muted-foreground">
-                {group}
+              <h3 className="truncate px-2.5 pt-1 pb-1.5 text-sm font-medium text-muted-foreground">
+                {group === "Worktable" ? worktableName : group}
               </h3>
               {groupSections.map((section) => {
                 const Icon = section.icon

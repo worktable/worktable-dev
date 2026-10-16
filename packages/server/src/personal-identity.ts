@@ -1,6 +1,7 @@
 import type { Context } from "hono"
-import { canManageUserSettings } from "./auth.ts"
-import { participantKey } from "./participant-store.ts"
+import { authRequired, canManageUserSettings } from "./auth.ts"
+import { isHosted } from "./hosted.ts"
+import { participantKey, participantNameForKey } from "./participant-store.ts"
 import { teamsEnabled } from "./team-database.ts"
 import { canAccessSpace, teamMemberForIdentity } from "./team-policy.ts"
 
@@ -22,4 +23,30 @@ export function personalPreferencesKey(c: Context): string | null {
 export function canReadSpaceFor(c: Context): (spaceId: string) => boolean {
   const identity = c.get("identity")
   return (spaceId) => canAccessSpace(spaceId, "read", identity)
+}
+
+export interface PersonSummary {
+  name: string
+  role: "owner" | "member"
+  /** How this person signs out here, or null when there is no session. */
+  signOut: "team" | "cloud" | "password" | null
+}
+
+/** Who is using this Worktable, for the sidebar. */
+export function personSummary(c: Context): PersonSummary | null {
+  if (!personalPreferencesKey(c)) return null
+  const identity = c.get("identity")!
+  const member = teamsEnabled() ? teamMemberForIdentity(identity) : null
+  if (member) {
+    return {
+      name: member.name,
+      role: member.role,
+      signOut: isHosted() ? "cloud" : "team",
+    }
+  }
+  return {
+    name: participantNameForKey(participantKey(identity)) ?? "Owner",
+    role: "owner",
+    signOut: isHosted() ? "cloud" : authRequired() ? "password" : null,
+  }
 }

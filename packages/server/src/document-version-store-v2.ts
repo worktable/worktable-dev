@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import {
   lstat,
   mkdtemp,
@@ -94,6 +94,64 @@ export interface WriteDocumentGenerationV2Input {
   authoredSource: DocumentGenerationPayloadSource
   companions?: DocumentGenerationPayloadCompanion[]
   registry?: DocumentFormatRegistry
+  /**
+   * The document's newest generation, when this save may continue it. If it
+   * is the same actor's open version (see continuesDocumentGeneration), the
+   * new generation replaces it: it keeps that version's createdAt and records
+   * this save's createdAt as updatedAt. Once the save has committed, the
+   * caller retires the replaced generation with retireReplacedGenerationV2.
+   */
+  coalesceWith?: string
+}
+
+/**
+ * Rapid edits coalesce into one version: saves by one actor within this long
+ * of their previous save update that version instead of starting another.
+ */
+export const DOCUMENT_VERSION_COALESCE_WINDOW_MS = 10 * 60_000
+
+/**
+ * Whether a save may replace `open` instead of starting a new version. `open`
+ * must be an ordinary update by the same actor through the same channel, in
+ * the same format and place, last saved less than the coalescing window
+ * before this save. A checkpoint (restore, manual, automatic transition or
+ * baseline) or an agent mutation receipt seals a version: receipts are the
+ * undo and replay points of their requests.
+ */
+export function continuesDocumentGeneration(
+  open: DocumentGenerationManifestV2,
+  save: Pick<
+    WriteDocumentGenerationV2Input,
+    | "operation"
+    | "createdAt"
+    | "createdBy"
+    | "source"
+    | "logicalPath"
+    | "format"
+    | "checkpoint"
+    | "agentMutation"
+    | "previousGenerationCheckpoint"
+  >
+): boolean {
+  if (
+    save.operation !== "update" ||
+    save.checkpoint ||
+    save.agentMutation ||
+    save.previousGenerationCheckpoint ||
+    open.operation !== "update" ||
+    open.checkpoint?.meaningful ||
+    open.agentMutation ||
+    open.createdBy !== save.createdBy ||
+    open.source !== save.source ||
+    open.logicalPath !== save.logicalPath ||
+    open.format.id !== save.format.id ||
+    open.format.sourceVersion !== save.format.sourceVersion
+  ) {
+    return false
+  }
+  const elapsed =
+    Date.parse(save.createdAt) - Date.parse(open.updatedAt ?? open.createdAt)
+  return elapsed >= 0 && elapsed < DOCUMENT_VERSION_COALESCE_WINDOW_MS
 }
 
 export interface ReadDocumentGenerationV2Result {
@@ -700,6 +758,21 @@ export async function writeDocumentGenerationV2(
         if (collision) {
           throw new Error(`document generation already exists: ${collision}`)
         }
+        const replaced = input.coalesceWith
+          ? await readDocumentGenerationManifestV2({
+              workspaceRoot: input.workspaceRoot,
+              spaceId: input.spaceId,
+              documentId: input.documentId,
+              generationId: input.coalesceWith,
+            }).catch(() => null)
+          : null
+        if (replaced && continuesDocumentGeneration(replaced, input)) {
+          prepared.manifest = DocumentGenerationManifestV2Schema.parse({
+            ...prepared.manifest,
+            createdAt: replaced.createdAt,
+            updatedAt: input.createdAt,
+          })
+        }
         const staging = await mkdtemp(join(parent, ".pending-"))
         try {
           await writePreparedGeneration(staging, prepared)
@@ -723,6 +796,67 @@ export async function writeDocumentGenerationV2(
           await rm(staging, { recursive: true, force: true })
           throw error
         }
+      }
+    )
+  })
+}
+
+/**
+ * Retire the version a coalesced save replaced. Version files are never
+ * rewritten: the replacement is a new generation, and this removes the one it
+ * superseded, first renaming it out of the listing so a crash leaves no
+ * half-removed generation behind. A version sealed since then is kept.
+ */
+export async function retireReplacedGenerationV2(input: {
+  workspaceRoot: string
+  spaceId: string
+  documentId: DocumentId
+  replacement: DocumentGenerationManifestV2
+  replaced: string
+}): Promise<void> {
+  if (!input.replacement.updatedAt || input.replaced === input.replacement.id) {
+    return
+  }
+  const parent = documentVersionsV2Directory(
+    input.workspaceRoot,
+    input.spaceId,
+    input.documentId
+  )
+  await withDocumentGenerationLock(parent, async () => {
+    if (!(await pathExists(parent))) return
+    await requireRealDocumentStorageDirectory(input.workspaceRoot, parent)
+    await withCrossProcessLock(
+      join(parent, ".write-lock"),
+      { label: `Document ${input.documentId} version history` },
+      async () => {
+        const replaced = await readDocumentGenerationManifestV2({
+          workspaceRoot: input.workspaceRoot,
+          spaceId: input.spaceId,
+          documentId: input.documentId,
+          generationId: input.replaced,
+        })
+        if (
+          !replaced ||
+          replaced.checkpoint?.meaningful ||
+          replaced.agentMutation ||
+          replaced.createdAt !== input.replacement.createdAt
+        ) {
+          return
+        }
+        const removing = join(
+          parent,
+          `.pending-replaced-${randomBytes(8).toString("hex")}`
+        )
+        await rename(
+          documentGenerationV2Directory(
+            input.workspaceRoot,
+            input.spaceId,
+            input.documentId,
+            input.replaced
+          ),
+          removing
+        )
+        await rm(removing, { recursive: true, force: true })
       }
     )
   })

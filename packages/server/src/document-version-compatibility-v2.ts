@@ -17,10 +17,12 @@ import {
 } from "./document-format-registry.ts"
 import { updateDocumentInventory } from "./document-inventory.ts"
 import {
+  DOCUMENT_VERSION_COALESCE_WINDOW_MS,
   hasCompatibleDocumentVersionV2,
   listDocumentGenerationsV2,
   markDocumentGenerationCheckpointV2,
   readDocumentGenerationV2,
+  retireReplacedGenerationV2,
   writeDocumentGenerationV2,
   type DocumentGenerationPayloadSource,
   type DocumentGenerationPayloadCompanion,
@@ -397,6 +399,8 @@ async function writeGeneration(input: {
   checkpoint?: VersionCheckpoint
   contentHash: string
   previousProvenance?: DocumentProvenance
+  /** The provenance names this actor's open version: the save may continue it. */
+  coalesce?: boolean
 }): Promise<DocumentProvenance> {
   const versionId = mintVersionId(input.createdAt)
   const provenance: DocumentProvenance = {
@@ -409,7 +413,11 @@ async function writeGeneration(input: {
   const previousCheckpoint = input.previousProvenance
     ? automaticSourceTransition(input.previousProvenance, provenance)
     : null
-  await writeDocumentGenerationV2({
+  const coalesceWith =
+    input.coalesce && input.previousProvenance
+      ? input.previousProvenance.versionId
+      : undefined
+  const written = await writeDocumentGenerationV2({
     workspaceRoot: getWorkspaceRoot(),
     spaceId: input.spaceId,
     documentId: input.documentId,
@@ -434,8 +442,48 @@ async function writeGeneration(input: {
     authoredSource: input.payload,
     ...(input.companions ? { companions: input.companions } : {}),
     registry: createBuiltinDocumentFormatRegistry(),
+    ...(coalesceWith ? { coalesceWith } : {}),
   })
+  if (coalesceWith) {
+    await retireReplacedGenerationV2({
+      workspaceRoot: getWorkspaceRoot(),
+      spaceId: input.spaceId,
+      documentId: input.documentId,
+      replacement: written,
+      replaced: coalesceWith,
+    }).catch((error) => {
+      console.warn(
+        "[document-versions] replaced version cleanup failed:",
+        logError(error)
+      )
+    })
+  }
   return provenance
+}
+
+/**
+ * Whether a save may continue the version the provenance names. A cheap
+ * filter on facts already read; the version store confirms the rest.
+ */
+function mayContinueVersion(input: {
+  previousProvenance?: DocumentProvenance
+  updatedBy: string
+  source: string
+  createdAt: string
+  baselineWritten: boolean
+  options?: RecordOptions
+}): boolean {
+  const previous = input.previousProvenance
+  return Boolean(
+    previous &&
+      !input.baselineWritten &&
+      !input.options?.checkpoint &&
+      (input.options?.operation ?? "update") === "update" &&
+      previous.updatedBy === input.updatedBy &&
+      previous.source === input.source &&
+      Date.parse(input.createdAt) - Date.parse(previous.updatedAt) <
+        DOCUMENT_VERSION_COALESCE_WINDOW_MS
+  )
 }
 
 async function writeBaseline(input: {
@@ -514,6 +562,8 @@ export async function recordLegacyDocVersionV2(input: {
   beforeBytes?: Uint8Array
   afterBytes?: Uint8Array
   previousProvenance?: DocumentProvenance
+  /** When the content was saved, if earlier than this record. */
+  editedAt?: string
 }): Promise<DocumentProvenance | undefined> {
   const after = docFormat(input.after, input.afterBytes)
   const owner = input.options?.documentId
@@ -536,16 +586,17 @@ export async function recordLegacyDocVersionV2(input: {
       kind: "docs",
     })
   }
-  if (
+  const baselineWritten = Boolean(
     input.before &&
-    (input.baselineRequired ||
-      !(await hasCompatibleHistory({
-        spaceId: input.spaceId,
-        documentId: owner.documentId,
-        path: owner.path,
-        legacyKind: "docs",
-      })))
-  ) {
+      (input.baselineRequired ||
+        !(await hasCompatibleHistory({
+          spaceId: input.spaceId,
+          documentId: owner.documentId,
+          path: owner.path,
+          legacyKind: "docs",
+        })))
+  )
+  if (input.before && baselineWritten) {
     const baseline = docFormat(input.before, input.beforeBytes)
     await writeBaseline({
       spaceId: input.spaceId,
@@ -557,7 +608,7 @@ export async function recordLegacyDocVersionV2(input: {
       contentHash: stableVersionHash(input.before.data),
     })
   }
-  const createdAt = new Date().toISOString()
+  const createdAt = input.editedAt ?? new Date().toISOString()
   const provenance = await writeGeneration({
     spaceId: input.spaceId,
     documentId: owner.documentId,
@@ -575,6 +626,7 @@ export async function recordLegacyDocVersionV2(input: {
       : {}),
     contentHash: input.contentHash,
     previousProvenance: input.previousProvenance,
+    coalesce: mayContinueVersion({ ...input, createdAt, baselineWritten }),
   })
   await markAutomaticSourceTransition({
     spaceId: input.spaceId,
@@ -625,16 +677,17 @@ export async function recordLegacyWidgetVersionV2(input: {
       kind: "widgets",
     })
   }
-  if (
+  const baselineWritten = Boolean(
     input.before &&
-    (input.baselineRequired ||
-      !(await hasCompatibleHistory({
-        spaceId: input.spaceId,
-        documentId: owner.documentId,
-        path: owner.path,
-        legacyKind: "widgets",
-      })))
-  ) {
+      (input.baselineRequired ||
+        !(await hasCompatibleHistory({
+          spaceId: input.spaceId,
+          documentId: owner.documentId,
+          path: owner.path,
+          legacyKind: "widgets",
+        })))
+  )
+  if (input.before && baselineWritten) {
     const before = widgetPayload(input.before)
     await writeBaseline({
       spaceId: input.spaceId,
@@ -648,6 +701,7 @@ export async function recordLegacyWidgetVersionV2(input: {
     })
   }
   const after = widgetPayload(input.after)
+  const createdAt = new Date().toISOString()
   const provenance = await writeGeneration({
     spaceId: input.spaceId,
     documentId: owner.documentId,
@@ -657,7 +711,7 @@ export async function recordLegacyWidgetVersionV2(input: {
     companions: after.companions,
     operation:
       input.options?.operation ?? (input.before === null ? "create" : "update"),
-    createdAt: new Date().toISOString(),
+    createdAt,
     createdBy: input.updatedBy,
     source: input.source,
     ...(input.reason ? { reason: input.reason } : {}),
@@ -666,6 +720,7 @@ export async function recordLegacyWidgetVersionV2(input: {
       : {}),
     contentHash: input.contentHash,
     previousProvenance: input.previousProvenance,
+    coalesce: mayContinueVersion({ ...input, createdAt, baselineWritten }),
   })
   await markAutomaticSourceTransition({
     spaceId: input.spaceId,

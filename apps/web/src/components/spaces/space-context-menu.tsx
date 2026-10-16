@@ -1,5 +1,5 @@
 import { browserTeamMemberId } from "@/lib/team-context"
-import { lazy, Suspense, useState, useEffect } from "react"
+import { lazy, Suspense, useState, useEffect, useRef } from "react"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -78,7 +78,7 @@ interface SpaceContextMenuProps {
   onChangeDocSort: (sort: DocSortMode) => void
   onRename: (newName: string) => void
   onChangeIcon: (icon: string) => void
-  onChangeColor: (color: RecognitionColor) => void
+  onChangeColor: (color: RecognitionColor) => Promise<void>
   onArchive?: () => void
   onRestore?: () => void
   onDelete: () => void
@@ -422,8 +422,28 @@ function IconPickerDialog({
   onSelect: (icon: string) => void
   currentIcon?: string
   currentColor: RecognitionColor
-  onSelectColor: (color: RecognitionColor) => void
+  onSelectColor: (color: RecognitionColor) => Promise<void>
 }) {
+  // One color saves at a time and the latest pick saves last, so an earlier
+  // click can't overwrite it.
+  const [shownColor, setShownColor] = useState<RecognitionColor | null>(null)
+  const saving = useRef(false)
+  const wanted = useRef<RecognitionColor | null>(null)
+  const selectColor = (color: RecognitionColor) => {
+    setShownColor(color)
+    wanted.current = color
+    if (saving.current) return
+    saving.current = true
+    void (async () => {
+      while (wanted.current) {
+        const next = wanted.current
+        wanted.current = null
+        await onSelectColor(next)
+      }
+      saving.current = false
+      setShownColor(null)
+    })()
+  }
   const handleSelect = (icon: string) => {
     onSelect(icon)
     onClose()
@@ -445,8 +465,8 @@ function IconPickerDialog({
         <ResponsiveDialogBody>
           <RecognitionSwatches
             label="Color"
-            value={currentColor}
-            onChange={onSelectColor}
+            value={shownColor ?? currentColor}
+            onChange={selectColor}
           />
           <IconSearchGrid
             selected={currentIcon}

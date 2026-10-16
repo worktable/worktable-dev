@@ -1,3 +1,4 @@
+import { useRef } from "react"
 import { Check } from "lucide-react"
 import { RECOGNITION_COLORS, type RecognitionColor } from "@worktable/types/recognition"
 import { recognitionSolid } from "@/lib/recognition"
@@ -25,14 +26,38 @@ export function RecognitionSwatches({
   label: string
   disabled?: boolean
 }) {
+  const buttons = useRef(new Map<RecognitionColor, HTMLButtonElement>())
+  // One tab stop; arrows move the choice, as in the Theme picker.
+  function handleKeyDown(event: React.KeyboardEvent) {
+    const forward = event.key === "ArrowRight" || event.key === "ArrowDown"
+    const back = event.key === "ArrowLeft" || event.key === "ArrowUp"
+    if ((!forward && !back) || disabled) return
+    event.preventDefault()
+    const index = RECOGNITION_COLORS.indexOf(value)
+    const count = RECOGNITION_COLORS.length
+    const next = RECOGNITION_COLORS[(index + (forward ? 1 : -1) + count) % count]
+    onChange(next)
+    buttons.current.get(next)?.focus()
+  }
+
   return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex flex-wrap gap-2"
+      onKeyDown={handleKeyDown}
+    >
       {RECOGNITION_COLORS.map((color) => (
         <button
           key={color}
+          ref={(element) => {
+            if (element) buttons.current.set(color, element)
+            else buttons.current.delete(color)
+          }}
           type="button"
           role="radio"
           aria-checked={value === color}
+          tabIndex={value === color ? 0 : -1}
           aria-label={NAMES[color]}
           title={NAMES[color]}
           disabled={disabled}

@@ -5,6 +5,15 @@
   background: var(--background);
 }
 
+/* The text editor is sized from canvas measurements, which use none of the
+   app's inherited text tuning. Any extra width wraps text out of view. */
+.worktable-drawing .qd-text-edit {
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-feature-settings: normal;
+  font-variation-settings: normal;
+}
+
 .worktable-drawing :is(.qd-dock, .qd-actions, .qd-popover, .qd-submenu) {
   color: var(--popover-foreground);
   background: var(--popover);

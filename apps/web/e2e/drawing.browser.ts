@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test"
-import { emptyQuickdrawDocument } from "@worktable/types"
+import {
+  emptyQuickdrawDocument,
+  type QuickdrawDocument,
+} from "@worktable/types"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
@@ -268,6 +271,9 @@ test("drawing backdrops survive refresh, failed saves, and external updates", as
 }) => {
   const spaceId = "drawing-settings"
   const path = "paper"
+  // Drawings from before saved backdrops have no grid.
+  const legacy: Partial<QuickdrawDocument> = emptyQuickdrawDocument("Paper")
+  delete legacy.grid
   const endpoint = `${harness.apiUrl}/api/spaces/${spaceId}/documents`
   expect(
     (
@@ -281,7 +287,19 @@ test("drawing backdrops survive refresh, failed saves, and external updates", as
       await request.post(endpoint, {
         data: {
           path,
-          source: JSON.stringify(emptyQuickdrawDocument("Paper")),
+          source: JSON.stringify(legacy),
+          encoding: "utf8",
+          format: { id: "worktable.quickdraw", sourceVersion: 1 },
+        },
+      })
+    ).ok()
+  ).toBe(true)
+  expect(
+    (
+      await request.post(endpoint, {
+        data: {
+          path: "fresh",
+          source: JSON.stringify(emptyQuickdrawDocument("Fresh")),
           encoding: "utf8",
           format: { id: "worktable.quickdraw", sourceVersion: 1 },
         },
@@ -311,10 +329,13 @@ test("drawing backdrops survive refresh, failed saves, and external updates", as
     await grid.getByRole("button", { name: label, exact: true }).click()
     await menu.click()
   }
-  await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/${path}`)
+  await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/fresh`)
   await expect(page.getByRole("status")).toHaveText("Saved", {
     timeout: 30_000,
   })
+  await expectGrid("None") // New drawings start plain.
+  await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/${path}`)
+  await expect(page.getByRole("status")).toHaveText("Saved")
   await expectGrid("Dots") // Existing documents without a saved grid still open.
   for (const [value, label] of [
     ["none", "None"],
@@ -373,6 +394,84 @@ test("drawing backdrops survive refresh, failed saves, and external updates", as
   ).toBeVisible()
   await expectGrid("Isometric")
   await expect(page.getByRole("status")).toHaveText("Saved")
+})
+
+// Text editors float over the canvas. Typed text must stay in view, and a
+// double-click inside a hollow shape must label that shape, not add loose text.
+test("typed text stays visible and hollow shapes take labels", async ({
+  page,
+  request,
+}) => {
+  const spaceId = "drawing-text"
+  const endpoint = `${harness.apiUrl}/api/spaces/${spaceId}/documents`
+  expect(
+    (
+      await request.post(`${harness.apiUrl}/api/spaces`, {
+        data: { name: "Drawing text", id: spaceId },
+      })
+    ).ok()
+  ).toBe(true)
+  expect(
+    (
+      await request.post(endpoint, {
+        data: {
+          path: "notes",
+          source: JSON.stringify(emptyQuickdrawDocument("Notes")),
+          encoding: "utf8",
+          format: { id: "worktable.quickdraw", sourceVersion: 1 },
+        },
+      })
+    ).ok()
+  ).toBe(true)
+  await page.goto(`${harness.webUrl}/spaces/${spaceId}/documents/notes`)
+  await expect(page.getByRole("status")).toHaveText("Saved", {
+    timeout: 30_000,
+  })
+  const canvas = page.getByLabel("Drawing canvas")
+  const box = (await canvas.boundingBox())!
+  const editor = canvas.locator(".qd-text-edit")
+  const hiddenText = () =>
+    editor.evaluate((node) => node.scrollHeight - node.clientHeight)
+
+  await canvas.getByRole("button", { name: "Text — T" }).click()
+  await page.mouse.click(box.x + 40, box.y + 80)
+  await page.keyboard.type("One long line that keeps going past a few words")
+  expect(await hiddenText()).toBeLessThanOrEqual(0)
+  await page.keyboard.press("Escape")
+
+  await canvas.getByRole("button", { name: "Shape — G" }).click()
+  const shape = { x: box.x + 80, y: box.y + 160, w: 240, h: 160 }
+  await page.mouse.move(shape.x, shape.y)
+  await page.mouse.down()
+  await page.mouse.move(shape.x + shape.w, shape.y + shape.h, { steps: 8 })
+  await page.mouse.up()
+  await page.mouse.dblclick(shape.x + shape.w / 2, shape.y + shape.h / 2)
+  await expect(editor).toBeFocused()
+  const label = (await editor.boundingBox())!
+  expect(label.x).toBeGreaterThan(shape.x)
+  expect(label.y).toBeGreaterThan(shape.y)
+  expect(label.x + label.width).toBeLessThan(shape.x + shape.w)
+  expect(label.y + label.height).toBeLessThan(shape.y + shape.h)
+  await page.keyboard.type("Queue")
+  await page.keyboard.press("Escape")
+
+  await expect(page.getByRole("status")).toHaveText("Saved")
+  const result = await (
+    await request.get(`${endpoint}/editable-source?path=notes`)
+  ).json()
+  const records = Object.values(
+    JSON.parse(Buffer.from(result.source, "base64").toString()).snapshot
+      .document.store
+  ) as { type: string; props: { text?: string; label?: string } }[]
+  expect(
+    records.map(({ type, props }) => [type, props.text ?? props.label])
+  ).toEqual(
+    expect.arrayContaining([
+      ["text", "One long line that keeps going past a few words"],
+      ["geo", "Queue"],
+    ])
+  )
+  expect(records).toHaveLength(2)
 })
 
 // The editor must follow agent saves while idle, preserving the reader's view,

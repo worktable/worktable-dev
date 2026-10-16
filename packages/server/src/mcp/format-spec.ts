@@ -19,9 +19,9 @@ Records are canonical shared data. HTML-local filters, drafts, preferences, and 
 
 Drawing source is a strict JSON envelope saved as a .quickdraw file:
 
-{"type":"worktable.quickdraw","version":1,"title":"Scratchpad","grid":"dots","snapshot":{"document":{"store":{}}}}
+{"type":"worktable.quickdraw","version":1,"title":"Scratchpad","grid":"none","snapshot":{"document":{"store":{}}}}
 
-grid is optional and controls the saved canvas background: "none", "lines", "ruled", "dots", "crosses", or "iso" (isometric). Drawings without grid open with dots. Preserve the existing grid value when editing raw source unless the user asks to change the background.
+grid is optional and controls the saved canvas background: "none", "lines", "ruled", "dots", "crosses", or "iso" (isometric). New drawings use "none". Drawings without grid open with dots. Preserve the existing grid value when editing raw source unless the user asks to change the background.
 
 Prefer worktable_drawings_read for inspect/query/render/changes and worktable_drawings_write for create/edit/undo/redo. Read worktable_guidance action="drawings" for typed operations, attached connectors, previews, retry and targeted undo. For exact source control, use worktable_documents_write with request.action="create", spaceId, an extensionless path, format={"id":"worktable.quickdraw","sourceVersion":1}, and source as a JSON string (encoding="utf8"). To edit raw source, use worktable_documents_read with request.action="read_source", decode its base64 source, preserve the full envelope including existing records and grid, and replace through worktable_documents_write with request.action="replace" and expectedRevision set to the returned sourceRevision. A conflict requires rereading and reconciling; never blindly retry a replacement with a newer revision. These APIs require V2 storage.
 

@@ -26,18 +26,36 @@ index 2f03b2eba931154ecd8b53dd228c84153fbacaec..ff61b218e70f72dfb7e497defb03d18e
    "files": [
      "src",
 diff --git a/src/editor.js b/src/editor.js
-index 28bba64c33109196c6b50d0646fd0e0c38a616fc..6d86d4d84f4aa7a97d4fa80bfff40d26fc1f9b75 100644
+index 28bba64c33109196c6b50d0646fd0e0c38a616fc..0601f6a99f34991795b523c24fb6ef4af03ab071 100644
 --- a/src/editor.js
 +++ b/src/editor.js
-@@ -7,7 +7,7 @@ import { Store, newId } from './store.js'
- import { themeOf, SIZES, FONT_SIZES, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_MAJOR } from './palette.js'
+@@ -4,10 +4,10 @@
+ // Dependency-free ESM: runs in any modern browser as-is, no build step.
+ 
+ import { Store, newId } from './store.js'
+-import { themeOf, SIZES, FONT_SIZES, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_MAJOR } from './palette.js'
++import { themeOf, SIZES, FONT_SIZES, FONTS, GEO_IDS, COLOR_IDS, GRID_IDS, GRID_STEP, GRID_MAJOR } from './palette.js'
  import {
    localBounds, pageBounds, toLocal, drawShape, hitShape, marqueeHits,
 -  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts,
-+  scaleShape, textLayout, noteLayout, NOTE_W, sampleLinePts, loadAssetImages,
++  scaleShape, textLayout, noteLayout, geoLabelLayout, NOTE_W, LABEL_PAD, sampleLinePts, loadAssetImages,
  } from './shapes.js'
  import { boundsUnion, boundsExpand, boundsContain, clamp, rotWith } from './geometry.js'
  
+@@ -400,11 +400,11 @@ export class Editor {
+         (a.id < b.id ? -1 : 1)
+     )
+   }
+-  hitTest(px, py) {
++  hitTest(px, py, { interior = false } = {}) {
+     const tol = 8 / this.camera.z
+     const list = this.shapesSorted()
+     for (let i = list.length - 1; i >= 0; i--) {
+-      if (hitShape(list[i], px, py, tol, this.store)) return list[i]
++      if (hitShape(list[i], px, py, tol, this.store, { interior })) return list[i]
+     }
+     return null
+   }
 @@ -450,6 +450,8 @@ export class Editor {
      if (this.readonly) return
      if (e.target !== this.canvas && e.target !== this.overlay && e.target !== this.container) return
@@ -120,7 +138,58 @@ index 28bba64c33109196c6b50d0646fd0e0c38a616fc..6d86d4d84f4aa7a97d4fa80bfff40d26
      }
      this.store.update(ss.id, { props: { pts } })
    }
-@@ -1451,20 +1465,7 @@ export class Editor {
+@@ -934,16 +948,20 @@ export class Editor {
+       ta.style.font = `500 ${lay.fontSize * s * z}px ${lay.font}`
+       ta.style.lineHeight = lay.lh * s * z + 'px'
+     } else if (shape.type === 'geo' && ed.field === 'label') {
++      // Wrap and center the block exactly as drawLabel does, so the label
++      // neither reflows nor jumps on commit. 2 units of slack absorb DOM
++      // rounding; centered text keeps it invisible.
+       const p = shape.props
+       const fs = FONT_SIZES[p.labelSize || 's']
+       const fam = FONTS[p.font || 'draw']
+-      pos = this.pageToScreen(shape.x + 8, shape.y + 8)
+-      w = p.w - 16
+-      h = p.h - 16
++      const lh = fs * 1.3
++      lay = geoLabelLayout(shape)
++      w = Math.max(24, p.w - LABEL_PAD * 2) + 2
++      h = lay ? lay.textH : lh
++      pos = this.pageToScreen(shape.x + p.w / 2 - w / 2, shape.y + p.h / 2 - h / 2)
+       align = 'center'
+       ta.style.font = `500 ${fs * z}px ${fam}`
+-      ta.style.lineHeight = fs * 1.3 * z + 'px'
+-      ta.style.paddingTop = Math.max(0, (h * z) / 2 - fs * 1.3 * z) / 2 + 'px'
++      ta.style.lineHeight = lh * z + 'px'
+     } else {
+       lay = textLayout(shape)
+       pos = this.pageToScreen(shape.x, shape.y)
+@@ -961,6 +979,13 @@ export class Editor {
+     ta.style.height = h * z + 'px'
+     ta.style.textAlign = align
+     ta.style.color = shape.type === 'note' ? this.theme.noteText : col.stroke
++    // The canvas turns a rotated shape about its center; turn its editor too.
++    if (shape.rot) {
++      const lb = localBounds(shape)
++      const c = this.pageToScreen(shape.x + lb.x + lb.w / 2, shape.y + lb.y + lb.h / 2)
++      ta.style.transformOrigin = `${c.x - pos.x}px ${c.y - pos.y}px`
++      ta.style.transform = `rotate(${shape.rot}rad)`
++    } else ta.style.transform = ''
+   }
+   _commitText() {
+     const ed = this.editing
+@@ -1191,7 +1216,9 @@ export class Editor {
+     if (this.readonly || this.tool !== 'select') return
+     const s = this._evPoint(e)
+     const p = this.screenToPage(s.x, s.y)
+-    const hit = this.hitTest(p.x, p.y)
++    // Inside a hollow shape, a double-click labels the shape rather than
++    // placing loose text over it.
++    const hit = this.hitTest(p.x, p.y) || this.hitTest(p.x, p.y, { interior: true })
+     if (hit) {
+       if (hit.type === 'text' || hit.type === 'note') {
+         this.setSelection([hit.id])
+@@ -1451,20 +1478,7 @@ export class Editor {
      return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'))
    }
    async _decodeAssets(shapes) {
@@ -178,9 +247,18 @@ index 79f2c01f128107d0ec4d954085b28cff5e049f1e..17c74f383189562b703a75594949d3a9
    user-select: text;
  }
 diff --git a/src/shapes.js b/src/shapes.js
-index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f78611f4d5 100644
+index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..6996f775ae38082feabf519ff7f6e0a5594fed92 100644
 --- a/src/shapes.js
 +++ b/src/shapes.js
+@@ -16,7 +16,7 @@ import { strokeOutline } from './freehand.js'
+ 
+ export const NOTE_W = 200
+ const NOTE_PAD = 20
+-const LABEL_PAD = 12
++export const LABEL_PAD = 12
+ 
+ // semi fill: a near-opaque wash of the paper, so the shape occludes what's
+ // behind it without committing to a color
 @@ -94,7 +94,7 @@ export function toLocal(shape, px, py) {
  
  const outlineCache = new WeakMap() // draw props -> Path2D
@@ -203,7 +281,7 @@ index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f7
  export function lineBaseline(font, fontSize, lh) {
    const key = `${fontSize}|${lh}|${font}`
    let b = baselineCache.get(key)
-@@ -126,21 +132,28 @@ export function lineBaseline(font, fontSize, lh) {
+@@ -126,21 +132,29 @@ export function lineBaseline(font, fontSize, lh) {
  
  // ---- text layout -----------------------------------------------------------
  
@@ -223,7 +301,8 @@ index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f7
 -        out.push({ text: line, w: ctx.measureText(line).width })
 -        line = word.trimStart()
 -      } else line = test
-+    const push = () => { out.push({ text: line, w: ctx.measureText(line).width }); line = '' }
++    // Spaces at a line end hang in the DOM editor; centering must ignore them too.
++    const push = () => { line = line.trimEnd(); out.push({ text: line, w: ctx.measureText(line).width }); line = '' }
 +    for (const { segment: word } of wordSegments.segment(para)) {
 +      if (line && ctx.measureText(line + word).width > maxW) push()
 +      const token = line ? word : word.trimStart()
@@ -240,7 +319,16 @@ index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f7
    }
    return out
  }
-@@ -191,19 +204,41 @@ function geoLabelLayout(shape) {
+@@ -174,7 +188,7 @@ export function noteLayout(shape) {
+   return l
+ }
+ 
+-function geoLabelLayout(shape) {
++export function geoLabelLayout(shape) {
+   const p = shape.props
+   if (!p.label) return null
+   const key = p
+@@ -191,19 +205,41 @@ function geoLabelLayout(shape) {
  
  // ---- image assets ----------------------------------------------------------
  
@@ -289,6 +377,29 @@ index 92a36917ccfb6f1491f3a664efaff02ee32a9e8e..dc701eabf56bb2a6ef94fc66a93939f7
  
  // ---- rendering -------------------------------------------------------------
  
+@@ -473,7 +509,7 @@ export function drawShape(ctx, shape, opts) {
+ // ---- hit testing -----------------------------------------------------------
+ 
+ // point hit in PAGE space; returns true when (px,py) touches the shape
+-export function hitShape(shape, px, py, tol, store) {
++export function hitShape(shape, px, py, tol, store, { interior = false } = {}) {
+   const b = pageBounds(shape)
+   const wide = tol + SIZES[shape.props.size || 'm'] * 2
+   if (!boundsContain({ x: b.x - wide, y: b.y - wide, w: b.w + wide * 2, h: b.h + wide * 2 }, px, py)) return false
+@@ -488,11 +524,11 @@ export function hitShape(shape, px, py, tol, store) {
+       const edgeTol = tol + SIZES[p.size]
+       if (p.geo === 'ellipse') {
+         const inside = pointInEllipse(l.x, l.y, p.w / 2, p.h / 2, p.w / 2, p.h / 2)
+-        if (p.fill !== 'none' || p.label) return inside || nearEllipseEdge(l, p, edgeTol)
++        if (interior || p.fill !== 'none' || p.label) return inside || nearEllipseEdge(l, p, edgeTol)
+         return nearEllipseEdge(l, p, edgeTol)
+       }
+       const poly = geoPolygon(p.geo, p.w, p.h)
+-      if (p.fill !== 'none' || p.label) {
++      if (interior || p.fill !== 'none' || p.label) {
+         if (pointInPolygon(l.x, l.y, poly)) return true
+       }
+       return distToPolyline(l.x, l.y, poly, 2, true) <= edgeTol
 diff --git a/src/store.js b/src/store.js
 index 68ec28e2f152d2dfc2760c31556326621a9b4c0f..de0d2a33b8944888dc56a821a2e2a702fdfc2912 100644
 --- a/src/store.js
@@ -328,12 +439,29 @@ index 68ec28e2f152d2dfc2760c31556326621a9b4c0f..de0d2a33b8944888dc56a821a2e2a702
        this._tx = null
        if (!isDiffEmpty(diff)) {
 diff --git a/types/index.d.ts b/types/index.d.ts
-index 595f061a8a15f6eb83e56c81478f955651d42daf..b82dfb18a6d4d6da9e62535c03c8346962df2385 100644
+index 595f061a8a15f6eb83e56c81478f955651d42daf..b36ea5690b37c19f52091d82df8b7f787b0529b6 100644
 --- a/types/index.d.ts
 +++ b/types/index.d.ts
-@@ -19 +19 @@
+@@ -16,7 +16,7 @@ export type FillId = 'none' | 'semi' | 'solid' | 'pattern'
+ export type FontId = 'draw' | 'sans' | 'serif' | 'mono'
+ export type GeoId = 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'hexagon' | 'star'
+ export type ThemeId = 'light' | 'dark'
 -export type GridId = 'none' | 'lines' | 'dots'
 +export type GridId = 'none' | 'lines' | 'ruled' | 'dots' | 'crosses' | 'iso'
+ 
+ export interface Bounds { x: number; y: number; w: number; h: number }
+ export interface Camera { x: number; y: number; z: number }
+@@ -120,8 +120,8 @@ export function drawShape(
+   shape: ShapeRecord,
+   opts: { theme: Theme; store: Store; zoom?: number; ghost?: boolean; onAssetLoad?: () => void }
+ ): void
+-/** Point hit-test in page space. */
+-export function hitShape(shape: ShapeRecord, px: number, py: number, tol: number, store: Store): boolean
++/** Point hit-test in page space. `interior` also hits inside hollow geo shapes. */
++export function hitShape(shape: ShapeRecord, px: number, py: number, tol: number, store: Store, opts?: { interior?: boolean }): boolean
+ 
+ /**
+  * Turn a raw pointer trail ([x, y, pressure, ...] triplets) into a filled
 @@ -160,6 +160,9 @@ export class Store {
     */
    listenHistory(fn: () => void): () => void
@@ -344,6 +472,15 @@ index 595f061a8a15f6eb83e56c81478f955651d42daf..b82dfb18a6d4d6da9e62535c03c83469
    transact(fn: () => void, source?: DiffSource): void
    put(rec: BoardRecord, source?: DiffSource): void
    update(id: string, patch: Partial<BoardRecord> & { props?: Record<string, any> }, source?: DiffSource): void
+@@ -254,7 +257,7 @@ export class Editor {
+   bringToFront(): void
+   sendToBack(): void
+   shapesSorted(): ShapeRecord[]
+-  hitTest(px: number, py: number): ShapeRecord | null
++  hitTest(px: number, py: number, opts?: { interior?: boolean }): ShapeRecord | null
+ 
+   // laser scribbles (live pointer trails, not part of the document)
+   setRemoteScribbles(list: ScribbleStroke[]): void
 @@ -332,3 +335,8 @@ export interface CreateQuickdrawOptions extends EditorOptions {
  
  /** One call: editor + toolbar chrome in a container. */

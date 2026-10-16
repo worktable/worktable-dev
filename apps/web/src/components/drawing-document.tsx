@@ -109,7 +109,7 @@ function DrawingEditor({
       container: node,
       theme: initialTheme.current,
       readonly: true,
-      grid: "dots",
+      grid: "none",
       themeToggle: false,
       watermark: false,
       styles: { font: "sans" },

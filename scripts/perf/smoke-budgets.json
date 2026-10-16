@@ -44,7 +44,8 @@
       "max": 18
     },
     "dom, cold, open the app at Home": {
-      "max": 1330
+      "max": 1478,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, cold, open Space": {
       "max": 14
@@ -97,7 +98,8 @@
       "max": 1
     },
     "dom, first, open the app at Home": {
-      "max": 1330
+      "max": 1478,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open Space": {
       "max": 7
@@ -106,7 +108,8 @@
       "max": 1
     },
     "dom, first, open Space": {
-      "max": 1740
+      "max": 1934,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open Markdown doc": {
       "max": 3
@@ -125,7 +128,8 @@
       "max": 0
     },
     "dom, first, open rich doc": {
-      "max": 1632
+      "max": 1819,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open rich doc (2,000 blocks)": {
       "max": 3
@@ -153,7 +157,8 @@
       "max": 0
     },
     "dom, first, back to Home": {
-      "max": 1869
+      "max": 2057,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open Threads": {
       "max": 1
@@ -162,7 +167,8 @@
       "max": 0
     },
     "dom, first, open Threads": {
-      "max": 1668
+      "max": 1856,
+      "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
     "requests, first, open a thread": {
       "max": 2

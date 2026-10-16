@@ -3,12 +3,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@worktable/ui/components/dropdown-menu"
 import {
   Trash,
   Pencil,
-  FilePlus,
   MoreVertical,
   Archive,
   RotateCcw,
@@ -24,7 +22,6 @@ interface DocContextMenuProps {
   // support.
   onRename?: () => void
   onDelete?: () => void
-  onNewDoc?: () => void
   onArchive?: () => void
   onRestore?: () => void
   onCopyMarkdown?: () => void
@@ -37,7 +34,6 @@ export function DocContextMenuButton({
   archived,
   onRename,
   onDelete,
-  onNewDoc,
   onArchive,
   onRestore,
   onCopyMarkdown,
@@ -54,15 +50,6 @@ export function DocContextMenuButton({
         <MoreVertical className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="min-w-44">
-        {isFolder && onNewDoc && (
-          <>
-            <DropdownMenuItem onClick={onNewDoc}>
-              <FilePlus className="mr-2 h-4 w-4" />
-              New Doc
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
         {onCopyMarkdown && (
           <DropdownMenuItem onClick={onCopyMarkdown}>
             <Copy className="mr-2 h-4 w-4" />

@@ -14,14 +14,17 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { listDocuments, writeDocumentSource } from "@/lib/documents-api"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { documentPathKey } from "@/lib/document-views"
 
 export function NewDrawingDialog({
   spaceId,
+  folder = "drawings",
   lifetime,
   onClose,
   onCreated,
 }: {
   spaceId: string
+  folder?: string
   lifetime: "durable" | "temporary"
   onClose: () => void
   onCreated: () => void
@@ -44,12 +47,12 @@ export function NewDrawingDialog({
           .replace(/^-|-$/g, "") || "drawing"
       const paths = new Set(
         (await listDocuments(spaceId, true)).map((item) =>
-          item.kind === "document" ? item.path : item.pathKey
+          documentPathKey(item.kind === "document" ? item.path : item.pathKey)
         )
       )
-      let path = `drawings/${slug}`
-      for (let suffix = 2; paths.has(path); suffix += 1)
-        path = `drawings/${slug}-${suffix}`
+      let path = `${folder}/${slug}`
+      for (let suffix = 2; paths.has(documentPathKey(path)); suffix += 1)
+        path = `${folder}/${slug}-${suffix}`
       const result = await writeDocumentSource(spaceId, {
         path,
         format: { id: QUICKDRAW_FORMAT, sourceVersion: 1 },

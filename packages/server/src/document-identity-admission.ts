@@ -7,6 +7,7 @@ import { noteDocumentCreated } from "./document-activity.ts"
 import { reservedByAliasIn } from "./doc-aliases.ts"
 import {
   buildDocumentCatalog,
+  type DocumentCatalog,
   type DocumentCatalogEntry,
 } from "./document-catalog.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
@@ -35,6 +36,10 @@ interface ManagedDocumentAdmission {
   currentClaim: ManagedDocumentClaim | null
   durable: boolean
 }
+
+type ManagedDocumentPath =
+  | string
+  | ((catalog: DocumentCatalog) => string | Promise<string>)
 
 export interface ManagedDocumentAdmissionContext {
   documentId: DocumentId
@@ -101,28 +106,38 @@ function isFamilyClaim(
   )
 }
 
-async function documentIdForManagedWrite(
-  spaceId: string,
-  path: string,
-  family: ManagedLegacyDocumentFamily,
-  intent: "write" | "delete",
-  allowHtmlMetadataRepair: boolean
-): Promise<ManagedDocumentAdmission | null> {
+function requireManagedDocumentPath(path: string) {
   const analyzed = analyzeDocumentPath(path)
-  if (
-    !analyzed.safe ||
-    !analyzed.canonicalPath ||
-    !analyzed.comparisonKey
-  ) {
+  if (!analyzed.safe || !analyzed.canonicalPath || !analyzed.comparisonKey) {
     throw new ManagedDocumentAdmissionError(
       `Document path cannot be created here: ${path}`
     )
   }
 
+  return analyzed
+}
+
+async function documentIdForManagedWrite(
+  spaceId: string,
+  selectedPath: ManagedDocumentPath,
+  family: ManagedLegacyDocumentFamily,
+  intent: "write" | "delete",
+  allowHtmlMetadataRepair: boolean
+): Promise<{ path: string; admission: ManagedDocumentAdmission | null }> {
+  const initialAnalysis =
+    typeof selectedPath === "string"
+      ? requireManagedDocumentPath(selectedPath)
+      : null
   const catalog = await buildDocumentCatalog({
     workspaceRoot: getWorkspaceRoot(),
     spaceId,
   })
+  const path =
+    typeof selectedPath === "function"
+      ? await selectedPath(catalog)
+      : selectedPath
+  const analyzed = initialAnalysis ?? requireManagedDocumentPath(path)
+
   if (
     catalog.inventoryDiagnostics.some(
       (diagnostic) => diagnostic.severity === "error"
@@ -144,23 +159,22 @@ async function documentIdForManagedWrite(
     (entry) => entryComparisonKey(entry) === analyzed.comparisonKey
   )
   if (occupying.length === 0) {
-    if (intent === "delete") return null
+    if (intent === "delete") return { path, admission: null }
     const newPath = analyzeDocumentPath(path, {
       enforceNewPathGrammar: true,
     })
-    if (
-      !newPath.safe ||
-      !newPath.portable ||
-      newPath.canonicalPath !== path
-    ) {
+    if (!newPath.safe || !newPath.portable || newPath.canonicalPath !== path) {
       throw new ManagedDocumentAdmissionError(
         `Document path cannot be created here: ${path}`
       )
     }
     return {
-      documentId: mintDocumentId(),
-      currentClaim: null,
-      durable: false,
+      path,
+      admission: {
+        documentId: mintDocumentId(),
+        currentClaim: null,
+        durable: false,
+      },
     }
   }
   if (occupying.length !== 1 || occupying[0]?.kind === "conflict") {
@@ -211,15 +225,18 @@ async function documentIdForManagedWrite(
     )
   }
   return {
-    documentId:
-      existing.handle.identity === "durable"
-        ? existing.handle.documentId
-        : mintDocumentId(),
-    currentClaim: {
-      format: existing.descriptor.format,
-      source: existing.handle.source,
+    path,
+    admission: {
+      documentId:
+        existing.handle.identity === "durable"
+          ? existing.handle.documentId
+          : mintDocumentId(),
+      currentClaim: {
+        format: existing.descriptor.format,
+        source: existing.handle.source,
+      },
+      durable: existing.handle.identity === "durable",
     },
-    durable: existing.handle.identity === "durable",
   }
 }
 
@@ -231,10 +248,10 @@ async function documentIdForManagedWrite(
 export async function admitManagedDocumentWrite<T>(options: {
   spaceId: string
   /**
-   * Resolve automatic paths while the common namespace is serialized. A
-   * fixed path avoids the extra callback for every ordinary update.
+   * Resolve automatic paths from the same fresh catalog used for admission,
+   * while the common namespace is serialized.
    */
-  path: string | (() => string | Promise<string>)
+  path: ManagedDocumentPath
   family: ManagedLegacyDocumentFamily
   /**
    * The complete format-specific transaction, including every narrower lock,
@@ -269,11 +286,9 @@ export async function admitManagedDocumentWrite<T>(options: {
   allowHtmlMetadataRepair?: boolean
 }): Promise<T> {
   return withDocPathLock(options.spaceId, async () => {
-    const path =
-      typeof options.path === "function" ? await options.path() : options.path
-    const admission = await documentIdForManagedWrite(
+    const { path, admission } = await documentIdForManagedWrite(
       options.spaceId,
-      path,
+      options.path,
       options.family,
       options.intent ?? "write",
       options.allowHtmlMetadataRepair ?? false

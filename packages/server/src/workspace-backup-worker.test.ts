@@ -133,6 +133,7 @@ describe("backup worker failures", () => {
 
   it("records a failed upload by step and exit code only", async () => {
     const manifest = JSON.stringify({
+      type: "worktable.workspace-snapshot",
       workspaceId: "ws_backup_test",
       files: [],
     })
@@ -151,13 +152,14 @@ describe("backup worker failures", () => {
 
   it("reads the manifest from among other lines the server printed", async () => {
     const manifest = JSON.stringify({
+      type: "worktable.workspace-snapshot",
       workspaceId: "ws_backup_test",
       files: [],
     })
     const job = await runJob({
       restic: await fakeRestic(3),
       server: await fakeServer(
-        `echo 'a dependency notice'; echo '${manifest}'; echo 'a notice on exit'`
+        `echo 'a dependency notice'; echo '${manifest}'; echo '{"level":"info"}'`
       ),
     })
     // The manifest parsed: the job reached the upload.
@@ -171,7 +173,7 @@ describe("backup worker failures", () => {
     })
     expect(job.failure.detail).toMatchObject({
       step: "parse-manifest",
-      message: "server command printed no JSON result (35 bytes, cut off mid-line)",
+      message: "server command printed no snapshot manifest (35 bytes, cut off mid-line)",
     })
   })
 })

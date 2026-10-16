@@ -83,6 +83,8 @@ export interface WorkspaceManifest {
   };
   /** Optional provenance metadata. Absence === a normal ("daily") workspace. */
   provenance?: WorkspaceProvenance;
+  /** The chosen recognition color; absent means the default for `id`. */
+  color?: string;
   // NOTE: the configured public origin (`publicUrl`) is NOT a manifest field. It
   // is machine-local — a tunnel/reverse-proxy URL belongs to this install, not
   // to the portable workspace — so it lives in the settings store

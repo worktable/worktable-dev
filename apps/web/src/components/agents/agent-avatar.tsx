@@ -1,3 +1,5 @@
+import { recognitionColor } from "@worktable/types"
+import { recognitionChip } from "@/lib/recognition"
 import { AGENT_PLATFORMS, type AgentPlatformId } from "@worktable/types"
 import {
   Avatar,
@@ -61,7 +63,10 @@ export function AgentAvatar({
           )}
         />
       ) : null}
-      <AvatarFallback className="bg-surface-tint text-xs font-medium text-primary">
+      <AvatarFallback
+        className="text-xs font-medium"
+        style={recognitionChip(recognitionColor(null, name))}
+      >
         {icon ? (
           <NamedIcon
             name={icon}

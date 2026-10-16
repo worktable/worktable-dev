@@ -10,7 +10,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Archive, Database, FileSearch, FileText, Search, X } from "lucide-react"
 import { Input } from "@worktable/ui/components/input"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
-import { resolveIcon } from "@/lib/icons"
+import { SpaceIcon } from "@/components/spaces/space-icon"
 import type { SearchResult, SpaceFile } from "@worktable/types"
 
 /** Escape a string for literal use inside a RegExp. */
@@ -341,7 +341,7 @@ export function SidebarSearchResults({
         return (
           <div key={spaceId}>
             <div className="mb-1 flex items-center gap-1.5 px-3 text-sidebar-foreground/40">
-              {resolveIcon(space?.icon, "size-3")}
+              {space ? <SpaceIcon space={space} size="xs" /> : null}
               <p className="truncate text-[10px] font-semibold tracking-wider uppercase">
                 {space?.name ?? spaceId}
               </p>

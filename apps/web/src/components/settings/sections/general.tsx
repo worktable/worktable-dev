@@ -1,3 +1,5 @@
+import { recognitionColor, type RecognitionColor } from "@worktable/types"
+import { RecognitionSwatches } from "@/components/recognition-swatches"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
@@ -45,6 +47,7 @@ function WorkspaceGroup() {
       ) : (
         <>
           <WorkspaceNameField workspace={workspace} />
+          <WorkspaceColorField workspace={workspace} />
           {capabilities?.workspaceUrl ? (
             <WorkspaceUrlField connection={connection} />
           ) : null}
@@ -105,6 +108,35 @@ function WorkspaceNameField({ workspace }: { workspace: WorkspaceInfo }) {
           if (e.key === "Enter") e.currentTarget.blur()
         }}
       />
+    </div>
+  )
+}
+
+// ── Color ────────────────────────────────────────────────────────────────────
+
+function WorkspaceColorField({ workspace }: { workspace: WorkspaceInfo }) {
+  const queryClient = useQueryClient()
+  const color = recognitionColor(workspace.color, workspace.id)
+  const mutation = useMutation({
+    mutationFn: (next: RecognitionColor) => updateWorkspace({ color: next }),
+    onSuccess: (info) => queryClient.setQueryData(queryKeys.workspace, info),
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Couldn’t change the color."
+      ),
+  })
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-foreground">Color</span>
+      <RecognitionSwatches
+        label="Color"
+        value={mutation.isPending && mutation.variables ? mutation.variables : color}
+        onChange={(next) => mutation.mutate(next)}
+        disabled={mutation.isPending}
+      />
+      <p className="text-sm text-muted-foreground">
+        Tells this Worktable apart from your others.
+      </p>
     </div>
   )
 }

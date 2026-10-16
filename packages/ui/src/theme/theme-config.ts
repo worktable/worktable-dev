@@ -249,6 +249,45 @@ export const themeConfig = {
       "oklch(0.46 0.008 250)",
     ],
   },
+  /**
+   * Recognition colors tell Worktables, Spaces and people apart. They tint
+   * tiles and icons only; they never mark actions (cobalt) or state. `solid`
+   * carries white initials, `ink` draws an icon on its `soft` fill.
+   */
+  recognition: {
+    teal: {
+      light: { solid: "oklch(0.56 0.100 190)", ink: "oklch(0.48 0.100 190)", soft: "oklch(0.93 0.035 190)" },
+      dark: { solid: "oklch(0.56 0.100 190)", ink: "oklch(0.78 0.100 190)", soft: "oklch(0.30 0.045 190)" },
+    },
+    sky: {
+      light: { solid: "oklch(0.56 0.100 225)", ink: "oklch(0.48 0.100 225)", soft: "oklch(0.93 0.035 225)" },
+      dark: { solid: "oklch(0.56 0.100 225)", ink: "oklch(0.78 0.100 225)", soft: "oklch(0.30 0.045 225)" },
+    },
+    violet: {
+      light: { solid: "oklch(0.56 0.130 300)", ink: "oklch(0.48 0.130 300)", soft: "oklch(0.93 0.045 300)" },
+      dark: { solid: "oklch(0.56 0.130 300)", ink: "oklch(0.78 0.130 300)", soft: "oklch(0.30 0.059 300)" },
+    },
+    rose: {
+      light: { solid: "oklch(0.56 0.130 350)", ink: "oklch(0.48 0.130 350)", soft: "oklch(0.93 0.045 350)" },
+      dark: { solid: "oklch(0.56 0.130 350)", ink: "oklch(0.78 0.130 350)", soft: "oklch(0.30 0.059 350)" },
+    },
+    orange: {
+      light: { solid: "oklch(0.56 0.140 50)", ink: "oklch(0.48 0.140 50)", soft: "oklch(0.93 0.049 50)" },
+      dark: { solid: "oklch(0.56 0.140 50)", ink: "oklch(0.78 0.140 50)", soft: "oklch(0.30 0.063 50)" },
+    },
+    amber: {
+      light: { solid: "oklch(0.56 0.130 85)", ink: "oklch(0.48 0.130 85)", soft: "oklch(0.93 0.045 85)" },
+      dark: { solid: "oklch(0.56 0.130 85)", ink: "oklch(0.78 0.130 85)", soft: "oklch(0.30 0.059 85)" },
+    },
+    green: {
+      light: { solid: "oklch(0.56 0.120 150)", ink: "oklch(0.48 0.120 150)", soft: "oklch(0.93 0.042 150)" },
+      dark: { solid: "oklch(0.56 0.120 150)", ink: "oklch(0.78 0.120 150)", soft: "oklch(0.30 0.054 150)" },
+    },
+    slate: {
+      light: { solid: "oklch(0.56 0.025 250)", ink: "oklch(0.48 0.025 250)", soft: "oklch(0.93 0.009 250)" },
+      dark: { solid: "oklch(0.56 0.025 250)", ink: "oklch(0.78 0.025 250)", soft: "oklch(0.30 0.011 250)" },
+    },
+  } satisfies Record<string, ModeValues<{ solid: string; ink: string; soft: string }>>,
   backdrop: {
     gridSize: 24,
     placement: "bottom-corners",

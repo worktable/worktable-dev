@@ -1,14 +1,19 @@
 import { useCallback } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import {
-  EMPTY_PERSONAL_NAVIGATION,
-  type PersonalNavigation,
-} from "@worktable/types"
+// Types only: the types package's schemas stay out of the app's entry bundle.
+import type { PersonalNavigation } from "@worktable/types"
 import type { SpaceView, WorkspaceInfo } from "./api"
 import { fetchJSON, HttpError } from "./http"
 import { queryKeys, useSpaces, useWorkspace } from "./queries"
 import { formatGroupLabel } from "./spaces"
 import { toast } from "@worktable/ui/components/sonner"
+
+const EMPTY_PERSONAL_NAVIGATION: PersonalNavigation = {
+  revision: 0,
+  groups: [],
+  spaceGroups: {},
+  pins: [],
+}
 
 /** What a change produces; the server assigns the revision. */
 export type NavigationChange = (

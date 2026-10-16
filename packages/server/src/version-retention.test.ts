@@ -50,6 +50,10 @@ import {
   listDocumentGenerationsV2,
   writeDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
+import {
+  resumeWorkspaceRequestAdmission,
+  stopWorkspaceMutationsAndDrain,
+} from "./workspace-request-lifecycle.ts"
 
 let appDir: string
 let workspaceDir: string
@@ -406,6 +410,37 @@ describe("runRetentionSweep — integration", () => {
     expect(ageVersions).toHaveLength(1)
     expect(ageVersions[0]?.reason).toBeUndefined()
     expect(ageVersions[0]?.createdAt).toBe(new Date(now - DAY).toISOString())
+  })
+
+  it("waits for a capture holding workspace writes before pruning", async () => {
+    const documentId = "doc_CCCCCCCCCCCCCCCCCCCCCC" as DocumentId
+    const now = Date.now()
+    for (let index = 0; index < 3; index += 1)
+      await writeV2Generation(
+        SP,
+        documentId,
+        new Date(now - index * DAY).toISOString(),
+        `held-${index}`
+      )
+    const versions = async () =>
+      (
+        await listDocumentGenerationsV2({
+          workspaceRoot: workspaceDir,
+          spaceId: SP,
+          documentId,
+        })
+      ).length
+    await stopWorkspaceMutationsAndDrain()
+    try {
+      const sweep = runRetentionSweep({ mode: "count", maxPerDoc: 1 })
+      await Bun.sleep(200)
+      expect(await versions()).toBe(3)
+      resumeWorkspaceRequestAdmission()
+      await sweep
+    } finally {
+      resumeWorkspaceRequestAdmission()
+    }
+    expect(await versions()).toBe(1)
   })
 
   it("count mode does not let checkpoint rewrite mtime beat same-ms ids", async () => {

@@ -36,6 +36,7 @@ import {
   type RetentionPolicy,
 } from "./settings-store.ts";
 import { getSpacesDir, getVersionsDir, getWorkspaceRoot } from "./workspace.ts";
+import { withWorkspaceWriteAdmission } from "./workspace-request-lifecycle.ts";
 import {
   versionIdTimestamp,
   versionKeyDir,
@@ -584,21 +585,25 @@ export async function runRetentionSweep(
       );
       break;
     }
-    const { filesDeleted, bytesFreed } = await pruneKeyDir(
-      spaceId,
-      key,
-      dir,
-      versionsRootResolved,
-      async () => {
-        // Under the lock: re-check the policy generation (this sweep may have
-        // queued behind a write) and read the space's provenance from a
-        // generation-aware cache. Most spaces parse docs.meta.json once per
-        // sweep; if a write lands while this sweep waits on a doc lock, the
-        // provenance generation changes and the next lookup refreshes before
-        // selecting deletions.
-        if (getRetentionPolicyGeneration() !== launchGeneration) return null;
-        return { policy: p, protect: await protectCache.get(spaceId) };
-      },
+    // Pruning a document's history is a workspace write, so a capture holding
+    // writes never sees it change.
+    const { filesDeleted, bytesFreed } = await withWorkspaceWriteAdmission(() =>
+      pruneKeyDir(
+        spaceId,
+        key,
+        dir,
+        versionsRootResolved,
+        async () => {
+          // Under the lock: re-check the policy generation (this sweep may
+          // have queued behind a write) and read the space's provenance from
+          // a generation-aware cache. Most spaces parse docs.meta.json once
+          // per sweep; if a write lands while this sweep waits on a doc lock,
+          // the provenance generation changes and the next lookup refreshes
+          // before selecting deletions.
+          if (getRetentionPolicyGeneration() !== launchGeneration) return null;
+          return { policy: p, protect: await protectCache.get(spaceId) };
+        },
+      ),
     );
     if (filesDeleted > 0) {
       result.docsTouched += 1;
@@ -624,14 +629,16 @@ export async function runRetentionSweep(
         spaceId,
         documentId,
       });
-      const removed = await pruneDocumentGenerationsV2({
-        workspaceRoot: getWorkspaceRoot(),
-        spaceId,
-        documentId,
-        retention: generationRetention,
-        authorizeRetention: () =>
-          getRetentionPolicyGeneration() === launchGeneration,
-      });
+      const removed = await withWorkspaceWriteAdmission(() =>
+        pruneDocumentGenerationsV2({
+          workspaceRoot: getWorkspaceRoot(),
+          spaceId,
+          documentId,
+          retention: generationRetention,
+          authorizeRetention: () =>
+            getRetentionPolicyGeneration() === launchGeneration,
+        }),
+      );
       if (removed === 0) continue;
       const afterIds = new Set(
         (

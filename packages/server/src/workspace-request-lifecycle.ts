@@ -121,6 +121,25 @@ export function admitWorkspaceRequest(
   }
 }
 
+/**
+ * Run background work that changes the workspace as an admitted write: a
+ * capture holding writes waits for it to finish, and it waits for the capture.
+ */
+export async function withWorkspaceWriteAdmission<T>(
+  work: () => Promise<T>
+): Promise<T> {
+  let release = admitWorkspaceRequest("write")
+  while (!release) {
+    await new Promise<void>((resolve) => reopenWaiters.push(resolve))
+    release = admitWorkspaceRequest("write")
+  }
+  try {
+    return await work()
+  } finally {
+    release()
+  }
+}
+
 async function drain(kinds: WorkspaceRequestKind[]): Promise<void> {
   for (const kind of kinds) accepting[kind] = false
   // Long polls answer now instead of holding the drain.

@@ -25,6 +25,7 @@ import {
   getSpaceArchiveInfo,
 } from "./store.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
+import { withWorkspaceWriteAdmission } from "./workspace-request-lifecycle.ts"
 import { logDocument, logError } from "./debug-log.ts"
 
 /** Actor recorded on documents archived because their date passed. */
@@ -261,15 +262,18 @@ export async function runLifetimeSweep(
       if (shouldStop()) break
       try {
         // The archive re-checks the due date under its own lock, so an edit,
-        // rename, or comment since the listing keeps the document active.
-        const outcome = await setRegisteredDocumentArchived({
-          spaceId: space.id,
-          path,
-          archived: true,
-          archivedBy: LIFETIME_ACTOR,
-          reason: SWEEP_REASON,
-          onlyIfDueBy: options.now ?? Date.now(),
-        })
+        // rename, or comment since the listing keeps the document active. It
+        // is a workspace write, so it waits while a capture holds writes.
+        const outcome = await withWorkspaceWriteAdmission(() =>
+          setRegisteredDocumentArchived({
+            spaceId: space.id,
+            path,
+            archived: true,
+            archivedBy: LIFETIME_ACTOR,
+            reason: SWEEP_REASON,
+            onlyIfDueBy: options.now ?? Date.now(),
+          })
+        )
         if (!outcome.notDue) receipt.archived.push(path)
       } catch (error) {
         receipt.failed.push(path)

@@ -12,7 +12,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
-- **Backups:** Backups and exports pause edits only for the moment it takes to record what changed.
+- **Backups:** Backups and exports pause edits only for the moment it takes to record what changed, and cleaning up old versions no longer makes them fail.
 
 ## [0.1.24] - 2026-10-16
 

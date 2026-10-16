@@ -587,7 +587,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
         <MessageAvatar
           aria-hidden={groupedWithPrevious || undefined}
           className={cn(
-            "w-7 min-w-7 self-start overflow-visible bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0",
+            "h-8 w-7 min-w-7 self-start overflow-visible bg-transparent group-has-data-[slot=message-footer]/message:translate-y-0",
             groupedWithPrevious && "invisible"
           )}
         >
@@ -632,7 +632,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
               {hideOwnDefaultAuthorLabel ? (
                 <span className="sr-only">You</span>
               ) : (
-                <span className="truncate font-medium text-foreground">
+                <span className="truncate font-semibold text-foreground">
                   {authorLabel}
                 </span>
               )}
@@ -640,7 +640,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
             </span>
           ) : (
             <>
-              <span className="truncate font-medium text-foreground">
+              <span className="truncate font-semibold text-foreground">
                 {authorLabel}
               </span>
               <MessageTime iso={message.createdAt} />

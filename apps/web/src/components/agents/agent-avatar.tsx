@@ -10,10 +10,11 @@ import { NamedIcon } from "@/lib/icons"
 import { participantInitials } from "@/lib/thread-presentation"
 
 /**
- * Logos drawn edge to edge; the rest sit inset on a white disc in both themes,
- * because brand rules forbid recoloring marks such as OpenAI's black Blossom.
+ * Hermes fills its avatar. OpenAI's artwork already includes its own inset;
+ * other marks need padding. Keep monochrome marks on white in both themes.
  */
 const FULL_BLEED_LOGOS = new Set<AgentPlatformId>(["hermes"])
+const PRE_PADDED_LOGOS = new Set<AgentPlatformId>(["chatgpt", "codex"])
 
 export function agentLogoUrl(
   platform: AgentPlatformId | undefined
@@ -48,7 +49,11 @@ export function AgentAvatar({
           className={cn(
             platform && FULL_BLEED_LOGOS.has(platform)
               ? "object-cover"
-              : "bg-white object-contain p-[18%]"
+              : "bg-white object-contain",
+            platform &&
+              !FULL_BLEED_LOGOS.has(platform) &&
+              !PRE_PADDED_LOGOS.has(platform) &&
+              "p-[18%]"
           )}
         />
       ) : null}

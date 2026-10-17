@@ -13,6 +13,7 @@ import type {
 import { listActivity, listActivityAgents } from "./activity-log.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
 import {
+  createDocAliasResolver,
   readDocAliases,
   resolveDocAliasIn,
   type DocAliases,
@@ -27,6 +28,8 @@ export interface ActivityFeedOptions {
   scopes: string[]
   actorKind?: ActivityActor["kind"]
   actorId?: string
+  /** One doc in `spaceId`, including events recorded before it moved. */
+  docPath?: string
   before?: string | null
   limit: number
   timezoneOffset?: number
@@ -60,12 +63,17 @@ export async function readActivityFeed(
   if (options.spaceId && visibleSpaces.size === 0) {
     return { entries: [], nextCursor: null }
   }
+  const docPath =
+    options.spaceId && options.docPath
+      ? await docPathMatcher(options.spaceId, options.docPath)
+      : undefined
   const page = await listActivity({
     ...(options.spaceId ? { spaces: [options.spaceId] } : {}),
     visibleSpaces,
     ...scopeFilters(options.scopes),
     ...(options.actorKind ? { actorKind: options.actorKind } : {}),
     ...(options.actorId ? { actorId: options.actorId } : {}),
+    ...(docPath ? { docPath } : {}),
     before: options.before ?? null,
     limit: options.limit,
     ...(options.timezoneOffset !== undefined
@@ -73,6 +81,19 @@ export async function readActivityFeed(
       : {}),
   })
   return { ...page, entries: await withCurrentNames(page.entries) }
+}
+
+/** Matches a doc's current path and the paths it had before it moved. */
+async function docPathMatcher(
+  spaceId: string,
+  docPath: string
+): Promise<(path: string) => boolean> {
+  const aliases = await readDocAliases(spaceId).then(
+    (result) => result.aliases,
+    () => null
+  )
+  const resolve = aliases ? createDocAliasResolver(aliases) : null
+  return (path) => path === docPath || resolve?.(path) === docPath
 }
 
 /** The agents a reader can filter Activity by, under their current names. */

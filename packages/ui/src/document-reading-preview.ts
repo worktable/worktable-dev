@@ -1,6 +1,7 @@
 import {
   cloneElement,
   createElement as h,
+  Fragment,
   type ComponentProps,
   isValidElement,
   type ReactElement,
@@ -450,14 +451,42 @@ function markdownPre({ children }: { children?: ReactNode }): ReactNode {
   )
 }
 
+/**
+ * Whether a Doc opens with a level-one heading, its title. Content that opens
+ * with anything else shows what goes under the title above everything else.
+ */
+export function documentOpensWithTitle(content: unknown[] | string): boolean {
+  if (typeof content === "string") return markdownTitleLine(content) !== null
+  const first = record(content[0])
+  return (
+    first.type === "heading" &&
+    (Number(record(first.props).level) || 1) === 1 &&
+    !record(first.props).isToggleable
+  )
+}
+
+/** The 1-based source line of a Markdown Doc's opening level-one heading. */
+export function markdownTitleLine(markdown: string): number | null {
+  const lines = markdown.split("\n")
+  const first = lines.findIndex((line) => line.trim() !== "")
+  if (first === -1) return null
+  return /^\uFEFF? {0,3}#[ \t]+\S/.test(lines[first]!) ||
+    /^ {0,3}=+[ \t]*$/.test(lines[first + 1] ?? "")
+    ? first + 1
+    : null
+}
+
 export function DocumentReadingPreview({
   content,
   onScroll,
   showStatus = true,
+  afterTitle,
 }: {
   content: unknown[] | string
   onScroll?: (top: number) => void
   showStatus?: boolean
+  /** Shown under the title (the opening level-one heading), as the open Doc shows it. */
+  afterTitle?: ReactNode
 }) {
   // Keep the opening preview bounded even for thousands of blocks. The full
   // editor still receives the complete document through collaboration.
@@ -465,12 +494,33 @@ export function DocumentReadingPreview({
     remaining: 80,
     truncated: typeof content === "string" && content.length > 64 * 1024,
   }
+  const titled = afterTitle != null && documentOpensWithTitle(content)
+  let titleShown = false
   const preview = Array.isArray(content)
-    ? blocks(content, budget)
+    ? titled
+      ? (([title, ...rest]) => [
+          title,
+          h(Fragment, { key: "after-title" }, afterTitle),
+          ...rest,
+        ])(blocks(content, budget))
+      : blocks(content, budget)
     : h(Markdown, {
         remarkPlugins: [remarkGfm],
         skipHtml: true,
         components: {
+          ...(titled
+            ? {
+                h1: ({
+                  node,
+                  ...props
+                }: ComponentProps<"h1"> & { node?: unknown }) => {
+                  void node
+                  if (titleShown) return h("h1", props)
+                  titleShown = true
+                  return h(Fragment, null, h("h1", props), afterTitle)
+                },
+              }
+            : {}),
           table: ({ children }: { children?: ReactNode }) =>
             scrollableTable(children),
           pre: markdownPre,
@@ -497,6 +547,7 @@ export function DocumentReadingPreview({
       {
         className: `worktable-markdown worktable-document-content${Array.isArray(content) ? " worktable-rich-preview" : ""}`,
       },
+      afterTitle != null && !titled ? afterTitle : null,
       preview,
       budget.truncated &&
         h(

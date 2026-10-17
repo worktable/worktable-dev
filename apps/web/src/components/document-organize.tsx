@@ -42,6 +42,10 @@ const calendar = preloadableComponent<CalendarProps>(() =>
 )
 const Calendar = calendar.Component
 
+/** The quiet chips that sit on a Doc's byline, under its title. */
+export const DOCUMENT_BYLINE_CHIP =
+  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-surface-tint px-2 text-xs text-muted-foreground transition-colors hover:bg-surface-selected hover:text-foreground aria-expanded:bg-surface-selected aria-expanded:text-foreground disabled:pointer-events-none"
+
 /** Compare calendar days in the person's local timezone. */
 function localDay(iso: string): Date {
   const date = new Date(iso)
@@ -49,13 +53,18 @@ function localDay(iso: string): Date {
   return date
 }
 
-/** Quiet header chip for temporary documents; durable documents show nothing. */
+/**
+ * Quiet chip for temporary documents; durable documents show nothing. The
+ * header chip sits with the page actions; Docs show it inline under the title.
+ */
 export function DocumentLifetimeChip({
   spaceId,
   path,
+  inline = false,
 }: {
   spaceId: string
   path: string
+  inline?: boolean
 }) {
   const { data: space } = useSpace(spaceId)
   const label = useTemporaryArchiveLabel(spaceId, path)
@@ -75,17 +84,21 @@ export function DocumentLifetimeChip({
         render={
           <button
             type="button"
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className={
+              inline
+                ? DOCUMENT_BYLINE_CHIP
+                : "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            }
             disabled={space?.space.permissions?.edit === false}
             aria-label={`Temporary. ${label}`}
           />
         }
       >
-        <Clock3 className="size-3.5" />
-        <span className="hidden sm:inline">{label}</span>
+        <Clock3 className={inline ? "size-3.5 text-warning" : "size-3.5"} />
+        <span className={inline ? undefined : "hidden sm:inline"}>{label}</span>
       </PopoverTrigger>
       <PopoverContent
-        align="end"
+        align={inline ? "start" : "end"}
         className="w-84 max-w-[calc(100vw-1rem)] gap-3 p-3"
         aria-busy={pending}
       >

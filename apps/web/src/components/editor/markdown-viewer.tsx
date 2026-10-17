@@ -8,13 +8,16 @@
 import {
   Component,
   Suspense,
+  createContext,
   isValidElement,
   lazy,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type ErrorInfo,
   type ReactNode,
 } from "react"
@@ -31,6 +34,7 @@ import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { NumberedList } from "@worktable/ui/lib/numbered-list"
+import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
 import "@/styles/document-controls.css"
 import { renderDocLinkHref } from "@/lib/doc-links"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
@@ -127,18 +131,49 @@ class MarkdownErrorBoundary extends Component<
   }
 }
 
+// ── Title ────────────────────────────────────────────────
+
+/** What shows under the title, and the source line of that title. */
+const AfterTitleContext = createContext<{
+  line: number | null
+  node: ReactNode
+}>({ line: null, node: null })
+
+/**
+ * Level-one headings. The title, the Doc's opening heading, carries what
+ * shows under it. One component for every render keeps that content's state.
+ */
+function TitleHeading({
+  node,
+  ...props
+}: ComponentProps<"h1"> & {
+  node?: { position?: { start: { line: number } } }
+}) {
+  const after = useContext(AfterTitleContext)
+  if (node?.position?.start.line !== after.line) return <h1 {...props} />
+  return (
+    <>
+      <h1 {...props} />
+      {after.node}
+    </>
+  )
+}
+
 // ── Markdown Viewer ──────────────────────────────────────
 
 interface MarkdownViewerProps {
   content: string
   spaceId: string
   docPath: string
+  /** Shown under the title (the opening level-one heading), or first when there is none. */
+  afterTitle?: ReactNode
 }
 
 export function MarkdownViewer({
   content,
   spaceId,
   docPath,
+  afterTitle,
 }: MarkdownViewerProps) {
   const router = useRouter()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
@@ -152,6 +187,13 @@ export function MarkdownViewer({
     [fade, paneWidth, setScrollRoot]
   )
   const html = useHtmlPlugins(content)
+  // What goes under the title renders inside the title's heading component,
+  // which keeps one identity across renders so its state survives them.
+  const titleLine = afterTitle != null ? markdownTitleLine(content) : null
+  const afterTitleValue = useMemo(
+    () => ({ line: titleLine, node: afterTitle }),
+    [titleLine, afterTitle]
+  )
   const { theme } = useTheme()
   const worktableOrigins = useMemo(
     () =>
@@ -177,137 +219,149 @@ export function MarkdownViewer({
       >
         <DataTooltips rootRef={scrollRoot} />
         <article className="worktable-markdown worktable-document-content">
+          {afterTitle != null && titleLine === null && afterTitle}
           <MarkdownErrorBoundary>
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={html.rehypePlugins}
-              skipHtml={html.skipHtml}
-              components={{
-                a: ({ node, href = "", ...props }) => {
-                  void node
-                  const renderedHref = renderDocLinkHref(spaceId, docPath, href)
-                  return (
-                    <a
-                      {...props}
-                      href={renderedHref}
-                      onClick={(event) => {
-                        props.onClick?.(event)
-                        if (
-                          event.defaultPrevented ||
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return
-                        if (renderedHref.startsWith("#")) return
-                        const anchor = event.currentTarget
-                        if (
-                          anchor.hasAttribute("download") ||
-                          (anchor.target && anchor.target !== "_self")
-                        )
-                          return
-                        const url = new URL(anchor.href)
-                        // Only app document routes belong to the client router.
-                        // Attachments, fragments and external URLs retain browser behavior.
-                        if (
-                          url.origin !== window.location.origin ||
-                          !/^\/spaces\/[^/]+\/(?:documents|docs|widgets)\//.test(
-                            url.pathname
-                          )
-                        )
-                          return
-                        event.preventDefault()
-                        void router.navigate({
-                          href: url.pathname + url.search + url.hash,
-                        })
-                      }}
-                      {...externalLinkProps(renderedHref, worktableOrigins)}
-                    />
-                  )
-                },
-                table: ({ node, children }) => {
-                  void node
-                  return <DocTable>{children}</DocTable>
-                },
-                ol: ({ node, ...props }) => {
-                  void node
-                  return <NumberedList {...props} />
-                },
-                img: ({ node, title, ...props }) => {
-                  void node
-                  const image = <img {...props} title={title} />
-                  return title ? (
-                    <span className="worktable-figure">
-                      {image}
-                      <span className="worktable-caption">{title}</span>
-                    </span>
-                  ) : (
-                    image
-                  )
-                },
-                details: ({ node, open, children }) => {
-                  void node
-                  return <DocDetails open={open}>{children}</DocDetails>
-                },
-                // Mapped directly, so DocDetails can find it among its children.
-                summary: DocSummary,
-                pre: ({ node, children, ...props }) => {
-                  void node
-                  const child = Array.isArray(children) ? children[0] : children
-                  const childProps = isValidElement<{
-                    className?: string
-                    children?: ReactNode
-                  }>(child)
-                    ? child.props
-                    : undefined
-                  const language = childProps?.className?.match(
-                    /(?:^|\s)language-(mermaid|mmd)(?:\s|$)/i
-                  )
-                  if (language) {
-                    const source = String(childProps?.children ?? "").replace(
-                      /\n$/,
-                      ""
+            <AfterTitleContext value={afterTitleValue}>
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={html.rehypePlugins}
+                skipHtml={html.skipHtml}
+                components={{
+                  h1: TitleHeading,
+                  a: ({ node, href = "", ...props }) => {
+                    void node
+                    const renderedHref = renderDocLinkHref(
+                      spaceId,
+                      docPath,
+                      href
                     )
                     return (
-                      <Suspense
-                        fallback={
-                          <div className="min-h-24 animate-pulse rounded-lg bg-muted" />
-                        }
-                      >
-                        <MermaidRenderer
-                          name={`${docPath}-markdown`}
-                          chart={source}
-                          themeMode={resolvedTheme}
-                          errorFallback={
-                            <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
-                              <div className="flex items-center gap-2 font-medium">
-                                <AlertTriangle className="h-4 w-4 shrink-0" />
-                                Diagram could not be rendered
-                              </div>
-                              <details className="mt-3 text-xs text-muted-foreground">
-                                <summary className="cursor-pointer font-medium select-none">
-                                  View diagram source
-                                </summary>
-                                <ScrollableMermaidSource source={source} />
-                              </details>
-                            </div>
-                          }
-                        />
-                      </Suspense>
+                      <a
+                        {...props}
+                        href={renderedHref}
+                        onClick={(event) => {
+                          props.onClick?.(event)
+                          if (
+                            event.defaultPrevented ||
+                            event.button !== 0 ||
+                            event.metaKey ||
+                            event.ctrlKey ||
+                            event.shiftKey ||
+                            event.altKey
+                          )
+                            return
+                          if (renderedHref.startsWith("#")) return
+                          const anchor = event.currentTarget
+                          if (
+                            anchor.hasAttribute("download") ||
+                            (anchor.target && anchor.target !== "_self")
+                          )
+                            return
+                          const url = new URL(anchor.href)
+                          // Only app document routes belong to the client router.
+                          // Attachments, fragments and external URLs retain browser behavior.
+                          if (
+                            url.origin !== window.location.origin ||
+                            !/^\/spaces\/[^/]+\/(?:documents|docs|widgets)\//.test(
+                              url.pathname
+                            )
+                          )
+                            return
+                          event.preventDefault()
+                          void router.navigate({
+                            href: url.pathname + url.search + url.hash,
+                          })
+                        }}
+                        {...externalLinkProps(renderedHref, worktableOrigins)}
+                      />
                     )
-                  }
-                  void props
-                  const code = childProps?.className?.match(
-                    /(?:^|\s)language-([\w+#.-]+)/
-                  )
-                  return <CodeBlock language={code?.[1]}>{children}</CodeBlock>
-                },
-              }}
-            >
-              {content}
-            </Markdown>
+                  },
+                  table: ({ node, children }) => {
+                    void node
+                    return <DocTable>{children}</DocTable>
+                  },
+                  ol: ({ node, ...props }) => {
+                    void node
+                    return <NumberedList {...props} />
+                  },
+                  img: ({ node, title, ...props }) => {
+                    void node
+                    const image = <img {...props} title={title} />
+                    return title ? (
+                      <span className="worktable-figure">
+                        {image}
+                        <span className="worktable-caption">{title}</span>
+                      </span>
+                    ) : (
+                      image
+                    )
+                  },
+                  details: ({ node, open, children }) => {
+                    void node
+                    return <DocDetails open={open}>{children}</DocDetails>
+                  },
+                  // Mapped directly, so DocDetails can find it among its children.
+                  summary: DocSummary,
+                  pre: ({ node, children, ...props }) => {
+                    void node
+                    const child = Array.isArray(children)
+                      ? children[0]
+                      : children
+                    const childProps = isValidElement<{
+                      className?: string
+                      children?: ReactNode
+                    }>(child)
+                      ? child.props
+                      : undefined
+                    const language = childProps?.className?.match(
+                      /(?:^|\s)language-(mermaid|mmd)(?:\s|$)/i
+                    )
+                    if (language) {
+                      const source = String(childProps?.children ?? "").replace(
+                        /\n$/,
+                        ""
+                      )
+                      return (
+                        <Suspense
+                          fallback={
+                            <div className="min-h-24 animate-pulse rounded-lg bg-muted" />
+                          }
+                        >
+                          <MermaidRenderer
+                            name={`${docPath}-markdown`}
+                            chart={source}
+                            themeMode={resolvedTheme}
+                            errorFallback={
+                              <div className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                                <div className="flex items-center gap-2 font-medium">
+                                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                                  Diagram could not be rendered
+                                </div>
+                                <details className="mt-3 text-xs text-muted-foreground">
+                                  <summary className="cursor-pointer font-medium select-none">
+                                    View diagram source
+                                  </summary>
+                                  <ScrollableMermaidSource source={source} />
+                                </details>
+                              </div>
+                            }
+                          />
+                        </Suspense>
+                      )
+                    }
+                    void props
+                    const code = childProps?.className?.match(
+                      /(?:^|\s)language-([\w+#.-]+)/
+                    )
+                    return (
+                      <CodeBlock language={code?.[1]}>{children}</CodeBlock>
+                    )
+                  },
+                }}
+              >
+                {content}
+              </Markdown>
+            </AfterTitleContext>
           </MarkdownErrorBoundary>
         </article>
       </div>

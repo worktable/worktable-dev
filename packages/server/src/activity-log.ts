@@ -30,7 +30,7 @@ import {
   type ActivityEvent,
   type ActivityPage,
 } from "@worktable/types"
-import { ensureAppDir } from "./app-storage.ts"
+import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import type { RequestPrincipal } from "./token-store.ts"
@@ -169,6 +169,10 @@ function targetKey(event: Pick<ActivityEvent, "target">): string {
 export function recordActivity(input: ActivityInput): void {
   const actor = input.actor ?? currentActivityActor() ?? SYSTEM_ACTOR
   const now = input.at ? Date.parse(input.at) : Date.now()
+  // Every save counts toward who last touched a doc, even inside one session.
+  if (input.target.kind === "doc" && input.spaceId) {
+    noteDocSummary(input.spaceId, input.target.path, input.action, actor)
+  }
   let sessionKey: string | undefined
   if (input.action === "doc.edited") {
     const key = `${input.spaceId}|${actor.id}|${targetKey(input)}`
@@ -287,15 +291,127 @@ async function appendEvent(event: ActivityEvent): Promise<void> {
   })
 }
 
-/** Wait for activity writes started so far; tests and shutdown use this. */
-export async function drainActivity(): Promise<void> {
+async function drainWrites(): Promise<void> {
   while (pending.size > 0) await Promise.allSettled([...pending])
+}
+
+/** Wait for activity writes and summaries started so far; tests and shutdown use this. */
+export async function drainActivity(): Promise<void> {
+  await drainWrites()
+  await Promise.allSettled([...summaryBuilds.values()])
+}
+
+// ------------------------------------------------------------
+// Who works on each doc
+// ------------------------------------------------------------
+//
+// The doc page names who last edited a doc and who has worked on it. That
+// comes from this in-memory summary rather than the log, so opening a doc
+// never reads history: a Space's summary is built once in the background from
+// its log, then kept current as this process records activity.
+
+export interface DocActivitySummary {
+  /** Who last created or edited the doc. */
+  lastEditor?: ActivityActor
+  /** People and agents who edited or commented, most recent first. */
+  contributors: ActivityActor[]
+}
+
+const CONTRIBUTORS_KEPT = 4
+/** Keyed by workspace and Space, like the logs, without touching the disk. */
+const docSummaries = new Map<string, Map<string, DocActivitySummary>>()
+/** Logs whose summary is building, with what arrived meanwhile. */
+const summariesBuilding = new Map<string, ActivityEvent[]>()
+const summaryBuilds = new Map<string, Promise<void>>()
+
+function summaryKey(spaceId: string): string {
+  return `${getAppDir()}\0${workspaceCacheKey()}\0${spaceId}`
+}
+
+function applyDocSummary(
+  summaries: Map<string, DocActivitySummary>,
+  path: string,
+  action: ActivityAction,
+  actor: ActivityActor
+): void {
+  const edit = action === "doc.created" || action === "doc.edited"
+  if (!edit && action !== "comment.created" && action !== "comment.replied") {
+    return
+  }
+  const summary = summaries.get(path) ?? { contributors: [] }
+  if (edit) summary.lastEditor = actor
+  if (actor.kind !== "system") {
+    summary.contributors = [
+      actor,
+      ...summary.contributors.filter((known) => known.id !== actor.id),
+    ].slice(0, CONTRIBUTORS_KEPT)
+  }
+  summaries.set(path, summary)
+}
+
+function noteDocSummary(
+  spaceId: string,
+  path: string,
+  action: ActivityAction,
+  actor: ActivityActor
+): void {
+  const key = summaryKey(spaceId)
+  const queued = summariesBuilding.get(key)
+  if (queued) {
+    queued.push({ action, actor, target: { kind: "doc", path } } as ActivityEvent)
+    return
+  }
+  const summaries = docSummaries.get(key)
+  if (summaries) applyDocSummary(summaries, path, action, actor)
+}
+
+async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
+  const queued: ActivityEvent[] = []
+  summariesBuilding.set(key, queued)
+  try {
+    // Writes already on their way land in the log before it is read; later
+    // ones queue above.
+    await drainWrites()
+    const summaries = new Map<string, DocActivitySummary>()
+    for (const event of [...(await readLog(spaceId)), ...queued]) {
+      if (event.target.kind === "doc") {
+        applyDocSummary(summaries, event.target.path, event.action, event.actor)
+      }
+    }
+    if (summariesBuilding.get(key) === queued) docSummaries.set(key, summaries)
+  } finally {
+    if (summariesBuilding.get(key) === queued) summariesBuilding.delete(key)
+  }
+}
+
+/**
+ * Who has worked on a doc, without waiting. A Space not summarized yet
+ * answers null and starts summarizing in the background.
+ */
+export function peekDocActivity(
+  spaceId: string,
+  path: string
+): DocActivitySummary | null {
+  const key = summaryKey(spaceId)
+  const summaries = docSummaries.get(key)
+  if (summaries) return summaries.get(path) ?? { contributors: [] }
+  if (!summariesBuilding.has(key)) {
+    const build = buildDocSummaries(spaceId, key)
+      .catch((error) => {
+        console.error("[activity] could not summarize docs:", logError(error))
+      })
+      .finally(() => summaryBuilds.delete(key))
+    summaryBuilds.set(key, build)
+  }
+  return null
 }
 
 // A replaced or reset workspace starts with an empty history.
 onWorkspaceChange((event) => {
   if (event.type !== "workspaceReset") return
   lastEditAt.clear()
+  docSummaries.clear()
+  summariesBuilding.clear()
   return drainActivity().then(() =>
     rm(logDir(), { recursive: true, force: true })
   )
@@ -348,6 +464,8 @@ export interface ListActivityOptions {
   actorKind?: ActivityActor["kind"]
   /** One actor, such as a single agent connection. */
   actorId?: string
+  /** Only events about docs whose recorded path this accepts. */
+  docPath?: (path: string) => boolean
   before?: string | null
   limit: number
   /** Reader's UTC offset in minutes (Date#getTimezoneOffset), for day grouping. */
@@ -440,6 +558,8 @@ export async function listActivity(
         isVisible(event, options) &&
         (!options.actorKind || event.actor.kind === options.actorKind) &&
         (!options.actorId || event.actor.id === options.actorId) &&
+        (!options.docPath ||
+          (event.target.kind === "doc" && options.docPath(event.target.path))) &&
         (!cursor || isBefore(event, cursor))
     )
     .sort(newestFirst)

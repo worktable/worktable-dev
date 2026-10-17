@@ -947,16 +947,23 @@ const WARMUP_QUIET_CPU = 0.05;
  * Build the index the app and agents search (common documents, archive
  * hidden), one Space at a time, as background work: small slices with pauses
  * between them. A search that arrives meanwhile joins the Space being synced.
+ * Spaces created or changed while it runs are picked up by another pass, up to
+ * the rounds a search would wait for.
  */
 export async function warmSearchIndex(stopped: () => boolean = () => false): Promise<void> {
-  const variant = variantFor("common", false, recordSearchMode() === "files");
-  if (!variant.spacesListed || variant.listing) await listVariantSpaces(variant);
-  for (const [id, segment] of [...variant.segments]) {
-    if (stopped()) return;
-    if (!segmentNeedsSync(segment)) continue;
-    const started = performance.now();
-    await syncSegment(variant, id, segment);
-    await betweenSlices(performance.now() - started);
+  for (let round = 1; round <= MAX_SYNC_ROUNDS; round += 1) {
+    const variant = variantFor("common", false, recordSearchMode() === "files");
+    if (!variant.spacesListed || variant.listing) await listVariantSpaces(variant);
+    let synced = false;
+    for (const [id, segment] of [...variant.segments]) {
+      if (stopped()) return;
+      if (!segmentNeedsSync(segment)) continue;
+      const started = performance.now();
+      await syncSegment(variant, id, segment);
+      synced = true;
+      await betweenSlices(performance.now() - started);
+    }
+    if (!synced && variant.spacesListed) return;
   }
 }
 

@@ -9,7 +9,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
 import { Input } from "@worktable/ui/components/input"
-import { cn } from "@worktable/ui/lib/utils"
 import type { WorkspaceInfo } from "@/lib/api"
 import { updateWorkspace } from "@/lib/api"
 import { getCurrentUser, getUserProfile, updateUserProfile } from "@/lib/profile"
@@ -390,12 +389,8 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
           style={{ width: `${((position + 1) / steps.length) * 100}%` }}
         />
       </div>
-      <main
-        className={cn(
-          "mx-auto w-full px-5 pt-[12vh] pb-16",
-          step === "connect" ? "max-w-xl" : "max-w-md"
-        )}
-      >
+      {/* One width for every step, so the column doesn't shift between them. */}
+      <main className="mx-auto w-full max-w-xl px-5 pt-[12vh] pb-16">
         {step === "create" ? (
           <CreateStep
             workspace={workspace}

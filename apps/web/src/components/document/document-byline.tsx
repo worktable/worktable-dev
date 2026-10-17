@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useId, useState, type ReactNode } from "react"
-import { ChevronDown, FileText, Folder, History, Link2 } from "lucide-react"
+import { ChevronDown, FileText, History, Link2 } from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
@@ -22,19 +22,18 @@ import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
 import { actorName, shortWhen } from "@/lib/activity-format"
-import { documentRoute, documentPathKey } from "@/lib/document-views"
+import { documentRoute } from "@/lib/document-views"
 import { findTreeNode } from "@/lib/space-document-tree"
 import type { TreeNode } from "@/lib/tree"
 import { RelativeTime } from "@/lib/time"
 
-type Panel = "activity" | "links" | "folder"
+type Panel = "activity" | "links"
 
 const ACTIVITY_SHOWN = 6
 
 /**
- * The line under a Doc's title: who last worked on it, and where it sits
- * among other work (what links here, the rest of its folder, when it
- * archives). Each part opens a short list in place, one at a time.
+ * The line under a Doc's title: who last worked on it, what links here and
+ * when it archives. Each part opens a short list in place, one at a time.
  */
 export function DocumentByline({
   spaceId,
@@ -70,9 +69,6 @@ export function DocumentByline({
     const node = trees ? findTreeNode(trees.active, link.path) : undefined
     return node && !node.isFolder ? [{ ...link, node }] : []
   })
-  const parentPath = docPath.split("/").slice(0, -1).join("/")
-  const folder = parentPath && trees ? findTreeNode(trees.active, parentPath) : undefined
-  const folderDocs = folder?.children.filter((node) => !node.isFolder) ?? []
 
   const toggle = (panel: Panel) => setOpen(open === panel ? null : panel)
   // The list arrives before its panel opens, so the panel grows once to its
@@ -134,7 +130,7 @@ export function DocumentByline({
             </span>
           </button>
         )}
-        {editedAt && (linked.length > 0 || folderDocs.length > 1) && (
+        {editedAt && linked.length > 0 && (
           <span aria-hidden="true" className="opacity-50">
             ·
           </span>
@@ -146,15 +142,6 @@ export function DocumentByline({
             expanded={open === "links"}
             controls={`${panelId}-links`}
             onClick={() => toggle("links")}
-          />
-        )}
-        {folder && folderDocs.length > 1 && (
-          <BylineChip
-            icon={<Folder className="size-3.5" />}
-            label={`${folderDocs.length} in ${folder.label}`}
-            expanded={open === "folder"}
-            controls={`${panelId}-folder`}
-            onClick={() => toggle("folder")}
           />
         )}
         <DocumentLifetimeChip spaceId={spaceId} path={docPath} inline />
@@ -174,16 +161,6 @@ export function DocumentByline({
             node={link.node}
             location={folderLabels(trees?.active, link.path)}
             detail={link.context}
-          />
-        ))}
-      </BylinePanel>
-      <BylinePanel id={`${panelId}-folder`} open={open === "folder"}>
-        {folderDocs.map((node) => (
-          <DocRow
-            key={node.path}
-            spaceId={spaceId}
-            node={node}
-            current={documentPathKey(node.path) === documentPathKey(docPath)}
           />
         ))}
       </BylinePanel>
@@ -344,42 +321,25 @@ function DocRow({
   node,
   location,
   detail,
-  current = false,
 }: {
   spaceId: string
   node: TreeNode
   location?: string
   detail?: string
-  current?: boolean
 }) {
-  const body = (
-    <>
+  return (
+    <Link
+      {...documentRoute(spaceId, node.path)}
+      className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover"
+    >
       <FileText className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate font-medium",
-            current ? "text-primary-text" : "text-foreground"
-          )}
-        >
+        <span className="block truncate font-medium text-foreground">
           {node.label}
         </span>
         {location && <span className="block truncate text-xs">{location}</span>}
         {detail && <span className="mt-0.5 line-clamp-2 block">{detail}</span>}
       </span>
-    </>
-  )
-  const className = "flex items-start gap-2.5 rounded-lg px-2 py-1.5"
-  return current ? (
-    <div className={className} aria-current="page">
-      {body}
-    </div>
-  ) : (
-    <Link
-      {...documentRoute(spaceId, node.path)}
-      className={cn(className, "transition-colors hover:bg-surface-hover")}
-    >
-      {body}
     </Link>
   )
 }

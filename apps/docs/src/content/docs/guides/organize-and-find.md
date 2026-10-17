@@ -57,8 +57,7 @@ automatically; permanent deletion is a separate action.
 
 Under a Doc's title, a line shows who last edited it and when. Open it to see
 the Doc's recent activity and **Version History**. **Linked from** lists the
-docs that link to this one, with the sentence around each link, and the folder
-chip lists the other docs in the same folder.
+docs that link to this one, with the sentence around each link.
 
 Use search to find documents and records across Spaces. Drawings are searchable
 by typed text; freehand marks require visual inspection.

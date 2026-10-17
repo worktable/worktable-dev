@@ -12,7 +12,7 @@ import { z } from "zod"
  * intentionally live outside this package so they can never leak into a
  * browser-facing DTO.
  */
-export const CLOUD_PLAN_IDS = ["solo", "team", "team30"] as const
+export const CLOUD_PLAN_IDS = ["solo", "team", "business"] as const
 export const CloudPlanId = z.enum(CLOUD_PLAN_IDS)
 export type CloudPlanId = z.infer<typeof CloudPlanId>
 
@@ -36,16 +36,16 @@ export const CLOUD_PLANS = {
   team: {
     id: "team",
     name: "Team",
-    amount: 2900,
-    peopleLimit: 10,
+    amount: 4900,
+    peopleLimit: 12,
     linkedDevices: 3,
     ...PLAN_TERMS,
   },
-  team30: {
-    id: "team30",
-    name: "Team 30",
-    amount: 9900,
-    peopleLimit: 30,
+  business: {
+    id: "business",
+    name: "Business",
+    amount: 19900,
+    peopleLimit: 50,
     linkedDevices: 3,
     ...PLAN_TERMS,
   },
@@ -54,16 +54,16 @@ export const CLOUD_PLANS = {
 /** How each paid plan's product is named at the payment provider, so invoices say what was bought. */
 export const CLOUD_PLAN_PRODUCT_NAMES = {
   team: "Worktable Cloud Team",
-  team30: "Worktable Cloud Team 30",
+  business: "Worktable Cloud Business",
 } as const
 
 /** The plans someone pays for, in the order a Worktable grows through them. */
-export const PAID_CLOUD_PLAN_IDS = ["team", "team30"] as const
+export const PAID_CLOUD_PLAN_IDS = ["team", "business"] as const
 export type PaidCloudPlanId = (typeof PAID_CLOUD_PLAN_IDS)[number]
 
 /** The plan that holds more people, or null at the largest. */
 export function nextCloudPlan(id: CloudPlanId): PaidCloudPlanId | null {
-  return id === "solo" ? "team" : id === "team" ? "team30" : null
+  return id === "solo" ? "team" : id === "team" ? "business" : null
 }
 
 /** A locked Worktable is deleted this many days after it locks. */

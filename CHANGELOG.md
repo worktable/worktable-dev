@@ -13,7 +13,7 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
-- **Cloud plans:** Worktable Cloud has three plans per Worktable: Solo, free for one person, Team for up to 10 people and Team 30 for up to 30, with agents free on every plan. Pending invitations count toward a plan's people.
+- **Cloud plans:** Worktable Cloud has three plans per Worktable: Solo, free for one person, Team for up to 12 people and Business for up to 50, with unlimited agents on every plan. Pending invitations count toward a plan's people.
 - **Full plans:** Inviting more people than a plan holds says so where you invite and offers the next plan to the person who pays; on Solo it's where a paid plan starts, and the people you typed are invited once it's active.
 - **Subscription settings:** **Settings → Subscription** shows the plan, how many people it holds and the next charge, and lets the person who pays change, manage or cancel it.
 - **Payment reminders:** When a Cloud payment fails, owners see a banner straight away and members see one two days before access locks.

@@ -830,7 +830,7 @@ const PageHeaderActions = memo(function PageHeaderActions({
         </Button>
       )}
 
-      {!isMobile && pageMeta?.document && (
+      {!isMobile && pageMeta?.document && !pageMeta.document.lifetimeInPage && (
         <DocumentLifetimeChip
           key={`${pageMeta.document.spaceId}:${pageMeta.document.path}`}
           spaceId={pageMeta.document.spaceId}

@@ -692,11 +692,11 @@ async function spaceColorEntries(): Promise<
   return entries;
 }
 
-/** A new Space's color, spread from the colors the other Spaces have. */
+/** A Space's default color, spread from the colors the other Spaces have. */
 export async function nextSpaceColor(spaceId: string): Promise<RecognitionColor> {
   const entries = await spaceColorEntries();
   return spreadRecognitionColor(
-    entries.map((entry) => entry.color),
+    entries.filter((entry) => entry.id !== spaceId).map((entry) => entry.color),
     spaceId
   );
 }

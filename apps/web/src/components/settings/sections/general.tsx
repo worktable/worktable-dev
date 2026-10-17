@@ -132,7 +132,8 @@ function WorkspaceColorField({ workspace }: { workspace: WorkspaceInfo }) {
         label="Color"
         value={mutation.isPending && mutation.variables ? mutation.variables : color}
         onChange={(next) => mutation.mutate(next)}
-        disabled={mutation.isPending}
+        // Only those who manage the Worktable can change it.
+        disabled={mutation.isPending || workspace.canManage === false}
       />
       <p className="text-sm text-muted-foreground">
         Tells this Worktable apart from your others.

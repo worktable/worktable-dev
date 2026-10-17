@@ -7,6 +7,7 @@ import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
+import { isRecognitionColor } from "@worktable/types/recognition"
 import { assignMissingSpaceColors, readSpace, writeSpace } from "./store.ts"
 import { prepareWorkspaceTarget, setWorkspaceRootOverride } from "./workspace.ts"
 
@@ -51,15 +52,19 @@ afterEach(async () => {
 })
 
 describe("recognition colors", () => {
-  it("are chosen for a Space beside its other settings, and cleared back to the default", async () => {
+  it("are chosen for a Space beside its other settings, and cleared to a saved default", async () => {
     expect((await request("/api/spaces/atlas", { color: "violet" })).status).toBe(200)
     expect((await readSpace("atlas")).data?.settings).toEqual({
       docSort: "custom",
       color: "violet",
     })
     expect((await request("/api/spaces/atlas", { color: "red" })).status).toBe(400)
+    // Clearing saves the default now, so a later startup leaves it alone.
     expect((await request("/api/spaces/atlas", { color: "" })).status).toBe(200)
-    expect((await readSpace("atlas")).data?.settings).toEqual({ docSort: "custom" })
+    const cleared = (await readSpace("atlas")).data?.settings
+    expect(cleared?.["docSort"]).toBe("custom")
+    expect(isRecognitionColor(cleared?.["color"])).toBe(true)
+    expect(await assignMissingSpaceColors()).toBe(0)
   })
 
   it("are chosen for the Worktable, and the update answers with the whole summary", async () => {

@@ -83,7 +83,7 @@ export function SpaceAppearanceDialog({
 
         <ResponsiveDialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            Done
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

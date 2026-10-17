@@ -287,12 +287,13 @@ spacesRouter.put("/:spaceId", requireScope("docs:write"), async (c) => {
 
   // Name, description, icon, color and group change the Space for everyone.
   // The color lives in settings, outside the Space schema agents read.
+  // Clearing a choice saves the default now, so it never changes later.
+  const savedColor = color === "" ? await nextSpaceColor(spaceId) : color;
   const { data: updated, error: mutationError } = await mutateSpace(
     spaceId,
     (space) => {
       const settings = { ...space.settings };
-      if (color) settings.color = color;
-      else if (color === "") delete settings.color;
+      if (savedColor) settings.color = savedColor;
       return {
         ...space,
         ...fields,

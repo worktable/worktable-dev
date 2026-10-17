@@ -13,10 +13,10 @@ import {
   commitAgentBlocks,
   syncDocAfterToolWrite,
 } from "./mcp/dispatcher.ts"
+import { listDocuments } from "./document-query.ts"
 import { DocEditError } from "./markdown-edit.ts"
 import {
   deduplicateSlug,
-  listDocs,
   sanitizeDocPath,
   slugify,
   writeDoc,
@@ -158,7 +158,10 @@ export async function pathForTitle(
   if (!slug) return from
   const parent = from.split("/").slice(0, -1).join("/")
   const base = parent ? `${parent}/${slug}` : slug
-  const others = (await listDocs(spaceId)).filter((path) => path !== from)
+  // Every document path is taken, archived ones too.
+  const others = (await listDocuments({ spaceId, includeArchived: true }))
+    .map((item) => (item.kind === "document" ? item.path : item.pathKey))
+    .filter((path) => path !== from)
   return deduplicateSlug(base, others)
 }
 

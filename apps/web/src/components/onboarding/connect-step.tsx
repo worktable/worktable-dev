@@ -1,7 +1,7 @@
 import { cloudConnectorCommand } from "@/lib/always-on-agents"
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Bot, Check, ExternalLink, Plug } from "lucide-react"
+import { Check, ChevronRight, ExternalLink, Plug } from "lucide-react"
 import {
   AGENT_PLATFORMS,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
@@ -74,27 +74,27 @@ const METHODS: Array<{
 }> = [
   {
     id: "computer",
-    title: "CLI agents",
-    description: () => "Claude Code, Codex, Cursor, and others on a computer.",
+    title: "Claude Code, Codex, or Cursor",
+    description: () => "Agents you run on a computer",
     platforms: ["claude-code", "codex"],
   },
   {
     id: "native",
     title: "Claude or ChatGPT",
     description: (cloud) =>
-      cloud ? "The web or desktop app." : "The desktop app.",
+      cloud ? "The web or desktop app" : "The desktop app",
     platforms: ["claude", "chatgpt"],
   },
   {
     id: "always-on",
     title: "OpenClaw or Hermes",
-    description: () => "Always on, answering you in Threads.",
+    description: () => "Always on, answers in Threads",
     platforms: ["openclaw", "hermes"],
   },
   {
     id: "other",
-    title: "Other MCP agent",
-    description: () => "Any agent that connects over MCP.",
+    title: "Another MCP agent",
+    description: () => "Anything that speaks MCP",
     platforms: [],
   },
 ]
@@ -590,9 +590,8 @@ export function ConnectStep({
     return (
       <>
         <StepHeading
-          icon={<Bot className="size-5" />}
-          title="Connect your Agents"
-          description="Choose where you use an agent. You can connect more later in Settings."
+          title="Connect your agent"
+          description="Your agents do their work in Worktable. Start with the one you use most."
         />
         {loading ? (
           <div className="mt-7">
@@ -613,21 +612,26 @@ export function ConnectStep({
             </button>
           </Callout>
         ) : (
-          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+          <div className="mt-7 card-surface divide-y divide-border overflow-hidden rounded-xl">
             {METHODS.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className="group flex flex-col items-start rounded-xl border border-border bg-background p-4 text-left transition-colors hover:border-primary/60 hover:bg-surface-tint/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none"
                 onClick={() => choose(item.id)}
               >
-                <LogoStack platforms={item.platforms} />
-                <span className="mt-4 block text-sm font-medium">
-                  {item.title}
+                <span className="flex w-14 shrink-0">
+                  <LogoStack platforms={item.platforms} className="size-8" />
                 </span>
-                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                  {item.description(isCloud)}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {item.title}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {item.description(isCloud)}
+                  </span>
                 </span>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
               </button>
             ))}
           </div>
@@ -644,8 +648,8 @@ export function ConnectStep({
           {setups.length ? (
             <Button onClick={onContinue}>Continue</Button>
           ) : (
-            <Button variant="outline" onClick={onContinue}>
-              Continue without an agent
+            <Button variant="ghost" onClick={onContinue}>
+              I’ll do this later
             </Button>
           )}
         </div>

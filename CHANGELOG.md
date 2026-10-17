@@ -13,6 +13,9 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Setup:** A new Worktable asks who it's for and connects your agent. Then tell the agent what you're working on: it makes a Space and writes the first brief while you invite your team, and setup ends in that Space.
+- **Getting Started:** New Worktables start with a Getting Started Space that everyone can see. Its home is your own checklist, which ticks off as you connect an agent, give it a first task, ask it for a review and more. It sits at the top of the sidebar, with a line on **Home**, until you unpin it. Existing Worktables keep their Welcome Space.
+- **Joining a team:** Members skip the owner's setup and open the Space they were invited to, with a short welcome. On self-hosted Worktables, the join page names the Worktable, who invited you and the Space.
 - **Your own groups and pins:** Organize the sidebar your way without changing it for anyone else. Pin a Space to keep it at the top, and sort Spaces into groups from **Change Group** in the Space menu or the **+** beside Spaces. Groups show as sections you can collapse, rename or remove, and **All** next to the Spaces heading shows one group at a time. Your arrangement follows you to your other devices. Anyone who can see a Space can pin it or group it. You start with the groups your Spaces already had.
 - **Worktable menu:** The top of the sidebar shows your Worktable's name and opens a menu with where it lives and **Worktable Settings**. In Desktop, **Switch Worktable** there opens the Worktable chooser, as **Workspace → Change Connection** does.
 - **Colors for Worktables, Spaces and people:** Each Space shows its icon on its own color in the sidebar, breadcrumbs, search and its page, the same for everyone. Choose it with **Icon and Color** in the Space menu. Your Worktable has a color too, chosen in **Settings → General**, and people get their own color behind their initials. Until someone chooses, each gets a color of its own.
@@ -21,6 +24,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Activity on a team:** Activity names other people. **You** means only you.
 - **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 - **Backups:** Backups and exports pause edits only for the moment it takes to record what changed, and cleaning up old versions no longer makes them fail.

@@ -1,3 +1,5 @@
+import { readPersonSetup } from "./personal-navigation-store.ts"
+import type { SetupItemId } from "@worktable/types/setup"
 import { base64url, SignJWT } from "jose"
 import {
   GATEWAY_HEADER,
@@ -1304,6 +1306,19 @@ test("invitations carry a starting Space, report their email, and grant a restri
   expect(canAccessSpace("original", "edit", identityFor("carol2@example.test"))).toBe(
     true
   )
+  // Joining ticks off the new member's first step, and the inviter's.
+  const stepDone = async (identity: TokenIdentity, item: SetupItemId) => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const evidence = readPersonSetup(participantKey(identity))?.items[item]
+      if (evidence) return evidence
+      await Bun.sleep(5)
+    }
+    return undefined
+  }
+  expect(
+    await stepDone(identityFor("carol2@example.test"), "join-space")
+  ).toMatchObject({ spaceId: "original" })
+  expect(await stepDone(owner, "invite-team")).toBeDefined()
 
   // Retiring a Space's policy clears it from pending invitations, so a Space
   // that later takes the same id is never granted through them.

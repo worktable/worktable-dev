@@ -41,6 +41,11 @@ import {
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
+import { GettingStartedHome } from "@/components/getting-started/getting-started-home"
+import { MemberWelcome } from "@/components/getting-started/member-welcome"
+import { gettingStartedSpace } from "@/lib/setup"
+
+const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
@@ -191,7 +196,7 @@ function PinnedSection({
                 {spaceDetail?.space.permissions?.edit !== false && <Button
                   size="xs"
                   variant="ghost"
-                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground focus-visible:opacity-100 sm:absolute sm:top-1/2 sm:right-3 sm:my-0 sm:mr-0 sm:-translate-y-1/2 sm:bg-card sm:opacity-0 sm:group-hover:opacity-100"
                   onClick={() => void unpin(pin.path)}
                 >
                   Unpin
@@ -361,6 +366,8 @@ function SpaceOverview({
           )}
         </header>
 
+        <MemberWelcome spaceId={spaceId} />
+
         <PendingSection spaceId={spaceId} />
 
         <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
@@ -493,6 +500,9 @@ function SpaceDetailPage() {
           restoring={restoring}
         />
       )}
+      {space && isGettingStarted(space) ? (
+        <GettingStartedHome space={space} />
+      ) : (
       <SpaceOverview
         // A folder filter belongs to one Space; start each Space unfiltered.
         key={spaceId}
@@ -504,6 +514,7 @@ function SpaceDetailPage() {
         onRetryPins={isError ? () => void refetch() : undefined}
         canEdit={space?.permissions?.edit !== false}
       />
+      )}
     </div>
   )
 }

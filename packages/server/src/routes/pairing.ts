@@ -1,3 +1,8 @@
+import {
+  noteAgentPairedForSetup,
+  OWNER_SETUP_KEY,
+  setupKeyForIdentity,
+} from "../personal-setup.ts";
 import { teamsEnabled } from "../team-database.ts"
 import { findTeamMemberById } from "../team-members.ts"
 import { identityForTeamMember } from "../team-identity.ts"
@@ -805,6 +810,10 @@ pairingRouter.post("/complete", async (c) => {
         if (!identity?.team?.agentId) throw new TeamAccessError("This agent connection has been revoked");
         await resolveParticipant(identity);
         await finalizeTeamCredentialRotation(tokenId, identity.team.agentId);
+        noteAgentPairedForSetup(
+          setupKeyForIdentity(identity),
+          session.target.kind === "agent-adapter"
+        );
         return;
       }
       const target = session.target;
@@ -872,6 +881,7 @@ pairingRouter.post("/complete", async (c) => {
         return;
       }
       await finalizeAgentTokenRotation(tokenId);
+      noteAgentPairedForSetup(OWNER_SETUP_KEY, target.kind === "agent-adapter");
     }
   );
   if (!result.ok) {

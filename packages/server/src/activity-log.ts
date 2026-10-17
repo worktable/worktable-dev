@@ -165,6 +165,15 @@ function targetKey(event: Pick<ActivityEvent, "target">): string {
   }
 }
 
+let activityObserver: ((event: ActivityEvent) => void) | null = null
+
+/** Something that reacts to activity as it is recorded, such as setup progress. */
+export function setActivityObserver(
+  observer: ((event: ActivityEvent) => void) | null
+): void {
+  activityObserver = observer
+}
+
 /** Note activity without delaying or failing the caller. */
 export function recordActivity(input: ActivityInput): void {
   const actor = input.actor ?? currentActivityActor() ?? SYSTEM_ACTOR
@@ -191,6 +200,11 @@ export function recordActivity(input: ActivityInput): void {
       parsed.error.issues.map((issue) => `${issue.path.map(String).join(".")} ${issue.code}`).join(", ")
     )
     return
+  }
+  try {
+    activityObserver?.(parsed.data)
+  } catch (error) {
+    console.warn("[activity] observer failed:", logError(error))
   }
   const write = appendEvent(parsed.data).catch((error) => {
     console.error("[activity] could not record event:", logError(error))

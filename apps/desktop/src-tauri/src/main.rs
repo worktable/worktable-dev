@@ -824,6 +824,44 @@ fn require_local_workspace_surface(
     }
 }
 
+/// Commands any active workspace may use, local, self-hosted or Cloud: the
+/// caller must be the workspace webview, showing the active connection's origin.
+fn require_active_workspace_surface(
+    webview: &Webview,
+    state: &DesktopHostState,
+) -> Result<(), String> {
+    if webview.label() != WORKSPACE_WEBVIEW_LABEL {
+        return Err(format!(
+            "native workspace command denied for webview '{}'",
+            webview.label()
+        ));
+    }
+    let (status_name, expected_origin) = {
+        let status = state
+            .status
+            .lock()
+            .map_err(|_| "desktop status lock is poisoned".to_string())?;
+        (
+            status.state,
+            status
+                .origin
+                .clone()
+                .ok_or_else(|| "the active Desktop origin is unavailable".to_string())?,
+        )
+    };
+    let expected_origin = expected_origin
+        .parse::<tauri::Url>()
+        .map_err(|_| "the active Desktop origin is invalid".to_string())?;
+    let current_url = webview
+        .url()
+        .map_err(|_| "the active Desktop workspace URL is unavailable".to_string())?;
+    if status_name == "ready" && same_workspace_origin(&current_url, &expected_origin) {
+        Ok(())
+    } else {
+        Err("native workspace command requires the active Desktop workspace and origin".into())
+    }
+}
+
 #[tauri::command]
 fn desktop_shell_identity(webview: Webview) -> Result<DesktopShellIdentity, String> {
     require_trusted_surface(&webview)?;
@@ -2879,6 +2917,22 @@ fn local_authority_log_path(authority: &LocalAuthorityInspection) -> Option<Stri
 async fn desktop_change_connection(webview: Webview, app: AppHandle) -> Result<(), String> {
     require_trusted_surface(&webview)?;
     change_connection(&app).await
+}
+
+/// Marks a switch that started and failed, so the page can tell it from a
+/// page this command refuses or a Desktop without the command.
+const SWITCH_FAILED: &str = "switch failed: ";
+
+/// The Worktable menu's Switch Worktable: the active workspace page asks for
+/// the native chooser, like Workspace -> Change Connection. It learns nothing
+/// about other connections, since a self-hosted or Cloud page is remote content.
+#[tauri::command]
+async fn desktop_workspace_show_chooser(webview: Webview, app: AppHandle) -> Result<(), String> {
+    require_active_workspace_surface(&webview, &app.state::<DesktopHostState>())?;
+    show_main_window(&app).map_err(|error| format!("{SWITCH_FAILED}{error}"))?;
+    change_connection(&app)
+        .await
+        .map_err(|error| format!("{SWITCH_FAILED}{error}"))
 }
 
 #[tauri::command]
@@ -7080,6 +7134,7 @@ fn main() {
         .on_menu_event(handle_desktop_menu_event)
         .invoke_handler(tauri::generate_handler![
             desktop_shell_identity,
+            desktop_workspace_show_chooser,
             desktop_agent_skills_status,
             desktop_agent_skills_preview,
             desktop_agent_skills_apply,

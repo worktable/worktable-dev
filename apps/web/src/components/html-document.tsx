@@ -161,10 +161,6 @@ function WidgetDetailPage({
 }) {
   const navigate = useNavigate()
   const readOnly = !page || page.capabilities.edit === false
-  // Permission checks use the latest validation without resetting the frame's
-  // navigation handshake when its preview becomes a checked document.
-  const readOnlyRef = useRef(readOnly)
-  readOnlyRef.current = readOnly
   const spaceEvents = useSpaceEvents(spaceId)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // The frame may load from a row's revision before the route's check. Its
@@ -578,10 +574,6 @@ function WidgetDetailPage({
           { type: "worktable.api.response", id: data.id, ...payload },
           "*"
         )
-      if (readOnlyRef.current && !["GET", "HEAD"].includes((data.method || "GET").toUpperCase())) {
-        reply({ok: false, status: 403, body: {error: "You have read access to this Space", code: "FORBIDDEN"}})
-        return
-      }
       const target = resolveWidgetApiTarget(
         data.path,
         spaceId,

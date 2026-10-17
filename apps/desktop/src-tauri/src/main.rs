@@ -2919,14 +2919,20 @@ async fn desktop_change_connection(webview: Webview, app: AppHandle) -> Result<(
     change_connection(&app).await
 }
 
+/// Marks a switch that started and failed, so the page can tell it from a
+/// page this command refuses or a Desktop without the command.
+const SWITCH_FAILED: &str = "switch failed: ";
+
 /// The Worktable menu's Switch Worktable: the active workspace page asks for
 /// the native chooser, like Workspace -> Change Connection. It learns nothing
 /// about other connections, since a self-hosted or Cloud page is remote content.
 #[tauri::command]
 async fn desktop_workspace_show_chooser(webview: Webview, app: AppHandle) -> Result<(), String> {
     require_active_workspace_surface(&webview, &app.state::<DesktopHostState>())?;
-    show_main_window(&app)?;
-    change_connection(&app).await
+    show_main_window(&app).map_err(|error| format!("{SWITCH_FAILED}{error}"))?;
+    change_connection(&app)
+        .await
+        .map_err(|error| format!("{SWITCH_FAILED}{error}"))
 }
 
 #[tauri::command]

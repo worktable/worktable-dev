@@ -19,14 +19,17 @@ export function insideDesktop(): boolean {
   )
 }
 
+/** Desktop's prefix for a switch that started and failed. */
+const SWITCH_FAILED = "switch failed: "
+
 /**
  * Opens Desktop's Worktable chooser, which closes this page. The open drawing
  * is saved first, and the switch waits if it can't be; Docs keep unsaved
  * edits for recovery. "unavailable" means this Desktop build has no such
- * command or refused this page.
+ * command or refused this page; "failed" means the switch itself failed.
  */
 export async function switchDesktopWorktable(): Promise<
-  "switching" | "unsaved" | "unavailable"
+  "switching" | "unsaved" | "unavailable" | "failed"
 > {
   const call = invoke()
   if (!call) return "unavailable"
@@ -38,7 +41,11 @@ export async function switchDesktopWorktable(): Promise<
   try {
     await call("desktop_workspace_show_chooser")
     return "switching"
-  } catch {
+  } catch (error) {
+    if (String(error).startsWith(SWITCH_FAILED)) {
+      console.error("[desktop] Switch Worktable failed:", error)
+      return "failed"
+    }
     return "unavailable"
   }
 }

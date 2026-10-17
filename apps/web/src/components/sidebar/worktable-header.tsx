@@ -91,6 +91,8 @@ export function WorktableHeader() {
                     toast.error(
                       "Choose Change Connection from the Workspace menu to switch."
                     )
+                  } else if (outcome === "failed") {
+                    toast.error("Couldn’t switch Worktables. Try again.")
                   }
                 })
               }

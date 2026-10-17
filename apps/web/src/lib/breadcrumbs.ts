@@ -1,3 +1,4 @@
+import type { RecognitionColor } from "@worktable/types/recognition"
 import { humanizeSegment } from "./tree"
 import type { TreeNode } from "./tree"
 import { findTreeNode } from "./space-document-tree"
@@ -28,6 +29,8 @@ export type Breadcrumb = {
   role: BreadcrumbRole
   /** The space's chosen icon, on its crumb. */
   icon?: string
+  /** The space's recognition color, on its crumb. */
+  color?: RecognitionColor
   /** The catalog entry a folder or document crumb names, once loaded. */
   node?: TreeNode
   /** A pane title that narrow screens leave to the pane itself. */
@@ -50,6 +53,7 @@ export interface BreadcrumbInput {
   parentTitleOverride?: string
   spaceName?: string
   spaceIcon?: string
+  spaceColor?: RecognitionColor
   documents?: Pick<SpaceDocumentTrees, "active" | "archived">
 }
 
@@ -100,6 +104,7 @@ export function buildBreadcrumbs({
   parentTitleOverride,
   spaceName,
   spaceIcon,
+  spaceColor,
   documents,
 }: BreadcrumbInput): Breadcrumb[] {
   const crumbs: Breadcrumb[] = []
@@ -108,6 +113,7 @@ export function buildBreadcrumbs({
     role: "space",
     label: spaceName ?? fallback ?? humanizeSegment(spaceId),
     icon: spaceIcon,
+    color: spaceColor,
     target: { to: "/spaces/$spaceId", params: { spaceId } },
   })
 

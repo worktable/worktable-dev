@@ -118,6 +118,12 @@ function renderMode(mode: ThemeMode): string {
       `  --chart-${index + 1}: var(--theme-${mode}-chart-${index + 1});`
     )
   })
+  for (const [name, values] of Object.entries(themeConfig.recognition)) {
+    for (const part of Object.keys(values[mode])) {
+      const cssName = part === "solid" ? `recognition-${name}` : `recognition-${name}-${part}`
+      lines.push(`  --${cssName}: var(--theme-${mode}-${cssName});`)
+    }
+  }
   lines.push("  --accent-bronze-soft: var(--surface-tint);")
   lines.push(`  --grid-size: ${themeConfig.backdrop.gridSize}px;`)
   lines.push(`  --grid-fade-width: ${themeConfig.backdrop.fadeWidth};`)
@@ -159,6 +165,12 @@ function renderPrimitiveAliases(): string {
     themeConfig.charts[mode].forEach((value, index) => {
       lines.push(`  --theme-${mode}-chart-${index + 1}: ${value};`)
     })
+    for (const [name, values] of Object.entries(themeConfig.recognition)) {
+      for (const [part, value] of Object.entries(values[mode])) {
+        const cssName = part === "solid" ? `recognition-${name}` : `recognition-${name}-${part}`
+        lines.push(`  --theme-${mode}-${cssName}: ${value};`)
+      }
+    }
     lines.push(
       `  --mermaid-canvas-${mode}: ${themeConfig.mermaid[mode].canvas};`
     )

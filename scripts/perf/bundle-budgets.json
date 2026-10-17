@@ -6,8 +6,8 @@
       "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
     },
     "root css": {
-      "gzip": 37500,
-      "why": "Docs share one reading stylesheet (document-content.css), which the saved preview needs before the app's JavaScript loads so nothing moves when a Doc opens. It replaces markdown.css and the preview overrides, and adds lists, checklists, code headers, tables, toggles, diagrams and the text color palette; controls that only appear once a Doc is interactive load with the viewer and editor instead."
+      "gzip": 38600,
+      "why": "The theme defines eight recognition colors, each with solid, ink and soft values in light and dark. Docs share one reading stylesheet (document-content.css), which the saved preview needs before the app's JavaScript loads so nothing moves when a Doc opens. It replaces markdown.css and the preview overrides, and adds lists, checklists, code headers, tables, toggles, diagrams and the text color palette; controls that only appear once a Doc is interactive load with the viewer and editor instead."
     },
     "home": {
       "gzip": 331400,

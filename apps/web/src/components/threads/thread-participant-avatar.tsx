@@ -1,9 +1,11 @@
 import { platformForName, type ParticipantRef } from "@worktable/types"
+import { recognitionColor } from "@worktable/types/recognition"
 import { Avatar, AvatarFallback } from "@worktable/ui/components/avatar"
 import { cn } from "@worktable/ui/lib/utils"
 
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { participantInitials } from "@/lib/thread-presentation"
+import { recognitionSolid } from "@/lib/recognition"
 import { useThreadParticipants } from "@/lib/threads-queries"
 
 interface ThreadParticipantAvatarProps {
@@ -38,7 +40,11 @@ export function ThreadParticipantAvatar({
       className={cn("size-8", className)}
       aria-label={participant?.name ?? "Unknown participant"}
     >
-      <AvatarFallback className="text-xs font-medium">
+      <AvatarFallback
+        className="text-xs font-medium"
+        // A person's color follows their participant id, as in the sidebar.
+        style={participant ? recognitionSolid(recognitionColor(null, participant.id)) : undefined}
+      >
         {participant ? participantInitials(participant.name) : "?"}
       </AvatarFallback>
     </Avatar>

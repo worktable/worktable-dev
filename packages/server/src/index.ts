@@ -121,6 +121,7 @@ import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { THREADS_SCOPE, wsManager } from "./ws.ts";
 import { yjsManager } from "./yjs-manager.ts";
 import {
+  assignMissingSpaceColors,
   docStat,
   getDocCollaborationCacheEpoch,
   listSpaces } from "./store.ts";
@@ -1480,16 +1481,17 @@ export function startServer(
   };
 
   // First run on an empty workspace: seed the welcome space so the first
-  // open isn't an empty void. No-op on any workspace with content. Skipped
-  // when the workspace folder was rejected so we never write into a foreign
-  // or unreadable folder. Track it as server-owned work so replacement waits
-  // for the last write before swapping workspace roots.
+  // open isn't an empty void (not after a replacement). No-op on any
+  // workspace with content. Then give Spaces without a saved color theirs.
+  // Skipped when the workspace folder was rejected so we never write into a
+  // foreign or unreadable folder. Track it as server-owned work so
+  // replacement waits for the last write before swapping workspace roots.
   //
-  // WORKTABLE_SKIP_STARTER_SEED=1 disables the seed for the test runner. The
-  // seed itself is covered directly by seed.test.ts. Never set in production.
+  // WORKTABLE_SKIP_STARTER_SEED=1 disables both for the test runner; they
+  // are covered directly by seed.test.ts and recognition-color.test.ts.
+  // Never set in production.
   if (
     !workspaceRejected &&
-    !options.replacementRestart &&
     process.env["WORKTABLE_SKIP_STARTER_SEED"] !== "1"
   ) {
     const task = (async () => {
@@ -1497,14 +1499,28 @@ export function startServer(
       // production boundary rather than an incidental await of a test hook.
       await Promise.resolve();
       if (startupDiscarded) return;
-      await starterSeedScheduleHookForTests?.();
+      if (!options.replacementRestart) {
+        await starterSeedScheduleHookForTests?.();
+        if (startupDiscarded) return;
+        try {
+          const seeded = await seedStarterWorkspace();
+          if (seeded) {
+            console.log("[Worktable] seeded starter workspace (welcome space)");
+          }
+        } catch (err) {
+          console.error("[Worktable] starter seed error:", logError(err));
+        }
+      }
       if (startupDiscarded) return;
-      const seeded = await seedStarterWorkspace();
-      if (seeded) {
-        console.log("[Worktable] seeded starter workspace (welcome space)");
+      // Spaces from before colors were saved, or from a replaced or imported
+      // workspace, get theirs once, spread apart; after the seed, so the
+      // starter Space takes part.
+      const colored = await assignMissingSpaceColors();
+      if (colored > 0) {
+        console.log(`[Worktable] gave ${colored} Spaces a color`);
       }
     })().catch((err) =>
-      console.error("[Worktable] starter seed error:", logError(err))
+      console.error("[Worktable] Space color error:", logError(err))
     );
     starterSeedTask = task;
     timeBootTask("starter seed", task);

@@ -1,3 +1,4 @@
+import { recognitionColor } from "@worktable/types/recognition"
 import { useRouterState } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { usePageMeta } from "@/hooks/use-page-meta"
@@ -52,6 +53,7 @@ export function useBreadcrumbs(): Breadcrumb[] {
     parentTitleOverride: pageMeta?.parentTitleOverride,
     spaceName: space?.name,
     spaceIcon: space?.icon,
+    spaceColor: space ? recognitionColor(space.settings?.color, space.id) : undefined,
     documents: trees,
   })
 }

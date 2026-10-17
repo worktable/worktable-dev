@@ -375,26 +375,26 @@ function reconcileThreadNames(participantId: string): Promise<void> {
   return next
 }
 
-// This server writes the bindings it cares about here, so names are read
+// This server writes the bindings it cares about here, so they are read
 // once and refreshed by its own saves; summaries carried by every page then
 // cost no file I/O. A binding another process adds shows after a restart.
-let namesCache: { path: string; names: Map<string, string> } | null = null
+let namesCache: { path: string; names: Map<string, ParticipantRef> } | null = null
 
-/** A participant's current name, for summaries that ride along with every page. */
-export function participantNameForKey(key: string): string | null {
+/** A participant, for summaries that ride along with every page. */
+export function cachedParticipantForKey(key: string): ParticipantRef | null {
   // Reading creates nothing, so it costs no directory check.
   const path = bindingsPath(getAppDir())
   if (namesCache?.path !== path) {
-    const names = new Map<string, string>()
+    const names = new Map<string, ParticipantRef>()
     try {
       const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ParticipantBindingsFile>
       for (const binding of Array.isArray(parsed.bindings) ? parsed.bindings : []) {
-        if (typeof binding?.key === "string" && typeof binding.participant?.name === "string") {
-          names.set(binding.key, binding.participant.name)
+        if (typeof binding?.key === "string" && ParticipantRefSchema.safeParse(binding.participant).success) {
+          names.set(binding.key, binding.participant)
         }
       }
     } catch {
-      // Missing or unreadable: no names yet.
+      // Missing or unreadable: no participants yet.
     }
     namesCache = { path, names }
   }

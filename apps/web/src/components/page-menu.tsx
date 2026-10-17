@@ -44,6 +44,7 @@ import type { PageOverflowAction } from "@/hooks/use-page-meta"
 import type { Breadcrumb } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow, documentPathKey } from "@/lib/document-views"
 import { resolveIcon } from "@/lib/icons"
+import { recognitionChip } from "@/lib/recognition"
 import type { TreeNode } from "@/lib/tree"
 
 const rowClass =
@@ -490,7 +491,15 @@ function CrumbIcon({
   const className = cn(iconClass, current && "text-primary-text")
   if (crumb.role === "space") {
     return (
-      <span className={cn(className, "[&>svg]:size-4")}>
+      <span
+        className={cn(
+          className,
+          crumb.color
+            ? "flex size-5 items-center justify-center rounded-[5px] [&>svg]:size-3.5"
+            : "[&>svg]:size-4"
+        )}
+        style={crumb.color ? recognitionChip(crumb.color) : undefined}
+      >
         {resolveIcon(crumb.icon)}
       </span>
     )

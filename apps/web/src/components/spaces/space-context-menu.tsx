@@ -41,13 +41,19 @@ import {
   PinOff,
   FolderPlus,
 } from "lucide-react"
-import { IconSearchGrid } from "@/components/icon-search-grid"
+import type { RecognitionColor } from "@worktable/types/recognition"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type { PersonalGroup } from "@worktable/types"
 import { sortedGroups } from "@/lib/personal-navigation"
 import type { DocSortMode } from "@/lib/tree"
 import { NewSubmenu } from "@/components/spaces/space-new-menu"
 
+// Loaded when first opened: the icon catalog and colors stay off startup.
+const SpaceAppearanceDialog = lazy(() =>
+  import("./space-appearance-dialog").then((module) => ({
+    default: module.SpaceAppearanceDialog,
+  }))
+)
 const SpaceAccessEditor = lazy(() => import("./space-access-editor").then(module => ({default: module.SpaceAccessEditor})))
 
 // ── Context Menu Button ──────────────────────────────────────
@@ -58,6 +64,8 @@ interface SpaceContextMenuProps {
   canManageAccess?: boolean
   spaceName: string
   spaceIcon?: string
+  /** The Space's color, chosen or default. */
+  spaceColor: RecognitionColor
   archived?: boolean
   /** Creation choices, listed first where the row has no + of its own. */
   newItems?: ReactNode
@@ -77,6 +85,7 @@ interface SpaceContextMenuProps {
   onChangeDocSort: (sort: DocSortMode) => void
   onRename: (newName: string) => void
   onChangeIcon: (icon: string) => void
+  onChangeColor: (color: RecognitionColor) => Promise<void>
   onArchive?: () => void
   onRestore?: () => void
   onDelete: () => void
@@ -98,6 +107,7 @@ export function SpaceContextMenuButton({
   canManageAccess = false,
   spaceName,
   spaceIcon,
+  spaceColor,
   archived,
   newItems,
   personal,
@@ -105,6 +115,7 @@ export function SpaceContextMenuButton({
   onChangeDocSort,
   onRename,
   onChangeIcon,
+  onChangeColor,
   onArchive,
   onRestore,
   onDelete,
@@ -180,7 +191,7 @@ export function SpaceContextMenuButton({
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!canAdminister} onClick={() => setIconPickerOpen(true)}>
             <Smile className="mr-2 h-4 w-4" />
-            Change Icon
+            Icon and Color
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!canEdit}>
@@ -240,12 +251,18 @@ export function SpaceContextMenuButton({
         spaceName={spaceName}
       />
 
-      <IconPickerDialog
-        open={iconPickerOpen}
-        onClose={() => setIconPickerOpen(false)}
-        onSelect={onChangeIcon}
-        currentIcon={spaceIcon}
-      />
+      {iconPickerOpen && (
+        <Suspense fallback={null}>
+          <SpaceAppearanceDialog
+            open
+            onClose={() => setIconPickerOpen(false)}
+            onSelect={onChangeIcon}
+            currentIcon={spaceIcon}
+            currentColor={spaceColor}
+            onSelectColor={onChangeColor}
+          />
+        </Suspense>
+      )}
     </>
   )
 }
@@ -396,55 +413,6 @@ function SpaceDeleteDialog({
             disabled={pending}
           >
             {pending ? "Deleting…" : "Delete"}
-          </Button>
-        </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  )
-}
-
-// ── Icon Picker Dialog ───────────────────────────────────────
-
-function IconPickerDialog({
-  open,
-  onClose,
-  onSelect,
-  currentIcon,
-}: {
-  open: boolean
-  onClose: () => void
-  onSelect: (icon: string) => void
-  currentIcon?: string
-}) {
-  const handleSelect = (icon: string) => {
-    onSelect(icon)
-    onClose()
-  }
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-tint">
-            <Smile className="h-5 w-5 text-primary" />
-          </div>
-          <ResponsiveDialogTitle>Change Icon</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Search icons or pick from popular ones below.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
-
-        <ResponsiveDialogBody>
-          <IconSearchGrid
-            selected={currentIcon}
-            onSelect={handleSelect}
-            autoFocus
-          />
-        </ResponsiveDialogBody>
-
-        <ResponsiveDialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

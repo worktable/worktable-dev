@@ -18,7 +18,7 @@ import {
 import { toast } from "@worktable/ui/components/sonner"
 import { useNewDocIn } from "@/hooks/use-new-doc"
 import { createSpace } from "@/lib/api"
-import { resolveIcon } from "@/lib/icons"
+import { SpaceIcon } from "@/components/spaces/space-icon"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 
@@ -44,7 +44,7 @@ function SpaceChoices({
     <DropdownMenuSubContent className="max-h-80 min-w-48 overflow-y-auto">
       {spaces.map((space) => (
         <DropdownMenuItem key={space.id} onClick={() => onChoose(space.id)}>
-          {resolveIcon(space.icon, "mr-2 size-4")}
+          <SpaceIcon space={space} className="mr-2" />
           {space.name}
         </DropdownMenuItem>
       ))}

@@ -29,6 +29,7 @@ import { DRAWING_GUIDE } from "./drawing-guide.ts"
 import {
   listSpaces,
   mutateSpace,
+  nextSpaceColor,
   readSpace,
   setSpaceArchived,
   writeSpace,
@@ -996,7 +997,7 @@ async function _dispatchOperationInner(
         createdAt: now,
         updatedAt: now,
         createdBy: actorId,
-        settings: {},
+        settings: { color: await nextSpaceColor(spaceId) },
         group,
       }
       await writeSpace(space)

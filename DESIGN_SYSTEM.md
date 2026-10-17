@@ -62,6 +62,7 @@ outputs without rewriting them.
 | Technical notation       | `.inline-code-accent`, `--code-accent-*`          | Primary cobalt for code, commands, and compact hints                |
 | Illustration accent      | `*-illustration-accent/<opacity>`                 | Cobalt markers and surfaces inside noninteractive product mockups   |
 | Status                   | `success`, `warning`, `info`, `destructive`       | Genuine state and feedback only                                     |
+| Recognition              | `--recognition-<color>`, `-ink`, `-soft`          | Tells Worktables, Spaces and people apart on tiles, chips, avatars  |
 
 `--accent-bronze-soft` is a deprecated compatibility alias for `--surface-tint`. Do not introduce new internal use.
 
@@ -71,6 +72,7 @@ outputs without rewriting them.
 - **Bronze = material.** Keep it for details such as presence and annotation dots. Never use it as a general decorative surface tint or primary action. Switch thumbs are flat cobalt controls.
 - **Technical notation = primary cobalt.** It shares the primary palette through its generated `--code-accent-*` finish. Use it for inline code, commands, environment variables, compact key hints, and docs tips; it does not imply clickability.
 - **Destructive stays red (hue ~22–28).** The primary no longer competes with it — keep it that way.
+- **Recognition = which one.** Eight muted hues around the color wheel and a quiet slate (`RECOGNITION_COLORS` in `@worktable/types`) identify a Worktable, a Space or a person wherever it appears: a solid tile or avatar carrying white initials, or an icon in `-ink` on its `-soft` fill, which stands a clear step from the sidebar and page in both modes so the chip reads as a shape. They never mark actions, state or text, and the set leaves out red and cobalt so neither is mistaken for them. A new Space gets the hue used least and farthest from the others (`spreadRecognitionColor`), saved so it never changes; Spaces from before saved colors get theirs once at startup. More hues would not help: at a lightness that keeps white initials readable, about eight muted hues stay clearly apart once red and cobalt are left out. A Worktable without a chosen color takes a stable default from its id. Personal groups have no color, since a color only one person sees cannot identify anything.
 - **Surfaces are opaque; fills are translucent.** Canvas, card, and popover are opaque steps. Hover and inset fills are translucent so one role reads the same on any surface. Do not put opacity modifiers on surface roles (`bg-muted/30`, `bg-card/60`) or add `dark:` surface overrides in components; add or retune a role in the theme instead.
 - **Sidebar text uses semantic hierarchy.** Space labels use `text-sidebar-space-foreground`; resting file, folder, record, widget, and navigation labels use `text-sidebar-item-foreground`. Hover and selected states may rise to the full sidebar foreground or primary text roles.
 

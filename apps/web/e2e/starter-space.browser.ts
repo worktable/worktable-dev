@@ -199,7 +199,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
     { exact: true }
   )
   const secondBlock = editor.getByRole("heading", {
-    name: "Useful combinations",
+    name: "Combine them",
     exact: true,
   })
   const thirdBlock = editor.getByRole("heading", {

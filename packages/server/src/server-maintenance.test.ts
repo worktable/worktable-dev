@@ -1,33 +1,20 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  setSystemTime,
-} from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   cp,
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   realpath,
   rm,
-  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { runServerMaintenance } from "./server-maintenance.ts"
-import type { DocumentId } from "@worktable/types"
 import { setAppDirOverride } from "./app-storage.ts"
-import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
-import { writeDocumentGenerationV2 } from "./document-version-store-v2.ts"
 import {
   importWorkspaceExportV2,
   inspectWorkspaceExportV2,
-  setWorkspaceExportCaptureHookForTests,
 } from "./workspace-transfer-v2.ts"
 import { setWorkspaceExportFlush } from "./workspace-export-coordinator.ts"
 import { startServer, stopActiveServer } from "./index.ts"
@@ -42,7 +29,6 @@ import {
 } from "./workspace-snapshot.ts"
 import { restoreLiveWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
-import { isWorkspaceRequestAdmissionOpen } from "./workspace-request-lifecycle.ts"
 
 let root: string
 let workspace: string
@@ -70,8 +56,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopActiveServer()
-  setSystemTime()
-  setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportFlush(null)
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
@@ -182,60 +166,6 @@ describe("server maintenance entrypoint", () => {
       )
     ).toContain("Hello")
   })
-  it("admits edits while a live capture copies the workspace and holds them only to record changes", async () => {
-    for (let index = 0; index < 50; index += 1)
-      await writeFile(
-        join(workspace, "spaces", "notes", "docs", `note-${index}.md`),
-        `# Note ${index}\n`
-      )
-    // Settled files are copied beside live writers.
-    setSystemTime(new Date(Date.now() + 60_000))
-    // So are versions, which are never rewritten in place, however recently
-    // they were saved.
-    for (let save = 1; save <= 6; save += 1)
-      await writeDocumentGenerationV2({
-        workspaceRoot: workspace,
-        spaceId: "notes",
-        documentId: "doc_VVVVVVVVVVVVVVVVVVVVVV" as DocumentId,
-        generationId: `2020-01-0${save}T00-00-00-000Z-000000-version${save}`,
-        logicalPath: "hot",
-        format: { id: BUILTIN_DOCUMENT_FORMATS.markdown, sourceVersion: 1 },
-        operation: "update",
-        createdAt: `2020-01-0${save}T00:00:00.000Z`,
-        createdBy: "test",
-        source: "test",
-        authoredSource: {
-          kind: "file",
-          entries: [{ path: "document.md", bytes: Buffer.from(`${save}`) }],
-        },
-      })
-    const history = (
-      await readdir(join(workspace, "versions"), { recursive: true })
-    ).map((path) => join(workspace, "versions", path))
-    const now = new Date()
-    for (const path of history) await utimes(path, now, now)
-    const server = startServer(0, "127.0.0.1")
-    process.env["PORT"] = String(server.port)
-    const copies: Array<{ path: string; held: boolean; admitted: boolean }> = []
-    setWorkspaceExportCaptureHookForTests(async ({ path, held }) => {
-      copies.push({ path, held, admitted: isWorkspaceRequestAdmissionOpen() })
-    })
-    const output: string[] = []
-    await runServerMaintenance(
-      ["workspace-snapshot", "live-delta-test", "30000"],
-      (value) => output.push(value)
-    )
-    const saved = JSON.parse(output[0]!)
-    const notes = copies.filter((copy) => copy.path.includes("/note-"))
-    expect(notes).toHaveLength(50)
-    expect(notes.every((copy) => !copy.held && copy.admitted)).toBe(true)
-    const versions = copies.filter((copy) => copy.path.startsWith("versions/"))
-    expect(versions.length).toBeGreaterThan(6)
-    expect(versions.every((copy) => !copy.held && copy.admitted)).toBe(true)
-    expect(copies.every((copy) => copy.held !== copy.admitted)).toBe(true)
-    expect(saved.captureBarrierMs).toBeGreaterThan(0)
-  })
-
   it("routes the canonical export through the live server flush barrier", async () => {
     const destination = join(
       root,

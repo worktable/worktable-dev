@@ -35,6 +35,81 @@
   height: 0;
 }
 
+/* With view transitions, sidebar trees open at their full height at once
+   and the transition moves the rows (sidebar-transition.ts). Height animates
+   on the main thread, so it stutters while the page builds the rows it
+   reveals; the transition runs on the compositor. Other browsers keep the
+   height transition above. */
+@supports (view-transition-name: none) {
+  [data-slot="collapsible-content"].collapsible-instant {
+    transition: none;
+  }
+}
+
+/* Opening part of the sidebar: rows slide to their new place and the
+   opened panel fades in. The page itself takes no part, so it stays live. */
+:root[data-sidebar-transition] {
+  view-transition-name: none;
+}
+
+::view-transition-group(*.sidebar-row),
+::view-transition-group(*.sidebar-panel),
+::view-transition-group(*.sidebar-thumb) {
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+::view-transition-new(*.sidebar-panel) {
+  animation: 220ms cubic-bezier(0.33, 1, 0.68, 1) both sidebar-panel-in;
+}
+
+/* A closing panel clears out before the rows below reach it. */
+::view-transition-old(*.sidebar-row):only-child {
+  animation: 80ms ease-out both sidebar-panel-out;
+}
+
+::view-transition-group(*.sidebar-cover) {
+  animation: none;
+  z-index: 1;
+}
+
+/* The scrollbar thumb stretches to its new length instead of fading. */
+::view-transition-old(*.sidebar-thumb),
+::view-transition-new(*.sidebar-thumb) {
+  animation: none;
+  height: 100%;
+}
+
+::view-transition-old(*.sidebar-thumb) {
+  display: none;
+}
+
+@keyframes sidebar-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes sidebar-panel-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Without view transitions, an opened Space's rows fade in as it grows. */
+@supports not (view-transition-name: none) {
+  .sidebar-reveal {
+    animation: 200ms ease-out both sidebar-reveal-in;
+  }
+}
+
+@keyframes sidebar-reveal-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-slot="collapsible-content"] {
     transition: none;

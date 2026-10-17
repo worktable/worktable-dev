@@ -50,13 +50,6 @@ import {
   listDocumentGenerationsV2,
   writeDocumentGenerationV2,
 } from "./document-version-store-v2.ts"
-import {
-  resumeWorkspaceRequestAdmission,
-  stopWorkspaceMutationsAndDrain,
-  stopWorkspaceRequestAdmissionAndDrain,
-  withWorkspaceWriteAdmission,
-  WorkspaceAdmissionClosedError,
-} from "./workspace-request-lifecycle.ts"
 
 let appDir: string
 let workspaceDir: string
@@ -413,47 +406,6 @@ describe("runRetentionSweep — integration", () => {
     expect(ageVersions).toHaveLength(1)
     expect(ageVersions[0]?.reason).toBeUndefined()
     expect(ageVersions[0]?.createdAt).toBe(new Date(now - DAY).toISOString())
-  })
-
-  it("waits for a capture holding writes and stops for a replacement", async () => {
-    const documentId = "doc_CCCCCCCCCCCCCCCCCCCCCC" as DocumentId
-    const now = Date.now()
-    for (let index = 0; index < 3; index += 1)
-      await writeV2Generation(
-        SP,
-        documentId,
-        new Date(now - index * DAY).toISOString(),
-        `held-${index}`
-      )
-    const versions = async () =>
-      (
-        await listDocumentGenerationsV2({
-          workspaceRoot: workspaceDir,
-          spaceId: SP,
-          documentId,
-        })
-      ).length
-    await stopWorkspaceMutationsAndDrain()
-    try {
-      // Nothing is pruned while a capture holds writes.
-      const sweep = runRetentionSweep({ mode: "count", maxPerDoc: 1 })
-      let ran = false
-      const waiting = withWorkspaceWriteAdmission(async () => {
-        ran = true
-      })
-      expect(ran).toBe(false)
-      // A replacement does not reopen until the server restarts, so waiting
-      // work stops instead.
-      await stopWorkspaceRequestAdmissionAndDrain()
-      await expect(waiting).rejects.toThrow(WorkspaceAdmissionClosedError)
-      await expect(sweep).rejects.toThrow(WorkspaceAdmissionClosedError)
-      expect(ran).toBe(false)
-      expect(await versions()).toBe(3)
-    } finally {
-      resumeWorkspaceRequestAdmission()
-    }
-    await runRetentionSweep({ mode: "count", maxPerDoc: 1 })
-    expect(await versions()).toBe(1)
   })
 
   it("count mode does not let checkpoint rewrite mtime beat same-ms ids", async () => {

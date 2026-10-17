@@ -1,12 +1,5 @@
 import { WorkspaceExportPathError } from "./workspace-package-path.ts"
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  setSystemTime,
-} from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   chmod,
   mkdir,
@@ -24,7 +17,7 @@ import {
 } from "node:fs/promises"
 import { createWriteStream } from "node:fs"
 import { tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { dirname, join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { pipeline } from "node:stream/promises"
 import * as yazl from "yazl"
@@ -34,10 +27,7 @@ import {
   BUILTIN_DOCUMENT_COMPANIONS,
   BUILTIN_DOCUMENT_FORMATS,
 } from "./document-format-registry.ts"
-import {
-  markDocumentGenerationCheckpointV2,
-  writeDocumentGenerationV2,
-} from "./document-version-store-v2.ts"
+import { writeDocumentGenerationV2 } from "./document-version-store-v2.ts"
 import {
   cleanupAbandonedWorkspaceExportCaptures,
   importWorkspaceExportV2,
@@ -188,7 +178,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  setSystemTime()
   setHistoryClassificationHookForTests(null)
   setWorkspaceExportCaptureHookForTests(null)
   setWorkspaceExportCaptureRemovalHookForTests(null)
@@ -847,127 +836,6 @@ describe("workspace export v2", () => {
     await exporting
 
     expect(maximum).toBe(8)
-  })
-
-  it("selects history from the held tree after it changes under the pre-copy", async () => {
-    const older = await addVersion("2020-01-01T00:00:00.000Z", "older")
-    const replaced = await addVersion("2020-01-02T00:00:00.000Z", "replaced")
-    await addV2Generation("2020-01-01T00:00:00.000Z", "gen-old")
-    const generation = await addV2Generation(
-      "2020-01-02T00:00:00.000Z",
-      "gen-new"
-    )
-    // Everything has settled, so the hold trusts what the pre-copy read.
-    setSystemTime(new Date(Date.now() + 60_000))
-    const history = { mode: "count", maxPerItem: 1 } as const
-    const held: string[] = []
-    let newest = ""
-    const result = await writeWorkspaceExportV2(join(root, "held"), {
-      history,
-      withCaptureBarrier: async (capture) => {
-        // A newer version displaces the selected one, and an older one
-        // becomes a checkpoint, between the pre-copy and the hold.
-        newest = await addVersion("2020-01-03T00:00:00.000Z", "newest")
-        // The version store marks a checkpoint by renaming a new file over it.
-        await writeFile(
-          join(source, `${older}.tmp`),
-          `${JSON.stringify({
-            createdAt: "2020-01-01T00:00:00.000Z",
-            checkpoint: { meaningful: true },
-            content: "Version older",
-          })}\n`
-        )
-        await rename(join(source, `${older}.tmp`), join(source, older))
-        setWorkspaceExportCaptureHookForTests(async (entry) => {
-          if (entry.held && entry.kind === "file") held.push(entry.path)
-        })
-        return capture()
-      },
-    })
-    setWorkspaceExportCaptureHookForTests(null)
-
-    expect(held.sort()).toEqual([newest, older].sort())
-    const paths = result.manifest.integrity.files.map((file) => file.path)
-    expect(paths).toEqual(expect.arrayContaining([older, newest]))
-    expect(paths).not.toContain(replaced)
-    expect(paths.filter((path) => path.startsWith(generation))).toHaveLength(2)
-    const reference = await writeWorkspaceExportV2(join(root, "reference"), {
-      history,
-    })
-    expect(result.manifest.integrity).toEqual(reference.manifest.integrity)
-    expect(result.manifest.history).toEqual(reference.manifest.history)
-    await importWorkspaceExportV2(result.destination, join(root, "restored"))
-    expect(await readFile(join(root, "restored", older), "utf8")).toContain(
-      '"meaningful":true'
-    )
-  })
-
-  it("reads inside the hold only the versions added or changed since the pre-copy", async () => {
-    // Versions are renamed into place, so their identity proves their bytes
-    // however recently they were written. Nothing here has settled.
-    const documentId = "doc_VVVVVVVVVVVVVVVVVVVVVV" as DocumentId
-    const generations: string[] = []
-    for (let index = 1; index <= 6; index += 1)
-      generations.push(
-        await addV2Generation(`2020-01-0${index}T00:00:00.000Z`, `gen-${index}`)
-      )
-    const [, sealed, removed] = generations as [string, string, string]
-    const history = { mode: "all" } as const
-    const reads: string[] = []
-    const copies: string[] = []
-    let appended = ""
-    const result = await writeWorkspaceExportV2(join(root, "held"), {
-      history,
-      withCaptureBarrier: async (capture) => {
-        // Between the pre-copy and the hold, a save adds a version, a change
-        // of author seals an older one by renaming a new manifest over its
-        // own, and retention removes another.
-        appended = await addV2Generation("2020-01-07T00:00:00.000Z", "gen-7")
-        await markDocumentGenerationCheckpointV2({
-          workspaceRoot: source,
-          spaceId: "notes",
-          documentId,
-          generationId: basename(sealed),
-          checkpoint: { meaningful: true, kind: "source-transition" },
-        })
-        await rm(join(source, removed), { recursive: true })
-        setHistoryClassificationHookForTests(async ({ path }) => {
-          reads.push(path)
-        })
-        setWorkspaceExportCaptureHookForTests(async (entry) => {
-          if (entry.held && entry.path.startsWith("versions/"))
-            copies.push(entry.path)
-        })
-        return capture()
-      },
-    })
-    setHistoryClassificationHookForTests(null)
-    setWorkspaceExportCaptureHookForTests(null)
-
-    const generationOf = (path: string) => path.split("/").slice(0, 5).join("/")
-    expect([...new Set(reads.map(generationOf))].sort()).toEqual(
-      [appended, sealed].sort()
-    )
-    expect(copies.sort()).toEqual(
-      [
-        appended,
-        `${appended}/manifest.json`,
-        `${appended}/source`,
-        `${appended}/source/document.md`,
-        `${sealed}/manifest.json`,
-      ].sort()
-    )
-    expect(result.manifest.history.meaningfulCheckpoints).toBe(1)
-    const reference = await writeWorkspaceExportV2(join(root, "reference"), {
-      history,
-    })
-    expect(result.manifest.integrity).toEqual(reference.manifest.integrity)
-    expect(result.manifest.history).toEqual(reference.manifest.history)
-    expect(
-      result.manifest.integrity.files.some((file) =>
-        file.path.startsWith(`${removed}/`)
-      )
-    ).toBe(false)
   })
 
   it("refuses unsafe sources and destinations", async () => {

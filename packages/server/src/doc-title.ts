@@ -23,6 +23,7 @@ import {
 import { listDocumentsWithAliases } from "./document-query.ts"
 import { DocEditError } from "./markdown-edit.ts"
 import {
+  docExists,
   sanitizeDocPath,
   slugify,
   writeDoc,
@@ -55,7 +56,7 @@ export async function setDocTitle(
       ...writeOptions,
       sourceRevision: current.sourceRevision,
     })
-    if (!written.ok) throw new Error(written.error ?? "Failed to rename document")
+    if (!written.ok) throwTitleWriteFailure(docPath, written)
     await syncDocAfterToolWrite(spaceId, docPath)
     return
   }
@@ -91,7 +92,7 @@ export async function setDocTitle(
     sourceRevision: current.sourceRevision,
     writeOptions,
   })
-  if (!written.ok) throw new Error(written.error ?? "Failed to rename document")
+  if (!written.ok) throwTitleWriteFailure(docPath, written)
   await syncDocAfterToolWrite(spaceId, docPath)
   // A block someone added at the top meanwhile goes before the new title.
   if (Array.isArray(written.content) && richDocTitle(written.content) !== title) {
@@ -99,6 +100,30 @@ export async function setDocTitle(
       "revision_conflict",
       `${docPath} changed at its top while it was renamed. Try again.`
     )
+  }
+}
+
+/**
+ * A title write that found the Doc changed or gone is a conflict the person
+ * can retry; anything else is unexpected and stays an error.
+ */
+function throwTitleWriteFailure(
+  docPath: string,
+  written: { error?: string; errorCode?: string }
+): never {
+  if (written.errorCode === "SOURCE_CHANGED") {
+    throw new DocEditError(
+      "revision_conflict",
+      `${docPath} changed while it was renamed. Try again.`
+    )
+  }
+  if (written.errorCode === "NOT_FOUND") throw new DocTitleMissingError(docPath)
+  throw new Error(written.error ?? "Failed to rename document")
+}
+
+class DocTitleMissingError extends Error {
+  constructor(docPath: string) {
+    super(`Doc not found: ${docPath}`)
   }
 }
 
@@ -161,10 +186,19 @@ export async function renameDocToTitle(
   updatedBy: string
 ): Promise<RenameOutcome> {
   const from = sanitizeDocPath(docPath)
-  const name =
-    title === undefined
-      ? await currentDocTitle(spaceId, docPath)
-      : title.trim()
+  let name: string
+  try {
+    name =
+      title === undefined
+        ? await currentDocTitle(spaceId, docPath)
+        : title.trim()
+  } catch (error) {
+    // It was removed after the request found it.
+    if (!(await docExists(spaceId, from))) {
+      return { renamed: [], error: `Doc not found: ${from}` }
+    }
+    throw error
+  }
   if (!name) {
     return title === undefined
       ? { renamed: [], error: null }
@@ -178,7 +212,7 @@ export async function renameDocToTitle(
   try {
     if (title !== undefined) await setDocTitle(spaceId, to, name, updatedBy)
   } catch (error) {
-    if (error instanceof DocEditError) {
+    if (error instanceof DocEditError || error instanceof DocTitleMissingError) {
       return { renamed: to === from ? [] : [{ from, to }], error: error.message }
     }
     throw error

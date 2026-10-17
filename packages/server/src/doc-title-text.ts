@@ -42,10 +42,11 @@ export function markdownTitleLines(
 ): { start: number; end: number; text: string } | null {
   const start = lines.findIndex((line) => line.replace(BOM, "").trim() !== "")
   if (start === -1) return null
+  // Lines split on "\n" keep the "\r" of Windows line endings.
   const line = lines[start]!.replace(BOM, "")
-  const atx = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(line)
+  const atx = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*\r?$/.exec(line)
   if (atx) return { start, end: start, text: atx[1]!.trim() }
-  if (/^ {0,3}=+[ \t]*$/.test(lines[start + 1] ?? "")) {
+  if (/^ {0,3}=+[ \t]*\r?$/.test(lines[start + 1] ?? "")) {
     return { start, end: start + 1, text: line.trim() }
   }
   return null
@@ -63,10 +64,17 @@ export function withMarkdownTitle(markdown: string, title: string): string {
   const lines = text.split("\n")
   const current = markdownTitleLines(lines)
   if (current) {
-    lines.splice(current.start, current.end - current.start + 1, `# ${title}`)
+    const eol = lines[current.end]!.endsWith("\r") ? "\r" : ""
+    lines.splice(current.start, current.end - current.start + 1, `# ${title}${eol}`)
     return bom + lines.join("\n")
   }
-  return bom + (text.trim() === "" ? `# ${title}\n` : `# ${title}\n\n${text}`)
+  const newline = text.includes("\r\n") ? "\r\n" : "\n"
+  return (
+    bom +
+    (text.trim() === ""
+      ? `# ${title}${newline}`
+      : `# ${title}${newline}${newline}${text}`)
+  )
 }
 
 /** The title in a stored Doc file's text: Markdown, or rich blocks as JSON. */

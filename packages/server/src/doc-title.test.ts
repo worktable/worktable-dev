@@ -125,5 +125,7 @@ describe("renaming a Doc by its title", () => {
     expect(withMarkdownTitle("Body only", "New")).toBe("# New\n\nBody only")
     expect(withMarkdownTitle("## Section\n\nBody", "New")).toBe("# New\n\n## Section\n\nBody")
     expect(withMarkdownTitle("\uFEFF# Old\n\nBody", "New")).toBe("\uFEFF# New\n\nBody")
+    expect(withMarkdownTitle("# Old\r\n\r\nBody\r\n", "New")).toBe("# New\r\n\r\nBody\r\n")
+    expect(withMarkdownTitle("Body\r\n", "New")).toBe("# New\r\n\r\nBody\r\n")
   })
 })

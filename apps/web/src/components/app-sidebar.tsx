@@ -211,6 +211,22 @@ function folderLifecycleError(error: unknown, fallback: string): string {
     : fallback
 }
 
+/** Why a rename failed when the name is already taken, for the dialog. */
+function takenNameError(
+  error: unknown,
+  newPath: string,
+  kind: "doc" | "folder"
+): string | null {
+  if (
+    !(error instanceof HttpError) ||
+    error.status !== 409 ||
+    !error.message.startsWith("Target path already exists")
+  ) {
+    return null
+  }
+  return `A ${kind} named ${newPath.split("/").at(-1)} already exists here.`
+}
+
 // ── Active route ─────────────────────────────────────────────
 // Each row selects only how the current route relates to it, so a navigation
 // re-renders the rows it leaves and enters instead of the whole sidebar.
@@ -2041,6 +2057,12 @@ function DocTreeItem({
       toast.success(node.isFolder ? "Folder renamed" : "Doc renamed")
       return true
     } catch (error) {
+      const taken = takenNameError(
+        error,
+        newPath,
+        node.isFolder ? "folder" : "doc"
+      )
+      if (taken) return taken
       toast.error(
         error instanceof DrawingUnsavedError
           ? error.message

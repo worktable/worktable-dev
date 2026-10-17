@@ -30,6 +30,7 @@ import {
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
 import { readWidget, readWidgetHtml } from "./widget-store.ts"
+import { yjsManager } from "./yjs-manager.ts"
 
 const testDir = join(tmpdir(), `worktable-doc-rename-lifecycle-${Date.now()}`)
 
@@ -192,15 +193,44 @@ describe("document rename lifecycle", () => {
         newPath: "ambiguous-target",
       })
     ).rejects.toThrow("Document sources are ambiguous at their source path")
-    await expect(
-      dispatchOperation("docs.rename", {
-        spaceId: "space",
-        oldPath: "source",
-        newPath: "occupied",
-      })
-    ).rejects.toThrow("Target path already exists")
+    // Someone has the destination open: still a taken name, not a failure.
+    const paragraph = [{ type: "paragraph", content: [] }] as never
+    await writeDoc("space", "open", paragraph)
+    await writeDoc("space", "folder/one", "# Folder one")
+    await writeDoc("space", "moved/one", paragraph)
+    await yjsManager.getOrCreateDoc("space", "open")
+    await yjsManager.getOrCreateDoc("space", "moved/one")
+    try {
+      await expect(
+        dispatchOperation("docs.rename", {
+          spaceId: "space",
+          oldPath: "source",
+          newPath: "open",
+        })
+      ).rejects.toThrow("Target path already exists: open")
+      expect(await moveDocumentFolder("space", "folder", "moved")).toMatchObject(
+        { ok: false, error: "Target path already exists: moved/one" }
+      )
+      expect(
+        (await renameDocsByPrefixAndSync("space", "folder", "moved")).error
+      ).toBe("Target path already exists: moved/one")
+      // A document busy with another change refuses the move as a conflict.
+      await yjsManager.withDocGenerationTransitions(
+        "space",
+        ["source"],
+        async () =>
+          expect(
+            (await renameDocAndSync("space", "source", "elsewhere")).error
+          ).toBe("Another change to source is in progress. Try again."),
+        () => false
+      )
+    } finally {
+      await yjsManager.shutdown()
+    }
     expect((await readDoc("space", "source")).data).toBe("# Source")
     expect((await readDoc("space", "occupied")).data).toBe("# Occupied")
+    expect((await readDoc("space", "folder/one")).data).toBe("# Folder one")
+    expect(await docExists("space", "elsewhere")).toBe(false)
     expect(existsSync(ambiguousJson)).toBe(true)
     expect(await docExists("space", "ambiguous-target")).toBe(false)
   })

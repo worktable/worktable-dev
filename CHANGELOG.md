@@ -28,6 +28,7 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Search:** The first search after Worktable starts is as fast as later ones, including when Spaces are added while it starts.
+- **Rename:** Renaming a doc or folder to a name that's already taken says so in the dialog instead of failing, including when someone has the other doc open.
 
 ## [0.1.24] - 2026-10-16
 

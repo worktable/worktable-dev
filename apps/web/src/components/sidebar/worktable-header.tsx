@@ -30,7 +30,7 @@ function WorktableTile({ name, color }: { name: string; color: RecognitionColor 
   return (
     <span
       aria-hidden
-      className="flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-semibold"
+      className="flex size-6 shrink-0 items-center justify-center rounded-[6px] text-xs font-semibold"
       style={recognitionSolid(color)}
     >
       {name.trim().charAt(0).toUpperCase() || "W"}

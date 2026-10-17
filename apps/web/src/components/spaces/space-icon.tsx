@@ -4,9 +4,11 @@ import { resolveIcon } from "@/lib/icons"
 import { recognitionChip } from "@/lib/recognition"
 
 const SIZES = {
-  xs: { chip: "size-4 rounded", icon: "size-3" },
-  sm: { chip: "size-5 rounded-md", icon: "size-3.5" },
-  lg: { chip: "size-9 rounded-lg", icon: "size-5" },
+  // Rounded squares, a quarter of their width: Spaces are places, and only
+  // people are round.
+  xs: { chip: "size-4 rounded-[4px]", icon: "size-3" },
+  sm: { chip: "size-5 rounded-[5px]", icon: "size-3.5" },
+  lg: { chip: "size-9 rounded-[9px]", icon: "size-5" },
 } as const
 
 /** A Space's icon on its own color, the same for everyone wherever it shows. */

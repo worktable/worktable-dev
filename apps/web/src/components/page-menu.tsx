@@ -495,7 +495,7 @@ function CrumbIcon({
         className={cn(
           className,
           crumb.color
-            ? "flex size-5 items-center justify-center rounded-md [&>svg]:size-3.5"
+            ? "flex size-5 items-center justify-center rounded-[5px] [&>svg]:size-3.5"
             : "[&>svg]:size-4"
         )}
         style={crumb.color ? recognitionChip(crumb.color) : undefined}

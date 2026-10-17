@@ -18,7 +18,7 @@ import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
-import { ActorBadge } from "@/components/home/activity-sentence"
+import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
 import { actorName, shortWhen } from "@/lib/activity-format"

@@ -7,6 +7,7 @@ import {
   AGENT_ROUTE_HEADERS,
   ENV,
   GATEWAY_HEADER,
+  hostedOAuthPrincipalId,
 } from "@worktable/hosted-contract"
 import { setAppDirOverride } from "./app-storage.ts"
 import { startServer } from "./index.ts"
@@ -228,5 +229,10 @@ describe("a sign-in agent on a Cloud workspace", () => {
     expect(withoutThreads.presentations[participant!.id]).toMatchObject({
       platform: "chatgpt",
     })
+    expect(
+      withoutThreads.presentations[
+        hostedOAuthPrincipalId("client_chatgpt", owner)
+      ]
+    ).toEqual(withoutThreads.presentations[participant!.id])
   })
 })

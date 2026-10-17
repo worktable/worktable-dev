@@ -26,7 +26,7 @@ export function ThreadParticipantAvatar({
     const current = participants.data?.presentations?.[participant.id]
     return (
       <AgentAvatar
-        name={participant.name}
+        name={current?.name ?? participant.name}
         // A sign-in agent (Claude, ChatGPT on Cloud) has no agent record here.
         platform={current?.platform ?? platformForName(participant.name)}
         icon={current?.icon}

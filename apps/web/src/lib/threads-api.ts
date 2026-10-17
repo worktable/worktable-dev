@@ -35,10 +35,10 @@ function threadBase(location: ThreadLocation): string {
     : `/api/spaces/${encodeURIComponent(location.spaceId)}/threads`
 }
 
-/** How a connected agent looks, keyed by participant id. */
+/** How a connected agent looks, keyed by participant or activity principal id. */
 export type AgentPresentations = Record<
   string,
-  Pick<ThreadParticipant, "platform" | "icon">
+  Pick<ThreadParticipant, "platform" | "icon"> & { name?: string }
 >
 
 export function listThreadParticipants(

@@ -12,7 +12,10 @@ import {
 } from "./agent-connection-store.ts"
 import { DEFAULT_AGENT_TOKEN_SCOPES } from "@worktable/types"
 import { resolveParticipant } from "./participant-store.ts"
-import { listThreadParticipants } from "./thread-service.ts"
+import {
+  listThreadParticipants,
+  listThreadParticipantsForDisplay,
+} from "./thread-service.ts"
 import { createToken, verifyToken } from "./token-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -219,6 +222,18 @@ describe("semantic agent connections", () => {
       icon: "terminal",
       participant: { name: "Desk Codex" },
     })
+    const presentation = {
+      name: "Desk Codex",
+      platform: "codex",
+      icon: "terminal",
+    } as const
+    const directory = await listThreadParticipantsForDisplay()
+    expect(directory.presentations[renamed!.participant!.id]).toEqual(
+      presentation
+    )
+    expect(
+      directory.presentations[`local-token:${desktop.metadata.id}`]
+    ).toEqual(presentation)
     expect(await listAgentConnections()).toHaveLength(2)
     // Without Threads it cannot read or answer one, so it is not offered.
     const recipients = async () =>
@@ -254,6 +269,18 @@ describe("semantic agent connections", () => {
       icon: "terminal",
       access: { threads: true, read: true, edit: false },
     })
+    const rotatedDirectory = await listThreadParticipantsForDisplay()
+    for (const credential of [desktop, reissued]) {
+      expect(
+        rotatedDirectory.presentations[`local-token:${credential.metadata.id}`]
+      ).toEqual(presentation)
+    }
+    await updateAgentConnection(codex.id, { icon: null })
+    expect(
+      (await listThreadParticipantsForDisplay()).presentations[
+        `local-token:${desktop.metadata.id}`
+      ]
+    ).toEqual({ ...presentation, icon: null })
 
     // Another credential under the same label is the same agent, too.
     const another = await createToken({

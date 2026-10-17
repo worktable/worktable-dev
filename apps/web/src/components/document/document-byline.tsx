@@ -117,7 +117,7 @@ export function DocumentByline({
                 {faces.map((actor) => (
                   <span
                     key={actor.id}
-                    className="rounded-md ring-2 ring-background"
+                    className="rounded-full ring-2 ring-background"
                   >
                     <ActorBadge actor={actor} />
                   </span>

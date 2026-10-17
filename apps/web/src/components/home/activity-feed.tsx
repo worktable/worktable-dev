@@ -12,18 +12,16 @@ import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
+import { ThreadParticipantAvatar } from "@/components/threads/thread-participant-avatar"
 
 // ── Actor badge ────────────────────────────────────────────
 
-/**
- * People are round; agents are square-cornered in the primary color. The
- * agent badge will carry each agent's own identity once agents have one.
- */
+/** Compact identities shared by activity, its filters, and document bylines. */
 export function ActorBadge({
   actor,
   live = false,
 }: {
-  actor: Pick<ActivityActor, "kind" | "name">
+  actor: ActivityActor
   live?: boolean
 }) {
   const initial = (actor.kind === "person" ? "You" : (actor.name ?? "?"))
@@ -36,15 +34,26 @@ export function ActorBadge({
       className={cn(
         "relative flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold",
         actor.kind === "agent"
-          ? "rounded-md bg-primary/12 text-primary-text ring-1 ring-primary/25 ring-inset"
+          ? "rounded-full"
           : actor.kind === "person"
             ? "rounded-full bg-surface-tint text-foreground"
             : "rounded-full bg-surface-tint text-muted-foreground",
         live &&
-          "after:absolute after:-inset-[3px] after:rounded-lg after:border-[1.5px] after:border-transparent after:border-t-primary after:border-r-primary motion-safe:after:animate-spin"
+          "after:absolute after:-inset-[3px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary after:border-r-primary motion-safe:after:animate-spin"
       )}
     >
-      {initial}
+      {actor.kind === "agent" ? (
+        <ThreadParticipantAvatar
+          participant={{
+            kind: "agent",
+            id: actor.id,
+            name: actor.name ?? "Agent",
+          }}
+          className="size-5 [&_[data-slot=avatar-fallback]]:text-[9px]"
+        />
+      ) : (
+        initial
+      )}
     </span>
   )
 }
@@ -368,7 +377,10 @@ function LiveReply({
   return (
     <li className="flex gap-3">
       <Rail last={last}>
-        <ActorBadge actor={{ kind: "agent", name }} live />
+        <ActorBadge
+          actor={{ kind: "agent", id: activity.participantId, name }}
+          live
+        />
       </Rail>
       <p
         className={cn(

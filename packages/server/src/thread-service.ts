@@ -919,6 +919,7 @@ export async function listThreadParticipants(
 /** How a connected agent looks: where it comes from and its chosen icon. */
 
 export interface AgentPresentation {
+  name?: string
   platform?: AgentPlatformId
   icon?: string | null
 }
@@ -927,7 +928,8 @@ export interface AgentPresentation {
  * Participants as the web app shows them: an agent also carries its platform
  * and the icon its owner chose, for its avatar. `presentations` covers every
  * connected agent, including one no longer offered as a recipient, so it
- * keeps its avatar in the threads it is already in.
+ * keeps its avatar in the threads it is already in. Principal IDs alias the
+ * same presentation for activity and document contributors.
  */
 export async function listThreadParticipantsForDisplay(
   identity?: ThreadIdentity,
@@ -951,23 +953,51 @@ export async function listThreadParticipantsForDisplay(
         ? [
             [
               connection.participant.id,
-              { platform: connection.platform, icon: connection.icon },
+              {
+                name: connection.displayName,
+                platform: connection.platform,
+                icon: connection.icon,
+              },
             ],
           ]
         : []
     )
   )
   // Sign-in agents (Claude, ChatGPT on Cloud) carry what their owner chose.
-  const [bindings, signIns] = await Promise.all([
+  const [bindings, signIns, tokens] = await Promise.all([
     participantsByKey(),
     signInPresentations(),
+    listTokens(),
   ])
   for (const [key, signIn] of signIns) {
     const participant = bindings.get(key)
     if (!participant || presentations[participant.id]) continue
     presentations[participant.id] = {
+      name: participant.name,
       ...(signIn.platform ? { platform: signIn.platform } : {}),
       icon: signIn.icon ?? null,
+    }
+  }
+  for (const [key, participant] of bindings) {
+    const presentation = presentations[participant.id]
+    if (
+      participant.kind === "agent" &&
+      key.startsWith("principal:") &&
+      presentation
+    ) {
+      presentations[key.slice("principal:".length)] = presentation
+    }
+  }
+  // Activity records credential principals, while Threads use participant IDs.
+  // Include rotated credentials so earlier edits retain the agent's avatar.
+  for (const token of tokens) {
+    if (token.workspace !== getWorkspaceRoot()) continue
+    const participant = bindings.get(
+      participantKey({ agent: token.agent, principal: token.principal })
+    )
+    const presentation = participant && presentations[participant.id]
+    if (participant?.kind === "agent" && presentation) {
+      presentations[`local-token:${token.id}`] = presentation
     }
   }
   return {

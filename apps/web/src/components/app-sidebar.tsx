@@ -4,9 +4,11 @@ import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
+  createContext,
   lazy,
   memo,
   useCallback,
+  useContext,
   useState,
   useEffect,
   useMemo,
@@ -329,6 +331,9 @@ function EditableRowNewActions({
   )
 }
 
+/** Which copies of each Space are open: a pinned Space is listed twice. */
+const openSpaceCopies = new Map<string, Set<string>>()
+
 const SpaceSection = memo(function SpaceSection({
   space,
   followRoute = true,
@@ -359,11 +364,16 @@ const SpaceSection = memo(function SpaceSection({
   const relation = useRouteRelation(spaceRoute)
   const isInSpace = relation !== null
   const openKey = `${copy}:${space.id}`
-  // Entering a Space opens one copy of it; a copy the person opened
-  // themselves stays open either way.
+  // Entering a Space opens its pinned copy, or its only copy, unless the
+  // person already opened a copy of it; a copy they opened stays open.
+  const anotherCopyOpen = () =>
+    copy === "pinned" &&
+    (openSpaceCopies.get(space.id)?.has("list") === true ||
+      rememberedOpen("space", `list:${space.id}`) === true)
   const [expanded, setExpandedState] = useState(
     () =>
-      rememberedOpen("space", openKey) ?? (followRoute && isInSpace)
+      rememberedOpen("space", openKey) ??
+      (followRoute && isInSpace && !anotherCopyOpen())
   )
   const setExpanded = useCallback(
     (open: boolean) => {
@@ -373,22 +383,34 @@ const SpaceSection = memo(function SpaceSection({
     [openKey]
   )
   const userCollapsedRef = useRef(false)
-  // Pinning the open Space hands its tree to the pinned copy.
-  const [followedRoute, setFollowedRoute] = useState(followRoute)
-  if (followRoute !== followedRoute) {
-    setFollowedRoute(followRoute)
-    if (!followRoute) setExpandedState(false)
-  }
+
+  useEffect(() => {
+    if (!expanded) return
+    const copies = openSpaceCopies.get(space.id) ?? new Set<string>()
+    copies.add(copy)
+    openSpaceCopies.set(space.id, copies)
+    return () => {
+      copies.delete(copy)
+    }
+  }, [expanded, space.id, copy])
 
   useEffect(() => {
     // Following the route is not the person's choice, so it isn't kept.
-    if (followRoute && isInSpace && !expanded && !userCollapsedRef.current) {
+    if (
+      followRoute &&
+      isInSpace &&
+      !expanded &&
+      !userCollapsedRef.current &&
+      !anotherCopyOpen()
+    ) {
       setExpandedState(true)
     }
     // Reset manual collapse flag when navigating away from the space
     if (!isInSpace) {
       userCollapsedRef.current = false
     }
+    // anotherCopyOpen reads the copies as they are when the route changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followRoute, isInSpace, expanded])
 
   const handleToggleExpanded = (open: boolean) => {
@@ -1554,9 +1576,18 @@ function SpaceTreeSection({
     onWidgetRefresh,
     canEdit: space.permissions?.edit !== false,
   }
+  const { data: detail } = useSpace(spaceId)
+  const currentPath = useRouterState({
+    select: (state) => routeDocumentPath(state.location.pathname, spaceId),
+  })
+  const revealCurrent =
+    !currentPath ||
+    !(detail?.pins ?? []).some(
+      (pin) => pin.status === "active" && pin.path === currentPath
+    )
 
   return (
-    <>
+    <RevealCurrent.Provider value={revealCurrent}>
       {loadFailed ? (
         <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
           <p className="text-sidebar-foreground/40">Couldn’t load docs</p>
@@ -1648,9 +1679,15 @@ function SpaceTreeSection({
           No docs yet
         </p>
       ) : null}
-    </>
+    </RevealCurrent.Provider>
   )
 }
+
+/**
+ * Whether folders open to show the open document. Not when it already shows
+ * among the Space's pins, so it doesn't take two places in the sidebar.
+ */
+const RevealCurrent = createContext(true)
 
 // ── Tree Item dispatcher (doc/folder vs widget leaf) ────────
 
@@ -1798,9 +1835,10 @@ function DocTreeItem({
   const exactDocumentArchived = (docEntry?.archived ?? node.archived) === true
   const archived = node.isFolder ? folderArchived : exactDocumentArchived
   const folderKey = `${spaceId}:${node.path}`
+  const revealCurrent = useContext(RevealCurrent)
   const [open, setOpenStored] = useState(
     () =>
-      containsCurrent ||
+      (containsCurrent && revealCurrent) ||
       isActive ||
       (node.isFolder && (rememberedOpen("folder", folderKey) ?? false))
   )
@@ -1815,7 +1853,7 @@ function DocTreeItem({
   useEffect(() => {
     if (
       node.isFolder &&
-      (containsCurrent || isActive) &&
+      ((containsCurrent && revealCurrent) || isActive) &&
       !open &&
       !userCollapsedNodeRef.current
     ) {
@@ -1825,7 +1863,7 @@ function DocTreeItem({
     if (!containsCurrent && !isActive) {
       userCollapsedNodeRef.current = false
     }
-  }, [containsCurrent, isActive, open, node.isFolder])
+  }, [containsCurrent, isActive, open, node.isFolder, revealCurrent])
 
   const handleToggleNode = (nextOpen: boolean) => {
     if (!nextOpen && (containsCurrent || isActive)) {

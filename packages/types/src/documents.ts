@@ -267,6 +267,8 @@ export const DocumentReferrerSchema = z.discriminatedUnion("kind", [
     kind: z.literal("html"),
     /** The HTML Doc's path; it opens this doc from its script. */
     path: z.string(),
+    /** The words on the button or link that opens this doc, when found. */
+    label: z.string().optional(),
   }),
 ])
 

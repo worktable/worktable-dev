@@ -99,7 +99,7 @@ export function DocumentByline({
   )
   const linkedHtml = (referrers ?? []).flatMap((referrer) => {
     const node = referrer.kind === "html" ? shown(referrer.path) : undefined
-    return node ? [node] : []
+    return node && referrer.kind === "html" ? [{ node, label: referrer.label }] : []
   })
   const linkedCount =
     linkedDocs.length + linkedRecords.length + linkedHtml.length
@@ -361,7 +361,7 @@ function LinkedFrom({
   spaceId: string
   docs: Array<DocumentBacklink & { node: TreeNode }>
   records: Array<Extract<DocumentReferrer, { kind: "record" }>>
-  html: TreeNode[]
+  html: Array<{ node: TreeNode; label?: string }>
 }) {
   const groups = [docs.length, records.length, html.length].filter(Boolean).length
   const heading = (label: string) =>
@@ -411,7 +411,7 @@ function LinkedFrom({
         </Link>
       ))}
       {html.length > 0 && heading("HTML Docs")}
-      {html.map((node) => (
+      {html.map(({ node, label }) => (
         <Link
           key={`html:${node.path}`}
           {...documentRoute(spaceId, node.path)}
@@ -422,7 +422,8 @@ function LinkedFrom({
             name={node.label}
             where={<DocLocation path={node.path} />}
           >
-            Opens this doc
+            {/* What people click there to come here, when it can be read. */}
+            {label && <span className={MARK}>{label}</span>}
           </ReferrerRow>
         </Link>
       ))}
@@ -449,7 +450,8 @@ function ReferrerRow({
   name: string
   where?: ReactNode
   note?: string
-  children: ReactNode
+  /** Why it points here; absent when there is nothing to show. */
+  children?: ReactNode
 }) {
   return (
     <>
@@ -466,7 +468,11 @@ function ReferrerRow({
             <span className="shrink-0 text-xs text-muted-foreground">{note}</span>
           )}
         </span>
-        <span className="mt-1 block truncate text-muted-foreground">{children}</span>
+        {children && (
+          <span className="mt-1 block truncate text-muted-foreground">
+            {children}
+          </span>
+        )}
       </span>
     </>
   )

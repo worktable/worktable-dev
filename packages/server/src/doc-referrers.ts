@@ -27,8 +27,8 @@ type RecordReferrer = Extract<DocumentReferrer, { kind: "record" }>
 interface SpaceReferrers {
   /** Per collection id: the records pointing at each doc path. */
   collections: Map<string, Map<string, RecordReferrer[]>>
-  /** Per HTML Doc path: the doc paths it opens. */
-  html: Map<string, string[]>
+  /** Per HTML Doc path: the docs it opens, with the label of what opens each. */
+  html: Map<string, OpenedDocument[]>
   /** Whether a first read has landed. */
   ready: boolean
   /** Whether anything changed since the last read. */
@@ -106,16 +106,81 @@ async function readCollection(
   return byDoc
 }
 
-/** Literal paths an HTML Doc's script opens. Paths it builds at run time are not found. */
-export function openedDocumentPaths(html: string): string[] {
-  const paths = new Set<string>()
-  const call = /openDocument\(\s*(["'`])([^"'`$\n]+)\1\s*\)/g
-  let match: RegExpExecArray | null
-  while ((match = call.exec(html)) !== null) {
-    const parsed = parseDocumentReference(match[2]!.trim().replace(/^\/+/, ""))
-    if (parsed.path) paths.add(parsed.path)
+/** A doc an HTML Doc opens, and the words on the button or link that opens it. */
+export interface OpenedDocument {
+  path: string
+  label?: string
+}
+
+const OPEN_CALL = /openDocument\(\s*(["'`])([^"'`$\n]+)\1\s*\)/
+
+function openedPath(raw: string): string | undefined {
+  return parseDocumentReference(raw.trim().replace(/^\/+/, "")).path
+}
+
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&quot;|&#34;/g, '"')
+    .replace(/&apos;|&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+}
+
+/**
+ * The docs an HTML Doc opens with worktable.navigation.openDocument and a
+ * literal path. When the call sits on the element people click (an onclick
+ * or a javascript: href), its visible words are the label; an element
+ * without words uses its aria-label, title or value. Calls made from the
+ * script alone have no label. Paths built at run time are not found.
+ */
+export async function openedDocuments(html: string): Promise<OpenedDocument[]> {
+  const labels = new Map<string, string>()
+  const open: Array<{ path: string; text: string; name?: string }> = []
+  await new HTMLRewriter()
+    .on("*", {
+      element(element) {
+        for (const [attribute, value] of element.attributes) {
+          if (!/^on|^href$/i.test(attribute)) continue
+          const path = openedPath(OPEN_CALL.exec(decodeEntities(value))?.[2] ?? "")
+          if (!path) continue
+          const entry = {
+            path,
+            text: "",
+            name:
+              element.getAttribute("aria-label") ??
+              element.getAttribute("title") ??
+              element.getAttribute("value") ??
+              undefined,
+          }
+          open.push(entry)
+          const close = () => {
+            open.splice(open.indexOf(entry), 1)
+            const text = entry.text.replace(/\s+/g, " ").trim()
+            const label = /[\p{L}\p{N}]/u.test(text) ? text : entry.name?.trim()
+            if (label && !labels.has(path)) labels.set(path, label.slice(0, 120))
+          }
+          if (element.canHaveContent) element.onEndTag(close)
+          else close()
+          break
+        }
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        for (const entry of open) entry.text += chunk.text
+      },
+    })
+    .transform(new Response(html))
+    .text()
+
+  const opened = new Map<string, OpenedDocument>()
+  const call = new RegExp(OPEN_CALL.source, "g")
+  for (const match of decodeEntities(html).matchAll(call)) {
+    const path = openedPath(match[2]!)
+    if (!path || opened.has(path)) continue
+    const label = labels.get(path)
+    opened.set(path, { path, ...(label ? { label } : {}) })
   }
-  return [...paths]
+  return [...opened.values()]
 }
 
 async function build(spaceId: string, space: SpaceReferrers): Promise<void> {
@@ -152,7 +217,7 @@ async function build(spaceId: string, space: SpaceReferrers): Promise<void> {
   for (const widget of widgets) {
     if (!stale.html.has(widget.id) && space.html.has(widget.id)) continue
     const { data } = await readWidgetHtml(spaceId, widget.id)
-    space.html.set(widget.id, data ? openedDocumentPaths(data) : [])
+    space.html.set(widget.id, data ? await openedDocuments(data) : [])
   }
 }
 
@@ -212,8 +277,15 @@ export function peekDocReferrers(
     }
   }
   for (const [htmlPath, opened] of space.html) {
-    if (opened.some((path) => path === docPath || current(path) === docPath)) {
-      referrers.push({ kind: "html", path: htmlPath })
+    const link = opened.find(
+      ({ path }) => path === docPath || current(path) === docPath
+    )
+    if (link) {
+      referrers.push({
+        kind: "html",
+        path: htmlPath,
+        ...(link.label ? { label: link.label } : {}),
+      })
     }
   }
   return referrers

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { ownerIdentity } from "./auth.ts"
 import {
-  openedDocumentPaths,
+  openedDocuments,
   peekDocReferrers,
   settleDocReferrers,
 } from "./doc-referrers.ts"
@@ -95,7 +95,7 @@ describe("records and HTML Docs that point at a Doc", () => {
         collection: "OKRs",
         field: "Plan",
       },
-      { kind: "html", path: "pulse" },
+      { kind: "html", path: "pulse", label: "Plan" },
     ])
     // A doc that moved is found under the path it was pointed at.
     expect(
@@ -105,14 +105,22 @@ describe("records and HTML Docs that point at a Doc", () => {
     ).toEqual(["Reliability"])
   })
 
-  it("reads literal paths from openDocument calls only", () => {
+  it("reads literal paths from openDocument calls, labelled by what people click", async () => {
     expect(
-      openedDocumentPaths(`
-        worktable.navigation.openDocument("plans/brief");
-        worktable.navigation.openDocument( '/notes/a' );
-        worktable.navigation.openDocument(\`specs/\${id}\`);
-        worktable.navigation.openDocument(path);
+      await openedDocuments(`
+        <button onclick="worktable.navigation.openDocument('plans/brief')">Read the <b>brief</b></button>
+        <a href="#" aria-label="Notes A" onclick="worktable.navigation.openDocument(&quot;/notes/a&quot;)">→</a>
+        <script>
+          menu.addEventListener("click", () => worktable.navigation.openDocument("specs/menu"))
+          worktable.navigation.openDocument(\`specs/\${id}\`)
+          worktable.navigation.openDocument(path)
+        </script>
       `)
-    ).toEqual(["plans/brief", "notes/a"])
+    ).toEqual([
+      { path: "plans/brief", label: "Read the brief" },
+      { path: "notes/a", label: "Notes A" },
+      { path: "specs/menu" },
+    ])
   })
+
 })

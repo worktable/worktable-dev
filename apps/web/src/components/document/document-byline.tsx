@@ -1,12 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useId, useState, type ReactNode } from "react"
-import {
-  ChevronDown,
-  Database,
-  History,
-  Link2,
-} from "lucide-react"
+import { ArrowDownLeft, ChevronDown, Database, History } from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
@@ -19,6 +14,11 @@ import {
   Collapsible,
   CollapsibleContent,
 } from "@worktable/ui/components/collapsible"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { cn } from "@worktable/ui/lib/utils"
 import {
   DOCUMENT_BYLINE_CHIP,
@@ -166,8 +166,13 @@ export function DocumentByline({
         )}
         {linkedCount > 0 && (
           <BylineChip
-            icon={<Link2 className="size-3.5" />}
-            label={`Linked from ${linkedCount}`}
+            icon={<ArrowDownLeft className="size-3.5" />}
+            label={String(linkedCount)}
+            hint={
+              linkedCount === 1
+                ? "1 place links here"
+                : `${linkedCount} places link here`
+            }
             expanded={open === "links"}
             controls={`${panelId}-links`}
             onClick={() => toggle("links")}
@@ -203,20 +208,24 @@ export function DocumentByline({
 function BylineChip({
   icon,
   label,
+  hint,
   expanded,
   controls,
   onClick,
 }: {
   icon: ReactNode
   label: string
+  /** What a short label means, as a tooltip and the chip's accessible name. */
+  hint?: string
   expanded: boolean
   controls: string
   onClick: () => void
 }) {
-  return (
+  const chip = (
     <button
       type="button"
       className={DOCUMENT_BYLINE_CHIP}
+      aria-label={hint}
       aria-expanded={expanded}
       aria-controls={controls}
       onClick={onClick}
@@ -231,6 +240,13 @@ function BylineChip({
         )}
       />
     </button>
+  )
+  if (!hint) return chip
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipContent>{hint}</TooltipContent>
+    </Tooltip>
   )
 }
 

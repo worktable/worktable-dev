@@ -439,7 +439,10 @@ function TaskStep({
         },
       ])
       await setPins(spaceId, [{ path: brief.path }])
-      void queryClient.invalidateQueries({ queryKey: queryKeys.spaces })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.spaces,
+        exact: true,
+      })
       return spaceId
     },
     onSuccess: (spaceId) => onStart(task.trim(), spaceId),

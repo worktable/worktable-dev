@@ -240,17 +240,41 @@ export const DocumentCollaborationSchema = z.object({
   cacheEpochHistory: z.array(z.string()),
 })
 
-/** A doc in the same Space that links to this one, with the text around the link. */
+/** A doc in the same Space that links to this one, with the sentence its first link sits in. */
 export const DocumentBacklinkSchema = z.object({
   path: z.string(),
   context: z.string(),
+  /** Where the link's words sit in `context`. */
+  mark: z.object({ start: z.number().int(), length: z.number().int() }).optional(),
+  /** How many links that doc has to this one. */
+  count: z.number().int().positive().optional(),
 })
+
+/** A record or HTML Doc in the same Space that points at this doc. */
+export const DocumentReferrerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("record"),
+    collectionId: z.string(),
+    recordId: z.string(),
+    /** The record's name. */
+    title: z.string(),
+    /** The collection's name. */
+    collection: z.string(),
+    /** The name of the document field that points here. */
+    field: z.string(),
+  }),
+  z.object({
+    kind: z.literal("html"),
+    /** The HTML Doc's path; it opens this doc from its script. */
+    path: z.string(),
+  }),
+])
 
 /** Who has worked on a doc, from the Space's recorded activity. */
 export const DocumentContributorsSchema = z.object({
   /** Who last created or edited the doc. */
   lastEditor: ActivityActorSchema.optional(),
-  /** People and agents who edited or commented, most recent first. */
+  /** People and agents who created or edited it, most recent first. */
   recent: z.array(ActivityActorSchema),
 })
 
@@ -270,6 +294,11 @@ export const DocumentPageSchema = z.object({
    * build. Absent until that graph has been built once.
    */
   backlinks: z.array(DocumentBacklinkSchema).optional(),
+  /**
+   * Records and HTML Docs in the same Space that point here. Absent until the
+   * Space's records and HTML Docs have been read once.
+   */
+  referrers: z.array(DocumentReferrerSchema).optional(),
   /** Absent until the Space's activity has been summarized once. */
   contributors: DocumentContributorsSchema.optional(),
 })
@@ -291,6 +320,7 @@ export type DocumentPage = z.infer<typeof DocumentPageSchema>
 export type DocumentPageResult = z.infer<typeof DocumentPageResultSchema>
 export type DocumentCollaboration = z.infer<typeof DocumentCollaborationSchema>
 export type DocumentBacklink = z.infer<typeof DocumentBacklinkSchema>
+export type DocumentReferrer = z.infer<typeof DocumentReferrerSchema>
 export type DocumentContributors = z.infer<typeof DocumentContributorsSchema>
 
 /**

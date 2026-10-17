@@ -1,13 +1,21 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useId, useState, type ReactNode } from "react"
-import { ChevronDown, FileText, History, Link2 } from "lucide-react"
+import {
+  AppWindow,
+  ChevronDown,
+  Database,
+  FileText,
+  History,
+  Link2,
+} from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
   DocumentBacklink,
   DocumentContributors,
   DocumentProvenance,
+  DocumentReferrer,
 } from "@worktable/types"
 import {
   Collapsible,
@@ -47,6 +55,7 @@ export function DocumentByline({
   updatedAt,
   contributors,
   backlinks,
+  referrers,
   onVersionHistory,
   state,
 }: {
@@ -58,6 +67,8 @@ export function DocumentByline({
   updatedAt?: string
   contributors?: DocumentContributors
   backlinks?: DocumentBacklink[]
+  /** Records and HTML Docs that point here. */
+  referrers?: DocumentReferrer[]
   onVersionHistory?: () => void
   /** Shared with the page's other copy of this byline, if any. */
   state?: BylineState
@@ -74,10 +85,24 @@ export function DocumentByline({
     limit: ACTIVITY_SHOWN,
   }
 
-  const linked = (backlinks ?? []).flatMap((link) => {
-    const node = trees ? findTreeNode(trees.active, link.path) : undefined
-    return node && !node.isFolder ? [{ ...link, node }] : []
+  // Only what the sidebar shows: archived sources stay out.
+  const shown = (path: string) => {
+    const node = trees ? findTreeNode(trees.active, path) : undefined
+    return node && node.kind === "document" ? node : undefined
+  }
+  const linkedDocs = (backlinks ?? []).flatMap((link) => {
+    const node = shown(link.path)
+    return node ? [{ ...link, node }] : []
   })
+  const linkedRecords = (referrers ?? []).flatMap((referrer) =>
+    referrer.kind === "record" ? [referrer] : []
+  )
+  const linkedHtml = (referrers ?? []).flatMap((referrer) => {
+    const node = referrer.kind === "html" ? shown(referrer.path) : undefined
+    return node ? [node] : []
+  })
+  const linkedCount =
+    linkedDocs.length + linkedRecords.length + linkedHtml.length
 
   const toggle = (panel: BylineSection) => setOpen(open === panel ? null : panel)
   // The list arrives before its panel opens, so the panel grows once to its
@@ -139,10 +164,10 @@ export function DocumentByline({
             </span>
           </button>
         )}
-        {linked.length > 0 && (
+        {linkedCount > 0 && (
           <BylineChip
             icon={<Link2 className="size-3.5" />}
-            label={`Linked from ${linked.length}`}
+            label={`Linked from ${linkedCount}`}
             expanded={open === "links"}
             controls={`${panelId}-links`}
             onClick={() => toggle("links")}
@@ -164,15 +189,13 @@ export function DocumentByline({
         />
       </BylinePanel>
       <BylinePanel id={`${panelId}-links`} open={open === "links"}>
-        {linked.map((link) => (
-          <DocRow
-            key={link.path}
-            spaceId={spaceId}
-            node={link.node}
-            location={folderLabels(trees?.active, link.path)}
-            detail={link.context}
-          />
-        ))}
+        <LinkedFrom
+          spaceId={spaceId}
+          nodes={trees?.active}
+          docs={linkedDocs}
+          records={linkedRecords}
+          html={linkedHtml}
+        />
       </BylinePanel>
     </div>
   )
@@ -224,7 +247,7 @@ function BylinePanel({
   return (
     <Collapsible open={open}>
       <CollapsibleContent id={id}>
-        <div className="card-surface mt-2.5 flex max-h-80 flex-col overflow-y-auto rounded-xl px-2 py-1.5">
+        <div className="mt-2.5 flex max-h-80 flex-col overflow-y-auto rounded-xl card-surface px-2 py-1.5">
           {children}
         </div>
       </CollapsibleContent>
@@ -243,9 +266,7 @@ function DocActivity({
   const entries = data?.entries ?? []
   return (
     <>
-      {isError && (
-        <div className="px-2 py-1.5">Activity could not load.</div>
-      )}
+      {isError && <div className="px-2 py-1.5">Activity could not load.</div>}
       {!isError && data && entries.length === 0 && (
         <div className="px-2 py-1.5">No activity recorded yet.</div>
       )}
@@ -326,31 +347,143 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   )
 }
 
-function DocRow({
+/**
+ * What points at this Doc: Docs with the sentence their first link sits in,
+ * records by the field that names it, and HTML Docs that open it. Kinds get
+ * a heading only when more than one kind is here.
+ */
+function LinkedFrom({
   spaceId,
-  node,
-  location,
-  detail,
+  nodes,
+  docs,
+  records,
+  html,
 }: {
   spaceId: string
-  node: TreeNode
-  location?: string
-  detail?: string
+  nodes: TreeNode[] | undefined
+  docs: Array<DocumentBacklink & { node: TreeNode }>
+  records: Array<Extract<DocumentReferrer, { kind: "record" }>>
+  html: TreeNode[]
+}) {
+  const groups = [docs.length, records.length, html.length].filter(
+    Boolean
+  ).length
+  const heading = (label: string) =>
+    groups > 1 && (
+      <div className="px-2 pt-2 pb-0.5 text-[0.6875rem] font-medium tracking-wide text-muted-foreground/70 uppercase">
+        {label}
+      </div>
+    )
+  return (
+    <>
+      {docs.length > 0 && heading("Docs")}
+      {docs.map((link) => (
+        <Link
+          key={`doc:${link.path}`}
+          {...documentRoute(spaceId, link.node.path)}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<FileText />}
+            name={link.node.label}
+            where={folderLabels(nodes, link.path)}
+            note={
+              link.count && link.count > 1 ? `${link.count} links` : undefined
+            }
+          >
+            <Marked text={link.context} mark={link.mark} />
+          </ReferrerRow>
+        </Link>
+      ))}
+      {records.length > 0 && heading("Records")}
+      {records.map((record) => (
+        <Link
+          key={`record:${record.collectionId}/${record.recordId}`}
+          to="/spaces/$spaceId/records/$collectionId/$recordId"
+          params={{
+            spaceId,
+            collectionId: record.collectionId,
+            recordId: record.recordId,
+          }}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<Database />}
+            name={record.title}
+            where={record.collection}
+          >
+            <span className="text-foreground">{record.field}</span> field
+          </ReferrerRow>
+        </Link>
+      ))}
+      {html.length > 0 && heading("HTML Docs")}
+      {html.map((node) => (
+        <Link
+          key={`html:${node.path}`}
+          {...documentRoute(spaceId, node.path)}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<AppWindow />}
+            name={node.label}
+            where={folderLabels(nodes, node.path)}
+          >
+            Opens this doc
+          </ReferrerRow>
+        </Link>
+      ))}
+    </>
+  )
+}
+
+const REFERRER_ROW =
+  "flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover"
+
+/** One source: its name, where it sits, and one line of why it points here. */
+function ReferrerRow({
+  icon,
+  name,
+  where,
+  note,
+  children,
+}: {
+  icon: ReactNode
+  name: string
+  where?: string
+  note?: string
+  children: ReactNode
 }) {
   return (
-    <Link
-      {...documentRoute(spaceId, node.path)}
-      className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover"
-    >
-      <FileText className="mt-0.5 size-3.5 shrink-0" />
+    <>
+      <span className="mt-0.5 shrink-0 [&>svg]:size-3.5">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">
-          {node.label}
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className="truncate font-medium text-foreground">{name}</span>
+          {where && <span className="shrink-0 truncate text-xs">{where}</span>}
+          {note && <span className="shrink-0 text-xs">{note}</span>}
         </span>
-        {location && <span className="block truncate text-xs">{location}</span>}
-        {detail && <span className="mt-0.5 line-clamp-2 block">{detail}</span>}
+        <span className="block truncate">{children}</span>
       </span>
-    </Link>
+    </>
+  )
+}
+
+/** `text` with the link's words in the reading color. */
+function Marked({
+  text,
+  mark,
+}: {
+  text: string
+  mark?: { start: number; length: number }
+}) {
+  if (!mark) return text
+  const end = mark.start + mark.length
+  return (
+    <>
+      {text.slice(0, mark.start)}
+      <span className="text-foreground">{text.slice(mark.start, end)}</span>
+      {text.slice(end)}
+    </>
   )
 }
 
@@ -375,7 +508,10 @@ function lastEditorName(
 }
 
 /** "Research / Slite Review" for a doc in research/slite-review. */
-function folderLabels(nodes: TreeNode[] | undefined, path: string): string | undefined {
+function folderLabels(
+  nodes: TreeNode[] | undefined,
+  path: string
+): string | undefined {
   if (!nodes) return undefined
   const segments = path.split("/").slice(0, -1)
   const labels: string[] = []

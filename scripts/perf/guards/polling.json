@@ -6,20 +6,16 @@
       "why": "Re-measures comment marker positions each second while annotations are shown; no request."
     },
     {
-      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.connections",
-      "why": "Waits every 3 s for a Cloud agent to finish signing in during setup; nothing pushes that event."
+      "site": "apps/web/src/components/onboarding/connect-agent.tsx#AgentConnectOptions.connections",
+      "why": "Waits every 3 s, only while a setup row is open and nothing in it has connected, for a Cloud agent to finish signing in; nothing pushes that event."
     },
     {
-      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.tokens",
-      "why": "Waits every 3 s for an agent to first use its new token during setup."
+      "site": "apps/web/src/components/onboarding/connect-agent.tsx#TokenPanel.tokens",
+      "why": "Waits every 3 s for an agent to first use the token made for it during setup."
     },
     {
-      "site": "apps/web/src/components/onboarding/connect-step.tsx#ConnectStep.pairingStatus",
-      "why": "Follows a pairing code every 2 s until it is verified, failed or expired."
-    },
-    {
-      "site": "apps/web/src/components/onboarding/onboarding.tsx#AlwaysOnHandoff.participants",
-      "why": "Waits every 3 s for an always-on agent to join during setup, to send it the first task."
+      "site": "apps/web/src/components/onboarding/connect-agent.tsx#PairingPanel.status",
+      "why": "Follows the open tab's pairing code every 2 s until it is verified, failed or expired."
     },
     {
       "site": "apps/web/src/components/settings/sections/agents.tsx#QuickConnectPanel.statusQuery",

@@ -8,14 +8,14 @@ prompts below, [connect an agent](/start/connect-your-agent/) first.
 
 ## Setup and Getting Started
 
-A new Worktable starts with a short setup: say who it's for, connect an agent,
-and tell it what you're working on. The agent makes a Space and writes a first
-brief while you invite your team, and setup ends in that Space.
+A new Worktable starts with a short setup: name it, connect your agent, and
+invite your team. Setup ends in the **Getting Started** Space.
 
-**Getting Started** then sits at the top of the sidebar. Its home is your own
-checklist, and items tick off as you do them, such as giving an agent its first
-task or asking it for a review. Each person has their own list. Unpin Getting
-Started from the sidebar to hide it; its guides stay in the Space.
+Getting Started sits at the top of the sidebar until you remove it. Its home
+lists your first steps: connect your agent, give it a task and, for the owner,
+invite the team. Each step ticks off when it happens, such as when your agent
+saves its first doc. Each person has their own list. The guides below it stay
+in the Space.
 
 ## Create a brief
 

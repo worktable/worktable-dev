@@ -27,10 +27,11 @@ export const setSpaceAccess = (policy: SpaceAccessPolicy) =>
       }),
     }
   )
+/** Without a password, the owner keeps the one this Worktable has. */
 export const activateTeams = (owner: {
   name: string
   email: string
-  password: string
+  password?: string
 }) =>
   fetchJSON("/api/team/activate", {
     method: "POST",

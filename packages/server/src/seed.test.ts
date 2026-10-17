@@ -72,7 +72,13 @@ describe("starter workspace seeding", () => {
       name: "Getting Started",
       settings: {
         docSort: "custom",
-        docOrder: ["what-agents-can-make", "prompts-to-try"],
+        docOrder: [
+          "what-agents-can-make",
+          "prompts-to-try",
+          "reviewing-with-your-agent",
+          "agents-that-stay-on",
+          "tracking-work-in-records",
+        ],
         gettingStarted: true,
         // Desktop and the CLI wait for this exact marker on first run.
         starterSeedVersion: 1,

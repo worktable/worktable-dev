@@ -153,6 +153,11 @@ export async function setOwnerPassword(password: string): Promise<void> {
   await saveSession(session);
 }
 
+/** The owner password's hash, for an account that keeps the same password. */
+export async function ownerPasswordHash(): Promise<string | null> {
+  return (await loadSession())?.passwordHash ?? null;
+}
+
 /** Verify a presented owner password against the stored hash. */
 export async function verifyOwnerPassword(password: string): Promise<boolean> {
   const session = await loadSession();

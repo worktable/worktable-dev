@@ -1,8 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
-import { openSettings } from "@/lib/settings-open"
-import { saveSetup, usePersonalSetup } from "@/lib/setup"
+import { Link } from "@tanstack/react-router"
+import {
+  GETTING_STARTED_SPACE_ID,
+  saveSetup,
+  usePersonalSetup,
+} from "@/lib/setup"
 
 /**
  * A new member's welcome in the Space they were invited to, shown once.
@@ -44,7 +48,16 @@ export function MemberWelcome({ spaceId }: { spaceId: string }) {
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {!connected && (
-          <Button size="sm" onClick={() => openSettings("agents")}>
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={
+              <Link
+                to="/spaces/$spaceId"
+                params={{ spaceId: GETTING_STARTED_SPACE_ID }}
+              />
+            }
+          >
             Connect your agent
           </Button>
         )}

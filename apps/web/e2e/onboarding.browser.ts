@@ -71,19 +71,18 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("a new owner names their Worktable, connects agents, hands one its first task and lands in its Space", async ({
+test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
 
   await expect(
-    page.getByRole("heading", { name: "Set up your Worktable" })
+    page.getByRole("heading", { name: "Create your Worktable" })
   ).toBeVisible()
   await page.getByLabel("Your name").fill("Alex")
-  await page.getByLabel("Worktable").fill("Alex Worktable")
-  await page.getByRole("radio", { name: /Just me/ }).click()
-  await page.getByRole("button", { name: "Continue" }).click()
+  await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByRole("button", { name: "Create Worktable" }).click()
 
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
@@ -92,88 +91,71 @@ test("a new owner names their Worktable, connects agents, hands one its first ta
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
   ).toBeVisible()
+  await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled()
 
-  await page.getByRole("button", { name: /Claude Code, Codex/ }).click()
-  await page.getByRole("combobox", { name: "CLI agent" }).click()
-  await page.getByRole("option", { name: "ChatGPT / Codex" }).click()
-  await page.getByLabel("Agent name").fill("My Codex")
+  // Opening a row shows the first tab's command straight away.
+  await page.getByRole("button", { name: /Coding agents/ }).click()
+  await expect(page.getByText(/--client claude-code$/)).toBeVisible()
   const cliPairing = await waitForPairingCreate(page, () =>
-    page.getByRole("button", { name: "Create install command" }).click()
+    page.getByRole("tab", { name: "Codex" }).click()
   )
+  await expect(page.getByText(/--client codex$/)).toBeVisible()
   const codexToken = await completePairing(cliPairing, {
     hostname: "browser-devbox",
     client: "codex",
   })
-  await expect(page.getByText("Connected.", { exact: true })).toBeVisible({
+  await expect(page.getByText("Codex is connected.")).toBeVisible({
     timeout: 10_000,
   })
-  await page.getByRole("button", { name: "Add another agent" }).click()
 
-  await page.getByRole("button", { name: /^OpenClaw/ }).click()
-  await page.getByRole("combobox", { name: "Agent" }).click()
-  await page.getByRole("option", { name: "Hermes" }).click()
-  await page.getByLabel("Agent name").fill("Ada")
+  await page.getByRole("button", { name: /Always-on agents/ }).click()
+  await expect(page.getByText(/openclaw worktable connect /)).toBeVisible()
   const hermesPairing = await waitForPairingCreate(page, () =>
-    page.getByRole("button", { name: "Create connection command" }).click()
+    page.getByRole("tab", { name: "Hermes" }).click()
   )
-  await expect(page.getByText(/^hermes worktable connect /)).toBeVisible()
+  await expect(page.getByText(/hermes worktable connect /)).toBeVisible()
   await completePairing(hermesPairing, {
     hostname: "browser-hermes",
     installationId: "hci_browser_test_0987654321",
   })
-  await expect(page.getByText("Connected.", { exact: true })).toBeVisible({
-    timeout: 10_000,
-  })
+  await expect(
+    page.getByText("Hermes is connected. Ask it for work in Threads.")
+  ).toBeVisible({ timeout: 10_000 })
+
+  // On this computer there is nobody to invite, so setup ends here.
   await page.getByRole("button", { name: "Continue" }).click()
-
-  // The first agent connected gets the first task.
+  await expect(page).toHaveURL(/\/spaces\/welcome$/)
   await expect(
-    page.getByRole("heading", { name: "What are you working on?" })
+    page.getByRole("heading", { name: "Getting Started" })
   ).toBeVisible()
-  await page
-    .getByLabel("What you're working on")
-    .fill("Planning our spring launch: goals and timeline")
-  await page.getByRole("button", { name: "Start" }).click()
   await expect(
-    page.getByRole("heading", { name: "Over to My Codex" })
+    page.getByRole("link", { name: /Getting Started\s*1\/2/ })
   ).toBeVisible()
-  await expect(page.getByText(/^codex "In Worktable, make a Space/)).toBeVisible()
-  await expect(page.getByText("Waiting for My Codex to start")).toBeVisible()
+  await expect(
+    page.getByText("Done when your agent saves its first doc.")
+  ).toBeVisible()
 
-  // The agent's work shows up as it lands, pushed to the page.
-  const agent = { Authorization: `Bearer ${codexToken}` }
+  // The agent's first doc finishes the list, pushed to the page.
   const space = await postJson<{ spaceId: string }>(
     "/api/spaces",
     { name: "Spring Launch" },
     codexToken
   )
-  await expect(page.getByText("Created Spring Launch")).toBeVisible({
-    timeout: 10_000,
-  })
   const brief = await fetch(
     `${harness.apiUrl}/api/spaces/${space.spaceId}/docs`,
     {
       method: "POST",
-      headers: { ...agent, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${codexToken}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ title: "Spring Launch Brief" }),
     }
   )
   expect(brief.status).toBeLessThan(300)
-  await expect(page.getByText("Wrote Spring Launch Brief")).toBeVisible({
+  await expect(page.getByText("Alex Worktable is set up.")).toBeVisible({
     timeout: 10_000,
   })
-  await page.getByRole("button", { name: "Continue" }).click()
-
-  await expect(page.getByRole("heading", { name: "You're set up" })).toBeVisible()
-  await page.getByRole("button", { name: "Open Spring Launch" }).click()
-  await expect(page).toHaveURL(/\/spaces\/spring-launch$/)
-  await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()
-  // Getting Started sits in the sidebar with what's already done: an agent
-  // connected, its first task, and Ada on call. Setup's own pin of the brief
-  // doesn't count as choosing what leads the Space.
-  await expect(
-    page.getByRole("link", { name: /Getting Started\s*3\/6/ })
-  ).toBeVisible()
 
   const workspace = (await fetch(`${harness.apiUrl}/api/workspace`).then(
     (res) => res.json()
@@ -191,10 +173,10 @@ test("a new owner names their Worktable, connects agents, hands one its first ta
     )
   ).toMatchObject({
     connections: expect.arrayContaining([
-      expect.objectContaining({ displayName: "My Codex" }),
+      expect.objectContaining({ displayName: "Codex" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
-        displayName: "Ada",
+        displayName: "Hermes",
         platform: "hermes",
         access: { threads: true, read: true, edit: true },
       }),
@@ -209,10 +191,10 @@ test("a new owner names their Worktable, connects agents, hands one its first ta
     .click()
   await agentSettings
     .getByRole("listitem")
-    .filter({ hasText: "Ada" })
+    .filter({ hasText: "Hermes" })
     .getByRole("button", { name: "Edit" })
     .click()
-  const editAgent = page.getByRole("dialog", { name: "Ada" })
+  const editAgent = page.getByRole("dialog", { name: "Hermes" })
   await editAgent.getByLabel("Name").fill("Ada Lovelace")
   await editAgent.getByText("Edit workspace").click()
   await editAgent.getByRole("button", { name: "Save" }).click()
@@ -238,7 +220,7 @@ test("a new owner names their Worktable, connects agents, hands one its first ta
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "Set up your Worktable" })
+    page.getByRole("heading", { name: "Create your Worktable" })
   ).toHaveCount(0)
 
   let releaseProfile!: () => void

@@ -1666,6 +1666,28 @@ test("access follows changes made through another database connection", async ()
   expect(() => currentTeamWorktable()).toThrow("restart after recovery")
 })
 
+test("an owner who already has a password keeps it for their account", async () => {
+  const { setOwnerPassword } = await import("./session-store.ts")
+  await setOwnerPassword(password)
+  const activated = await activateLocalTeams(
+    origin,
+    { name: "Alice", email: "alice@example.test" },
+    {
+      user: "owner",
+      workspace: join(root, "workspace"),
+      credentialClass: "local",
+      scopes: ["*"],
+      agent: null,
+      principal: { id: "local:owner", type: "human", displayName: "Owner" },
+    }
+  )
+  expect(activated.member.role).toBe("owner")
+  const signedIn = await (await getTeamAuth(origin)).api.signInEmail({
+    body: { email: "alice@example.test", password },
+  })
+  expect(signedIn.user.email).toBe("alice@example.test")
+})
+
 test("an interrupted activation can be retried with another email or password", async () => {
   const bootstrap: TokenIdentity = {
     user: "owner",

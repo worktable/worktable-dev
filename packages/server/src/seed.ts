@@ -28,6 +28,9 @@ import {
   buildWhatAgentsCanMakeBlocks,
   LAUNCH_PLAN_COLLECTION_ID,
   PROMPTS_TO_TRY_MARKDOWN,
+  REVIEWING_WITH_YOUR_AGENT_MARKDOWN,
+  AGENTS_THAT_STAY_ON_MARKDOWN,
+  TRACKING_WORK_IN_RECORDS_MARKDOWN,
   STARTER_RECORD_FIELDS,
   STARTER_RECORDS,
   STARTER_SPACE_ID,
@@ -52,6 +55,15 @@ export function setStarterSeedBeforePublishHookForTests(
   starterSeedBeforePublishHookForTests = hook
 }
 
+/** The guides Getting Started links to, in the order its Space lists them. */
+const STARTER_GUIDE_DOCS = [
+  "what-agents-can-make",
+  "prompts-to-try",
+  "reviewing-with-your-agent",
+  "agents-that-stay-on",
+  "tracking-work-in-records",
+] as const
+
 function makeStarterSpace(): SpaceFile {
   const now = new Date().toISOString()
   return {
@@ -66,7 +78,7 @@ function makeStarterSpace(): SpaceFile {
     createdBy: "worktable",
     settings: {
       docSort: "custom",
-      docOrder: ["what-agents-can-make", "prompts-to-try"],
+      docOrder: [...STARTER_GUIDE_DOCS],
       [GETTING_STARTED_SETTING]: true,
       [STARTER_SEED_VERSION_KEY]: STARTER_SEED_VERSION,
       [STARTER_SEED_STATUS_KEY]: "complete",
@@ -161,6 +173,20 @@ export async function seedStarterWorkspace(): Promise<boolean> {
     )
     if (!promptsWrite.ok) {
       throw new Error(promptsWrite.error ?? "Prompts to Try seed failed")
+    }
+
+    for (const [path, markdown] of [
+      ["reviewing-with-your-agent", REVIEWING_WITH_YOUR_AGENT_MARKDOWN],
+      ["agents-that-stay-on", AGENTS_THAT_STAY_ON_MARKDOWN],
+      ["tracking-work-in-records", TRACKING_WORK_IN_RECORDS_MARKDOWN],
+    ] as const) {
+      const written = await writeDoc(preparedId, path, markdown, {
+        updatedBy: "worktable",
+        source: "seed",
+        recordVersion: false,
+        managedIdentity: true,
+      })
+      if (!written.ok) throw new Error(written.error ?? `${path} seed failed`)
     }
 
     const schema = buildRecordCollectionSchema({
@@ -263,8 +289,7 @@ export async function starterWorkspaceReady(): Promise<boolean> {
     readWidgetHtml(STARTER_SPACE_ID, "launch-board"),
   ])
   return (
-    docs.includes("what-agents-can-make") &&
-    docs.includes("prompts-to-try") &&
+    STARTER_GUIDE_DOCS.every((path) => docs.includes(path)) &&
     widgets.some((widget) => widget.id === "launch-board") &&
     boardHtml.data != null
   )

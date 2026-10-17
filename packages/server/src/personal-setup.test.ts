@@ -7,10 +7,8 @@ import type { PersonalSetup } from "@worktable/types/setup"
 import { recordActivity, setActivityObserver } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
-import {
-  noteSpaceCreatedForSetup,
-  observeActivityForSetup,
-} from "./personal-setup.ts"
+import { observeActivityForSetup } from "./personal-setup.ts"
+import { parsePersonalSetup } from "./personal-setup-shape.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import {
@@ -68,57 +66,47 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-it("completes the owner's steps from their agent's work, and shows setup what it made while it waits", async () => {
+it("completes the owner's first task from their agent's work, not their own", async () => {
   expect(await setup()).toEqual({ items: {} })
-  const started = await choose({ audience: "solo", watch: "start" })
-  expect(started.status).toBe(200)
-  expect((await setup()).audience).toBe("solo")
 
-  // The person's own doc is not an agent's first task.
   recordActivity({
     spaceId: "atlas",
     action: "doc.created",
     actor: { kind: "person", id: "local:owner" },
     target: { kind: "doc", path: "notes" },
   })
-  noteSpaceCreatedForSetup("atlas", true)
   recordActivity({
     spaceId: "atlas",
     action: "doc.created",
     actor: { kind: "agent", id: "local-token:codex" },
     target: { kind: "doc", path: "atlas-brief" },
   })
-  recordActivity({
-    spaceId: "atlas",
-    action: "comment.created",
-    actor: { kind: "agent", id: "local-token:codex" },
-    target: { kind: "doc", path: "atlas-brief" },
-  })
 
-  const progressed = await eventually(
-    (current) =>
-      Boolean(
-        current.items["first-task"] &&
-          current.items["ask-review"] &&
-          current.watch?.space &&
-          current.watch.doc
-      )
+  const progressed = await eventually((current) =>
+    Boolean(current.items["first-task"])
   )
   expect(progressed.items["first-task"]).toMatchObject({
     spaceId: "atlas",
     path: "atlas-brief",
   })
-  expect(progressed.watch).toMatchObject({
-    space: { spaceId: "atlas" },
-    doc: { spaceId: "atlas", path: "atlas-brief" },
-  })
 
-  // Finishing setup stops watching; what was done stays done.
-  expect((await choose({ watch: "stop", hidden: true })).status).toBe(200)
-  const finished = await setup()
-  expect(finished.watch).toBeUndefined()
-  expect(finished.hidden).toBe(true)
-  expect(finished.items["first-task"]).toBeDefined()
+  // Unpinning Getting Started keeps what was done.
+  expect((await choose({ hidden: true })).status).toBe(200)
+  const hidden = await setup()
+  expect(hidden.hidden).toBe(true)
+  expect(hidden.items["first-task"]).toBeDefined()
 
+  // Progress is the server's to record.
   expect((await choose({ items: {} })).status).toBe(400)
+})
+
+it("keeps stored progress when an earlier version listed other items", () => {
+  const at = "2026-10-01T00:00:00.000Z"
+  expect(
+    parsePersonalSetup({
+      audience: "team",
+      items: { "connect-agent": { at }, "ask-review": { at } },
+      watch: { since: at },
+    })
+  ).toEqual({ items: { "connect-agent": { at } } })
 })

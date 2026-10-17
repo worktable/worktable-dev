@@ -47,6 +47,74 @@ existing work first keeps your Spaces tidy.
 See [What agents can make](/what-agents-can-make) for the formats an agent can use.
 `
 
+export const REVIEWING_WITH_YOUR_AGENT_MARKDOWN = `# Reviewing with Your Agent
+
+Your agent can comment on a doc the way a colleague would, and you can comment
+back.
+
+## Ask for a review
+
+> Review **[doc]** in Worktable for **[accuracy or clarity]**. Comment on the
+> passages that need attention. Don't change the text yet.
+
+Its comments appear beside the text. Reply to any of them, or select text and
+add your own.
+
+## Have it make the changes
+
+> Read the comments on **[doc]** in Worktable. Make the changes we agreed on and
+> resolve those comments. Reply to the rest.
+
+Each change is saved as a version, so you can compare it with what was there
+before.
+`
+
+export const AGENTS_THAT_STAY_ON_MARKDOWN = `# Agents That Stay On
+
+Most agents work while you have them open. An always-on agent, such as OpenClaw
+or Hermes, runs on a server and picks up work from Threads.
+
+## Ask it for work
+
+Start a Thread with it in Threads and say what you need. It replies there, and
+what it makes is saved in your Spaces like any other agent's work.
+
+## When it needs you
+
+If it needs a decision, it asks in the Thread. Your reply goes straight back to
+it.
+
+## Connect one
+
+Open Settings, then Agents, and choose OpenClaw, Hermes or another always-on
+agent. Run the command on the machine where it runs.
+`
+
+export const TRACKING_WORK_IN_RECORDS_MARKDOWN = `# Tracking Work in Records
+
+Records are rows with fields, for work that changes one item at a time: tasks,
+leads, bugs, decisions. Your agents add and update them, and you can edit them
+too.
+
+## Start a list
+
+> Turn **[list or checklist]** into Records in Worktable, with the fields we
+> need to sort and update them.
+
+## Put a board on top
+
+> Build a board for the **[collection]** Records in Worktable, grouped by
+> status.
+
+The board shows the Records as they change. Example: Launch Plan in this Space
+was built this way.
+
+## Keep them current
+
+> Go through the **[collection]** Records in Worktable and update the status of
+> anything that has moved.
+`
+
 const WHAT_AGENTS_CAN_MAKE_MARKDOWN = `# What Agents Can Make
 
 Ask an agent for the result you want. It chooses the format, and you review

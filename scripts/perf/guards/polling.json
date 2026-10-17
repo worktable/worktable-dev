@@ -18,8 +18,8 @@
       "why": "Follows a pairing code every 2 s until it is verified, failed or expired."
     },
     {
-      "site": "apps/web/src/components/onboarding/onboarding.tsx#ReadyStep.participants",
-      "why": "Waits every 3 s for an always-on agent to join during setup."
+      "site": "apps/web/src/components/onboarding/onboarding.tsx#AlwaysOnHandoff.participants",
+      "why": "Waits every 3 s for an always-on agent to join during setup, to send it the first task."
     },
     {
       "site": "apps/web/src/components/settings/sections/agents.tsx#QuickConnectPanel.statusQuery",

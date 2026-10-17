@@ -51,6 +51,7 @@ import {
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
+import { ProfileMenu } from "@/components/sidebar/profile-menu"
 import {
   GroupActions,
   NewSpaceOrGroupButton,
@@ -2621,11 +2622,12 @@ export function AppSidebar() {
       </ScrollFadeArea>
 
       <div
-        className="flex shrink-0 items-center justify-end gap-1.5 px-3 py-2.5"
+        className="flex shrink-0 items-center gap-1.5 px-3 py-2.5"
         style={{
           paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
+        <ProfileMenu />
         <SettingsButton />
       </div>
 

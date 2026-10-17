@@ -24,7 +24,6 @@ import {
   issueInvitationPasswordReset,
   setMemberOperator,
 } from "@/lib/team-api"
-import { signOutLocalTeam } from "@/lib/team-context"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
@@ -236,7 +235,6 @@ function TeamMembers({
       setMemberOperator(id, value),
     onSuccess: refresh,
   })
-  const logout = useMutation({ mutationFn: signOutLocalTeam })
   const error =
     invite.error ??
     resend.error ??
@@ -244,8 +242,7 @@ function TeamMembers({
     role.error ??
     remove.error ??
     reset.error ??
-    operatorChange.error ??
-    logout.error
+    operatorChange.error
   return (
     <div className="flex flex-col gap-6">
       {cloud && <Button variant="outline" render={<a href="/" />}>Switch Worktable</Button>}
@@ -532,17 +529,6 @@ function TeamMembers({
         )}
       </SettingsGroup>
       <TeamAgents owner={owner} />
-      {!cloud && (
-        <SettingsGroup title="Session">
-          <Button
-            variant="outline"
-            disabled={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            Sign out
-          </Button>
-        </SettingsGroup>
-      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error.message}

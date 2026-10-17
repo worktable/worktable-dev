@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { ParticipantKind, ParticipantRef } from "@worktable/types"
@@ -6,7 +7,7 @@ import {
   defaultAgentNameForLabel,
   ParticipantRefSchema,
 } from "@worktable/types"
-import { ensureAppDir } from "./app-storage.ts"
+import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { listSpaces } from "./store.ts"
 import { renameThreadMember, scanAllThreadDigests } from "./thread-store.ts"
@@ -60,8 +61,8 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
   return next
 }
 
-function bindingsPath(): string {
-  return join(ensureAppDir(), "participants", `${workspaceCacheKey()}.json`)
+function bindingsPath(appDir = ensureAppDir()): string {
+  return join(appDir, "participants", `${workspaceCacheKey()}.json`)
 }
 
 async function loadBindings(): Promise<ParticipantBindingsFile> {
@@ -106,6 +107,7 @@ async function saveBindings(file: ParticipantBindingsFile): Promise<void> {
   await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf8")
   await chmod(tmp, 0o600)
   await rename(tmp, path)
+  namesCache = null
 }
 
 async function notifyParticipantsChanged(): Promise<void> {
@@ -371,6 +373,32 @@ function reconcileThreadNames(participantId: string): Promise<void> {
     }
   })
   return next
+}
+
+// This server writes the bindings it cares about here, so names are read
+// once and refreshed by its own saves; summaries carried by every page then
+// cost no file I/O. A binding another process adds shows after a restart.
+let namesCache: { path: string; names: Map<string, string> } | null = null
+
+/** A participant's current name, for summaries that ride along with every page. */
+export function participantNameForKey(key: string): string | null {
+  // Reading creates nothing, so it costs no directory check.
+  const path = bindingsPath(getAppDir())
+  if (namesCache?.path !== path) {
+    const names = new Map<string, string>()
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ParticipantBindingsFile>
+      for (const binding of Array.isArray(parsed.bindings) ? parsed.bindings : []) {
+        if (typeof binding?.key === "string" && typeof binding.participant?.name === "string") {
+          names.set(binding.key, binding.participant.name)
+        }
+      }
+    } catch {
+      // Missing or unreadable: no names yet.
+    }
+    namesCache = { path, names }
+  }
+  return namesCache.names.get(key) ?? null
 }
 
 /** Each identity's current participant, keyed like `participantKey`. */

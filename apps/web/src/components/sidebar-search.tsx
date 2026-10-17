@@ -9,7 +9,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Archive, Database, FileSearch, FileText, Search, X } from "lucide-react"
 import { Input } from "@worktable/ui/components/input"
-import { searchQueryOptions, useSpaces } from "@/lib/queries"
+import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { resolveIcon } from "@/lib/icons"
 import type { SearchResult, SpaceFile } from "@worktable/types"
 
@@ -57,6 +57,7 @@ export function SidebarSearchInput({
   /** Called on Enter with a non-empty query — opens the top search result. */
   onSubmit?: () => void
 }) {
+  const worktableName = useWorkspace().data?.name ?? "Worktable"
   return (
     <div className="relative">
       <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-sidebar-foreground/40" />
@@ -76,7 +77,7 @@ export function SidebarSearchInput({
             onSubmit?.()
           }
         }}
-        placeholder="Search workspace…"
+        placeholder={`Search ${worktableName}…`}
         aria-label="Search workspace"
         className="h-9 pr-8 pl-9 placeholder:text-sm placeholder:text-sidebar-foreground/50"
       />

@@ -79,6 +79,17 @@ describe("personal navigation", () => {
     const spaceFile = join(root, "workspace", "spaces", "atlas", "space.json")
     const before = await readFile(spaceFile, "utf8")
     expect((await summary()).navigation).toBeNull()
+    expect(await summary()).toMatchObject({
+      person: { name: "Owner", role: "owner", signOut: null },
+    })
+    await app().fetch(
+      new Request("http://localhost/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Alex" }),
+      })
+    )
+    expect(await summary()).toMatchObject({ person: { name: "Alex" } })
 
     const saved = await save({ expectedRevision: 0, ...arrangement })
     expect(saved.status).toBe(200)
@@ -153,6 +164,7 @@ describe("personal navigation", () => {
     const agent = { Authorization: `Bearer ${credential.token}` }
     expect((await save({ expectedRevision: 0, ...arrangement }, agent)).status).toBe(403)
     expect(await summary(agent)).not.toHaveProperty("navigation")
+    expect(await summary(agent)).not.toHaveProperty("person")
 
     const unknownGroup = await save({
       expectedRevision: 0,

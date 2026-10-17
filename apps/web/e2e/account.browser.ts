@@ -87,13 +87,15 @@ async function openCloudAccount(page: Page): Promise<void> {
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
   await page.getByRole("button", { name: "Settings", exact: true }).click()
   const settings = page.getByRole("dialog")
-  await settings.getByRole("button", { name: "Account", exact: true }).click()
-  await expect(
-    settings.getByText("Signed in on this browser", { exact: true })
-  ).toBeVisible()
+  const section = settings.getByRole("button", {
+    name: "Subscription",
+    exact: true,
+  })
+  await section.click()
+  await expect(section).toHaveAttribute("aria-pressed", "true")
 }
 
-test("Cloud Account settings confirms in-app before a CSRF-protected gateway sign-out", async ({
+test("Signing out of Cloud confirms in-app before a CSRF-protected gateway sign-out", async ({
   page,
 }) => {
   let sessionRequests = 0
@@ -133,7 +135,8 @@ test("Cloud Account settings confirms in-app before a CSRF-protected gateway sig
     })
   })
 
-  await openCloudAccount(page)
+  await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
   const primedStatus = await page.evaluate(async () => {
     const moduleUrl = "/src/lib/http.ts"
     const { authenticatedFetch } = await import(/* @vite-ignore */ moduleUrl)
@@ -141,8 +144,11 @@ test("Cloud Account settings confirms in-app before a CSRF-protected gateway sig
     return response.status
   })
   expect(primedStatus).toBe(204)
-  const settings = page.getByRole("dialog")
-  await settings.getByRole("button", { name: "Sign out", exact: true }).click()
+  await page
+    .locator("[data-worktable-sidebar-root]")
+    .getByRole("button", { name: /, Owner$/ })
+    .click()
+  await page.getByRole("menuitem", { name: "Sign Out" }).click()
 
   await expect(
     page.getByRole("heading", { name: "Sign out of Worktable?" })

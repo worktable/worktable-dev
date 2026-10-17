@@ -13,11 +13,13 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Your own groups and pins:** Organize the sidebar your way without changing it for anyone else. Pin a Space to keep it at the top, and sort Spaces into groups from **Change Group** in the Space menu or the **+** beside Spaces. Pinned, each group and your other Spaces show as sections you can collapse, and groups can be renamed or removed. Your arrangement follows you to your other devices. Anyone who can see a Space can pin it or group it. You start with the groups your Spaces already had.
+- **Worktable menu:** The top of the sidebar shows your Worktable's name and opens a menu with where it lives and **Worktable Settings**.
 
 ### Changed
 
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
-
+- **Sidebar:** Tapping a Space opens or closes it instead of going to its page, and **Space Home** is the first row inside. Folders show a folder icon instead of an arrow, in the sidebar and in the page menu on phones. The sidebar remembers what you left open on each device. On phones, each row has a single menu with **New** at the top, and menus for docs and folders say **Rename**, **Archive** and **Delete**.
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 
 ### Fixed

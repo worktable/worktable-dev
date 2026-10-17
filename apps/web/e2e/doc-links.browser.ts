@@ -196,8 +196,9 @@ test("a cold rich-text doc completes its first websocket sync without refresh", 
   await page.context().tracing.stop()
   await page.context().tracing.start({ screenshots: true, snapshots: false })
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
+  // The Space's row opens it in the sidebar.
   await page
-    .getByRole("button", { name: "Expand Link Regression", exact: true })
+    .getByRole("button", { name: "Link Regression", exact: true })
     .click()
   await page.getByRole("link", { name: "Cold Sync Proof", exact: true }).click()
 
@@ -497,8 +498,9 @@ test("mobile navigation opens the new-space sheet and returns to navigation", as
   await expect(sidebarToggle).toBeVisible({ timeout: 30_000 })
   await sidebarToggle.click()
 
-  await expect(page.getByRole("button", { name: "All Spaces" })).toBeVisible()
-  await page.getByRole("button", { name: "Create new space" }).click()
+  await expect(page.getByRole("button", { name: /Worktable menu$/ })).toBeVisible()
+  await page.getByRole("button", { name: "New Space or Group" }).click()
+  await page.getByRole("menuitem", { name: "Space", exact: true }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toBeVisible()
   await page.getByRole("button", { name: "Cancel" }).click()
   await expect(page.getByRole("heading", { name: "New Space" })).toHaveCount(0)

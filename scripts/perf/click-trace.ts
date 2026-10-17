@@ -1255,11 +1255,35 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
+/** Opens a Space in the sidebar: its whole row folds and unfolds it. */
+/**
+ * What opens and closes a Space in the sidebar: its whole row, or in
+ * releases before rows opened Spaces, the chevron beside its name. The
+ * release gate runs this script against the previous release too.
+ */
+function spaceToggle(session: Session, name: string) {
+  const spaces = sidebar(session).locator(".group\\/space")
+  return spaces
+    .getByRole("button", { name, exact: true })
+    .or(
+      spaces.getByRole("button", {
+        name: new RegExp(`^(Expand|Collapse) ${escapeRegExp(name)}$`),
+      })
+    )
+    .first()
+}
+
+/** Opens a Space in the sidebar. */
+async function expandSpace(session: Session, name: string) {
+  const row = spaceToggle(session, name)
+  await row.waitFor()
+  if ((await row.getAttribute("aria-expanded")) === "false") await row.click()
+}
+
 async function revealDocument(session: Session, doc: DocTarget) {
   await showSidebar(session)
   const root = sidebar(session)
-  const expand = root.locator(`button[aria-label="Expand ${doc.spaceName}"]`)
-  if ((await expand.count()) > 0) await expand.first().click()
+  await expandSpace(session, doc.spaceName)
   for (const segment of doc.path.split("/").slice(0, -1)) {
     const folder = root
       .getByRole("button", {
@@ -1347,7 +1371,11 @@ function openSpace(pass: Pass, space: SpaceTarget): Action {
     ],
     contentKey: "content",
     gate: new RegExp(`/api/spaces/${space.id}/(documents|docs)\\b`),
-    prepare: showSidebar,
+    // Space Home is the first row inside the opened Space.
+    prepare: async (session) => {
+      await showSidebar(session)
+      await expandSpace(session, space.name)
+    },
     act: (session) =>
       press(
         session,

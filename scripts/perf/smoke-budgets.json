@@ -115,7 +115,8 @@
       "max": 0
     },
     "dom, first, open Markdown doc": {
-      "max": 1445
+      "max": 1655,
+      "why": "Each Space row in the sidebar carries its pin button (hover-revealed on desktop), and groups add their labels: about 60 elements on the fixture."
     },
     "requests, first, open rich doc": {
       "max": 4
@@ -142,7 +143,8 @@
       "max": 1
     },
     "dom, first, open HTML doc": {
-      "max": 1358
+      "max": 1510,
+      "why": "The sidebar shows each Space row's pin button (hover-revealed on desktop) and the person's group labels."
     },
     "requests, first, back to Home": {
       "max": 4
@@ -283,7 +285,8 @@
       "max": 0
     },
     "requests, reopen, open the app at Home": {
-      "max": 11
+      "max": 19,
+      "why": "The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open."
     },
     "chain, reopen, open the app at Home": {
       "max": 1

@@ -1,4 +1,11 @@
-import { lazy, Suspense, useEffect, useState, type ReactElement } from "react"
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import {
@@ -8,6 +15,7 @@ import {
   FileText,
   Monitor,
   Pencil,
+  Plus,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
@@ -17,6 +25,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { Input } from "@worktable/ui/components/input"
@@ -70,6 +81,70 @@ export function SpaceNewMenu({
   trigger: ReactElement
   align?: "start" | "end"
   onCreated?: () => void
+}) {
+  return (
+    <SpaceNewActions spaceId={spaceId} folder={folder} onCreated={onCreated}>
+      {(items) => (
+        <NewMenu trigger={trigger} align={align}>
+          {items}
+        </NewMenu>
+      )}
+    </SpaceNewActions>
+  )
+}
+
+export function NewMenu({
+  trigger,
+  align = "end",
+  children,
+}: {
+  trigger: ReactElement
+  align?: "start" | "end"
+  children: ReactNode
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={trigger} />
+      <DropdownMenuContent align={align} sideOffset={4} className="min-w-60">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** The same choices as the first entry of a row's own menu. */
+export function NewSubmenu({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <Plus className="mr-2 h-4 w-4" />
+          New
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="min-w-56">
+          {children}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      <DropdownMenuSeparator />
+    </>
+  )
+}
+
+/**
+ * What can be created in a Space or folder. The caller places the items in a
+ * menu; the dialogs they open render beside it, so they stay open after the
+ * menu closes.
+ */
+export function SpaceNewActions({
+  spaceId,
+  folder,
+  onCreated,
+  children,
+}: {
+  spaceId: string
+  folder?: string
+  onCreated?: () => void
+  children: (items: ReactNode) => ReactNode
 }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -162,44 +237,45 @@ export function SpaceNewMenu({
     }
   }
 
+  const items = (
+    <>
+      <DropdownMenuItem onClick={() => newDoc(folder)}>
+        <FileText className="mr-2 h-4 w-4" />
+        Doc
+      </DropdownMenuItem>
+      {workspace?.storageVersion === 2 && (
+        <DropdownMenuItem onClick={() => setDrawingOpen(true)}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Drawing
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem onClick={() => setWidgetOpen(true)}>
+        <AppWindow className="mr-2 h-4 w-4" />
+        HTML Doc
+      </DropdownMenuItem>
+      {!folder && (
+        <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
+          <Database className="mr-2 h-4 w-4" />
+          Record Collection
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuCheckboxItem
+        checked={lifetime === "temporary"}
+        closeOnClick={false}
+        onCheckedChange={(checked) => {
+          setLifetime(checked ? "temporary" : "durable")
+        }}
+      >
+        <Clock3 className="mr-2 h-4 w-4" />
+        Start as Temporary
+      </DropdownMenuCheckboxItem>
+    </>
+  )
+
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger render={trigger} />
-        <DropdownMenuContent align={align} sideOffset={4} className="min-w-60">
-          <DropdownMenuItem onClick={() => newDoc(folder)}>
-            <FileText className="mr-2 h-4 w-4" />
-            Doc
-          </DropdownMenuItem>
-          {workspace?.storageVersion === 2 && (
-            <DropdownMenuItem onClick={() => setDrawingOpen(true)}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Drawing
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onClick={() => setWidgetOpen(true)}>
-            <AppWindow className="mr-2 h-4 w-4" />
-            HTML Doc
-          </DropdownMenuItem>
-          {!folder && (
-            <DropdownMenuItem onClick={() => setCollectionOpen(true)}>
-              <Database className="mr-2 h-4 w-4" />
-              Record Collection
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem
-            checked={lifetime === "temporary"}
-            closeOnClick={false}
-            onCheckedChange={(checked) => {
-              setLifetime(checked ? "temporary" : "durable")
-            }}
-          >
-            <Clock3 className="mr-2 h-4 w-4" />
-            Start as Temporary
-          </DropdownMenuCheckboxItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {children(items)}
       {drawingOpen && (
         <Suspense fallback={null}>
           <NewDrawingDialog

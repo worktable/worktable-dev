@@ -52,7 +52,7 @@ export function DeleteDialog({
             <Trash2 className="h-5 w-5 text-destructive" />
           </div>
           <ResponsiveDialogTitle>
-            Delete {isFolder ? "folder" : "doc"}
+            Delete {isFolder ? "Folder" : "Doc"}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             Delete{" "}

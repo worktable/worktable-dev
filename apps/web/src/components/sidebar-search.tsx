@@ -78,7 +78,7 @@ export function SidebarSearchInput({
         }}
         placeholder="Search workspace…"
         aria-label="Search workspace"
-        className="h-9 pr-8 pl-9"
+        className="h-9 pr-8 pl-9 placeholder:text-sm placeholder:text-sidebar-foreground/50"
       />
       {query && (
         <button

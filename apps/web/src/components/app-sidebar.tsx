@@ -1,17 +1,20 @@
 import type { SpaceView } from "@/lib/api"
 import { browserTeamMemberId } from "@/lib/team-context"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
-import { formatGroupLabel, getSpaceArchiveInfo } from "@/lib/spaces"
+import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { DrawingUnsavedError } from "@/lib/drawing-drafts"
 import {
+  createContext,
   lazy,
   memo,
   useCallback,
+  useContext,
   useState,
   useEffect,
   useMemo,
   useRef,
   type Ref,
+  type ReactNode,
 } from "react"
 import {
   Link,
@@ -21,19 +24,14 @@ import {
 } from "@tanstack/react-router"
 import {
   ChevronRight,
-  ChevronDown,
   File,
   History,
   Folder,
+  FolderOpen,
   AlertTriangle,
   LayoutDashboard,
   Plus,
-  Briefcase,
-  Rocket,
-  Church,
-  Target,
-  LayoutGrid,
-  Check,
+  Pin,
   Archive,
   Clock3,
   AppWindow,
@@ -52,8 +50,25 @@ import {
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
-import { WorktableAppIcon } from "@/components/worktable-app-icon"
-import { ProvenanceChip } from "@/components/provenance-chip"
+import { WorktableHeader } from "@/components/sidebar/worktable-header"
+import {
+  GroupActions,
+  NewSpaceOrGroupButton,
+  SectionHeading,
+} from "@/components/sidebar/space-groups"
+import { rememberedOpen, rememberOpen } from "@/lib/sidebar-open-state"
+import {
+  addGroup,
+  moveToGroup,
+  newGroupId,
+  removeGroup,
+  renameGroup,
+  restoreGroup,
+  sortedGroups,
+  togglePin,
+  usePersonalNavigation,
+} from "@/lib/personal-navigation"
+import type { PersonalGroup } from "@worktable/types"
 import { resolveIcon } from "@/lib/icons"
 import {
   useSpaces,
@@ -77,6 +92,12 @@ import {
   archiveSpace,
   restoreSpace,
 } from "@/lib/api"
+// Loaded when first opened, like New Space.
+const GroupNameDialog = lazy(() =>
+  import("@/components/sidebar/group-name-dialog").then((module) => ({
+    default: module.GroupNameDialog,
+  }))
+)
 const NewSpaceDialog = lazy(() =>
   import("@/components/spaces/new-space-dialog").then((module) => ({
     default: module.NewSpaceDialog,
@@ -91,7 +112,11 @@ import { openSettings } from "@/lib/settings-open"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { SpaceContextMenuButton } from "@/components/spaces/space-context-menu"
-import { SpaceNewMenu } from "@/components/spaces/space-new-menu"
+import {
+  NewMenu,
+  NewSubmenu,
+  SpaceNewActions,
+} from "@/components/spaces/space-new-menu"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { DocContextMenuButton } from "@/components/docs/doc-context-menu"
 import {
@@ -106,6 +131,8 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import {
   DropdownMenu,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -160,24 +187,6 @@ import {
   spaceDocumentTrees,
   type SpaceDocumentIndex,
 } from "@/lib/space-document-tree"
-
-// ── Group Definitions ────────────────────────────────────────
-
-// Icon hints for known group slugs; unknown groups use LayoutGrid
-const GROUP_ICONS: Record<string, typeof Briefcase> = {
-  work: Briefcase,
-  "main-quest": Target,
-  "side-quests": Rocket,
-  church: Church,
-}
-
-function getGroupDef(id: string) {
-  return {
-    id,
-    label: formatGroupLabel(id),
-    icon: GROUP_ICONS[id] ?? LayoutGrid,
-  }
-}
 
 function isSpaceArchived(space: SpaceFile) {
   return !!getSpaceArchiveInfo(space)
@@ -264,132 +273,86 @@ function SettingsButton() {
   )
 }
 
-// ── Group Switcher (bottom of sidebar) ───────────────────────
+// ── Space Section ────────────────────────────────────────────
 
-function GroupSwitcher({
-  activeGroup,
-  onGroupChange,
-}: {
-  activeGroup: string | null
-  onGroupChange: (group: string | null) => void
-}) {
-  const { data: spaces } = useSpaces()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+type RowNewActionsProps = {
+  spaceId: string
+  folder?: string
+  label: string
+  onCreated: () => void
+  /** Renders the row's own menu, given the creation choices it should list. */
+  children: (newItems: ReactNode | undefined) => ReactNode
+}
 
-  // Derive groups dynamically from spaces data
-  const availableGroups = (() => {
-    const groups = new Set<string>()
-    if (spaces) {
-      for (const s of spaces) {
-        if (s.group) groups.add(s.group)
-      }
-    }
-    return [...groups].sort()
-  })()
+/**
+ * A Space or folder row's + and its menu. On phones the actions always show,
+ * so the + would repeat on every row; its choices open from the menu instead.
+ */
+function RowNewActions({
+  canCreate,
+  ...props
+}: RowNewActionsProps & { canCreate: boolean }) {
+  if (!canCreate) return <>{props.children(undefined)}</>
+  return <EditableRowNewActions {...props} />
+}
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClick)
-    return () => document.removeEventListener("mousedown", handleClick)
-  }, [open])
-
-  const activeDef = activeGroup ? getGroupDef(activeGroup) : null
-  const ActiveIcon = activeDef?.icon ?? LayoutGrid
-  const activeLabel = activeDef?.label ?? "All Spaces"
-
+function EditableRowNewActions({
+  spaceId,
+  folder,
+  label,
+  onCreated,
+  children,
+}: RowNewActionsProps) {
+  const isMobile = useIsMobile()
   return (
-    <div ref={ref} className="relative">
-      {/* Dropdown menu (opens upward) */}
-      {open && (
-        <div className="overlay-floating absolute right-0 bottom-full left-0 mb-1.5 animate-in overflow-hidden rounded-lg bg-popover duration-150 fade-in slide-in-from-bottom-2">
-          <div className="p-1.5">
-            {/* All option */}
-            <button
-              type="button"
-              onClick={() => {
-                onGroupChange(null)
-                setOpen(false)
-              }}
-              className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                activeGroup === null
-                  ? "bg-accent text-accent-foreground"
-                  : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
-              }`}
-            >
-              <LayoutGrid className="size-4 shrink-0" />
-              <span className="flex-1 text-left font-medium">All Spaces</span>
-              {activeGroup === null && (
-                <Check className="size-3.5 text-sidebar-primary" />
-              )}
-            </button>
-
-            <div className="my-1.5 border-t border-border/50" />
-
-            {/* Group options */}
-            {availableGroups.map((groupId) => {
-              const def = getGroupDef(groupId)
-              const Icon = def.icon
-              const isActive = activeGroup === groupId
-              return (
+    <SpaceNewActions spaceId={spaceId} folder={folder} onCreated={onCreated}>
+      {(items) => (
+        <>
+          {!isMobile && (
+            <NewMenu
+              trigger={
                 <button
-                  key={groupId}
                   type="button"
-                  onClick={() => {
-                    onGroupChange(groupId)
-                    setOpen(false)
-                  }}
-                  className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                    isActive
-                      ? "bg-accent text-accent-foreground"
-                      : "text-popover-foreground/70 hover:bg-surface-hover hover:text-popover-foreground"
-                  }`}
+                  aria-label={label}
+                  title="New"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-foreground"
                 >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="flex-1 text-left font-medium">
-                    {def.label}
-                  </span>
-                  {isActive && (
-                    <Check className="size-3.5 text-sidebar-primary" />
-                  )}
+                  <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
                 </button>
-              )
-            })}
-          </div>
-        </div>
+              }
+            >
+              {items}
+            </NewMenu>
+          )}
+          {children(isMobile ? items : undefined)}
+        </>
       )}
-
-      {/* Trigger button */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className="sidebar-selector flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-sm font-medium text-sidebar-space-foreground transition-colors duration-180"
-      >
-        <ActiveIcon className="size-4 shrink-0 text-sidebar-primary" />
-        <span className="flex-1 truncate text-left">{activeLabel}</span>
-        <ChevronDown
-          className={`size-3.5 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-    </div>
+    </SpaceNewActions>
   )
 }
 
-// ── Space Section ────────────────────────────────────────────
+/** Which copies of each Space are open: a pinned Space is listed twice. */
+const openSpaceCopies = new Map<string, Set<string>>()
 
 const SpaceSection = memo(function SpaceSection({
   space,
+  followRoute = true,
+  copy = "list",
+  onNewGroup,
 }: {
   space: SpaceView
+  /** Which listing this row is, for remembering whether it was left open. */
+  copy?: "pinned" | "list"
+  /**
+   * A pinned Space is listed twice. Only one copy opens itself when the
+   * route enters the Space, so its tree is not shown twice.
+   */
+  followRoute?: boolean
+  /** Opens New Group for this Space, when the person has groups to keep. */
+  onNewGroup?: (spaceId: string) => void
 }) {
+  const { navigation, update } = usePersonalNavigation()
+  const pinned = navigation?.pins.includes(space.id) ?? false
   const isMobile = useIsMobile()
   const { setOpen } = useSidebar()
   const queryClient = useQueryClient()
@@ -400,18 +363,55 @@ const SpaceSection = memo(function SpaceSection({
   const spaceRoute = `/spaces/${space.id}`
   const relation = useRouteRelation(spaceRoute)
   const isInSpace = relation !== null
-  const [expanded, setExpanded] = useState(isInSpace)
+  const openKey = `${copy}:${space.id}`
+  // Entering a Space opens its pinned copy, or its only copy, unless the
+  // person already opened a copy of it; a copy they opened stays open.
+  const anotherCopyOpen = () =>
+    copy === "pinned" &&
+    (openSpaceCopies.get(space.id)?.has("list") === true ||
+      rememberedOpen("space", `list:${space.id}`) === true)
+  const [expanded, setExpandedState] = useState(
+    () =>
+      rememberedOpen("space", openKey) ??
+      (followRoute && isInSpace && !anotherCopyOpen())
+  )
+  const setExpanded = useCallback(
+    (open: boolean) => {
+      rememberOpen("space", openKey, open)
+      setExpandedState(open)
+    },
+    [openKey]
+  )
   const userCollapsedRef = useRef(false)
 
   useEffect(() => {
-    if (isInSpace && !expanded && !userCollapsedRef.current) {
-      setExpanded(true)
+    if (!expanded) return
+    const copies = openSpaceCopies.get(space.id) ?? new Set<string>()
+    copies.add(copy)
+    openSpaceCopies.set(space.id, copies)
+    return () => {
+      copies.delete(copy)
+    }
+  }, [expanded, space.id, copy])
+
+  useEffect(() => {
+    // Following the route is not the person's choice, so it isn't kept.
+    if (
+      followRoute &&
+      isInSpace &&
+      !expanded &&
+      !userCollapsedRef.current &&
+      !anotherCopyOpen()
+    ) {
+      setExpandedState(true)
     }
     // Reset manual collapse flag when navigating away from the space
     if (!isInSpace) {
       userCollapsedRef.current = false
     }
-  }, [isInSpace, expanded])
+    // anotherCopyOpen reads the copies as they are when the route changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followRoute, isInSpace, expanded])
 
   const handleToggleExpanded = (open: boolean) => {
     if (!open && isInSpace) {
@@ -435,19 +435,6 @@ const SpaceSection = memo(function SpaceSection({
     } catch (err) {
       toast.error("Failed to rename space")
       console.error("Failed to rename space:", err)
-    }
-  }
-
-  const handleChangeGroup = async (group: string | undefined) => {
-    try {
-      await updateSpace(space.id, { group: group ?? "" })
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.spaces,
-        exact: true,
-      })
-    } catch (err) {
-      toast.error("Failed to change group")
-      console.error("Failed to change group:", err)
     }
   }
 
@@ -512,7 +499,8 @@ const SpaceSection = memo(function SpaceSection({
   // Creation lives on the space row (hover-revealed +) so the tree below starts
   // immediately — no toolbar row between the space header and its content.
   const afterCreate = () => {
-    setExpanded(true)
+    // Shows the new document; like following the route, it isn't kept.
+    setExpandedState(true)
     if (isMobile) setOpen(false)
   }
 
@@ -520,82 +508,82 @@ const SpaceSection = memo(function SpaceSection({
     <>
       <Collapsible open={expanded} onOpenChange={handleToggleExpanded}>
         <div className="group/space relative flex items-center rounded-md transition-colors duration-180 hover:bg-sidebar-hover">
-          {/* The chevron toggles the tree; the name opens the Space overview. */}
-          <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
-            <CollapsibleTrigger
-              className="flex min-w-10 shrink-0 items-center self-stretch py-2 pr-1 pl-3 sm:min-w-0"
-              render={
-                <button
-                  type="button"
-                  aria-label={
-                    expanded ? `Collapse ${space.name}` : `Expand ${space.name}`
-                  }
-                />
-              }
-            >
-              <ChevronRight
-                className={`size-4 shrink-0 text-sidebar-foreground/40 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-              />
-            </CollapsibleTrigger>
-            <Link
-              to="/spaces/$spaceId"
-              params={{ spaceId: space.id }}
-              onClick={handleNavigate}
-              className={`flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3 pl-1 text-sm font-medium ${
-                relation === "self"
-                  ? "text-sidebar-primary"
-                  : "text-sidebar-space-foreground"
-              }`}
-            >
-              {resolveIcon(space.icon, "size-4")}
-              <span className="min-w-0 truncate">{space.name}</span>
-            </Link>
-          </div>
+          {/* The whole row folds and unfolds the Space; its overview is the
+            first row inside. */}
+          <CollapsibleTrigger
+            className={`flex min-h-10 min-w-0 flex-1 items-center gap-2.5 py-2 pr-2 pl-2.5 text-left text-sm font-medium sm:min-h-0 ${
+              isInSpace ? "text-sidebar-foreground" : "text-sidebar-space-foreground"
+            }`}
+            render={<button type="button" aria-expanded={expanded} />}
+          >
+            {resolveIcon(space.icon, "size-4")}
+            <span className="min-w-0 truncate">{space.name}</span>
+          </CollapsibleTrigger>
           {/* Always visible on touch (no hover exists) and on keyboard focus;
             hover-revealed on desktop pointers. This cluster is the primary
             create entry point now that the tabs toolbar is gone. */}
           <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/space:opacity-100">
-            {space.permissions?.edit !== false && <SpaceNewMenu
+            {navigation && (
+              // Touch screens keep Pin in the menu instead.
+              <button
+                type="button"
+                aria-label={pinned ? `Unpin ${space.name}` : `Pin ${space.name}`}
+                title={pinned ? "Unpin" : "Pin"}
+                aria-pressed={pinned}
+                onClick={() => void update(togglePin(space.id))}
+                className="hidden size-6 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:flex"
+              >
+                <Pin className={`size-3.5 ${pinned ? "fill-current" : ""}`} />
+              </button>
+            )}
+            <RowNewActions
               spaceId={space.id}
+              label={`New in ${space.name}`}
+              canCreate={space.permissions?.edit !== false}
               onCreated={afterCreate}
-              trigger={
-                <button
-                  type="button"
-                  title="New"
-                  className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground has-[[data-popup-open]]:bg-sidebar-accent sm:size-6"
-                >
-                  <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
-                </button>
-              }
-            />
-            }
-            <SpaceContextMenuButton
-              spaceId={space.id}
-              canEdit={space.permissions?.edit !== false}
-              canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
-              spaceName={space.name}
-              spaceIcon={space.icon}
-              currentGroup={space.group}
-              archived={archived}
-              docSort={getDocSort(space)}
-              onChangeDocSort={handleChangeDocSort}
-              onRename={handleRename}
-              onChangeIcon={async (icon: string) => {
-                try {
-                  await updateSpace(space.id, { icon })
-                  await queryClient.invalidateQueries({
-                    queryKey: queryKeys.spaces,
-                    exact: true,
-                  })
-                } catch {
-                  toast.error("Failed to change icon")
-                }
-              }}
-              onChangeGroup={handleChangeGroup}
-              onArchive={handleArchive}
-              onRestore={handleRestore}
-              onDelete={handleDelete}
-            />
+            >
+              {(newItems) => (
+                <SpaceContextMenuButton
+                  newItems={newItems}
+                  spaceId={space.id}
+                  canEdit={space.permissions?.edit !== false}
+                  canManageAccess={Boolean(browserTeamMemberId() && space.permissions?.manage)}
+                  spaceName={space.name}
+                  spaceIcon={space.icon}
+                  archived={archived}
+                  personal={
+                    navigation && onNewGroup
+                      ? {
+                          pinned,
+                          groups: navigation.groups,
+                          groupId: navigation.spaceGroups[space.id] ?? null,
+                          onTogglePin: () => void update(togglePin(space.id)),
+                          onChangeGroup: (groupId) =>
+                            void update(moveToGroup(space.id, groupId)),
+                          onNewGroup: () => onNewGroup(space.id),
+                        }
+                      : undefined
+                  }
+                  docSort={getDocSort(space)}
+                  onChangeDocSort={handleChangeDocSort}
+                  onRename={handleRename}
+                  onChangeIcon={async (icon: string) => {
+                    try {
+                      await updateSpace(space.id, { icon })
+                      await queryClient.invalidateQueries({
+                        queryKey: queryKeys.spaces,
+                        exact: true,
+                      })
+                    } catch {
+                      toast.error("Failed to change icon")
+                    }
+                  }}
+                  onArchive={handleArchive}
+                  onRestore={handleRestore}
+                  onDelete={handleDelete}
+                />
+              )}
+            </RowNewActions>
           </div>
         </div>
 
@@ -663,6 +651,7 @@ const SpaceContent = memo(function SpaceContent({
 
   return (
     <div className="mt-1 animate-in duration-200 fade-in">
+      <SpaceOverviewLink spaceId={spaceId} onNavigate={onNavigate} />
       <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
       <SpaceTreeSection
         space={space}
@@ -679,6 +668,34 @@ const SpaceContent = memo(function SpaceContent({
     </div>
   )
 })
+
+/** The Space's own page, first inside it now that its row only folds. */
+function SpaceOverviewLink({
+  spaceId,
+  onNavigate,
+}: {
+  spaceId: string
+  onNavigate: () => void
+}) {
+  const isActive = useIsCurrentRoute(`/spaces/${spaceId}`)
+  return (
+    <Link
+      to="/spaces/$spaceId"
+      params={{ spaceId }}
+      onClick={onNavigate}
+      className={`mb-1 flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
+        isActive
+          ? "bg-sidebar-accent font-medium text-sidebar-primary"
+          : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+      }`}
+    >
+      <LayoutDashboard
+        className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+      />
+      <span className="min-w-0 truncate">Space Home</span>
+    </Link>
+  )
+}
 
 /** A Space's pinned docs, above its tree, with a label separating the two. */
 function PinnedSidebarSection({
@@ -933,6 +950,7 @@ function WidgetTreeActions({
   onArchiveFolder,
   onRestoreFolder,
   onDeleteFolder,
+  newItems,
 }: {
   spaceId: string
   widgetId: string
@@ -944,6 +962,7 @@ function WidgetTreeActions({
   onArchiveFolder?: () => void
   onRestoreFolder?: () => void
   onDeleteFolder?: () => void
+  newItems?: ReactNode
 }) {
   const navigate = useNavigate()
   const router = useRouter()
@@ -1031,6 +1050,7 @@ function WidgetTreeActions({
       <WidgetContextMenuButton
         documentName={documentName}
         archived={archived}
+        newItems={newItems}
         onRenameFolder={onRenameFolder}
         folderArchived={folderArchived}
         onArchiveFolder={onArchiveFolder}
@@ -1106,7 +1126,7 @@ function WidgetTreeItem({
           />
           <span className="truncate">{node.label}</span>
         </Link>
-        <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/widget:opacity-100 has-[[data-popup-open]]:opacity-100">
+        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
           <WidgetTreeActions
             key={node.path}
             spaceId={spaceId}
@@ -1134,6 +1154,7 @@ function WidgetContextMenuButton({
   onArchive,
   onRestore,
   onDelete,
+  newItems,
 }: {
   documentName: string
   archived?: boolean
@@ -1147,16 +1168,16 @@ function WidgetContextMenuButton({
   onArchive: () => void
   onRestore: () => void
   onDelete: () => void
+  newItems?: ReactNode
 }) {
   const hasFolderActions = Boolean(
     onRenameFolder || onArchiveFolder || onRestoreFolder || onDeleteFolder
   )
-  const isHybridPath = folderArchived !== undefined
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:size-6"
+        className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-foreground sm:size-6"
         render={
           <button type="button" aria-label={`Actions for ${documentName}`} />
         }
@@ -1164,58 +1185,65 @@ function WidgetContextMenuButton({
         <MoreVertical className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="min-w-44">
-        {onRenameFolder && (
-          <DropdownMenuItem onClick={onRenameFolder}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Rename Folder
+        {newItems && <NewSubmenu>{newItems}</NewSubmenu>}
+        {/* A path can hold an HTML Doc and docs inside it; each has its own
+          actions, so the menu names which one they act on. */}
+        <DropdownMenuGroup>
+          {hasFolderActions && <DropdownMenuLabel>HTML Doc</DropdownMenuLabel>}
+          <DropdownMenuItem onClick={onCopyHtml}>
+            <Copy className="mr-2 h-4 w-4" />
+            Copy HTML
           </DropdownMenuItem>
-        )}
-        {(folderArchived ? onRestoreFolder : onArchiveFolder) && (
-          <DropdownMenuItem
-            onClick={folderArchived ? onRestoreFolder : onArchiveFolder}
-          >
-            {folderArchived ? (
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
+            {archived ? (
               <RotateCcw className="mr-2 h-4 w-4" />
             ) : (
               <Archive className="mr-2 h-4 w-4" />
             )}
-            {folderArchived ? "Restore Folder" : "Archive Folder"}
+            {archived ? "Restore" : "Archive"}
           </DropdownMenuItem>
-        )}
-        {onDeleteFolder && (
-          <DropdownMenuItem variant="destructive" onClick={onDeleteFolder}>
+          {!hasFolderActions && <DropdownMenuSeparator />}
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
             <Trash className="mr-2 h-4 w-4" />
-            Delete Folder
+            Delete
           </DropdownMenuItem>
+        </DropdownMenuGroup>
+        {hasFolderActions && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Folder</DropdownMenuLabel>
+              {onRenameFolder && (
+                <DropdownMenuItem onClick={onRenameFolder}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+              )}
+              {(folderArchived ? onRestoreFolder : onArchiveFolder) && (
+                <DropdownMenuItem
+                  onClick={folderArchived ? onRestoreFolder : onArchiveFolder}
+                >
+                  {folderArchived ? (
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Archive className="mr-2 h-4 w-4" />
+                  )}
+                  {folderArchived ? "Restore" : "Archive"}
+                </DropdownMenuItem>
+              )}
+              {onDeleteFolder && (
+                <DropdownMenuItem variant="destructive" onClick={onDeleteFolder}>
+                  <Trash className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuGroup>
+          </>
         )}
-        {hasFolderActions && <DropdownMenuSeparator />}
-        <DropdownMenuItem onClick={onCopyHtml}>
-          <Copy className="mr-2 h-4 w-4" />
-          Copy HTML
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onRename}>
-          <Pencil className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Rename HTML Doc" : "Rename"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={archived ? onRestore : onArchive}>
-          {archived ? (
-            <RotateCcw className="mr-2 h-4 w-4" />
-          ) : (
-            <Archive className="mr-2 h-4 w-4" />
-          )}
-          {archived
-            ? isHybridPath
-              ? "Restore HTML Doc"
-              : "Restore"
-            : isHybridPath
-              ? "Archive HTML Doc"
-              : "Archive"}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
-          <Trash className="mr-2 h-4 w-4" />
-          {isHybridPath ? "Delete HTML Doc" : "Delete"}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -1548,9 +1576,18 @@ function SpaceTreeSection({
     onWidgetRefresh,
     canEdit: space.permissions?.edit !== false,
   }
+  const { data: detail } = useSpace(spaceId)
+  const currentPath = useRouterState({
+    select: (state) => routeDocumentPath(state.location.pathname, spaceId),
+  })
+  const revealCurrent =
+    !currentPath ||
+    !(detail?.pins ?? []).some(
+      (pin) => pin.status === "active" && pin.path === currentPath
+    )
 
   return (
-    <>
+    <RevealCurrent.Provider value={revealCurrent}>
       {loadFailed ? (
         <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
           <p className="text-sidebar-foreground/40">Couldn’t load docs</p>
@@ -1642,9 +1679,15 @@ function SpaceTreeSection({
           No docs yet
         </p>
       ) : null}
-    </>
+    </RevealCurrent.Provider>
   )
 }
+
+/**
+ * Whether folders open to show the open document. Not when it already shows
+ * among the Space's pins, so it doesn't take two places in the sidebar.
+ */
+const RevealCurrent = createContext(true)
 
 // ── Tree Item dispatcher (doc/folder vs widget leaf) ────────
 
@@ -1791,7 +1834,18 @@ function DocTreeItem({
     node.isFolder && !index.folderSupports(node.path, "delete")
   const exactDocumentArchived = (docEntry?.archived ?? node.archived) === true
   const archived = node.isFolder ? folderArchived : exactDocumentArchived
-  const [open, setOpenState] = useState(containsCurrent || isActive)
+  const folderKey = `${spaceId}:${node.path}`
+  const revealCurrent = useContext(RevealCurrent)
+  const [open, setOpenStored] = useState(
+    () =>
+      (containsCurrent && revealCurrent) ||
+      isActive ||
+      (node.isFolder && (rememberedOpen("folder", folderKey) ?? false))
+  )
+  const setOpenState = (next: boolean) => {
+    if (node.isFolder) rememberOpen("folder", folderKey, next)
+    setOpenStored(next)
+  }
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const userCollapsedNodeRef = useRef(false)
@@ -1799,16 +1853,17 @@ function DocTreeItem({
   useEffect(() => {
     if (
       node.isFolder &&
-      (containsCurrent || isActive) &&
+      ((containsCurrent && revealCurrent) || isActive) &&
       !open &&
       !userCollapsedNodeRef.current
     ) {
-      setOpenState(true)
+      // Like a Space, a folder opened by the route is not kept open.
+      setOpenStored(true)
     }
     if (!containsCurrent && !isActive) {
       userCollapsedNodeRef.current = false
     }
-  }, [containsCurrent, isActive, open, node.isFolder])
+  }, [containsCurrent, isActive, open, node.isFolder, revealCurrent])
 
   const handleToggleNode = (nextOpen: boolean) => {
     if (!nextOpen && (containsCurrent || isActive)) {
@@ -1978,36 +2033,36 @@ function DocTreeItem({
           >
             {dropIndicator}
             {hasDocumentAtFolder ? (
-              // A document can also own a path with descendants: the chevron
-              // toggles the folder while the label opens its common page.
+              // A document can also own a path with descendants: its icon folds
+              // them, and its name opens the document and unfolds them.
               <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
                 <CollapsibleTrigger
                   className="flex h-full shrink-0 items-center py-2 pr-1 pl-3"
                   render={
                     <button
                       type="button"
-                      aria-label={open ? "Collapse folder" : "Expand folder"}
+                      aria-label={open ? `Collapse ${node.label}` : `Expand ${node.label}`}
                     />
                   }
-                >
-                  <ChevronRight
-                    className={`size-3.5 shrink-0 text-sidebar-foreground/30 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
-                  />
-                </CollapsibleTrigger>
-                <SpecializedDocumentLink
-                  spaceId={spaceId}
-                  path={node.path}
-                  onClick={onNavigate}
-                  className={`flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 pl-1 text-sm ${
-                    isActive
-                      ? "font-medium text-sidebar-primary"
-                      : "text-sidebar-item-foreground"
-                  }`}
                 >
                   <DocumentNodeIcon
                     node={node}
                     className={`size-4 shrink-0 ${node.kind === "conflict" ? "text-sidebar-foreground/40" : "text-sidebar-primary/60"}`}
                   />
+                </CollapsibleTrigger>
+                <SpecializedDocumentLink
+                  spaceId={spaceId}
+                  path={node.path}
+                  onClick={() => {
+                    handleToggleNode(true)
+                    onNavigate()
+                  }}
+                  className={`flex min-w-0 flex-1 items-center py-2 pr-3 pl-1 text-sm ${
+                    isActive
+                      ? "font-medium text-sidebar-primary"
+                      : "text-sidebar-item-foreground"
+                  }`}
+                >
                   <span className="truncate">{node.label}</span>
                 </SpecializedDocumentLink>
               </div>
@@ -2016,79 +2071,77 @@ function DocTreeItem({
                 className="flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm text-sidebar-item-foreground sm:min-h-0"
                 render={<button type="button" />}
               >
-                <ChevronRight
-                  className={`size-3.5 shrink-0 text-sidebar-foreground/30 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
-                />
-                <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
+                {open ? (
+                  <FolderOpen className="size-4 shrink-0 text-sidebar-primary/60" />
+                ) : (
+                  <Folder className="size-4 shrink-0 text-sidebar-primary/60" />
+                )}
                 <span className="truncate">{node.label}</span>
               </CollapsibleTrigger>
             )}
             <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
-              {canEdit && <SpaceNewMenu
+              <RowNewActions
                 spaceId={spaceId}
                 folder={node.path}
+                label={`New in ${node.label}`}
+                canCreate={canEdit}
                 onCreated={onNavigate}
-                trigger={
-                  <button
-                    type="button"
-                    aria-label={`New in ${node.label}`}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/35 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground has-[[data-popup-open]]:bg-sidebar-accent sm:size-6"
-                  >
-                    <Plus className="size-3.5 transition-transform duration-200 active:scale-90" />
-                  </button>
+              >
+                {(newItems) =>
+                  view === "html" ? (
+                    <WidgetTreeActions
+                      key={`${node.path}:${exactDocumentArchived ? "archived" : "active"}`}
+                      spaceId={spaceId}
+                      widgetId={node.path}
+                      documentName={node.label}
+                      archived={exactDocumentArchived}
+                      onRefresh={onWidgetRefresh}
+                      onRenameFolder={
+                        folderMoveUnavailable
+                          ? undefined
+                          : () => setRenameOpen(true)
+                      }
+                      folderArchived={folderArchived}
+                      onArchiveFolder={
+                        folderArchiveUnavailable ? undefined : handleArchiveFolder
+                      }
+                      onRestoreFolder={
+                        folderArchiveUnavailable ? undefined : handleRestoreFolder
+                      }
+                      onDeleteFolder={
+                        folderDeleteUnavailable
+                          ? undefined
+                          : () => setDeleteOpen(true)
+                      }
+                      newItems={newItems}
+                    />
+                  ) : (
+                    <DocContextMenuButton
+                      documentName={node.label}
+                      newItems={newItems}
+                      archived={archived}
+                      onRename={
+                        folderMoveUnavailable
+                          ? undefined
+                          : () => setRenameOpen(true)
+                      }
+                      onDelete={
+                        folderDeleteUnavailable
+                          ? undefined
+                          : () => setDeleteOpen(true)
+                      }
+                      onArchive={
+                        folderArchiveUnavailable ? undefined : handleArchiveFolder
+                      }
+                      onRestore={
+                        folderArchiveUnavailable ? undefined : handleRestoreFolder
+                      }
+                      onCopyMarkdown={docEntry ? handleCopyMarkdown : undefined}
+                      onDownload={docEntry ? handleDownload : undefined}
+                    />
+                  )
                 }
-              />}
-              {view === "html" ? (
-                <WidgetTreeActions
-                  key={`${node.path}:${exactDocumentArchived ? "archived" : "active"}`}
-                  spaceId={spaceId}
-                  widgetId={node.path}
-                  documentName={node.label}
-                  archived={exactDocumentArchived}
-                  onRefresh={onWidgetRefresh}
-                  onRenameFolder={
-                    folderMoveUnavailable
-                      ? undefined
-                      : () => setRenameOpen(true)
-                  }
-                  folderArchived={folderArchived}
-                  onArchiveFolder={
-                    folderArchiveUnavailable ? undefined : handleArchiveFolder
-                  }
-                  onRestoreFolder={
-                    folderArchiveUnavailable ? undefined : handleRestoreFolder
-                  }
-                  onDeleteFolder={
-                    folderDeleteUnavailable
-                      ? undefined
-                      : () => setDeleteOpen(true)
-                  }
-                />
-              ) : (
-                <DocContextMenuButton
-                  documentName={node.label}
-                  isFolder
-                  archived={archived}
-                  onRename={
-                    folderMoveUnavailable
-                      ? undefined
-                      : () => setRenameOpen(true)
-                  }
-                  onDelete={
-                    folderDeleteUnavailable
-                      ? undefined
-                      : () => setDeleteOpen(true)
-                  }
-                  onArchive={
-                    folderArchiveUnavailable ? undefined : handleArchiveFolder
-                  }
-                  onRestore={
-                    folderArchiveUnavailable ? undefined : handleRestoreFolder
-                  }
-                  onCopyMarkdown={docEntry ? handleCopyMarkdown : undefined}
-                  onDownload={docEntry ? handleDownload : undefined}
-                />
-              )}
+              </RowNewActions>
             </div>
           </div>
           <CollapsibleContent>
@@ -2155,10 +2208,9 @@ function DocTreeItem({
           />
           <span className="truncate">{node.label}</span>
         </Link>
-        <div className="shrink-0 pr-1 opacity-0 transition-opacity group-hover/doc:opacity-100 has-[[data-popup-open]]:opacity-100">
+        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
           <DocContextMenuButton
             documentName={node.label}
-            isFolder={false}
             archived={archived}
             onRename={() => setRenameOpen(true)}
             onDelete={() => setDeleteOpen(true)}
@@ -2195,47 +2247,12 @@ function DocTreeItem({
 
 // ── Main Sidebar Component ───────────────────────────────────
 
-const STORAGE_KEY = "worktable-active-group"
-
 type ShellSection = "home" | "threads" | "activity" | null
 
 function shellSection(pathname: string): ShellSection {
   if (pathname === "/") return "home"
   if (pathname.startsWith("/threads")) return "threads"
   return pathname === "/activity" ? "activity" : null
-}
-
-/**
- * Auto-switch group when navigating to a space in a different group.
- * Only triggers on path changes (not manual group switches) by tracking
- * the previous path. This prevents the effect from fighting the user
- * when they switch groups while viewing a doc in the old group. Its own
- * component, so following the route does not re-render the sidebar.
- */
-function FollowSpaceGroup({
-  spaces,
-  activeGroup,
-  onGroupChange,
-}: {
-  spaces: SpaceFile[] | undefined
-  activeGroup: string | null
-  onGroupChange: (group: string) => void
-}) {
-  const currentPath = useRouterState({ select: (s) => s.location.pathname })
-  const prevPathRef = useRef(currentPath)
-  useEffect(() => {
-    if (currentPath === prevPathRef.current) return
-    prevPathRef.current = currentPath
-    if (!spaces || !activeGroup) return
-    const match = currentPath.match(/^\/spaces\/([^/]+)/)
-    if (!match) return
-    const spaceId = match[1]
-    const space = spaces.find((s) => s.id === spaceId)
-    if (space?.group && space.group !== activeGroup) {
-      onGroupChange(space.group)
-    }
-  }, [currentPath, spaces, activeGroup, onGroupChange])
-  return null
 }
 
 function SidebarSearchPanel({
@@ -2258,8 +2275,14 @@ function SidebarSearchPanel({
   )
 }
 
+type GroupDialogState =
+  | { mode: "new"; spaceId?: string }
+  | { mode: "rename"; group: PersonalGroup }
+  | null
+
 export function AppSidebar() {
   const { data: spaces, isLoading: spacesLoading } = useSpaces()
+  const { navigation, update } = usePersonalNavigation()
   // Select only what the shell shows, so navigating between documents does
   // not re-render the sidebar: rows follow the route themselves.
   const section = useRouterState({
@@ -2272,51 +2295,36 @@ export function AppSidebar() {
   const { setOpen } = useSidebar()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [newSpaceOpen, setNewSpaceOpen] = useState(false)
+  const [newSpace, setNewSpace] = useState<{ groupId: string | null } | null>(
+    null
+  )
+  const [groupDialog, setGroupDialog] = useState<GroupDialogState>(null)
+  // Which sections are folded, remembered on this device.
+  const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({})
   // Kept across navigation so multiple results can be triaged; cleared only
   // via the input's clear button or Escape.
   const [searchQuery, setSearchQuery] = useState("")
   const searching = searchQuery.trim().length > 0
   const searchResultsRef = useRef<SidebarSearchResultsHandle>(null)
 
-  // Active group filter (persisted in localStorage)
-  const [activeGroup, setActiveGroup] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY)
-    } catch {
-      return null
-    }
-  })
-
-  const handleGroupChange = useCallback((group: string | null) => {
-    setActiveGroup(group)
-    try {
-      if (group) {
-        localStorage.setItem(STORAGE_KEY, group)
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // localStorage unavailable
-    }
-  }, [])
-
   // Every Space socket hears spaces_changed; keeping the first Space's socket
   // open lets the shared socket refresh the Spaces list when any Space changes.
   const firstSpaceId = spaces?.[0]?.id
   useSpaceEvents(firstSpaceId)
 
-  // Filter spaces by active group
-  const filteredSpaces = spaces
-    ? activeGroup
-      ? spaces.filter((s) => s.group === activeGroup)
-      : spaces
-    : undefined
+  const groupOf = (spaceId: string) =>
+    navigation?.spaceGroups[spaceId] ?? null
   const activeSpaces =
-    filteredSpaces?.filter((space) => !isSpaceArchived(space as SpaceFile)) ??
-    []
+    spaces?.filter((space) => !isSpaceArchived(space as SpaceFile)) ?? []
   const archivedSpaces =
-    filteredSpaces?.filter((space) => isSpaceArchived(space as SpaceFile)) ?? []
+    spaces?.filter((space) => isSpaceArchived(space as SpaceFile)) ?? []
+  const pinnedSpaces = navigation
+    ? navigation.pins.flatMap(
+        (id) => activeSpaces.find((space) => space.id === id) ?? []
+      )
+    : []
+  const isPinned = (space: SpaceView) => pinnedSpaces.includes(space)
+  const groups = navigation ? sortedGroups(navigation.groups) : []
   const [archivedSpacesOpen, setArchivedSpacesOpen] = useState(
     !!currentSpaceId &&
       archivedSpaces.some((space) => space.id === currentSpaceId)
@@ -2335,11 +2343,7 @@ export function AppSidebar() {
     if (isMobile) setOpen(false)
   }
 
-  const handleCreateSpace = async (data: {
-    name: string
-    icon?: string
-    group?: string
-  }) => {
+  const handleCreateSpace = async (data: { name: string; icon?: string }) => {
     try {
       const { spaceId } = await createSpace(data)
       await queryClient.invalidateQueries({
@@ -2348,9 +2352,98 @@ export function AppSidebar() {
       })
       navigate({ to: "/spaces/$spaceId", params: { spaceId } })
       if (isMobile) setOpen(false)
+      return spaceId
     } catch (err) {
+      toast.error("Failed to create space")
       console.error("Failed to create space:", err)
+      return undefined
     }
+  }
+
+  const openNewGroup = useStableCallback((spaceId?: string) =>
+    setGroupDialog({ mode: "new", spaceId })
+  )
+
+  const isSectionOpen = (key: string) =>
+    sectionOpen[key] ?? rememberedOpen("section", key) ?? true
+  const toggleSection = (key: string) => {
+    const next = !isSectionOpen(key)
+    rememberOpen("section", key, next)
+    setSectionOpen((state) => ({ ...state, [key]: next }))
+  }
+
+  const handleRemoveGroup = (group: PersonalGroup) => {
+    if (!navigation) return
+    const index = navigation.groups.findIndex(({ id }) => id === group.id)
+    const spaceIds = Object.entries(navigation.spaceGroups).flatMap(
+      ([spaceId, groupId]) => (groupId === group.id ? [spaceId] : [])
+    )
+    void update(removeGroup(group.id))
+    toast(`${group.name} removed`, {
+      action: {
+        label: "Undo",
+        onClick: () => void update(restoreGroup(group, index, spaceIds)),
+      },
+    })
+  }
+
+  const spaceRow = (space: SpaceView, key = space.id) => (
+    <SpaceSection
+      key={key}
+      space={space}
+      followRoute={!isPinned(space)}
+      onNewGroup={navigation ? openNewGroup : undefined}
+    />
+  )
+
+  const ungrouped = activeSpaces.filter((space) => {
+    const groupId = groupOf(space.id)
+    return !groupId || !groups.some((group) => group.id === groupId)
+  })
+
+  // Pinned, the person's groups and Spaces for the rest are one run of
+  // sections that look alike; with no groups it is Pinned and Spaces.
+  const renderSection = (
+    key: string,
+    label: string,
+    members: SpaceView[],
+    actions?: ReactNode,
+    options: { revealActions?: boolean; pinned?: boolean; emptyHint?: boolean } = {}
+  ) => {
+    const open = isSectionOpen(key)
+    return (
+      <div key={key}>
+        <SectionHeading
+          label={label}
+          count={members.length}
+          open={open}
+          onToggle={() => toggleSection(key)}
+          actions={actions}
+          revealActions={options.revealActions}
+        />
+        {open &&
+          (members.length > 0 ? (
+            <div className="space-y-0.5">
+              {members.map((space) =>
+                options.pinned ? (
+                  <SpaceSection
+                    key={`pinned:${space.id}`}
+                    space={space}
+                    copy="pinned"
+                    onNewGroup={navigation ? openNewGroup : undefined}
+                  />
+                ) : (
+                  spaceRow(space)
+                )
+              )}
+            </div>
+          ) : options.emptyHint === false ? null : (
+            <p className="px-3 py-1 text-[11px] text-sidebar-foreground/30">
+              No Spaces
+            </p>
+          ))}
+      </div>
+    )
   }
 
   return (
@@ -2364,32 +2457,10 @@ export function AppSidebar() {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <FollowSpaceGroup
-        spaces={spaces}
-        activeGroup={activeGroup}
-        onGroupChange={handleGroupChange}
-      />
-      {/* Header */}
-      <div
-        data-tauri-drag-region="deep"
-        data-worktable-sidebar-header
-        className="flex h-12 shrink-0 items-center px-3"
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <Link
-            to="/"
-            onClick={handleNavigateHome}
-            className="flex items-center gap-2.5 text-sm font-semibold tracking-tight transition-opacity duration-180 hover:opacity-80"
-          >
-            <WorktableAppIcon className="size-6" />
-            <span>Worktable</span>
-          </Link>
-          <ProvenanceChip />
-        </div>
-      </div>
+      <WorktableHeader />
 
-      {/* Workspace search (global scope, not group-filtered) */}
-      <div className="shrink-0 px-3 pt-3 pb-1">
+      {/* Workspace search (every Space, whatever the list shows) */}
+      <div className="shrink-0 px-3 pt-1 pb-1">
         <SidebarSearchInput
           query={searchQuery}
           onQueryChange={setSearchQuery}
@@ -2460,21 +2531,38 @@ export function AppSidebar() {
               <span>Activity</span>
             </Link>
 
-            {/* Section label */}
-            <div className="mb-2 flex items-center justify-between px-3 pr-1">
-              <p className="text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-                Spaces
-              </p>
-              <button
-                type="button"
-                className="flex size-6 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground"
-                aria-label="Create new space"
-                title="New space"
-                onClick={() => setNewSpaceOpen(true)}
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </div>
+            {pinnedSpaces.length > 0 &&
+              renderSection("pinned", "Pinned", pinnedSpaces, undefined, {
+                pinned: true,
+              })}
+            {groups.map((group) =>
+              renderSection(
+                `group:${group.id}`,
+                group.name,
+                activeSpaces.filter((space) => groupOf(space.id) === group.id),
+                <GroupActions
+                  name={group.name}
+                  onNewSpace={() => setNewSpace({ groupId: group.id })}
+                  onRename={() => setGroupDialog({ mode: "rename", group })}
+                  onRemove={() => handleRemoveGroup(group)}
+                />
+              )
+            )}
+            {renderSection(
+              "spaces",
+              "Spaces",
+              ungrouped,
+              <>
+                <NewSpaceOrGroupButton
+                  onNewSpace={() => setNewSpace({ groupId: null })}
+                  onNewGroup={navigation ? () => openNewGroup() : null}
+                />
+                {/* Keeps the + in the rows' + column, beside their menus. */}
+                {!isMobile && <span aria-hidden className="w-6" />}
+              </>,
+              // The list's own empty state covers a Worktable with no Spaces.
+              { revealActions: false, emptyHint: false }
+            )}
 
             {/* Spaces */}
             {spacesLoading && (
@@ -2488,10 +2576,10 @@ export function AppSidebar() {
               </div>
             )}
 
-            {filteredSpaces && filteredSpaces.length === 0 && (
+            {spaces && spaces.length === 0 && (
               <div className="px-2 py-6 text-center">
                 <p className="text-xs text-sidebar-foreground/40">
-                  {activeGroup ? "No spaces in this group" : "No spaces yet"}
+                  No spaces yet
                 </p>
                 <p className="mt-1 text-[11px] text-sidebar-foreground/30">
                   Ask your AI agent to create one
@@ -2499,15 +2587,8 @@ export function AppSidebar() {
               </div>
             )}
 
-            {filteredSpaces && filteredSpaces.length > 0 && (
+            {spaces && spaces.length > 0 && (
               <div className="space-y-2">
-                {activeSpaces.length > 0 && (
-                  <div className="space-y-0.5">
-                    {activeSpaces.map((space) => (
-                      <SpaceSection key={space.id} space={space} />
-                    ))}
-                  </div>
-                )}
 
                 {archivedSpaces.length > 0 && (
                   <Collapsible
@@ -2528,9 +2609,7 @@ export function AppSidebar() {
                     </div>
                     <CollapsibleContent>
                       <div className="space-y-0.5">
-                        {archivedSpaces.map((space) => (
-                          <SpaceSection key={space.id} space={space} />
-                        ))}
+                        {archivedSpaces.map((space) => spaceRow(space))}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -2541,32 +2620,43 @@ export function AppSidebar() {
         )}
       </ScrollFadeArea>
 
-      {/* Footer: group switcher takes the row, settings rides along as an
-          icon so the footer is one composed line instead of stacked rows. */}
       <div
-        className="flex shrink-0 items-center gap-1.5 px-3 py-2.5"
+        className="flex shrink-0 items-center justify-end gap-1.5 px-3 py-2.5"
         style={{
           paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="min-w-0 flex-1">
-          <GroupSwitcher
-            activeGroup={activeGroup}
-            onGroupChange={handleGroupChange}
-          />
-        </div>
         <SettingsButton />
       </div>
 
       {/* New space dialog */}
-      <DeferredMount active={newSpaceOpen}>
+      <DeferredMount active={newSpace !== null}>
         <NewSpaceDialog
-          open={newSpaceOpen}
-          onClose={() => setNewSpaceOpen(false)}
+          open={newSpace !== null}
+          onClose={() => setNewSpace(null)}
           onCreate={handleCreateSpace}
-          defaultGroup={activeGroup}
+          defaultGroup={newSpace?.groupId ?? null}
         />
       </DeferredMount>
+
+      {navigation && (
+        <DeferredMount active={groupDialog !== null}>
+        <GroupNameDialog
+          open={groupDialog !== null}
+          group={groupDialog?.mode === "rename" ? groupDialog.group : undefined}
+          groups={navigation.groups}
+          onClose={() => setGroupDialog(null)}
+          onSubmit={(name) => {
+            if (!groupDialog) return
+            void update(
+              groupDialog.mode === "rename"
+                ? renameGroup(groupDialog.group.id, name)
+                : addGroup(newGroupId(), name, groupDialog.spaceId)
+            )
+          }}
+        />
+        </DeferredMount>
+      )}
     </div>
   )
 }

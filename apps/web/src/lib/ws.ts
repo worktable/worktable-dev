@@ -23,6 +23,7 @@ import { patchDocumentRevision } from "./document-rows"
 import { recentQueryKeys } from "./lifetime"
 import { threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
+import { noteNavigationChanged } from "./personal-navigation"
 import { applyRecordChange } from "./record-cache"
 import { noteSocketStatus, type SocketStatus } from "./connection-status"
 import { traceTrigger } from "./trace"
@@ -721,6 +722,14 @@ function applyMessage(
 ): void {
   const queryClient = connection.queryClient
   if (!queryClient) return
+  // Only the person's own sockets hear this, on whichever stream they follow.
+  if (message.type === "navigation_changed") {
+    noteNavigationChanged(
+      queryClient,
+      (message.data as { revision?: unknown } | undefined)?.revision
+    )
+    return
+  }
   if (connection.stream === THREAD_STREAM) {
     if (THREAD_EVENTS.has(message.type)) {
       applyThreadEvent(queryClient, message, null)

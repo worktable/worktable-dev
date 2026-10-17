@@ -65,11 +65,7 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
   const [drawingSpaceId, setDrawingSpaceId] = useState<string | null>(null)
   const [spaceOpen, setSpaceOpen] = useState(false)
 
-  const handleCreateSpace = async (data: {
-    name: string
-    icon?: string
-    group?: string
-  }) => {
+  const handleCreateSpace = async (data: { name: string; icon?: string }) => {
     try {
       const { spaceId } = await createSpace(data)
       await queryClient.invalidateQueries({
@@ -77,9 +73,11 @@ export function HomeNewMenu({ spaces }: { spaces: SpaceFile[] }) {
         exact: true,
       })
       void navigate({ to: "/spaces/$spaceId", params: { spaceId } })
+      return spaceId
     } catch (err) {
       toast.error("Failed to create space")
       console.error("Failed to create space:", err)
+      return undefined
     }
   }
 

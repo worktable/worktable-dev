@@ -54,7 +54,7 @@ type Option =
   | { kind: "cli"; tab: string; client: ConnectorInstallableMcpClientId | null }
   | { kind: "chat"; tab: string; app: "claude" | "chatgpt" }
   | { kind: "always-on"; tab: string; agent: AlwaysOnAgent }
-  | { kind: "mcp"; tab: string; alwaysOn: boolean }
+  | { kind: "mcp"; tab: string }
 
 interface Row {
   id: RowId
@@ -80,12 +80,11 @@ const ON_DEMAND: Row[] = [
   {
     id: "chat",
     title: "Chat apps",
-    description: "Claude, ChatGPT and more, on desktop or the web",
+    description: "Claude and ChatGPT, on desktop or the web",
     platforms: ["claude", "chatgpt"],
     options: [
       { kind: "chat", tab: "Claude", app: "claude" },
       { kind: "chat", tab: "ChatGPT", app: "chatgpt" },
-      { kind: "mcp", tab: "Other", alwaysOn: false },
     ],
   },
 ]
@@ -93,16 +92,15 @@ const ON_DEMAND: Row[] = [
 const ALWAYS_ON: Row = {
   id: "always",
   title: "Always-on agents",
-  description: "OpenClaw, Hermes and more, on your server",
+  description: "OpenClaw and Hermes, on your server",
   platforms: ["openclaw", "hermes"],
   options: [
     { kind: "always-on", tab: "OpenClaw", agent: OPENCLAW },
     { kind: "always-on", tab: "Hermes", agent: HERMES },
-    { kind: "mcp", tab: "Other", alwaysOn: true },
   ],
 }
 
-const ANY_MCP: Option = { kind: "mcp", tab: "Other", alwaysOn: false }
+const ANY_MCP: Option = { kind: "mcp", tab: "Other" }
 
 /** Labels an app's credential carries, so the agent shows its platform. */
 const CHAT_LABELS = {
@@ -122,7 +120,7 @@ function agentName(option: Option): string {
     case "always-on":
       return option.agent.name
     case "mcp":
-      return option.alwaysOn ? "Always-on agent" : "My agent"
+      return "My agent"
   }
 }
 
@@ -148,16 +146,29 @@ function shellLines(lines: Array<string | null | false>): string {
   return lines.filter(Boolean).join("\n")
 }
 
-function CommandBlock({ value }: { value: string }) {
+function CommandBlock({
+  value,
+  pending = false,
+}: {
+  value: string
+  /** Shown in its final shape while the real value is on its way. */
+  pending?: boolean
+}) {
   const copy = useCopy()
   return (
     <div className="relative rounded-xl border border-border bg-surface-inset py-2.5 pr-20 pl-3">
-      <code className="block font-mono text-xs leading-5 break-all whitespace-pre-wrap text-foreground">
+      <code
+        className={cn(
+          "block font-mono text-xs leading-5 break-all whitespace-pre-wrap transition-colors duration-200",
+          pending ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
         {value}
       </code>
       <Button
         variant="outline"
         size="sm"
+        disabled={pending}
         className="absolute top-1.5 right-1.5 h-7 px-2.5 text-xs"
         onClick={() => void copy.copy(value)}
       >
@@ -240,7 +251,7 @@ function setupFor(
     name,
     harness: option.tab === "Other" ? "MCP agent" : option.tab,
     mode:
-      option.kind === "always-on" || (option.kind === "mcp" && option.alwaysOn)
+      option.kind === "always-on"
         ? "always-on"
         : "on-demand",
     verified: true,
@@ -250,9 +261,13 @@ function setupFor(
 }
 
 /** Local CLI agents and always-on agents connect with a pairing code. */
+/** Stands in for a pairing code until it arrives; codes look like ABCDE-FGHIJ. */
+const CODE_PLACEHOLDER = "·····-·····"
+
 function PairingPanel({
   option,
   rowId,
+  connection,
   connected,
   onConnected,
   pairings,
@@ -304,16 +319,20 @@ function PairingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, pairing?.id])
 
-  const command = !pairing
-    ? null
-    : option.kind === "always-on"
+  // The command keeps its shape while its code is made, so nothing jumps.
+  const origin =
+    pairing?.serverOrigin ??
+    new URL(desktopAgentConnectionDetails(connection).endpoint).origin
+  const code = pairing?.code ?? CODE_PLACEHOLDER
+  const command =
+    option.kind === "always-on"
       ? shellLines([
           option.agent.installCommand,
           option.agent.restartBeforeConnect && option.agent.restartCommand,
-          option.agent.localConnectCommand(pairing.serverOrigin, pairing.code),
+          option.agent.localConnectCommand(origin, code),
           !option.agent.restartBeforeConnect && option.agent.restartCommand,
         ])
-      : `curl -fsSL ${new URL("/connect.sh", pairing.mcpUrl).href} | sh -s -- ${pairing.code}${pairing.client ? ` --client ${pairing.client}` : ""}`
+      : `curl -fsSL ${pairing ? new URL("/connect.sh", pairing.mcpUrl).href : `${origin}/connect.sh`} | sh -s -- ${code}${option.kind === "cli" && option.client ? ` --client ${option.client}` : ""}`
   const ended = session?.status === "expired" || session?.status === "failed"
   const failure = session ? latestPairingFailure(session) : null
 
@@ -326,13 +345,7 @@ function PairingPanel({
             ? "Run this in your terminal. It adds Worktable to the coding agents it finds, such as OpenCode and VS Code."
             : "Run this in your terminal."}
       </Instruction>
-      {command ? (
-        <CommandBlock value={command} />
-      ) : create.isError || connected ? null : (
-        <div className="flex h-11 items-center rounded-xl border border-border bg-surface-inset px-3">
-          <Loader2 className="size-4 animate-spin text-muted-foreground" />
-        </div>
-      )}
+      <CommandBlock value={command} pending={!pairing} />
       {connected ? (
         <StatusLine connected>
           {connectedLine(connected.name, connected.mode === "always-on")}
@@ -365,9 +378,9 @@ function PairingPanel({
             Make a new command
           </button>
         </Callout>
-      ) : pairing ? (
+      ) : (
         <StatusLine waiting>Waiting for {waitingFor(option)}</StatusLine>
-      ) : null}
+      )}
     </>
   )
 }
@@ -442,9 +455,7 @@ function TokenPanel({
       ? option.app === "claude"
         ? "Download the Worktable extension for Claude Desktop and open it. Paste this address and the access token, then restart Claude."
         : "In ChatGPT desktop, open Settings, then MCP servers, and add Worktable with Streamable HTTP. Paste this address and the access token."
-      : option.kind === "mcp" && option.alwaysOn
-        ? "Add Worktable to your agent as an MCP server with this address and an access token. It shows up in Threads once it registers."
-        : "Add Worktable to your agent as an MCP server with this address and an access token."
+      : "Add Worktable to your agent as an MCP server with this address and an access token."
 
   return (
     <>
@@ -559,9 +570,7 @@ function SignInPanel({
           : "In ChatGPT on the web, open Settings, then Apps, and create an app. Paste this address and sign in."
         : option.kind === "always-on"
           ? `Run this on the machine where ${option.agent.name} runs${option.agent.cloudAuth === "oauth" ? ", then sign in" : ""}.`
-          : option.alwaysOn
-            ? "Connect it as an MCP server with this address and sign in. It shows up in Threads once it registers."
-            : "Add this address as a custom connector or MCP server, then sign in."
+          : "Add this address as a custom connector or MCP server, then sign in."
   const value =
     option.kind === "cli"
       ? cloudConnectorCommand(url, option.client ?? "auto")
@@ -692,7 +701,7 @@ function RowItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="pt-0.5 pr-3.5 pb-4 pl-3.5 sm:pl-[4.25rem]">
+        <div className="pt-2 pr-3.5 pb-5 pl-3.5 sm:pl-[4.25rem]">
           <Tabs
             value={tab}
             onValueChange={(value) => {
@@ -708,7 +717,7 @@ function RowItem({
               ))}
             </TabsList>
           </Tabs>
-          <div key={tab} className="animate-in fade-in duration-150 motion-reduce:animate-none">
+          <div key={tab}>
             <OptionPanel
               {...panel}
               option={option}
@@ -869,7 +878,7 @@ export function AgentConnectOptions({
         open={open === "mcp"}
         onOpenChange={(next) => openRow("mcp", next)}
       >
-        <CollapsibleTrigger className="mt-4 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <CollapsibleTrigger className="mt-5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           Using something else?{" "}
           <span className="text-primary-text">Connect any MCP agent</span>
         </CollapsibleTrigger>

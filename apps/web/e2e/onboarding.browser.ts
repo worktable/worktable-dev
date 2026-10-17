@@ -94,7 +94,9 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled()
 
   // Opening a row shows the first tab's command straight away.
-  await page.getByRole("button", { name: /Coding agents/ }).click()
+  await waitForPairingCreate(page, () =>
+    page.getByRole("button", { name: /Coding agents/ }).click()
+  )
   await expect(page.getByText(/--client claude-code$/)).toBeVisible()
   const cliPairing = await waitForPairingCreate(page, () =>
     page.getByRole("tab", { name: "Codex" }).click()
@@ -108,7 +110,9 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     timeout: 10_000,
   })
 
-  await page.getByRole("button", { name: /Always-on agents/ }).click()
+  await waitForPairingCreate(page, () =>
+    page.getByRole("button", { name: /Always-on agents/ }).click()
+  )
   await expect(page.getByText(/openclaw worktable connect /)).toBeVisible()
   const hermesPairing = await waitForPairingCreate(page, () =>
     page.getByRole("tab", { name: "Hermes" }).click()

@@ -310,12 +310,15 @@ export async function cloudLinkRequest(origin: string, body: unknown) {
       if (!response.ok) {
         const code = data["code"]
         const messages: Record<string, string> = {
-          BILLING_REQUIRED: "A Worktable Cloud subscription is required.",
-          WORKTABLE_REQUIRED: "Choose a Worktable subscription for this device.",
-          BILLING_PAYER_REQUIRED: "Choose a subscription you pay for.",
+          BILLING_REQUIRED: "This Worktable's plan needs paying for first.",
+          WORKTABLE_REQUIRED: "Choose a Worktable for this device.",
+          NO_WORKTABLE:
+            "Create a Worktable in Cloud first. Solo is free and links one device.",
+          BILLING_PAYER_REQUIRED: "Choose a Worktable you pay for.",
           BILLING_LOCKED:
             "Update your Worktable Cloud subscription to continue.",
-          INSTALLATION_LIMIT: "Unlink a device in Cloud to connect this one.",
+          INSTALLATION_LIMIT:
+            "This Worktable's devices are all linked. Unlink one in Cloud to connect this one.",
           LINK_ALREADY_USED:
             "Unlink this device before connecting another account.",
           LINKED_CAPACITY: "Worktable Link unavailable. Try again later.",

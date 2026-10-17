@@ -25,6 +25,7 @@ import { hasScope } from "../token-store.ts"
 import { isRecognitionColor } from "@worktable/types"
 import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
+import { setupKeyForPerson, setupSummary } from "../personal-setup.ts"
 import {
   appendWorkspaceImportChunk,
   createWorkspaceExportJob,
@@ -143,7 +144,7 @@ export async function workspaceSummary(
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
-    ...(person ? { person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
+    ...(person ? { person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)), setup: setupSummary(setupKeyForPerson(person)) } : {}),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",

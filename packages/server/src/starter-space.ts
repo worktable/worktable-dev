@@ -3,96 +3,94 @@ import { markdownToBlocks } from "./markdown.ts"
 
 export const STARTER_SPACE_ID = "welcome"
 
-export const EXAMPLE_PROMPTS_MARKDOWN = `# Example Prompts
+export const PROMPTS_TO_TRY_MARKDOWN = `# Prompts to Try
 
-Replace the brackets with your task. Ask the agent to check for existing work
-before creating more.
+Paste one into your agent and replace the brackets. Asking it to look for
+existing work first keeps your Spaces tidy.
 
 ## Start a project
 
-> Find existing work about **[goal]**. Reuse its Space or create one if needed.
-> Save a short document with the outcome, constraints, and open questions.
-> Show me where it is and revise it with my feedback.
+> In Worktable, find existing work about **[goal]**. Reuse its Space or make one.
+> Write a short brief with the outcome, constraints, and open questions, then
+> tell me where it is.
 
 ## Organize notes
 
-> Read **[notes]** and organize them into a document. Preserve decisions, sources,
-> and uncertainties. Remove repetition and explain what still needs checking.
+> Read **[notes]** and organize them into a doc in Worktable. Keep decisions,
+> sources, and uncertainties. Remove repetition and list what still needs checking.
 
-## Track items
+## Track work
 
-> Create a records collection for **[items]**. Use the fields needed to sort and
-> update them. Show me the table before proposing a custom view.
+> Turn **[list or checklist]** into Records in Worktable, with the fields we need
+> to sort and update them. Then build a board for them.
 
 ## Draw a plan
 
-> Create a drawing of **[layout or process]**. Label the important parts, inspect
-> the result, and leave room for us to revise it.
+> Make a drawing of **[layout or process]** in Worktable. Label the important
+> parts and leave room for us to revise it.
 
-## Review work
+## Ask for a review
 
-> Review **[document]** for **[accuracy or clarity]**. Attach annotations to the
-> passages that need attention. Make the requested revisions, then resolve only
-> the feedback you addressed.
+> Review **[doc]** for **[accuracy or clarity]**. Comment on the passages that
+> need attention, make the changes I agree to, then resolve what you addressed.
 
 ## Build a tool
 
-> Use **[supplied data]** to build an HTML doc that helps me **[task]**. Show the
-> assumptions, test its controls, and inspect the result before calling it done.
+> Use **[data]** to build an HTML doc in Worktable that helps me **[task]**.
+> Show your assumptions and test the controls before calling it done.
 
-Name the outcome, source material, and constraints. See [Ways to work](/ways-to-work)
-for the available formats.
+## Write a welcome
+
+> Read the Spaces in this Worktable and draft a Start Here doc for new teammates:
+> what each Space is for and where to begin. Then pin it in its Space.
+
+See [What agents can make](/what-agents-can-make) for the formats an agent can use.
 `
 
-const WAYS_TO_WORK_MARKDOWN = `# Ways to Work
+const WHAT_AGENTS_CAN_MAKE_MARKDOWN = `# What Agents Can Make
 
-Use Worktable to create and revise work yourself or with a connected agent.
-Choose the format that fits the task.
+Ask an agent for the result you want. It chooses the format, and you review
+the work here.
 
-| Task | Format |
+| Ask for | You get |
 | --- | --- |
-| Develop an idea, brief, decision, or research summary | Document |
-| Sketch a layout or explain a process visually | Drawing |
-| Track items that change independently | Records |
-| Build an interactive explanation, calculator, or custom view | HTML doc |
-| Leave feedback attached to a document | Annotation |
-| Continue a conversation with people or agents | Thread |
+| A brief, plan, decision, or research summary | Doc |
+| A layout, flow, or diagram | Drawing |
+| A list of things that change one by one | Records |
+| A calculator, dashboard, or custom view | HTML doc |
+| Feedback on a passage | Comment |
+| A conversation that keeps going | Thread |
 
-## Useful combinations
+## Combine them
 
 ### Plan a project
 
-Keep the brief and decisions in a document. Add a drawing when a layout or diagram
-helps. Track separate deliverables as records when you need to update them individually.
+Ask for a brief with the goals and open questions. Then ask for the deliverables
+as Records with a board. The Launch Plan example in this Space shows the result.
 
-### Compare options
+### Review together
 
-Save the sources and comparison in a document. Use annotations for questions and
-record the decision after reviewing the evidence.
+Select a passage and ask an agent what it thinks. Its comments appear beside the
+text, and it can make the changes you agree on.
 
-### Explore data
+### Keep an agent on call
 
-Ask an agent to build an HTML tool from supplied data. Connect it to records if
-those items need ongoing updates; an HTML doc can also stand on its own.
+Connect OpenClaw or Hermes in **Settings → Agents**, and it answers you in
+Threads while you're away.
 
-## First task
+## Next
 
-1. Choose something you need to make or revise.
-2. Create it yourself, or connect an agent in **Settings → Agents** and ask for help.
-3. Open the result, review it, and make one useful revision.
-4. Set its lifetime to durable if you want to keep it without automatic archiving.
-
-Try an [example prompt](/example-prompts), or read the
+Try one of the [prompts](/prompts-to-try), or read the
 [guides](https://docs.worktable.dev/) and [agent setup](https://docs.worktable.dev/agents/connections/).
 `
 
-const WAYS_TO_WORK_MERMAID = `flowchart LR
+const FORMAT_MERMAID = `flowchart LR
   A["What do you want?"] --> B{"What does it need?"}
   B --> C["Context and decisions<br/>Doc"]
   B --> H["Visual plans<br/>Drawing"]
   B --> D["Changing items<br/>Records"]
   B --> E["A focused interface<br/>HTML doc"]
-  B --> F["Feedback in place<br/>Annotation"]
+  B --> F["Feedback in place<br/>Comment"]
   B --> G["An ongoing conversation<br/>Thread"]`
 
 function blockText(block: Record<string, unknown>): string {
@@ -107,15 +105,15 @@ function blockText(block: Record<string, unknown>): string {
     .join("")
 }
 
-export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
-  const blocks = await markdownToBlocks(WAYS_TO_WORK_MARKDOWN)
+export async function buildWhatAgentsCanMakeBlocks(): Promise<unknown[]> {
+  const blocks = await markdownToBlocks(WHAT_AGENTS_CAN_MAKE_MARKDOWN)
   const combinationsIndex = blocks.findIndex(
     (block) =>
-      block["type"] === "heading" && blockText(block) === "Useful combinations"
+      block["type"] === "heading" && blockText(block) === "Combine them"
   )
   if (combinationsIndex < 0) {
     throw new Error(
-      "Starter Ways to Work document is missing its combinations section"
+      "Starter What Agents Can Make doc is missing its combinations section"
     )
   }
 
@@ -123,7 +121,7 @@ export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
     combinationsIndex,
     0,
     {
-      id: "ways-work-map-heading",
+      id: "format-map-heading",
       type: "heading",
       props: {
         backgroundColor: "default",
@@ -142,10 +140,10 @@ export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
       children: [],
     },
     {
-      id: "ways-work-map",
+      id: "format-map",
       type: "mermaid",
       props: {
-        data: WAYS_TO_WORK_MERMAID,
+        data: FORMAT_MERMAID,
         title: "Choose a format",
         collapsed: "false",
         locked: "false",
@@ -156,67 +154,70 @@ export async function buildWaysToWorkBlocks(): Promise<unknown[]> {
   return blocks
 }
 
+export const LAUNCH_PLAN_COLLECTION_ID = "launch-plan"
+
 export const STARTER_RECORD_FIELDS: RecordCollectionSchema["fields"] = {
-  title: { type: "string", name: "Guide item", required: true },
+  title: { type: "string", name: "Task", required: true },
   status: {
     type: "select",
     name: "Status",
     required: true,
-    values: ["Ready", "In progress", "Next", "Learned"],
+    values: ["To do", "In progress", "Done"],
   },
-  outcome: { type: "text", name: "User outcome", required: true },
+  owner: { type: "string", name: "Owner" },
+  detail: { type: "text", name: "Notes" },
   sequence: { type: "number", name: "Order", required: true },
 }
 
 export const STARTER_RECORDS = [
   {
-    id: "purpose-in-one-minute",
+    id: "launch-brief",
     data: {
-      outcome:
-        "A new user can choose documents, drawings, records, HTML docs, annotations, or threads.",
+      title: "Write the launch brief",
+      status: "Done",
+      owner: "Maya",
+      detail: "Goals, audience, and the one thing people should remember.",
       sequence: 1,
-      status: "Next",
-      title: "Explain the building blocks",
     },
   },
   {
-    id: "real-project-context",
+    id: "announcement",
     data: {
-      outcome:
-        "The starter space demonstrates work a user can adapt, not placeholder content.",
+      title: "Draft the announcement",
+      status: "In progress",
+      owner: "Jon",
+      detail: "A short post and an email, reviewed in comments.",
       sequence: 2,
-      status: "Ready",
-      title: "Show useful examples",
     },
   },
   {
-    id: "connected-record-view",
+    id: "pricing-page",
     data: {
-      outcome:
-        "The board and Records table stay connected to the same source of truth.",
+      title: "Update the pricing page",
+      status: "In progress",
+      owner: "Maya",
+      detail: "New plan names and the comparison table.",
       sequence: 3,
-      status: "Next",
-      title: "Connect Records to a custom view",
     },
   },
   {
-    id: "first-useful-action",
+    id: "demo",
     data: {
-      outcome:
-        "A new user can begin useful work with an agent from a concrete scenario.",
+      title: "Prepare the demo",
+      status: "To do",
+      owner: "Jon",
+      detail: "A five-minute walkthrough of the main flow.",
       sequence: 4,
-      status: "Next",
-      title: "Offer prompts worth trying",
     },
   },
   {
-    id: "learn-from-review",
+    id: "launch-day",
     data: {
-      outcome:
-        "Annotations turn review into visible changes to the starter experience.",
+      title: "Plan launch day",
+      status: "To do",
+      owner: "Maya",
+      detail: "Who posts what, and when.",
       sequence: 5,
-      status: "Learned",
-      title: "Improve the guide through feedback",
     },
   },
 ] as const
@@ -230,113 +231,13 @@ export interface StarterWidgetDefinition {
   permissions: WidgetFile["permissions"]
 }
 
-export const START_HERE_HTML = `<!doctype html>
+export const LAUNCH_BOARD_HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Welcome to Worktable</title>
-<style>
-:root{
-  color-scheme:light dark;
-  --ad-bg:#f6f6f5;
-  --ad-surface:#ffffff;
-  --ad-surface-2:#eeeeed;
-  --ad-text:#1b1b1d;
-  --ad-muted:#717178;
-  --ad-border:#d7d7da;
-  --ad-accent:#1769aa;
-  --ad-accent-soft:#e8f1f8;
-  --ad-danger:#b84c3a;
-  --ad-warning:#9a6827;
-  --ad-success:#3d735b;
-  --ad-radius:12px;
-  --ad-shadow:none;
-  --display:"Fraunces","Iowan Old Style","Palatino Linotype",Georgia,serif;
-  --sans:"General Sans","Avenir Next",Avenir,"Segoe UI",sans-serif;
-}
-html[data-theme="dark"]{
-  --ad-bg:#111113;
-  --ad-surface:#19191c;
-  --ad-surface-2:#242428;
-  --ad-text:#f0f0f1;
-  --ad-muted:#9c9ca5;
-  --ad-border:#34343a;
-  --ad-accent:#69aee6;
-  --ad-accent-soft:#172536;
-  --ad-danger:#ed8b78;
-  --ad-warning:#d7aa6a;
-  --ad-success:#83bea1;
-}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--ad-bg)}
-body{color:var(--ad-text);font-family:var(--sans);font-size:16px;font-weight:440;letter-spacing:.01em;line-height:1.55}
-.page{width:min(1060px,calc(100% - 48px));margin:0 auto;padding:clamp(72px,11vh,120px) 0 70px}
-.opening{max-width:840px;margin-bottom:clamp(72px,10vh,112px)}
-h1{margin:0;font-family:var(--display);font-size:clamp(56px,7.4vw,86px);font-weight:400;letter-spacing:-.025em;line-height:.98}
-.opening p{max-width:690px;margin:28px 0 0;color:var(--ad-muted);font-size:clamp(18px,2vw,21px);font-weight:420;line-height:1.6}
-.journey{margin:0;padding:0;list-style:none;border-top:1px solid var(--ad-border)}
-.step{display:grid;grid-template-columns:72px minmax(0,1fr) 238px;gap:26px;align-items:center;min-height:174px;padding:30px 0;border-bottom:1px solid var(--ad-border)}
-.number{align-self:start;padding-top:7px;color:var(--ad-accent);font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;font-weight:500}
-.step h2{margin:0;font-size:clamp(24px,3vw,34px);font-weight:480;letter-spacing:-.014em;line-height:1.18}
-.step p{max-width:590px;margin:11px 0 0;color:var(--ad-muted);font-size:15px;font-weight:420}
-.where{justify-self:end;width:100%;padding-left:28px;color:var(--ad-muted);font-size:13px}
-.where span{display:block;margin-bottom:4px;color:var(--ad-text);font-size:14px;font-weight:480}
-@media(max-width:700px){
-  .page{width:calc(100% - 30px);padding:68px 0 48px}
-  .opening{margin-bottom:68px}
-  h1{font-size:clamp(52px,15vw,70px)}
-  .opening p{font-size:17px}
-  .step{grid-template-columns:40px 1fr;gap:14px;min-height:0;padding:34px 0}
-  .number{padding-top:5px}
-  .where{grid-column:2;justify-self:start;width:auto;margin-top:15px;padding-left:0}
-}
-</style>
-</head>
-<body>
-<main class="page">
-  <section class="opening">
-    <h1>Welcome to Worktable</h1>
-    <p>Explore this space for a quick look at what you and your agents can create.</p>
-  </section>
-  <ol class="journey">
-    <li class="step">
-      <span class="number">01</span>
-      <div>
-        <h2>Choose a format</h2>
-        <p>Choose documents, drawings, records, HTML docs, annotations, or threads.</p>
-      </div>
-      <div class="where"><span>Ways to Work</span>Documents</div>
-    </li>
-    <li class="step">
-      <span class="number">02</span>
-      <div>
-        <h2>Try a task</h2>
-        <p>Adapt a prompt to something you need to create or revise.</p>
-      </div>
-      <div class="where"><span>Example Prompts</span>Documents</div>
-    </li>
-    <li class="step">
-      <span class="number">03</span>
-      <div>
-        <h2>Explore the board</h2>
-        <p>Update a sample record here, then open the same item in the table.</p>
-      </div>
-      <div class="where"><span>Onboarding Board</span>HTML docs</div>
-    </li>
-  </ol>
-</main>
-</body>
-</html>`
-
-export const ONBOARDING_BOARD_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Onboarding Board</title>
+<title>Launch Plan</title>
 <style>
 :root{
   color-scheme:light dark;
@@ -382,7 +283,7 @@ h1{margin:0;font-family:var(--display);font-size:clamp(48px,5.8vw,72px);font-wei
 .board-viewport[data-fade="right"]{-webkit-mask-image:linear-gradient(to right,#000 0,#000 calc(100% - 34px),transparent 100%);mask-image:linear-gradient(to right,#000 0,#000 calc(100% - 34px),transparent 100%)}
 .board-viewport[data-fade="left"]{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 34px,#000 100%);mask-image:linear-gradient(to right,transparent 0,#000 34px,#000 100%)}
 .board-viewport[data-fade="both"]{-webkit-mask-image:linear-gradient(to right,transparent 0,#000 34px,#000 calc(100% - 34px),transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 34px,#000 calc(100% - 34px),transparent 100%)}
-.board{min-width:1060px;display:grid;grid-template-columns:repeat(4,minmax(235px,1fr));gap:24px}
+.board{min-width:780px;display:grid;grid-template-columns:repeat(3,minmax(235px,1fr));gap:24px}
 .column{min-width:0;padding:0 1px}
 .column-head{display:flex;align-items:center;justify-content:space-between;padding:0 12px 13px;border-bottom:1px solid var(--ad-border)}
 .column h2{margin:0;font-size:14px;font-weight:500}
@@ -416,7 +317,7 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
   .header{margin-bottom:30px}
   h1{font-size:53px}
   .header p{margin-top:13px}
-  .board{min-width:1000px}
+  .board{min-width:760px}
   .agent-note{margin-top:24px}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -425,22 +326,22 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
 <body>
 <main class="shell">
   <header class="header">
-    <h1>Onboarding Board</h1>
-    <p>Drag a handle to update status. Records stay in sync.</p>
+    <h1>Launch Plan</h1>
+    <p>An example board over Records, the kind an agent can build for you. Drag a card to change its status.</p>
   </header>
   <div class="board-viewport" id="viewport">
-    <section class="board" id="board" aria-label="Onboarding work grouped by status">
+    <section class="board" id="board" aria-label="Launch tasks grouped by status">
       <div class="loading">Loading records…</div>
     </section>
   </div>
   <footer class="agent-note">
-    <p><span>A custom view of sample records.</span> Ask an agent to build a view for your task.</p>
+    <p><span>Try it with your own work.</span> Ask an agent to turn a checklist into Records with a board.</p>
   </footer>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>
 (function(){
-  var statuses=["Ready","In progress","Next","Learned"];
+  var statuses=["To do","In progress","Done"];
   var state={records:[],saving:new Set(),dragging:null};
   var board=document.getElementById("board");
   var viewport=document.getElementById("viewport");
@@ -461,12 +362,12 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
     if(!record||dataOf(record).status===status||state.saving.has(recordId))return;
     state.saving.add(recordId);render();
     try{
-      await worktable.records.update("onboarding-work",recordId,{status:status});
+      await worktable.records.update("launch-plan",recordId,{status:status});
       state.records=state.records.map(function(item){return idOf(item)===recordId?Object.assign({},item,{data:Object.assign({},dataOf(item),{status:status})}):item});
       say("Status updated");
     }catch(error){
       say("Could not update status");
-      if(worktable.ui&&worktable.ui.notify)worktable.ui.notify("Could not update onboarding work",{type:"error"});
+      if(worktable.ui&&worktable.ui.notify)worktable.ui.notify("Could not update the launch plan",{type:"error"});
     }finally{
       state.saving.delete(recordId);state.dragging=null;render();
     }
@@ -496,7 +397,7 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
       document.querySelectorAll(".column").forEach(function(column){column.classList.remove("dragover")});
     });
     top.append(grip);card.append(top);
-    card.append(el("p","",data.outcome||""));
+    card.append(el("p","",[data.owner,data.detail].filter(Boolean).join(" · ")));
     var wrap=el("div","select-wrap");
     var select=el("select","");
     select.setAttribute("aria-label","Status for "+data.title);
@@ -532,9 +433,9 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
   var recordsQuery={orderBy:"sequence",order:"asc",limit:20};
   async function loadBoard(){
     try{
-      var records=await worktable.records.query("onboarding-work",recordsQuery);
+      var records=await worktable.records.query("launch-plan",recordsQuery);
       state.records=Array.isArray(records)?records:[];render();
-      worktable.records.subscribe("onboarding-work",recordsQuery,function(nextRecords){state.records=Array.isArray(nextRecords)?nextRecords:[];render()});
+      worktable.records.subscribe("launch-plan",recordsQuery,function(nextRecords){state.records=Array.isArray(nextRecords)?nextRecords:[];render()});
     }catch(error){board.innerHTML='<div class="loading">Could not load records.</div>'}
   }
   loadBoard();
@@ -545,35 +446,18 @@ select:hover{border-color:color-mix(in srgb,var(--ad-border) 45%,var(--ad-text))
 
 export const STARTER_WIDGETS: readonly StarterWidgetDefinition[] = [
   {
-    id: "onboarding-board",
-    name: "Onboarding Board",
-    description: "A draggable Kanban view over the five Welcome Guide records.",
-    html: ONBOARDING_BOARD_HTML,
+    id: "launch-board",
+    name: "Example: Launch Plan",
+    description: "A board an agent built over the Launch Plan Records.",
+    html: LAUNCH_BOARD_HTML,
     metadata: {
-      journeyOrder: 3,
       purpose: "record-backed-project-board",
     },
     permissions: {
       network: false,
       records: {
-        "onboarding-work": { read: true, update: true },
+        [LAUNCH_PLAN_COLLECTION_ID]: { read: true, update: true },
       },
-      state: { read: false, write: false },
-    },
-  },
-  {
-    id: "welcome",
-    name: "Start Here",
-    description:
-      "Choose a format, try a prompt, and explore a sample board.",
-    html: START_HERE_HTML,
-    metadata: {
-      journeyOrder: 1,
-      purpose: "guided-welcome",
-    },
-    permissions: {
-      network: false,
-      records: {},
       state: { read: false, write: false },
     },
   },

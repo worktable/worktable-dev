@@ -1,3 +1,4 @@
+import { initialSpaceVisibility } from "./getting-started.ts"
 import {
   beginTeamInitialization,
   finishTeamInitialization,
@@ -125,8 +126,8 @@ export async function resolveVerifiedCloudMember(
               ).run(ownerMemberId, worktableId, userId, actorId, Date.now())
               for (const space of spaces)
                 db.query(
-                  "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, 'restricted')"
-                ).run(worktableId, space.id)
+                  "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, ?)"
+                ).run(worktableId, space.id, initialSpaceVisibility(space))
               writeTeamMarker(worktableId)
               initializationHookForTests?.()
             })()

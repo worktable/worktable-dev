@@ -25,18 +25,20 @@ import { createHtmlDocument } from "./html-document-create.ts"
 import { readDocumentInventory } from "./document-inventory.ts"
 import { readDocumentPortableStateV2, writeDocumentPortableStateV2 } from "./document-data-v2.ts"
 import {
-  buildWaysToWorkBlocks,
-  EXAMPLE_PROMPTS_MARKDOWN,
+  buildWhatAgentsCanMakeBlocks,
+  LAUNCH_PLAN_COLLECTION_ID,
+  PROMPTS_TO_TRY_MARKDOWN,
   STARTER_RECORD_FIELDS,
   STARTER_RECORDS,
   STARTER_SPACE_ID,
   STARTER_WIDGETS,
 } from "./starter-space.ts"
+import { GETTING_STARTED_SETTING } from "@worktable/types/setup"
 
-// A clean install must not open onto an empty void. The welcome space itself
-// is the onboarding: two purposeful documents, a live Records collection,
-// and two HTML docs that show what the product and an agent can create.
-// Existing workspaces are never modified.
+// A clean install must not open onto an empty void. It starts with Getting
+// Started: each person's checklist is its Space Home, beside two guides and
+// an example board over live Records. Existing workspaces are never modified,
+// and an older Welcome Space keeps its own content.
 
 const STARTER_SEED_VERSION = 1
 const STARTER_SEED_STATUS_KEY = "starterSeedStatus"
@@ -56,16 +58,16 @@ function makeStarterSpace(): SpaceFile {
     type: "worktable.space",
     version: 1,
     id: STARTER_SPACE_ID,
-    name: "Welcome to Worktable",
-    description:
-      "Formats, example prompts, and a board connected to sample records.",
-    icon: "hand",
+    name: "Getting Started",
+    description: "Your first steps, with guides and prompts to try.",
+    icon: "rocket",
     createdAt: now,
     updatedAt: now,
     createdBy: "worktable",
     settings: {
       docSort: "custom",
-      docOrder: ["ways-to-work", "example-prompts"],
+      docOrder: ["what-agents-can-make", "prompts-to-try"],
+      [GETTING_STARTED_SETTING]: true,
       [STARTER_SEED_VERSION_KEY]: STARTER_SEED_VERSION,
       [STARTER_SEED_STATUS_KEY]: "complete",
     },
@@ -83,7 +85,7 @@ function assertWrite(
 
 async function discardStarterPreparation(preparedId: string): Promise<void> {
   await discardPreparedSpace(preparedId)
-  await reconcileDiscardedRecordCollection(preparedId, "onboarding-work")
+  await reconcileDiscardedRecordCollection(preparedId, LAUNCH_PLAN_COLLECTION_ID)
 }
 
 // Portable state binds its digest to the Space identity. Prepare that state
@@ -141,45 +143,41 @@ export async function seedStarterWorkspace(): Promise<boolean> {
     preparedDirectoryCreated = true
     await markPreparedSpace(preparedId)
 
-    const waysWrite = await writeDoc(
+    const guideWrite = await writeDoc(
       preparedId,
-      "ways-to-work",
-      await buildWaysToWorkBlocks(),
+      "what-agents-can-make",
+      await buildWhatAgentsCanMakeBlocks(),
       { updatedBy: "worktable", source: "seed", recordVersion: false, managedIdentity: true }
     )
-    if (!waysWrite.ok) {
-      throw new Error(waysWrite.error ?? "Ways to Work seed failed")
+    if (!guideWrite.ok) {
+      throw new Error(guideWrite.error ?? "What Agents Can Make seed failed")
     }
 
     const promptsWrite = await writeDoc(
       preparedId,
-      "example-prompts",
-      EXAMPLE_PROMPTS_MARKDOWN,
+      "prompts-to-try",
+      PROMPTS_TO_TRY_MARKDOWN,
       { updatedBy: "worktable", source: "seed", recordVersion: false, managedIdentity: true }
     )
     if (!promptsWrite.ok) {
-      throw new Error(promptsWrite.error ?? "Example Prompts seed failed")
+      throw new Error(promptsWrite.error ?? "Prompts to Try seed failed")
     }
 
     const schema = buildRecordCollectionSchema({
-      id: "onboarding-work",
-      name: "Welcome Guide",
-      description:
-        "The small set of independently changing improvements that shape the first-use guide.",
+      id: LAUNCH_PLAN_COLLECTION_ID,
+      name: "Launch Plan",
+      description: "An example plan, tracked as Records with a board.",
       fields: STARTER_RECORD_FIELDS,
       createdBy: "worktable",
-      metadata: {
-        note: "Each item represents one part of the starter experience that can be reviewed and improved independently.",
-      },
     })
     assertWrite(
       await writeRecordCollectionSchema(preparedId, schema),
-      "Welcome Guide schema seed failed"
+      "Launch Plan schema seed failed"
     )
 
     for (const record of STARTER_RECORDS) {
       assertWrite(
-        await createRecord(preparedId, "onboarding-work", {
+        await createRecord(preparedId, LAUNCH_PLAN_COLLECTION_ID, {
           id: record.id,
           data: { ...record.data },
           createdBy: "worktable",
@@ -188,8 +186,8 @@ export async function seedStarterWorkspace(): Promise<boolean> {
       )
     }
 
-    // Start Here remains last among the authored payloads so every dependency
-    // it points to has already landed when the completion marker is written.
+    // The board comes after its Records, so it never opens onto a missing
+    // collection.
     for (const definition of STARTER_WIDGETS) {
       const result = await createHtmlDocument({
         spaceId: preparedId,
@@ -233,7 +231,7 @@ export async function seedStarterWorkspace(): Promise<boolean> {
     await reconcilePublishedRecordCollection(
       preparedId,
       STARTER_SPACE_ID,
-      "onboarding-work"
+      LAUNCH_PLAN_COLLECTION_ID
     )
 
     return true
@@ -259,19 +257,15 @@ export async function starterWorkspaceReady(): Promise<boolean> {
     return false
   }
 
-  const [docs, widgets, boardHtml, welcomeHtml] = await Promise.all([
+  const [docs, widgets, boardHtml] = await Promise.all([
     listDocs(STARTER_SPACE_ID),
     listWidgets(STARTER_SPACE_ID),
-    readWidgetHtml(STARTER_SPACE_ID, "onboarding-board"),
-    readWidgetHtml(STARTER_SPACE_ID, "welcome"),
+    readWidgetHtml(STARTER_SPACE_ID, "launch-board"),
   ])
-  const widgetIds = new Set(widgets.map((widget) => widget.id))
   return (
-    docs.includes("ways-to-work") &&
-    docs.includes("example-prompts") &&
-    widgetIds.has("onboarding-board") &&
-    widgetIds.has("welcome") &&
-    boardHtml.data != null &&
-    welcomeHtml.data != null
+    docs.includes("what-agents-can-make") &&
+    docs.includes("prompts-to-try") &&
+    widgets.some((widget) => widget.id === "launch-board") &&
+    boardHtml.data != null
   )
 }

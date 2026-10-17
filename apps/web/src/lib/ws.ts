@@ -24,6 +24,7 @@ import { recentQueryKeys } from "./lifetime"
 import { threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
 import { noteNavigationChanged } from "./personal-navigation"
+import { noteSetupChanged } from "./setup"
 import { applyRecordChange } from "./record-cache"
 import { noteSocketStatus, type SocketStatus } from "./connection-status"
 import { traceTrigger } from "./trace"
@@ -736,6 +737,10 @@ function applyMessage(
   const queryClient = connection.queryClient
   if (!queryClient) return
   // Only the person's own sockets hear this, on whichever stream they follow.
+  if (message.type === "setup_changed") {
+    noteSetupChanged(queryClient)
+    return
+  }
   if (message.type === "navigation_changed") {
     noteNavigationChanged(
       queryClient,

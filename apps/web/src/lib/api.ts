@@ -8,6 +8,7 @@ import type {
   SpaceFile,
   WithContentRevision,
 } from "@worktable/types"
+import type { PersonalSetup } from "@worktable/types/setup"
 import { fetchJSON, fetchVoid, type ReadOptions } from "./http.ts"
 
 export type SpaceView = SpaceFile & {
@@ -32,6 +33,8 @@ export interface WorkspaceInfo {
    * absent for agents and anyone who is not a member or the owner.
    */
   navigation?: PersonalNavigation | null
+  /** The person's own first steps; absent with `navigation`. */
+  setup?: PersonalSetup
   /** Who is using this Worktable; absent with `navigation`. */
   person?: {
     /** Their participant id, which Threads also show. */

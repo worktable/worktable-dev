@@ -14,7 +14,11 @@ import type { WorkspaceInfo } from "@/lib/api"
 import { updateWorkspace } from "@/lib/api"
 import { getCurrentUser, getUserProfile, updateUserProfile } from "@/lib/profile"
 import { queryKeys, useSpaces } from "@/lib/queries"
-import { gettingStartedSpace, usePersonalSetup } from "@/lib/setup"
+import {
+  gettingStartedSpace,
+  noteSetupChanged,
+  usePersonalSetup,
+} from "@/lib/setup"
 import { activateTeams } from "@/lib/team-api"
 import { ConnectAgentStep } from "./connect-agent"
 import { EmailChips, InviteResult } from "./invite-people"
@@ -348,6 +352,9 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
         setup: queryClient.getQueryData<WorkspaceInfo>(queryKeys.workspace)
           ?.setup,
       })
+      // Setup has no socket; read the progress it made, such as the agent
+      // that connected, once.
+      noteSetupChanged(queryClient)
       const start = gettingStartedSpace(spaces)
       void (start
         ? navigate({ to: "/spaces/$spaceId", params: { spaceId: start.id } })

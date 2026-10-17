@@ -620,7 +620,9 @@ export function ConnectStep({
                 className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none"
                 onClick={() => choose(item.id)}
               >
-                <LogoStack platforms={item.platforms} className="size-8" />
+                <span className="flex w-14 shrink-0">
+                  <LogoStack platforms={item.platforms} className="size-8" />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-foreground">
                     {item.title}

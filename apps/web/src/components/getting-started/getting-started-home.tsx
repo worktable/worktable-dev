@@ -216,7 +216,7 @@ function useWaitingInvitations(enabled: boolean): string | null {
     (invitation) => invitation.status === "pending" && !invitation.expired
   )
   if (!waiting.length) return null
-  const names = waiting.map((invitation) => invitation.email.split("@")[0])
+  const names = waiting.map((invitation) => invitation.email)
   const list =
     names.length === 1
       ? names[0]

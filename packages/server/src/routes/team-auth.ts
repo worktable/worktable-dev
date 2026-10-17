@@ -13,7 +13,13 @@ import { withCrossProcessLock } from "../cross-process-lock.ts"
 import { sameOriginRequestAllowed } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
-import { invitationLandingSpace } from "../team-invitations.ts"
+import {
+  invitationDetails,
+  invitationLandingSpace,
+  unavailableInvitation,
+} from "../team-invitations.ts"
+import { ensureWorkspaceManifest } from "../workspace.ts"
+import { storedSpaceName } from "../getting-started.ts"
 
 export const teamAuthRouter = new Hono()
 const enrollment = z
@@ -98,6 +104,32 @@ for (const endpoint of [
     return response
   })
 }
+// What a held invitation is for, so the join page can name the Worktable,
+// the inviter and the starting Space, or say why the link no longer works.
+// The link itself is the credential here, so nothing more is revealed than
+// the link already grants.
+teamAuthRouter.get("/invitations/:invitationId", (c) => {
+  const invitationId = c.req.param("invitationId")
+  const invitation = pendingInvitation(invitationId)
+  if (!invitation) {
+    const row = requireTeamDatabase()
+      .query<{ status: string; expiresAt: number | string }, [string, string]>(
+        "SELECT status, expiresAt FROM invitation WHERE id = ? AND organizationId = ?"
+      )
+      .get(invitationId, currentTeamWorktable()!.organizationId)
+    const reason = unavailableInvitation(row ?? null) ?? unavailableInvitation(null)!
+    return c.json({ error: reason.message, code: reason.code }, 410)
+  }
+  const spaceId = invitationDetails(invitationId)?.startSpaceId
+  return c.json({
+    worktableName: ensureWorkspaceManifest().name,
+    inviterName: findTeamMember(invitation.inviterId)?.name ?? null,
+    spaceName: spaceId ? storedSpaceName(spaceId) : null,
+    email: invitation.email,
+    expiresAt: expiresAtMs(invitation.expiresAt),
+  })
+})
+
 teamAuthRouter.get("/get-session", async (c) => {
   const auth = await getTeamAuth(
     resolveWorkspaceOriginForRequest(c.req.raw).origin

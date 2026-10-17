@@ -35,6 +35,7 @@ import {
   type InvitationEmailStatus,
 } from "@/lib/team-api"
 import { createThread, listThreadParticipants } from "@/lib/threads-api"
+import { humanizeSegment } from "@/lib/tree"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { ConnectStep } from "./connect-step"
 import { StepHeading, Waiting } from "./onboarding-shared"
@@ -155,7 +156,8 @@ export function spaceNameFrom(task: string): string {
 
 /** What the agent is asked to do with the person's answer. */
 export function firstTaskPrompt(task: string): string {
-  return `In Worktable, make a Space for this and write a first brief in it: ${task.trim()}. Cover the goal, the plan so far, and what's still undecided.`
+  const work = task.trim().replace(/[.\s]+$/, "")
+  return `In Worktable, make a Space for what I'm working on and write a first brief in it. What I'm working on: ${work}.`
 }
 
 /** The command line for a CLI agent, where one starts with a prompt. */
@@ -538,8 +540,7 @@ function ProgressLine({
 }
 
 function docTitle(path: string): string {
-  const name = (path.split("/").pop() ?? path).replace(/[-_]+/g, " ").trim()
-  return name.charAt(0).toUpperCase() + name.slice(1)
+  return humanizeSegment(path.split("/").pop() ?? path)
 }
 
 /** The agent's progress during setup, from what the server saw it make. */

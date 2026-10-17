@@ -196,7 +196,7 @@ function PinnedSection({
                 {spaceDetail?.space.permissions?.edit !== false && <Button
                   size="xs"
                   variant="ghost"
-                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                  className="relative -my-1 -mr-2 shrink-0 text-muted-foreground focus-visible:opacity-100 sm:absolute sm:top-1/2 sm:right-3 sm:my-0 sm:mr-0 sm:-translate-y-1/2 sm:bg-card sm:opacity-0 sm:group-hover:opacity-100"
                   onClick={() => void unpin(pin.path)}
                 >
                   Unpin

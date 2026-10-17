@@ -10,7 +10,7 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("a person's groups, pins and focus are their own and stay after a reload", async ({
+test("a person's groups and pins are their own, and the sidebar stays as they left it", async ({
   page,
 }) => {
   for (const space of [
@@ -23,11 +23,11 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
   }
   await page.goto(new URL("/", harness.webUrl).href)
   const sidebar = page.locator("[data-worktable-sidebar-root]")
+  const named = (name: string) =>
+    sidebar.getByRole("button", { name, exact: true })
 
   // They start from the groups Spaces already name.
-  await expect(
-    sidebar.getByRole("button", { name: "Research", exact: true })
-  ).toBeVisible({ timeout: 30_000 })
+  await expect(named("Research")).toBeVisible({ timeout: 30_000 })
 
   const saved = () =>
     page.waitForResponse(
@@ -37,37 +37,37 @@ test("a person's groups, pins and focus are their own and stay after a reload", 
         response.ok()
     )
 
-  await sidebar.getByRole("link", { name: "Beta" }).hover()
+  await named("Beta").hover()
   const pinned = saved()
   await sidebar.getByRole("button", { name: "Pin Beta" }).click()
   await pinned
   await expect(sidebar.getByText("Pinned", { exact: true })).toBeVisible()
 
-  await sidebar.getByRole("link", { name: "Beta" }).last().hover()
-  await sidebar
-    .locator(".group\\/space", { has: page.getByRole("link", { name: "Beta" }) })
+  const listed = sidebar
+    .locator(".group\\/space", { has: named("Beta") })
     .last()
-    .locator("button[aria-haspopup='menu']")
-    .last()
-    .click()
+  await listed.hover()
+  await listed.locator("button[aria-haspopup='menu']").last().click()
   await page.getByRole("menuitem", { name: "Change Group" }).hover()
   await page.getByRole("menuitem", { name: "New Group" }).click()
   await page.getByLabel("Name").fill("Clients")
   const grouped = saved()
   await page.getByRole("button", { name: "Create" }).click()
   await grouped
-  await expect(sidebar.getByRole("button", { name: "Clients", exact: true })).toBeVisible()
+  await expect(named("Clients")).toBeVisible()
 
-  await sidebar.getByRole("button", { name: "Showing all Spaces" }).click()
-  await page.getByRole("menuitem", { name: "Clients" }).click()
-  await expect(sidebar.getByRole("link", { name: "Alpha" })).toHaveCount(0)
+  // What is open stays on this device: a folded section and an open Space.
+  await named("Research").click()
+  await expect(named("Alpha")).toHaveCount(0)
+  await named("Beta").last().click()
+  await expect(named("Beta").last()).toHaveAttribute("aria-expanded", "true")
+  await expect(sidebar.getByRole("link", { name: "Space Home" })).toBeVisible()
 
   await page.reload()
-  await expect(
-    sidebar.getByRole("button", { name: "Showing Clients" })
-  ).toBeVisible({ timeout: 30_000 })
-  await expect(sidebar.getByRole("link", { name: "Beta" })).toHaveCount(2)
-  await expect(sidebar.getByRole("link", { name: "Alpha" })).toHaveCount(0)
+  await expect(named("Clients")).toBeVisible({ timeout: 30_000 })
+  await expect(named("Beta")).toHaveCount(2)
+  await expect(named("Beta").last()).toHaveAttribute("aria-expanded", "true")
+  await expect(named("Alpha")).toHaveCount(0)
 
   // None of it changed the Spaces themselves.
   const spaces = (await (

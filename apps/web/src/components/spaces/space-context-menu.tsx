@@ -1,5 +1,5 @@
 import { browserTeamMemberId } from "@/lib/team-context"
-import { lazy, Suspense, useState, useEffect } from "react"
+import { lazy, Suspense, useState, useEffect, type ReactNode } from "react"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -46,6 +46,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import type { PersonalGroup } from "@worktable/types"
 import { sortedGroups } from "@/lib/personal-navigation"
 import type { DocSortMode } from "@/lib/tree"
+import { NewSubmenu } from "@/components/spaces/space-new-menu"
 
 const SpaceAccessEditor = lazy(() => import("./space-access-editor").then(module => ({default: module.SpaceAccessEditor})))
 
@@ -58,6 +59,8 @@ interface SpaceContextMenuProps {
   spaceName: string
   spaceIcon?: string
   archived?: boolean
+  /** Creation choices, listed first where the row has no + of its own. */
+  newItems?: ReactNode
   /**
    * The person's own arrangement, when they have one: pinning and groups
    * change only their sidebar, so they need no Space permission.
@@ -96,6 +99,7 @@ export function SpaceContextMenuButton({
   spaceName,
   spaceIcon,
   archived,
+  newItems,
   personal,
   docSort,
   onChangeDocSort,
@@ -117,12 +121,13 @@ export function SpaceContextMenuButton({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground sm:size-6"
+          className="flex size-9 items-center justify-center rounded-md text-sidebar-foreground/30 transition-colors hover:bg-sidebar-hover hover:text-sidebar-foreground data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-foreground sm:size-6"
           render={<button type="button" />}
         >
           <MoreVertical className="h-3.5 w-3.5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
+          {newItems && <NewSubmenu>{newItems}</NewSubmenu>}
           {personal && (
             <>
               <DropdownMenuItem onClick={personal.onTogglePin}>

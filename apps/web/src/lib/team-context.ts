@@ -200,7 +200,7 @@ export async function clearTeamBrowserData(
       if (
         (name.startsWith("worktable:drawing-draft:") ||
           name.startsWith("worktable-profile:") ||
-          name.startsWith("worktable-space-focus:")) &&
+          name.startsWith("worktable-sidebar-open:")) &&
         owns(name)
       )
         localStorage.removeItem(name)

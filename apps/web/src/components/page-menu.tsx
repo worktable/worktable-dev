@@ -9,6 +9,7 @@ import {
   Database,
   FileText,
   Folder,
+  FolderOpen,
   History,
   House,
   MessageCircle,
@@ -542,6 +543,7 @@ function FolderTrail({
         spaceId={spaceId}
         depth={depth}
         expandable={before.length + after.length > 0}
+        onTrail
         expanded={expanded}
         onExpandedChange={setExpanded}
         onNavigate={onNavigate}
@@ -651,14 +653,16 @@ function TreeFolder({
 }
 
 /**
- * Folders toggle their contents. A folder that is also a page opens it from
- * its label, like the sidebar, and toggles from its chevron.
+ * Folders toggle their contents and show open or closed. A folder that is
+ * also a page opens it from its label and folds from its icon, as in the
+ * sidebar; there are no chevrons.
  */
 function FolderRow({
   node,
   spaceId,
   depth,
   expandable = true,
+  onTrail = false,
   expanded,
   onExpandedChange,
   onNavigate,
@@ -668,6 +672,8 @@ function FolderRow({
   depth: number
   /** False when the folder holds nothing beyond the entry on the trail. */
   expandable?: boolean
+  /** The current page is inside, so the folder always shows part of itself. */
+  onTrail?: boolean
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
   onNavigate: () => void
@@ -678,13 +684,14 @@ function FolderRow({
       className={cn(iconClass, "text-primary/60")}
     />
   )
+  const FolderIcon = expanded || onTrail ? FolderOpen : Folder
   if (node.kind === "folder" && !expandable) {
     return (
       <div
         className={cn(rowClass, "hover:bg-transparent")}
         style={indent(depth)}
       >
-        {icon}
+        <FolderIcon className={cn(iconClass, "text-primary/60")} />
         <span className="truncate">{node.label}</span>
       </div>
     )
@@ -698,37 +705,47 @@ function FolderRow({
         className={rowClass}
         style={indent(depth)}
       >
-        {icon}
+        <FolderIcon className={cn(iconClass, "text-primary/60")} />
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
-        <Disclosure expanded={expanded} />
       </button>
     )
   }
-  return (
-    <div className="flex min-w-0 items-center">
+  if (!expandable) {
+    return (
       <Link
         to="/spaces/$spaceId/documents/$"
         params={{ spaceId, _splat: node.path }}
         onClick={onNavigate}
-        className={cn(rowClass, "flex-1")}
+        className={rowClass}
         style={indent(depth)}
       >
         {icon}
         <span className="truncate">{node.label}</span>
       </Link>
-      {expandable && (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={
-            expanded ? `Collapse ${node.label}` : `Expand ${node.label}`
-          }
-          onClick={() => onExpandedChange(!expanded)}
-          className="flex size-11 shrink-0 items-center justify-center rounded-lg transition-colors outline-none hover:bg-accent focus-visible:bg-accent active:bg-accent"
-        >
-          <Disclosure expanded={expanded} />
-        </button>
-      )}
+    )
+  }
+  return (
+    <div className="flex min-w-0 items-center rounded-lg" style={indent(depth)}>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={expanded ? `Collapse ${node.label}` : `Expand ${node.label}`}
+        onClick={() => onExpandedChange(!expanded)}
+        className="-ml-3 flex size-11 shrink-0 items-center justify-center rounded-lg transition-colors outline-none hover:bg-accent focus-visible:bg-accent active:bg-accent"
+      >
+        {icon}
+      </button>
+      <Link
+        to="/spaces/$spaceId/documents/$"
+        params={{ spaceId, _splat: node.path }}
+        onClick={() => {
+          onExpandedChange(true)
+          onNavigate()
+        }}
+        className={cn(rowClass, "flex-1 pl-0")}
+      >
+        <span className="truncate">{node.label}</span>
+      </Link>
     </div>
   )
 }
@@ -761,6 +778,7 @@ function DocumentRow({
   )
 }
 
+/** A row that reveals options, such as Temporary's dates; trees don't use it. */
 function Disclosure({ expanded }: { expanded: boolean }) {
   return (
     <ChevronRight

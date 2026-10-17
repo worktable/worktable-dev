@@ -315,6 +315,8 @@ Action buttons (3-dot menus, plus buttons) on sidebar items show only on hover:
 - Use named groups (`group/space`, `group/doc`, `group/folder`) to avoid conflicts.
 - `has-[[data-popup-open]]:opacity-100` keeps the trigger visible while its dropdown is open.
 - Trigger buttons: `h-6 w-6`, `rounded-md`, `hover:bg-sidebar-accent hover:text-sidebar-foreground`.
+- Touch screens have no hover, so actions always show there. A row then keeps only its menu: the + choices move to a New submenu at the top of it (`RowNewActions`, `NewSubmenu`), and a group heading's New Space is already in its menu.
+- Menus open from a vertical three-dot icon (`MoreVertical`) everywhere: sidebar rows and headings, records, and the page header.
 
 ### Collapsible sections
 

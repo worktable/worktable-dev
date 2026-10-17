@@ -619,7 +619,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await racePage
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await racePage.getByRole("menuitem", { name: "Rename Folder" }).click()
+  await racePage
+    .getByRole("group", { name: "Folder" })
+    .getByRole("menuitem", { name: "Rename" })
+    .click()
   const folderDialog = racePage.getByRole("dialog", {
     name: "Rename Folder",
   })
@@ -662,7 +665,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     name: "Actions for Live Status",
   })
   await liveStatusMenu
-    .getByRole("menuitem", { name: "Archive HTML Doc" })
+    .getByRole("group", { name: "HTML Doc" })
+    .getByRole("menuitem", { name: "Archive" })
     .click()
   const archivedHtmlNotice = racePage.getByText(/This HTML doc is archived/)
   await expect(archivedHtmlNotice).toBeVisible()
@@ -687,7 +691,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
   await liveStatusMenu
-    .getByRole("menuitem", { name: "Restore HTML Doc" })
+    .getByRole("group", { name: "HTML Doc" })
+    .getByRole("menuitem", { name: "Restore" })
     .click()
   await expect(archivedHtmlNotice).toBeHidden()
   await expect(
@@ -703,7 +708,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await activeDocuments
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await liveStatusMenu.getByRole("menuitem", { name: "Archive Folder" }).click()
+  await liveStatusMenu
+    .getByRole("group", { name: "Folder" })
+    .getByRole("menuitem", { name: "Archive" })
+    .click()
   await expect(archivedHtmlNotice).toBeVisible()
   await expect(
     archivedDocuments.getByRole("link", {
@@ -724,7 +732,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await archivedDocuments
     .getByRole("button", { name: "Actions for Live Status" })
     .click()
-  await liveStatusMenu.getByRole("menuitem", { name: "Restore Folder" }).click()
+  await liveStatusMenu
+    .getByRole("group", { name: "Folder" })
+    .getByRole("menuitem", { name: "Restore" })
+    .click()
   await expect(archivedHtmlNotice).toBeHidden()
   await expect(
     activeDocuments.getByRole("link", { name: "Live Status", exact: true })

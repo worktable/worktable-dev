@@ -256,33 +256,37 @@ export const themeConfig = {
    * `soft` fill.
    */
   recognition: {
-    teal: {
-      light: { solid: "oklch(0.50 0.100 190)", ink: "oklch(0.45 0.100 190)", soft: "oklch(0.885 0.047 190)" },
-      dark: { solid: "oklch(0.50 0.100 190)", ink: "oklch(0.78 0.100 190)", soft: "oklch(0.30 0.045 190)" },
-    },
-    sky: {
-      light: { solid: "oklch(0.50 0.100 225)", ink: "oklch(0.45 0.100 225)", soft: "oklch(0.885 0.047 225)" },
-      dark: { solid: "oklch(0.50 0.100 225)", ink: "oklch(0.78 0.100 225)", soft: "oklch(0.30 0.045 225)" },
-    },
-    violet: {
-      light: { solid: "oklch(0.50 0.130 300)", ink: "oklch(0.45 0.130 300)", soft: "oklch(0.885 0.061 300)" },
-      dark: { solid: "oklch(0.50 0.130 300)", ink: "oklch(0.78 0.130 300)", soft: "oklch(0.30 0.059 300)" },
-    },
-    rose: {
-      light: { solid: "oklch(0.50 0.130 350)", ink: "oklch(0.45 0.130 350)", soft: "oklch(0.885 0.061 350)" },
-      dark: { solid: "oklch(0.50 0.130 350)", ink: "oklch(0.78 0.130 350)", soft: "oklch(0.30 0.059 350)" },
-    },
     orange: {
-      light: { solid: "oklch(0.50 0.150 45)", ink: "oklch(0.45 0.140 45)", soft: "oklch(0.885 0.066 45)" },
-      dark: { solid: "oklch(0.50 0.150 45)", ink: "oklch(0.78 0.140 45)", soft: "oklch(0.30 0.063 45)" },
+      light: { solid: "oklch(0.50 0.150 42)", ink: "oklch(0.45 0.140 42)", soft: "oklch(0.885 0.066 42)" },
+      dark: { solid: "oklch(0.50 0.150 42)", ink: "oklch(0.78 0.140 42)", soft: "oklch(0.30 0.063 42)" },
     },
     amber: {
-      light: { solid: "oklch(0.50 0.140 70)", ink: "oklch(0.45 0.130 70)", soft: "oklch(0.885 0.061 70)" },
-      dark: { solid: "oklch(0.50 0.140 70)", ink: "oklch(0.78 0.130 70)", soft: "oklch(0.30 0.059 70)" },
+      light: { solid: "oklch(0.50 0.140 78)", ink: "oklch(0.45 0.130 78)", soft: "oklch(0.885 0.062 78)" },
+      dark: { solid: "oklch(0.50 0.140 78)", ink: "oklch(0.78 0.130 78)", soft: "oklch(0.30 0.059 78)" },
+    },
+    olive: {
+      light: { solid: "oklch(0.50 0.120 110)", ink: "oklch(0.45 0.115 110)", soft: "oklch(0.885 0.055 110)" },
+      dark: { solid: "oklch(0.50 0.120 110)", ink: "oklch(0.78 0.115 110)", soft: "oklch(0.30 0.052 110)" },
     },
     green: {
       light: { solid: "oklch(0.50 0.120 150)", ink: "oklch(0.45 0.120 150)", soft: "oklch(0.885 0.057 150)" },
       dark: { solid: "oklch(0.50 0.120 150)", ink: "oklch(0.78 0.120 150)", soft: "oklch(0.30 0.054 150)" },
+    },
+    teal: {
+      light: { solid: "oklch(0.50 0.100 198)", ink: "oklch(0.45 0.100 198)", soft: "oklch(0.885 0.047 198)" },
+      dark: { solid: "oklch(0.50 0.100 198)", ink: "oklch(0.78 0.100 198)", soft: "oklch(0.30 0.045 198)" },
+    },
+    indigo: {
+      light: { solid: "oklch(0.50 0.120 280)", ink: "oklch(0.45 0.120 280)", soft: "oklch(0.885 0.055 280)" },
+      dark: { solid: "oklch(0.50 0.120 280)", ink: "oklch(0.78 0.120 280)", soft: "oklch(0.30 0.052 280)" },
+    },
+    violet: {
+      light: { solid: "oklch(0.50 0.130 315)", ink: "oklch(0.45 0.130 315)", soft: "oklch(0.885 0.062 315)" },
+      dark: { solid: "oklch(0.50 0.130 315)", ink: "oklch(0.78 0.130 315)", soft: "oklch(0.30 0.059 315)" },
+    },
+    rose: {
+      light: { solid: "oklch(0.50 0.130 352)", ink: "oklch(0.45 0.130 352)", soft: "oklch(0.885 0.062 352)" },
+      dark: { solid: "oklch(0.50 0.130 352)", ink: "oklch(0.78 0.130 352)", soft: "oklch(0.30 0.059 352)" },
     },
     slate: {
       light: { solid: "oklch(0.50 0.025 250)", ink: "oklch(0.45 0.025 250)", soft: "oklch(0.885 0.012 250)" },

@@ -121,6 +121,7 @@ import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { THREADS_SCOPE, wsManager } from "./ws.ts";
 import { yjsManager } from "./yjs-manager.ts";
 import {
+  assignMissingSpaceColors,
   docStat,
   getDocCollaborationCacheEpoch,
   listSpaces } from "./store.ts";
@@ -1502,6 +1503,11 @@ export function startServer(
       const seeded = await seedStarterWorkspace();
       if (seeded) {
         console.log("[Worktable] seeded starter workspace (welcome space)");
+      }
+      // Spaces from before colors were saved get theirs once, spread apart.
+      const colored = await assignMissingSpaceColors();
+      if (colored > 0) {
+        console.log(`[Worktable] gave ${colored} Spaces a color`);
       }
     })().catch((err) =>
       console.error("[Worktable] starter seed error:", logError(err))

@@ -4,13 +4,14 @@ import { RECOGNITION_COLORS, type RecognitionColor } from "@worktable/types/reco
 import { recognitionSolid } from "@/lib/recognition"
 
 const NAMES: Record<RecognitionColor, string> = {
-  teal: "Teal",
-  sky: "Sky",
-  violet: "Violet",
-  rose: "Rose",
   orange: "Orange",
   amber: "Amber",
+  olive: "Olive",
   green: "Green",
+  teal: "Teal",
+  indigo: "Indigo",
+  violet: "Violet",
+  rose: "Rose",
   slate: "Slate",
 }
 

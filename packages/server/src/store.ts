@@ -6,6 +6,11 @@ import crypto from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
 import type { ArchiveInfo, DocListEntry, DocSourceCategory, DocumentId, SpaceFile } from "@worktable/types";
 import { SpaceFileSchema, sourceCategory } from "@worktable/types";
+import {
+  isRecognitionColor,
+  spreadRecognitionColor,
+  type RecognitionColor,
+} from "@worktable/types/recognition";
 import { assertWorkspaceAvailable } from "./workspace-safety.ts";
 import { assertSpaceAccess, canAccessSpace, canCreateTeamSpace, registerTeamSpace, retireTeamSpacePolicy, TeamAccessError } from "./team-policy.ts";
 
@@ -653,6 +658,84 @@ export async function listSpaces(): Promise<SpaceFile[]> {
   }
 
   return spaces;
+}
+
+/**
+ * Every published Space's id, creation time and color, whoever can read it:
+ * colors tell Spaces apart for everyone, so they are spread across all of
+ * them.
+ */
+async function spaceColorEntries(): Promise<
+  { id: string; createdAt: string; color: unknown }[]
+> {
+  const base = baseDir();
+  if (!existsSync(base)) return [];
+  const entries: { id: string; createdAt: string; color: unknown }[] = [];
+  for (const entry of await readdir(base, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const raw = (await Bun.file(join(base, entry.name, "space.json")).json()) as {
+        id?: unknown;
+        createdAt?: unknown;
+        settings?: { color?: unknown };
+      };
+      if (raw.id !== entry.name) continue;
+      entries.push({
+        id: entry.name,
+        createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
+        color: raw.settings?.color,
+      });
+    } catch {
+      // Unpublished or unreadable Spaces take no part.
+    }
+  }
+  return entries;
+}
+
+/** A new Space's color, spread from the colors the other Spaces have. */
+export async function nextSpaceColor(spaceId: string): Promise<RecognitionColor> {
+  const entries = await spaceColorEntries();
+  return spreadRecognitionColor(
+    entries.map((entry) => entry.color),
+    spaceId
+  );
+}
+
+/**
+ * Gives each Space without a color one, in the order they were created and
+ * spread the way new Spaces get theirs. A color that is no longer in the
+ * palette counts as none. Spaces with a color keep it, so this changes
+ * nothing once every Space has one.
+ */
+export async function assignMissingSpaceColors(): Promise<number> {
+  const entries = (await spaceColorEntries()).sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id)
+  );
+  const inUse = entries
+    .map((entry) => entry.color)
+    .filter(isRecognitionColor);
+  let assigned = 0;
+  for (const entry of entries) {
+    if (isRecognitionColor(entry.color)) continue;
+    const color = spreadRecognitionColor(inUse, entry.id);
+    const path = spacePath(entry.id);
+    const written = await withWriteLock(path, async () => {
+      const current = SpaceFileSchema.parse(await Bun.file(path).json());
+      if (isRecognitionColor(current.settings?.["color"])) return false;
+      await atomicWrite(path, {
+        ...current,
+        settings: { ...current.settings, color },
+      });
+      return true;
+    });
+    if (written) {
+      inUse.push(color);
+      assigned += 1;
+    }
+  }
+  return assigned;
 }
 
 export async function readSpace(

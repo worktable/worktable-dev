@@ -7,6 +7,7 @@ import { z } from "zod";
 import { RECOGNITION_COLORS } from "@worktable/types";
 import {
   listSpaces,
+  nextSpaceColor,
   occupiedSpaceIds,
   mutateSpace,
   readSpace,
@@ -103,7 +104,7 @@ spacesRouter.post("/", requireScope("docs:write"), async (c) => {
     createdAt: now,
     updatedAt: now,
     createdBy: restWriteActor(c, createdBy),
-    settings: {},
+    settings: { color: await nextSpaceColor(spaceId) },
   };
 
   await writeSpace(space);

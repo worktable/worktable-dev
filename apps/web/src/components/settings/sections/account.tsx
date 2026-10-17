@@ -163,10 +163,12 @@ export function AccountSection() {
   )
 }
 
+/** "$49", or "$7.99" when there are cents. */
 function formatPrice(amount: number, currency: string): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
+    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
   }).format(amount / 100)
 }
 

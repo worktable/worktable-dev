@@ -57,7 +57,7 @@ test("subscription access determines available recovery actions", () => {
 test("a plan shows its people and offers the plans this Worktable can move to", () => {
   const team = render({ canChangeTo: ["business"] })
   expect(team).toContain("3 of 12 people")
-  expect(team).toContain("Move to Business, $199.00 a month")
+  expect(team).toContain("Move to Business, $199 a month")
   expect(team).toContain("Cancel plan")
 
   // Solo pays for a plan through checkout.
@@ -65,7 +65,7 @@ test("a plan shows its people and offers the plans this Worktable can move to", 
     { plan: CLOUD_PLANS.solo, canManageBilling: false, canCheckout: true },
     1
   )
-  expect(solo).toContain("Move to Team, $49.00 a month")
+  expect(solo).toContain("Move to Team, $49 a month")
   expect(solo).not.toContain("Cancel plan")
 
   // Moving down waits until everyone fits.

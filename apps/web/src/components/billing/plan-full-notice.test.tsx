@@ -34,7 +34,7 @@ test("a full plan offers the next plan to the person who pays, and names them to
   )
   expect(payer).toContain("Move to Team 30, $99 a month")
   expect(render({ isPayer: false })).toContain(
-    "Northwind is full. Ask Avery to change the plan."
+    "Northwind is full. Ask Avery to change the plan. We&#x27;ve"
   )
   expect(render({ plan: "team30", peopleLimit: 30, people: 30 })).toContain(
     "Northwind has reached 30 people."

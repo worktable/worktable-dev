@@ -146,6 +146,17 @@ export const TenantBilling = z.object({
 })
 export type TenantBilling = z.infer<typeof TenantBilling>
 
+/**
+ * A member tried to invite someone and the plan was full. The tenant tells
+ * the control plane, which tells the payer; the tenant sends only a name.
+ */
+export const PLAN_FULL_NOTICE_PATH = "/runtime/plan-full"
+
+export const PlanFullNotice = z
+  .object({ memberName: z.string().trim().min(1).max(100) })
+  .strict()
+export type PlanFullNotice = z.infer<typeof PlanFullNotice>
+
 function base64UrlEncode(text: string): string {
   let binary = ""
   for (const byte of new TextEncoder().encode(text))

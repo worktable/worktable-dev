@@ -2,6 +2,7 @@ import {
   assertPayerKeepsOwnership,
   assertRoomForInvitation,
   assertRoomToJoin,
+  memberIsPayer,
   PlanFullError,
   requestBilling,
 } from "../hosted-billing.ts"
@@ -52,6 +53,7 @@ import {
 import {
   invitationEmailConfigured,
   sendInvitationEmail,
+  notifyPayerPlanFull,
 } from "../team-invitation-email.ts"
 import { ensureWorkspaceManifest } from "../workspace.ts"
 
@@ -292,10 +294,13 @@ teamRouter.post("/invitations", async (c) => {
     if (!space) return c.json({ error: "Space not found" }, 404)
     assertInvitationStartSpace(member, parsed.data.spaceId)
   }
+  const billing = requestBilling(c.req.raw)
   try {
-    assertRoomForInvitation(requestBilling(c.req.raw))
+    assertRoomForInvitation(billing)
   } catch (error) {
     if (!(error instanceof PlanFullError)) throw error
+    // Only the payer can change the plan; anyone else's attempt is passed on.
+    if (!memberIsPayer(member.userId, billing)) notifyPayerPlanFull(member.name)
     return c.json(
       { error: error.message, code: error.code, ...error.room },
       409

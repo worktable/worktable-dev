@@ -1,5 +1,6 @@
 import {
   ENV,
+  PLAN_FULL_NOTICE_PATH,
   InvitationEmailResult,
   type InvitationEmailRequest,
   type InvitationEmailStatus,
@@ -58,4 +59,24 @@ export async function sendInvitationEmail(
   } catch {
     return "failed"
   }
+}
+
+/**
+ * A member found the plan full: the control plane tells the person who
+ * pays, at most once a day. Best effort; the member's answer doesn't wait.
+ */
+export function notifyPayerPlanFull(memberName: string): void {
+  const endpoint = invitationEmailEndpoint()
+  if (!endpoint) return
+  void fetch(new URL(PLAN_FULL_NOTICE_PATH, endpoint.url.origin), {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${endpoint.secret}`,
+      "X-Worktable-Runtime": endpoint.runtimeId,
+    },
+    body: JSON.stringify({ memberName: memberName.slice(0, 100) || "A member" }),
+  }).catch(() => undefined)
 }

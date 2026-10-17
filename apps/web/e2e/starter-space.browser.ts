@@ -195,7 +195,7 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 
   const editor = page.locator(".bn-editor")
   const firstBlock = editor.getByText(
-    "Use Worktable to create and revise work yourself or with a connected agent. Choose the format that fits the task.",
+    "Ask an agent for the result you want. It chooses the format, and you review the work here.",
     { exact: true }
   )
   const secondBlock = editor.getByRole("heading", {
@@ -267,7 +267,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   // Space Home also links docs from Recent and Activity; use the sidebar tree.
   const tree = page.getByRole("navigation", { name: "Active documents" })
   await expect(
-    tree.getByRole("link", { name: "Ways to Work", exact: true })
+    tree.getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
   const created = await page.request.post(
@@ -418,7 +418,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await frame.getByRole("button", { name: "Open move note" }).click()
   await resolutionStarted
-  await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
+  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
   releaseResolution()
   expect((await delayedResolution).status()).toBe(200)
@@ -463,7 +463,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     { waitUntil: "domcontentloaded" }
   )
   await expect(
-    racePage.getByRole("link", { name: "Ways to Work", exact: true })
+    racePage.getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
   await racePage
     .getByRole("navigation", { name: "Active documents" })
@@ -483,7 +483,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       .getByRole("heading", { name: "Ready now" })
   ).toBeVisible()
   await racePage
-    .getByRole("link", { name: "Ways to Work", exact: true })
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/what-agents-can-make$/
@@ -491,7 +491,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   // The URL changes before the renderer commits. Finish leaving the cached
   // document before exercising a fresh mount during the concurrent move.
   await expect(
-    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+    racePage.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible()
   await expect(
     racePage.getByRole("link", { name: "Live Status", exact: true })
@@ -554,7 +554,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     racePage.getByRole("heading", { name: "Move Note", exact: true })
   ).toBeVisible()
   await racePage
-    .getByRole("link", { name: "Ways to Work", exact: true })
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/what-agents-can-make$/
@@ -562,7 +562,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   // The URL changes before the renderer commits. Finish leaving the cached
   // document before exercising a fresh mount during the concurrent move.
   await expect(
-    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+    racePage.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible()
 
   let docMovedDuringRead = false
@@ -747,7 +747,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
+  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
   await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
 
   await page

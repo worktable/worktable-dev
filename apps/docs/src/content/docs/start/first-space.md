@@ -6,6 +6,17 @@ description: Save one useful document, revise it with an agent, and keep it easy
 Start with one project brief. You need an open Worktable workspace; to use the
 prompts below, [connect an agent](/start/connect-your-agent/) first.
 
+## Setup and Getting Started
+
+A new Worktable starts with a short setup: say who it's for, connect an agent,
+and tell it what you're working on. The agent makes a Space and writes a first
+brief while you invite your team, and setup ends in that Space.
+
+**Getting Started** then sits at the top of the sidebar. Its home is your own
+checklist, and items tick off as you do them, such as giving an agent its first
+task or asking it for a review. Each person has their own list. Unpin Getting
+Started from the sidebar to hide it; its guides stay in the Space.
+
 ## Create a brief
 
 Use an existing Space for the project, or create one from the sidebar. From the

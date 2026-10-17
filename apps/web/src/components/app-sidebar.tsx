@@ -147,10 +147,8 @@ import {
   moveWidget,
   restoreWidget,
 } from "@/lib/widgets-api"
-import {
-  GettingStartedRow,
-  useGettingStartedShortcut,
-} from "@/components/sidebar/getting-started-row"
+import { GettingStartedRow } from "@/components/sidebar/getting-started-row"
+import { useGettingStartedShortcut } from "@/lib/setup"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import type {

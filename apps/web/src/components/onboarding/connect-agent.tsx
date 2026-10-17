@@ -701,7 +701,7 @@ function RowItem({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="pt-2 pr-3.5 pb-5 pl-3.5 sm:pl-[4.25rem]">
+        <div className="pt-3 pr-3.5 pb-5 pl-3.5 sm:pl-[4.25rem]">
           <Tabs
             value={tab}
             onValueChange={(value) => {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import {
-  CLOUD_PERSONAL_PLAN,
+  CLOUD_PLANS,
   type BillingStatus,
 } from "@worktable/hosted-contract"
 import { startWebHarness, type WebHarness } from "./harness"
@@ -32,7 +32,7 @@ test.afterAll(async () => {
 
 function activeBilling(overrides: Partial<BillingStatus> = {}): BillingStatus {
   return {
-    plan: CLOUD_PERSONAL_PLAN,
+    plan: CLOUD_PLANS.team,
     access: "active",
     subscription: {
       status: "active",
@@ -42,6 +42,7 @@ function activeBilling(overrides: Partial<BillingStatus> = {}): BillingStatus {
     canCheckout: false,
     canManageBilling: true,
     canExport: true,
+    canChangeTo: [],
     ...overrides,
   }
 }
@@ -221,7 +222,7 @@ test("Cloud Account shows period-end cancellation and opens the CSRF-protected p
   await openCloudAccount(page)
   const settings = page.getByRole("dialog")
   await expect(settings.getByText("Cancels at period end")).toBeVisible()
-  await settings.getByRole("button", { name: "Manage billing" }).click()
+  await settings.getByRole("button", { name: "Manage payment" }).click()
   await expect(
     page.getByRole("heading", { name: "Polar customer portal" })
   ).toBeVisible()
@@ -235,11 +236,12 @@ test("Cloud Account opens a CSRF-protected checkout without re-entering signup",
   page,
 }) => {
   await mockCloudAccount(page, {
-    plan: CLOUD_PERSONAL_PLAN,
+    plan: CLOUD_PLANS.team,
     access: "payment_required",
     canCheckout: true,
     canManageBilling: false,
     canExport: true,
+    canChangeTo: [],
   })
   await page.route("**/gateway/session", (route) =>
     route.fulfill({
@@ -316,7 +318,7 @@ test("Cloud Account keeps export available while billing access is locked", asyn
 
   await openCloudAccount(page)
   const settings = page.getByRole("dialog")
-  await expect(settings.getByText("Subscription expired")).toBeVisible()
+  await expect(settings.getByText("Locked", { exact: true })).toBeVisible()
   await settings.getByRole("button", { name: "Export" }).click()
   await expect(
     page.getByRole("heading", { name: "Workspace export ready" })

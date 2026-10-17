@@ -1,3 +1,9 @@
+import {
+  assertPayerKeepsOwnership,
+  assertRoomForInvitation,
+  PlanFullError,
+  requestBilling,
+} from "../hosted-billing.ts"
 import { hasOwnerPassword } from "../session-store.ts"
 import { updateTeamAgentConnection } from "../team-agent-connections.ts"
 import { isHosted } from "../hosted.ts"
@@ -13,6 +19,7 @@ import {
 import { currentTeamWorktable, currentWorktableId } from "../team-database.ts"
 import {
   findTeamMember,
+  findTeamMemberById,
   hasTeamOperatorAuthority,
   listTeamMembers,
 } from "../team-members.ts"
@@ -157,6 +164,13 @@ teamRouter.patch("/members/:id", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!body.success) return c.json({ error: "Choose owner or member" }, 400)
+  const target = findTeamMemberById(c.req.param("id"))
+  if (target)
+    assertPayerKeepsOwnership(
+      target.userId,
+      body.data.role,
+      requestBilling(c.req.raw)
+    )
   await changeTeamMembership(
     origin(c),
     c.req.raw,
@@ -167,6 +181,9 @@ teamRouter.patch("/members/:id", async (c) => {
   return c.json({ ok: true })
 })
 teamRouter.delete("/members/:id", async (c) => {
+  const target = findTeamMemberById(c.req.param("id"))
+  if (target)
+    assertPayerKeepsOwnership(target.userId, null, requestBilling(c.req.raw))
   await changeTeamMembership(
     origin(c),
     c.req.raw,
@@ -260,6 +277,15 @@ teamRouter.post("/invitations", async (c) => {
   if (parsed.data.spaceId) {
     if (!space) return c.json({ error: "Space not found" }, 404)
     assertInvitationStartSpace(member, parsed.data.spaceId)
+  }
+  try {
+    assertRoomForInvitation(requestBilling(c.req.raw))
+  } catch (error) {
+    if (!(error instanceof PlanFullError)) throw error
+    return c.json(
+      { error: error.message, code: error.code, ...error.room },
+      409
+    )
   }
   const invitation = await auth.api.createInvitation({
     headers,

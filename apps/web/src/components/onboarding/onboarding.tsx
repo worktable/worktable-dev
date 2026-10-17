@@ -3,7 +3,7 @@ import {
   CACHED_SYSTEM_VERSION_QUERY_KEY,
   getCachedSystemVersion,
 } from "@/lib/system-api"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
@@ -19,6 +19,9 @@ import {
   usePersonalSetup,
 } from "@/lib/setup"
 import { activateTeams } from "@/lib/team-api"
+import { CLOUD_PLANS } from "@worktable/hosted-contract"
+import { PlanFullNotice } from "@/components/billing/plan-full-notice"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { ConnectAgentStep } from "./connect-agent"
 import { EmailChips, InviteResult } from "./invite-people"
 import {
@@ -36,6 +39,8 @@ interface SetupDraft {
   step: Step
   setups: SetupRecord[]
   invited?: Invited[]
+  /** Addresses typed before leaving to pay for a plan, sent on return. */
+  pendingEmails?: string[]
 }
 
 const STEPS: Step[] = ["create", "connect", "invite"]
@@ -61,6 +66,10 @@ function readDraft(workspaceId: string): SetupDraft {
       step: isStep(value.step) ? value.step : "create",
       setups: value.setups,
       ...(Array.isArray(value.invited) ? { invited: value.invited } : {}),
+      ...(Array.isArray(value.pendingEmails) &&
+      value.pendingEmails.every((item) => typeof item === "string")
+        ? { pendingEmails: value.pendingEmails }
+        : {}),
     }
   } catch {
     return DEFAULT_DRAFT
@@ -215,7 +224,9 @@ function InviteStep({
   cloud,
   worktableName,
   invited,
+  pendingEmails,
   onInvited,
+  onKeepEmails,
   onFinish,
   finishing,
   onBack,
@@ -223,25 +234,43 @@ function InviteStep({
   cloud: boolean
   worktableName: string
   invited: Invited[] | undefined
+  pendingEmails: string[] | undefined
   onInvited: (invited: Invited[]) => void
+  onKeepEmails: (emails: string[] | undefined) => void
   onFinish: () => void
   finishing: boolean
   onBack: () => void
 }) {
-  const [emails, setEmails] = useState<string[]>([])
+  const queryClient = useQueryClient()
+  const { plan } = useCloudPlan()
+  const [emails, setEmails] = useState<string[]>(pendingEmails ?? [])
+  const [paidJustNow, setPaidJustNow] = useState<number | null>(null)
   const send = useMutation({
-    mutationFn: () => invitePeople(emails),
+    mutationFn: (addresses: string[]) => invitePeople(addresses),
     onSuccess: (results) => {
       setEmails([])
+      onKeepEmails(undefined)
       onInvited(mergeInvited(invited, results))
+      // The people count moved; the plan's room is read again.
+      noteSetupChanged(queryClient)
     },
   })
+  const fits = roomFor(plan, emails.length)
+  // Back from paying for a plan: send what was typed before leaving.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (resumed.current || !pendingEmails?.length || !plan) return
+    if (plan.plan === "solo" || !roomFor(plan, pendingEmails.length)) return
+    resumed.current = true
+    const count = pendingEmails.length
+    send.mutate(pendingEmails, { onSuccess: () => setPaidJustNow(count) })
+  }, [pendingEmails, plan, send])
   const action = cloud ? "Send invites" : "Create links"
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        if (emails.length) send.mutate()
+        if (emails.length && fits) send.mutate(emails)
       }}
     >
       <StepHeading
@@ -252,6 +281,14 @@ function InviteStep({
             : "You'll get a link for each person to send them."
         }
       />
+      {paidJustNow && plan && !send.isPending ? (
+        <p className="mt-6 text-sm text-foreground" role="status">
+          {CLOUD_PLANS[plan.plan].name} plan active.{" "}
+          {paidJustNow === 1
+            ? "1 invitation sent."
+            : `${paidJustNow} invitations sent.`}
+        </p>
+      ) : null}
       {invited?.length ? (
         <ul className="mt-7 card-surface divide-y divide-border rounded-xl">
           {invited.map((item) => (
@@ -268,10 +305,20 @@ function InviteStep({
           <EmailChips
             emails={emails}
             onChange={setEmails}
-            onSubmit={() => send.mutate()}
+            onSubmit={() => fits && send.mutate(emails)}
             autoFocus
           />
         </Field>
+        {plan && !fits ? (
+          <div className="mt-3">
+            <PlanFullNotice
+              plan={plan}
+              worktableName={worktableName}
+              adding={emails.length}
+              onBeforeCheckout={() => onKeepEmails(emails)}
+            />
+          </div>
+        ) : null}
       </div>
       <ErrorNote error={send.error} />
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
@@ -282,7 +329,11 @@ function InviteStep({
           {invited?.length ? (
             <>
               {emails.length ? (
-                <Button type="submit" variant="outline" disabled={send.isPending}>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={send.isPending || !fits}
+                >
                   {action}
                 </Button>
               ) : null}
@@ -300,7 +351,10 @@ function InviteStep({
               >
                 It's just me for now
               </Button>
-              <Button type="submit" disabled={!emails.length || send.isPending}>
+              <Button
+                type="submit"
+                disabled={!emails.length || !fits || send.isPending}
+              >
                 {send.isPending ? "Inviting…" : action}
               </Button>
             </>
@@ -424,9 +478,16 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
             cloud={cloud}
             worktableName={workspace.name}
             invited={draft.invited}
+            pendingEmails={draft.pendingEmails}
             onInvited={(invited) =>
               setDraft((current) => ({ ...current, invited }))
             }
+            onKeepEmails={(pendingEmails) => {
+              const next = { ...draft, pendingEmails }
+              // Written now: paying leaves the page before effects run.
+              writeDraft(workspace.id, next)
+              setDraft(next)
+            }}
             onFinish={() => finish.mutate()}
             finishing={finish.isPending}
             onBack={() => go("connect")}

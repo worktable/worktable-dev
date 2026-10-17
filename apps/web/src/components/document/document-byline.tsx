@@ -18,7 +18,7 @@ import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
-import { ActivitySentence, ActorBadge } from "@/components/home/activity-feed"
+import { ActorBadge } from "@/components/home/activity-sentence"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
 import { actorName, shortWhen } from "@/lib/activity-format"
@@ -279,6 +279,50 @@ function DocActivity({
   )
 }
 
+const IN_DOC: Partial<Record<ActivityEntry["action"], string>> = {
+  "doc.created": "created this doc",
+  "doc.edited": "edited",
+  "doc.archived": "archived it",
+  "doc.restored": "restored it",
+  "doc.kept": "kept it",
+  "doc.madeTemporary": "made it temporary",
+  "doc.pinned": "pinned it",
+  "doc.unpinned": "unpinned it",
+  "comment.replied": "replied to a comment",
+}
+
+/**
+ * Activity as the Doc itself tells it: the Doc goes without saying, so it
+ * reads "Claude edited", "Maya commented".
+ */
+function DocSentence({ entry }: { entry: ActivityEntry }) {
+  if (entry.actor.kind === "system") return <>Changed outside Worktable</>
+  const instruction = entry.category === "instruction"
+  const verb =
+    entry.action === "comment.created"
+      ? instruction
+        ? "left an instruction"
+        : "commented"
+      : entry.action === "comment.resolved"
+        ? instruction
+          ? "resolved an instruction"
+          : "resolved a comment"
+        : (IN_DOC[entry.action] ?? "changed it")
+  const times =
+    entry.action === "doc.edited" && entry.repeats > 1
+      ? ` ${entry.repeats} times`
+      : ""
+  return (
+    <>
+      <span className="font-medium text-foreground">
+        {actorName(entry.actor)}
+      </span>{" "}
+      {verb}
+      {times}
+    </>
+  )
+}
+
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
   const comment = entry.action.startsWith("comment.") && entry.quote
   return (
@@ -286,7 +330,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
       <ActorBadge actor={entry.actor} />
       <div className="min-w-0 flex-1">
         <div className="text-foreground/85">
-          <ActivitySentence entry={entry} inDoc />
+          <DocSentence entry={entry} />
         </div>
         {comment && <div className="mt-0.5 line-clamp-1">{entry.quote}</div>}
       </div>

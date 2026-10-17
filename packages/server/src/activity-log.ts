@@ -376,13 +376,14 @@ function noteDocSummary(
   at: string
 ): void {
   const key = summaryKey(spaceId)
-  const queued = summariesBuilding.get(key)
-  if (queued) {
-    queued.push({ action, actor, at, target: { kind: "doc", path } } as ActivityEvent)
-    return
-  }
   const summaries = docSummaries.get(key)
-  if (summaries) applyDocSummary(summaries, path, action, actor, at)
+  if (summaries) return applyDocSummary(summaries, path, action, actor, at)
+  // Saves inside one edit session never reach the log, so the summary that
+  // will be built from it must receive this one now.
+  if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)
+  summariesBuilding
+    .get(key)
+    ?.push({ action, actor, at, target: { kind: "doc", path } } as ActivityEvent)
 }
 
 /** The summaries of every path a doc was recorded under, as one. */
@@ -450,15 +451,17 @@ export function peekDocActivity(
       )
     )
   }
-  if (!summariesBuilding.has(key)) {
-    const build = buildDocSummaries(spaceId, key)
-      .catch((error) => {
-        console.error("[activity] could not summarize docs:", logError(error))
-      })
-      .finally(() => summaryBuilds.delete(key))
-    summaryBuilds.set(key, build)
-  }
+  if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)
   return null
+}
+
+function startSummaryBuild(spaceId: string, key: string): void {
+  const build = buildDocSummaries(spaceId, key)
+    .catch((error) => {
+      console.error("[activity] could not summarize docs:", logError(error))
+    })
+    .finally(() => summaryBuilds.delete(key))
+  summaryBuilds.set(key, build)
 }
 
 // A replaced or reset workspace starts with an empty history.

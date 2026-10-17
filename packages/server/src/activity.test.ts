@@ -307,13 +307,15 @@ describe("workspace activity", () => {
     // Claude created it as a draft; it moved to "plan" before Maya edited it.
     recordActivity({ spaceId: "company", action: "doc.created", actor: claude, target: { kind: "doc", path: "drafts/plan" }, at: "2026-10-16T09:00:00.000Z" })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:05:00.000Z" })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: claude, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:06:00.000Z" })
+    // Inside Maya's edit session: never logged, but she edited last.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:07:00.000Z" })
     // Not every reader may see who commented, so comments do not count.
     recordActivity({ spaceId: "company", action: "comment.created", actor: codexActor, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:10:00.000Z" })
-    await drainActivity()
     const plan = (path: string) => path === "plan" || path === "drafts/plan"
 
-    // The first read answers at once and summarizes in the background.
-    expect(peekDocActivity("company", "plan", plan)).toBeNull()
+    // A page never waits: a Space not summarized yet answers at once.
+    expect(peekDocActivity("archive", "notes")).toBeNull()
     await drainActivity()
     expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,

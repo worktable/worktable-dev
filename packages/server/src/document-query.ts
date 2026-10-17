@@ -134,6 +134,8 @@ export interface ResolvedDocumentHandle {
   renderDisposition: DocumentRenderDisposition | null
   formatCapabilities: DocumentFormatCapabilityHints | null
   resolvedFrom?: string
+  /** The Space's aliases from the same catalog, mapping old paths to current ones. */
+  aliases?: DocAliases
 }
 
 export type DocumentHandleResolution =
@@ -1035,6 +1037,7 @@ function handleForPrepared(
       renderDisposition: registration?.renderDisposition ?? null,
       formatCapabilities: registration?.capabilities ?? null,
       ...(resolvedFrom ? { resolvedFrom } : {}),
+      aliases: context.catalog.aliases,
     },
   }
 }

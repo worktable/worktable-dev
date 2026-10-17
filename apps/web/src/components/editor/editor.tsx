@@ -44,6 +44,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
   type SyntheticEvent,
 } from "react"
@@ -51,6 +52,7 @@ import { createPortal } from "react-dom"
 import { useTheme } from "@/components/theme-provider"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { initMermaidTouchHandler } from "./mermaid-touch-handler"
+import { afterTitleKey, afterTitlePlugin } from "./after-title-widget"
 import {
   getBlockNoteCreationContent,
   normalizeEditorInitialContent,
@@ -175,6 +177,8 @@ interface EditorProps {
   activeAnnotationId?: string | null
   onCreateAnnotation?: (request: AnnotationCreateRequest) => void
   onSelectAnnotation?: (annotation: Annotation) => void
+  /** Shown under the title (the opening level-one heading), outside the content. */
+  afterTitle?: ReactNode
 }
 
 export function Editor({
@@ -187,6 +191,7 @@ export function Editor({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  afterTitle,
 }: EditorProps) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -213,6 +218,7 @@ export function Editor({
       activeAnnotationId={activeAnnotationId}
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
+      afterTitle={afterTitle}
       resolvedTheme={resolvedTheme}
       isMobile={isMobile}
       spellcheck={spellcheck}
@@ -230,6 +236,7 @@ function EditorInner({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  afterTitle,
   resolvedTheme,
   isMobile,
   spellcheck,
@@ -334,6 +341,30 @@ function EditorInner({
       tiptap.off("transaction", handler)
     }
   }, [editor, onLocalEdit])
+
+  // What goes under the title lives in a widget ProseMirror places between
+  // blocks; React renders into it through a portal.
+  const [afterTitleHost] = useState(() => {
+    const host = document.createElement("div")
+    host.className = "worktable-after-title"
+    host.contentEditable = "false"
+    return host
+  })
+  const showsAfterTitle = afterTitle != null
+  useEffect(() => {
+    if (!showsAfterTitle) return
+    const tiptap = (
+      editor as unknown as {
+        _tiptapEditor?: {
+          registerPlugin(plugin: ReturnType<typeof afterTitlePlugin>): void
+          unregisterPlugin(key: typeof afterTitleKey): void
+        }
+      }
+    )._tiptapEditor
+    if (!tiptap) return
+    tiptap.registerPlugin(afterTitlePlugin(afterTitleHost))
+    return () => tiptap.unregisterPlugin(afterTitleKey)
+  }, [editor, showsAfterTitle, afterTitleHost])
 
   useEffect(() => {
     if (collaboration) return
@@ -447,6 +478,7 @@ function EditorInner({
           editor={editor as unknown as { document: Block[] }}
           onSelectAnnotation={onSelectAnnotation}
         />
+        {showsAfterTitle && createPortal(afterTitle, afterTitleHost)}
         <BlockNoteView
           editor={editor}
           editable={editable}

@@ -45,55 +45,123 @@ export interface SpaceLinkGraph {
   orphans: string[];
   /** Outbound links whose target doc does not exist. */
   broken: Array<{ docPath: string; target: string; resolvedPath: string }>;
+  /** For each linked doc, the text around its first link from each source doc. */
+  inboundContext: Map<string, Map<string, string>>;
+}
+
+/** A doc that links to another, with the text around the link. */
+export interface DocBacklink {
+  path: string;
+  context: string;
 }
 
 // ── Extraction ────────────────────────────────────────────────
 
-/** Strip fenced code blocks and inline code spans so their contents never register as links. */
-function stripCode(markdown: string): string {
-  return markdown
-    .replace(/^```[\s\S]*?^```/gm, "")
-    .replace(/`[^`\n]*`/g, "");
+/** A link target and the sentence-sized text around it. */
+export interface ExtractedDocLink {
+  target: string;
+  /** The line or block the link sits in, as plain text, trimmed to fit a row. */
+  context: string;
 }
 
-function extractMarkdownLinkTargets(markdown: string): string[] {
-  const targets: string[] = [];
+const CONTEXT_MAX = 180;
+
+/** Plain text around a link: whitespace collapsed, centered on the link when long. */
+export function linkContext(text: string, linkText = ""): string {
+  const plain = text.replace(/\s+/g, " ").trim();
+  if (plain.length <= CONTEXT_MAX) return plain;
+  const at = linkText ? Math.max(0, plain.indexOf(linkText)) : 0;
+  const start = Math.max(0, Math.min(at - 60, plain.length - CONTEXT_MAX));
+  const end = start + CONTEXT_MAX;
+  return `${start > 0 ? "…" : ""}${plain.slice(start, end).trim()}${end < plain.length ? "…" : ""}`;
+}
+
+/** A Markdown line as people read it: links become their text, markers go. */
+function markdownLineText(line: string): string {
+  return line
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/, "")
+    .replace(/(\*\*|__|\*|_|~~)(?=\S)([^*_~]*?\S)\1/g, "$2")
+    .replace(/\|/g, " ");
+}
+
+function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
+  const links: ExtractedDocLink[] = [];
   // Inline links [text](target "title"), excluding images ![alt](src).
-  const linkRe = /(!?)\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
-  const cleaned = stripCode(markdown);
+  const linkRe = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+  const withoutFences = markdown.replace(/^```[\s\S]*?^```/gm, "");
+  // Code spans never register as links; blanking them keeps offsets, so a
+  // link whose text wraps onto the next line still matches.
+  const scanned = withoutFences.replace(/`[^`\n]*`/g, (span) => " ".repeat(span.length));
   let match: RegExpExecArray | null;
-  while ((match = linkRe.exec(cleaned)) !== null) {
+  while ((match = linkRe.exec(scanned)) !== null) {
     if (match[1] === "!") continue;
-    targets.push(match[2]!);
+    // The lines the link sits on, as context; code spans read as their text.
+    const start = withoutFences.lastIndexOf("\n", match.index) + 1;
+    const end = withoutFences.indexOf("\n", match.index + match[0].length);
+    const lines = withoutFences
+      .slice(start, end === -1 ? undefined : end)
+      .replace(/`([^`\n]*)`/g, "$1")
+      // Links first: their text may wrap across the lines.
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .split("\n")
+      .map(markdownLineText)
+      .join(" ");
+    links.push({
+      target: match[3]!,
+      context: linkContext(lines, (match[2] ?? "").replace(/\s+/g, " ")),
+    });
   }
-  return targets;
+  return links;
 }
 
-function extractBlockNoteLinkTargets(blocks: unknown[], targets: string[] = []): string[] {
+/** The readable text of a BlockNote inline run, including link text. */
+function inlineText(content: unknown[]): string {
+  let text = "";
+  for (const inline of content) {
+    if (!inline || typeof inline !== "object") continue;
+    const node = inline as Record<string, unknown>;
+    if (typeof node.text === "string") text += node.text;
+    else if (Array.isArray(node.content)) text += inlineText(node.content);
+  }
+  return text;
+}
+
+function extractBlockNoteLinks(
+  blocks: unknown[],
+  links: ExtractedDocLink[] = []
+): ExtractedDocLink[] {
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
     const b = block as Record<string, unknown>;
     if (Array.isArray(b.content)) {
+      const blockText = inlineText(b.content);
       for (const inline of b.content) {
         if (!inline || typeof inline !== "object") continue;
         const node = inline as Record<string, unknown>;
         if (node.type === "link" && typeof node.href === "string") {
-          targets.push(node.href);
+          const linkText = Array.isArray(node.content) ? inlineText(node.content) : "";
+          links.push({ target: node.href, context: linkContext(blockText, linkText) });
         }
       }
     }
     if (Array.isArray(b.children)) {
-      extractBlockNoteLinkTargets(b.children, targets);
+      extractBlockNoteLinks(b.children, links);
     }
   }
-  return targets;
+  return links;
+}
+
+/** Link targets from a doc body (markdown string or BlockNote blocks), with their context. */
+export function extractDocLinks(content: string | unknown[]): ExtractedDocLink[] {
+  if (typeof content === "string") return extractMarkdownLinks(content);
+  if (Array.isArray(content)) return extractBlockNoteLinks(content);
+  return [];
 }
 
 /** Raw link targets from a doc body (markdown string or BlockNote blocks). */
 export function extractDocLinkTargets(content: string | unknown[]): string[] {
-  if (typeof content === "string") return extractMarkdownLinkTargets(content);
-  if (Array.isArray(content)) return extractBlockNoteLinkTargets(content);
-  return [];
+  return extractDocLinks(content).map((link) => link.target);
 }
 
 // ── Graph cache ─────────────────────────────────────────────
@@ -108,7 +176,7 @@ export function extractDocLinkTargets(content: string | unknown[]): string[] {
 const MAX_REBUILD_ROUNDS = 3;
 
 interface DocTargets extends DerivedRevision {
-  targets: string[];
+  links: ExtractedDocLink[];
 }
 
 interface SpaceLinks {
@@ -175,14 +243,15 @@ function resolveSpaceLinkGraph(
   const outbound = new Map<string, DocLink[]>();
   const inbound = new Map<string, string[]>();
   const broken: SpaceLinkGraph["broken"] = [];
+  const inboundContext: SpaceLinkGraph["inboundContext"] = new Map();
 
   for (const docPath of docPaths) {
-    const targets = docs.get(docPath)?.targets;
-    if (!targets) continue;
+    const extracted = docs.get(docPath)?.links;
+    if (!extracted) continue;
 
     const links: DocLink[] = [];
     const seen = new Set<string>();
-    for (const target of targets) {
+    for (const { target, context } of extracted) {
       const lexicalPath = resolveDocLink(docPath, target);
       if (lexicalPath === null) continue;
       const resolvedPath = resolveDocAliasIn(aliases, lexicalPath);
@@ -199,6 +268,9 @@ function resolveSpaceLinkGraph(
         const sources = inbound.get(resolvedPath) ?? [];
         sources.push(docPath);
         inbound.set(resolvedPath, sources);
+        const contexts = inboundContext.get(resolvedPath) ?? new Map<string, string>();
+        contexts.set(docPath, context);
+        inboundContext.set(resolvedPath, contexts);
       } else {
         broken.push({ docPath, target, resolvedPath });
       }
@@ -207,7 +279,7 @@ function resolveSpaceLinkGraph(
   }
 
   const orphans = docPaths.filter((path) => !inbound.has(path));
-  return { outbound, inbound, orphans, broken };
+  return { outbound, inbound, orphans, broken, inboundContext };
 }
 
 async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void> {
@@ -241,7 +313,7 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       docs.set(docPath, {
         revision,
         readAt,
-        targets: extractDocLinkTargets(result.data as string | unknown[]),
+        links: extractDocLinks(result.data as string | unknown[]),
       });
     }
 
@@ -299,6 +371,40 @@ export async function getDocLinks(
     links: graph.outbound.get(docPath) ?? [],
     backlinks: graph.inbound.get(docPath) ?? [],
   };
+}
+
+/**
+ * The docs linking to one doc, from the graph as last built, without waiting.
+ * A Space whose graph is out of date is rebuilt in the background, and one
+ * never built answers null until its first build lands. Page reads use this so
+ * opening a doc never waits on re-reading the Space.
+ */
+export function peekDocBacklinks(
+  spaceId: string,
+  docPath: string,
+  current: (path: string) => string = (path) => path
+): DocBacklink[] | null {
+  const space = spaces.get(spaceId);
+  if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
+  const graph = space?.graph;
+  if (!graph) return null;
+  // A graph built before a move still names the old paths: `current` maps
+  // them to where those docs are now, until the rebuild lands.
+  const backlinks = new Map<string, string>();
+  for (const [target, sources] of graph.inbound) {
+    if (target !== docPath && current(target) !== docPath) continue;
+    const contexts = graph.inboundContext.get(target);
+    for (const source of sources) {
+      const path = current(source);
+      if (!backlinks.has(path)) backlinks.set(path, contexts?.get(source) ?? "");
+    }
+  }
+  return [...backlinks].map(([path, context]) => ({ path, context }));
+}
+
+/** Start building a Space's graph in the background if it is missing or out of date. */
+export function warmLinkGraph(spaceId: string): void {
+  void getSpaceLinkGraph(spaceId).catch(() => undefined);
 }
 
 /** Annotate a doc list with backlink counts from one graph build. */

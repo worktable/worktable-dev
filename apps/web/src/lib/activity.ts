@@ -26,6 +26,8 @@ export interface ActivityOptions {
   actor?: "person" | "agent"
   /** One actor, such as a single agent. */
   actorId?: string
+  /** One doc in `spaceId`. */
+  docPath?: string
   limit?: number
 }
 
@@ -36,6 +38,7 @@ function activityUrl(options: ActivityOptions, before?: string | null): string {
     ...(options.spaceId ? { spaceId: options.spaceId } : {}),
     ...(options.actor ? { actor: options.actor } : {}),
     ...(options.actorId ? { actorId: options.actorId } : {}),
+    ...(options.docPath ? { docPath: options.docPath } : {}),
     ...(before ? { before } : {}),
   })
   return `/api/activity?${query}`

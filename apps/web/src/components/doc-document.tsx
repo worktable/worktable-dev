@@ -76,6 +76,7 @@ import {
   type PageSecondaryAction,
 } from "@/hooks/use-page-meta"
 import { DocumentPreview } from "@/components/editor/document-preview"
+import { DocumentByline } from "@/components/document/document-byline"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
@@ -325,7 +326,8 @@ function DocPageMeta({
 
   useEffect(() => {
     setPageMeta({
-      document: { spaceId, path: docPath },
+      // The byline under the title carries the lifetime chip.
+      document: { spaceId, path: docPath, lifetimeInPage: true },
       overflowActions,
       secondaryAction,
       annotations,
@@ -605,6 +607,7 @@ function DocEditorPage({
         readOnly={!page || page.capabilities.edit === false}
         spaceId={spaceId}
         docPath={docPath}
+        page={page}
         archived={archived}
         validated={validated}
         revision={revision}
@@ -697,6 +700,7 @@ function MarkdownDocPage({
   readOnly,
   spaceId,
   docPath,
+  page,
   archived,
   validated,
   revision,
@@ -711,6 +715,7 @@ function MarkdownDocPage({
   readOnly?: boolean
   spaceId: string
   docPath: string
+  page: DocumentPage | null
   archived: boolean
   validated: boolean
   revision: string | undefined
@@ -853,6 +858,17 @@ function MarkdownDocPage({
             content={content}
             spaceId={spaceId}
             docPath={docPath}
+            afterTitle={
+              <DocumentByline
+                spaceId={spaceId}
+                docPath={docPath}
+                provenance={page?.provenance}
+                updatedAt={page?.document.updatedAt}
+                contributors={page?.contributors}
+                backlinks={page?.backlinks}
+                onVersionHistory={openVersions}
+              />
+            }
           />
         </div>
 
@@ -1336,6 +1352,18 @@ function BlockNoteDocPage({
   }, [collabDoc, docPath, provider, spaceId])
 
 
+  const byline = (
+    <DocumentByline
+      spaceId={spaceId}
+      docPath={docPath}
+      provenance={page?.provenance}
+      updatedAt={page?.document.updatedAt}
+      contributors={page?.contributors}
+      backlinks={page?.backlinks}
+      onVersionHistory={openVersions}
+    />
+  )
+
   return (
     <div className="flex h-full flex-col">
       <DocPageMeta
@@ -1369,6 +1397,7 @@ function BlockNoteDocPage({
                 <DocumentPreview
                   showStatus={false}
                   content={previewContent}
+                  afterTitle={byline}
                   onScroll={(top) => {
                     previewScrollTop.current = top
                   }}
@@ -1397,6 +1426,7 @@ function BlockNoteDocPage({
                     onLocalEdit: handleLocalEdit,
                   }}
                   editable={!convertingToMarkdown}
+                  afterTitle={byline}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}
                   onSelectAnnotation={selectAnnotation}

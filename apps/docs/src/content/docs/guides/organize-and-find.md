@@ -45,8 +45,8 @@ New documents created in the app start temporary. Clear **Start as Temporary**
 in the Space's **+** menu to change that default. When asking an
 agent to create work, specify whether you want to keep it or archive it later.
 
-On a temporary document, open the **Archives** chip to choose **Keep**, change
-the archive date, or select **Archive now**. A durable document's menu offers
+On a temporary document, open the **Archives** chip under its title to choose
+**Keep**, change the archive date, or select **Archive now**. A durable document's menu offers
 **Make Temporary**.
 
 Archiving removes a document from active views without deleting it. Restoring
@@ -54,6 +54,10 @@ an archived document makes it durable. Archived documents are never deleted
 automatically; permanent deletion is a separate action.
 
 ## Find content
+
+Under a Doc's title, a line shows who last edited it and when. Open it to see
+the Doc's recent activity and **Version History**. **Linked from** lists the
+docs that link to this one, with the sentence around each link.
 
 Use search to find documents and records across Spaces. Drawings are searchable
 by typed text; freehand marks require visual inspection.

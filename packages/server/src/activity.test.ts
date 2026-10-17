@@ -13,7 +13,12 @@ import { Hono } from "hono"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { runAsActivityActor } from "./activity-log.ts"
+import {
+  drainActivity,
+  peekDocActivity,
+  recordActivity,
+  runAsActivityActor,
+} from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
@@ -272,6 +277,61 @@ describe("workspace activity", () => {
     expect(collections.every((target) => target.name === "Hiring plan")).toBe(
       true
     )
+
+    // One doc's history includes what happened before it moved, and nothing else.
+    await agentTool("worktable_docs_write", {
+      action: "write",
+      spaceId: "company",
+      docPath: "other",
+      content: "# Other\n",
+      lifetime: "durable",
+    })
+    const docPage = await request<ActivityPage>(
+      "/api/activity?spaceId=company&docPath=reports%2Fpulse"
+    )
+    expect(docPage.entries.map((entry) => entry.action)).toContain(
+      "doc.created"
+    )
+    expect(
+      docPage.entries.every(
+        (entry) =>
+          entry.target.kind === "doc" && entry.target.path === "reports/pulse"
+      )
+    ).toBe(true)
+  })
+
+  it("summarizes who worked on each doc without the page waiting on history", async () => {
+    const claude = { kind: "agent" as const, id: "local-token:claude", name: "Claude" }
+    const maya = { kind: "person" as const, id: "local:owner" }
+    const codexActor = { kind: "agent" as const, id: "local-token:codex", name: "Codex" }
+    // Claude created it as a draft; it moved to "plan" before Maya edited it.
+    recordActivity({ spaceId: "company", action: "doc.created", actor: claude, target: { kind: "doc", path: "drafts/plan" }, at: "2026-10-16T09:00:00.000Z" })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:05:00.000Z" })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: claude, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:06:00.000Z" })
+    // Inside Maya's edit session: never logged, but she edited last.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:07:00.000Z" })
+    // Not every reader may see who commented, so comments do not count.
+    recordActivity({ spaceId: "company", action: "comment.created", actor: codexActor, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:10:00.000Z" })
+    const plan = (path: string) => path === "plan" || path === "drafts/plan"
+
+    // A page never waits: a Space not summarized yet answers at once.
+    expect(peekDocActivity("archive", "notes")).toBeNull()
+    await drainActivity()
+    expect(peekDocActivity("company", "plan", plan)).toEqual({
+      lastEditor: maya,
+      contributors: [maya, claude],
+    })
+
+    // Later saves count at once, even inside one edit session.
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: claude, target: { kind: "doc", path: "plan" } })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
+    expect(peekDocActivity("company", "plan", plan)).toEqual({
+      lastEditor: maya,
+      contributors: [maya, claude],
+    })
+    expect(peekDocActivity("company", "other")).toEqual({ contributors: [] })
+    await drainActivity()
   })
 
   it("lists what is waiting on the reader until they answer", async () => {

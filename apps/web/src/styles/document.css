@@ -12,6 +12,21 @@
   margin-top: 0 !important;
 }
 
+/* A Doc's byline sits in the content flow under the title, but reads as app
+   text: the document's tracking, wrapping and link styles stay out of it. */
+.worktable-document-content .worktable-doc-byline {
+  white-space: normal;
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-variant-ligatures: normal;
+  font-feature-settings: normal;
+}
+
+.worktable-document-content .worktable-doc-byline a {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+
 .worktable-document-status {
   position: fixed;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));

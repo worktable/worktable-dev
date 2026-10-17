@@ -39,6 +39,30 @@ describe("saved document preview", () => {
     expect(html).not.toContain("worktable-preview-diagram")
   })
 
+  it("puts what goes under the title right after the opening heading, or first without one", () => {
+    const text = (value: string) => [{ type: "text", text: value, styles: {} }]
+    const byline = <div data-byline>Byline</div>
+    const order = (html: string) =>
+      ["Title", "Byline", "Body"].sort((a, b) => html.indexOf(a) - html.indexOf(b))
+
+    const rich = renderToStaticMarkup(<DocumentPreview afterTitle={byline} content={[
+      { type: "heading", props: { level: 1 }, content: text("Title") },
+      { type: "paragraph", content: text("Body") },
+    ]} />)
+    expect(order(rich)).toEqual(["Title", "Byline", "Body"])
+
+    const markdown = renderToStaticMarkup(
+      <DocumentPreview afterTitle={byline} content={"\n# Title\n\nBody\n\n# Title again"} />
+    )
+    expect(order(markdown)).toEqual(["Title", "Byline", "Body"])
+    expect(markdown.match(/data-byline/g)).toHaveLength(1)
+
+    const untitled = renderToStaticMarkup(
+      <DocumentPreview afterTitle={byline} content={"## Title\n\nBody"} />
+    )
+    expect(order(untitled)).toEqual(["Byline", "Title", "Body"])
+  })
+
   it("escapes authored text and retains headings and table content", () => {
     const html = renderToStaticMarkup(<DocumentPreview content={[
       { type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Notes", styles: {} }] },

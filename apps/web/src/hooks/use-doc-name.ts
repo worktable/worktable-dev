@@ -38,7 +38,16 @@ export function useNameFromTitleOnLeave(
     if (!createdInThisTab(spaceId, docPath)) return
     const key = `${spaceId}\0${docPath}`
     open.set(key, (open.get(key) ?? 0) + 1)
+    // Closing or reloading the page leaves the doc too; this request
+    // outlives the page.
+    const onPageHide = () => {
+      if (enabledNow.current) {
+        retitleDoc(spaceId, docPath, undefined, true).catch(() => undefined)
+      }
+    }
+    window.addEventListener("pagehide", onPageHide)
     return () => {
+      window.removeEventListener("pagehide", onPageHide)
       open.set(key, (open.get(key) ?? 1) - 1)
       // A page that opens the doc again straight away has not left it.
       setTimeout(() => {

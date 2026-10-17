@@ -203,11 +203,14 @@ export function renameDoc(
 export function retitleDoc(
   spaceId: string,
   docPath: string,
-  title?: string
+  title?: string,
+  /** Let the request finish after the page closes. */
+  keepalive = false
 ): Promise<{ ok: boolean; renamed?: Array<{ from: string; to: string }> }> {
   return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/title`, {
     method: "POST",
     body: JSON.stringify(title === undefined ? {} : { title }),
+    keepalive,
   });
 }
 

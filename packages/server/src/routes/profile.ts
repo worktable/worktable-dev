@@ -2,10 +2,22 @@ import { getTeamAuth } from "../team-auth.ts";
 import { requireTeamDatabase, currentTeamWorktable } from "../team-database.ts";
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { Hono } from "hono"
+import { z } from "zod"
 import { canManageUserSettings } from "../auth.ts"
 import { resolveParticipant } from "../participant-store.ts"
 import { teamsEnabled } from "../team-database.ts"
 import { requireTeamHuman } from "../team-policy.ts"
+import {
+  PersonalNavigationSchema,
+  personalNavigationProblem,
+} from "@worktable/types"
+import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
+import {
+  PreferencesUnreadableError,
+  savePersonalNavigation,
+} from "../personal-navigation-store.ts"
+import { occupiedSpaceIds } from "../store.ts"
+import { wsManager } from "../ws.ts"
 
 export const profileRouter = new Hono()
 
@@ -48,4 +60,65 @@ profileRouter.put("/", async (c) => {
     name,
   })
   return c.json({ id: participant.id, name: participant.name })
+})
+
+const SaveNavigationSchema = PersonalNavigationSchema.omit({
+  revision: true,
+}).extend({
+  expectedRevision: PersonalNavigationSchema.shape.revision,
+  /** The Spaces the client could show; entries for others are kept. */
+  knownSpaces: z.array(z.string().min(1).max(200)).max(5000),
+})
+
+// The person's own groups and pins. Reads arrive with the workspace summary.
+profileRouter.put("/navigation", async (c) => {
+  const person = personalPreferencesKey(c)
+  if (!person) return c.json(forbidden(), 403)
+  const parsed = SaveNavigationSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) return c.json({ error: "Invalid navigation" }, 400)
+  const problem = personalNavigationProblem(parsed.data)
+  if (problem) return c.json({ error: problem }, 400)
+  const { expectedRevision, knownSpaces, ...next } = parsed.data
+  let result
+  try {
+    result = await savePersonalNavigation(
+      person,
+      expectedRevision,
+      next,
+      knownSpaces,
+      canReadSpaceFor(c),
+      await occupiedSpaceIds()
+    )
+  } catch (error) {
+    if (error instanceof PreferencesUnreadableError) {
+      return c.json({ error: error.message, code: error.code }, 503)
+    }
+    throw error
+  }
+  if (!result.saved && "tooLarge" in result) {
+    return c.json(
+      {
+        error: "Too many pins or grouped Spaces to save",
+        code: "NAVIGATION_TOO_LARGE",
+      },
+      400
+    )
+  }
+  if (!result.saved) {
+    return c.json(
+      {
+        error: "Navigation changed since it was read",
+        code: "NAVIGATION_CONFLICT",
+        navigation: result.current,
+      },
+      409
+    )
+  }
+  wsManager.sendToPerson(person, {
+    type: "navigation_changed",
+    data: { revision: result.navigation.revision },
+  })
+  return c.json({ navigation: result.navigation })
 })

@@ -60,7 +60,6 @@ function makeStarterSpace(): SpaceFile {
     description:
       "Formats, example prompts, and a board connected to sample records.",
     icon: "hand",
-    group: "meta",
     createdAt: now,
     updatedAt: now,
     createdBy: "worktable",

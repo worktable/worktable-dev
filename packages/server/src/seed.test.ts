@@ -67,8 +67,8 @@ describe("starter workspace seeding", () => {
 
     const spaces = await listSpaces()
     expect(spaces.map((s) => s.id)).toEqual(["welcome"])
+    expect(spaces[0]).not.toHaveProperty("group")
     expect(spaces[0]).toMatchObject({
-      group: "meta",
       settings: {
         docSort: "custom",
         docOrder: ["ways-to-work", "example-prompts"],

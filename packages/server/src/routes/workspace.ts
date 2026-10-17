@@ -22,6 +22,8 @@ import {
 import { canManageUserSettings, canOperateHost } from "../auth.ts"
 import { memberAccess, spaceAccessKey } from "../team-access.ts"
 import { hasScope } from "../token-store.ts"
+import { canReadSpaceFor, personalPreferencesKey } from "../personal-identity.ts"
+import { readPersonalNavigation } from "../personal-navigation-store.ts"
 import {
   appendWorkspaceImportChunk,
   createWorkspaceExportJob,
@@ -127,6 +129,9 @@ export async function workspaceSummary(
   const member = identity?.team ? teamMemberForIdentity(identity) : null;
   const team = member ? currentTeamWorktable() : null;
   const access = member && team ? memberAccess(member.id) : null;
+  // The person's own groups and pins ride along, so the sidebar needs no
+  // request of its own. null means they have not arranged anything yet.
+  const person = personalPreferencesKey(c);
   // The page carries each Space's content key, so the first render addresses
   // content once instead of again after the spaces list arrives. Later reads
   // take them from the spaces list, which keeps this summary small.
@@ -136,6 +141,7 @@ export async function workspaceSummary(
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
+    ...(person ? { navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",
@@ -800,10 +806,10 @@ workspaceRouter.put("/", async (c) => {
   return chainManifestWrite(() => applyWorkspacePatch(c, body))
 })
 
-function applyWorkspacePatch(
+async function applyWorkspacePatch(
   c: Context,
   body: { name?: unknown; onboarding?: unknown }
-) {
+): Promise<Response> {
   const current = ensureWorkspaceManifest()
   const next: WorkspaceManifest = { ...current }
 
@@ -841,7 +847,7 @@ function applyWorkspacePatch(
   }
 
   writeWorkspaceManifest(next)
-  // Hosted browser owners may rename but never receive the filesystem root.
-  // Local owners retain the existing owner-gated PUT response.
-  return c.json(publicView(next, { includeRoot: canReadWorkspaceRoot(c) }))
+  // The whole summary, so a client replacing its copy keeps the person's
+  // navigation and team context. The root stays owner and same-origin only.
+  return c.json(await workspaceSummary(c))
 }

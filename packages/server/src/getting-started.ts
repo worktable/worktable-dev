@@ -36,3 +36,16 @@ export function gettingStartedExists(): boolean {
     return false
   }
 }
+
+/** A Space's name from its file, for pages shown before anyone signs in. */
+export function storedSpaceName(spaceId: string): string | null {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(spaceId)) return null
+  try {
+    const space = JSON.parse(
+      readFileSync(join(getSpacesDir(), spaceId, "space.json"), "utf8")
+    ) as { name?: unknown }
+    return typeof space.name === "string" ? space.name : null
+  } catch {
+    return null
+  }
+}

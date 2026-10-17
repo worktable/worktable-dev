@@ -213,9 +213,15 @@ export function observeActivityForSetup(event: ActivityEvent): void {
     case "records.added":
       completeSetupItem(key, "track-records", where)
       return
-    case "doc.pinned":
+    case "doc.pinned": {
+      // Setup pins the agent's first brief itself; that isn't the person
+      // choosing what leads a Space.
+      const watched = storedSetup(key)?.watch?.doc
+      if (watched && watched.path === where.path && watched.spaceId === where.spaceId)
+        return
       completeSetupItem(key, "pin-start", where)
       return
+    }
   }
 }
 

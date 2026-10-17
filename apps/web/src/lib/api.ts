@@ -41,6 +41,8 @@ export interface WorkspaceInfo {
     id: string
     name: string
     role: "owner" | "member"
+    /** How Activity names them as its actor. */
+    activityId?: string
     /** How they sign out here; null without a session, such as on this computer. */
     signOut: "team" | "cloud" | "password" | null
   } | null

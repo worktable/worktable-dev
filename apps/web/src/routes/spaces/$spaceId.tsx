@@ -41,6 +41,11 @@ import {
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
+import { GettingStartedHome } from "@/components/getting-started/getting-started-home"
+import { MemberWelcome } from "@/components/getting-started/member-welcome"
+import { gettingStartedSpace } from "@/lib/setup"
+
+const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
@@ -361,6 +366,8 @@ function SpaceOverview({
           )}
         </header>
 
+        <MemberWelcome spaceId={spaceId} />
+
         <PendingSection spaceId={spaceId} />
 
         <PinnedSection spaceId={spaceId} pins={pins} onRetry={onRetryPins} />
@@ -493,6 +500,9 @@ function SpaceDetailPage() {
           restoring={restoring}
         />
       )}
+      {space && isGettingStarted(space) ? (
+        <GettingStartedHome space={space} />
+      ) : (
       <SpaceOverview
         // A folder filter belongs to one Space; start each Space unfiltered.
         key={spaceId}
@@ -504,6 +514,7 @@ function SpaceDetailPage() {
         onRetryPins={isError ? () => void refetch() : undefined}
         canEdit={space?.permissions?.edit !== false}
       />
+      )}
     </div>
   )
 }

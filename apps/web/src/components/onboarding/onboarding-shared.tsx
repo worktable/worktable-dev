@@ -25,11 +25,11 @@ export function StepHeading({
     <div>
       {media ? (
         <div className="mb-5">{media}</div>
-      ) : (
+      ) : icon ? (
         <div className="mb-5 grid size-11 place-items-center rounded-xl bg-surface-tint text-primary">
           {icon}
         </div>
-      )}
+      ) : null}
       <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
         {title}
       </h1>

@@ -11,6 +11,8 @@ import { usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
+import { ProgressRing } from "@/components/getting-started/progress-ring"
+import { useGettingStartedShortcut } from "@/components/sidebar/getting-started-row"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
@@ -115,6 +117,8 @@ function PendingRow({
   }
 }
 
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
+
 /** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
   const pending = usePending(spaceId)
@@ -122,7 +126,10 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
   const items = pending.data?.items ?? []
   const failed = pending.isError && !pending.data
-  if (items.length === 0 && !failed) return null
+  // Home points to Getting Started until the person is done or unpins it.
+  const shortcut = useGettingStartedShortcut(spaces)
+  const gettingStarted = !spaceId && shortcut?.progress.next ? shortcut : null
+  if (items.length === 0 && !failed && !gettingStarted) return null
   return (
     <section aria-labelledby="pending-heading">
       <h2
@@ -131,7 +138,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
       >
         Pending
       </h2>
-      {failed ? (
+      {failed && !gettingStarted ? (
         <p className="text-sm text-muted-foreground">
           Couldn’t load what’s pending.{" "}
           <button
@@ -153,6 +160,26 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
               }
             />
           ))}
+          {gettingStarted && (
+            <Link
+              to="/spaces/$spaceId"
+              params={{ spaceId: gettingStarted.space.id }}
+              className={rowClass}
+            >
+              <ProgressRing
+                done={gettingStarted.progress.done}
+                total={gettingStarted.progress.total}
+              />
+              <span className="shrink-0 font-medium text-foreground">
+                {gettingStarted.space.name}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {gettingStarted.progress.done} of{" "}
+                {gettingStarted.progress.total} · Next:{" "}
+                {lowerFirst(gettingStarted.progress.next?.title ?? "")}
+              </span>
+            </Link>
+          )}
         </div>
       )}
     </section>

@@ -17,6 +17,7 @@ import {
   savePersonalNavigation,
 } from "../personal-navigation-store.ts"
 import { occupiedSpaceIds } from "../store.ts"
+import { changeSetup, setupKeyForPerson } from "../personal-setup.ts"
 import { wsManager } from "../ws.ts"
 
 export const profileRouter = new Hono()
@@ -121,4 +122,40 @@ profileRouter.put("/navigation", async (c) => {
     data: { revision: result.navigation.revision },
   })
   return c.json({ navigation: result.navigation })
+})
+
+const SaveSetupSchema = z
+  .object({
+    audience: z.enum(["solo", "team"]).optional(),
+    hidden: z.boolean().optional(),
+    welcomed: z.boolean().optional(),
+    /** Start or stop waiting for an agent's first task during setup. */
+    watch: z.enum(["start", "stop"]).optional(),
+  })
+  .strict()
+
+// The person's own choices about their first steps. Progress itself is
+// recorded by the server as things happen; reads arrive with the workspace
+// summary.
+profileRouter.put("/setup", async (c) => {
+  const person = personalPreferencesKey(c)
+  if (!person) return c.json(forbidden(), 403)
+  const parsed = SaveSetupSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!parsed.success) return c.json({ error: "Invalid setup" }, 400)
+  const { watch, ...choices } = parsed.data
+  try {
+    const saved = await changeSetup(setupKeyForPerson(person), (current) => {
+      const next = { ...current, ...choices }
+      if (watch === "start") next.watch = { since: new Date().toISOString() }
+      if (watch === "stop") delete next.watch
+      return next
+    })
+    return c.json({ setup: saved })
+  } catch (error) {
+    if (error instanceof PreferencesUnreadableError)
+      return c.json({ error: error.message, code: error.code }, 503)
+    throw error
+  }
 })

@@ -1,3 +1,5 @@
+import { initialSpaceVisibility } from "./getting-started.ts"
+import { moveOwnerSetup } from "./personal-setup.ts"
 import {
   beginTeamInitialization,
   finishTeamInitialization,
@@ -133,8 +135,8 @@ export async function activateLocalTeams(
           ).run(worktableId, user.id)
           for (const space of spaces)
             db.query(
-              "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, 'restricted')"
-            ).run(worktableId, space.id)
+              "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, ?)"
+            ).run(worktableId, space.id, initialSpaceVisibility(space))
           // Preserve the single person's existing labelled agents and their participants.
           const migrated = new Map<string, string>()
           for (const credential of credentials) {
@@ -178,6 +180,8 @@ export async function activateLocalTeams(
         throw error
       }
       const member = findTeamMember(user.id)!
+      // The owner's first steps carry over to their new team identity.
+      await moveOwnerSetup(participantKey(bootstrap))
       return {
         headers: signedIn.headers,
         member,

@@ -455,7 +455,9 @@ function ReferrerRow({
 }) {
   return (
     <>
-      <span className="mt-0.5 shrink-0 [&>svg]:size-3.5">{icon}</span>
+      <span className="flex h-5 shrink-0 items-center [&>svg]:size-3.5">
+        {icon}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className="truncate font-medium text-foreground">{name}</span>

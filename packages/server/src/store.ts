@@ -2435,26 +2435,6 @@ export async function listDocsDetailed(
   return docs.filter((doc) => includeArchived || !doc.archived);
 }
 
-const docSummaryWarmups = new Set<string>();
-
-/**
- * A Doc's name as the sidebar shows it, its first heading, from the summary
- * the last list of its Space read, without reading the Doc. Until a list has
- * run, one starts in the background and this returns undefined, so callers
- * fall back to the name the path gives.
- */
-export function peekDocTitle(spaceId: string, docPath: string): string | undefined {
-  const key = docsDir(spaceId);
-  const summaries = docBodySummaries.get(key);
-  if (!summaries && !docSummaryWarmups.has(key)) {
-    docSummaryWarmups.add(key);
-    void listDocsDetailed(spaceId)
-      .catch(() => undefined)
-      .finally(() => docSummaryWarmups.delete(key));
-  }
-  return summaries?.get(docPath)?.headings[0]?.trim() || undefined;
-}
-
 export async function listDocsByPrefix(spaceId: string, prefix: string): Promise<string[]> {
   const sanitizedPrefix = sanitizeDocPath(prefix);
   return (await listDocs(spaceId)).filter(

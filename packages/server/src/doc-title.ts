@@ -13,70 +13,22 @@ import {
   commitAgentBlocks,
   syncDocAfterToolWrite,
 } from "./mcp/dispatcher.ts"
-import { listDocuments } from "./document-query.ts"
+import { createDocAliasReservationLookup } from "./doc-aliases.ts"
+import {
+  markdownDocTitle,
+  richDocTitle,
+  titleBlock,
+  withMarkdownTitle,
+} from "./doc-title-text.ts"
+import { listDocumentsWithAliases } from "./document-query.ts"
 import { DocEditError } from "./markdown-edit.ts"
 import {
-  deduplicateSlug,
   sanitizeDocPath,
   slugify,
   writeDoc,
 } from "./store.ts"
 
 type Block = Record<string, unknown> & { id?: unknown }
-
-/** The opening block when it is the Doc's title, a level-one heading. */
-export function titleBlock(blocks: readonly unknown[]): Block | null {
-  const first = blocks[0] as Block | undefined
-  if (!first || first.type !== "heading") return null
-  const props = (first.props ?? {}) as Record<string, unknown>
-  if ((Number(props.level) || 1) !== 1 || props.isToggleable) return null
-  return first
-}
-
-function inlineText(content: unknown): string {
-  if (!Array.isArray(content)) return ""
-  return content
-    .map((inline) => {
-      if (!inline || typeof inline !== "object") return ""
-      const item = inline as { text?: unknown; content?: unknown }
-      return typeof item.text === "string" ? item.text : inlineText(item.content)
-    })
-    .join("")
-}
-
-/** The title a rich Doc opens with, or "" without one. */
-export function richDocTitle(blocks: readonly unknown[]): string {
-  const block = titleBlock(blocks)
-  return block ? inlineText(block.content).trim() : ""
-}
-
-/**
- * The 0-based line range of the level-one heading a Markdown Doc opens with
- * (ATX `# Title`, or a setext title underlined with `=`), or null.
- */
-function markdownTitleLines(
-  lines: readonly string[]
-): { start: number; end: number; text: string } | null {
-  const start = lines.findIndex((line) => line.trim() !== "")
-  if (start === -1) return null
-  const atx = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(lines[start]!)
-  if (atx) return { start, end: start, text: atx[1]!.trim() }
-  if (/^ {0,3}=+[ \t]*$/.test(lines[start + 1] ?? "")) {
-    return { start, end: start + 1, text: lines[start]!.trim() }
-  }
-  return null
-}
-
-/** `markdown` with `title` as its opening level-one heading. */
-export function withMarkdownTitle(markdown: string, title: string): string {
-  const lines = markdown.split("\n")
-  const current = markdownTitleLines(lines)
-  if (current) {
-    lines.splice(current.start, current.end - current.start + 1, `# ${title}`)
-    return lines.join("\n")
-  }
-  return markdown.trim() === "" ? `# ${title}\n` : `# ${title}\n\n${markdown}`
-}
 
 /**
  * Give a Doc `title` as its opening heading. A rich Doc that is open gets
@@ -141,6 +93,13 @@ export async function setDocTitle(
   })
   if (!written.ok) throw new Error(written.error ?? "Failed to rename document")
   await syncDocAfterToolWrite(spaceId, docPath)
+  // A block someone added at the top meanwhile goes before the new title.
+  if (Array.isArray(written.content) && richDocTitle(written.content) !== title) {
+    throw new DocEditError(
+      "revision_conflict",
+      `${docPath} changed at its top while it was renamed. Try again.`
+    )
+  }
 }
 
 /**
@@ -158,11 +117,24 @@ export async function pathForTitle(
   if (!slug) return from
   const parent = from.split("/").slice(0, -1).join("/")
   const base = parent ? `${parent}/${slug}` : slug
-  // Every document path is taken, archived ones too.
-  const others = (await listDocuments({ spaceId, includeArchived: true }))
-    .map((item) => (item.kind === "document" ? item.path : item.pathKey))
-    .filter((path) => path !== from)
-  return deduplicateSlug(base, others)
+  // Every document path is taken, archived ones too, and so is every path a
+  // moved document left behind for its old links.
+  const { documents, aliases } = await listDocumentsWithAliases({
+    spaceId,
+    includeArchived: true,
+  })
+  const taken = new Set(
+    documents
+      .map((item) => (item.kind === "document" ? item.path : item.pathKey))
+      .filter((path) => path !== from)
+      .map((path) => path.toLowerCase())
+  )
+  const reserved = createDocAliasReservationLookup(aliases)
+  const free = (path: string) =>
+    path === from || (!taken.has(path.toLowerCase()) && !reserved(path))
+  let candidate = base
+  for (let n = 2; !free(candidate); n++) candidate = `${base}-${n}`
+  return candidate
 }
 
 /** The title a Doc has now, as people see it when it is open. */
@@ -171,16 +143,16 @@ export async function currentDocTitle(
   docPath: string
 ): Promise<string> {
   const { base } = await agentChangeBase(spaceId, docPath, undefined, false)
-  if (typeof base === "string") {
-    return markdownTitleLines(base.split("\n"))?.text ?? ""
-  }
+  if (typeof base === "string") return markdownDocTitle(base)
   return Array.isArray(base) ? richDocTitle(base) : ""
 }
 
 /**
- * Rename a Doc: set its title, then move it to the path made from it.
- * Without a title, the Doc keeps the one it has and only moves; a Doc
- * without a title stays where it is.
+ * Rename a Doc: move it to the path made from its new title, then set the
+ * title. Moving first means a move that cannot happen changes nothing, and
+ * a title that fails after the move is set by trying again, which finds the
+ * Doc already at that path. Without a title, the Doc keeps the one it has and
+ * only moves; a Doc without a title stays where it is.
  */
 export async function renameDocToTitle(
   spaceId: string,
@@ -198,13 +170,18 @@ export async function renameDocToTitle(
       ? { renamed: [], error: null }
       : { renamed: [], error: "Name is empty" }
   }
+  const to = await pathForTitle(spaceId, docPath, name)
+  if (to !== from) {
+    const moved = await renameDocAndSync(spaceId, from, to)
+    if (moved.error) return moved
+  }
   try {
-    if (title !== undefined) await setDocTitle(spaceId, docPath, name, updatedBy)
+    if (title !== undefined) await setDocTitle(spaceId, to, name, updatedBy)
   } catch (error) {
-    if (error instanceof DocEditError) return { renamed: [], error: error.message }
+    if (error instanceof DocEditError) {
+      return { renamed: to === from ? [] : [{ from, to }], error: error.message }
+    }
     throw error
   }
-  const to = await pathForTitle(spaceId, docPath, name)
-  if (to === from) return { renamed: [{ from, to }], error: null }
-  return renameDocAndSync(spaceId, from, to)
+  return { renamed: [{ from, to }], error: null }
 }

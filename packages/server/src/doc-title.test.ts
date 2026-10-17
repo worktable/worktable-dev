@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import type { SpaceFile } from "@worktable/types"
-import { renameDocToTitle, withMarkdownTitle } from "./doc-title.ts"
+import { renameDocToTitle } from "./doc-title.ts"
+import { renameDocAndSync } from "./doc-rename.ts"
+import { withMarkdownTitle } from "./doc-title-text.ts"
 import { resolveDocAlias } from "./doc-aliases.ts"
 import { docExists, readDoc, writeDoc, writeSpace } from "./store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -75,6 +77,13 @@ describe("renaming a Doc by its title", () => {
     expect(await docExists("space", "plans/hiring")).toBe(true)
     expect((await resolveDocAlias("space", "plans/untitled")).path).toBe("plans/hiring-2")
 
+    // A path a moved Doc left for its old links is taken too.
+    await writeDoc("space", "plans/budget", [paragraph("b", "Moved away")])
+    await renameDocAndSync("space", "plans/budget", "archive/budget")
+    expect((await renameDocToTitle("space", "plans/hiring", "Budget", "user")).renamed).toEqual([
+      { from: "plans/hiring", to: "plans/budget-2" },
+    ])
+
     // Renaming to the name it already has leaves the path alone.
     expect(await renameDocToTitle("space", "plans/hiring-2", "Hiring", "user")).toEqual({
       renamed: [{ from: "plans/hiring-2", to: "plans/hiring-2" }],
@@ -115,5 +124,6 @@ describe("renaming a Doc by its title", () => {
     expect(withMarkdownTitle("Old\n===\n\nBody", "New")).toBe("# New\n\nBody")
     expect(withMarkdownTitle("Body only", "New")).toBe("# New\n\nBody only")
     expect(withMarkdownTitle("## Section\n\nBody", "New")).toBe("# New\n\n## Section\n\nBody")
+    expect(withMarkdownTitle("\uFEFF# Old\n\nBody", "New")).toBe("\uFEFF# New\n\nBody")
   })
 })

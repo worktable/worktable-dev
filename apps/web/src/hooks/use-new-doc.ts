@@ -7,12 +7,19 @@ import { docQueryKeys } from "@/lib/docs-queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
 
-// Docs this tab just created, so their page can start in the title.
+// Docs this tab created: their page starts in the title the first time it
+// opens, and they take their title's name when left.
 const justCreated = new Set<string>()
+const createdHere = new Set<string>()
 
 /** Whether this tab just created the doc; true only the first time asked. */
 export function takeJustCreated(spaceId: string, path: string): boolean {
   return justCreated.delete(`${spaceId}\0${path}`)
+}
+
+/** Whether this tab created the doc, under the name it was given. */
+export function createdInThisTab(spaceId: string, path: string): boolean {
+  return createdHere.has(`${spaceId}\0${path}`)
 }
 
 /**
@@ -38,6 +45,7 @@ export function useNewDocIn(onCreated?: () => void) {
           lifetime
         )
         justCreated.add(`${spaceId}\0${path}`)
+        createdHere.add(`${spaceId}\0${path}`)
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: docQueryKeys.docs(spaceId),

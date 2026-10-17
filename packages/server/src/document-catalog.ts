@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import type { BigIntStats, Stats } from "node:fs"
-import { lstat } from "node:fs/promises"
+import { lstat, readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import type {
   DocumentDescriptor,
@@ -42,9 +42,11 @@ import {
   type HtmlDocumentPropertiesRead,
 } from "./html-document-properties-v2.ts"
 import {
+  BUILTIN_DOCUMENT_FORMATS,
   createBuiltinDocumentFormatRegistry,
   type DocumentFormatRegistry,
 } from "./document-format-registry.ts"
+import { storedDocTitle } from "./doc-title-text.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
   documentStorageProfiles,
@@ -185,6 +187,7 @@ async function buildFingerprint(
 const SPACE_FILE_CACHE_LIMIT = 1_024
 /** One entry per durable V2 HTML Doc. */
 const HTML_PROPERTIES_CACHE_LIMIT = 10_000
+const DOC_TITLE_CACHE_LIMIT = 50_000
 
 /**
  * Reuse a parse of `path` while its fingerprint is unchanged. Values are
@@ -334,6 +337,29 @@ async function readCatalogHtmlProperties(input: {
   }
   if (key !== null) parsedHtmlProperties.set(stateRoot, key, view)
   return view
+}
+
+const docTitles = new FingerprintCache<string>(DOC_TITLE_CACHE_LIMIT)
+
+/**
+ * The title a Doc file opens with, re-read only when its fingerprint
+ * changed. A file changed too recently to identify is read every time.
+ */
+async function readCatalogDocTitle(
+  file: string,
+  key: string | undefined,
+  markdown: boolean
+): Promise<string> {
+  const cached = key !== undefined ? docTitles.get(file, key) : undefined
+  if (cached !== undefined) return cached
+  let title = ""
+  try {
+    title = storedDocTitle(await readFile(file, "utf8"), markdown)
+  } catch {
+    // An unreadable file keeps the name its path gives; its reader reports why.
+  }
+  if (key !== undefined) docTitles.set(file, key, title)
+  return title
 }
 
 /** Freeze a parsed value; binary views cannot be frozen and are left as is. */
@@ -998,6 +1024,27 @@ async function buildDocumentCatalogFromFiles(
       if (fingerprint && !fingerprint.racy) {
         sourceKeys.set(claim.source.relativePath, fingerprint.key)
       }
+    }
+  )
+  // A Doc is named by the title it opens with, read again only when its
+  // file changes.
+  await mapWithConcurrency(
+    merged.claims.filter(
+      (claim) =>
+        claim.source.kind === "file" &&
+        (claim.format.id === BUILTIN_DOCUMENT_FORMATS.markdown ||
+          claim.format.id === BUILTIN_DOCUMENT_FORMATS.richText) &&
+        !claim.diagnostics.some((diagnostic) => diagnostic.severity === "error")
+    ),
+    CATALOG_IO_CONCURRENCY,
+    async (claim) => {
+      options.signal?.throwIfAborted()
+      const title = await readCatalogDocTitle(
+        resolve(spaceRoot, claim.source.relativePath),
+        sourceKeys.get(claim.source.relativePath),
+        claim.format.id === BUILTIN_DOCUMENT_FORMATS.markdown
+      )
+      if (title) claim.title = title
     }
   )
   const grouped = new Map<string, typeof merged.claims>()

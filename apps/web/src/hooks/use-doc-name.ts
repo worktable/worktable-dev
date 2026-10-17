@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { createdInThisTab } from "@/hooks/use-new-doc"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { retitleDoc } from "@/lib/docs-api"
 import { docQueryKeys } from "@/lib/docs-queries"
@@ -14,16 +15,13 @@ export function useDocName(spaceId: string, docPath: string): string {
   return node?.label ?? humanizeSegment(docPath.split("/").at(-1) ?? docPath)
 }
 
-/** The names new docs get until they have a title. */
-const AUTOMATIC_NAME = /^untitled(?:-\d+)?$/
-
 // How many pages have each doc open, so leaving means none still do.
 const open = new Map<string, number>()
 
 /**
- * A doc created as Untitled takes the name its title gives once people leave
- * it. Moving it while it is open would reload the page under the person
- * typing.
+ * A doc this tab created as Untitled takes the name its title gives once
+ * people leave it. Moving it while it is open would reload the page under the
+ * person typing. Other docs keep their path until someone renames them.
  */
 export function useNameFromTitleOnLeave(
   spaceId: string,
@@ -32,9 +30,7 @@ export function useNameFromTitleOnLeave(
 ): void {
   const queryClient = useQueryClient()
   useEffect(() => {
-    if (!enabled || !AUTOMATIC_NAME.test(docPath.split("/").at(-1) ?? "")) {
-      return
-    }
+    if (!enabled || !createdInThisTab(spaceId, docPath)) return
     const key = `${spaceId}\0${docPath}`
     open.set(key, (open.get(key) ?? 0) + 1)
     return () => {

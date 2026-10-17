@@ -219,8 +219,12 @@ export function RecordDetailBody({
   const archived = Boolean(record.archive)
   const moreCount = sections.unmodeled.length
   const { data: agentData } = useActivityAgents()
-  // The Space page keeps this list; HTML Doc titles name records they wrote.
-  const { data: documents } = useQuery({ ...documentsQueryOptions(spaceId), refetchOnMount: false })
+  // HTML Doc titles name records they wrote. The Space's socket marks this
+  // list invalid when a document changes; otherwise the cached list is used.
+  const { data: documents } = useQuery({
+    ...documentsQueryOptions(spaceId),
+    refetchOnMount: (query) => query.state.isInvalidated,
+  })
   const actors = { agents: agentData?.agents, documents }
 
   const narrativeContent = sections.narrative.length > 0 ? (

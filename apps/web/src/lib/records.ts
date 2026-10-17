@@ -120,7 +120,9 @@ export function recordDetailSections(
   }
 }
 
-const AGENT_PRINCIPAL = /^(agent|local-token|workos-agent):/
+// Agent principal ids: local and Team tokens, Cloud OAuth clients, and the
+// implicit identity of an unauthenticated local MCP connection.
+const AGENT_PRINCIPAL = /^(agent|local-token|workos-agent|oauth):|^worktable-agent$/
 
 /** Who a record's `createdBy`/`updatedBy` names. Write paths store different
  *  forms: the owner (`user`), an agent's principal id (`local-token:<id>` over

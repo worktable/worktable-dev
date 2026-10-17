@@ -176,6 +176,8 @@ describe("record attribution", () => {
     // Unknown agents and removed Docs never show a raw id.
     expect(recordActorName("local-token:gone", known)).toBe("An agent")
     expect(recordActorName("workos-agent:client", known)).toBe("An agent")
+    expect(recordActorName("oauth:client:owner", known)).toBe("An agent")
+    expect(recordActorName("worktable-agent", known)).toBe("An agent")
     expect(recordActorName("widget:removed", known)).toBe("An HTML Doc")
     // A name written by hand in the record file stays as written.
     expect(recordActorName("Research desk", known)).toBe("Research desk")

@@ -477,7 +477,8 @@ const SpaceSection = memo(function SpaceSection({
   // Creation lives on the space row (hover-revealed +) so the tree below starts
   // immediately — no toolbar row between the space header and its content.
   const afterCreate = () => {
-    setExpanded(true)
+    // Shows the new document; like following the route, it isn't kept.
+    setExpandedState(true)
     if (isMobile) setOpen(false)
   }
 

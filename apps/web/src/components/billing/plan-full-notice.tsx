@@ -163,7 +163,8 @@ export function PlanFullNotice({
   } else {
     body = (
       <p>
-        {worktableName} is full. Ask {payerName} to change the plan.
+        {worktableName} is full. Ask {payerName} to change the plan. We&apos;ve
+        let them know.
       </p>
     )
   }

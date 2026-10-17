@@ -60,6 +60,11 @@ import {
 } from "@/components/sidebar/space-groups"
 import { rememberedOpen, rememberOpen } from "@/lib/sidebar-open-state"
 import {
+  collapsiblePanel,
+  transitionOpenChange,
+  transitionSidebar,
+} from "@/lib/sidebar-transition"
+import {
   addGroup,
   moveToGroup,
   newGroupId,
@@ -77,8 +82,10 @@ import {
   useRecordCollections,
   useSpace,
   queryKeys,
+  recordCollectionsQueryOptions,
+  spaceQueryOptions,
 } from "@/lib/queries"
-import { useSpaceDocs } from "@/lib/docs-queries"
+import { spaceDocsQueryOptions, useSpaceDocs } from "@/lib/docs-queries"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { useSidebar } from "@/hooks/use-sidebar"
@@ -158,7 +165,7 @@ import {
   moveWidget,
   restoreWidget,
 } from "@/lib/widgets-api"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import type {
   DocListEntry,
@@ -173,7 +180,11 @@ import {
   moveDocumentFolder,
   restoreDocumentFolder,
 } from "@/lib/documents-api"
-import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
+import {
+  documentQueryKeys,
+  documentsQueryOptions,
+  useDocuments,
+} from "@/lib/documents-queries"
 import {
   documentPathIsAtOrBelow,
   specializedDocumentView,
@@ -276,6 +287,39 @@ function SettingsButton() {
 }
 
 // ── Space Section ────────────────────────────────────────────
+
+/** What an opened Space shows at once: its pins, Docs and record collections. */
+const spaceContents = (spaceId: string) =>
+  [
+    spaceQueryOptions(spaceId),
+    spaceDocsQueryOptions(spaceId),
+    documentsQueryOptions(spaceId),
+    recordCollectionsQueryOptions(spaceId),
+  ] as const
+
+function spaceContentsLoaded(queryClient: QueryClient, spaceId: string) {
+  return spaceContents(spaceId).every(
+    (options) => queryClient.getQueryData(options.queryKey) !== undefined
+  )
+}
+
+function loadSpaceContents(queryClient: QueryClient, spaceId: string) {
+  return Promise.all([
+    queryClient.ensureQueryData(spaceQueryOptions(spaceId)),
+    queryClient.ensureQueryData(spaceDocsQueryOptions(spaceId)),
+    queryClient.ensureQueryData(documentsQueryOptions(spaceId)),
+    queryClient.ensureQueryData(recordCollectionsQueryOptions(spaceId)),
+  ]).then(
+    () => undefined,
+    // The opened Space shows its own error states.
+    () => undefined
+  )
+}
+
+/** How long a Space waits for its contents before opening without them. */
+const OPEN_WAIT_MS = 500
+/** How long the pointer rests on a Space before its contents load. */
+const INTENT_MS = 80
 
 type RowNewActionsProps = {
   spaceId: string
@@ -415,11 +459,56 @@ const SpaceSection = memo(function SpaceSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followRoute, isInSpace, expanded])
 
+  // The panel takes the height of what it holds when it opens. Opening
+  // once the contents are in lets it grow to the whole tree in one motion
+  // instead of easing to a placeholder and jumping when the tree arrives.
+  const opening = useRef(false)
+  const intent = useRef<number | undefined>(undefined)
+  const rowRef = useRef<HTMLDivElement>(null)
+  // Building the tree takes as long as loading it on a phone, so it builds
+  // hidden while its contents load; opening then only reveals it. Resting
+  // the pointer only loads what is missing: a hidden tree would refetch
+  // whatever is stale, for Spaces that may never open.
+  const [prepared, setPrepared] = useState(false)
+  const preload = () => void loadSpaceContents(queryClient, space.id)
+  const prepare = () => {
+    setPrepared(true)
+    preload()
+  }
+  const animateExpanded = (open: boolean) => {
+    const root = rowRef.current?.parentElement
+    if (!root) return setExpanded(open)
+    transitionSidebar(
+      root,
+      () => setExpanded(open),
+      () => collapsiblePanel(root)
+    )
+  }
   const handleToggleExpanded = (open: boolean) => {
-    if (!open && isInSpace) {
-      userCollapsedRef.current = true
+    if (!open) {
+      if (isInSpace) userCollapsedRef.current = true
+      animateExpanded(false)
+      setPrepared(false)
+      return
     }
-    setExpanded(open)
+    if (prepared && spaceContentsLoaded(queryClient, space.id)) {
+      animateExpanded(true)
+      return
+    }
+    // Keyboard and assistive opens start here; pointers prepared on press.
+    if (!prepared) setPrepared(true)
+    if (opening.current) return
+    opening.current = true
+    void Promise.race([
+      loadSpaceContents(queryClient, space.id),
+      new Promise((resolve) => setTimeout(resolve, OPEN_WAIT_MS)),
+    ]).then(() =>
+      // A frame later the hidden tree has rendered what just arrived.
+      requestAnimationFrame(() => {
+        opening.current = false
+        animateExpanded(true)
+      })
+    )
   }
 
   const handleNavigate = useCallback(() => {
@@ -509,7 +598,10 @@ const SpaceSection = memo(function SpaceSection({
   return (
     <>
       <Collapsible open={expanded} onOpenChange={handleToggleExpanded}>
-        <div className="group/space relative flex items-center rounded-md transition-colors duration-180 hover:bg-sidebar-hover">
+        <div
+          ref={rowRef}
+          className="group/space relative flex items-center rounded-md transition-colors duration-180 hover:bg-sidebar-hover"
+        >
           {/* The whole row folds and unfolds the Space; its overview is the
             first row inside. */}
           <CollapsibleTrigger
@@ -517,6 +609,24 @@ const SpaceSection = memo(function SpaceSection({
               isInSpace ? "text-sidebar-foreground" : "text-sidebar-space-foreground"
             }`}
             render={<button type="button" aria-expanded={expanded} />}
+            onPointerEnter={(event) => {
+              if (event.pointerType !== "mouse" || expanded) return
+              intent.current = window.setTimeout(preload, INTENT_MS)
+            }}
+            onPointerLeave={(event) => {
+              window.clearTimeout(intent.current)
+              // A finger "leaves" as it lifts, before its tap; only a mouse
+              // moving away means the Space won't open.
+              if (event.pointerType !== "mouse") return
+              if (!expanded && !opening.current) setPrepared(false)
+            }}
+            onPointerCancel={() => {
+              // A touch that turns into a scroll won't open the Space.
+              if (!expanded && !opening.current) setPrepared(false)
+            }}
+            onPointerDown={() => {
+              if (!expanded) prepare()
+            }}
           >
             <SpaceIcon space={space} />
             <span className="min-w-0 truncate">{space.name}</span>
@@ -601,7 +711,10 @@ const SpaceSection = memo(function SpaceSection({
           </div>
         </div>
 
-        <CollapsibleContent>
+        <CollapsibleContent
+          className="collapsible-instant"
+          keepMounted={prepared}
+        >
           <div className="ml-4 pl-2">
             <SpaceContent space={space} onNavigate={handleNavigate} />
           </div>
@@ -664,7 +777,7 @@ const SpaceContent = memo(function SpaceContent({
   })
 
   return (
-    <div className="mt-1 animate-in duration-200 fade-in">
+    <div className="sidebar-reveal mt-1">
       <SpaceOverviewLink spaceId={spaceId} onNavigate={onNavigate} />
       <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
       <SpaceTreeSection
@@ -1076,19 +1189,23 @@ function WidgetTreeActions({
         onRestore={handleRestore}
         onDelete={() => setDeleteOpen(true)}
       />
-      <RenameDialog
-        open={renameOpen}
-        onClose={() => setRenameOpen(false)}
-        onRename={handleRename}
-        currentPath={widgetId}
-        pathInput
-      />
-      <WidgetDeleteDialog
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        widgetName={documentName}
-        onConfirm={handleDelete}
-      />
+      <DeferredMount active={renameOpen}>
+        <RenameDialog
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+          onRename={handleRename}
+          currentPath={widgetId}
+          pathInput
+        />
+      </DeferredMount>
+      <DeferredMount active={deleteOpen}>
+        <WidgetDeleteDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          widgetName={documentName}
+          onConfirm={handleDelete}
+        />
+      </DeferredMount>
     </>
   )
 }
@@ -1630,7 +1747,7 @@ function SpaceTreeSection({
           )}
 
           {temporaryTree.length > 0 && (
-            <Collapsible open={temporaryOpen} onOpenChange={setTemporaryOpen}>
+            <Collapsible open={temporaryOpen} onOpenChange={transitionOpenChange(setTemporaryOpen)}>
               <div className="px-3">
                 <CollapsibleTrigger
                   className="flex min-h-8 w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase sm:min-h-0"
@@ -1644,7 +1761,7 @@ function SpaceTreeSection({
                   <span className="font-normal">{temporaryCount}</span>
                 </CollapsibleTrigger>
               </div>
-              <CollapsibleContent>
+              <CollapsibleContent className="collapsible-instant">
                 <nav aria-label="Temporary documents" className="space-y-0.5">
                   {temporaryTree.map((node) => (
                     <TreeItem
@@ -1660,7 +1777,7 @@ function SpaceTreeSection({
           )}
 
           {archivedTree.length > 0 && (
-            <Collapsible open={archivedOpen} onOpenChange={setArchivedOpen}>
+            <Collapsible open={archivedOpen} onOpenChange={transitionOpenChange(setArchivedOpen)}>
               <div className="px-3">
                 <CollapsibleTrigger
                   className="flex min-h-8 w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase sm:min-h-0"
@@ -1673,7 +1790,7 @@ function SpaceTreeSection({
                   <span>Archived</span>
                 </CollapsibleTrigger>
               </div>
-              <CollapsibleContent>
+              <CollapsibleContent className="collapsible-instant">
                 <nav aria-label="Archived documents" className="space-y-0.5">
                   {archivedTree.map((node) => (
                     <TreeItem
@@ -1879,11 +1996,18 @@ function DocTreeItem({
     }
   }, [containsCurrent, isActive, open, node.isFolder, revealCurrent])
 
+  const folderRowRef = useRef<HTMLDivElement>(null)
   const handleToggleNode = (nextOpen: boolean) => {
     if (!nextOpen && (containsCurrent || isActive)) {
       userCollapsedNodeRef.current = true
     }
-    setOpenState(nextOpen)
+    const root = folderRowRef.current?.parentElement
+    if (!root) return setOpenState(nextOpen)
+    transitionSidebar(
+      root,
+      () => setOpenState(nextOpen),
+      () => collapsiblePanel(root)
+    )
   }
 
   const handleRename = async (newPath: string) => {
@@ -2040,6 +2164,7 @@ function DocTreeItem({
       <>
         <Collapsible open={open} onOpenChange={handleToggleNode}>
           <div
+            ref={folderRowRef}
             className={`group/folder relative flex items-center rounded-md transition-colors duration-180 ${
               isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
             } ${isDragging ? "opacity-50" : ""}`}
@@ -2068,7 +2193,8 @@ function DocTreeItem({
                   spaceId={spaceId}
                   path={node.path}
                   onClick={() => {
-                    handleToggleNode(true)
+                    // The page changes too, so this opens without a transition.
+                    setOpenState(true)
                     onNavigate()
                   }}
                   className={`flex min-w-0 flex-1 items-center py-2 pr-3 pl-1 text-sm ${
@@ -2158,7 +2284,7 @@ function DocTreeItem({
               </RowNewActions>
             </div>
           </div>
-          <CollapsibleContent>
+          <CollapsibleContent className="collapsible-instant">
             <div className="ml-4 pl-2">
               {node.children.map((child) => (
                 <TreeItem
@@ -2178,20 +2304,24 @@ function DocTreeItem({
             </div>
           </CollapsibleContent>
         </Collapsible>
-        <RenameDialog
-          open={renameOpen}
-          onClose={() => setRenameOpen(false)}
-          onRename={handleRename}
-          currentPath={node.path}
-          isFolder
-        />
-        <DeleteDialog
-          open={deleteOpen}
-          onClose={() => setDeleteOpen(false)}
-          onConfirm={handleDelete}
-          itemName={node.name}
-          isFolder
-        />
+        <DeferredMount active={renameOpen}>
+          <RenameDialog
+            open={renameOpen}
+            onClose={() => setRenameOpen(false)}
+            onRename={handleRename}
+            currentPath={node.path}
+            isFolder
+          />
+        </DeferredMount>
+        <DeferredMount active={deleteOpen}>
+          <DeleteDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            onConfirm={handleDelete}
+            itemName={node.name}
+            isFolder
+          />
+        </DeferredMount>
       </>
     )
   }
@@ -2243,18 +2373,22 @@ function DocTreeItem({
           />
         </div>
       </div>
-      <RenameDialog
-        open={renameOpen}
-        onClose={() => setRenameOpen(false)}
-        onRename={handleRename}
-        currentPath={node.path}
-      />
-      <DeleteDialog
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={handleDelete}
-        itemName={node.name}
-      />
+      <DeferredMount active={renameOpen}>
+        <RenameDialog
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+          onRename={handleRename}
+          currentPath={node.path}
+        />
+      </DeferredMount>
+      <DeferredMount active={deleteOpen}>
+        <DeleteDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={handleDelete}
+          itemName={node.name}
+        />
+      </DeferredMount>
     </>
   )
 }
@@ -2485,7 +2619,7 @@ export function AppSidebar() {
       {/* Content */}
       <ScrollFadeArea
         fadeSize={24}
-        className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:opacity-0 [&_[data-slot=scroll-area-scrollbar]]:transition-opacity [&_[data-slot=scroll-area-scrollbar]]:duration-300 [&:hover_[data-slot=scroll-area-scrollbar]]:opacity-100"
+        className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:opacity-0 [&_[data-slot=scroll-area-scrollbar]]:transition-opacity [&_[data-slot=scroll-area-scrollbar]]:duration-300 [&:hover_[data-slot=scroll-area-scrollbar]]:opacity-100 [&[data-scrollbar-held]_[data-slot=scroll-area-scrollbar]]:opacity-100"
       >
         {searching ? (
           <div className="px-2 py-3">
@@ -2607,7 +2741,7 @@ export function AppSidebar() {
                 {archivedSpaces.length > 0 && (
                   <Collapsible
                     open={archivedSpacesOpen}
-                    onOpenChange={setArchivedSpacesOpen}
+                    onOpenChange={transitionOpenChange(setArchivedSpacesOpen)}
                   >
                     <div className="px-3">
                       <CollapsibleTrigger
@@ -2621,7 +2755,7 @@ export function AppSidebar() {
                         <span>Archived</span>
                       </CollapsibleTrigger>
                     </div>
-                    <CollapsibleContent>
+                    <CollapsibleContent className="collapsible-instant">
                       <div className="space-y-0.5">
                         {archivedSpaces.map((space) => spaceRow(space))}
                       </div>
@@ -2635,7 +2769,8 @@ export function AppSidebar() {
       </ScrollFadeArea>
 
       <div
-        className="flex shrink-0 items-center gap-1.5 px-3 py-2.5"
+        data-sidebar-motion-cover=""
+        className="flex shrink-0 items-center gap-1.5 bg-sidebar px-3 py-2.5"
         style={{
           paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))",
         }}

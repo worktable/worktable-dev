@@ -1,4 +1,5 @@
 import { browserTeamMemberId } from "@/lib/team-context"
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { lazy, Suspense, useState, useEffect, type ReactNode } from "react"
 import {
   DropdownMenu,
@@ -237,19 +238,23 @@ export function SpaceContextMenuButton({
       </DropdownMenu>
 
       {accessOpen && spaceId && <Suspense fallback={null}><SpaceAccessEditor spaceId={spaceId} onClose={() => setAccessOpen(false)} /></Suspense>}
-      <SpaceRenameDialog
-        open={renameOpen}
-        onClose={() => setRenameOpen(false)}
-        onRename={onRename}
-        currentName={spaceName}
-      />
+      <DeferredMount active={renameOpen}>
+        <SpaceRenameDialog
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+          onRename={onRename}
+          currentName={spaceName}
+        />
+      </DeferredMount>
 
-      <SpaceDeleteDialog
-        open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onConfirm={onDelete}
-        spaceName={spaceName}
-      />
+      <DeferredMount active={deleteOpen}>
+        <SpaceDeleteDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={onDelete}
+          spaceName={spaceName}
+        />
+      </DeferredMount>
 
       {iconPickerOpen && (
         <Suspense fallback={null}>

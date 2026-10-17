@@ -86,6 +86,7 @@ import {
   type Browser,
   type BrowserContext,
   type CDPSession,
+  type Locator,
   type Page,
 } from "playwright-core"
 import {
@@ -1239,8 +1240,14 @@ async function hideSidebar(session: Session): Promise<void> {
 }
 
 /** The measured gesture: hover then click on desktop, tap on the phone. */
-async function press(session: Session, selector: string): Promise<void> {
-  const link = session.page.locator(selector).first()
+async function press(
+  session: Session,
+  selector: string | Locator
+): Promise<void> {
+  const link =
+    typeof selector === "string"
+      ? session.page.locator(selector).first()
+      : selector
   if (session.network.phone) {
     await link.tap()
     return
@@ -1356,6 +1363,31 @@ function docExpectations(
 }
 
 // ── Journeys ──────────────────────────────────────────────────────────
+
+function openSpaceInSidebar(pass: Pass, space: SpaceTarget): Action {
+  return {
+    pass,
+    journey: "open a Space in the sidebar",
+    target: space.id,
+    expect: [
+      { name: "sidebarSpace", key: "content", args: { spaceId: space.id } },
+    ],
+    contentKey: "content",
+    gate: new RegExp(`/api/spaces/${space.id}/(documents|docs)\\b`),
+    // Starts from the Space closed, as a person meets it in the list.
+    prepare: async (session) => {
+      await showSidebar(session)
+      const row = spaceToggle(session, space.name)
+      await row.waitFor()
+      if ((await row.getAttribute("aria-expanded")) === "true") {
+        await row.click()
+        await row.and(session.page.locator('[aria-expanded="false"]')).waitFor()
+      }
+    },
+    act: (session) => press(session, spaceToggle(session, space.name)),
+    t0: "click",
+  }
+}
 
 function openSpace(pass: Pass, space: SpaceTarget): Action {
   return {
@@ -1504,6 +1536,7 @@ function search(pass: Pass, query: string): Action {
 function clickJourney(pass: Pass, targets: Targets, second: boolean): Action[] {
   const pick = <T>(a: T, b: T) => (second ? b : a)
   return [
+    openSpaceInSidebar(pass, pick(targets.spaceA, targets.spaceB)),
     openSpace(pass, pick(targets.spaceA, targets.spaceB)),
     openDocument(pass, "open Markdown doc", pick(targets.mdA, targets.mdB)),
     openDocument(pass, "open rich doc", pick(targets.richA, targets.richB)),

@@ -287,11 +287,13 @@ export function SpaceNewActions({
           />
         </Suspense>
       )}
-      <NewWidgetDialog
-        open={widgetOpen}
-        onClose={() => setWidgetOpen(false)}
-        onCreate={createWidgetShell}
-      />
+      <DeferredMount active={widgetOpen}>
+        <NewWidgetDialog
+          open={widgetOpen}
+          onClose={() => setWidgetOpen(false)}
+          onCreate={createWidgetShell}
+        />
+      </DeferredMount>
       <DeferredMount active={collectionOpen}>
         <NewCollectionDialog
           open={collectionOpen}

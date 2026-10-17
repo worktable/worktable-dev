@@ -171,7 +171,13 @@ export function recordActivity(input: ActivityInput): void {
   const now = input.at ? Date.parse(input.at) : Date.now()
   // Every save counts toward who last touched a doc, even inside one session.
   if (input.target.kind === "doc" && input.spaceId) {
-    noteDocSummary(input.spaceId, input.target.path, input.action, actor)
+    noteDocSummary(
+      input.spaceId,
+      input.target.path,
+      input.action,
+      actor,
+      new Date(now).toISOString()
+    )
   }
   let sessionKey: string | undefined
   if (input.action === "doc.edited") {
@@ -313,13 +319,28 @@ export async function drainActivity(): Promise<void> {
 export interface DocActivitySummary {
   /** Who last created or edited the doc. */
   lastEditor?: ActivityActor
-  /** People and agents who edited or commented, most recent first. */
+  /**
+   * People and agents who created or edited it, most recent first. Comments
+   * are left out: not every reader may see who commented.
+   */
   contributors: ActivityActor[]
+}
+
+/** One actor's latest work on a doc. */
+interface DocWork {
+  actor: ActivityActor
+  at: string
+}
+
+/** What one recorded path's history says, kept with times to merge paths. */
+interface PathSummary {
+  lastEdit?: DocWork
+  contributors: DocWork[]
 }
 
 const CONTRIBUTORS_KEPT = 4
 /** Keyed by workspace and Space, like the logs, without touching the disk. */
-const docSummaries = new Map<string, Map<string, DocActivitySummary>>()
+const docSummaries = new Map<string, Map<string, PathSummary>>()
 /** Logs whose summary is building, with what arrived meanwhile. */
 const summariesBuilding = new Map<string, ActivityEvent[]>()
 const summaryBuilds = new Map<string, Promise<void>>()
@@ -329,21 +350,19 @@ function summaryKey(spaceId: string): string {
 }
 
 function applyDocSummary(
-  summaries: Map<string, DocActivitySummary>,
+  summaries: Map<string, PathSummary>,
   path: string,
   action: ActivityAction,
-  actor: ActivityActor
+  actor: ActivityActor,
+  at: string
 ): void {
-  const edit = action === "doc.created" || action === "doc.edited"
-  if (!edit && action !== "comment.created" && action !== "comment.replied") {
-    return
-  }
+  if (action !== "doc.created" && action !== "doc.edited") return
   const summary = summaries.get(path) ?? { contributors: [] }
-  if (edit) summary.lastEditor = actor
+  summary.lastEdit = { actor, at }
   if (actor.kind !== "system") {
     summary.contributors = [
-      actor,
-      ...summary.contributors.filter((known) => known.id !== actor.id),
+      { actor, at },
+      ...summary.contributors.filter((known) => known.actor.id !== actor.id),
     ].slice(0, CONTRIBUTORS_KEPT)
   }
   summaries.set(path, summary)
@@ -353,16 +372,33 @@ function noteDocSummary(
   spaceId: string,
   path: string,
   action: ActivityAction,
-  actor: ActivityActor
+  actor: ActivityActor,
+  at: string
 ): void {
   const key = summaryKey(spaceId)
   const queued = summariesBuilding.get(key)
   if (queued) {
-    queued.push({ action, actor, target: { kind: "doc", path } } as ActivityEvent)
+    queued.push({ action, actor, at, target: { kind: "doc", path } } as ActivityEvent)
     return
   }
   const summaries = docSummaries.get(key)
-  if (summaries) applyDocSummary(summaries, path, action, actor)
+  if (summaries) applyDocSummary(summaries, path, action, actor, at)
+}
+
+/** The summaries of every path a doc was recorded under, as one. */
+function mergePathSummaries(parts: readonly PathSummary[]): DocActivitySummary {
+  const newestFirst = (a: DocWork, b: DocWork) => b.at.localeCompare(a.at)
+  const lastEdit = parts
+    .flatMap((part) => (part.lastEdit ? [part.lastEdit] : []))
+    .sort(newestFirst)[0]
+  const seen = new Set<string>()
+  const contributors = parts
+    .flatMap((part) => part.contributors)
+    .sort(newestFirst)
+    .filter(({ actor }) => !seen.has(actor.id) && seen.add(actor.id))
+    .slice(0, CONTRIBUTORS_KEPT)
+    .map(({ actor }) => actor)
+  return { ...(lastEdit ? { lastEditor: lastEdit.actor } : {}), contributors }
 }
 
 async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
@@ -372,14 +408,20 @@ async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
     // Writes already on their way land in the log before it is read; later
     // ones queue above.
     await drainWrites()
-    const summaries = new Map<string, DocActivitySummary>()
+    const summaries = new Map<string, PathSummary>()
     // Writes started together can land in the log in either order.
     const logged = (await readLog(spaceId)).sort((a, b) =>
       a.at.localeCompare(b.at)
     )
     for (const event of [...logged, ...queued]) {
       if (event.target.kind === "doc") {
-        applyDocSummary(summaries, event.target.path, event.action, event.actor)
+        applyDocSummary(
+          summaries,
+          event.target.path,
+          event.action,
+          event.actor,
+          event.at
+        )
       }
     }
     if (summariesBuilding.get(key) === queued) docSummaries.set(key, summaries)
@@ -389,16 +431,25 @@ async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
 }
 
 /**
- * Who has worked on a doc, without waiting. A Space not summarized yet
- * answers null and starts summarizing in the background.
+ * Who has worked on a doc, without waiting. History stays under the paths it
+ * was recorded at, so `recordedAt` says which paths were this doc's before
+ * it moved. A Space not summarized yet answers null and starts summarizing
+ * in the background.
  */
 export function peekDocActivity(
   spaceId: string,
-  path: string
+  path: string,
+  recordedAt: (recorded: string) => boolean = (recorded) => recorded === path
 ): DocActivitySummary | null {
   const key = summaryKey(spaceId)
   const summaries = docSummaries.get(key)
-  if (summaries) return summaries.get(path) ?? { contributors: [] }
+  if (summaries) {
+    return mergePathSummaries(
+      [...summaries].flatMap(([recorded, summary]) =>
+        recordedAt(recorded) ? [summary] : []
+      )
+    )
+  }
   if (!summariesBuilding.has(key)) {
     const build = buildDocSummaries(spaceId, key)
       .catch((error) => {
@@ -551,7 +602,7 @@ function isVisible(event: ActivityEvent, options: VisibilityOptions): boolean {
 export async function listActivity(
   options: ListActivityOptions
 ): Promise<ActivityPage> {
-  await drainActivity()
+  await drainWrites()
   const offset = options.timezoneOffset ?? 0
   const sources = options.spaces ?? (await loggedSpaces())
   const cursor = options.before ? decodeCursor(options.before) : null
@@ -614,7 +665,7 @@ export async function listActivity(
 export async function listActivityAgents(
   options: VisibilityOptions & Pick<ListActivityOptions, "spaces">
 ): Promise<ActivityActor[]> {
-  await drainActivity()
+  await drainWrites()
   const sources = options.spaces ?? (await loggedSpaces())
   const events = (await Promise.all(sources.map(readLog)))
     .flat()

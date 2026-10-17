@@ -132,13 +132,19 @@ describe("link graph", () => {
         "[fenced](/inside-fence)",
         "```",
         `${"Long lead-in. ".repeat(20)}Then [far](/far) and more text after it.`,
+        "A link whose text [wraps",
+        "onto a new line](/wrapped) still counts.",
       ].join("\n");
       const links = extractDocLinks(md);
       expect(links[0]).toEqual({
         target: "/plans/arrival",
         context: "See the plan for dates and invitations@example.com.",
       });
-      expect(links).toHaveLength(2);
+      expect(links).toHaveLength(3);
+      expect(links[2]).toEqual({
+        target: "/wrapped",
+        context: "A link whose text wraps onto a new line still counts.",
+      });
       expect(links[1]!.context.startsWith("…")).toBe(true);
       expect(links[1]!.context).toContain("Then far and more");
       expect(links[1]!.context.length).toBeLessThanOrEqual(182);
@@ -384,6 +390,14 @@ describe("link graph", () => {
     await getSpaceLinkGraph(SPACE);
     expect(peekDocBacklinks(SPACE, "target")?.map((link) => link.path).sort()).toEqual([
       "first",
+      "second",
+    ]);
+
+    // Until the rebuild after a move lands, the old paths name the moved docs.
+    const moved = (path: string) =>
+      ({ target: "renamed", first: "notes/first" })[path] ?? path;
+    expect(peekDocBacklinks(SPACE, "renamed", moved)?.map((link) => link.path).sort()).toEqual([
+      "notes/first",
       "second",
     ]);
   });

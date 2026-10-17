@@ -303,15 +303,20 @@ describe("workspace activity", () => {
   it("summarizes who worked on each doc without the page waiting on history", async () => {
     const claude = { kind: "agent" as const, id: "local-token:claude", name: "Claude" }
     const maya = { kind: "person" as const, id: "local:owner" }
-    recordActivity({ spaceId: "company", action: "doc.created", actor: claude, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:00:00.000Z" })
-    recordActivity({ spaceId: "company", action: "comment.created", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:05:00.000Z" })
+    const codexActor = { kind: "agent" as const, id: "local-token:codex", name: "Codex" }
+    // Claude created it as a draft; it moved to "plan" before Maya edited it.
+    recordActivity({ spaceId: "company", action: "doc.created", actor: claude, target: { kind: "doc", path: "drafts/plan" }, at: "2026-10-16T09:00:00.000Z" })
+    recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:05:00.000Z" })
+    // Not every reader may see who commented, so comments do not count.
+    recordActivity({ spaceId: "company", action: "comment.created", actor: codexActor, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:10:00.000Z" })
     await drainActivity()
+    const plan = (path: string) => path === "plan" || path === "drafts/plan"
 
     // The first read answers at once and summarizes in the background.
-    expect(peekDocActivity("company", "plan")).toBeNull()
+    expect(peekDocActivity("company", "plan", plan)).toBeNull()
     await drainActivity()
-    expect(peekDocActivity("company", "plan")).toEqual({
-      lastEditor: claude,
+    expect(peekDocActivity("company", "plan", plan)).toEqual({
+      lastEditor: maya,
       contributors: [maya, claude],
     })
 
@@ -319,7 +324,7 @@ describe("workspace activity", () => {
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: claude, target: { kind: "doc", path: "plan" } })
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" } })
-    expect(peekDocActivity("company", "plan")).toEqual({
+    expect(peekDocActivity("company", "plan", plan)).toEqual({
       lastEditor: maya,
       contributors: [maya, claude],
     })

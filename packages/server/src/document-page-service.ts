@@ -27,10 +27,12 @@ import {
 import { listDocumentAnnotationsForHandle } from "./document-annotation-service.ts"
 import {
   legacySpecializedDocumentView,
+  readDocumentCatalogSnapshot,
   type DocumentHandleResolution,
   type ResolvedDocumentHandle,
   useResolvedDocumentHandle,
 } from "./document-query.ts"
+import { createDocAliasResolver } from "./doc-aliases.ts"
 import { createBuiltinDocumentFormatRegistry } from "./document-format-registry.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -91,16 +93,26 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
     legacyShareKind: "doc",
     annotationTarget: (path) => ({ docPath: path }),
     async readMetadata(spaceId, handle) {
-      const [meta, epoch, revision] = await Promise.all([
+      const [meta, epoch, revision, catalog] = await Promise.all([
         getDocMetaView(spaceId, handle.document.path),
         getWorkspaceCollaborationEpoch(),
         docSourceContentRevision(spaceId, handle.source),
+        readDocumentCatalogSnapshot(spaceId),
       ])
       // Backlinks and who has worked on the doc come from per-Space caches
       // that answer without reading files. A Space whose cache is not built
-      // yet leaves them out until its background build lands.
-      const backlinks = peekDocBacklinks(spaceId, handle.document.path)
-      const activity = peekDocActivity(spaceId, handle.document.path)
+      // yet leaves them out until its background build lands. Both keep the
+      // paths docs had when they were recorded; the Space's aliases say where
+      // those docs are now.
+      const path = handle.document.path
+      const resolve = createDocAliasResolver(catalog.aliases)
+      const current = (recorded: string) => resolve(recorded) ?? recorded
+      const backlinks = peekDocBacklinks(spaceId, path, current)
+      const activity = peekDocActivity(
+        spaceId,
+        path,
+        (recorded) => current(recorded) === path
+      )
       return {
         ...(meta.provenance ? { provenance: meta.provenance } : {}),
         ...(revision ? { revision } : {}),

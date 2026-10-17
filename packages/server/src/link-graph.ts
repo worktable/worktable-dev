@@ -90,21 +90,27 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   // Inline links [text](target "title"), excluding images ![alt](src).
   const linkRe = /(!?)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
   const withoutFences = markdown.replace(/^```[\s\S]*?^```/gm, "");
-  for (const line of withoutFences.split("\n")) {
-    // Code spans never register as links, but their text still reads as context.
-    const scanned = line.replace(/`[^`\n]*`/g, "");
-    let match: RegExpExecArray | null;
-    linkRe.lastIndex = 0;
-    while ((match = linkRe.exec(scanned)) !== null) {
-      if (match[1] === "!") continue;
-      links.push({
-        target: match[3]!,
-        context: linkContext(
-          markdownLineText(line.replace(/`([^`\n]*)`/g, "$1")),
-          match[2] ?? ""
-        ),
-      });
-    }
+  // Code spans never register as links; blanking them keeps offsets, so a
+  // link whose text wraps onto the next line still matches.
+  const scanned = withoutFences.replace(/`[^`\n]*`/g, (span) => " ".repeat(span.length));
+  let match: RegExpExecArray | null;
+  while ((match = linkRe.exec(scanned)) !== null) {
+    if (match[1] === "!") continue;
+    // The lines the link sits on, as context; code spans read as their text.
+    const start = withoutFences.lastIndexOf("\n", match.index) + 1;
+    const end = withoutFences.indexOf("\n", match.index + match[0].length);
+    const lines = withoutFences
+      .slice(start, end === -1 ? undefined : end)
+      .replace(/`([^`\n]*)`/g, "$1")
+      // Links first: their text may wrap across the lines.
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .split("\n")
+      .map(markdownLineText)
+      .join(" ");
+    links.push({
+      target: match[3]!,
+      context: linkContext(lines, (match[2] ?? "").replace(/\s+/g, " ")),
+    });
   }
   return links;
 }
@@ -375,17 +381,25 @@ export async function getDocLinks(
  */
 export function peekDocBacklinks(
   spaceId: string,
-  docPath: string
+  docPath: string,
+  current: (path: string) => string = (path) => path
 ): DocBacklink[] | null {
   const space = spaces.get(spaceId);
   if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
   const graph = space?.graph;
   if (!graph) return null;
-  const contexts = graph.inboundContext.get(docPath);
-  return (graph.inbound.get(docPath) ?? []).map((path) => ({
-    path,
-    context: contexts?.get(path) ?? "",
-  }));
+  // A graph built before a move still names the old paths: `current` maps
+  // them to where those docs are now, until the rebuild lands.
+  const backlinks = new Map<string, string>();
+  for (const [target, sources] of graph.inbound) {
+    if (target !== docPath && current(target) !== docPath) continue;
+    const contexts = graph.inboundContext.get(target);
+    for (const source of sources) {
+      const path = current(source);
+      if (!backlinks.has(path)) backlinks.set(path, contexts?.get(source) ?? "");
+    }
+  }
+  return [...backlinks].map(([path, context]) => ({ path, context }));
 }
 
 /** Start building a Space's graph in the background if it is missing or out of date. */

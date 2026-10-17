@@ -63,6 +63,32 @@ describe("saved document preview", () => {
     expect(order(untitled)).toEqual(["Byline", "Title", "Body"])
   })
 
+  it("shows a rich Doc's name in grey where its title is empty or missing", () => {
+    const text = (value: string) => [{ type: "text", text: value, styles: {} }]
+    const byline = <div data-byline>Byline</div>
+    const placeholder = (html: string) =>
+      html.match(/<h1 class="worktable-title-placeholder">([^<]*)<\/h1>/)?.[1]
+
+    const empty = renderToStaticMarkup(<DocumentPreview titlePlaceholder="Untitled 2" afterTitle={byline} content={[
+      { id: "t", type: "heading", props: { level: 1 }, content: [] },
+      { id: "p", type: "paragraph", content: text("Body") },
+    ]} />)
+    expect(placeholder(empty)).toBe("Untitled 2")
+    expect(empty.indexOf("Untitled 2")).toBeLessThan(empty.indexOf("Byline"))
+
+    const missing = renderToStaticMarkup(<DocumentPreview titlePlaceholder="Field notes" afterTitle={byline} content={[
+      { id: "p", type: "paragraph", content: text("Body") },
+    ]} />)
+    expect(placeholder(missing)).toBe("Field notes")
+    expect(missing.indexOf("Field notes")).toBeLessThan(missing.indexOf("Byline"))
+    expect(missing.indexOf("Byline")).toBeLessThan(missing.indexOf("Body"))
+
+    const titled = renderToStaticMarkup(<DocumentPreview titlePlaceholder="Plan" content={[
+      { id: "t", type: "heading", props: { level: 1 }, content: text("Q3 plan") },
+    ]} />)
+    expect(placeholder(titled)).toBeUndefined()
+  })
+
   it("escapes authored text and retains headings and table content", () => {
     const html = renderToStaticMarkup(<DocumentPreview content={[
       { type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Notes", styles: {} }] },

@@ -51,6 +51,7 @@ import { resolveDocAliasIn, type DocAliases } from "./doc-aliases.ts"
 import { withDocPathLock } from "./doc-path-lock.ts"
 import {
   getDocMetaFactsMaps,
+  peekDocTitle,
   readSpace,
   sanitizeDocPath,
   type DocLifetimeFacts,
@@ -445,6 +446,11 @@ function findEntry(
   )
 }
 
+const DOC_TITLE_FORMATS = new Set<string>([
+  BUILTIN_DOCUMENT_FORMATS.markdown,
+  BUILTIN_DOCUMENT_FORMATS.richText,
+])
+
 export async function listDocuments(options: {
   spaceId: string
   includeArchived?: boolean
@@ -468,7 +474,14 @@ export async function listDocumentsWithAliases(options: {
         context,
         options.includeArchived ?? false
       )
-      return classified ? [classified.item] : []
+      if (!classified) return []
+      const item = classified.item
+      // Docs are named by their first heading, as in the sidebar.
+      const title =
+        item.kind === "document" && DOC_TITLE_FORMATS.has(item.format.id)
+          ? peekDocTitle(options.spaceId, item.path)
+          : undefined
+      return [title ? { ...item, title } : item]
     }),
     aliases: context.catalog.aliases,
   }

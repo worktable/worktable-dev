@@ -151,6 +151,7 @@ import { RenameDialog } from "@/components/docs/rename-dialog"
 import { DeleteDialog } from "@/components/docs/delete-dialog"
 import {
   renameDoc,
+  retitleDoc,
   deleteDoc,
   archiveDoc,
   restoreDoc,
@@ -2026,6 +2027,11 @@ function DocTreeItem({
     )
   }
 
+  // A Doc's name is its title; other documents are named by their path.
+  const namedByTitle =
+    !node.isFolder &&
+    (node.format?.id === "worktable.rich-text" ||
+      node.format?.id === "worktable.markdown")
   const handleRename = async (newPath: string) => {
     const openPath = router.state.location.pathname
     try {
@@ -2039,7 +2045,9 @@ function DocTreeItem({
                 renamed: [{ from: node.path, to: result.to ?? newPath }],
               })
             )
-          : await renameDoc(spaceId, node.path, newPath, "document")
+          : namedByTitle
+            ? await retitleDoc(spaceId, node.path, newPath)
+            : await renameDoc(spaceId, node.path, newPath, "document")
       await Promise.all([
         onRefresh(),
         ...(node.isFolder ? [onWidgetRefresh()] : []),
@@ -2401,6 +2409,7 @@ function DocTreeItem({
           onClose={() => setRenameOpen(false)}
           onRename={handleRename}
           currentPath={node.path}
+          title={namedByTitle ? node.label : undefined}
         />
       </DeferredMount>
       <DeferredMount active={deleteOpen}>

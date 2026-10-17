@@ -4,7 +4,6 @@ import { z } from "zod";
 import { DocumentLifetimeSchema } from "@worktable/types";
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import {
-  listDocs,
   listDocsByPrefix,
   listDocsDetailed,
   readDoc,
@@ -14,7 +13,6 @@ import {
   docExists,
   docStat,
   slugifyDocPath,
-  deduplicateSlug,
   getDocArchiveInfo,
   getDocArchiveInfoMap,
   getDocProvenance,
@@ -39,7 +37,7 @@ import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts"
 import { invalidateSearchIndex } from "../search-index.ts";
 import { listDocAnnotations } from "../annotation-store.ts";
 import { renameDocAndSync, renameDocsByPrefixAndSync } from "../doc-rename.ts";
-import { renameDocToTitle } from "../doc-title.ts";
+import { freeDocPath, renameDocToTitle } from "../doc-title.ts";
 import { docAliasReservationError, readDocAliases, resolveDocAlias, resolveDocAliasIn } from "../doc-aliases.ts";
 import { extractHeadings, extractMarkdownHeadings, prepareMarkdownStorageConversion } from "../markdown.ts";
 import { documentReferenceFallbackTitle, parseDocumentReference, type ResolvedDocumentReference } from "@worktable/types";
@@ -268,7 +266,8 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     return c.json({ error: "Title is empty after normalization", code: "VALIDATION_ERROR" }, 400);
   }
 
-  const docPath = await deduplicateSlug(base, await listDocs(spaceId));
+  // A new doc never takes a path an older one left for its links.
+  const docPath = await freeDocPath(spaceId, base);
 
   const filePath = getDocPath(spaceId, docPath);
   suppressPath(filePath);

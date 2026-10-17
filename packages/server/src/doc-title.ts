@@ -141,9 +141,20 @@ export async function pathForTitle(
   const slug = slugify(title)
   if (!slug) return from
   const parent = from.split("/").slice(0, -1).join("/")
-  const base = parent ? `${parent}/${slug}` : slug
-  // Every document path is taken, archived ones too, and so is every path a
-  // moved document left behind for its old links.
+  return freeDocPath(spaceId, parent ? `${parent}/${slug}` : slug, from)
+}
+
+/**
+ * `base`, or `base-2`, `base-3`, … when it is taken. Every document path is
+ * taken, archived ones too, and so is every path a moved document left for
+ * its old links. `own` is the path of the document being named, which it may
+ * keep.
+ */
+export async function freeDocPath(
+  spaceId: string,
+  base: string,
+  own?: string
+): Promise<string> {
   const { documents, aliases } = await listDocumentsWithAliases({
     spaceId,
     includeArchived: true,
@@ -151,12 +162,12 @@ export async function pathForTitle(
   const taken = new Set(
     documents
       .map((item) => (item.kind === "document" ? item.path : item.pathKey))
-      .filter((path) => path !== from)
+      .filter((path) => path !== own)
       .map((path) => path.toLowerCase())
   )
   const reserved = createDocAliasReservationLookup(aliases)
   const free = (path: string) =>
-    path === from || (!taken.has(path.toLowerCase()) && !reserved(path))
+    path === own || (!taken.has(path.toLowerCase()) && !reserved(path))
   let candidate = base
   for (let n = 2; !free(candidate); n++) candidate = `${base}-${n}`
   return candidate

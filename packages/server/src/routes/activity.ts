@@ -21,6 +21,7 @@ activityRouter.get("/", async (c) => {
       scopes: c.get("identity").scopes,
       ...(actor === "person" || actor === "agent" ? { actorKind: actor } : {}),
       ...(c.req.query("actorId") ? { actorId: c.req.query("actorId") } : {}),
+      ...(c.req.query("docPath") ? { docPath: c.req.query("docPath") } : {}),
       before: c.req.query("before") || null,
       limit,
       ...(Number.isInteger(offsetRaw) && Math.abs(offsetRaw) <= 14 * 60

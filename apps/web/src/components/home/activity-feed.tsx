@@ -126,13 +126,23 @@ function records(count: number | undefined): string {
   return n === 1 ? "a record" : `${n} records`
 }
 
-/** One plain sentence: who did what to which thing. */
-function Sentence({ entry }: { entry: ActivityEntry }) {
+/**
+ * One plain sentence: who did what to which thing. On the doc itself, the
+ * thing goes without saying: "Claude edited", "Maya commented".
+ */
+export function ActivitySentence({
+  entry,
+  inDoc = false,
+}: {
+  entry: ActivityEntry
+  inDoc?: boolean
+}) {
   const who = (
     <span className="font-medium text-foreground">
       {actorName(entry.actor)}
     </span>
   )
+  if (inDoc) return <DocSentence entry={entry} who={who} />
   const what = <TargetLink entry={entry} />
   const times = entry.repeats > 1 ? ` ${entry.repeats} times` : ""
   if (entry.actor.kind === "system") {
@@ -257,6 +267,47 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
   }
 }
 
+const IN_DOC: Partial<Record<ActivityEntry["action"], string>> = {
+  "doc.created": "created this doc",
+  "doc.edited": "edited",
+  "doc.archived": "archived it",
+  "doc.restored": "restored it",
+  "doc.kept": "kept it",
+  "doc.madeTemporary": "made it temporary",
+  "doc.pinned": "pinned it",
+  "doc.unpinned": "unpinned it",
+  "comment.replied": "replied to a comment",
+}
+
+function DocSentence({
+  entry,
+  who,
+}: {
+  entry: ActivityEntry
+  who: ReactNode
+}) {
+  const times = entry.repeats > 1 ? ` ${entry.repeats} times` : ""
+  const instruction = entry.category === "instruction"
+  const verb =
+    entry.action === "comment.created"
+      ? instruction
+        ? "left an instruction"
+        : "commented"
+      : entry.action === "comment.resolved"
+        ? instruction
+          ? "resolved an instruction"
+          : "resolved a comment"
+        : (IN_DOC[entry.action] ?? "changed it")
+  return entry.actor.kind === "system" ? (
+    <>Changed outside Worktable</>
+  ) : (
+    <>
+      {who} {verb}
+      {entry.action === "doc.edited" ? times : ""}
+    </>
+  )
+}
+
 // ── Entry ──────────────────────────────────────────────────
 
 /** The badge on the timeline, joined to the next entry by a line. */
@@ -302,7 +353,7 @@ export function ActivityItem({
         )}
       >
         <p className="break-words">
-          <Sentence entry={entry} />
+          <ActivitySentence entry={entry} />
         </p>
         {entry.quote && entry.action.startsWith("comment.") && (
           <p className="mt-1.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[0.8125rem] leading-[1.125rem]">

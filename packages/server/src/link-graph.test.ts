@@ -7,7 +7,9 @@ import { join } from "node:path";
 
 import { writeSpace, renameDoc, deleteDoc, listDocsDetailed } from "./store.ts";
 import {
+  extractDocLinks,
   extractDocLinkTargets,
+  peekDocBacklinks,
   resolveDocLink,
   getSpaceLinkGraph,
   getDocLinks,
@@ -119,6 +121,41 @@ describe("link graph", () => {
         },
       ];
       expect(extractDocLinkTargets(blocks)).toEqual(["/target-doc", "nested"]);
+    });
+  });
+
+  describe("extractDocLinks", () => {
+    it("keeps the readable text around each link as its context", () => {
+      const md = [
+        "- See the [plan](/plans/arrival) for **dates** and `invitations@example.com`.",
+        "```",
+        "[fenced](/inside-fence)",
+        "```",
+        `${"Long lead-in. ".repeat(20)}Then [far](/far) and more text after it.`,
+      ].join("\n");
+      const links = extractDocLinks(md);
+      expect(links[0]).toEqual({
+        target: "/plans/arrival",
+        context: "See the plan for dates and invitations@example.com.",
+      });
+      expect(links).toHaveLength(2);
+      expect(links[1]!.context.startsWith("…")).toBe(true);
+      expect(links[1]!.context).toContain("Then far and more");
+      expect(links[1]!.context.length).toBeLessThanOrEqual(182);
+
+      const blocks = [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Builds on " },
+            { type: "link", href: "/research/mocks", content: [{ type: "text", text: "the mockups" }] },
+            { type: "text", text: "." },
+          ],
+        },
+      ];
+      expect(extractDocLinks(blocks)).toEqual([
+        { target: "/research/mocks", context: "Builds on the mockups." },
+      ]);
     });
   });
 
@@ -327,6 +364,28 @@ describe("link graph", () => {
       const graph = await getSpaceLinkGraph(SPACE);
       expect(graph.inbound.get("b")).toEqual(["a"]);
     });
+  });
+
+  it("peekDocBacklinks answers from the last build and refreshes in the background", async () => {
+    await write("target", "Target");
+    await write("first", "Read [the target](target) first.");
+    // A Space never built has no answer yet; asking starts a build without waiting.
+    expect(peekDocBacklinks("never-built", "target")).toBeNull();
+    await getSpaceLinkGraph(SPACE);
+    expect(peekDocBacklinks(SPACE, "target")).toEqual([
+      { path: "first", context: "Read the target first." },
+    ]);
+
+    await write("second", "Also [target](/target).");
+    // The graph is out of date: the last answer stands while it rebuilds.
+    expect(peekDocBacklinks(SPACE, "target")).toEqual([
+      { path: "first", context: "Read the target first." },
+    ]);
+    await getSpaceLinkGraph(SPACE);
+    expect(peekDocBacklinks(SPACE, "target")?.map((link) => link.path).sort()).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("decorateDocsWithBacklinkCounts annotates lists", async () => {

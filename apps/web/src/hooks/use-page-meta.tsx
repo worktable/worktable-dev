@@ -47,8 +47,11 @@ export interface PageMeta {
   /** Optional artifact details shown from the breadcrumb accessory. */
   updatedAtLabel?: string
   provenanceLabel?: string
-  /** The document this page shows, for its lifetime and pin controls. */
-  document?: { spaceId: string; path: string }
+  /**
+   * The document this page shows, for its lifetime and pin controls. Pages
+   * that show the lifetime chip themselves say so with `lifetimeInPage`.
+   */
+  document?: { spaceId: string; path: string; lifetimeInPage?: boolean }
   /** Cloud-only owner control for a read-only public link. */
   shareTarget?: PageShareTarget
   /** The single most important action for the open artifact. */

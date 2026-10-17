@@ -13,9 +13,11 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Doc byline:** A line under each Doc's title shows who last edited it and when. Open it for the Doc's recent activity and **Version History**. Beside it, **Linked from** lists the docs that link here with the sentence around each link, and the folder chip lists the other docs in the same folder.
 
 ### Changed
 
+- **Archive date:** On a temporary Doc, the archive date now sits under the title, where it also shows on phones.
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
 
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.

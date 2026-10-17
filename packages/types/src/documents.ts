@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ActivityActorSchema } from "./activity"
 
 export const DOCUMENT_ARCHIVE_REASON_MAX_LENGTH = 500
 
@@ -239,6 +240,20 @@ export const DocumentCollaborationSchema = z.object({
   cacheEpochHistory: z.array(z.string()),
 })
 
+/** A doc in the same Space that links to this one, with the text around the link. */
+export const DocumentBacklinkSchema = z.object({
+  path: z.string(),
+  context: z.string(),
+})
+
+/** Who has worked on a doc, from the Space's recorded activity. */
+export const DocumentContributorsSchema = z.object({
+  /** Who last created or edited the doc. */
+  lastEditor: ActivityActorSchema.optional(),
+  /** People and agents who edited or commented, most recent first. */
+  recent: z.array(ActivityActorSchema),
+})
+
 export const DocumentPageSchema = z.object({
   kind: z.literal("document"),
   document: DocumentSummarySchema,
@@ -250,6 +265,13 @@ export const DocumentPageSchema = z.object({
   revision: DocumentContentRevisionSchema.optional(),
   /** Present for documents the Doc renderer opens. */
   collaboration: DocumentCollaborationSchema.optional(),
+  /**
+   * Docs in the same Space that link here, as of the Space's last link-graph
+   * build. Absent until that graph has been built once.
+   */
+  backlinks: z.array(DocumentBacklinkSchema).optional(),
+  /** Absent until the Space's activity has been summarized once. */
+  contributors: DocumentContributorsSchema.optional(),
 })
 
 export const DocumentPageResultSchema = z.discriminatedUnion("kind", [
@@ -268,6 +290,8 @@ export type DocumentPageCapabilities = z.infer<
 export type DocumentPage = z.infer<typeof DocumentPageSchema>
 export type DocumentPageResult = z.infer<typeof DocumentPageResultSchema>
 export type DocumentCollaboration = z.infer<typeof DocumentCollaborationSchema>
+export type DocumentBacklink = z.infer<typeof DocumentBacklinkSchema>
+export type DocumentContributors = z.infer<typeof DocumentContributorsSchema>
 
 /**
  * A row the app opens documents from (Space documents, Recent, search and

@@ -4,7 +4,9 @@ import { extname, resolve } from "node:path"
 import type {
   Annotation,
   DocumentAnnotationV2,
+  DocumentBacklink,
   DocumentCollaboration,
+  DocumentContributors,
   DocumentContent,
   DocumentPage,
   DocumentPageResult,
@@ -38,6 +40,8 @@ import {
   DocumentSourceReadError,
   readDocumentSource,
 } from "./document-source-reader.ts"
+import { peekDocActivity } from "./activity-log.ts"
+import { peekDocBacklinks } from "./link-graph.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -62,6 +66,8 @@ interface DocumentPageMetadata {
   provenance?: DocumentProvenance
   revision?: string
   collaboration?: DocumentCollaboration
+  backlinks?: DocumentBacklink[]
+  contributors?: DocumentContributors
 }
 
 interface DocumentPageIntegration {
@@ -90,9 +96,25 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
         getWorkspaceCollaborationEpoch(),
         docSourceContentRevision(spaceId, handle.source),
       ])
+      // Backlinks and who has worked on the doc come from per-Space caches
+      // that answer without reading files. A Space whose cache is not built
+      // yet leaves them out until its background build lands.
+      const backlinks = peekDocBacklinks(spaceId, handle.document.path)
+      const activity = peekDocActivity(spaceId, handle.document.path)
       return {
         ...(meta.provenance ? { provenance: meta.provenance } : {}),
         ...(revision ? { revision } : {}),
+        ...(backlinks ? { backlinks } : {}),
+        ...(activity
+          ? {
+              contributors: {
+                ...(activity.lastEditor
+                  ? { lastEditor: activity.lastEditor }
+                  : {}),
+                recent: activity.contributors,
+              },
+            }
+          : {}),
         collaboration: {
           epoch,
           cacheEpoch: meta.collaborationCacheEpoch,
@@ -275,6 +297,8 @@ async function pageForHandle(
     ...(renderer && metadata?.collaboration
       ? { collaboration: metadata.collaboration }
       : {}),
+    ...(metadata?.backlinks ? { backlinks: metadata.backlinks } : {}),
+    ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
   }
 }
 

@@ -208,6 +208,17 @@ export function installInstrumentation(): void {
       location.pathname === `/spaces/${args["spaceId"]}` &&
       all("main h1").some((h1) => text(h1) === args["name"]) &&
       recentRows().length > 0,
+    // A Space opened in the sidebar: its Space Home row and its docs show.
+    sidebarSpace: (args) => {
+      const root = document.querySelector("[data-worktable-sidebar-root]")
+      const id = String(args["spaceId"])
+      const doc = root?.querySelector(`a[href^="/spaces/${id}/documents/"]`)
+      return (
+        root?.querySelector(`a[href="/spaces/${id}"]`) != null &&
+        doc != null &&
+        doc.getBoundingClientRect().height > 0
+      )
+    },
     // Markdown: the rendered article shows the document's first heading.
     markdown: (args) =>
       all("article.worktable-markdown h1, article.worktable-markdown h2").some(

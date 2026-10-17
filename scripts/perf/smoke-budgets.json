@@ -101,6 +101,15 @@
       "max": 1478,
       "why": "Each Space icon and person avatar sits on its recognition color, one more element per Space row and avatar."
     },
+    "requests, first, open a Space in the sidebar": {
+      "max": 4
+    },
+    "chain, first, open a Space in the sidebar": {
+      "max": 0
+    },
+    "dom, first, open a Space in the sidebar": {
+      "max": 1829
+    },
     "requests, first, open Space": {
       "max": 7
     },
@@ -188,6 +197,12 @@
     "dom, first, search": {
       "max": 1724
     },
+    "requests, warm, open a Space in the sidebar": {
+      "max": 4
+    },
+    "chain, warm, open a Space in the sidebar": {
+      "max": 0
+    },
     "requests, warm, open Space": {
       "max": 7
     },
@@ -235,6 +250,12 @@
     },
     "chain, warm, search": {
       "max": 1
+    },
+    "requests, revisit, open a Space in the sidebar": {
+      "max": 5
+    },
+    "chain, revisit, open a Space in the sidebar": {
+      "max": 0
     },
     "requests, revisit, open Space": {
       "max": 7

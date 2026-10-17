@@ -373,7 +373,11 @@ async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
     // ones queue above.
     await drainWrites()
     const summaries = new Map<string, DocActivitySummary>()
-    for (const event of [...(await readLog(spaceId)), ...queued]) {
+    // Writes started together can land in the log in either order.
+    const logged = (await readLog(spaceId)).sort((a, b) =>
+      a.at.localeCompare(b.at)
+    )
+    for (const event of [...logged, ...queued]) {
       if (event.target.kind === "doc") {
         applyDocSummary(summaries, event.target.path, event.action, event.actor)
       }

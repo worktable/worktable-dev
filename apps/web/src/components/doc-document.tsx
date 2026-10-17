@@ -79,6 +79,7 @@ import { DocumentPreview } from "@/components/editor/document-preview"
 import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
 import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
+import { useBylineState } from "@/hooks/use-byline-state"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
@@ -1363,8 +1364,12 @@ function BlockNoteDocPage({
   )
   useNameFromTitleOnLeave(spaceId, docPath, !readOnly && !archived)
 
+  // The preview and the editor each show the byline; one state keeps what
+  // is open when the editor takes over.
+  const bylineState = useBylineState()
   const byline = (
     <DocumentByline
+      state={bylineState}
       spaceId={spaceId}
       docPath={docPath}
       provenance={page?.provenance}

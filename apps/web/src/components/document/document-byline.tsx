@@ -26,8 +26,13 @@ import { documentRoute } from "@/lib/document-views"
 import { findTreeNode } from "@/lib/space-document-tree"
 import type { TreeNode } from "@/lib/tree"
 import { RelativeTime } from "@/lib/time"
+import {
+  useBylineState,
+  type BylineSection,
+  type BylineState,
+} from "@/hooks/use-byline-state"
 
-type Panel = "activity" | "links"
+
 
 const ACTIVITY_SHOWN = 6
 
@@ -43,6 +48,7 @@ export function DocumentByline({
   contributors,
   backlinks,
   onVersionHistory,
+  state,
 }: {
   spaceId: string
   docPath: string
@@ -53,8 +59,11 @@ export function DocumentByline({
   contributors?: DocumentContributors
   backlinks?: DocumentBacklink[]
   onVersionHistory?: () => void
+  /** Shared with the page's other copy of this byline, if any. */
+  state?: BylineState
 }) {
-  const [open, setOpen] = useState<Panel | null>(null)
+  const local = useBylineState()
+  const { open, setOpen, lifetimeOpen, setLifetimeOpen } = state ?? local
   const [opening, setOpening] = useState(false)
   const queryClient = useQueryClient()
   const panelId = useId()
@@ -70,7 +79,7 @@ export function DocumentByline({
     return node && !node.isFolder ? [{ ...link, node }] : []
   })
 
-  const toggle = (panel: Panel) => setOpen(open === panel ? null : panel)
+  const toggle = (panel: BylineSection) => setOpen(open === panel ? null : panel)
   // The list arrives before its panel opens, so the panel grows once to its
   // full height instead of stopping at a placeholder.
   const toggleActivity = async () => {
@@ -139,7 +148,13 @@ export function DocumentByline({
             onClick={() => toggle("links")}
           />
         )}
-        <DocumentLifetimeChip spaceId={spaceId} path={docPath} inline />
+        <DocumentLifetimeChip
+          spaceId={spaceId}
+          path={docPath}
+          inline
+          open={lifetimeOpen}
+          onOpenChange={setLifetimeOpen}
+        />
       </div>
 
       <BylinePanel id={`${panelId}-activity`} open={open === "activity"}>

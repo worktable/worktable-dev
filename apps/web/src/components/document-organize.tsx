@@ -61,14 +61,21 @@ export function DocumentLifetimeChip({
   spaceId,
   path,
   inline = false,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   spaceId: string
   path: string
   inline?: boolean
+  /** Whether the popover is open, when its owner keeps that state. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { data: space } = useSpace(spaceId)
   const label = useTemporaryArchiveLabel(spaceId, path)
-  const [open, setOpen] = useState(false)
+  const [localOpen, setLocalOpen] = useState(false)
+  const open = controlledOpen ?? localOpen
+  const setOpen = onOpenChange ?? setLocalOpen
   const [pending, setPending] = useState(false)
   if (!label) return null
 

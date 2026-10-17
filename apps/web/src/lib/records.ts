@@ -1,5 +1,5 @@
 import { toast } from "@worktable/ui/components/sonner"
-import type { RecordCollectionSchema, RecordField, RecordFile, RecordPredicateOp, RecordQueryResult } from "@worktable/types"
+import type { DocumentListItem, RecordCollectionSchema, RecordField, RecordFile, RecordPredicateOp, RecordQueryResult } from "@worktable/types"
 import { normalizeRecordFieldType, parseDocumentReference } from "@worktable/types"
 import type { RecordFilter } from "./record-filters"
 
@@ -120,12 +120,30 @@ export function recordDetailSections(
   }
 }
 
-/** Who a record's `createdBy`/`updatedBy` names: the owner, a connected
- *  agent (`agent:<principal>`), Worktable itself, or a file-authored name. */
-export function recordActorName(actor: string, agents?: ReadonlyArray<{ id: string; name?: string }>): string {
+const AGENT_PRINCIPAL = /^(agent|local-token|workos-agent):/
+
+/** Who a record's `createdBy`/`updatedBy` names. Write paths store different
+ *  forms: the owner (`user`), an agent's principal id (`local-token:<id>` over
+ *  MCP, `agent:<principal>` over REST), an HTML Doc (`widget:<path>`),
+ *  Worktable itself, or a file-authored name. */
+export function recordActorName(
+  actor: string,
+  known: {
+    agents?: ReadonlyArray<{ id: string; name?: string }>
+    documents?: ReadonlyArray<DocumentListItem>
+  } = {}
+): string {
   if (actor === "user") return "You"
   if (actor === "system" || actor === "worktable") return "Worktable"
-  if (actor.startsWith("agent:")) return agents?.find((agent) => agent.id === actor.slice(6))?.name ?? "An agent"
+  const unprefixed = actor.startsWith("agent:") ? actor.slice(6) : actor
+  const agent = known.agents?.find((candidate) => candidate.id === actor || candidate.id === unprefixed)
+  if (agent?.name) return agent.name
+  if (AGENT_PRINCIPAL.test(actor)) return "An agent"
+  if (actor.startsWith("widget:")) {
+    const path = actor.slice(7)
+    const document = known.documents?.find((item) => item.kind === "document" && item.path === path)
+    return document?.kind === "document" ? document.title : "An HTML Doc"
+  }
   return actor
 }
 

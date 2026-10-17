@@ -130,11 +130,6 @@ export function DocumentByline({
             </span>
           </button>
         )}
-        {editedAt && linked.length > 0 && (
-          <span aria-hidden="true" className="opacity-50">
-            ·
-          </span>
-        )}
         {linked.length > 0 && (
           <BylineChip
             icon={<Link2 className="size-3.5" />}

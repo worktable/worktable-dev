@@ -324,7 +324,7 @@ function PairingPanel({
       </Instruction>
       {command ? (
         <CommandBlock value={command} />
-      ) : create.isError ? null : (
+      ) : create.isError || connected ? null : (
         <div className="flex h-11 items-center rounded-xl border border-border bg-surface-inset px-3">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
         </div>
@@ -638,7 +638,15 @@ function RowItem({
   onTabChange: () => void
   connected: SetupRecord[]
 }) {
-  const [tab, setTab] = useState(0)
+  // A row opens on the tab that already connected, if one did.
+  const [tab, setTab] = useState(() =>
+    Math.max(
+      0,
+      row.options.findIndex((item) =>
+        connected.some((setup) => setup.source === sourceOf(row.id, item))
+      )
+    )
+  )
   const option = row.options[tab]!
   const done = connected.find((setup) =>
     setup.source?.startsWith(`${row.id}:`)

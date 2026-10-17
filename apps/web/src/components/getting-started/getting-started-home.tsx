@@ -411,7 +411,7 @@ export function GettingStartedHome() {
         <h2 id="guides-heading" className="mb-2 text-sm font-semibold text-foreground">
           Guides
         </h2>
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-2.5 sm:grid-cols-2">
           {GUIDES.map((guide) => (
             <Link
               key={guide.path}

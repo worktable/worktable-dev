@@ -3,9 +3,6 @@ import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
 
-const ALWAYS_ON_FIRST_MESSAGE =
-  "Help me choose a first task in Worktable. Ask what I want to accomplish, find any related work, and help me create or revise one useful result."
-
 function appUrl(path = "/"): string {
   return new URL(path, harness.webUrl).href
 }
@@ -34,7 +31,7 @@ async function postJson<T>(
 async function completePairing(
   created: { code: string },
   body: Record<string, unknown>
-): Promise<void> {
+): Promise<string> {
   const redeemed = await postJson<{ token: string }>("/api/pairing/redeem", {
     code: created.code,
     ...body,
@@ -49,6 +46,7 @@ async function completePairing(
     { code: created.code },
     redeemed.token
   )
+  return redeemed.token
 }
 
 async function waitForPairingCreate(page: Page, click: () => Promise<void>) {
@@ -73,7 +71,7 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("new owner can name, connect multiple real agent identities, leave an always-on reply pending, and resume", async ({
+test("a new owner names their Worktable, connects agents, hands one its first task and lands in its Space", async ({
   page,
 }) => {
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
@@ -83,103 +81,28 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     page.getByRole("heading", { name: "Set up your Worktable" })
   ).toBeVisible()
   await page.getByLabel("Your name").fill("Alex")
-  await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByLabel("Worktable").fill("Alex Worktable")
+  await page.getByRole("radio", { name: /Just me/ }).click()
   await page.getByRole("button", { name: "Continue" }).click()
 
   await expect(
-    page.getByRole("heading", { name: "Connect your Agents" })
+    page.getByRole("heading", { name: "Connect your agent" })
   ).toBeVisible()
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(
-    page.getByRole("heading", { name: "Connect your Agents" })
+    page.getByRole("heading", { name: "Connect your agent" })
   ).toBeVisible()
 
-  await page.getByRole("button", { name: /CLI agents/ }).click()
+  await page.getByRole("button", { name: /Claude Code, Codex/ }).click()
   await page.getByRole("combobox", { name: "CLI agent" }).click()
   await page.getByRole("option", { name: "ChatGPT / Codex" }).click()
   await page.getByLabel("Agent name").fill("My Codex")
   const cliPairing = await waitForPairingCreate(page, () =>
     page.getByRole("button", { name: "Create install command" }).click()
   )
-  await expect(
-    page.getByRole("button", { name: "Copy install command" })
-  ).toBeVisible()
-  await completePairing(cliPairing, {
+  const codexToken = await completePairing(cliPairing, {
     hostname: "browser-devbox",
     client: "codex",
-  })
-  await expect(page.getByText("Connected.", { exact: true })).toBeVisible({
-    timeout: 10_000,
-  })
-  await page.getByRole("button", { name: "Add another agent" }).click()
-
-  await page.getByRole("button", { name: /Claude or ChatGPT/ }).click()
-  await page.getByRole("combobox", { name: "App" }).click()
-  await page.getByRole("option", { name: "ChatGPT" }).click()
-  await page.getByLabel("Agent name").fill("Writing ChatGPT")
-  let releaseTokenRequest!: () => void
-  const tokenRequestGate = new Promise<void>((resolve) => {
-    releaseTokenRequest = resolve
-  })
-  let tokenRequestStarted!: () => void
-  const tokenRequestPending = new Promise<void>((resolve) => {
-    tokenRequestStarted = resolve
-  })
-  let holdTokenRequest = true
-  await page.route("**/api/agent-connections", async (route) => {
-    if (route.request().method() === "POST" && holdTokenRequest) {
-      holdTokenRequest = false
-      tokenRequestStarted()
-      await tokenRequestGate
-    }
-    await route.continue()
-  })
-  const mintedResponse = page.waitForResponse(
-    (candidate) =>
-      candidate.request().method() === "POST" &&
-      new URL(candidate.url()).pathname === "/api/agent-connections"
-  )
-  // Its owner keeps it from changing the workspace.
-  await page.getByText("Edit workspace").click()
-  await page.getByRole("button", { name: "Generate access token" }).click()
-  await tokenRequestPending
-  await expect(
-    page.getByRole("button", { name: "Finish later" })
-  ).toBeDisabled()
-  releaseTokenRequest()
-  const minted = (await (await mintedResponse).json()) as {
-    token: string
-    connection: { displayName: string; platform: string; access: unknown }
-  }
-  // The app's own steps follow, with what to paste.
-  await expect(
-    page.getByText("Open ChatGPT desktop Settings → MCP servers.")
-  ).toBeVisible()
-  expect(minted.connection).toMatchObject({
-    displayName: "Writing ChatGPT",
-    platform: "chatgpt",
-    access: { threads: true, read: true, edit: false },
-  })
-  const used = await fetch(`${harness.apiUrl}/api/spaces`, {
-    headers: { Authorization: `Bearer ${minted.token}` },
-  })
-  expect(used.status).toBe(200)
-  await expect(
-    page.getByRole("button", { name: "Add another agent" })
-  ).toBeVisible({ timeout: 10_000 })
-  await page.getByRole("button", { name: "Add another agent" }).click()
-
-  await page.getByRole("button", { name: /^OpenClaw/ }).click()
-  await page.getByLabel("Agent name").fill("Atlas")
-  const openClawPairing = await waitForPairingCreate(page, () =>
-    page.getByRole("button", { name: "Create connection command" }).click()
-  )
-  await expect(
-    page.getByRole("button", { name: "Copy connection command" })
-  ).toBeVisible()
-  await completePairing(openClawPairing, {
-    hostname: "browser-openclaw",
-    installationId: "oci_browser_test_1234567890",
   })
   await expect(page.getByText("Connected.", { exact: true })).toBeVisible({
     timeout: 10_000,
@@ -203,54 +126,53 @@ test("new owner can name, connect multiple real agent identities, leave an alway
   })
   await page.getByRole("button", { name: "Continue" }).click()
 
+  // The first agent connected gets the first task.
   await expect(
-    page.getByRole("heading", { name: "Your Worktable is ready" })
+    page.getByRole("heading", { name: "What are you working on?" })
   ).toBeVisible()
-  const atlasStarter = page.getByRole("region", {
-    name: "Start a Thread with Atlas",
-  })
-  const adaStarter = page.getByRole("region", {
-    name: "Start a Thread with Ada",
-  })
-  await expect(atlasStarter).toBeVisible()
-  await expect(adaStarter).toBeVisible()
-  let dropStarterResponse = true
-  await page.route("**/api/threads", async (route) => {
-    if (route.request().method() === "POST" && dropStarterResponse) {
-      dropStarterResponse = false
-      await route.fetch()
-      await route.abort("failed")
-      return
-    }
-    await route.continue()
-  })
-  await atlasStarter.getByRole("button", { name: "Start Thread" }).click()
-  await expect(atlasStarter.getByText("Failed to fetch")).toBeVisible()
-  await page.reload({ waitUntil: "domcontentloaded" })
+  await page
+    .getByLabel("What you're working on")
+    .fill("Planning our spring launch: goals and timeline")
+  await page.getByRole("button", { name: "Start" }).click()
   await expect(
-    page.getByRole("heading", { name: "Your Worktable is ready" })
+    page.getByRole("heading", { name: "Over to My Codex" })
   ).toBeVisible()
-  await atlasStarter.getByRole("button", { name: "Start Thread" }).click()
-  await adaStarter.getByRole("button", { name: "Start Thread" }).click()
-  await expect(
-    page.getByText(
-      "Thread started. Finish setup now and check Threads whenever you’re ready."
-    )
-  ).toHaveCount(2)
-  await expect
-    .poll(async () => {
-      const response = await fetch(`${harness.apiUrl}/api/threads`)
-      const payload = (await response.json()) as {
-        threads: Array<{ lastMessage: { excerpt: string } }>
-      }
-      return payload.threads.filter(
-        (thread) => thread.lastMessage.excerpt === ALWAYS_ON_FIRST_MESSAGE
-      ).length
-    })
-    .toBe(2)
-  await page.getByRole("button", { name: "Finish setup" }).click()
+  await expect(page.getByText(/^codex "In Worktable, make a Space/)).toBeVisible()
+  await expect(page.getByText("Waiting for My Codex to start")).toBeVisible()
 
+  // The agent's work shows up as it lands, pushed to the page.
+  const agent = { Authorization: `Bearer ${codexToken}` }
+  const space = await postJson<{ spaceId: string }>(
+    "/api/spaces",
+    { name: "Spring Launch" },
+    codexToken
+  )
+  await expect(page.getByText("Created Spring Launch")).toBeVisible({
+    timeout: 10_000,
+  })
+  const brief = await fetch(
+    `${harness.apiUrl}/api/spaces/${space.spaceId}/docs`,
+    {
+      method: "POST",
+      headers: { ...agent, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Spring Launch Brief" }),
+    }
+  )
+  expect(brief.status).toBeLessThan(300)
+  await expect(page.getByText("Wrote Spring Launch Brief")).toBeVisible({
+    timeout: 10_000,
+  })
+  await page.getByRole("button", { name: "Continue" }).click()
+
+  await expect(page.getByRole("heading", { name: "You're set up" })).toBeVisible()
+  await page.getByRole("button", { name: "Open Spring Launch" }).click()
+  await expect(page).toHaveURL(/\/spaces\/spring-launch$/)
   await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()
+  // Getting Started sits in the sidebar with what's already done.
+  await expect(
+    page.getByRole("link", { name: /Getting Started\s*2\/6/ })
+  ).toBeVisible()
+
   const workspace = (await fetch(`${harness.apiUrl}/api/workspace`).then(
     (res) => res.json()
   )) as { name: string; onboarding: { status: string } }
@@ -262,34 +184,12 @@ test("new owner can name, connect multiple real agent identities, leave an alway
     await fetch(`${harness.apiUrl}/api/profile`).then((res) => res.json())
   ).toMatchObject({ name: "Alex" })
   expect(
-    await fetch(`${harness.apiUrl}/api/tokens`).then((res) => res.json())
-  ).toMatchObject({
-    tokens: expect.arrayContaining([
-      // Labeled by its app, so it shows its platform; named as its owner chose.
-      expect.objectContaining({
-        agent: "chatgpt-desktop",
-        lastUsedAt: expect.any(String),
-      }),
-    ]),
-  })
-  expect(
     await fetch(`${harness.apiUrl}/api/agent-connections`).then((res) =>
       res.json()
     )
   ).toMatchObject({
     connections: expect.arrayContaining([
       expect.objectContaining({ displayName: "My Codex" }),
-      expect.objectContaining({
-        displayName: "Writing ChatGPT",
-        platform: "chatgpt",
-        access: { threads: true, read: true, edit: false },
-      }),
-      expect.objectContaining({
-        target: expect.objectContaining({ adapter: "openclaw" }),
-        displayName: "Atlas",
-        platform: "openclaw",
-        access: { threads: true, read: true, edit: true },
-      }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
         displayName: "Ada",

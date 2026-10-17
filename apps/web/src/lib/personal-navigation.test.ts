@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test"
-import { startingNavigation } from "./personal-navigation"
+import { QueryClient } from "@tanstack/react-query"
+import { noteNavigationChanged, startingNavigation } from "./personal-navigation"
+import { queryKeys } from "./queries"
 
 describe("startingNavigation", () => {
   it("copies the groups Spaces name into groups a person can save", () => {
@@ -24,5 +26,23 @@ describe("startingNavigation", () => {
     expect(navigation.spaceGroups.c).not.toBe(navigation.spaceGroups.d)
     expect(navigation.spaceGroups).not.toHaveProperty("e")
     expect(navigation.spaceGroups).not.toHaveProperty("g")
+  })
+})
+
+describe("noteNavigationChanged", () => {
+  it("refetches once for a change every open socket delivers", () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(queryKeys.workspace, {
+      navigation: { revision: 3 },
+    })
+    const refetches: unknown[] = []
+    queryClient.invalidateQueries = ((filters: unknown) => {
+      refetches.push(filters)
+      return Promise.resolve()
+    }) as QueryClient["invalidateQueries"]
+    for (const revision of [4, 4, 4, 3, 5]) {
+      noteNavigationChanged(queryClient, revision)
+    }
+    expect(refetches).toHaveLength(2)
   })
 })

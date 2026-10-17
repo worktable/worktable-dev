@@ -153,13 +153,22 @@ export function usePersonalNavigation() {
 }
 
 /** Another tab or device saved; read the summary again unless we already have it. */
+/** The newest revision each client has already asked for. */
+const requestedRevision = new WeakMap<QueryClient, number>()
+
 export function noteNavigationChanged(
   queryClient: QueryClient,
   revision: unknown
 ): void {
   const workspace = queryClient.getQueryData<WorkspaceInfo>(queryKeys.workspace)
   const known = workspace?.navigation?.revision ?? 0
-  if (typeof revision === "number" && revision <= known) return
+  if (typeof revision === "number") {
+    // Each of the person's open sockets delivers the same change; one
+    // refetch covers them all.
+    if (revision <= Math.max(known, requestedRevision.get(queryClient) ?? 0))
+      return
+    requestedRevision.set(queryClient, revision)
+  }
   void queryClient.invalidateQueries({
     queryKey: queryKeys.workspace,
     exact: true,

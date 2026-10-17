@@ -621,8 +621,16 @@ describe("search excerpts", () => {
 
   it("warms the index so the first search reads nothing", async () => {
     let syncs = 0;
+    let created = false;
     setSearchIndexRebuildHookForTests(async () => {
       syncs += 1;
+      // A Space created while the warm-up runs is warmed too.
+      if (created) return;
+      created = true;
+      expect((await req(app, "POST", "/api/spaces", { name: "Yonder" })).status).toBe(201);
+      await req(app, "PUT", "/api/spaces/yonder/docs/heron", {
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Lighthouse keeper", styles: {} }] }],
+      });
     });
     await warmSearchIndex();
     expect(syncs).toBeGreaterThan(0);
@@ -632,6 +640,10 @@ describe("search excerpts", () => {
       scopes: ["search:read", "documents:read"],
       documentMode: "common",
     })).toContainEqual(expect.objectContaining({ path: "richdoc" }));
+    expect(await searchResults(app, "lighthouse", {
+      scopes: ["search:read", "documents:read"],
+      documentMode: "common",
+    })).toContainEqual(expect.objectContaining({ spaceId: "yonder", path: "heron" }));
     expect(syncs).toBe(0);
   });
 

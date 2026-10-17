@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, ChevronRight, Loader2 } from "lucide-react"
 import {
@@ -280,9 +280,13 @@ function PairingPanel({
           }),
     onSuccess: (created) => onPairing(key, created),
   })
-  // The command is ready when the tab opens.
+  // The command is ready when the tab opens. One request per command: a
+  // render before the mutation reports pending must not make another.
+  const requested = useRef(false)
   useEffect(() => {
-    if (!pairing && !connected && create.isIdle) create.mutate()
+    if (pairing || connected || requested.current) return
+    requested.current = true
+    create.mutate()
   }, [pairing, connected, create])
   const status = useQuery({
     queryKey: ["pairing", pairing?.id],
@@ -353,6 +357,7 @@ function PairingPanel({
             type="button"
             className="font-medium underline underline-offset-2"
             onClick={() => {
+              requested.current = false
               onPairing(key, null)
               create.reset()
             }}
@@ -535,8 +540,12 @@ function SignInPanel({
         setupFor(rowId, option, selected.id, selected.displayName)
       ),
   })
+  // Each agent that signs in is added once.
+  const accepted = useRef<string | null>(null)
   useEffect(() => {
-    if (arrived && !connected && accept.isIdle) accept.mutate(arrived)
+    if (!arrived || connected || accepted.current === arrived.id) return
+    accepted.current = arrived.id
+    accept.mutate(arrived)
   }, [arrived, connected, accept])
 
   const instruction =

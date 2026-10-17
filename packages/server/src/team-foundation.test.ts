@@ -1281,7 +1281,7 @@ test("a Cloud plan holds members and pending invitations, never more, and keeps 
     plan: "team",
     limit: 3,
     used: 3,
-    nextPlan: "team30",
+    nextPlan: "business",
   })
   // An expired invitation frees its place.
   requireTeamDatabase()

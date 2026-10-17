@@ -83,7 +83,7 @@ export function PlanFullNotice({
   const queryClient = useQueryClient()
   const needed = plan.people + Math.max(adding, 1)
   const [choice, setChoice] = useState<PaidCloudPlanId>(
-    CLOUD_PLANS.team.peopleLimit >= needed ? "team" : "team30"
+    CLOUD_PLANS.team.peopleLimit >= needed ? "team" : "business"
   )
   const checkout = useMutation({
     mutationFn: async (target: PaidCloudPlanId) => {
@@ -133,7 +133,7 @@ export function PlanFullNotice({
         {worktableName} has reached {plan.peopleLimit} people.{" "}
         <a
           className="font-medium text-primary-text hover:underline"
-          href={`mailto:${CLOUD_PLANS.team30.supportEmail}?subject=${encodeURIComponent(`More people for ${worktableName}`)}`}
+          href={`mailto:${CLOUD_PLANS.business.supportEmail}?subject=${encodeURIComponent(`More people for ${worktableName}`)}`}
         >
           Contact us
         </a>{" "}

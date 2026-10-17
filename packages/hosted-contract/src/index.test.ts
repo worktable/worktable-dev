@@ -385,10 +385,10 @@ describe("tenant billing header", () => {
 })
 
 describe("cloud plans", () => {
-  it("grow from Solo to Team to Team 30, each holding more people", () => {
+  it("grow from Solo to Team to Business, each holding more people", () => {
     expect(nextCloudPlan("solo")).toBe("team")
-    expect(nextCloudPlan("team")).toBe("team30")
-    expect(nextCloudPlan("team30")).toBeNull()
+    expect(nextCloudPlan("team")).toBe("business")
+    expect(nextCloudPlan("business")).toBeNull()
     for (const id of CLOUD_PLAN_IDS) {
       const plan = CLOUD_PLANS[id]
       expect(PublicPlanDetails.parse(plan)).toEqual(plan)

@@ -10,8 +10,7 @@ import {
   SelectValue,
 } from "@worktable/ui/components/select"
 import { Button } from "@worktable/ui/components/button"
-import { ActivityItem } from "@/components/home/activity-feed"
-import { ActorBadge } from "@/components/home/activity-sentence"
+import { ActivityItem, ActorBadge } from "@/components/home/activity-feed"
 import { clockTime, groupByDay } from "@/lib/activity-format"
 import { useActivityAgents, useActivityPages } from "@/lib/activity"
 import { useSpaces } from "@/lib/queries"

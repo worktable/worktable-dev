@@ -8,7 +8,10 @@
     },
     "home": { "gzip": 323000 },
     "space": { "gzip": 313000 },
-    "rich document": { "gzip": 785000 },
+    "rich document": {
+      "gzip": 788000,
+      "why": "Doc byline under the title (about 3 KB gzip): last editor, recent contributors, backlinks with their context, the folder's docs and the Doc's activity, plus the editor widget that holds it outside the editable content."
+    },
     "html document": {
       "gzip": 342000,
       "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16)."

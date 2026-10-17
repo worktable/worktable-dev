@@ -1,3 +1,4 @@
+import type { BillingAccess, CloudPlanId } from "@worktable/hosted-contract";
 import { applySpaceAccess, initializeBrowserTeamContext } from "./team-context";
 import { rememberOneSpaceAccess } from "./team-access";
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
@@ -38,6 +39,21 @@ export interface WorkspaceInfo {
   navigation?: PersonalNavigation | null
   /** The person's own first steps; absent with `navigation`. */
   setup?: PersonalSetup
+  /**
+   * On Cloud, this Worktable's plan, how many people it holds, and who pays.
+   * Absent elsewhere.
+   */
+  cloudPlan?: {
+    plan: CloudPlanId
+    access: BillingAccess
+    peopleLimit: number | null
+    /** Members plus pending invitations. */
+    people: number
+    graceEndsAt?: number
+    deletesAt?: number
+    payerName: string | null
+    isPayer: boolean
+  }
   /** Who is using this Worktable; absent with `navigation`. */
   person?: {
     /** Their participant id, which Threads also show. */

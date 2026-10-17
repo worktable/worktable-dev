@@ -1,3 +1,4 @@
+import { memberIsPayer, peopleInWorktable, requestBilling } from "../hosted-billing.ts";
 import { teamsEnabled } from "../team-database.ts"
 import { currentTeamWorktable } from "../team-database.ts";
 import { teamMemberForIdentity } from "../team-policy.ts";
@@ -149,9 +150,35 @@ export async function workspaceSummary(
       includeRoot: canReadWorkspaceRoot(c),
     }),
     ...(person ? { ...(presentations ? { presentations } : {}), person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)), setup: setupSummary(setupKeyForPerson(person)) } : {}),
+    // On Cloud, the plan and its people, for banners and limits without a
+    // request of their own.
+    ...(person ? cloudPlanSummary(c) : {}),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",
+  }
+}
+
+function cloudPlanSummary(c: Context) {
+  const billing = requestBilling(c.req.raw)
+  if (!billing) return {}
+  return {
+    cloudPlan: {
+      plan: billing.plan,
+      access: billing.access,
+      peopleLimit: billing.peopleLimit,
+      people: peopleInWorktable(),
+      ...(billing.graceEndsAt ? { graceEndsAt: billing.graceEndsAt } : {}),
+      ...(billing.deletesAt ? { deletesAt: billing.deletesAt } : {}),
+      payerName: billing.payer?.name || null,
+      isPayer: Boolean(
+        c.get("identity")?.team &&
+          memberIsPayer(
+            teamMemberForIdentity(c.get("identity"))?.userId ?? "",
+            billing
+          )
+      ),
+    },
   }
 }
 

@@ -19,6 +19,8 @@ import {
   InviteResult,
 } from "@/components/onboarding/invite-people"
 import { invitePeople, mergeInvited, type Invited } from "@/lib/invite-people"
+import { PlanFullNotice } from "@/components/billing/plan-full-notice"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import type { SetupRecord } from "@/lib/onboarding-setups"
 import { useSpaces } from "@/lib/queries"
 import { openSettings } from "@/lib/settings-open"
@@ -27,6 +29,7 @@ import {
   checklistFor,
   checklistProgress,
   GETTING_STARTED_SPACE_ID,
+  noteSetupChanged,
   saveSetup,
   usePersonalSetup,
   type ChecklistItem,
@@ -143,14 +146,18 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
     enabled: teams,
     staleTime: 60_000,
   })
+  const { plan, worktableName } = useCloudPlan()
   const send = useMutation({
     mutationFn: () => invitePeople(emails),
     onSuccess: (results) => {
       setEmails([])
       setInvited((current) => mergeInvited(current, results))
       void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
+      // The plan's room depends on who is invited.
+      noteSetupChanged(queryClient)
     },
   })
+  const fits = roomFor(plan, emails.length)
   if (!teams) {
     return (
       <>
@@ -171,7 +178,7 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
   )
   // Enter and the button both send, once at a time.
   const submit = () => {
-    if (emails.length && !send.isPending) send.mutate()
+    if (emails.length && fits && !send.isPending) send.mutate()
   }
   return (
     <form
@@ -188,10 +195,22 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
             onSubmit={submit}
           />
         </div>
-        <Button type="submit" disabled={!emails.length || send.isPending}>
+        <Button
+          type="submit"
+          disabled={!emails.length || !fits || send.isPending}
+        >
           {send.isPending ? "Inviting…" : cloud ? "Send invites" : "Create links"}
         </Button>
       </div>
+      {plan && !fits ? (
+        <div className="mt-3">
+          <PlanFullNotice
+            plan={plan}
+            worktableName={worktableName}
+            adding={emails.length}
+          />
+        </div>
+      ) : null}
       {invited.length || waiting.length ? (
         <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
           {invited.map((item) => (

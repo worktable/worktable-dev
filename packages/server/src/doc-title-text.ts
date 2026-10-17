@@ -44,8 +44,9 @@ export function markdownTitleLines(
   if (start === -1) return null
   // Lines split on "\n" keep the "\r" of Windows line endings.
   const line = lines[start]!.replace(BOM, "")
-  const atx = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*\r?$/.exec(line)
-  if (atx) return { start, end: start, text: atx[1]!.trim() }
+  // "#" alone is an empty title.
+  const atx = /^ {0,3}#(?:[ \t]+(.*?)(?:[ \t]+#+)?)?[ \t]*\r?$/.exec(line)
+  if (atx) return { start, end: start, text: (atx[1] ?? "").trim() }
   if (/^ {0,3}=+[ \t]*\r?$/.test(lines[start + 1] ?? "")) {
     return { start, end: start + 1, text: line.trim() }
   }

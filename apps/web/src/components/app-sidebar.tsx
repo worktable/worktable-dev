@@ -2034,6 +2034,22 @@ function DocTreeItem({
       node.format?.id === "worktable.markdown")
   const handleRename = async (newPath: string) => {
     const openPath = router.state.location.pathname
+    // Keep an open document on screen where it now lives.
+    const follow = async (renamed: Array<{ from: string; to: string }>) => {
+      await Promise.all([
+        onRefresh(),
+        ...(node.isFolder ? [onWidgetRefresh()] : []),
+      ])
+      if (!routeRelation(openPath, documentFullPath)) return
+      const oldOpenPath = `${node.path}${openPath.slice(documentFullPath.length)}`
+      const target = renamed.find((r) => r.from === oldOpenPath)?.to
+      if (target && target !== oldOpenPath) {
+        void navigate({
+          to: "/spaces/$spaceId/documents/$",
+          params: { spaceId, _splat: target },
+        })
+      }
+    }
     try {
       // The server slugifies the target, so follow its from→to mapping rather
       // than the human-typed newPath when re-navigating an open document.
@@ -2048,23 +2064,18 @@ function DocTreeItem({
           : namedByTitle
             ? await retitleDoc(spaceId, node.path, newPath)
             : await renameDoc(spaceId, node.path, newPath, "document")
-      await Promise.all([
-        onRefresh(),
-        ...(node.isFolder ? [onWidgetRefresh()] : []),
-      ])
-      if (routeRelation(openPath, documentFullPath)) {
-        const oldOpenPath = `${node.path}${openPath.slice(documentFullPath.length)}`
-        const target = result.renamed?.find((r) => r.from === oldOpenPath)?.to
-        if (target) {
-          void navigate({
-            to: "/spaces/$spaceId/documents/$",
-            params: { spaceId, _splat: target },
-          })
-        }
-      }
+      await follow(result.renamed ?? [])
       toast.success(node.isFolder ? "Folder renamed" : "Doc renamed")
       return true
     } catch (error) {
+      // A doc can move before setting its title fails.
+      const moved =
+        error instanceof HttpError &&
+        Array.isArray((error.body as { renamed?: unknown } | null)?.renamed)
+          ? ((error.body as { renamed: Array<{ from: string; to: string }> })
+              .renamed)
+          : []
+      if (moved.length > 0) await follow(moved)
       const taken = takenNameError(
         error,
         newPath,

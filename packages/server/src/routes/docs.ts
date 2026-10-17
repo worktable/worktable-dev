@@ -364,7 +364,12 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
     if (outcome.error) {
       const status = outcome.error.includes("not found") ? 404 : 409;
       return c.json(
-        { error: outcome.error, code: status === 404 ? "NOT_FOUND" : "CONFLICT" },
+        {
+          error: outcome.error,
+          code: status === 404 ? "NOT_FOUND" : "CONFLICT",
+          // A Doc can move before its title fails; callers follow it.
+          renamed: outcome.renamed,
+        },
         status
       );
     }

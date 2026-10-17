@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { createdInThisTab } from "@/hooks/use-new-doc"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
@@ -29,8 +29,13 @@ export function useNameFromTitleOnLeave(
   enabled: boolean
 ): void {
   const queryClient = useQueryClient()
+  // Becoming read-only or archived while open is not leaving the doc.
+  const enabledNow = useRef(enabled)
   useEffect(() => {
-    if (!enabled || !createdInThisTab(spaceId, docPath)) return
+    enabledNow.current = enabled
+  }, [enabled])
+  useEffect(() => {
+    if (!createdInThisTab(spaceId, docPath)) return
     const key = `${spaceId}\0${docPath}`
     open.set(key, (open.get(key) ?? 0) + 1)
     return () => {
@@ -39,6 +44,7 @@ export function useNameFromTitleOnLeave(
       setTimeout(() => {
         if ((open.get(key) ?? 0) > 0) return
         open.delete(key)
+        if (!enabledNow.current) return
         retitleDoc(spaceId, docPath).then(
           (result) => {
             if (!result.renamed?.some(({ from, to }) => from !== to)) return
@@ -56,5 +62,5 @@ export function useNameFromTitleOnLeave(
         )
       }, 0)
     }
-  }, [enabled, spaceId, docPath, queryClient])
+  }, [spaceId, docPath, queryClient])
 }

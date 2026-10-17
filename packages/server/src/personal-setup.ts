@@ -134,36 +134,9 @@ export function completeSetupItem(
   })
 }
 
-/** Note the first Space or doc a person's agent makes while setup waits. */
-function noteWatched(
-  key: string | null,
-  kind: "space" | "doc",
-  details: Omit<SetupEvidence, "at">
-): void {
-  if (!key) return
-  const watch = storedSetup(key)?.watch
-  if (!watch || watch[kind]) return
-  changeSetup(key, (setup) =>
-    !setup.watch || setup.watch[kind]
-      ? null
-      : { ...setup, watch: { ...setup.watch, [kind]: evidence(details) } }
-  ).catch((error) => {
-    console.warn("[setup] could not save progress:", logError(error))
-  })
-}
-
 /** The person behind the current request, as far as setup is concerned. */
 function currentSetupKey(): string | null {
   return setupKeyForIdentity(currentRequestIdentity())
-}
-
-/** An agent or person made a Space through a request. */
-export function noteSpaceCreatedForSetup(
-  spaceId: string,
-  byAgent: boolean
-): void {
-  if (!byAgent) return
-  noteWatched(currentSetupKey(), "space", { spaceId })
 }
 
 /** An agent connected and made its first call. */
@@ -171,58 +144,19 @@ export function noteAgentCallForSetup(identity: TokenIdentity | undefined): void
   completeSetupItem(setupKeyForIdentity(identity), "connect-agent")
 }
 
-/** A person paired an agent; one that answers in Threads keeps them company. */
-export function noteAgentPairedForSetup(
-  key: string | null,
-  alwaysOn: boolean
-): void {
+/** A person paired an agent. */
+export function noteAgentPairedForSetup(key: string | null): void {
   completeSetupItem(key, "connect-agent")
-  if (alwaysOn) completeSetupItem(key, "agent-on-call")
 }
 
-/** A person replied in a Thread an agent is part of. */
-export function noteThreadReplyForSetup(): void {
-  completeSetupItem(currentSetupKey(), "answer-thread")
-}
-
-/**
- * Activity is where most items show up: an agent's first doc, its first
- * comment, its first Records, and a doc pinned for the Space.
- */
+/** An agent's first doc, or its first edit, is its first task done. */
 export function observeActivityForSetup(event: ActivityEvent): void {
-  const byAgent = event.actor.kind === "agent"
-  if (event.actor.kind === "system") return
-  if (!byAgent && event.action !== "doc.pinned") return
-  const key = currentSetupKey()
-  if (!key) return
-  const where = {
+  if (event.actor.kind !== "agent") return
+  if (event.action !== "doc.created" && event.action !== "doc.edited") return
+  completeSetupItem(currentSetupKey(), "first-task", {
     ...(event.spaceId ? { spaceId: event.spaceId } : {}),
     ...(event.target.kind === "doc" ? { path: event.target.path } : {}),
-  }
-  switch (event.action) {
-    case "doc.created":
-      noteWatched(key, "doc", where)
-      completeSetupItem(key, "first-task", where)
-      return
-    case "doc.edited":
-      completeSetupItem(key, "first-task", where)
-      return
-    case "comment.created":
-      completeSetupItem(key, "ask-review", where)
-      return
-    case "records.added":
-      completeSetupItem(key, "track-records", where)
-      return
-    case "doc.pinned": {
-      // Setup pins the agent's first brief itself; that isn't the person
-      // choosing what leads a Space.
-      const watched = storedSetup(key)?.watch?.doc
-      if (watched && watched.path === where.path && watched.spaceId === where.spaceId)
-        return
-      completeSetupItem(key, "pin-start", where)
-      return
-    }
-  }
+  })
 }
 
 /** When Teams turns on, the owner's setup moves to their member key. */

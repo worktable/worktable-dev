@@ -1,4 +1,3 @@
-import { noteSpaceCreatedForSetup } from "../personal-setup.ts";
 import { teamsEnabled } from "../team-database.ts";
 import { canAccessSpace, currentRequestIdentity, teamMemberForIdentity } from "../team-policy.ts";
 import { accessSnapshot, spaceAccessKey } from "../team-access.ts";
@@ -109,11 +108,6 @@ spacesRouter.post("/", requireScope("docs:write"), async (c) => {
   };
 
   await writeSpace(space);
-  const identity = c.get("identity");
-  noteSpaceCreatedForSetup(
-    spaceId,
-    Boolean(identity?.agent) || identity?.principal.type === "agent"
-  );
   return c.json({ spaceId }, 201);
 });
 

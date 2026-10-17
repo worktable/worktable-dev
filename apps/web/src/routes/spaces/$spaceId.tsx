@@ -501,7 +501,7 @@ function SpaceDetailPage() {
         />
       )}
       {space && isGettingStarted(space) ? (
-        <GettingStartedHome space={space} />
+        <GettingStartedHome />
       ) : (
       <SpaceOverview
         // A folder filter belongs to one Space; start each Space unfiltered.

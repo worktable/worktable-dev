@@ -126,11 +126,8 @@ profileRouter.put("/navigation", async (c) => {
 
 const SaveSetupSchema = z
   .object({
-    audience: z.enum(["solo", "team"]).optional(),
     hidden: z.boolean().optional(),
     welcomed: z.boolean().optional(),
-    /** Start or stop waiting for an agent's first task during setup. */
-    watch: z.enum(["start", "stop"]).optional(),
   })
   .strict()
 
@@ -144,14 +141,11 @@ profileRouter.put("/setup", async (c) => {
     await c.req.json().catch(() => null)
   )
   if (!parsed.success) return c.json({ error: "Invalid setup" }, 400)
-  const { watch, ...choices } = parsed.data
   try {
-    const saved = await changeSetup(setupKeyForPerson(person), (current) => {
-      const next = { ...current, ...choices }
-      if (watch === "start") next.watch = { since: new Date().toISOString() }
-      if (watch === "stop") delete next.watch
-      return next
-    })
+    const saved = await changeSetup(setupKeyForPerson(person), (current) => ({
+      ...current,
+      ...parsed.data,
+    }))
     return c.json({ setup: saved })
   } catch (error) {
     if (error instanceof PreferencesUnreadableError)

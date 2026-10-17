@@ -1,7 +1,6 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query"
 import type {
   PersonalSetup,
-  SetupAudience,
   SetupEvidence,
   SetupItemId,
 } from "@worktable/types/setup"
@@ -16,146 +15,60 @@ import { getSpaceArchiveInfo } from "./spaces"
 
 export { GETTING_STARTED_SPACE_ID }
 
-export type SetupAction =
-  | { kind: "settings"; section: "agents" | "team"; label: string }
-  | { kind: "doc"; path: string; label: string }
-  | { kind: "threads"; label: string }
-
 export interface ChecklistItem {
   id: SetupItemId
   title: string
   description: string
-  action?: SetupAction
 }
 
-export interface ChecklistSection {
-  title: string
-  items: ChecklistItem[]
+/** Owners can invite once people have accounts to sign in with. */
+export function canInvite(
+  person: WorkspaceInfo["person"] | undefined
+): boolean {
+  return person?.role === "owner" && person.signOut !== null
 }
 
-const CONNECT: ChecklistItem = {
-  id: "connect-agent",
-  title: "Connect an agent",
-  description:
-    "Bring Claude Code, Codex, or another agent so it can work in your Spaces.",
-  action: { kind: "settings", section: "agents", label: "Connect" },
-}
-
-const FIRST_TASK: ChecklistItem = {
-  id: "first-task",
-  title: "Give an agent its first task",
-  description:
-    "Ask it to make a Space for something you're working on and write the first draft.",
-  action: { kind: "doc", path: "prompts-to-try", label: "Prompts to try" },
-}
-
-const ASK_REVIEW: ChecklistItem = {
-  id: "ask-review",
-  title: "Ask for a review",
-  description:
-    "Ask your agent to review a doc. Its comments appear beside the text, and you can reply or ask for changes.",
-  action: { kind: "doc", path: "prompts-to-try", label: "Copy a prompt" },
-}
-
-/** Each person's own list, in the order it is worth doing. */
+/** Each person's own steps, in the order they're worth doing. */
 export function checklistFor(
   role: "owner" | "member",
-  audience: SetupAudience | undefined,
-  joinedSpaceName?: string
-): ChecklistSection[] {
+  options: { canInvite: boolean; joinedSpaceName?: string }
+): ChecklistItem[] {
   if (role === "member") {
     return [
       {
-        title: "Set up",
-        items: [
-          {
-            id: "join-space",
-            title: joinedSpaceName ? `Join ${joinedSpaceName}` : "Join the team",
-            description: "You're in.",
-          },
-          {
-            ...CONNECT,
-            title: "Connect your agent",
-            description:
-              "Bring Claude Code, Codex, or another agent so it can work here too.",
-          },
-          { ...FIRST_TASK, title: "Give your agent a first task" },
-        ],
+        id: "connect-agent",
+        title: "Connect your agent",
+        description: "So it can work here too.",
       },
       {
-        title: "Work with your agents",
-        items: [
-          ASK_REVIEW,
-          {
-            id: "answer-thread",
-            title: "Answer an agent in a Thread",
-            description:
-              "When an agent needs something from you, it asks in Threads. Reply there.",
-            action: { kind: "threads", label: "Open Threads" },
-          },
-        ],
+        id: "first-task",
+        title: "Give your agent a task",
+        description: options.joinedSpaceName
+          ? `Start with the work already in ${options.joinedSpaceName}.`
+          : "Ask for something you need. It saves the result in Worktable.",
       },
     ]
   }
-  const team = audience !== "solo"
   return [
     {
-      title: "Set up",
-      items: [
-        CONNECT,
-        FIRST_TASK,
-        ...(team
-          ? [
-              {
-                id: "invite-team",
-                title: "Invite your team",
-                description:
-                  "Invite people into a Space with work already in it. This completes when someone joins.",
-                action: { kind: "settings", section: "team", label: "Invite" },
-              } satisfies ChecklistItem,
-            ]
-          : []),
-      ],
+      id: "connect-agent",
+      title: "Connect your agent",
+      description: "So it can read and write here.",
     },
     {
-      title: "Work with your agents",
-      items: [
-        ASK_REVIEW,
-        {
-          id: "agent-on-call",
-          title: "Keep an agent on call",
-          description:
-            "Connect OpenClaw or Hermes to answer you in Threads while you're away.",
-          action: { kind: "settings", section: "agents", label: "Connect" },
-        },
-        {
-          id: "track-records",
-          title: "Track work as Records",
-          description:
-            "Ask an agent to turn a checklist into Records with a board, like the Launch Plan example.",
-          action: { kind: "doc", path: "launch-board", label: "See the example" },
-        },
-      ],
+      id: "first-task",
+      title: "Give your agent a task",
+      description: "Ask for something you need. It saves the result in Worktable.",
     },
-    {
-      title: "Make it yours",
-      items: [
-        team
-          ? {
-              id: "pin-start",
-              title: "Write your team's welcome",
-              description:
-                "Have an agent draft a Start Here doc from your Spaces, then pin it.",
-              action: { kind: "doc", path: "prompts-to-try", label: "Copy the prompt" },
-            }
-          : {
-              id: "pin-start",
-              title: "Pin your starting point",
-              description:
-                "Pin the doc you come back to most, so it leads its Space.",
-            },
-      ],
-    },
+    ...(options.canInvite
+      ? [
+          {
+            id: "invite-team",
+            title: "Invite your team",
+            description: "They join the Spaces you share with them.",
+          } satisfies ChecklistItem,
+        ]
+      : []),
   ]
 }
 
@@ -166,10 +79,9 @@ export interface ChecklistProgress {
 }
 
 export function checklistProgress(
-  sections: ChecklistSection[],
+  all: ChecklistItem[],
   items: PersonalSetup["items"]
 ): ChecklistProgress {
-  const all = sections.flatMap((section) => section.items)
   const done = all.filter((item) => items[item.id]).length
   return {
     done,
@@ -203,10 +115,8 @@ export function usePersonalSetup() {
 }
 
 export interface SetupChoices {
-  audience?: SetupAudience
   hidden?: boolean
   welcomed?: boolean
-  watch?: "start" | "stop"
 }
 
 /** Save the person's own choices; the summary carries the result. */
@@ -251,12 +161,7 @@ export function useGettingStartedShortcut(
   const { person, setup } = usePersonalSetup()
   const space = gettingStartedSpace(spaces)
   if (!space || !person || setup.hidden) return null
-  const joined = setup.items["join-space"]?.spaceId
-  const sections = checklistFor(
-    person.role,
-    setup.audience,
-    joined ? spaces?.find((entry) => entry.id === joined)?.name : undefined
-  )
-  return { space, progress: checklistProgress(sections, setup.items) }
+  const items = checklistFor(person.role, { canInvite: canInvite(person) })
+  return { space, progress: checklistProgress(items, setup.items) }
 }
 

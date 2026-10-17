@@ -7,18 +7,21 @@ const EvidenceSchema = z.object({
   path: z.string().min(1).max(1000).optional(),
 })
 
+const ITEM_IDS = new Set<string>(SETUP_ITEM_IDS)
+
 export const PersonalSetupSchema = z.object({
-  audience: z.enum(["solo", "team"]).optional(),
-  items: z.partialRecord(z.enum(SETUP_ITEM_IDS), EvidenceSchema),
+  // Items a later version no longer lists are dropped, not fatal.
+  items: z.preprocess(
+    (value) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.entries(value).filter(([id]) => ITEM_IDS.has(id))
+          )
+        : value,
+    z.partialRecord(z.enum(SETUP_ITEM_IDS), EvidenceSchema)
+  ),
   hidden: z.boolean().optional(),
   welcomed: z.boolean().optional(),
-  watch: z
-    .object({
-      since: z.string().min(1).max(40),
-      space: EvidenceSchema.optional(),
-      doc: EvidenceSchema.optional(),
-    })
-    .optional(),
 })
 
 /** A stored setup, or undefined when it is missing or unreadable. */

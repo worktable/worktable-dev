@@ -1,4 +1,3 @@
-import { noteThreadReplyForSetup } from "./personal-setup.ts"
 import { isWorkspaceDraining } from "./workspace-request-lifecycle.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import { findTeamMemberById, listTeamMembers } from "./team-members.ts"
@@ -609,14 +608,6 @@ export async function postThreadMessageWithStored(
         ? { quote: result.message.body }
         : {}),
     })
-  }
-  if (
-    result.created &&
-    input.threadId &&
-    actor.kind === "human" &&
-    result.thread.members.some((member) => member.kind === "agent")
-  ) {
-    noteThreadReplyForSetup()
   }
   const activity = result.message.responseRequest
     ? await (async (request) => {

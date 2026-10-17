@@ -113,7 +113,6 @@ import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
 import {
   noteAgentCallForSetup,
   noteAgentPairedForSetup,
-  noteSpaceCreatedForSetup,
   setupKeyForIdentity,
 } from "../personal-setup.ts"
 import {
@@ -936,10 +935,7 @@ async function _dispatchOperationInner(
       if (!name || name.length > 120) {
         throw new Error("name is required to register a participant")
       }
-      noteAgentPairedForSetup(
-        setupKeyForIdentity(currentRequestIdentity()),
-        true
-      )
+      noteAgentPairedForSetup(setupKeyForIdentity(currentRequestIdentity()))
       return await resolveParticipant(identity, {
         name,
         // Self-registration is a new adapter-only operation, so it always opts
@@ -1012,7 +1008,6 @@ async function _dispatchOperationInner(
         group,
       }
       await writeSpace(space)
-      noteSpaceCreatedForSetup(spaceId, true)
       return { spaceId }
     }
     case "spaces.update": {

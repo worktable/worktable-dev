@@ -1,6 +1,7 @@
 import {
   assertPayerKeepsOwnership,
   assertRoomForInvitation,
+  assertRoomToJoin,
   PlanFullError,
   requestBilling,
 } from "../hosted-billing.ts"
@@ -146,6 +147,19 @@ teamRouter.post("/accept-invitation", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid invitation" }, 400)
+  try {
+    assertRoomToJoin(requestBilling(c.req.raw))
+  } catch (error) {
+    if (!(error instanceof PlanFullError)) throw error
+    return c.json(
+      {
+        error:
+          "This Worktable is full. Ask the person who invited you to make room.",
+        code: error.code,
+      },
+      409
+    )
+  }
   const accepted = await acceptCloudTeamInvitation(
     origin(c),
     identity.cloudIdentity,

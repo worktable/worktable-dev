@@ -78,6 +78,16 @@ export function assertRoomForInvitation(billing: TenantBilling | null): void {
   if (room.used + 1 > billing.peopleLimit) throw new PlanFullError(room)
 }
 
+/**
+ * Joining needs a place among the members. Pending invitations already hold
+ * one, so this only refuses when the plan shrank after the invitation went out.
+ */
+export function assertRoomToJoin(billing: TenantBilling | null): void {
+  if (!billing || billing.peopleLimit === null) return
+  if (listTeamMembers().length + 1 > billing.peopleLimit)
+    throw new PlanFullError(planRoom(billing))
+}
+
 /** Whether this member signs in as the person who pays for the Worktable. */
 export function memberIsPayer(
   userId: string,

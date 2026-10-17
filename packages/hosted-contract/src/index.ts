@@ -51,6 +51,12 @@ export const CLOUD_PLANS = {
   },
 } as const satisfies Record<CloudPlanId, { id: CloudPlanId; [key: string]: unknown }>
 
+/** How each paid plan's product is named at the payment provider, so invoices say what was bought. */
+export const CLOUD_PLAN_PRODUCT_NAMES = {
+  team: "Worktable Cloud Team",
+  team30: "Worktable Cloud Team 30",
+} as const
+
 /** The plans someone pays for, in the order a Worktable grows through them. */
 export const PAID_CLOUD_PLAN_IDS = ["team", "team30"] as const
 export type PaidCloudPlanId = (typeof PAID_CLOUD_PLAN_IDS)[number]

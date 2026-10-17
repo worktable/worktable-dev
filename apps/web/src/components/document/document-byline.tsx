@@ -2,10 +2,8 @@ import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useId, useState, type ReactNode } from "react"
 import {
-  AppWindow,
   ChevronDown,
   Database,
-  FileText,
   History,
   Link2,
 } from "lucide-react"
@@ -26,6 +24,8 @@ import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { DocLocation } from "@/components/document/doc-location"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
@@ -191,7 +191,6 @@ export function DocumentByline({
       <BylinePanel id={`${panelId}-links`} open={open === "links"}>
         <LinkedFrom
           spaceId={spaceId}
-          nodes={trees?.active}
           docs={linkedDocs}
           records={linkedRecords}
           html={linkedHtml}
@@ -349,28 +348,25 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
 
 /**
  * What points at this Doc: Docs with the sentence their first link sits in,
- * records by the field that names it, and HTML Docs that open it. Kinds get
- * a heading only when more than one kind is here.
+ * records by the field that names it, and HTML Docs that open it. Each row
+ * starts like a row on Home: icon, name, then where it lives. Kinds get a
+ * heading only when more than one kind is here.
  */
 function LinkedFrom({
   spaceId,
-  nodes,
   docs,
   records,
   html,
 }: {
   spaceId: string
-  nodes: TreeNode[] | undefined
   docs: Array<DocumentBacklink & { node: TreeNode }>
   records: Array<Extract<DocumentReferrer, { kind: "record" }>>
   html: TreeNode[]
 }) {
-  const groups = [docs.length, records.length, html.length].filter(
-    Boolean
-  ).length
+  const groups = [docs.length, records.length, html.length].filter(Boolean).length
   const heading = (label: string) =>
     groups > 1 && (
-      <div className="px-2 pt-2 pb-0.5 text-[0.6875rem] font-medium tracking-wide text-muted-foreground/70 uppercase">
+      <div className="px-2.5 pt-3 pb-1 text-[0.6875rem] font-medium text-muted-foreground/70 first:pt-1.5">
         {label}
       </div>
     )
@@ -384,12 +380,10 @@ function LinkedFrom({
           className={REFERRER_ROW}
         >
           <ReferrerRow
-            icon={<FileText />}
+            icon={<DocumentFormatIcon formatId={link.node.format?.id} />}
             name={link.node.label}
-            where={folderLabels(nodes, link.path)}
-            note={
-              link.count && link.count > 1 ? `${link.count} links` : undefined
-            }
+            where={<DocLocation path={link.path} />}
+            note={link.count && link.count > 1 ? `${link.count} links` : undefined}
           >
             <Marked text={link.context} mark={link.mark} />
           </ReferrerRow>
@@ -410,9 +404,9 @@ function LinkedFrom({
           <ReferrerRow
             icon={<Database />}
             name={record.title}
-            where={record.collection}
+            where={<DocLocation path={`${record.collection}/`} />}
           >
-            <span className="text-foreground">{record.field}</span> field
+            <span className={MARK}>{record.field}</span> field
           </ReferrerRow>
         </Link>
       ))}
@@ -424,9 +418,9 @@ function LinkedFrom({
           className={REFERRER_ROW}
         >
           <ReferrerRow
-            icon={<AppWindow />}
+            icon={<DocumentFormatIcon formatId="worktable.html" />}
             name={node.label}
-            where={folderLabels(nodes, node.path)}
+            where={<DocLocation path={node.path} />}
           >
             Opens this doc
           </ReferrerRow>
@@ -437,9 +431,13 @@ function LinkedFrom({
 }
 
 const REFERRER_ROW =
-  "flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover"
+  "group flex min-w-0 gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-hover"
 
-/** One source: its name, where it sits, and one line of why it points here. */
+/** The words that link, set like inline code in a Doc: the reading blue on its tint. */
+const MARK =
+  "rounded-[0.3em] bg-[var(--code-accent-background)] px-[0.25em] text-[var(--code-accent-foreground)] [box-decoration-break:clone]"
+
+/** One source: a Home-style first line, then one quieter line of why it points here. */
 function ReferrerRow({
   icon,
   name,
@@ -449,28 +447,32 @@ function ReferrerRow({
 }: {
   icon: ReactNode
   name: string
-  where?: string
+  where?: ReactNode
   note?: string
   children: ReactNode
 }) {
   return (
     <>
-      <span className="flex h-5 shrink-0 items-center [&>svg]:size-3.5">
+      <span className="flex h-5 shrink-0 items-center text-muted-foreground transition-colors group-hover:text-foreground [&>svg]:size-4">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="truncate font-medium text-foreground">{name}</span>
-          {where && <span className="shrink-0 truncate text-xs">{where}</span>}
-          {note && <span className="shrink-0 text-xs">{note}</span>}
+        <span className="flex h-5 min-w-0 items-center gap-3">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {name}
+          </span>
+          {where}
+          {note && (
+            <span className="shrink-0 text-xs text-muted-foreground">{note}</span>
+          )}
         </span>
-        <span className="block truncate">{children}</span>
+        <span className="mt-1 block truncate text-muted-foreground">{children}</span>
       </span>
     </>
   )
 }
 
-/** `text` with the link's words in the reading color. */
+/** `text` with the link's words marked. */
 function Marked({
   text,
   mark,
@@ -483,7 +485,7 @@ function Marked({
   return (
     <>
       {text.slice(0, mark.start)}
-      <span className="text-foreground">{text.slice(mark.start, end)}</span>
+      <span className={MARK}>{text.slice(mark.start, end)}</span>
       {text.slice(end)}
     </>
   )
@@ -507,19 +509,4 @@ function lastEditorName(
       (by.startsWith("agent:") && actor.id === by.slice("agent:".length)))
   if (same) return actorName(actor)
   return by === "user" ? "You" : undefined
-}
-
-/** "Research / Slite Review" for a doc in research/slite-review. */
-function folderLabels(
-  nodes: TreeNode[] | undefined,
-  path: string
-): string | undefined {
-  if (!nodes) return undefined
-  const segments = path.split("/").slice(0, -1)
-  const labels: string[] = []
-  for (let depth = 1; depth <= segments.length; depth += 1) {
-    const node = findTreeNode(nodes, segments.slice(0, depth).join("/"))
-    labels.push(node?.label ?? segments[depth - 1]!)
-  }
-  return labels.length > 0 ? labels.join(" / ") : undefined
 }

@@ -13,6 +13,10 @@ infrastructure and personal context out of release notes.
 
 - **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
 - **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Cloud plans:** Worktable Cloud has three plans per Worktable: Solo, free for one person, Team for up to 12 people and Business for up to 50, with unlimited agents on every plan. Pending invitations count toward a plan's people.
+- **Full plans:** Inviting more people than a plan holds says so where you invite and offers the next plan to the person who pays; on Solo it's where a paid plan starts, and the people you typed are invited once it's active.
+- **Subscription settings:** **Settings → Subscription** shows the plan, how many people it holds and the next charge, and lets the person who pays change, manage or cancel it.
+- **Payment reminders:** When a Cloud payment fails, owners see a banner straight away and members see one two days before access locks.
 - **Setup:** A new Worktable takes three steps: name it, connect your agent and invite your team. Connecting groups agents by how they work, on demand or always on, and shows the command or address for the one you pick, then waits for it to connect. On a self-hosted Worktable with an owner password, setup asks for your email so teammates can join, and you keep signing in with the same password.
 - **Getting Started:** New Worktables start with a Getting Started Space that everyone can see. Its home lists your own first steps: connect your agent, give it a task and, for the owner, invite your team. Each one ticks off when it happens. Guides cover what agents can make, prompts to try, reviewing with your agent, always-on agents and Records. It sits at the top of the sidebar, with a line on **Home**, until you remove it. Existing Worktables keep their Welcome Space.
 - **Joining a team:** Members skip the owner's setup and open the Space they were invited to, with a short welcome. On self-hosted Worktables, the join page names the Worktable, who invited you and the Space.
@@ -24,6 +28,8 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
+- **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
 - **Activity on a team:** Activity names other people. **You** means only you.
 - **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.

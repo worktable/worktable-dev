@@ -20,6 +20,13 @@ import {
   sameAuthorizationServerIssuer,
   tenantResourceUrl,
   TenantProvisionInput,
+  BillingAccess,
+  CLOUD_PLAN_IDS,
+  CLOUD_PLANS,
+  decodeTenantBilling,
+  encodeTenantBilling,
+  nextCloudPlan,
+  PublicPlanDetails,
 } from "./index.ts"
 
 const base = {
@@ -347,4 +354,46 @@ it("reads fragmented UTF-8 directories and cancels oversized tenant responses be
   await expect(readTeamDirectorySnapshot(new Response(oversized))).rejects.toThrow("Team directory too large")
   expect(cancelled).toBe(true)
   expect(remaining).toBeGreaterThan(0)
+})
+
+describe("tenant billing header", () => {
+  it("round-trips any valid billing, including names outside ASCII", () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          plan: fc.constantFrom(...CLOUD_PLAN_IDS),
+          peopleLimit: fc.option(fc.integer({ min: 1, max: 1000 }), { nil: null }),
+          access: fc.constantFrom(...BillingAccess.options),
+          payer: fc.record({
+            subject: fc.string({ minLength: 1, maxLength: 40 }),
+            name: fc.string({ maxLength: 40 }),
+          }),
+        }),
+        (billing) => {
+          expect(decodeTenantBilling(encodeTenantBilling(billing))).toEqual(
+            billing
+          )
+        }
+      )
+    )
+  })
+
+  it("reads anything else as no billing", () => {
+    for (const value of [null, "", "not base64!", btoa("{}"), "x".repeat(5000)])
+      expect(decodeTenantBilling(value)).toBeNull()
+  })
+})
+
+describe("cloud plans", () => {
+  it("grow from Solo to Team to Business, each holding more people", () => {
+    expect(nextCloudPlan("solo")).toBe("team")
+    expect(nextCloudPlan("team")).toBe("business")
+    expect(nextCloudPlan("business")).toBeNull()
+    for (const id of CLOUD_PLAN_IDS) {
+      const plan = CLOUD_PLANS[id]
+      expect(PublicPlanDetails.parse(plan)).toEqual(plan)
+      const next = nextCloudPlan(id)
+      if (next) expect(CLOUD_PLANS[next].peopleLimit).toBeGreaterThan(plan.peopleLimit)
+    }
+  })
 })

@@ -172,7 +172,7 @@ export function CloudSection() {
   const linkTooltip = !data.account.user
     ? "Sign in to Worktable Cloud to enable this connection."
     : !data.enabled && !selectedSubscription
-      ? "Choose a Worktable subscription for this device."
+      ? "Choose a Worktable for this device."
       : disconnect.isPending || data.state === "unlinking"
         ? "Unlinking this device…"
         : toggle.isPending
@@ -239,7 +239,7 @@ export function CloudSection() {
                 htmlFor="link-subscription"
                 className="text-sm font-medium"
               >
-                Worktable subscription
+                Worktable
               </label>
               <Select
                 value={selectedSubscription ?? ""}

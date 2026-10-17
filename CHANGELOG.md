@@ -28,6 +28,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
 - **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
 - **Activity on a team:** Activity names other people. **You** means only you.
 - **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.

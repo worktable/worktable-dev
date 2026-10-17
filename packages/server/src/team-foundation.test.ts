@@ -12,6 +12,7 @@ import { trustedLocalIdentity, verifyBearer } from "./auth.ts"
 import { teamRouter } from "./routes/team.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import { widgetsRouter } from "./routes/widgets.ts"
 import { DEFAULT_AGENT_ACCESS, type DocumentId } from "@worktable/types"
 import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
@@ -858,6 +859,76 @@ describe("team foundation", () => {
       clock.mockRestore()
     }
   })
+})
+
+test("an HTML Doc reads Records for members with read access and writes only for editors", async () => {
+  const { owner, member, bobHeaders } = await setup()
+  setSpaceAccessPolicy(
+    {
+      spaceId: "original",
+      visibility: "restricted",
+      grants: [
+        {
+          subjectType: "member",
+          subjectId: member.team!.memberId!,
+          access: "read",
+        },
+      ],
+    },
+    owner
+  )
+  await runWithTeamIdentity(owner, async () => {
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "original",
+      collectionId: "tasks",
+      fields: { title: { type: "string" } },
+    })
+    await dispatchOperation("records.create", {
+      spaceId: "original",
+      collectionId: "tasks",
+      recordId: "first",
+      data: { title: "First" },
+    })
+    await dispatchOperation("html.create", {
+      lifetime: "durable",
+      spaceId: "original",
+      id: "board",
+      name: "Board",
+      html: "<main><h1>Board</h1></main>",
+      permissions: { records: { tasks: { read: true, create: true } } },
+    })
+  })
+  const app = new Hono()
+  app.onError(
+    (error) =>
+      new Response(error.message, {
+        status: error instanceof TeamAccessError ? 403 : 500,
+      })
+  )
+  app.use("/api/*", trustedLocalIdentity())
+  app.route("/api/spaces/:spaceId/widgets", widgetsRouter)
+  const bridge = (path: string, method: string, body: unknown) =>
+    app.request(`${origin}/api/spaces/original/widgets/board${path}`, {
+      method,
+      headers: { Cookie: bobHeaders.get("Cookie")!, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
+  // The bridge sends queries as POST; they are reads.
+  const query = await bridge("/records/tasks/query", "POST", {})
+  expect(query.status).toBe(200)
+  expect(
+    ((await query.json()) as { records: { id: string }[] }).records.map(
+      (record) => record.id
+    )
+  ).toEqual(["first"])
+  expect(
+    (await bridge("/records/tasks", "POST", { data: { title: "Second" } }))
+      .status
+  ).toBe(403)
+  expect((await bridge("/state", "PUT", { state: { seen: true } })).status).toBe(
+    403
+  )
 })
 
 test("HTTP requires named members, admits an invitation once, and binds minted credentials to the inviting member", async () => {

@@ -17,8 +17,10 @@ export function useDeploymentInfo() {
       if (deployment.mode === "cloud") prefetchBrowserCsrfToken()
       return deployment
     },
-    staleTime: 60_000,
+    // Mounting another reader never refetches; only the events above do.
+    staleTime: Infinity,
     refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
   })
 }
 

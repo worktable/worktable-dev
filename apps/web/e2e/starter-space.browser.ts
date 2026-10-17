@@ -459,10 +459,13 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     racePage.getByRole("link", { name: "Ways to Work", exact: true })
   ).toBeVisible({ timeout: 30_000 })
-  await racePage
+  // The tab shares what the first one left open, so Plans may be open.
+  const racePlans = racePage
     .getByRole("navigation", { name: "Active documents" })
     .getByRole("button", { name: "Plans", exact: true })
-    .click()
+  await expect(racePlans).toBeVisible()
+  if ((await racePlans.getAttribute("aria-expanded")) === "false")
+    await racePlans.click()
   await expect(
     racePage.getByRole("link", { name: "Live Status", exact: true })
   ).toBeVisible()

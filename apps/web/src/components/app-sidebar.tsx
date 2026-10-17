@@ -359,10 +359,11 @@ const SpaceSection = memo(function SpaceSection({
   const relation = useRouteRelation(spaceRoute)
   const isInSpace = relation !== null
   const openKey = `${copy}:${space.id}`
+  // Entering a Space opens one copy of it; a copy the person opened
+  // themselves stays open either way.
   const [expanded, setExpandedState] = useState(
     () =>
-      followRoute &&
-      (isInSpace || (rememberedOpen("space", openKey) ?? false))
+      rememberedOpen("space", openKey) ?? (followRoute && isInSpace)
   )
   const setExpanded = useCallback(
     (open: boolean) => {
@@ -380,14 +381,15 @@ const SpaceSection = memo(function SpaceSection({
   }
 
   useEffect(() => {
+    // Following the route is not the person's choice, so it isn't kept.
     if (followRoute && isInSpace && !expanded && !userCollapsedRef.current) {
-      setExpanded(true)
+      setExpandedState(true)
     }
     // Reset manual collapse flag when navigating away from the space
     if (!isInSpace) {
       userCollapsedRef.current = false
     }
-  }, [followRoute, isInSpace, expanded, setExpanded])
+  }, [followRoute, isInSpace, expanded])
 
   const handleToggleExpanded = (open: boolean) => {
     if (!open && isInSpace) {
@@ -1816,7 +1818,8 @@ function DocTreeItem({
       !open &&
       !userCollapsedNodeRef.current
     ) {
-      setOpenState(true)
+      // Like a Space, a folder opened by the route is not kept open.
+      setOpenStored(true)
     }
     if (!containsCurrent && !isActive) {
       userCollapsedNodeRef.current = false

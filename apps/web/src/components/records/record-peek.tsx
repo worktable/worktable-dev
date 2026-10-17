@@ -2,6 +2,7 @@ import { useSpace } from "@/lib/queries"
 import { useRef, useState } from "react"
 import { Archive, ChevronDown, ChevronLeft, ChevronRight, Copy, FileText, Hash, Info, Loader2, Maximize2, MoreVertical, ExternalLink, RotateCcw, SearchX, Trash, X } from "lucide-react"
 import { Link } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@worktable/ui/components/badge"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Card, CardContent } from "@worktable/ui/components/card"
@@ -38,6 +39,7 @@ import {
 } from "@/lib/records"
 import { RelativeTime } from "@/lib/time"
 import { useActivityAgents } from "@/lib/activity"
+import { documentsQueryOptions } from "@/lib/documents-queries"
 import { copyText } from "@/lib/clipboard"
 import { toast } from "@worktable/ui/components/sonner"
 import { FieldValue, type ExpandedRecords } from "./field-value"
@@ -217,7 +219,15 @@ export function RecordDetailBody({
   const archived = Boolean(record.archive)
   const moreCount = sections.unmodeled.length
   const { data: agentData } = useActivityAgents()
-  const agents = agentData?.agents
+  // HTML Doc titles name records they wrote. The Space's socket marks this
+  // list invalid when a document changes; otherwise the cached list is used.
+  const writtenByHtmlDoc = [record.createdBy, record.updatedBy].some((actor) => actor?.startsWith("widget:"))
+  const { data: documents } = useQuery({
+    ...documentsQueryOptions(spaceId),
+    enabled: writtenByHtmlDoc,
+    refetchOnMount: (query) => query.state.isInvalidated,
+  })
+  const actors = { agents: agentData?.agents, documents }
 
   const narrativeContent = sections.narrative.length > 0 ? (
     <section aria-label="Overview">
@@ -313,8 +323,8 @@ export function RecordDetailBody({
           <Info className="size-4 text-accent-bronze-ink" />
           Record information
         </div>
-        <ProvenanceRow label="Created" by={recordActorName(record.createdBy, agents)} at={record.createdAt} />
-        <ProvenanceRow label="Updated" by={recordActorName(record.updatedBy ?? record.createdBy, agents)} at={record.updatedAt} />
+        <ProvenanceRow label="Created" by={recordActorName(record.createdBy, actors)} at={record.createdAt} />
+        <ProvenanceRow label="Updated" by={recordActorName(record.updatedBy ?? record.createdBy, actors)} at={record.updatedAt} />
       </CardContent>
     </Card>
   )

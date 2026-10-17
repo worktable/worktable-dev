@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import type { RecordCollectionSchema, RecordFile } from "@worktable/types"
-import { canApplyFilterValue, compareGroupLabels, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldLabel, filterOpsForType, indexDanglingRelations, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
+import type { DocumentListItem, RecordCollectionSchema, RecordFile } from "@worktable/types"
+import { canApplyFilterValue, compareGroupLabels, documentPathIsSelected, normalizeDocumentPickerSearch, toggleDocumentPath, collectRecordQueryWarnings, coerceFieldInput, fieldLabel, filterOpsForType, indexDanglingRelations, recordActorName, recordDetailSections, recordFieldColumns, resolveDocumentGroupValue } from "./records"
 
 const schema = {
   version: 2,
@@ -146,5 +146,40 @@ describe("document filter values", () => {
     expect(canApplyFilterValue(true, undefined)).toBe(false)
     expect(canApplyFilterValue(true, "notes/current")).toBe(true)
     expect(canApplyFilterValue(false, null)).toBe(true)
+  })
+})
+
+describe("record attribution", () => {
+  const planningBoard = {
+    kind: "document",
+    path: "plans/board",
+    format: { id: "worktable.html", sourceVersion: 1 },
+    title: "Planning board",
+    health: "supported",
+  } satisfies DocumentListItem
+
+  it("names the author for every form a write path stores", () => {
+    const known = {
+      agents: [
+        { id: "local-token:abc", name: "Codex" },
+        { id: "agent:7f2c", name: "Team Researcher" },
+      ],
+      documents: [planningBoard],
+    }
+    // MCP, local REST, a Team agent, an HTML Doc, the owner and Worktable.
+    expect(recordActorName("local-token:abc", known)).toBe("Codex")
+    expect(recordActorName("agent:local-token:abc", known)).toBe("Codex")
+    expect(recordActorName("agent:7f2c", known)).toBe("Team Researcher")
+    expect(recordActorName("widget:plans/board", known)).toBe("Planning board")
+    expect(recordActorName("user", known)).toBe("You")
+    expect(recordActorName("worktable", known)).toBe("Worktable")
+    // Unknown agents and removed Docs never show a raw id.
+    expect(recordActorName("local-token:gone", known)).toBe("An agent")
+    expect(recordActorName("workos-agent:client", known)).toBe("An agent")
+    expect(recordActorName("oauth:client:owner", known)).toBe("An agent")
+    expect(recordActorName("worktable-agent", known)).toBe("An agent")
+    expect(recordActorName("widget:removed", known)).toBe("An HTML Doc")
+    // A name written by hand in the record file stays as written.
+    expect(recordActorName("Research desk", known)).toBe("Research desk")
   })
 })

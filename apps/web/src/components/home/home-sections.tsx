@@ -12,7 +12,7 @@ import { shortWhen } from "@/lib/activity-format"
 import { formatArchiveDate } from "@/lib/lifetime"
 import { useSpaces } from "@/lib/queries"
 import { ProgressRing } from "@/components/getting-started/progress-ring"
-import { useGettingStartedShortcut } from "@/components/sidebar/getting-started-row"
+import { useGettingStartedShortcut } from "@/lib/setup"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"

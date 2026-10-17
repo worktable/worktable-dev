@@ -9,7 +9,8 @@ import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
-import { useSpaces, useWorkspace } from "@/lib/queries"
+import { useIsSelf } from "@/lib/use-is-self"
+import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
 
@@ -19,17 +20,6 @@ import { threadsQueryOptions } from "@/lib/threads-queries"
  * People are round; agents are square-cornered in the primary color. The
  * agent badge will carry each agent's own identity once agents have one.
  */
-/**
- * Whether an activity actor is the reader. Without Teams there is one
- * person, so every person is the reader.
- */
-export function useIsSelf(): (actor: Pick<ActivityActor, "id">) => boolean {
-  const { data } = useWorkspace()
-  const me = data?.person?.activityId
-  const team = Boolean(data?.teamContext)
-  return (actor) => !team || !me || actor.id === me
-}
-
 export function ActorBadge({
   actor,
   live = false,

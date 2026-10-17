@@ -142,7 +142,7 @@ function initialWorktableName(workspace: WorkspaceInfo): string {
 }
 
 /** A short Space name from a sentence about the work. */
-export function spaceNameFrom(task: string): string {
+function spaceNameFrom(task: string): string {
   const clause = task.split(/[:.\n,;(]/)[0]?.trim() ?? ""
   const words = clause.split(/\s+/).filter(Boolean)
   let name = ""
@@ -155,7 +155,7 @@ export function spaceNameFrom(task: string): string {
 }
 
 /** What the agent is asked to do with the person's answer. */
-export function firstTaskPrompt(task: string): string {
+function firstTaskPrompt(task: string): string {
   const work = task.trim().replace(/[.\s]+$/, "")
   return `In Worktable, make a Space for what I'm working on and write a first brief in it. What I'm working on: ${work}.`
 }

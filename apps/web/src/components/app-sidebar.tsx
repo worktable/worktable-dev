@@ -167,10 +167,8 @@ import {
   restoreWidget,
 } from "@/lib/widgets-api"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import {
-  GettingStartedRow,
-  useGettingStartedShortcut,
-} from "@/components/sidebar/getting-started-row"
+import { GettingStartedRow } from "@/components/sidebar/getting-started-row"
+import { useGettingStartedShortcut } from "@/lib/setup"
 import { toast } from "@worktable/ui/components/sonner"
 import type {
   DocListEntry,

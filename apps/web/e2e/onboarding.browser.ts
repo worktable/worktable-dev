@@ -168,9 +168,11 @@ test("a new owner names their Worktable, connects agents, hands one its first ta
   await page.getByRole("button", { name: "Open Spring Launch" }).click()
   await expect(page).toHaveURL(/\/spaces\/spring-launch$/)
   await expect(page.locator("[data-worktable-app-shell]")).toBeVisible()
-  // Getting Started sits in the sidebar with what's already done.
+  // Getting Started sits in the sidebar with what's already done: an agent
+  // connected, its first task, and Ada on call. Setup's own pin of the brief
+  // doesn't count as choosing what leads the Space.
   await expect(
-    page.getByRole("link", { name: /Getting Started\s*2\/6/ })
+    page.getByRole("link", { name: /Getting Started\s*3\/6/ })
   ).toBeVisible()
 
   const workspace = (await fetch(`${harness.apiUrl}/api/workspace`).then(

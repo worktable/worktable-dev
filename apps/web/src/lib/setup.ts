@@ -237,3 +237,26 @@ export function noteSetupChanged(queryClient: QueryClient): void {
 }
 
 export type { PersonalSetup, SetupEvidence, SetupItemId }
+
+/**
+ * Getting Started, with the person's progress, while they keep it pinned.
+ * Null when there is no Getting Started Space or they unpinned it.
+ */
+export function useGettingStartedShortcut(
+  spaces: SpaceView[] | undefined
+): {
+  space: SpaceView
+  progress: ChecklistProgress
+} | null {
+  const { person, setup } = usePersonalSetup()
+  const space = gettingStartedSpace(spaces)
+  if (!space || !person || setup.hidden) return null
+  const joined = setup.items["join-space"]?.spaceId
+  const sections = checklistFor(
+    person.role,
+    setup.audience,
+    joined ? spaces?.find((entry) => entry.id === joined)?.name : undefined
+  )
+  return { space, progress: checklistProgress(sections, setup.items) }
+}
+

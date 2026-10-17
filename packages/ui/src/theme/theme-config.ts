@@ -257,35 +257,35 @@ export const themeConfig = {
    */
   recognition: {
     teal: {
-      light: { solid: "oklch(0.50 0.100 190)", ink: "oklch(0.48 0.100 190)", soft: "oklch(0.93 0.035 190)" },
+      light: { solid: "oklch(0.50 0.100 190)", ink: "oklch(0.45 0.100 190)", soft: "oklch(0.885 0.047 190)" },
       dark: { solid: "oklch(0.50 0.100 190)", ink: "oklch(0.78 0.100 190)", soft: "oklch(0.30 0.045 190)" },
     },
     sky: {
-      light: { solid: "oklch(0.50 0.100 225)", ink: "oklch(0.48 0.100 225)", soft: "oklch(0.93 0.035 225)" },
+      light: { solid: "oklch(0.50 0.100 225)", ink: "oklch(0.45 0.100 225)", soft: "oklch(0.885 0.047 225)" },
       dark: { solid: "oklch(0.50 0.100 225)", ink: "oklch(0.78 0.100 225)", soft: "oklch(0.30 0.045 225)" },
     },
     violet: {
-      light: { solid: "oklch(0.50 0.130 300)", ink: "oklch(0.48 0.130 300)", soft: "oklch(0.93 0.045 300)" },
+      light: { solid: "oklch(0.50 0.130 300)", ink: "oklch(0.45 0.130 300)", soft: "oklch(0.885 0.061 300)" },
       dark: { solid: "oklch(0.50 0.130 300)", ink: "oklch(0.78 0.130 300)", soft: "oklch(0.30 0.059 300)" },
     },
     rose: {
-      light: { solid: "oklch(0.50 0.130 350)", ink: "oklch(0.48 0.130 350)", soft: "oklch(0.93 0.045 350)" },
+      light: { solid: "oklch(0.50 0.130 350)", ink: "oklch(0.45 0.130 350)", soft: "oklch(0.885 0.061 350)" },
       dark: { solid: "oklch(0.50 0.130 350)", ink: "oklch(0.78 0.130 350)", soft: "oklch(0.30 0.059 350)" },
     },
     orange: {
-      light: { solid: "oklch(0.50 0.140 50)", ink: "oklch(0.48 0.140 50)", soft: "oklch(0.93 0.049 50)" },
-      dark: { solid: "oklch(0.50 0.140 50)", ink: "oklch(0.78 0.140 50)", soft: "oklch(0.30 0.063 50)" },
+      light: { solid: "oklch(0.50 0.150 45)", ink: "oklch(0.45 0.140 45)", soft: "oklch(0.885 0.066 45)" },
+      dark: { solid: "oklch(0.50 0.150 45)", ink: "oklch(0.78 0.140 45)", soft: "oklch(0.30 0.063 45)" },
     },
     amber: {
-      light: { solid: "oklch(0.50 0.130 85)", ink: "oklch(0.48 0.130 85)", soft: "oklch(0.93 0.045 85)" },
-      dark: { solid: "oklch(0.50 0.130 85)", ink: "oklch(0.78 0.130 85)", soft: "oklch(0.30 0.059 85)" },
+      light: { solid: "oklch(0.50 0.140 70)", ink: "oklch(0.45 0.130 70)", soft: "oklch(0.885 0.061 70)" },
+      dark: { solid: "oklch(0.50 0.140 70)", ink: "oklch(0.78 0.130 70)", soft: "oklch(0.30 0.059 70)" },
     },
     green: {
-      light: { solid: "oklch(0.50 0.120 150)", ink: "oklch(0.48 0.120 150)", soft: "oklch(0.93 0.042 150)" },
+      light: { solid: "oklch(0.50 0.120 150)", ink: "oklch(0.45 0.120 150)", soft: "oklch(0.885 0.057 150)" },
       dark: { solid: "oklch(0.50 0.120 150)", ink: "oklch(0.78 0.120 150)", soft: "oklch(0.30 0.054 150)" },
     },
     slate: {
-      light: { solid: "oklch(0.50 0.025 250)", ink: "oklch(0.48 0.025 250)", soft: "oklch(0.93 0.009 250)" },
+      light: { solid: "oklch(0.50 0.025 250)", ink: "oklch(0.45 0.025 250)", soft: "oklch(0.885 0.012 250)" },
       dark: { solid: "oklch(0.50 0.025 250)", ink: "oklch(0.78 0.025 250)", soft: "oklch(0.30 0.011 250)" },
     },
   } satisfies Record<string, ModeValues<{ solid: string; ink: string; soft: string }>>,

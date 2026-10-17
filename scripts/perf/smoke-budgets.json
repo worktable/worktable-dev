@@ -285,7 +285,8 @@
       "max": 0
     },
     "requests, reopen, open the app at Home": {
-      "max": 11
+      "max": 19,
+      "why": "The sidebar reopens the Spaces a person left open, and each loads its tree (Space, docs, documents, records). The journey leaves two Spaces open."
     },
     "chain, reopen, open the app at Home": {
       "max": 1

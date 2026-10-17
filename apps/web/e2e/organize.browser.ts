@@ -132,10 +132,9 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   await expect(
     page.getByRole("button", { name: "New in Plans", exact: true })
   ).toBeVisible()
-  const spaceRow = page
-    .getByRole("button", { name: "Collapse Folder creation", exact: true })
-    .locator("../..")
-  await spaceRow.getByRole("button", { name: "New", exact: true }).click()
+  await page
+    .getByRole("button", { name: "New in Folder creation", exact: true })
+    .click()
   await expect(
     page.getByRole("menuitem", { name: "Record Collection" })
   ).toBeVisible()
@@ -145,12 +144,17 @@ test("folder creation keeps Docs, drawings, and HTML docs in the chosen folder",
   await page
     .getByRole("button", { name: "Toggle sidebar", exact: true })
     .click()
-  const folderNew = page.getByRole("button", {
-    name: "New in Plans",
+  // Phones have no hover: the row's menu always shows and holds New.
+  const folderMenu = page.getByRole("button", {
+    name: "Actions for Plans",
     exact: true,
   })
-  await expect(folderNew.locator("..")).toHaveCSS("opacity", "1")
-  await folderNew.click()
+  await expect(folderMenu.locator("..")).toHaveCSS("opacity", "1")
+  await expect(
+    page.getByRole("button", { name: "New in Plans", exact: true })
+  ).toHaveCount(0)
+  await folderMenu.click()
+  await page.getByRole("menuitem", { name: "New", exact: true }).click()
   await expect(
     page.getByRole("menuitem", { name: "Drawing", exact: true })
   ).toBeVisible()
@@ -179,11 +183,10 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await page.goto(`${harness.webUrl}/spaces/organize`, {
     waitUntil: "domcontentloaded",
   })
-  const row = page
-    .getByRole("button", { name: /^(Expand|Collapse) Organize$/ })
-    .locator("../..")
-  await row.hover()
-  await row.getByRole("button", { name: "New", exact: true }).click()
+  await page.getByRole("button", { name: "Organize", exact: true }).hover()
+  await page
+    .getByRole("button", { name: "New in Organize", exact: true })
+    .click()
   await expect(
     page.getByRole("menuitemcheckbox", { name: "Start as Temporary" })
   ).toHaveAttribute("aria-checked", "true")
@@ -283,11 +286,12 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
     await detailsHeld
     await route.continue()
   })
-  await page
-    .getByRole("button", { name: /^(Expand|Collapse) Organize$/ })
-    .locator("../..")
-    .getByRole("link", { name: "Organize", exact: true })
-    .click()
+  // Space Home is the first row inside the opened Space.
+  const sidebar = page.locator("[data-worktable-sidebar-root]")
+  const organize = sidebar.getByRole("button", { name: "Organize", exact: true })
+  if ((await organize.getAttribute("aria-expanded")) === "false")
+    await organize.click()
+  await sidebar.locator('a[href="/spaces/organize"]').click()
   await expect(page).toHaveURL(/\/spaces\/organize$/)
   const title = page.getByRole("heading", { level: 1, name: "Organize" })
   const activity = page.getByRole("region", { name: "Activity" })

@@ -44,7 +44,9 @@ test("a person's groups and pins are their own, and the sidebar stays as they le
   await expect(sidebar.getByText("Pinned", { exact: true })).toBeVisible()
 
   const listed = sidebar
-    .locator(".group\\/space", { has: named("Beta") })
+    .locator(".group\\/space", {
+      has: page.getByRole("button", { name: "Beta", exact: true }),
+    })
     .last()
   await listed.hover()
   await listed.locator("button[aria-haspopup='menu']").last().click()

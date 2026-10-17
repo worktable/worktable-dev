@@ -62,9 +62,7 @@ test("ink stays continuous through pen lifts, resting palms, and autosave recove
   expect(space.ok()).toBe(true)
   await page.goto(`${harness.webUrl}/spaces/drawing-input`)
   await page
-    .getByRole("button", { name: /^(Expand|Collapse) Drawing input$/ })
-    .locator("../..")
-    .getByRole("button", { name: "New", exact: true })
+    .getByRole("button", { name: "New in Drawing input", exact: true })
     .click()
   await page.getByRole("menuitem", { name: "Drawing", exact: true }).click()
   await page.getByLabel("Name", { exact: true }).fill("Scratchpad")

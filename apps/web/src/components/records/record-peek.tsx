@@ -221,8 +221,10 @@ export function RecordDetailBody({
   const { data: agentData } = useActivityAgents()
   // HTML Doc titles name records they wrote. The Space's socket marks this
   // list invalid when a document changes; otherwise the cached list is used.
+  const writtenByHtmlDoc = [record.createdBy, record.updatedBy].some((actor) => actor?.startsWith("widget:"))
   const { data: documents } = useQuery({
     ...documentsQueryOptions(spaceId),
+    enabled: writtenByHtmlDoc,
     refetchOnMount: (query) => query.state.isInvalidated,
   })
   const actors = { agents: agentData?.agents, documents }

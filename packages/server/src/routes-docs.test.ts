@@ -356,6 +356,20 @@ describe("doc routes", () => {
       });
       expect(next.status).toBe(201);
       expect((next.json as { path: string }).path).toBe("untitled-2");
+
+      // A folder that moved reserves everything inside it: no number helps.
+      await req(app, "PUT", "/api/spaces/test-space/docs/plans/brief", {
+        content: [para("brief")],
+      });
+      const moved = await req(app, "POST", "/api/spaces/test-space/docs/plans/rename", {
+        newPath: "archive/plans",
+        scope: "folder",
+      });
+      expect(moved.status).toBe(200);
+      const insideOld = await req(app, "POST", "/api/spaces/test-space/docs", {
+        title: "plans/Untitled",
+      });
+      expect(insideOld.status).toBe(409);
     });
   });
 

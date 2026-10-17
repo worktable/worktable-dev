@@ -268,6 +268,12 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
 
   // A new doc never takes a path an older one left for its links.
   const docPath = await freeDocPath(spaceId, base);
+  if (!docPath) {
+    return c.json(
+      { error: "This folder moved. Create the doc in its new place.", code: "CONFLICT" },
+      409
+    );
+  }
 
   const filePath = getDocPath(spaceId, docPath);
   suppressPath(filePath);

@@ -141,20 +141,24 @@ export async function pathForTitle(
   const slug = slugify(title)
   if (!slug) return from
   const parent = from.split("/").slice(0, -1).join("/")
-  return freeDocPath(spaceId, parent ? `${parent}/${slug}` : slug, from)
+  return (await freeDocPath(spaceId, parent ? `${parent}/${slug}` : slug, from)) ?? from
 }
+
+/** Numbered names tried before giving up on a base. */
+const FREE_PATH_TRIES = 1_000
 
 /**
  * `base`, or `base-2`, `base-3`, … when it is taken. Every document path is
  * taken, archived ones too, and so is every path a moved document left for
  * its old links. `own` is the path of the document being named, which it may
- * keep.
+ * keep. Null when no number helps: a moved folder reserves everything that
+ * was inside it.
  */
 export async function freeDocPath(
   spaceId: string,
   base: string,
   own?: string
-): Promise<string> {
+): Promise<string | null> {
   const { documents, aliases } = await listDocumentsWithAliases({
     spaceId,
     includeArchived: true,
@@ -166,11 +170,14 @@ export async function freeDocPath(
       .map((path) => path.toLowerCase())
   )
   const reserved = createDocAliasReservationLookup(aliases)
-  const free = (path: string) =>
-    path === own || (!taken.has(path.toLowerCase()) && !reserved(path))
-  let candidate = base
-  for (let n = 2; !free(candidate); n++) candidate = `${base}-${n}`
-  return candidate
+  for (let n = 1; n <= FREE_PATH_TRIES; n++) {
+    const candidate = n === 1 ? base : `${base}-${n}`
+    if (candidate === own) return candidate
+    const reservation = reserved(candidate)
+    if (reservation?.kind === "prefix") return null
+    if (!reservation && !taken.has(candidate.toLowerCase())) return candidate
+  }
+  return null
 }
 
 /** The title a Doc has now, as people see it when it is open. */

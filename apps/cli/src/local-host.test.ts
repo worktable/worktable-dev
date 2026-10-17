@@ -777,7 +777,7 @@ describe("local-authority state model and command integration", () => {
             "spaces",
             "welcome",
             "docs",
-            "welcome.html"
+            "launch-board.html"
           )
         )
       ).toBe(true)

@@ -448,6 +448,16 @@ async function writeYjsStateFile(
 
 export class DocFormatTransitionConflictError extends Error {}
 
+/**
+ * A path move was refused before anything moved, because a room it would
+ * move or replace is busy. Callers answer it as a conflict.
+ */
+export class DocPathMoveConflictError extends DocFormatTransitionConflictError {
+  constructor(docPath: string) {
+    super(`Another change to ${docPath} is in progress. Try again.`)
+  }
+}
+
 export class YjsDocManager {
   private docs: Map<string, LiveDoc> = new Map();
   private initializingDocs: Map<string, Promise<LiveDoc>> = new Map();
@@ -1876,8 +1886,8 @@ export class YjsDocManager {
           this.frozenDocs.has(move.newKey)
       )
       if (frozenMove) {
-        throw new DocFormatTransitionConflictError(
-          `document ${spaceId}/${frozenMove.from} or ${frozenMove.to} is already moving`
+        throw new DocPathMoveConflictError(
+          this.frozenDocs.has(frozenMove.oldKey) ? frozenMove.from : frozenMove.to
         )
       }
       for (const key of fencedKeys) this.frozenDocs.add(key)
@@ -1904,9 +1914,7 @@ export class YjsDocManager {
             !oldKeys.has(move.newKey) && this.docs.has(move.newKey)
         )
         if (occupiedMove) {
-          throw new DocFormatTransitionConflictError(
-            `document destination ${spaceId}/${occupiedMove.to} is already open`
-          )
+          throw new DocPathMoveConflictError(occupiedMove.to)
         }
         for (const { oldKey } of preparedMoves) {
           const liveDoc = this.docs.get(oldKey)

@@ -33,7 +33,7 @@ import {
 import { getWorkspaceRoot } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWait } from "./workspace-events.ts"
 import { wsManager } from "./ws.ts"
-import { yjsManager } from "./yjs-manager.ts"
+import { DocPathMoveConflictError, yjsManager } from "./yjs-manager.ts"
 import { logDocument, logError } from "./debug-log.ts"
 
 export type MoveDocumentFolderResult =
@@ -141,6 +141,20 @@ async function planDocumentFolderMove(
     }
   }
 
+  // Answer a taken name before the move fences live rooms. The fence refuses
+  // a destination someone has open, which would hide the reason.
+  const sourceKeys = new Set(
+    documents.map(
+      (document) => analyzeDocumentPath(document.descriptor.path).comparisonKey
+    )
+  )
+  const occupiedKeys = new Set(
+    catalog.entries.map((entry) =>
+      entry.kind === "conflict"
+        ? entry.pathKey
+        : analyzeDocumentPath(entry.descriptor.path).comparisonKey
+    )
+  )
   const moves: PlannedFolderMove[] = []
   for (const document of documents) {
     const storageProfileId = document.handle.storageProfile
@@ -164,6 +178,14 @@ async function planDocumentFolderMove(
         ok: false,
         kind: "conflict",
         error: "Document folder contents changed before the move",
+      }
+    }
+    const toKey = analyzeDocumentPath(toPath).comparisonKey
+    if (toKey && !sourceKeys.has(toKey) && occupiedKeys.has(toKey)) {
+      return {
+        ok: false,
+        kind: "conflict",
+        error: `Target path already exists: ${toPath}`,
       }
     }
     moves.push({
@@ -318,11 +340,18 @@ export async function moveDocumentFolder(
             withWidgetWriteLocks(spaceId, htmlPaths, runJournal)
           )
     )
-  return docMoves.length === 0
-    ? underDocumentLock()
-    : yjsManager.withDocPathMoveTransitions(
-        spaceId,
-        docMoves,
-        underDocumentLock
-      )
+  if (docMoves.length === 0) return underDocumentLock()
+  try {
+    return await yjsManager.withDocPathMoveTransitions(
+      spaceId,
+      docMoves,
+      underDocumentLock
+    )
+  } catch (error) {
+    // The fence refused before anything moved.
+    if (error instanceof DocPathMoveConflictError) {
+      return { ok: false, kind: "conflict", error: error.message }
+    }
+    throw error
+  }
 }

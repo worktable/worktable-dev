@@ -19,7 +19,7 @@ import {
   renameDoc,
   sanitizeDocPath,
 } from "./store.ts"
-import { yjsManager } from "./yjs-manager.ts"
+import { DocPathMoveConflictError, yjsManager } from "./yjs-manager.ts"
 import {
   AnnotationPathMoveConflictError,
   renameAnnotationDocPath,
@@ -57,9 +57,34 @@ export async function renameDocAndSync(
       renameDocAndSyncLocked(spaceId, from, to)
     )
   }
-  return yjsManager.withDocPathMoveTransition(spaceId, from, to, () =>
-    withDocPathLock(spaceId, () => renameDocAndSyncLocked(spaceId, from, to))
+  // Answer a taken name before fencing live rooms. The fence refuses a
+  // destination someone has open, which would hide the reason.
+  if ((await docExists(spaceId, from)) && (await docExists(spaceId, to))) {
+    return { renamed: [], error: targetExistsError(to) }
+  }
+  return refuseBusyMove(() =>
+    yjsManager.withDocPathMoveTransition(spaceId, from, to, () =>
+      withDocPathLock(spaceId, () => renameDocAndSyncLocked(spaceId, from, to))
+    )
   )
+}
+
+function targetExistsError(path: string): string {
+  return `Target path already exists: ${path}`
+}
+
+/** A move the live-room fence refused moved nothing; answer it as a conflict. */
+async function refuseBusyMove(
+  move: () => Promise<RenameOutcome>
+): Promise<RenameOutcome> {
+  try {
+    return await move()
+  } catch (error) {
+    if (error instanceof DocPathMoveConflictError) {
+      return { renamed: [], error: error.message }
+    }
+    throw error
+  }
 }
 
 async function renameDocAndSyncLocked(
@@ -145,9 +170,17 @@ export async function renameDocsByPrefixAndSync(
     to: path === from ? to : `${to}${path.slice(from.length)}`,
     storageProfileId: DOCUMENT_STORAGE_PROFILE_IDS.legacyDocFile,
   }))
-  return yjsManager.withDocPathMoveTransitions(spaceId, planned, () =>
-    withDocPathLock(spaceId, () =>
-      renameDocsByPrefixAndSyncLocked(spaceId, from, to, planned)
+  const sources = new Set(sourcePaths)
+  for (const move of planned) {
+    if (!sources.has(move.to) && (await docExists(spaceId, move.to))) {
+      return { renamed: [], error: targetExistsError(move.to) }
+    }
+  }
+  return refuseBusyMove(() =>
+    yjsManager.withDocPathMoveTransitions(spaceId, planned, () =>
+      withDocPathLock(spaceId, () =>
+        renameDocsByPrefixAndSyncLocked(spaceId, from, to, planned)
+      )
     )
   )
 }

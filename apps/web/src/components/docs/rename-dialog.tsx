@@ -16,7 +16,13 @@ import { Pencil, ArrowRight } from "lucide-react"
 interface RenameDialogProps {
   open: boolean
   onClose: () => void
-  onRename: (newPath: string) => boolean | void | Promise<boolean | void>
+  /**
+   * Resolves false to stay open, or with a reason to show under the name and
+   * stay open.
+   */
+  onRename: (
+    newPath: string
+  ) => boolean | string | void | Promise<boolean | string | void>
   currentPath: string
   isFolder?: boolean
   pathInput?: boolean
@@ -32,6 +38,7 @@ export function RenameDialog({
 }: RenameDialogProps) {
   const [newName, setNewName] = useState("")
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const isMobile = useIsMobile()
 
   const parts = currentPath.split("/")
@@ -42,6 +49,7 @@ export function RenameDialog({
   useEffect(() => {
     if (open) {
       setNewName(currentValue)
+      setError(null)
     }
   }, [open, currentValue])
 
@@ -59,7 +67,8 @@ export function RenameDialog({
     setPending(true)
     try {
       const renamed = await onRename(newPath)
-      if (renamed !== false) onClose()
+      if (typeof renamed === "string") setError(renamed)
+      else if (renamed !== false) onClose()
     } finally {
       setPending(false)
     }
@@ -98,11 +107,25 @@ export function RenameDialog({
             <Input
               id="new-name"
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e) => {
+                setNewName(e.target.value)
+                setError(null)
+              }}
               onKeyDown={handleKeyDown}
               className="h-9"
               autoFocus={!isMobile}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "rename-error" : undefined}
             />
+            {error && (
+              <p
+                id="rename-error"
+                role="alert"
+                className="text-xs text-destructive"
+              >
+                {error}
+              </p>
+            )}
           </div>
 
           {hasChanged && (

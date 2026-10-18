@@ -15,13 +15,15 @@ export const TRACE_CATEGORIES = [
 ]
 
 /**
- * For reading a trace in DevTools: JS samples with call stacks, and the JS
- * stack behind each request, timer and other trace event.
+ * For reading a trace in DevTools: JS samples with call stacks, the JS stack
+ * behind each request, timer and other trace event, and which DOM change
+ * invalidated the styles each recalculation covers.
  */
 export const RAW_TRACE_CATEGORIES = [
   ...TRACE_CATEGORIES,
   "disabled-by-default-v8.cpu_profiler",
   "disabled-by-default-devtools.timeline.stack",
+  "disabled-by-default-devtools.timeline.invalidationTracking",
 ]
 
 export type Group =

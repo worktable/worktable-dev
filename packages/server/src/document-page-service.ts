@@ -32,7 +32,7 @@ import {
   type ResolvedDocumentHandle,
   useResolvedDocumentHandle,
 } from "./document-query.ts"
-import { createDocAliasResolver } from "./doc-aliases.ts"
+import { pathMovesFor } from "./doc-aliases.ts"
 import { createBuiltinDocumentFormatRegistry } from "./document-format-registry.ts"
 import {
   DOCUMENT_STORAGE_PROFILE_IDS,
@@ -105,18 +105,13 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
       // yet leaves them out until its background build lands. Both keep the
       // paths docs had when they were recorded; the Space's aliases say where
       // those docs are now.
+      // The moves are indexed once per alias set, so a read looks up this
+      // doc's entries instead of resolving every path in the Space.
       const path = handle.document.path
-      const resolve = handle.aliases
-        ? createDocAliasResolver(handle.aliases)
-        : () => null
-      const current = (recorded: string) => resolve(recorded) ?? recorded
-      const backlinks = peekDocBacklinks(spaceId, path, current)
-      const referrers = peekDocReferrers(spaceId, path, current)
-      const activity = peekDocActivity(
-        spaceId,
-        path,
-        (recorded) => current(recorded) === path
-      )
+      const moves = pathMovesFor(handle.aliases)
+      const backlinks = peekDocBacklinks(spaceId, path, moves)
+      const referrers = peekDocReferrers(spaceId, path, moves.current)
+      const activity = peekDocActivity(spaceId, path, moves)
       return {
         ...(meta.provenance ? { provenance: meta.provenance } : {}),
         ...(revision ? { revision } : {}),

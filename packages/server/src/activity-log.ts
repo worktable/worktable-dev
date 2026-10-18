@@ -32,6 +32,7 @@ import {
 } from "@worktable/types"
 import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
+import type { DocPathMoves } from "./doc-aliases.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import type { RequestPrincipal } from "./token-store.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -447,22 +448,25 @@ async function buildDocSummaries(spaceId: string, key: string): Promise<void> {
 
 /**
  * Who has worked on a doc, without waiting. History stays under the paths it
- * was recorded at, so `recordedAt` says which paths were this doc's before
- * it moved. A Space not summarized yet answers null and starts summarizing
- * in the background.
+ * was recorded at, so `moves` says which paths were this doc's before it
+ * moved. A Space not summarized yet answers null and starts summarizing in
+ * the background.
  */
 export function peekDocActivity(
   spaceId: string,
   path: string,
-  recordedAt: (recorded: string) => boolean = (recorded) => recorded === path
+  moves?: DocPathMoves
 ): DocActivitySummary | null {
   const key = summaryKey(spaceId)
   const summaries = docSummaries.get(key)
   if (summaries) {
+    // Summaries only gain paths, so the moves' index of them stays valid.
+    const recorded = moves ? moves.keysFor(summaries, path) : [path]
     return mergePathSummaries(
-      [...summaries].flatMap(([recorded, summary]) =>
-        recordedAt(recorded) ? [summary] : []
-      )
+      recorded.flatMap((at) => {
+        const summary = summaries.get(at)
+        return summary ? [summary] : []
+      })
     )
   }
   if (!summariesBuilding.has(key)) startSummaryBuild(spaceId, key)

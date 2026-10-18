@@ -19,9 +19,11 @@ import { onDocContentChanged } from "./content-events.ts";
 import { LINK_CLOSE, LINK_OPEN, sentenceContext } from "./link-context.ts";
 import { resolveDocLink, type DocListEntry } from "@worktable/types";
 import {
+  NO_DOC_PATH_MOVES,
   readDocAliases,
   resolveDocAliasIn,
   type DocAliases,
+  type DocPathMoves,
 } from "./doc-aliases.ts";
 import { onWorkspaceChange } from "./workspace-events.ts";
 import { canReuseDerived, type DerivedRevision } from "./derived-revision.ts";
@@ -428,20 +430,20 @@ export async function getDocLinks(
 export function peekDocBacklinks(
   spaceId: string,
   docPath: string,
-  current: (path: string) => string = (path) => path
+  moves: DocPathMoves = NO_DOC_PATH_MOVES
 ): DocBacklink[] | null {
   const space = spaces.get(spaceId);
   if (!space?.graph || space.dirty) warmLinkGraph(spaceId);
   const graph = space?.graph;
   if (!graph) return null;
-  // A graph built before a move still names the old paths: `current` maps
+  // A graph built before a move still names the old paths: `moves` maps
   // them to where those docs are now, until the rebuild lands.
   const backlinks = new Map<string, InboundLinks>();
-  for (const [target, sources] of graph.inbound) {
-    if (target !== docPath && current(target) !== docPath) continue;
+  for (const target of moves.keysFor(graph.inbound, docPath)) {
+    const sources = graph.inbound.get(target) ?? [];
     const contexts = graph.inboundContext.get(target);
     for (const source of sources) {
-      const path = current(source);
+      const path = moves.current(source);
       // A doc that now links to itself is not a backlink.
       if (path === docPath || backlinks.has(path)) continue;
       backlinks.set(path, contexts?.get(source) ?? { context: "", count: 1 });

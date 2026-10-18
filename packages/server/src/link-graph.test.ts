@@ -24,6 +24,7 @@ import {
   setWorkspaceRootOverride,
 } from "./workspace.ts";
 import { setAppDirOverride } from "./app-storage.ts";
+import { pathMovesFor } from "./doc-aliases.ts";
 import { notifyWorkspaceChange } from "./workspace-events.ts";
 import type { SpaceFile } from "@worktable/types";
 
@@ -416,8 +417,10 @@ describe("link graph", () => {
     });
 
     // Until the rebuild after a move lands, the old paths name the moved docs.
-    const moved = (path: string) =>
-      ({ target: "renamed", first: "notes/first" })[path] ?? path;
+    const moved = pathMovesFor({
+      exact: { target: "renamed", first: "notes/first" },
+      prefixes: {},
+    });
     expect(peekDocBacklinks(SPACE, "renamed", moved)?.map((link) => link.path).sort()).toEqual([
       "notes/first",
       "second",

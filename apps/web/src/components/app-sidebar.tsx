@@ -1254,6 +1254,7 @@ function WidgetTreeItem({
   return (
     <>
       <div
+        data-tree-row
         className={`group/widget relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}
@@ -1830,7 +1831,7 @@ function TreeSection({
   label: string
   icon: typeof Archive
   count: number
-  /** Quiets the rows inside, except the open one and the one under the pointer. */
+  /** Quiets each row inside, nested ones too, except the open and hovered rows. */
   dimmed?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -1855,7 +1856,7 @@ function TreeSection({
           aria-label={`${label} documents`}
           className={`ml-4 space-y-0.5 pl-2 ${
             dimmed
-              ? "[&>*]:opacity-60 [&>*]:transition-opacity [&>*:has([aria-current=page])]:opacity-100 [&>*:hover]:opacity-100"
+              ? "[&_[data-tree-row]:not(:hover):not(:has([aria-current=page]))]:opacity-60"
               : ""
           }`}
         >
@@ -1947,6 +1948,7 @@ function UnavailableDocumentTreeItem({
   )
   return (
     <div
+      data-tree-row
       className={`relative rounded-md transition-colors ${
         isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
       } ${isDragging ? "opacity-50" : ""}`}
@@ -2241,6 +2243,7 @@ function DocTreeItem({
         <Collapsible open={open} onOpenChange={handleToggleNode}>
           <div
             ref={folderRowRef}
+            data-tree-row
             className={`group/folder relative flex items-center rounded-md transition-colors duration-180 ${
               isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
             } ${isDragging ? "opacity-50" : ""}`}
@@ -2405,6 +2408,7 @@ function DocTreeItem({
   return (
     <>
       <div
+        data-tree-row
         className={`group/doc relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}

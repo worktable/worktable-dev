@@ -978,11 +978,17 @@ async function timingRun(options: {
   try {
     const timings: Timing[] = []
     for (const session of sessions) {
-      for (const endpoint of await endpointsFor(
+      const endpoints = await endpointsFor(
         server.url,
         session.cookies,
         options.fixture
-      )) {
+      )
+      // The probe opens a doc page, which can start once-per-Space work in
+      // the background (its link graph, its activity summary). Routes are
+      // timed at rest, as after boot, not against that work.
+      if ((await waitForIdle(server.pid, 120_000)) === "busy")
+        throw new Error("server still busy 2 minutes after the endpoint probe")
+      for (const endpoint of endpoints) {
         for (let index = 0; index < WARMUP; index += 1)
           await request(server.url, session.cookies, endpoint.path)
         const values: number[] = []

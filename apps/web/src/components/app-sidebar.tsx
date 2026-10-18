@@ -1572,7 +1572,7 @@ function SpaceTreeSection({
     separateTemporary: true,
   })
   const index = spaceDocumentIndex({ documents, docs })
-  const { temporaryCount, temporaryPaths, archivedPaths } = useMemo(() => {
+  const { temporaryCount, temporaryPaths, archivedCount, archivedPaths } = useMemo(() => {
     const temporary = documents.filter(
       (item) => !documentListItemArchived(item) && isTemporaryDocument(item)
     )
@@ -1588,6 +1588,7 @@ function SpaceTreeSection({
           item.kind === "document" ? [item.path] : []
         )
       ),
+      archivedCount: documents.filter(documentListItemArchived).length,
       archivedPaths: new Set(archivedDocumentPaths),
     }
   }, [documents])
@@ -1750,7 +1751,7 @@ function SpaceTreeSection({
           </button>
         </div>
       ) : hasContent ? (
-        <div className="space-y-2">
+        <div className="space-y-0.5">
           {tree.length > 0 && (
             <nav aria-label="Active documents" className="space-y-0.5">
               {tree.map((node) => (
@@ -1766,62 +1767,42 @@ function SpaceTreeSection({
           )}
 
           {temporaryTree.length > 0 && (
-            <Collapsible open={temporaryOpen} onOpenChange={transitionOpenChange(setTemporaryOpen)}>
-              <div className="px-3">
-                <CollapsibleTrigger
-                  className="flex min-h-8 w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase sm:min-h-0"
-                  render={<button type="button" />}
-                >
-                  <ChevronRight
-                    className={`size-3 shrink-0 transition-transform ${temporaryOpen ? "rotate-90" : ""}`}
-                  />
-                  <Clock3 className="size-3 shrink-0" />
-                  <span>Temporary</span>
-                  <span className="font-normal">{temporaryCount}</span>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="collapsible-instant">
-                <nav aria-label="Temporary documents" className="space-y-0.5">
-                  {temporaryTree.map((node) => (
-                    <TreeItem
-                      key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
-                      node={node}
-                      {...rowProps}
-                      folderArchived={false}
-                    />
-                  ))}
-                </nav>
-              </CollapsibleContent>
-            </Collapsible>
+            <TreeSection
+              label="Temporary"
+              icon={Clock3}
+              count={temporaryCount}
+              open={temporaryOpen}
+              onOpenChange={transitionOpenChange(setTemporaryOpen)}
+            >
+              {temporaryTree.map((node) => (
+                <TreeItem
+                  key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
+                  node={node}
+                  {...rowProps}
+                  folderArchived={false}
+                />
+              ))}
+            </TreeSection>
           )}
 
           {archivedTree.length > 0 && (
-            <Collapsible open={archivedOpen} onOpenChange={transitionOpenChange(setArchivedOpen)}>
-              <div className="px-3">
-                <CollapsibleTrigger
-                  className="flex min-h-8 w-full items-center gap-2 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase sm:min-h-0"
-                  render={<button type="button" />}
-                >
-                  <ChevronRight
-                    className={`size-3 shrink-0 transition-transform ${archivedOpen ? "rotate-90" : ""}`}
-                  />
-                  <Archive className="size-3 shrink-0" />
-                  <span>Archived</span>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="collapsible-instant">
-                <nav aria-label="Archived documents" className="space-y-0.5">
-                  {archivedTree.map((node) => (
-                    <TreeItem
-                      key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
-                      node={node}
-                      {...rowProps}
-                      folderArchived
-                    />
-                  ))}
-                </nav>
-              </CollapsibleContent>
-            </Collapsible>
+            <TreeSection
+              label="Archived"
+              icon={Archive}
+              count={archivedCount}
+              open={archivedOpen}
+              onOpenChange={transitionOpenChange(setArchivedOpen)}
+              dimmed
+            >
+              {archivedTree.map((node) => (
+                <TreeItem
+                  key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
+                  node={node}
+                  {...rowProps}
+                  folderArchived
+                />
+              ))}
+            </TreeSection>
           )}
         </div>
       ) : !isLoading ? (
@@ -1830,6 +1811,58 @@ function SpaceTreeSection({
         </p>
       ) : null}
     </RevealCurrent.Provider>
+  )
+}
+
+/**
+ * Temporary and Archived: folder-like rows at the end of a Space's tree, so
+ * they read as part of the Space rather than as sidebar headings.
+ */
+function TreeSection({
+  label,
+  icon: Icon,
+  count,
+  open,
+  onOpenChange,
+  dimmed = false,
+  children,
+}: {
+  label: string
+  icon: typeof Archive
+  count: number
+  /** Quiets the rows inside, except the open one and the one under the pointer. */
+  dimmed?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <CollapsibleTrigger
+        className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground/50 transition-colors duration-180 hover:bg-sidebar-hover hover:text-sidebar-foreground sm:min-h-0"
+        render={<button type="button" />}
+      >
+        <Icon className="size-4 shrink-0 text-sidebar-foreground/30" />
+        <span className="min-w-0 truncate">{label}</span>
+        {!open && (
+          <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
+            {count}
+          </span>
+        )}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="collapsible-instant">
+        <nav
+          aria-label={`${label} documents`}
+          className={`ml-4 space-y-0.5 pl-2 ${
+            dimmed
+              ? "[&>*]:opacity-60 [&>*]:transition-opacity [&>*:has([aria-current=page])]:opacity-100 [&>*:hover]:opacity-100"
+              : ""
+          }`}
+        >
+          {children}
+        </nav>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 

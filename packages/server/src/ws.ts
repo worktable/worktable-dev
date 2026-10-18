@@ -59,6 +59,7 @@ interface OutgoingMessage {
     | "participants_update"
     | "spaces_changed"
     | "navigation_changed"
+    | "setup_changed"
     | "error"
     | "subscribed"
   spaceId?: string
@@ -379,6 +380,14 @@ export class WsManager {
 
   /** One person's own sockets, wherever they are subscribed. */
   sendToPerson(personKey: string, msg: OutgoingMessage): void {
+    this.sendToPeople((identity) => participantKey(identity) === personKey, msg)
+  }
+
+  /** The sockets of every person `matches`, never an agent's. */
+  sendToPeople(
+    matches: (identity: Pick<TokenIdentity, "agent" | "principal">) => boolean,
+    msg: OutgoingMessage
+  ): void {
     const json = JSON.stringify(msg)
     const sent = new Set<WsClient>()
     const dead: WsClient[] = []
@@ -386,7 +395,8 @@ export class WsManager {
       for (const ws of clients) {
         const identity = ws.data.identity
         if (sent.has(ws) || ws.data.credentialRevoked || !identity) continue
-        if (identity.agent || participantKey(identity) !== personKey) continue
+        if (identity.agent || identity.principal.type !== "human") continue
+        if (!matches(identity)) continue
         sent.add(ws)
         try {
           ws.send(json)
@@ -465,6 +475,7 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
         ws.data.canReadAnnotations === true
       )
     case "navigation_changed":
+    case "setup_changed":
     case "error":
     case "subscribed":
       return true

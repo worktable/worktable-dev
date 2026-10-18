@@ -1083,7 +1083,7 @@ export async function migrateDocOrderPaths(
   });
 }
 
-export function getSpaceArchiveInfo(space: SpaceFile): ArchiveInfo | undefined {
+export function getSpaceArchiveInfo(space: Pick<SpaceFile, "settings">): ArchiveInfo | undefined {
   return normalizeArchiveInfo(space.settings["archive"]);
 }
 

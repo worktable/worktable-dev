@@ -1,8 +1,16 @@
 import type { ActivityActor } from "@worktable/types"
 import { formatArchiveDate } from "./lifetime"
 
-export function actorName(actor: ActivityActor): string {
-  if (actor.kind === "person") return "You"
+/**
+ * "You" for the reader; on a team, other people go by their names. Who the
+ * reader is comes from useIsSelf.
+ */
+export function actorName(
+  actor: Pick<ActivityActor, "kind" | "id" | "name">,
+  isSelf: (actor: Pick<ActivityActor, "id">) => boolean
+): string {
+  if (actor.kind === "person")
+    return isSelf(actor) ? "You" : (actor.name ?? "Someone")
   return actor.name ?? (actor.kind === "agent" ? "An agent" : "Worktable")
 }
 

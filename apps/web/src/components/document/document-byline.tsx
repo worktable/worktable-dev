@@ -32,6 +32,7 @@ import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
 import { actorName, shortWhen } from "@/lib/activity-format"
+import { useIsSelf } from "@/lib/use-is-self"
 import { documentRoute } from "@/lib/document-views"
 import { findTreeNode } from "@/lib/space-document-tree"
 import type { TreeNode } from "@/lib/tree"
@@ -125,7 +126,8 @@ export function DocumentByline({
   const prefetchActivity = () =>
     void queryClient.prefetchQuery(activityQueryOptions(activityOptions))
 
-  const editor = lastEditorName(contributors?.lastEditor, provenance)
+  const isSelf = useIsSelf()
+  const editor = lastEditorName(contributors?.lastEditor, provenance, isSelf)
   const faces = contributors?.recent.slice(0, 3) ?? []
   const editedAt = provenance?.updatedAt ?? updatedAt
 
@@ -319,6 +321,7 @@ const IN_DOC: Partial<Record<ActivityEntry["action"], string>> = {
  * reads "Claude edited", "Maya commented".
  */
 function DocSentence({ entry }: { entry: ActivityEntry }) {
+  const isSelf = useIsSelf()
   if (entry.actor.kind === "system") return <>Changed outside Worktable</>
   const instruction = entry.category === "instruction"
   const verb =
@@ -338,7 +341,7 @@ function DocSentence({ entry }: { entry: ActivityEntry }) {
   return (
     <>
       <span className="font-medium text-foreground">
-        {actorName(entry.actor)}
+        {actorName(entry.actor, isSelf)}
       </span>{" "}
       {verb}
       {times}
@@ -526,15 +529,17 @@ function Marked({
  */
 function lastEditorName(
   actor: ActivityActor | undefined,
-  provenance: DocumentProvenance | undefined
+  provenance: DocumentProvenance | undefined,
+  isSelf: (actor: Pick<ActivityActor, "id">) => boolean
 ): string | undefined {
   const by = provenance?.updatedBy
-  if (!by) return actor ? actorName(actor) : undefined
+  if (!by) return actor ? actorName(actor, isSelf) : undefined
   const same =
     actor &&
     (actor.id === by ||
       (by === "user" && actor.kind === "person") ||
       (by.startsWith("agent:") && actor.id === by.slice("agent:".length)))
-  if (same) return actorName(actor)
-  return by === "user" ? "You" : undefined
+  if (same) return actorName(actor, isSelf)
+  // A save by "user" is the reader's only where there is one person.
+  return by === "user" && isSelf({ id: by }) ? "You" : undefined
 }

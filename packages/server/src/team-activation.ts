@@ -1,3 +1,6 @@
+import { ownerPasswordHash } from "./session-store.ts"
+import { initialSpaceVisibility } from "./getting-started.ts"
+import { moveOwnerSetup } from "./personal-setup.ts"
 import {
   beginTeamInitialization,
   finishTeamInitialization,
@@ -38,7 +41,8 @@ export function setLocalTeamInitializationHookForTests(
 export interface TeamOwnerSetup {
   name: string
   email: string
-  password: string
+  /** Omitted to keep the owner password this Worktable already has. */
+  password?: string
 }
 
 /** Caller must have established the pre-Teams owner's authority over the original request. */
@@ -55,6 +59,12 @@ export async function activateLocalTeams(
   ) {
     throw new TeamAccessError("The local owner must enable Teams")
   }
+  const ownerHash = setup.password ? null : await ownerPasswordHash()
+  if (!setup.password && !ownerHash)
+    throw new TeamAccessError("Choose a password for your account")
+  // Without a new password, the account is made with a throwaway one and
+  // then given the owner password's hash.
+  const password = setup.password ?? `${randomUUID()}${randomUUID()}`
   recoverTeamInitialization()
   openTeamDatabase(true)
   return withCrossProcessLock(
@@ -88,15 +98,20 @@ export async function activateLocalTeams(
       if (existing)
         await context.internalAdapter.updatePassword(
           existing.user.id,
-          await context.password.hash(setup.password)
+          await context.password.hash(password)
         )
       const signedIn = existing
         ? await auth.api.signInEmail({
-            body: { email: setup.email, password: setup.password },
+            body: { email: setup.email, password },
             returnHeaders: true,
           })
-        : await auth.api.signUpEmail({ body: setup, returnHeaders: true })
+        : await auth.api.signUpEmail({
+            body: { name: setup.name, email: setup.email, password },
+            returnHeaders: true,
+          })
       const user = signedIn.response.user
+      if (ownerHash)
+        await context.internalAdapter.updatePassword(user.id, ownerHash)
       beginTeamInitialization("local", user.id)
       const { organizationId, ownerMemberId } =
         await getInitialTeamOrganization(origin, user.id, {
@@ -133,8 +148,8 @@ export async function activateLocalTeams(
           ).run(worktableId, user.id)
           for (const space of spaces)
             db.query(
-              "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, 'restricted')"
-            ).run(worktableId, space.id)
+              "INSERT INTO wt_space_policy(worktable_id, space_id, visibility) VALUES (?, ?, ?)"
+            ).run(worktableId, space.id, initialSpaceVisibility(space))
           // Preserve the single person's existing labelled agents and their participants.
           const migrated = new Map<string, string>()
           for (const credential of credentials) {
@@ -178,6 +193,8 @@ export async function activateLocalTeams(
         throw error
       }
       const member = findTeamMember(user.id)!
+      // The owner's first steps carry over to their new team identity.
+      await moveOwnerSetup(participantKey(bootstrap))
       return {
         headers: signedIn.headers,
         member,

@@ -6,6 +6,8 @@ import {
   PersonalNavigationSchema,
   type PersonalNavigation,
 } from "@worktable/types"
+import type { PersonalSetup } from "@worktable/types/setup"
+import { parsePersonalSetup } from "./personal-setup-shape.ts"
 import { ensureAppDir, getAppDir } from "./app-storage.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { logError } from "./debug-log.ts"
@@ -19,7 +21,12 @@ import { workspaceCacheKey } from "./workspace.ts"
 interface PreferencesFile {
   type: "worktable.personal-preferences"
   version: 1
-  people: Record<string, { navigation?: PersonalNavigation }>
+  people: Record<string, PersonEntry>
+}
+
+interface PersonEntry {
+  navigation?: PersonalNavigation
+  setup?: PersonalSetup
 }
 
 function emptyFile(): PreferencesFile {
@@ -43,7 +50,11 @@ function parsePreferences(text: string): PreferencesFile {
   const people: PreferencesFile["people"] = {}
   for (const [key, entry] of Object.entries(parsed.people)) {
     const navigation = PersonalNavigationSchema.safeParse(entry?.navigation)
-    people[key] = navigation.success ? { navigation: navigation.data } : {}
+    const setup = parsePersonalSetup(entry?.setup)
+    people[key] = {
+      ...(navigation.success ? { navigation: navigation.data } : {}),
+      ...(setup ? { setup } : {}),
+    }
   }
   return { type: "worktable.personal-preferences", version: 1, people }
 }
@@ -203,5 +214,47 @@ export function savePersonalNavigation(
     file.people[personKey] = { ...file.people[personKey], navigation }
     await savePreferences(file)
     return { saved: true, navigation: visible(navigation, canRead) }
+  })
+}
+
+/** The person's stored setup, from memory after the first read. */
+export function readPersonSetup(personKey: string): PersonalSetup | undefined {
+  return readPreferences().people[personKey]?.setup
+}
+
+/**
+ * Change one person's setup. `change` sees the latest saved value and returns
+ * the next one, or null to leave the file untouched.
+ */
+export function updatePersonSetup(
+  personKey: string,
+  change: (current: PersonalSetup | undefined) => PersonalSetup | null
+): Promise<PersonalSetup | null> {
+  return serialized(async () => {
+    const path = preferencesPath()
+    const file = readFromDisk(path)
+    cached = { path, file }
+    const next = change(file.people[personKey]?.setup)
+    if (!next) return null
+    file.people[personKey] = { ...file.people[personKey], setup: next }
+    await savePreferences(file)
+    return next
+  })
+}
+
+/** Hand one key's setup to another that has none, as when Teams turns on. */
+export function movePersonSetup(from: string, to: string): Promise<boolean> {
+  return serialized(async () => {
+    const path = preferencesPath()
+    const file = readFromDisk(path)
+    cached = { path, file }
+    const setup = file.people[from]?.setup
+    if (!setup || file.people[to]?.setup) return false
+    file.people[to] = { ...file.people[to], setup }
+    const { setup: _moved, ...rest } = file.people[from]!
+    void _moved
+    file.people[from] = rest
+    await savePreferences(file)
+    return true
   })
 }

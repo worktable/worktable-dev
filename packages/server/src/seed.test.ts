@@ -59,7 +59,7 @@ describe("starter workspace seeding", () => {
     expect(await listSpaces()).toEqual([])
   })
 
-  it.each([1, 2] as const)("seeds the complete Welcome to Worktable experience on V%s", async (version) => {
+  it.each([1, 2] as const)("seeds the complete Getting Started Space on V%s", async (version) => {
     writeWorkspaceManifest({ ...ensureWorkspaceManifest(), version })
     expect(await starterWorkspaceReady()).toBe(false)
     expect(await seedStarterWorkspace()).toBe(true)
@@ -69,77 +69,59 @@ describe("starter workspace seeding", () => {
     expect(spaces.map((s) => s.id)).toEqual(["welcome"])
     expect(spaces[0]).not.toHaveProperty("group")
     expect(spaces[0]).toMatchObject({
+      name: "Getting Started",
       settings: {
         docSort: "custom",
-        docOrder: ["ways-to-work", "example-prompts"],
+        docOrder: [
+          "what-agents-can-make",
+          "prompts-to-try",
+          "reviewing-with-your-agent",
+          "agents-that-stay-on",
+          "tracking-work-in-records",
+        ],
+        gettingStarted: true,
+        // Desktop and the CLI wait for this exact marker on first run.
         starterSeedVersion: 1,
         starterSeedStatus: "complete",
       },
     })
 
-    const ways = await readDoc("welcome", "ways-to-work")
-    expect(ways.error).toBeNull()
-    expect(ways.storedAs).toBe("json")
-    expect(ways.data).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "mermaid",
-        }),
-      ])
+    const guide = await readDoc("welcome", "what-agents-can-make")
+    expect(guide.error).toBeNull()
+    expect(guide.storedAs).toBe("json")
+    expect(guide.data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "mermaid" })])
     )
 
-    const prompts = await readDoc("welcome", "example-prompts")
+    const prompts = await readDoc("welcome", "prompts-to-try")
     expect(prompts.error).toBeNull()
     expect(prompts.storedAs).toBe("md")
     expect(String(prompts.data).trim().length).toBeGreaterThan(0)
 
     const widgets = await listWidgets("welcome")
-    expect(widgets.map((w) => w.id).sort()).toEqual([
-      "onboarding-board",
-      "welcome",
-    ])
-    expect(widgets.find((widget) => widget.id === "welcome")).toMatchObject({
-      metadata: { journeyOrder: 1, purpose: "guided-welcome" },
-    })
-    expect(
-      widgets.find((widget) => widget.id === "onboarding-board")
-    ).toMatchObject({
-      permissions: {
-        records: { "onboarding-work": { read: true, update: true } },
-      },
+    expect(widgets.map((w) => w.id)).toEqual(["launch-board"])
+    expect(widgets[0]).toMatchObject({
+      permissions: { records: { "launch-plan": { read: true, update: true } } },
     })
 
-    const schema = await readRecordCollectionSchema(
-      "welcome",
-      "onboarding-work"
-    )
+    const schema = await readRecordCollectionSchema("welcome", "launch-plan")
     expect(schema.error).toBeNull()
     expect(schema.data).toMatchObject({
       fields: {
-        title: { name: "Guide item", required: true },
-        status: {
-          values: ["Ready", "In progress", "Next", "Learned"],
-        },
-        outcome: { name: "User outcome", required: true },
-        sequence: { name: "Order", required: true },
+        title: { name: "Task", required: true },
+        status: { values: ["To do", "In progress", "Done"] },
       },
     })
-    const records = await listRecords("welcome", "onboarding-work", {
+    const records = await listRecords("welcome", "launch-plan", {
       orderBy: "sequence",
       order: "asc",
     })
-    expect(records.map((record) => record.data)).toEqual([
-      expect.objectContaining({
-        sequence: 1,
-        status: "Next",
-      }),
-      expect.objectContaining({
-        sequence: 2,
-        status: "Ready",
-      }),
-      expect.objectContaining({ sequence: 3, status: "Next" }),
-      expect.objectContaining({ sequence: 4, status: "Next" }),
-      expect.objectContaining({ sequence: 5, status: "Learned" }),
+    expect(records.map((record) => record.data["status"])).toEqual([
+      "Done",
+      "In progress",
+      "In progress",
+      "To do",
+      "To do",
     ])
   })
 
@@ -304,7 +286,7 @@ describe("starter workspace seeding", () => {
       },
     ]
     writeFileSync(
-      join(welcomeDir, "docs", "ways-to-work.json"),
+      join(welcomeDir, "docs", "what-agents-can-make.json"),
       JSON.stringify(syncedDoc)
     )
     releaseManifest()
@@ -316,10 +298,10 @@ describe("starter workspace seeding", () => {
     expect(readFileSync(join(welcomeDir, "synced.txt"), "utf8")).toBe(
       "preserve me"
     )
-    expect((await readDoc("welcome", "ways-to-work")).data).toEqual(syncedDoc)
-    expect((await readDoc("welcome", "example-prompts")).data).toBeNull()
-    expect(existsSync(join(welcomeDir, "widgets", "welcome"))).toBe(false)
-    expect(existsSync(join(welcomeDir, "records", "onboarding-work"))).toBe(
+    expect((await readDoc("welcome", "what-agents-can-make")).data).toEqual(syncedDoc)
+    expect((await readDoc("welcome", "prompts-to-try")).data).toBeNull()
+    expect(existsSync(join(welcomeDir, "widgets", "launch-board"))).toBe(false)
+    expect(existsSync(join(welcomeDir, "records", "launch-plan"))).toBe(
       false
     )
   })

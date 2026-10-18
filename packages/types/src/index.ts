@@ -22,6 +22,7 @@ export * from "./activity";
 export * from "./teams";
 export * from "./personal-navigation";
 export * from "./recognition";
+export * from "./setup";
 
 export type SpaceId = string;
 export type AgentId = string;

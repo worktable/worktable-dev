@@ -1,8 +1,6 @@
 import { isAgentPlatformId, type AgentPlatformId } from "@worktable/types"
 
-import { createClientId } from "./client-id"
-
-/** An agent connected during onboarding, remembered until setup finishes. */
+/** An agent connected during setup, remembered until setup finishes. */
 export interface SetupRecord {
   id: string
   name: string
@@ -11,8 +9,8 @@ export interface SetupRecord {
   verified: boolean
   /** Where the agent comes from, for its logo. */
   platform?: AgentPlatformId
-  participantName?: string
-  starterThreadKey?: string
+  /** The row and tab it was connected from, such as `code:Codex`. */
+  source?: string
 }
 
 export function isSetupRecord(item: unknown): item is SetupRecord {
@@ -25,18 +23,6 @@ export function isSetupRecord(item: unknown): item is SetupRecord {
     ["on-demand", "always-on"].includes(setup.mode) &&
     typeof setup.verified === "boolean" &&
     (setup.platform === undefined || isAgentPlatformId(setup.platform)) &&
-    (setup.participantName === undefined ||
-      typeof setup.participantName === "string") &&
-    (setup.starterThreadKey === undefined ||
-      (typeof setup.starterThreadKey === "string" &&
-        Boolean(setup.starterThreadKey)))
+    (setup.source === undefined || typeof setup.source === "string")
   )
-}
-
-export function ensureStarterThreadKey(setup: SetupRecord): SetupRecord {
-  if (setup.mode !== "always-on" || setup.starterThreadKey) return setup
-  return {
-    ...setup,
-    starterThreadKey: createClientId("onboarding-thread"),
-  }
 }

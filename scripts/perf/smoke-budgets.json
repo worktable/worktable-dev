@@ -41,7 +41,8 @@
       "max": 11
     },
     "cold js, open the app at Home": {
-      "max": 18
+      "max": 19,
+      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
     },
     "dom, cold, open the app at Home": {
       "max": 1478,
@@ -63,15 +64,15 @@
       "max": 15
     },
     "cold js, open rich doc": {
-      "max": 33,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk."
+      "max": 34,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
     },
     "requests, cold, open rich doc (2,000 blocks)": {
       "max": 15
     },
     "cold js, open rich doc (2,000 blocks)": {
-      "max": 33,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk."
+      "max": 34,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
     },
     "requests, cold, open HTML doc": {
       "max": 14

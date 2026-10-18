@@ -134,6 +134,7 @@ import {
   usesHtmlDocumentStorageV2,
 } from "./html-document-storage-v2.ts";
 import { seedStarterWorkspace } from "./seed.ts";
+import { observeActivityForSetup } from "./personal-setup.ts";
 import { ensureInstallIdentity } from "./local-identity.ts";
 import { reconcileUpdateStatus } from "./update-runner.ts";
 import {
@@ -228,13 +229,16 @@ import {
   initializeLocalOperatorToken,
   isAuthorizedLocalOperatorRequest,
 } from "./operator-export.ts";
-import { runAsActivityActor } from "./activity-log.ts";
+import { runAsActivityActor, setActivityObserver } from "./activity-log.ts";
 import { TeamAccessError } from "./team-policy.ts";
 import { TeamStateError } from "./team-database.ts";
 
 // ============================================================
 // App setup
 // ============================================================
+
+// Each person's Getting Started list completes from activity as it happens.
+setActivityObserver(observeActivityForSetup);
 
 const app = new Hono();
 

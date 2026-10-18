@@ -10,7 +10,8 @@
     "./views-vnext": "./src/views-vnext.ts",
     "./mcp-clients": "./src/mcp-clients.ts",
     "./recognition": "./src/recognition.ts",
-    "./doc-source": "./src/doc-source.ts"
+    "./doc-source": "./src/doc-source.ts",
+    "./setup": "./src/setup.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

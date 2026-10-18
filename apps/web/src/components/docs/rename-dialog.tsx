@@ -24,6 +24,11 @@ interface RenameDialogProps {
     newPath: string
   ) => boolean | string | void | Promise<boolean | string | void>
   currentPath: string
+  /**
+   * The Doc's title. The dialog then starts from it and onRename receives the
+   * new title rather than a path.
+   */
+  title?: string
   isFolder?: boolean
   pathInput?: boolean
 }
@@ -33,6 +38,7 @@ export function RenameDialog({
   onClose,
   onRename,
   currentPath,
+  title,
   isFolder,
   pathInput,
 }: RenameDialogProps) {
@@ -44,7 +50,7 @@ export function RenameDialog({
   const parts = currentPath.split("/")
   const currentName = parts[parts.length - 1]
   const parentDir = parts.slice(0, -1).join("/")
-  const currentValue = pathInput ? currentPath : currentName
+  const currentValue = title ?? (pathInput ? currentPath : currentName)
 
   useEffect(() => {
     if (open) {
@@ -59,11 +65,12 @@ export function RenameDialog({
       onClose()
       return
     }
-    const newPath = pathInput
-      ? newName.trim()
-      : parentDir
-        ? `${parentDir}/${newName.trim()}`
-        : newName.trim()
+    const newPath =
+      title !== undefined || pathInput
+        ? newName.trim()
+        : parentDir
+          ? `${parentDir}/${newName.trim()}`
+          : newName.trim()
     setPending(true)
     try {
       const renamed = await onRename(newPath)

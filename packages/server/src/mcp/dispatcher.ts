@@ -349,7 +349,7 @@ async function docSourceAtRevision(
  * Whether the open Doc's blocks the change replaces are still as they were
  * is checked when it commits (`commitAgentBlocks`).
  */
-async function agentChangeBase(
+export async function agentChangeBase(
   spaceId: string,
   docPath: string,
   expectedRevision: string | undefined,
@@ -435,7 +435,7 @@ async function canonicalById(blocks: unknown[]): Promise<Map<string, string>> {
  * receives only the replaced blocks. Nested changes replace their top-level
  * block.
  */
-async function commitAgentBlocks(input: {
+export async function commitAgentBlocks(input: {
   spaceId: string
   docPath: string
   base: unknown[]
@@ -702,7 +702,7 @@ async function docWriteWarnings(
  * Announce a committed tool write. An open Doc has already received it from
  * commitAgentBlocks.
  */
-async function syncDocAfterToolWrite(
+export async function syncDocAfterToolWrite(
   spaceId: string,
   docPath: string
 ): Promise<void> {

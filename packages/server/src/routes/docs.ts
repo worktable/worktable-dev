@@ -4,7 +4,6 @@ import { z } from "zod";
 import { DocumentLifetimeSchema } from "@worktable/types";
 import { applyLifetimeOnCreate, ArchiveOnSchema, lifetimeCreateError } from "../document-lifetime.ts";
 import {
-  listDocs,
   listDocsByPrefix,
   listDocsDetailed,
   readDoc,
@@ -14,7 +13,6 @@ import {
   docExists,
   docStat,
   slugifyDocPath,
-  deduplicateSlug,
   getDocArchiveInfo,
   getDocArchiveInfoMap,
   getDocProvenance,
@@ -39,6 +37,7 @@ import { DocFormatTransitionConflictError, yjsManager } from "../yjs-manager.ts"
 import { invalidateSearchIndex } from "../search-index.ts";
 import { listDocAnnotations } from "../annotation-store.ts";
 import { renameDocAndSync, renameDocsByPrefixAndSync } from "../doc-rename.ts";
+import { freeDocPath, renameDocToTitle } from "../doc-title.ts";
 import { docAliasReservationError, readDocAliases, resolveDocAlias, resolveDocAliasIn } from "../doc-aliases.ts";
 import { extractHeadings, extractMarkdownHeadings, prepareMarkdownStorageConversion } from "../markdown.ts";
 import { documentReferenceFallbackTitle, parseDocumentReference, type ResolvedDocumentReference } from "@worktable/types";
@@ -48,6 +47,11 @@ import { logDocument, logError } from "../debug-log.ts";
 
 const WriteDocSchema = z.object({
   content: z.array(z.unknown()),
+});
+
+const TitleDocSchema = z.object({
+  /** Omitted: keep the Doc's title and move it to the path made from it. */
+  title: z.string().trim().min(1).max(200).optional(),
 });
 
 const RenameDocSchema = z.object({
@@ -262,7 +266,14 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
     return c.json({ error: "Title is empty after normalization", code: "VALIDATION_ERROR" }, 400);
   }
 
-  const docPath = await deduplicateSlug(base, await listDocs(spaceId));
+  // A new doc never takes a path an older one left for its links.
+  const docPath = await freeDocPath(spaceId, base);
+  if (!docPath) {
+    return c.json(
+      { error: "This folder moved. Create the doc in its new place.", code: "CONFLICT" },
+      409
+    );
+  }
 
   const filePath = getDocPath(spaceId, docPath);
   suppressPath(filePath);
@@ -308,7 +319,7 @@ docsRouter.post("/", requireScope("docs:write"), async (c) => {
   );
 });
 
-// POST /api/spaces/:spaceId/docs/*/{rename,convert}
+// POST /api/spaces/:spaceId/docs/*/{rename,title,convert}
 // Must be before the wildcard GET to avoid conflicts
 docsRouter.post("/*", requireScope("docs:write"), async (c) => {
   const spaceId = c.req.param("spaceId") ?? "";
@@ -321,7 +332,7 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
   const routePrefix = `/api/spaces/${spaceId}/docs/`;
   const relativeMutationPath = decodeURIComponent(rawPath.slice(routePrefix.length));
   const guardedDocPath = relativeMutationPath
-    .replace(/\/(?:rename|archive|restore|review|convert|convert-to-markdown)$/, "")
+    .replace(/\/(?:rename|title|archive|restore|review|convert|convert-to-markdown)$/, "")
     .replace(/\/versions\/(?:checkpoint|[^/]+\/restore)$/, "");
   if (guardedDocPath !== relativeMutationPath) {
     const aliasError = await docAliasReservationError(
@@ -331,6 +342,43 @@ docsRouter.post("/*", requireScope("docs:write"), async (c) => {
     if (aliasError) {
       return c.json({ error: aliasError, code: "CONFLICT" }, 409);
     }
+  }
+
+  // ── /title handler ──
+  // Rename a Doc by its title: the heading it opens with changes, and the
+  // file moves to a path made from it, numbered when that path is taken.
+  // Without a title, a Doc moves to the path its current title gives.
+  if (rawPath.endsWith("/title")) {
+    const docPath = extractDocPath(rawPath, spaceId, "/title");
+    if (!docPath) {
+      return c.json({ error: "Missing doc path", code: "BAD_REQUEST" }, 400);
+    }
+    const parsed = TitleDocSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+    }
+    if (!(await docExists(spaceId, docPath))) {
+      return c.json({ error: `Doc not found: ${docPath}`, code: "NOT_FOUND" }, 404);
+    }
+    const outcome = await renameDocToTitle(
+      spaceId,
+      docPath,
+      parsed.data.title,
+      restWriteActor(c)
+    );
+    if (outcome.error) {
+      const status = outcome.error.includes("not found") ? 404 : 409;
+      return c.json(
+        {
+          error: outcome.error,
+          code: status === 404 ? "NOT_FOUND" : "CONFLICT",
+          // A Doc can move before its title fails; callers follow it.
+          renamed: outcome.renamed,
+        },
+        status
+      );
+    }
+    return c.json({ ok: true, renamed: outcome.renamed, count: outcome.renamed.length });
   }
 
   // ── /rename handler ──

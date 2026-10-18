@@ -455,6 +455,18 @@ function markdownPre({ children }: { children?: ReactNode }): ReactNode {
  * Whether a Doc opens with a level-one heading, its title. Content that opens
  * with anything else shows what goes under the title above everything else.
  */
+function hasText(content: unknown): boolean {
+  return (
+    Array.isArray(content) &&
+    content.some((item) => {
+      const inline = record(item)
+      return typeof inline.text === "string"
+        ? inline.text.trim() !== ""
+        : hasText(inline.content)
+    })
+  )
+}
+
 export function documentOpensWithTitle(content: unknown[] | string): boolean {
   if (typeof content === "string") return markdownTitleLine(content) !== null
   const first = record(content[0])
@@ -481,12 +493,18 @@ export function DocumentReadingPreview({
   onScroll,
   showStatus = true,
   afterTitle,
+  titlePlaceholder,
 }: {
   content: unknown[] | string
   onScroll?: (top: number) => void
   showStatus?: boolean
   /** Shown under the title (the opening level-one heading), as the open Doc shows it. */
   afterTitle?: ReactNode
+  /**
+   * The rich Doc's name, shown in grey where its title goes while the title
+   * is empty or missing, as the editor shows it.
+   */
+  titlePlaceholder?: string
 }) {
   // Keep the opening preview bounded even for thousands of blocks. The full
   // editor still receives the complete document through collaboration.
@@ -494,16 +512,23 @@ export function DocumentReadingPreview({
     remaining: 80,
     truncated: typeof content === "string" && content.length > 64 * 1024,
   }
-  const titled = afterTitle != null && documentOpensWithTitle(content)
+  const opensWithTitle = documentOpensWithTitle(content)
+  const titled = afterTitle != null && opensWithTitle
   let titleShown = false
+  const placeholderTitle = (key: string) =>
+    h("h1", { key, className: "worktable-title-placeholder" }, titlePlaceholder)
+  const richPreview = (blocks: unknown[]): ReactNode[] => {
+    if (titlePlaceholder === undefined) return blocks as ReactNode[]
+    if (!opensWithTitle) return [placeholderTitle("title-stand-in"), ...blocks] as ReactNode[]
+    return hasText(record(content[0] as unknown).content)
+      ? (blocks as ReactNode[])
+      : [placeholderTitle("title"), ...blocks.slice(1)] as ReactNode[]
+  }
   const preview = Array.isArray(content)
-    ? titled
-      ? (([title, ...rest]) => [
-          title,
-          h(Fragment, { key: "after-title" }, afterTitle),
-          ...rest,
-        ])(blocks(content, budget))
-      : blocks(content, budget)
+    ? (([title, ...rest]) =>
+        afterTitle != null && (opensWithTitle || titlePlaceholder !== undefined)
+          ? [title, h(Fragment, { key: "after-title" }, afterTitle), ...rest]
+          : [title, ...rest])(richPreview(blocks(content, budget)))
     : h(Markdown, {
         remarkPlugins: [remarkGfm],
         skipHtml: true,
@@ -547,7 +572,11 @@ export function DocumentReadingPreview({
       {
         className: `worktable-markdown worktable-document-content${Array.isArray(content) ? " worktable-rich-preview" : ""}`,
       },
-      afterTitle != null && !titled ? afterTitle : null,
+      afterTitle != null &&
+        !titled &&
+        !(Array.isArray(content) && titlePlaceholder !== undefined)
+        ? afterTitle
+        : null,
       preview,
       budget.truncated &&
         h(

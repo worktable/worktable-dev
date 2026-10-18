@@ -106,7 +106,7 @@ describe("shadow document catalog", () => {
     }
   })
 
-  it("enumerates current formats without parsing authored bodies", async () => {
+  it("enumerates current formats, and names Docs by their titles without judging their bodies", async () => {
     const docs = join(root, "spaces", spaceId, "docs")
     await mkdir(join(docs, "notes"))
     await writeFile(join(docs, "notes", "brief.md"), "# Brief")
@@ -153,6 +153,17 @@ describe("shadow document catalog", () => {
         "legacy-doc-file",
       ],
     ])
+    const titles = (from: typeof catalog) =>
+      from.entries.map((entry) =>
+        entry.kind === "document" ? entry.descriptor.title : entry.pathKey
+      )
+    // A body that does not parse keeps the name its path gives.
+    expect(titles(catalog)).toEqual(["Broken", "Status board", "Brief"])
+
+    await writeFile(join(docs, "notes", "brief.md"), "Launch brief\n===\n\nBody")
+    expect(
+      titles(await buildDocumentCatalog({ workspaceRoot: root, spaceId }))
+    ).toEqual(["Broken", "Status board", "Launch brief"])
   })
 
   it("keeps missing, newer, and unknown inventoried formats visible and inert", async () => {

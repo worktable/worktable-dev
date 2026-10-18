@@ -195,6 +195,25 @@ export function renameDoc(
   });
 }
 
+/**
+ * Rename a doc by its title: its opening heading becomes `title` and it moves
+ * to a path made from it, numbered when another doc has that path. Without a
+ * title it keeps its own and only moves.
+ */
+export function retitleDoc(
+  spaceId: string,
+  docPath: string,
+  title?: string,
+  /** Let the request finish after the page closes. */
+  keepalive = false
+): Promise<{ ok: boolean; renamed?: Array<{ from: string; to: string }> }> {
+  return fetchJSON(`/api/spaces/${spaceId}/docs/${encodeDocPath(docPath)}/title`, {
+    method: "POST",
+    body: JSON.stringify(title === undefined ? {} : { title }),
+    keepalive,
+  });
+}
+
 export function archiveDoc(
   spaceId: string,
   docPath: string,

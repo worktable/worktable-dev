@@ -92,11 +92,12 @@ describe("space document trees", () => {
   it("builds once per catalog read for every view that presents it", () => {
     const documents = [
       document("b"),
-      document("a"),
+      document("a", { title: "Alpha" }),
       document("c", { format: html, title: "Launch board" }),
     ]
+    // The docs list's headings no longer name a Doc; the catalog does.
     const docs = [
-      { path: "a", format: "markdown", headings: ["Alpha"] },
+      { path: "a", format: "markdown", headings: ["Later heading"] },
     ] as DocListEntry[]
     const sidebar = spaceDocumentTrees({
       documents,
@@ -105,8 +106,8 @@ describe("space document trees", () => {
       order: ["b", "a"],
     })
 
-    // A Markdown doc is named by its first heading, others by catalog title,
-    // which is an HTML doc's name.
+    // Every document is named by its catalog title: the title a Doc opens
+    // with, or an HTML doc's name.
     expect(sidebar.active.map((node) => node.label)).toEqual([
       "b",
       "Alpha",

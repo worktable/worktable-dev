@@ -80,7 +80,8 @@ export function documentTreeInputResolver(
     return {
       path: item.path,
       kind: "document" as const,
-      title: doc?.headings?.[0]?.trim() || item.title,
+      // The catalog names a Doc by the title it opens with.
+      title: item.title,
       format: item.format,
       health: item.health,
       archived: item.archived,

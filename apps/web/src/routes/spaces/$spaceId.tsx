@@ -7,7 +7,7 @@ import {
   useChildMatches,
   useRouter,
 } from "@tanstack/react-router"
-import { useCallback, useMemo, useState } from "react"
+import { lazy, Suspense, useCallback, useMemo, useState } from "react"
 import { Archive, Database, Folder, Plus, RotateCcw } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { browserTeamMemberId } from "@/lib/team-context"
@@ -41,11 +41,18 @@ import {
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
 import { useSpaceSubscription } from "@/lib/ws"
-import { GettingStartedHome } from "@/components/getting-started/getting-started-home"
 import { MemberWelcome } from "@/components/getting-started/member-welcome"
 import { gettingStartedSpace } from "@/lib/setup"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
+
+// Only the Getting Started Space shows this, and it carries agent setup;
+// other Spaces and their documents don't load it.
+const GettingStartedHome = lazy(() =>
+  import("@/components/getting-started/getting-started-home").then((module) => ({
+    default: module.GettingStartedHome,
+  }))
+)
 
 export const Route = createFileRoute("/spaces/$spaceId")({
   ssr: false,
@@ -501,7 +508,9 @@ function SpaceDetailPage() {
         />
       )}
       {space && isGettingStarted(space) ? (
-        <GettingStartedHome />
+        <Suspense fallback={null}>
+          <GettingStartedHome />
+        </Suspense>
       ) : (
       <SpaceOverview
         // A folder filter belongs to one Space; start each Space unfiltered.

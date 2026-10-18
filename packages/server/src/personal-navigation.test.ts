@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { setAppDirOverride } from "./app-storage.ts"
 import { trustedLocalIdentity } from "./auth.ts"
+import type { PersonSummary } from "./personal-identity.ts"
 import { savePersonalNavigation } from "./personal-navigation-store.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
@@ -30,7 +31,11 @@ async function summary(headers: HeadersInit = {}) {
   const response = await app().fetch(
     new Request("http://localhost/api/workspace", { headers })
   )
-  return (await response.json()) as { navigation?: unknown }
+  return (await response.json()) as {
+    navigation?: unknown
+    person?: PersonSummary
+    presentations?: Record<string, { id?: string; name?: string }>
+  }
 }
 
 function save(body: Record<string, unknown>, headers: HeadersInit = {}) {
@@ -82,6 +87,8 @@ describe("personal navigation", () => {
     expect(await summary()).toMatchObject({
       person: { name: "Owner", role: "owner", signOut: null },
     })
+    const firstPerson = (await summary()).person!
+    expect(firstPerson.id).toBe("local:owner")
     await app().fetch(
       new Request("http://localhost/api/profile", {
         method: "PUT",
@@ -89,7 +96,12 @@ describe("personal navigation", () => {
         body: JSON.stringify({ name: "Alex" }),
       })
     )
-    expect(await summary()).toMatchObject({ person: { name: "Alex" } })
+    const renamedPerson = await summary()
+    expect(renamedPerson.person?.name).toBe("Alex")
+    expect(renamedPerson.presentations?.["local:owner"]).toEqual({
+      id: renamedPerson.person?.id,
+      name: "Alex",
+    })
 
     const saved = await save({ expectedRevision: 0, ...arrangement })
     expect(saved.status).toBe(200)

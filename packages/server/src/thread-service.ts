@@ -24,6 +24,8 @@ import {
   threadLocationKey,
 } from "@worktable/types"
 import { hasScope, listTokens, type TokenIdentity } from "./token-store.ts"
+import { getAppDir } from "./app-storage.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { hasWorkspaceOwnerAuthority } from "./owner-authority.ts"
 import {
@@ -916,18 +918,19 @@ export async function listThreadParticipants(
     }))
 }
 
-/** How a connected agent looks: where it comes from and its chosen icon. */
+/** A person's saved identity, or an agent's name, platform, and chosen icon. */
 
-export interface AgentPresentation {
+export interface ParticipantPresentation {
+  id?: string
+  name?: string
   platform?: AgentPlatformId
   icon?: string | null
 }
 
 /**
- * Participants as the web app shows them: an agent also carries its platform
- * and the icon its owner chose, for its avatar. `presentations` covers every
- * connected agent, including one no longer offered as a recipient, so it
- * keeps its avatar in the threads it is already in.
+ * Current identities as the web app shows them. Agents also carry their
+ * platform and chosen icon, including when no longer offered as recipients.
+ * Principal IDs alias the same identity for activity and document contributors.
  */
 export async function listThreadParticipantsForDisplay(
   identity?: ThreadIdentity,
@@ -937,39 +940,12 @@ export async function listThreadParticipantsForDisplay(
     ParticipantRef & {
       defaultIdentityId: string
       alwaysOn: boolean
-    } & AgentPresentation
+    } & ParticipantPresentation
   >
-  presentations: Record<string, AgentPresentation>
+  presentations: Record<string, ParticipantPresentation>
 }> {
-  const [participants, connections] = await Promise.all([
-    listThreadParticipants(identity, location),
-    listAgentConnections(),
-  ])
-  const presentations: Record<string, AgentPresentation> = Object.fromEntries(
-    connections.flatMap((connection) =>
-      connection.participant
-        ? [
-            [
-              connection.participant.id,
-              { platform: connection.platform, icon: connection.icon },
-            ],
-          ]
-        : []
-    )
-  )
-  // Sign-in agents (Claude, ChatGPT on Cloud) carry what their owner chose.
-  const [bindings, signIns] = await Promise.all([
-    participantsByKey(),
-    signInPresentations(),
-  ])
-  for (const [key, signIn] of signIns) {
-    const participant = bindings.get(key)
-    if (!participant || presentations[participant.id]) continue
-    presentations[participant.id] = {
-      ...(signIn.platform ? { platform: signIn.platform } : {}),
-      icon: signIn.icon ?? null,
-    }
-  }
+  const participants = await listThreadParticipants(identity, location)
+  const presentations = await buildParticipantPresentations()
   return {
     participants: participants.map((participant) => ({
       ...participant,
@@ -977,6 +953,91 @@ export async function listThreadParticipantsForDisplay(
     })),
     presentations,
   }
+}
+
+// Display metadata reads only identity/configuration files, never portable
+// Threads. Carry one cached copy with boot/workspace so avatars need no request.
+type DisplayPresentations = Record<string, ParticipantPresentation>
+let displayCache: { key: string; readers: Map<string, Promise<DisplayPresentations>> } | undefined
+onWorkspaceChange((event) => {
+  if (event.type === "participants" || event.type === "workspaceReset") displayCache = undefined
+})
+
+export function cachedParticipantPresentations(readerKey: string, policyRevision = 0): Promise<DisplayPresentations> {
+  const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${policyRevision}`
+  if (displayCache?.key !== key) displayCache = { key, readers: new Map() }
+  let value = displayCache.readers.get(readerKey)
+  if (!value) {
+    const cache = displayCache
+    const pending: Promise<DisplayPresentations> = buildParticipantPresentations().catch(() => {
+      if (cache.readers.get(readerKey) === pending) cache.readers.delete(readerKey)
+      return {}
+    })
+    value = pending
+    cache.readers.set(readerKey, value)
+  }
+  return value
+}
+
+async function buildParticipantPresentations(): Promise<Record<string, ParticipantPresentation>> {
+  const connections = await listAgentConnections()
+  const presentations: Record<string, ParticipantPresentation> =
+    Object.fromEntries(
+      connections.flatMap((connection) =>
+        connection.participant
+          ? [
+              [
+                connection.participant.id,
+                {
+                  name: connection.displayName,
+                  platform: connection.platform,
+                  icon: connection.icon,
+                },
+              ],
+            ]
+          : []
+      )
+    )
+  // Sign-in agents (Claude, ChatGPT on Cloud) carry what their owner chose.
+  const [bindings, signIns, tokens] = await Promise.all([
+    participantsByKey(),
+    signInPresentations(),
+    listTokens(),
+  ])
+  for (const [key, signIn] of signIns) {
+    const participant = bindings.get(key)
+    if (!participant || presentations[participant.id]) continue
+    presentations[participant.id] = {
+      name: participant.name,
+      ...(signIn.platform ? { platform: signIn.platform } : {}),
+      icon: signIn.icon ?? null,
+    }
+  }
+  for (const [key, participant] of bindings) {
+    if (participant.kind === "human") {
+      presentations[participant.id] = {
+        id: participant.id,
+        name: participant.name,
+      }
+    }
+    const presentation = presentations[participant.id]
+    if (key.startsWith("principal:") && presentation) {
+      presentations[key.slice("principal:".length)] = presentation
+    }
+  }
+  // Activity records credential principals, while Threads use participant IDs.
+  // Include rotated credentials so earlier edits retain the agent's avatar.
+  for (const token of tokens) {
+    if (token.workspace !== getWorkspaceRoot()) continue
+    const participant = bindings.get(
+      participantKey({ agent: token.agent, principal: token.principal })
+    )
+    const presentation = participant && presentations[participant.id]
+    if (participant?.kind === "agent" && presentation) {
+      presentations[`local-token:${token.id}`] = presentation
+    }
+  }
+  return presentations
 }
 
 export async function listThreadSummaries(

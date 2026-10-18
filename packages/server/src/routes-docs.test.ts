@@ -3,7 +3,13 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDocPath, getDocProvenance, writeSpace } from "./store.ts";
+import {
+  getDocCollaborationCacheEpoch,
+  getDocCollaborationCacheEpochHistory,
+  getDocPath,
+  getDocProvenance,
+  writeSpace,
+} from "./store.ts";
 import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
@@ -633,6 +639,10 @@ describe("doc routes", () => {
       }
       expect(firstVersionId).toBeTruthy();
 
+      const cacheEpoch = await getDocCollaborationCacheEpoch(
+        "test-space",
+        "folder/doc"
+      );
       await yjsManager.getOrCreateDoc("test-space", "folder/doc");
       const wrongOwnerRestore = await req(
         app,
@@ -640,6 +650,9 @@ describe("doc routes", () => {
         `/api/spaces/test-space/docs/folder/Doc/versions/${firstVersionId}/restore`
       );
       expect(wrongOwnerRestore.status).toBe(409);
+      expect(
+        await getDocCollaborationCacheEpoch("test-space", "folder/doc")
+      ).toBe(cacheEpoch);
       expect(
         (wrongOwnerRestore.json as { error: string }).error
       ).toContain("folder/doc");
@@ -652,12 +665,52 @@ describe("doc routes", () => {
         textOf((unchangedDoc.json as { content: unknown[] }).content)
       ).toBe("second");
 
+      // A failed cache-fence write must leave the source and provenance intact.
+      const beforeFailure = await getDocProvenance("test-space", "folder/doc");
+      const metadataTemporary = join(
+        spacesDir,
+        "test-space",
+        "docs.meta.json.tmp"
+      );
+      mkdirSync(metadataTemporary);
+      try {
+        const failedRestore = await req(
+          app,
+          "POST",
+          `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
+        );
+        expect(failedRestore.status).toBe(500);
+      } finally {
+        rmSync(metadataTemporary, { recursive: true, force: true });
+      }
+      const afterFailure = await req(
+        app,
+        "GET",
+        "/api/spaces/test-space/docs/folder/doc"
+      );
+      expect(
+        textOf((afterFailure.json as { content: unknown[] }).content)
+      ).toBe("second");
+      expect(await getDocProvenance("test-space", "folder/doc")).toEqual(
+        beforeFailure
+      );
+      expect(
+        await getDocCollaborationCacheEpoch("test-space", "folder/doc")
+      ).toBe(cacheEpoch);
+
       const restoreRes = await req(
         app,
         "POST",
         `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
       );
       expect(restoreRes.status).toBe(200);
+      // Restoring retires the room; browsers must also leave its old cache.
+      expect(
+        await getDocCollaborationCacheEpoch("test-space", "folder/doc")
+      ).not.toBe(cacheEpoch);
+      expect(
+        await getDocCollaborationCacheEpochHistory("test-space", "folder/doc")
+      ).toContain(cacheEpoch);
 
       const restoredDoc = await req(app, "GET", "/api/spaces/test-space/docs/folder/doc");
       expect(textOf((restoredDoc.json as { content: unknown[] }).content)).toBe("first");

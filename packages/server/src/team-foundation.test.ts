@@ -91,6 +91,7 @@ import { listPending } from "./pending.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   claimNextThreadDelivery,
+  cachedParticipantPresentations,
   listThreadParticipants,
   postThreadMessage,
 } from "./thread-service.ts"
@@ -560,6 +561,25 @@ describe("team foundation", () => {
     })
     const alice = resolveTeamAgentCredential(credential("local-token:alice"))!
     const bob = resolveTeamAgentCredential(credential("local-token:bob"))!
+    const { resolveParticipant } = await import("./participant-store.ts")
+    const aliceParticipant = await resolveParticipant(alice)
+    const bobParticipant = await resolveParticipant(bob)
+    const presentations = (identity: TokenIdentity) =>
+      runWithTeamIdentity(identity, () =>
+        cachedParticipantPresentations(participantKey(identity))
+      )
+    expect(
+      (await presentations(owner))[aliceParticipant.participant.id]?.name
+    ).toBe("Alice Codex")
+    expect(
+      (await presentations(member))[aliceParticipant.participant.id]
+    ).toBeUndefined()
+    expect(
+      (await presentations(member))[bobParticipant.participant.id]?.name
+    ).toBe("Bob Codex")
+    expect(
+      (await presentations(owner))[aliceParticipant.participant.id]?.name
+    ).toBe("Alice Codex")
     expect(participantKey(alice)).not.toBe(participantKey(bob))
     expect(canAccessSpace("original", "edit", alice)).toBe(true)
     expect(canAccessSpace("original", "read", bob)).toBe(false)

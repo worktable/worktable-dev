@@ -41,8 +41,8 @@
       "max": 11
     },
     "cold js, open the app at Home": {
-      "max": 19,
-      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
+      "max": 20,
+      "why": "The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
     },
     "dom, cold, open the app at Home": {
       "max": 1478,
@@ -52,33 +52,36 @@
       "max": 14
     },
     "cold js, open Space": {
-      "max": 17
+      "max": 18,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
     },
     "requests, cold, open Markdown doc": {
       "max": 14
     },
     "cold js, open Markdown doc": {
-      "max": 27
+      "max": 28,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
     },
     "requests, cold, open rich doc": {
       "max": 15
     },
     "cold js, open rich doc": {
-      "max": 34,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
+      "max": 35,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
     },
     "requests, cold, open rich doc (2,000 blocks)": {
       "max": 15
     },
     "cold js, open rich doc (2,000 blocks)": {
-      "max": 34,
-      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file."
+      "max": 35,
+      "why": "The editor preloads one more 0.5 KB chunk alongside its others: zwitch and html-void-elements, which its syntax highlighter has always used and which the Markdown viewer's on-demand HTML support (rehype-raw) now shares, so Rollup can no longer keep them inside the editor chunk. The sidebar's Getting Started row and its progress ring share a small chunk with the member welcome, so every page loads one more file. Configured avatars share one additional 1.1 KB gzip graphics module; identity metadata reuses the existing workspace response."
     },
     "requests, cold, open HTML doc": {
       "max": 14
     },
     "cold js, open HTML doc": {
-      "max": 27
+      "max": 28,
+      "why": "Configured agent logos, custom icons and person avatars share one 1.1 KB gzip graphics module loaded by the sidebar; identity metadata reuses the existing workspace response."
     },
     "requests, cold, open Threads": {
       "max": 9

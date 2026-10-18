@@ -15,8 +15,7 @@ import { toast } from "@worktable/ui/components/sonner"
 import { useTheme } from "@/components/theme-provider"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import type { WorkspaceInfo } from "@/lib/api"
-import { recognitionColor } from "@worktable/types/recognition"
-import { recognitionSolid } from "@/lib/recognition"
+import { PersonAvatar } from "@/components/person-avatar"
 import { submitCloudLogout } from "@/lib/cloud-logout"
 import { queryKeys, useWorkspace } from "@/lib/queries"
 import { runtimePath } from "@/lib/runtime-path"
@@ -44,28 +43,6 @@ const SIGN_OUT: Record<SignOut, () => Promise<void>> = {
   cloud: submitCloudLogout,
   team: signOutLocalTeam,
   password: signOutWithPassword,
-}
-
-export function PersonAvatar({
-  id,
-  name,
-  size = "sm",
-}: {
-  id: string
-  name: string
-  size?: "sm" | "lg"
-}) {
-  return (
-    <span
-      aria-hidden
-      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ${
-        size === "lg" ? "size-9 text-sm" : "size-6 text-[11px]"
-      }`}
-      style={recognitionSolid(recognitionColor(null, id))}
-    >
-      {name.trim().charAt(0).toUpperCase() || "?"}
-    </span>
-  )
 }
 
 /** Who is signed in here, opening what concerns them. */

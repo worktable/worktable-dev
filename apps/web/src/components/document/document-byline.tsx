@@ -24,7 +24,10 @@ import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
-import { DocLocation, DocumentFormatIcon } from "@/components/document-format-icon"
+import {
+  DocLocation,
+  DocumentFormatIcon,
+} from "@/components/document-format-icon"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
@@ -39,8 +42,6 @@ import {
   type BylineSection,
   type BylineState,
 } from "@/hooks/use-byline-state"
-
-
 
 const ACTIVITY_SHOWN = 6
 
@@ -99,12 +100,15 @@ export function DocumentByline({
   )
   const linkedHtml = (referrers ?? []).flatMap((referrer) => {
     const node = referrer.kind === "html" ? shown(referrer.path) : undefined
-    return node && referrer.kind === "html" ? [{ node, label: referrer.label }] : []
+    return node && referrer.kind === "html"
+      ? [{ node, label: referrer.label }]
+      : []
   })
   const linkedCount =
     linkedDocs.length + linkedRecords.length + linkedHtml.length
 
-  const toggle = (panel: BylineSection) => setOpen(open === panel ? null : panel)
+  const toggle = (panel: BylineSection) =>
+    setOpen(open === panel ? null : panel)
   // The list arrives before its panel opens, so the panel grows once to its
   // full height instead of stopping at a placeholder.
   const toggleActivity = async () => {
@@ -128,10 +132,7 @@ export function DocumentByline({
   const editedAt = provenance?.updatedAt ?? updatedAt
 
   return (
-    <div
-      className="worktable-doc-byline mb-7 font-sans text-[0.8125rem] leading-5 text-muted-foreground"
-      data-doc-byline
-    >
+    <div className="worktable-doc-byline" data-doc-byline>
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1.5">
         {editedAt && (
           <button
@@ -152,7 +153,7 @@ export function DocumentByline({
                 {faces.map((actor) => (
                   <span
                     key={actor.id}
-                    className="rounded-md ring-2 ring-background"
+                    className="rounded-full ring-2 ring-background"
                   >
                     <ActorBadge actor={actor} />
                   </span>
@@ -381,7 +382,9 @@ function LinkedFrom({
   records: Array<Extract<DocumentReferrer, { kind: "record" }>>
   html: Array<{ node: TreeNode; label?: string }>
 }) {
-  const groups = [docs.length, records.length, html.length].filter(Boolean).length
+  const groups = [docs.length, records.length, html.length].filter(
+    Boolean
+  ).length
   const heading = (label: string) =>
     groups > 1 && (
       <div className="px-2.5 pt-3 pb-1 text-[0.6875rem] font-medium text-muted-foreground/70 first:pt-1.5">
@@ -401,7 +404,9 @@ function LinkedFrom({
             icon={<DocumentFormatIcon formatId={link.node.format?.id} />}
             name={link.node.label}
             where={<DocLocation path={link.path} />}
-            note={link.count && link.count > 1 ? `${link.count} links` : undefined}
+            note={
+              link.count && link.count > 1 ? `${link.count} links` : undefined
+            }
           >
             <Marked text={link.context} mark={link.mark} />
           </ReferrerRow>
@@ -483,7 +488,9 @@ function ReferrerRow({
           </span>
           {where}
           {note && (
-            <span className="shrink-0 text-xs text-muted-foreground">{note}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {note}
+            </span>
           )}
         </span>
         {children && (

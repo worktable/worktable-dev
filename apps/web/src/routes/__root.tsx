@@ -749,6 +749,8 @@ function PreloadScreensWhenIdle() {
       ],
       () =>
         router.state.status === "pending" ||
+        // The renderer can still be opening after its requests finish.
+        document.querySelector("[data-document-loading]") !== null ||
         queryClient.isFetching() > 0 ||
         queryClient.isMutating() > 0
     )

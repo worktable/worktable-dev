@@ -13,53 +13,56 @@ import { useIsSelf } from "@/lib/use-is-self"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
+import { ThreadParticipantAvatar } from "@/components/threads/thread-participant-avatar"
 
 // ── Actor badge ────────────────────────────────────────────
 
-/**
- * People are round; agents are square-cornered in the primary color. The
- * agent badge will carry each agent's own identity once agents have one.
- */
+/** Compact identities shared by activity, its filters, and document bylines. */
 export function ActorBadge({
   actor,
   live = false,
 }: {
-  actor: Pick<ActivityActor, "kind" | "name"> & { id?: string }
+  actor: ActivityActor
   live?: boolean
 }) {
-  const isSelf = useIsSelf()
-  const initial = (
-    actor.kind === "person"
-      ? actorName({ kind: "person", id: actor.id ?? "", name: actor.name }, isSelf)
-      : (actor.name ?? "?")
-  )
-    .trim()
-    .charAt(0)
-    .toUpperCase()
   return (
     <span
       aria-hidden="true"
       className={cn(
-        "relative flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold",
-        actor.kind === "agent"
-          ? "rounded-md bg-primary/12 text-primary-text ring-1 ring-primary/25 ring-inset"
-          : actor.kind === "person"
-            ? "rounded-full bg-surface-tint text-foreground"
-            : "rounded-full bg-surface-tint text-muted-foreground",
+        "relative flex size-6 shrink-0 items-center justify-center text-[11px] font-semibold",
+        actor.kind !== "system"
+          ? "rounded-full"
+          : "rounded-full bg-surface-tint text-muted-foreground",
         live &&
-          "after:absolute after:-inset-[3px] after:rounded-lg after:border-[1.5px] after:border-transparent after:border-t-primary after:border-r-primary motion-safe:after:animate-spin"
+          "after:absolute after:-inset-[3px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary after:border-r-primary motion-safe:after:animate-spin"
       )}
     >
-      {initial}
+      {actor.kind !== "system" ? (
+        <ThreadParticipantAvatar
+          participant={{
+            kind: actor.kind === "person" ? "human" : "agent",
+            id: actor.id,
+            name: actor.name ?? (actor.kind === "person" ? "User" : "Agent"),
+          }}
+          className="size-6 text-[11px]"
+        />
+      ) : (
+        (actor.name ?? "?").trim().charAt(0).toUpperCase()
+      )}
     </span>
   )
 }
 
 // ── Sentences ──────────────────────────────────────────────
 
+// Stretch the existing destination link across its ActivityRow, keeping native
+// link behavior and a single keyboard stop for each entry.
+const activityLinkClass =
+  "font-medium text-foreground outline-none after:absolute after:inset-0 after:z-10 after:rounded-lg hover:text-primary-text focus-visible:text-primary-text focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+
 function TargetLink({ entry }: { entry: ActivityEntry }) {
   const target = entry.target
-  const className = "font-medium text-foreground hover:text-primary-text"
+  const className = activityLinkClass
   if (target.kind === "doc" && entry.spaceId) {
     return (
       <Link
@@ -266,48 +269,59 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
 
 // ── Entry ──────────────────────────────────────────────────
 
+/** Row padding sits outside the headings' and timestamps' shared left edge. */
+export function ActivityList({ children }: { children: ReactNode }) {
+  return <ul className="-mx-2">{children}</ul>
+}
+
+function ActivityRow({ children }: { children: ReactNode }) {
+  return (
+    <li className="relative isolate flex min-h-11 gap-3 rounded-lg px-2 py-2.5 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
+      {children}
+    </li>
+  )
+}
+
 /** The badge on the timeline, joined to the next entry by a line. */
 function Rail({ children, last }: { children: ReactNode; last: boolean }) {
   return (
-    <div className="flex shrink-0 flex-col items-center">
+    <div className="relative flex shrink-0 flex-col items-center">
       {children}
       {!last && (
-        <span aria-hidden="true" className="my-1.5 w-px flex-1 bg-border" />
+        <span
+          aria-hidden="true"
+          className="absolute top-7.5 -bottom-3.5 w-px bg-border"
+        />
       )}
     </div>
+  )
+}
+
+function ActivityTime({ at }: { at?: string }) {
+  return (
+    <span className="w-16 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
+      {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
+    </span>
   )
 }
 
 export function ActivityItem({
   entry,
   spaceName,
-  hideTime = false,
   last = false,
-  leading,
 }: {
   entry: ActivityEntry
   spaceName?: string
-  hideTime?: boolean
   /** The final entry in a run; its badge ends the line. */
   last?: boolean
-  /** Content before the badge, such as the Activity page's time column. */
-  leading?: ReactNode
 }) {
-  const meta = [spaceName, hideTime ? null : clockTime(entry.at)]
-    .filter(Boolean)
-    .join(" · ")
   return (
-    <li className="flex gap-3">
-      {leading}
+    <ActivityRow>
+      <ActivityTime at={entry.at} />
       <Rail last={last}>
         <ActorBadge actor={entry.actor} />
       </Rail>
-      <div
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
-          last ? "pb-1" : "pb-5"
-        )}
-      >
+      <div className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
         <p className="break-words">
           <Sentence entry={entry} />
         </p>
@@ -316,7 +330,7 @@ export function ActivityItem({
             {entry.quote}
           </p>
         )}
-        {meta && (
+        {spaceName && (
           <p
             className={cn(
               "text-xs leading-4 text-muted-foreground/70",
@@ -325,11 +339,11 @@ export function ActivityItem({
                 : "mt-0.5"
             )}
           >
-            {meta}
+            {spaceName}
           </p>
         )}
       </div>
-    </li>
+    </ActivityRow>
   )
 }
 
@@ -373,27 +387,26 @@ function LiveReply({
   const spaceId =
     thread.location.kind === "space" ? thread.location.spaceId : null
   return (
-    <li className="flex gap-3">
+    <ActivityRow>
+      <ActivityTime />
       <Rail last={last}>
-        <ActorBadge actor={{ kind: "agent", name }} live />
+        <ActorBadge
+          actor={{ kind: "agent", id: activity.participantId, name }}
+          live
+        />
       </Rail>
-      <p
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
-          last ? "pb-1" : "pb-5"
-        )}
-      >
+      <p className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
         <span className="font-medium text-foreground">{name}</span> is replying
         in{" "}
         <ThreadLink
           spaceId={spaceId}
           threadId={thread.id}
-          className="font-medium text-foreground hover:text-primary-text"
+          className={activityLinkClass}
         >
           {thread.title}
         </ThreadLink>
       </p>
-    </li>
+    </ActivityRow>
   )
 }
 
@@ -448,13 +461,14 @@ export function ActivityPanel({
       </div>
       <div
         ref={scrollRef}
-        className="scroll-fade min-h-0 flex-1 overflow-y-auto"
+        className="scroll-fade -mx-2 min-h-0 flex-1 overflow-y-auto px-2"
       >
         {isPending ? (
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="flex gap-3">
-                <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted" />
+                <div className="h-3 w-16 shrink-0 animate-pulse rounded bg-muted" />
+                <div className="size-6 shrink-0 animate-pulse rounded-full bg-muted" />
                 <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
               </div>
             ))}
@@ -475,7 +489,7 @@ export function ActivityPanel({
         ) : (
           <>
             {live.length > 0 && (
-              <ul>
+              <ActivityList>
                 {live.map((thread, index) => (
                   <LiveReply
                     key={thread.id}
@@ -483,19 +497,19 @@ export function ActivityPanel({
                     last={index === live.length - 1 && entries.length === 0}
                   />
                 ))}
-              </ul>
+              </ActivityList>
             )}
             {groups.map((group, index) => (
               <div key={group.label}>
                 <h3
                   className={cn(
-                    "mb-3 text-xs leading-4 font-medium text-muted-foreground/70",
+                    "mb-1 text-xs leading-4 font-medium text-muted-foreground/70",
                     index > 0 && "mt-5"
                   )}
                 >
                   {group.label}
                 </h3>
-                <ul>
+                <ActivityList>
                   {group.items.map((entry, itemIndex) => (
                     <ActivityItem
                       key={entry.id}
@@ -508,7 +522,7 @@ export function ActivityPanel({
                       }
                     />
                   ))}
-                </ul>
+                </ActivityList>
               </div>
             ))}
           </>

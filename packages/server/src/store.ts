@@ -3391,6 +3391,11 @@ export async function restoreDocVersion(
             }
 
             const content = version.after.content;
+            if (activeSource.result.storedAs === "json" || Array.isArray(content)) {
+              // Fence the old browser cache before committing any restored
+              // content. A failed metadata write must leave the source intact.
+              await rotateDocCollaborationCacheEpoch(spaceId, owner.path);
+            }
             const writeResult = await writeDocTransaction(
               spaceId,
               owner.path,

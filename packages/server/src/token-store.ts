@@ -359,7 +359,9 @@ async function mintTokenLocked(
 export async function createToken(
   options: CreateTokenOptions
 ): Promise<{ token: string; metadata: TokenMetadata }> {
-  return serialized(() => mintTokenLocked(options))
+  const result = await serialized(() => mintTokenLocked(options))
+  await notifyParticipantsChanged()
+  return result
 }
 
 /** List token metadata. Secret hashes are never exposed. */
@@ -379,7 +381,7 @@ export async function rotateAgentToken(options: {
 }): Promise<{ token: string; metadata: TokenMetadata }> {
   // One serialized step for revoke + mint: concurrent redeems must each get
   // a token that survives (interleaved load/saves would drop one mint).
-  return serialized(async () => {
+  const result = await serialized(async () => {
     const tokens = await loadTokens()
     // Rotation is scoped to the CURRENT workspace: tokens are workspace-bound,
     // and a same-label token minted for another workspace must keep working
@@ -399,6 +401,8 @@ export async function rotateAgentToken(options: {
     if (changed) await saveTokens(tokens)
     return mintTokenLocked({ scopes: options.scopes, agent: options.agent })
   })
+  await notifyParticipantsChanged()
+  return result
 }
 
 /**

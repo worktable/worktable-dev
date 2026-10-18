@@ -8,6 +8,7 @@ import { trustedLocalIdentity } from "./auth.ts"
 import { profileRouter } from "./routes/profile.ts"
 import { createThread, readThread } from "./thread-store.ts"
 import { createToken } from "./token-store.ts"
+import { listThreadParticipantsForDisplay } from "./thread-service.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 
 let appDir: string
@@ -67,6 +68,9 @@ describe("profile routes", () => {
 
     const after = await app().fetch(new Request("http://localhost/api/profile"))
     expect(await after.json()).toEqual(profile)
+    const { presentations } = await listThreadParticipantsForDisplay()
+    expect(presentations[owner.id]).toEqual(profile)
+    expect(presentations["local:owner"]).toEqual(profile)
 
     // Existing threads show the new name, and @Alex reaches the owner there.
     const renamed = await readThread({ kind: "worktable" }, thread.id)

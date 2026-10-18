@@ -18,6 +18,9 @@ export type SpaceView = SpaceFile & {
 export type WorkspaceMode = "daily" | "staging" | "sandbox" | "fixture"
 
 export interface WorkspaceInfo {
+  /** Cached display identities carried by boot; avatars do not list recipients. */
+  presentations?: import("./threads-api").ParticipantPresentations
+
   contentEpoch?: string
   teamContext?: {
     worktableId: string;

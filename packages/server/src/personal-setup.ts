@@ -147,9 +147,9 @@ export function noteAgentCallForSetup(identity: TokenIdentity | undefined): void
   void completeSetupItem(setupKeyForIdentity(identity), "connect-agent")
 }
 
-/** A person paired an agent. */
-export function noteAgentPairedForSetup(key: string | null): void {
-  void completeSetupItem(key, "connect-agent")
+/** A person paired an agent, or a member's agent first signed in. */
+export function noteAgentPairedForSetup(key: string | null): Promise<void> {
+  return completeSetupItem(key, "connect-agent")
 }
 
 /** An agent's first doc, or its first edit, is its first task done. */

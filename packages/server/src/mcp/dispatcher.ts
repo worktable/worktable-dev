@@ -935,7 +935,7 @@ async function _dispatchOperationInner(
       if (!name || name.length > 120) {
         throw new Error("name is required to register a participant")
       }
-      noteAgentPairedForSetup(setupKeyForIdentity(currentRequestIdentity()))
+      void noteAgentPairedForSetup(setupKeyForIdentity(currentRequestIdentity()))
       return await resolveParticipant(identity, {
         name,
         // Self-registration is a new adapter-only operation, so it always opts

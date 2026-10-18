@@ -1,7 +1,6 @@
 import {
   assertPayerKeepsOwnership,
-  assertRoomForInvitation,
-  assertRoomToJoin,
+  inviteWithinPlan,
   memberIsPayer,
   PlanFullError,
   requestBilling,
@@ -150,7 +149,13 @@ teamRouter.post("/accept-invitation", async (c) => {
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid invitation" }, 400)
   try {
-    assertRoomToJoin(requestBilling(c.req.raw))
+    const accepted = await acceptCloudTeamInvitation(
+      origin(c),
+      identity.cloudIdentity,
+      parsed.data.invitationId,
+      requestBilling(c.req.raw)
+    )
+    return c.json({ ok: true, ...accepted })
   } catch (error) {
     if (!(error instanceof PlanFullError)) throw error
     return c.json(
@@ -162,12 +167,6 @@ teamRouter.post("/accept-invitation", async (c) => {
       409
     )
   }
-  const accepted = await acceptCloudTeamInvitation(
-    origin(c),
-    identity.cloudIdentity,
-    parsed.data.invitationId
-  )
-  return c.json({ ok: true, ...accepted })
 })
 teamRouter.use("*", async (c, next) => {
   requireTeamHuman(c.get("identity"))
@@ -295,8 +294,18 @@ teamRouter.post("/invitations", async (c) => {
     assertInvitationStartSpace(member, parsed.data.spaceId)
   }
   const billing = requestBilling(c.req.raw)
+  let invitation: Awaited<ReturnType<typeof auth.api.createInvitation>>
   try {
-    assertRoomForInvitation(billing)
+    invitation = await inviteWithinPlan(billing, () =>
+      auth.api.createInvitation({
+        headers,
+        body: {
+          organizationId: worktable.organizationId,
+          email: parsed.data.email,
+          role: "member",
+        },
+      })
+    )
   } catch (error) {
     if (!(error instanceof PlanFullError)) throw error
     // Only the payer can change the plan; anyone else's attempt is passed on.
@@ -306,14 +315,6 @@ teamRouter.post("/invitations", async (c) => {
       409
     )
   }
-  const invitation = await auth.api.createInvitation({
-    headers,
-    body: {
-      organizationId: worktable.organizationId,
-      email: parsed.data.email,
-      role: "member",
-    },
-  })
   recordInvitationDetails(invitation.id, parsed.data.spaceId ?? null)
   const email = invitationEmailConfigured()
     ? claimInvitationEmail(invitation.id) === null

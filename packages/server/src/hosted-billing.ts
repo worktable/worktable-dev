@@ -6,9 +6,15 @@ import {
   type PaidCloudPlanId,
   type TenantBilling,
 } from "@worktable/hosted-contract"
+import { withCrossProcessLock } from "./cross-process-lock.ts"
 import { gatewayAdmits, gatewaySecret, isHosted } from "./hosted.ts"
 import { accessSnapshot } from "./team-access.ts"
-import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
+import {
+  currentTeamWorktable,
+  refreshTeamStateForWrite,
+  requireTeamDatabase,
+  teamDatabasePath,
+} from "./team-database.ts"
 import { listTeamMembers } from "./team-members.ts"
 import { TeamAccessError } from "./team-policy.ts"
 
@@ -79,8 +85,28 @@ export function assertRoomForInvitation(billing: TenantBilling | null): void {
 }
 
 /**
+ * Invite while no one else can add a person, counting after the wait, so two
+ * invitations can't both take the last place. Joining holds the same lock.
+ */
+export function inviteWithinPlan<T>(
+  billing: TenantBilling | null,
+  invite: () => Promise<T>
+): Promise<T> {
+  return withCrossProcessLock(
+    `${teamDatabasePath()}.members.lock`,
+    { label: "Team invitation" },
+    async () => {
+      refreshTeamStateForWrite()
+      assertRoomForInvitation(billing)
+      return invite()
+    }
+  )
+}
+
+/**
  * Joining needs a place among the members. Pending invitations already hold
  * one, so this only refuses when the plan shrank after the invitation went out.
+ * Check it while holding the members lock, so two joins can't both pass.
  */
 export function assertRoomToJoin(billing: TenantBilling | null): void {
   if (!billing || billing.peopleLimit === null) return

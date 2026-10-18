@@ -1249,6 +1249,7 @@ test("a Cloud plan holds members and pending invitations, never more, and keeps 
   const {
     assertPayerKeepsOwnership,
     assertRoomForInvitation,
+    inviteWithinPlan,
     peopleInWorktable,
     PlanFullError,
   } = await import("./hosted-billing.ts")
@@ -1288,6 +1289,29 @@ test("a Cloud plan holds members and pending invitations, never more, and keeps 
     .query("UPDATE invitation SET expiresAt = ? WHERE id = ?")
     .run(Date.now() - 1000, pending.id)
   expect(peopleInWorktable()).toBe(2)
+  // Two invitations sent at once for the last place: only one gets it.
+  const racing = await Promise.allSettled(
+    ["dan@example.test", "erin@example.test"].map((email) =>
+      inviteWithinPlan(team(3), () =>
+        auth.api.createInvitation({
+          headers: ownerHeaders,
+          body: {
+            organizationId: currentTeamWorktable()!.organizationId,
+            email,
+            role: "member",
+          },
+        })
+      )
+    )
+  )
+  expect(racing.map((result) => result.status).sort()).toEqual([
+    "fulfilled",
+    "rejected",
+  ])
+  expect(
+    racing.find((result) => result.status === "rejected")?.reason
+  ).toBeInstanceOf(PlanFullError)
+  expect(peopleInWorktable()).toBe(3)
 
   // The payer can't be removed or made a member until billing moves.
   const worktable = currentTeamWorktable()!
@@ -2193,7 +2217,7 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
     // The invitation was emailed to one address; a forwarded link does not
     // admit a different account.
     await expect(
-      acceptCloudTeamInvitation(origin, bob, invitation.id)
+      acceptCloudTeamInvitation(origin, bob, invitation.id, null)
     ).rejects.toMatchObject({
       code: "INVITATION_EMAIL_MISMATCH",
       message:
@@ -2214,9 +2238,9 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
     ).toBe(bob.subject)
     expect(bindings()).toBe(0)
     const invitedBob = { ...bob, email: "Bob@Company.test" }
-    await acceptCloudTeamInvitation(origin, invitedBob, invitation.id)
+    await acceptCloudTeamInvitation(origin, invitedBob, invitation.id, null)
     await expect(
-      acceptCloudTeamInvitation(origin, invitedBob, invitation.id)
+      acceptCloudTeamInvitation(origin, invitedBob, invitation.id, null)
     ).rejects.toMatchObject({ code: "INVITATION_USED" })
     const member = await resolveVerifiedCloudMember(origin, bob)
     expect(member?.team?.memberId).toBeDefined()

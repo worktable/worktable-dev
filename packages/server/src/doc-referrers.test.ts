@@ -110,7 +110,11 @@ describe("records and HTML Docs that point at a Doc", () => {
       await openedDocuments(`
         <button onclick="worktable.navigation.openDocument('plans/brief')">Read the <b>brief</b></button>
         <a href="#" aria-label="Notes A" onclick="worktable.navigation.openDocument(&quot;/notes/a&quot;)">→</a>
+        <p>Call worktable.navigation.openDocument("plans/shown-as-text") to open a doc.</p>
+        <pre><code>worktable.navigation.openDocument('plans/sample')</code></pre>
+        <script type="application/json">{"x": "worktable.navigation.openDocument('plans/data')"}</script>
         <script>
+          // worktable.navigation.openDocument("plans/commented-out")
           menu.addEventListener("click", () => worktable.navigation.openDocument("specs/menu"))
           worktable.navigation.openDocument(\`specs/\${id}\`)
           worktable.navigation.openDocument(path)

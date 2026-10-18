@@ -136,9 +136,17 @@ describe("link graph", () => {
         "onto a new line](/wrapped) still counts. A closing sentence.",
         "",
         longSentence,
+        "## The [roadmap](/roadmap)",
+        "A paragraph right under the heading.",
       ].join("\n");
       const links = extractDocLinks(md);
-      expect(links).toHaveLength(3);
+      expect(links).toHaveLength(4);
+      // A heading is its own block, even with no blank line after it.
+      expect(links[3]).toEqual({
+        target: "/roadmap",
+        context: "The roadmap",
+        mark: { start: 4, length: 7 },
+      });
       expect(links[0]).toEqual({
         target: "/plans/arrival",
         context: "See the plan for dates and invitations@example.com.",

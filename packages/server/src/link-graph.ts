@@ -81,22 +81,37 @@ function linkWithContext(target: string, marked: string): ExtractedDocLink {
 /** Lines that start a block of their own rather than continue a paragraph. */
 const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
 
+/** An ATX heading is a block of one line. */
+const HEADING = /^\s{0,3}#{1,6}(?:\s|$)/;
+
 /** The bounds of the paragraph, list item or other block around `at`. */
 function blockAround(text: string, at: number, length: number): [number, number] {
+  const lineAt = (from: number) => {
+    const end = text.indexOf("\n", from);
+    return text.slice(from, end === -1 ? undefined : end);
+  };
   let start = text.lastIndexOf("\n", at - 1) + 1;
+  if (HEADING.test(lineAt(start))) {
+    const end = text.indexOf("\n", at + length);
+    return [start, end === -1 ? text.length : end];
+  }
   while (start > 0) {
     const previousStart = text.lastIndexOf("\n", start - 2) + 1;
     const previous = text.slice(previousStart, start - 1);
-    const current = text.slice(start, text.indexOf("\n", start) === -1 ? undefined : text.indexOf("\n", start));
-    if (previous.trim() === "" || BLOCK_START.test(current)) break;
+    if (
+      previous.trim() === "" ||
+      HEADING.test(previous) ||
+      BLOCK_START.test(lineAt(start))
+    ) {
+      break;
+    }
     start = previousStart;
   }
   let end = text.indexOf("\n", at + length);
   while (end !== -1) {
-    const nextEnd = text.indexOf("\n", end + 1);
-    const next = text.slice(end + 1, nextEnd === -1 ? undefined : nextEnd);
+    const next = lineAt(end + 1);
     if (next.trim() === "" || BLOCK_START.test(next)) break;
-    end = nextEnd;
+    end = text.indexOf("\n", end + 1);
   }
   return [start, end === -1 ? text.length : end];
 }

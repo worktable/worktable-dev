@@ -302,7 +302,12 @@ export async function readWidgetDocument(
     : { data: null, error: widget.error };
 }
 
-export async function readWidgetHtml(spaceId: string, widgetId: string): Promise<{ data: string | null; error: string | null }> {
+export async function readWidgetHtml(
+  spaceId: string,
+  widgetId: string,
+  /** V2: a catalog already read for this Space, so a batch reads it once. */
+  options: { catalog?: DocumentCatalog } = {}
+): Promise<{ data: string | null; error: string | null }> {
   assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
@@ -314,6 +319,7 @@ export async function readWidgetHtml(spaceId: string, widgetId: string): Promise
       const document = await readHtmlDocumentStorageV2({
         spaceId,
         path: widgetId,
+        ...(options.catalog ? { catalog: options.catalog } : {}),
       });
       return document
         ? { data: document.html, error: null }

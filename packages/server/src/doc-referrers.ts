@@ -17,6 +17,9 @@ import {
   type RecordFile,
 } from "@worktable/types"
 import { logError } from "./debug-log.ts"
+import { createDocAliasResolver, readDocAliases } from "./doc-aliases.ts"
+import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { wsManager } from "./ws.ts"
 import { listRecordCollections, listRecords } from "./record-store.ts"
 import { listWidgets, readWidgetHtml } from "./widget-store.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
@@ -112,7 +115,15 @@ export interface OpenedDocument {
   label?: string
 }
 
-const OPEN_CALL = /openDocument\(\s*(["'`])([^"'`$\n]+)\1\s*\)/
+/** A call on some receiver, such as worktable.navigation.openDocument("plans/brief"). */
+const OPEN_CALL = /[\w$)\]]\s*\.\s*openDocument\(\s*(["'`])([^"'`$\n]+)\1\s*\)/
+
+/** Script without its comments, so a commented-out call does not count. */
+function withoutComments(script: string): string {
+  return script
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1")
+}
 
 function openedPath(raw: string): string | undefined {
   return parseDocumentReference(raw.trim().replace(/^\/+/, "")).path
@@ -127,20 +138,42 @@ function decodeEntities(value: string): string {
 
 /**
  * The docs an HTML Doc opens with worktable.navigation.openDocument and a
- * literal path. When the call sits on the element people click (an onclick
- * or a javascript: href), its visible words are the label; an element
- * without words uses its aria-label, title or value. Calls made from the
- * script alone have no label. Paths built at run time are not found.
+ * literal path, read from its scripts and event handlers only: a call shown
+ * as text or in a comment does not count. When the call sits on the
+ * element people click (an onclick or a javascript: href), its visible words
+ * are the label; an element without words uses its aria-label, title or
+ * value. Calls made from the script alone have no label. Paths built at run
+ * time are not found.
  */
 export async function openedDocuments(html: string): Promise<OpenedDocument[]> {
   const labels = new Map<string, string>()
   const open: Array<{ path: string; text: string; name?: string }> = []
+  const code: string[] = []
+  let script = ""
   await new HTMLRewriter()
+    .on("script", {
+      element(element) {
+        const type = element.getAttribute("type")?.trim().toLowerCase()
+        const runs =
+          !type || type === "module" || /javascript|ecmascript/.test(type)
+        if (!runs || element.getAttribute("src")) return
+        script = ""
+        element.onEndTag(() => {
+          code.push(withoutComments(script))
+          script = ""
+        })
+      },
+      text(chunk) {
+        script += chunk.text
+      },
+    })
     .on("*", {
       element(element) {
         for (const [attribute, value] of element.attributes) {
           if (!/^on|^href$/i.test(attribute)) continue
-          const path = openedPath(OPEN_CALL.exec(decodeEntities(value))?.[2] ?? "")
+          const handler = decodeEntities(value)
+          code.push(withoutComments(handler))
+          const path = openedPath(OPEN_CALL.exec(handler)?.[2] ?? "")
           if (!path) continue
           const entry = {
             path,
@@ -174,7 +207,7 @@ export async function openedDocuments(html: string): Promise<OpenedDocument[]> {
 
   const opened = new Map<string, OpenedDocument>()
   const call = new RegExp(OPEN_CALL.source, "g")
-  for (const match of decodeEntities(html).matchAll(call)) {
+  for (const match of code.join("\n").matchAll(call)) {
     const path = openedPath(match[2]!)
     if (!path || opened.has(path)) continue
     const label = labels.get(path)
@@ -183,10 +216,52 @@ export async function openedDocuments(html: string): Promise<OpenedDocument[]> {
   return [...opened.values()]
 }
 
+/** Per doc path: what points at it, as text that changes when it does. */
+function signatures(space: SpaceReferrers): Map<string, string> {
+  const lines = new Map<string, string[]>()
+  const add = (path: string, line: string) =>
+    lines.set(path, [...(lines.get(path) ?? []), line])
+  for (const byDoc of space.collections.values()) {
+    for (const [path, records] of byDoc) {
+      for (const record of records) {
+        add(path, `record ${record.collectionId}/${record.recordId} ${record.title} ${record.field}`)
+      }
+    }
+  }
+  for (const [htmlPath, opened] of space.html) {
+    for (const link of opened) add(link.path, `html ${htmlPath} ${link.label ?? ""}`)
+  }
+  return new Map([...lines].map(([path, list]) => [path, list.sort().join("\n")]))
+}
+
+/**
+ * Tell open pages of the docs whose referrers changed to read again: a
+ * page asked before this read landed, or before a record or HTML Doc changed.
+ */
+async function announceChanges(
+  spaceId: string,
+  before: Map<string, string>,
+  after: Map<string, string>
+): Promise<void> {
+  const changed = [...new Set([...before.keys(), ...after.keys()])].filter(
+    (path) => before.get(path) !== after.get(path)
+  )
+  if (changed.length === 0) return
+  const { aliases } = await readDocAliases(spaceId)
+  const resolve = aliases ? createDocAliasResolver(aliases) : () => null
+  const docPaths = [...new Set(changed.map((path) => resolve(path) ?? path))]
+  wsManager.broadcast(spaceId, {
+    type: "doc_links_update",
+    spaceId,
+    data: { docPaths: docPaths.slice(0, 500) },
+  })
+}
+
 async function build(spaceId: string, space: SpaceReferrers): Promise<void> {
   const stale = space.stale
   space.stale = { collections: new Set(), html: new Set() }
   space.changed = false
+  const before = signatures(space)
 
   const collections = await listRecordCollections(spaceId)
   const present = new Set(collections.map((collection) => collection.id))
@@ -209,16 +284,19 @@ async function build(spaceId: string, space: SpaceReferrers): Promise<void> {
     )
   }
 
-  const widgets = await listWidgets(spaceId)
+  // One catalog for the whole pass: each HTML Doc read would build it again.
+  const catalog = await readDocumentCatalogSnapshot(spaceId)
+  const widgets = await listWidgets(spaceId, { catalog: async () => catalog })
   const htmlPaths = new Set(widgets.map((widget) => widget.id))
   for (const path of space.html.keys()) {
     if (!htmlPaths.has(path)) space.html.delete(path)
   }
   for (const widget of widgets) {
     if (!stale.html.has(widget.id) && space.html.has(widget.id)) continue
-    const { data } = await readWidgetHtml(spaceId, widget.id)
+    const { data } = await readWidgetHtml(spaceId, widget.id, { catalog })
     space.html.set(widget.id, data ? await openedDocuments(data) : [])
   }
+  await announceChanges(spaceId, before, signatures(space))
 }
 
 function spaceFor(spaceId: string): SpaceReferrers {

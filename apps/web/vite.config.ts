@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
 import { precompressAssets } from "./precompress-assets"
 import { sharedIconChunk } from "./shared-icon-chunk"
+import { blocknoteHoverRule } from "./blocknote-hover-rule"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import { browserNotices } from "../../scripts/browser-notices"
@@ -123,6 +124,7 @@ export default defineConfig({
       },
     }),
     react(),
+    blocknoteHoverRule(),
     tailwindcss(),
     browserNotices(),
     buildIdFile(),

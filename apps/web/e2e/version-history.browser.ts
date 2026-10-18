@@ -228,6 +228,11 @@ for (const kind of ["doc", "html"] as const) {
         (entry: { id: string }) => entry.id === savedId
       )
     ).toBe(true)
+    // Reopening must keep the restored content rather than the old Yjs cache.
+    await page.reload()
+    await expect(
+      current.getByText("Original paragraph", { exact: true })
+    ).toBeVisible()
 
     // A document can be read-only inside an editable Space. The page's
     // capabilities govern both mutation controls, including snapshot restore.

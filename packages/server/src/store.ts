@@ -3416,6 +3416,11 @@ export async function restoreDocVersion(
                 errorCode: "CONFLICT",
               };
             }
+            if (writeResult.storedAs === "json") {
+              // The old room is retired below. Its browser Yjs state must not
+              // merge into the restored generation when clients reconnect.
+              await rotateDocCollaborationCacheEpoch(spaceId, owner.path);
+            }
             const statResult = await docStat(spaceId, owner.path);
             return {
               ok: true,

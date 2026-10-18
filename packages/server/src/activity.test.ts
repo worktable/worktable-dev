@@ -20,6 +20,7 @@ import {
   runAsActivityActor,
 } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
+import { pathMovesFor } from "./doc-aliases.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -312,7 +313,7 @@ describe("workspace activity", () => {
     recordActivity({ spaceId: "company", action: "doc.edited", actor: maya, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:07:00.000Z" })
     // Not every reader may see who commented, so comments do not count.
     recordActivity({ spaceId: "company", action: "comment.created", actor: codexActor, target: { kind: "doc", path: "plan" }, at: "2026-10-16T09:10:00.000Z" })
-    const plan = (path: string) => path === "plan" || path === "drafts/plan"
+    const plan = pathMovesFor({ exact: { "drafts/plan": "plan" }, prefixes: {} })
 
     // A page never waits: a Space not summarized yet answers at once.
     expect(peekDocActivity("archive", "notes")).toBeNull()

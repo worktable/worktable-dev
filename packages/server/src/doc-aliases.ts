@@ -445,6 +445,73 @@ export function createDocAliasResolver(
 }
 
 /**
+ * Where docs that caches recorded under older paths are now. Caches keyed by
+ * recorded paths (backlinks, who worked on a doc) use it to find one doc's
+ * entries without resolving every key on every read.
+ */
+export interface DocPathMoves {
+  /** Where the doc recorded at `path` is now. */
+  current(path: string): string;
+  /**
+   * The keys of `recorded` that now name `docPath`, in the map's order. The
+   * keys are indexed once per map and kept while its size holds, so a map
+   * must be replaced or only grow.
+   */
+  keysFor(recorded: ReadonlyMap<string, unknown>, docPath: string): string[];
+}
+
+/** No doc has moved: every key names itself. */
+export const NO_DOC_PATH_MOVES: DocPathMoves = {
+  current: (path) => path,
+  keysFor: (recorded, docPath) => (recorded.has(docPath) ? [docPath] : []),
+};
+
+const docPathMoves = new WeakMap<DocAliases, DocPathMoves>();
+
+/** The moves a Space's aliases describe, shared while the aliases object is. */
+export function pathMovesFor(aliases: DocAliases | undefined): DocPathMoves {
+  if (
+    !aliases ||
+    (Object.keys(aliases.exact).length === 0 &&
+      Object.keys(aliases.prefixes).length === 0)
+  ) {
+    return NO_DOC_PATH_MOVES;
+  }
+  const known = docPathMoves.get(aliases);
+  if (known) return known;
+  const resolve = createDocAliasResolver(aliases);
+  const current = (path: string) => resolve(path) ?? path;
+  const indexes = new WeakMap<
+    ReadonlyMap<string, unknown>,
+    { size: number; byCurrent: Map<string, string[]> }
+  >();
+  const moves: DocPathMoves = {
+    current,
+    keysFor(recorded, docPath) {
+      let index = indexes.get(recorded);
+      if (!index || index.size !== recorded.size) {
+        const byCurrent = new Map<string, string[]>();
+        const add = (path: string, key: string) => {
+          const keys = byCurrent.get(path);
+          if (keys) keys.push(key);
+          else byCurrent.set(path, [key]);
+        };
+        for (const key of recorded.keys()) {
+          add(key, key);
+          const now = current(key);
+          if (now !== key) add(now, key);
+        }
+        index = { size: recorded.size, byCurrent };
+        indexes.set(recorded, index);
+      }
+      return index.byCurrent.get(docPath) ?? [];
+    },
+  };
+  docPathMoves.set(aliases, moves);
+  return moves;
+}
+
+/**
  * Whether every alias resolves without a cycle or hop overflow, including
  * paths below each alias source. Exported for the equivalence test; the
  * exhaustive mode probes every source and is the reference behaviour.

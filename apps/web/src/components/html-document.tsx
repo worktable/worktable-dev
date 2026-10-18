@@ -811,9 +811,9 @@ function WidgetDetailPage({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           ref={wrapperRef}
-          className={`relative min-h-0 flex-col bg-background ${previewVersionId ? "hidden" : "flex"} ${
+          className={`relative min-h-0 min-w-0 flex-col bg-background ${
             overlayFullscreen ? "fixed inset-0 z-50" : ""
-          } ${previewVersionId ? "hidden print:block" : "flex-1"}`}
+          } ${previewVersionId ? "hidden xl:flex xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex flex-1"}`}
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
           <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">

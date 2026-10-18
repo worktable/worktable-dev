@@ -4,6 +4,29 @@ import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 
 const PANEL_GUTTER = 12
 
+export function ContextPanelHeader({
+  title,
+  icon,
+  meta,
+  actions,
+}: {
+  title: string
+  icon: ReactNode
+  meta?: ReactNode
+  actions: ReactNode
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-3 p-4 pb-2">
+      <div className="flex min-w-0 items-center gap-2">
+        {icon}
+        <h2 className="text-sm font-medium text-foreground">{title}</h2>
+        {meta}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">{actions}</div>
+    </div>
+  )
+}
+
 export function DesktopContextPanel({
   open,
   width,

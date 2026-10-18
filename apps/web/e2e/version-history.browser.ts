@@ -50,12 +50,30 @@ for (const kind of ["doc", "html"] as const) {
       (entry: { checkpoint?: { label?: string } }) =>
         entry.checkpoint?.label === "Before review"
     ).id as string
+    expect(
+      (
+        await page.request.fetch(endpoint, {
+          method: "PUT",
+          data:
+            kind === "doc"
+              ? { content: blocks("Review paragraph") }
+              : { name: "History HTML", html: "<p>Review paragraph</p>" },
+        })
+      ).ok()
+    ).toBe(true)
+    expect(
+      (
+        await page.request.post(`${endpoint}/versions/checkpoint`, {
+          data: { label: "During review" },
+        })
+      ).ok()
+    ).toBe(true)
     const changed = await page.request.fetch(endpoint, {
-      method: kind === "doc" ? "PUT" : "PATCH",
+      method: "PUT",
       data:
         kind === "doc"
           ? { content: blocks("Latest paragraph") }
-          : { html: "<p>Latest paragraph</p>" },
+          : { name: "History HTML", html: "<p>Latest paragraph</p>" },
     })
     expect(changed.ok()).toBe(true)
     let snapshotReads = 0
@@ -96,6 +114,25 @@ for (const kind of ["doc", "html"] as const) {
     await expect(
       history.getByRole("button", { name: /^Before review/ })
     ).toHaveAttribute("aria-pressed", "true")
+    // Both panes remain visible, and selecting another snapshot replaces its
+    // content without changing the live document.
+    const current =
+      kind === "doc"
+        ? page.getByRole("main").getByRole("textbox").first()
+        : page.frameLocator('[data-worktable-widget-frame="true"]')
+    await expect(
+      current.getByText("Latest paragraph", { exact: true })
+    ).toBeVisible()
+    await history.getByRole("button", { name: /^During review/ }).click()
+    await expect(
+      previewText.getByText("Review paragraph", { exact: true })
+    ).toBeVisible()
+    await expect(
+      previewText.getByText("Original paragraph", { exact: true })
+    ).toBeHidden()
+    await expect(
+      current.getByText("Latest paragraph", { exact: true })
+    ).toBeVisible()
     await history.getByRole("button", { name: /^Current version/ }).click()
     await history.getByRole("button", { name: /^Before review/ }).click()
     await expect(
@@ -103,23 +140,26 @@ for (const kind of ["doc", "html"] as const) {
     ).toBeVisible()
     expect(snapshotReads).toBe(1)
 
-    // Naming captures the live doc, even while an older version is previewed.
+    // Saving captures the live document in one click, with no required name.
     await history
-      .getByRole("button", { name: "Name version", exact: true })
-      .click()
-    const naming = page.getByRole("dialog", {
-      name: "Name current version",
-      exact: true,
-    })
-    await naming.getByLabel("Name", { exact: true }).fill("Reviewed")
-    await naming
       .getByRole("button", { name: "Save version", exact: true })
       .click()
-    await expect(naming).toBeHidden()
-    await history.getByRole("button", { name: "Named", exact: true }).click()
+    await expect(page.getByText("Version saved", { exact: true })).toBeVisible()
+    await history.getByRole("button", { name: "Saved", exact: true }).click()
     await expect(
-      history.getByRole("button", { name: /^Reviewed/ })
+      history.getByRole("button", { name: /^Saved version/ })
     ).toBeVisible()
+    const afterSave = await page.request.get(`${endpoint}/versions?all=true`)
+    const savedId = (await afterSave.json()).versions[0].id as string
+    const savedContent = await page.request.get(
+      `${endpoint}/versions/${savedId}`
+    )
+    expect(
+      JSON.stringify((await savedContent.json()).version.after.content)
+    ).toContain("Latest paragraph")
+    await page.screenshot({
+      path: testInfo.outputPath(`history-${kind}-desktop.png`),
+    })
 
     await page.setViewportSize({ width: 390, height: 844 })
     const drawer = page.getByRole("dialog", {
@@ -131,7 +171,7 @@ for (const kind of ["doc", "html"] as const) {
     await expect(
       previewText.getByText("Original paragraph", { exact: true })
     ).toBeVisible()
-    await expect(preview.getByText("Read only", { exact: true })).toBeVisible()
+    await expect(preview.locator('[contenteditable="true"]')).toHaveCount(0)
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth)
     ).toBe(390)
@@ -167,18 +207,13 @@ for (const kind of ["doc", "html"] as const) {
     await preview.getByRole("button", { name: "Restore", exact: true }).click()
     await confirm.getByRole("button", { name: "Restore", exact: true }).click()
     await expect(preview).toBeHidden()
-    const current =
-      kind === "doc"
-        ? page.getByRole("main")
-        : page.frameLocator('[data-worktable-widget-frame="true"]')
     await expect(
       current.getByText("Original paragraph", { exact: true })
     ).toBeVisible()
     const retained = await page.request.get(`${endpoint}/versions?all=true`)
     expect(
       (await retained.json()).versions.some(
-        (entry: { checkpoint?: { label?: string } }) =>
-          entry.checkpoint?.label === "Reviewed"
+        (entry: { id: string }) => entry.id === savedId
       )
     ).toBe(true)
   })

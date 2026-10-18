@@ -1,6 +1,16 @@
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Bookmark, History, RotateCcw, X } from "lucide-react"
+import {
+  Bookmark,
+  ChevronDown,
+  ChevronUp,
+  ChevronsLeft,
+  ChevronsRight,
+  History,
+  RotateCcw,
+  Save,
+  X,
+} from "lucide-react"
 import {
   sourceCategory,
   type ActivityActor,
@@ -14,19 +24,12 @@ import {
   DrawerDescription,
   DrawerTitle,
 } from "@worktable/ui/components/drawer"
-import { Input } from "@worktable/ui/components/input"
-import {
-  ResponsiveDialog,
-  ResponsiveDialogBody,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogFooter,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from "@worktable/ui/components/responsive-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
-import { DesktopContextPanel } from "@/components/desktop-context-panel"
+import {
+  ContextPanelHeader,
+  DesktopContextPanel,
+} from "@/components/desktop-context-panel"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { clockTime, groupByDay } from "@/lib/activity-format"
@@ -58,7 +61,7 @@ function listKey({ kind, spaceId, path, revision }: HistoryLocation) {
   return versionHistoryKeys.list(kind, spaceId, path, revision)
 }
 
-function namedVersion(version: DocVersionEntry): boolean {
+function savedVersion(version: DocVersionEntry): boolean {
   return (
     version.checkpoint?.kind === "manual" ||
     version.checkpoint?.kind === "review"
@@ -71,7 +74,7 @@ function versionLabel(version: DocVersionEntry): string {
     version.checkpoint.label !== "Manual Checkpoint"
   )
     return version.checkpoint.label
-  if (namedVersion(version)) return "Saved version"
+  if (savedVersion(version)) return "Saved version"
   if (version.source === "version-restore") return "Restored version"
   return version.operation === "create" ? "Created document" : "Edited document"
 }
@@ -149,7 +152,7 @@ function VersionRow({
     currentActor
   )
   const at = current ? provenance?.updatedAt : version?.createdAt
-  const named = version && namedVersion(version)
+  const saved = version && savedVersion(version)
   const label = current ? "Current version" : versionLabel(version!)
   const reason =
     version?.source !== "version-restore" &&
@@ -171,7 +174,7 @@ function VersionRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-3">
           <span className="min-w-0 truncate text-sm font-medium text-foreground">
-            {current ? label : named ? label : identity.label}
+            {current ? label : saved ? label : identity.label}
           </span>
           {at && (
             <time
@@ -184,8 +187,8 @@ function VersionRow({
           )}
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
-          {named && <Bookmark className="size-3 shrink-0" aria-hidden="true" />}
-          {current || named ? identity.label : label}
+          {saved && <Bookmark className="size-3 shrink-0" aria-hidden="true" />}
+          {current || saved ? identity.label : label}
         </span>
         {reason && (
           <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">
@@ -222,9 +225,8 @@ export function VersionHistoryPanel({
   const queryClient = useQueryClient()
   const { data: space } = useSpace(spaceId)
   const canEdit = Boolean(space && space.space.permissions?.edit !== false)
-  const [filter, setFilter] = useState<"all" | "named">("all")
-  const [naming, setNaming] = useState(false)
-  const [name, setName] = useState("")
+  const [filter, setFilter] = useState<"all" | "saved">("all")
+  const [collapsed, setCollapsed] = useState(false)
   const [saving, setSaving] = useState(false)
   const scrollRef = useScrollFade<HTMLDivElement>()
   const versions = useQuery({
@@ -240,21 +242,23 @@ export function VersionHistoryPanel({
     const currentSnapshot =
       index === 0 &&
       version.after.contentHash === provenance?.contentHash &&
-      !namedVersion(version)
-    return !currentSnapshot && (filter === "all" || namedVersion(version))
+      !savedVersion(version)
+    return !currentSnapshot && (filter === "all" || savedVersion(version))
   })
+  const selectedIndex = entries.findIndex(
+    (version) => version.id === selectedVersionId
+  )
   const groups = groupByDay(
     entries.map((version) => ({ ...version, at: version.createdAt }))
   )
-  const saveNamedVersion = async () => {
-    if (saving || !name.trim()) return
+  const saveVersion = async () => {
+    if (saving) return
     setSaving(true)
     try {
       await (kind === "doc"
-        ? createDocCheckpoint(spaceId, path, name.trim())
-        : createWidgetCheckpoint(spaceId, path, name.trim()))
-      setNaming(false)
-      toast.success("Version named")
+        ? createDocCheckpoint(spaceId, path)
+        : createWidgetCheckpoint(spaceId, path))
+      toast.success("Version saved")
       await queryClient.invalidateQueries({
         queryKey: listKey(location),
         exact: true,
@@ -270,18 +274,33 @@ export function VersionHistoryPanel({
       aria-label="Version history"
       className="flex h-full min-h-0 flex-col"
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-4 pb-3">
-        <h2 className="text-sm font-medium text-foreground">Version history</h2>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Close version history"
-          onClick={onClose}
-        >
-          <X className="size-4" />
-        </Button>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-3">
+      <ContextPanelHeader
+        title="Version history"
+        icon={<History className="size-4 shrink-0 text-primary" />}
+        actions={
+          <>
+            {selectedVersionId && !drawerMode && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Collapse version history"
+                onClick={() => setCollapsed(true)}
+              >
+                <ChevronsRight className="size-4" />
+              </Button>
+            )}
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close version history"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </Button>
+          </>
+        }
+      />
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
         <div className="flex gap-1" role="group" aria-label="Filter versions">
           <Button
             size="xs"
@@ -293,24 +312,22 @@ export function VersionHistoryPanel({
           </Button>
           <Button
             size="xs"
-            variant={filter === "named" ? "secondary" : "ghost"}
-            aria-pressed={filter === "named"}
-            onClick={() => setFilter("named")}
+            variant={filter === "saved" ? "secondary" : "ghost"}
+            aria-pressed={filter === "saved"}
+            onClick={() => setFilter("saved")}
           >
-            Named
+            Saved
           </Button>
         </div>
         {canEdit && (
           <Button
             size="xs"
             variant="outline"
-            onClick={() => {
-              setName("")
-              setNaming(true)
-            }}
+            disabled={saving}
+            onClick={() => void saveVersion()}
           >
-            <Bookmark className="size-3.5" />
-            Name version
+            <Save className="size-3.5" />
+            {saving ? "Saving…" : "Save version"}
           </Button>
         )}
       </div>
@@ -342,8 +359,8 @@ export function VersionHistoryPanel({
           </p>
         ) : entries.length === 0 ? (
           <p className="px-3 py-4 text-sm leading-6 text-muted-foreground">
-            {filter === "named"
-              ? "No named versions yet. Name the current version to mark a moment you want to keep."
+            {filter === "saved"
+              ? "No saved versions yet. Save a version to keep this point in the document."
               : "Saved versions will appear here as you edit."}
           </p>
         ) : (
@@ -385,53 +402,62 @@ export function VersionHistoryPanel({
           </DrawerContent>
         </Drawer>
       ) : (
-        <DesktopContextPanel open={open} width={384}>
-          {content}
+        <DesktopContextPanel
+          open={open}
+          width={collapsed && selectedVersionId ? 64 : 384}
+        >
+          {collapsed && selectedVersionId ? (
+            <aside
+              aria-label="Version history"
+              className="flex h-full flex-col items-center gap-2 py-4"
+            >
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Expand version history"
+                onClick={() => setCollapsed(false)}
+              >
+                <ChevronsLeft className="size-4" />
+              </Button>
+              <div className="flex flex-1 items-center [writing-mode:vertical-rl]">
+                <span className="text-xs text-muted-foreground">
+                  Version history
+                </span>
+              </div>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Older version"
+                disabled={
+                  selectedIndex < 0 || selectedIndex >= entries.length - 1
+                }
+                onClick={() => onSelect(entries[selectedIndex + 1].id)}
+              >
+                <ChevronUp className="size-4" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Newer version"
+                disabled={selectedIndex <= 0}
+                onClick={() => onSelect(entries[selectedIndex - 1].id)}
+              >
+                <ChevronDown className="size-4" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close version history"
+                onClick={onClose}
+              >
+                <X className="size-4" />
+              </Button>
+            </aside>
+          ) : (
+            content
+          )}
         </DesktopContextPanel>
       )}
-      <ResponsiveDialog open={naming} onOpenChange={setNaming}>
-        <ResponsiveDialogContent>
-          <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>Name current version</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription>
-              Keep a named version you can return to later.
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <ResponsiveDialogBody>
-            <label className="space-y-2 text-sm font-medium">
-              <span>Name</span>
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ready for review"
-                disabled={saving}
-                autoFocus
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault()
-                    void saveNamedVersion()
-                  }
-                }}
-              />
-            </label>
-          </ResponsiveDialogBody>
-          <ResponsiveDialogFooter>
-            <Button
-              variant="outline"
-              disabled={saving}
-              onClick={() => setNaming(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={saving || !name.trim()}
-              onClick={saveNamedVersion}
-            >
-              {saving ? "Saving…" : "Save version"}
-            </Button>
-          </ResponsiveDialogFooter>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
     </>
   )
 }
@@ -515,60 +541,51 @@ export function VersionPreview({
   return (
     <section
       aria-label="Version preview"
-      className="flex min-w-0 flex-1 flex-col overflow-hidden print:hidden"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-inset xl:flex-[1_1_50%] print:hidden"
     >
-      <header className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button size="sm" variant="ghost" onClick={onBack}>
-            <ArrowLeft className="size-4" />
-            Back to current
-          </Button>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="xl:hidden"
-              onClick={onHistory}
-            >
-              <History className="size-4" />
-              History
-            </Button>
-            {version && (
-              <RestoreVersionButton
-                kind={kind}
-                spaceId={spaceId}
-                path={path}
-                revision={revision}
-                version={version}
-                onRestored={onRestored}
-              />
-            )}
-          </div>
+      <header className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
+        <div className="min-w-0">
+          <h2 className="truncate font-medium text-foreground">
+            {version
+              ? versionLabel(version)
+              : error
+                ? "Version unavailable"
+                : "Loading version…"}
+          </h2>
+          {version && (
+            <p className="truncate text-muted-foreground">
+              {identity.label} · {new Date(version.createdAt).toLocaleString()}
+            </p>
+          )}
         </div>
-        <div className="mt-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-medium text-foreground">
-              {version
-                ? versionLabel(version)
-                : error
-                  ? "Version unavailable"
-                  : "Loading version…"}
-            </h2>
-            {version && (
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                {identity.label} ·{" "}
-                {new Date(version.createdAt).toLocaleString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </p>
-            )}
-          </div>
-          <span className="shrink-0 rounded-full bg-surface-tint px-2 py-1 text-xs text-muted-foreground">
-            Read only
-          </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="xl:hidden"
+            aria-label="Choose version"
+            onClick={onHistory}
+          >
+            <History className="size-4" />
+          </Button>
+          {version && (
+            <RestoreVersionButton
+              kind={kind}
+              spaceId={spaceId}
+              path={path}
+              revision={revision}
+              version={version}
+              onRestored={onRestored}
+            />
+          )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Exit compare"
+            onClick={onBack}
+          >
+            <X className="size-4" />
+          </Button>
         </div>
       </header>
       {error ? (

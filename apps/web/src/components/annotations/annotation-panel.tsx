@@ -12,6 +12,7 @@ import { Badge } from "@worktable/ui/components/badge"
 import { Button } from "@worktable/ui/components/button"
 import { Textarea } from "@worktable/ui/components/textarea"
 import { cn } from "@worktable/ui/lib/utils"
+import { ContextPanelHeader } from "@/components/desktop-context-panel"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 
 const categoryLabel: Record<AnnotationCategory, string> = {
@@ -65,35 +66,42 @@ export function AnnotationPanel({
   const openCount = annotations.filter((annotation) => annotation.status !== "resolved").length;
 
   return (
-    <aside className={cn("flex h-full w-full flex-col bg-background", className)}>
-      <div className="flex items-center justify-between gap-3 p-4 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <MessageSquareText className="h-4 w-4 shrink-0 text-primary" />
-          <h2 className="text-sm font-medium text-foreground">Annotations</h2>
-          <Badge variant="secondary">{openCount} open</Badge>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setShowResolved((value) => !value)}>
-            {showResolved ? "Hide resolved" : "Show resolved"}
-          </Button>
-          {onClose && (
-            <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close annotations">
-              <X className="h-4 w-4" />
+    <aside className={cn("flex h-full min-h-0 w-full flex-col bg-transparent", className)}>
+      <ContextPanelHeader
+        title="Annotations"
+        icon={<MessageSquareText className="size-4 shrink-0 text-primary" />}
+        meta={<Badge variant="secondary">{openCount} open</Badge>}
+        actions={
+          onClose && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={onClose}
+              aria-label="Close annotations"
+            >
+              <X className="size-4" />
             </Button>
-          )}
-        </div>
-      </div>
-
-      {onCompose && !readOnly && (
-        <div className="px-4 pb-2">
-          <Button size="sm" variant="outline" className="w-full gap-2" onClick={onCompose}>
-            <MessageSquareText className="h-4 w-4" />
+          )
+        }
+      />
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 pb-2">
+        <Button
+          size="xs"
+          variant="ghost"
+          aria-pressed={showResolved}
+          onClick={() => setShowResolved((value) => !value)}
+        >
+          {showResolved ? "Hide resolved" : "Show resolved"}
+        </Button>
+        {onCompose && !readOnly && (
+          <Button size="xs" variant="outline" onClick={onCompose}>
+            <MessageSquareText className="size-3.5" />
             {composeLabel ?? "Add comment"}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto p-3">
+      <div ref={scrollRef} className="scroll-fade min-h-0 flex-1 overflow-auto px-2 pb-3">
         {visible.length === 0 ? (
           <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
             <MessageSquareText className="mb-3 h-8 w-8 text-muted-foreground/50" />
@@ -101,7 +109,7 @@ export function AnnotationPanel({
             <p className="mt-1 text-xs text-muted-foreground">{emptyHint ?? "Use /comment or /instruction in the editor to attach context to a block."}</p>
           </div>
         ) : (
-          <div className="divide-y divide-border/60">
+          <div className="space-y-1">
             {visible.map((annotation) => (
               <AnnotationCard
                 key={annotation.id}
@@ -150,11 +158,11 @@ function AnnotationCard({
   return (
     <article
       className={cn(
-        "border-l-2 px-3 py-4 transition-colors",
-        active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"
+        "rounded-lg px-3 py-3 transition-colors",
+        active ? "bg-surface-selected" : "hover:bg-surface-hover"
       )}
     >
-      <button type="button" onClick={onSelect} className="w-full text-left">
+      <button type="button" onClick={onSelect} className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           <Badge variant={categoryVariant(annotation.category)}>
             {annotation.category === "instruction" && (

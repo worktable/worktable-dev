@@ -820,7 +820,7 @@ function MarkdownDocPage({
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
-          className={`min-w-0 overflow-hidden ${previewVersionId ? "hidden print:block" : "flex-1"}`}
+          className={`min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           <MarkdownViewer
             content={content}
@@ -1343,7 +1343,7 @@ function BlockNoteDocPage({
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
-          className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden print:block" : "flex-1"}`}
+          className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden xl:block xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex-1"}`}
         >
           {!editorReadable && (
             <div className="absolute inset-0 z-10">

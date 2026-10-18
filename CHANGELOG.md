@@ -34,6 +34,7 @@ infrastructure and personal context out of release notes.
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
 - **Sidebar:** Tapping a Space opens or closes it instead of going to its page, and **Space Home** is the first row inside. Folders show a folder icon instead of an arrow, in the sidebar and in the page menu on phones. The sidebar remembers what you left open on each device. On phones, each row has a single menu with **New** at the top, and menus for docs and folders say **Rename**, **Archive** and **Delete**.
 - **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
+- **Team settings:** People and pending invitations share one list in **Settings → Team**. Change someone's role from the menu beside them, which says what Owner and Member allow. To invite someone straight into a Space, use that Space's access settings. On Cloud, **Switch Worktable** moved to the Worktable menu.
 - **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
 - **Activity on a team:** Activity names other people. **You** means only you.
 - **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.

@@ -32,7 +32,8 @@ test("a full plan offers the next plan to the person who pays, and names them to
   expect(payer).toContain(
     "Northwind&#x27;s plan has room for 12 people, and 12 are in or invited."
   )
-  expect(payer).toContain("Move to Business, $199 a month")
+  expect(payer).toContain("Upgrade to Business")
+  expect(payer).toContain("Business holds up to 50 for $199 a month.")
   expect(render({ isPayer: false })).toContain(
     "Northwind is full. Ask Avery to change the plan. We&#x27;ve"
   )

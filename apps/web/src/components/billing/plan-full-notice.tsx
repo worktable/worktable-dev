@@ -172,7 +172,9 @@ export function PlanFullNotice({
       <>
         <p>
           {worktableName}&apos;s plan has room for {plan.peopleLimit} people,
-          and {plan.people} {plan.people === 1 ? "is" : "are"} in or invited.
+          and {plan.people} {plan.people === 1 ? "is" : "are"} in or invited.{" "}
+          {CLOUD_PLANS[next].name} holds up to {CLOUD_PLANS[next].peopleLimit}{" "}
+          for {planPrice(next)}.
         </p>
         <Button
           type="button"
@@ -183,7 +185,7 @@ export function PlanFullNotice({
         >
           {change.isPending
             ? "Changing plan…"
-            : `Move to ${CLOUD_PLANS[next].name}, ${planPrice(next)}`}
+            : `Upgrade to ${CLOUD_PLANS[next].name}`}
         </Button>
       </>
     )

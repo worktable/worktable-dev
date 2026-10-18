@@ -22,12 +22,17 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
+import { Input } from "@worktable/ui/components/input"
+import { toast } from "@worktable/ui/components/sonner"
 import {
   getSpaceAccess,
   getTeamAgents,
   getTeamMembers,
+  inviteTeamMember,
   setSpaceAccess,
 } from "@/lib/team-api"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
+import { queryKeys } from "@/lib/queries"
 
 export function SpaceAccessEditor({
   spaceId,
@@ -93,6 +98,25 @@ export function SpaceAccessEditor({
         : previous
     )
   }
+  const { plan } = useCloudPlan()
+  const [email, setEmail] = useState("")
+  // Someone new joins straight into this Space, with access to it.
+  const invite = useMutation({
+    mutationFn: (address: string) => inviteTeamMember(address, spaceId),
+    onSuccess: (result, address) => {
+      setEmail("")
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace, exact: true })
+      void queryClient.invalidateQueries({ queryKey: ["team"] })
+      if (result.email === "sent") toast.success(`Invitation sent to ${address}`)
+      else
+        void navigator.clipboard.writeText(result.url).then(
+          () => toast.success(`Invitation link for ${address} copied. Send it to them.`),
+          () => toast.error("Couldn't copy the invitation link. Find it in Settings, under Team.")
+        )
+    },
+  })
+  const teamAgents =
+    agents.data?.filter((agent) => agent.ownership === "team" && agent.active) ?? []
   const grantFor = (subjectType: SpaceAccessGrant["subjectType"], id: string) =>
     draft?.grants.find(
       (grant) => grant.subjectType === subjectType && grant.subjectId === id
@@ -171,14 +195,10 @@ export function SpaceAccessEditor({
                     </div>
                   ))}
                 <p className="text-xs text-muted-foreground">
-                  Personal agents follow their member&rsquo;s access. Team
-                  agents need their own grants.
+                  Each person&rsquo;s agents follow their access.
+                  {teamAgents.length ? " Team agents need their own grants." : ""}
                 </p>
-                {agents.data
-                  ?.filter(
-                    (agent) => agent.ownership === "team" && agent.active
-                  )
-                  .map((agent) => (
+                {teamAgents.map((agent) => (
                     <div key={agent.id} className="flex items-center gap-3">
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {agent.name}
@@ -196,6 +216,38 @@ export function SpaceAccessEditor({
               </>
             )
           )}
+          {draft && roomFor(plan, 1) ? (
+            <form
+              className="flex flex-col gap-2 border-t border-border pt-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                invite.mutate(email.trim())
+              }}
+            >
+              <label htmlFor="space-invite" className="text-sm font-medium text-foreground">
+                Invite someone new to this Space
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="space-invite"
+                  placeholder="Email address"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  className="min-w-0 flex-1"
+                />
+                <Button type="submit" variant="outline" disabled={invite.isPending}>
+                  {invite.isPending ? "Inviting…" : "Invite"}
+                </Button>
+              </div>
+              {invite.isError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {invite.error.message}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
           {save.isError && (
             <p role="alert" className="text-sm text-destructive">
               {save.error.message}

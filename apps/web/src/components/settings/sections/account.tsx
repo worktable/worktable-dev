@@ -13,19 +13,14 @@ import { Button } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@worktable/ui/components/card"
-import {
-  CreditCard,
-  Download,
-  ExternalLink,
-  Gift,
-  TriangleAlert,
-} from "lucide-react"
+import { Callout } from "@worktable/ui/components/callout"
+import { Download, ExternalLink, Gift, TriangleAlert } from "lucide-react"
 import { getConnection } from "@/lib/system-api"
 import {
   cancelCloudPlan,
@@ -102,7 +97,6 @@ export function AccountSection() {
   return (
     <>
       <section className="flex flex-col gap-3">
-        <h3 className="text-sm font-medium text-foreground">Subscription</h3>
         {billingQuery.isLoading ? (
           <Card size="sm">
             <CardContent>
@@ -210,15 +204,8 @@ export function SubscriptionCard({
   const locked = billing.access === "locked"
   const solo = plan.id === "solo"
   const cancelsAtEnd = Boolean(billing.subscription?.cancelAtPeriodEnd)
-  const price =
-    plan.amount === 0 ? "Free" : `${formatPrice(plan.amount, plan.currency)} a month`
-  const title = complimentary ? "VIP" : plan.name
-  const description = complimentary
-    ? "Boss tier"
-    : solo
-      ? "Free · Just you and your agents"
-      : `${price} · Up to ${plan.peopleLimit} people`
-  const badge = complimentary
+  const date = billing.subscription?.currentPeriodEnd
+  const status = complimentary
     ? null
     : locked
       ? "Locked"
@@ -231,154 +218,102 @@ export function SubscriptionCard({
             : solo
               ? null
               : "Active"
-  const date = billing.subscription?.currentPeriodEnd
-  const dateLine = !date || locked || inGrace
-    ? null
-    : cancelsAtEnd
-      ? `${plan.name} until ${formatDate(date)}`
-      : `Next charge ${formatDate(date)}`
+  const summary = complimentary
+    ? "Boss tier"
+    : [
+        solo ? "Free" : `${formatPrice(plan.amount, plan.currency)} a month`,
+        !date || locked || inGrace || solo
+          ? null
+          : cancelsAtEnd
+            ? `Ends ${formatDate(date)}`
+            : `Renews ${formatDate(date)}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
   const fitsSolo = people === null || people <= 1
-  const showExport = locked && billing.canExport
   const busy = pending !== null
+  // Solo pays through checkout; a running plan moves at once.
+  const others: Array<{ id: PaidCloudPlanId; via: "checkout" | "change" }> =
+    solo && billing.canCheckout
+      ? PAID_CLOUD_PLAN_IDS.map((id) => ({ id, via: "checkout" as const }))
+      : billing.canChangeTo.map((id) => ({ id, via: "change" as const }))
+  const primary =
+    locked || paymentRequired
+      ? "checkout"
+      : inGrace
+        ? "portal"
+        : others.find((other) => CLOUD_PLANS[other.id].amount > plan.amount)?.id ?? null
 
   return (
     <div className="flex flex-col gap-2">
       <Card size="sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
             {complimentary ? (
               <Gift className="size-4 text-primary-text" />
-            ) : (
-              <CreditCard className="size-4 text-primary-text" />
-            )}
-            {title}
+            ) : null}
+            {complimentary ? "VIP" : plan.name}
+            {status ? (
+              <Badge variant={locked || inGrace ? "destructive" : "secondary"}>
+                {status}
+              </Badge>
+            ) : null}
           </CardTitle>
-          <CardDescription>{description}</CardDescription>
-          {badge ? (
-            <CardAction>
-              <Badge variant="secondary">{badge}</Badge>
-            </CardAction>
-          ) : null}
+          <CardDescription>{summary}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {people !== null || dateLine ? (
-            <p className="text-sm text-muted-foreground">
-              {[
-                people !== null && !complimentary
-                  ? `${people} of ${plan.peopleLimit} ${plan.peopleLimit === 1 ? "person" : "people"}`
-                  : null,
-                dateLine,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
-          ) : null}
           {inGrace && billing.subscription?.graceEndsAt ? (
-            <div className="flex gap-2 rounded-lg bg-warning/10 p-3 text-sm text-foreground">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-              <p>
-                Payment for {worktableName} failed. Update the card by{" "}
-                {formatDate(billing.subscription.graceEndsAt)} to keep access.
-              </p>
-            </div>
+            <Callout variant="warning">
+              Payment for {worktableName} failed. Update the card by{" "}
+              {formatDate(billing.subscription.graceEndsAt)} to keep access.
+            </Callout>
           ) : null}
           {locked ? (
-            <p className="text-sm text-muted-foreground">
+            <Callout variant="warning">
               {billing.deletesAt
-                ? `${worktableName} is locked. Export it before ${formatDate(billing.deletesAt)}, when it will be deleted.`
-                : `${worktableName} is locked. You can still export it.`}
-            </p>
+                ? `${worktableName} is locked. Restart the subscription, or export it before ${formatDate(billing.deletesAt)}, when it will be deleted.`
+                : `${worktableName} is locked. Restart the subscription, or export it.`}
+            </Callout>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            {solo && billing.canCheckout
-              ? PAID_CLOUD_PLAN_IDS.map((id, index) => (
-                  <Button
+          {people !== null && !complimentary ? (
+            <PeopleMeter people={people} limit={plan.peopleLimit} />
+          ) : null}
+          {others.length && !locked ? (
+            <ul className="flex flex-col gap-2">
+              {others.map(({ id, via }) => {
+                const other = CLOUD_PLANS[id]
+                const up = other.amount > plan.amount
+                const tooMany = people !== null && people > other.peopleLimit
+                return (
+                  <li
                     key={id}
-                    size="sm"
-                    variant={index === 0 ? "default" : "outline"}
-                    disabled={busy}
-                    onClick={() => onCheckout(id)}
+                    className="flex items-center gap-3 rounded-lg bg-surface-inset px-3 py-2.5"
                   >
-                    {pending === "checkout"
-                      ? "Opening payment…"
-                      : `Move to ${CLOUD_PLANS[id].name}, ${formatPrice(CLOUD_PLANS[id].amount, plan.currency)} a month`}
-                  </Button>
-                ))
-              : null}
-            {!solo && billing.canCheckout ? (
-              <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
-                <CreditCard className="size-4" />
-                {pending === "checkout"
-                  ? "Opening payment…"
-                  : locked
-                    ? "Restart subscription"
-                    : "Subscribe"}
-              </Button>
-            ) : null}
-            {billing.canChangeTo.map((id) => {
-              const fits = people === null || people <= CLOUD_PLANS[id].peopleLimit
-              return (
-                <Button
-                  key={id}
-                  size="sm"
-                  disabled={busy || !fits}
-                  title={
-                    fits
-                      ? undefined
-                      : `Remove ${people! - CLOUD_PLANS[id].peopleLimit} people before moving to ${CLOUD_PLANS[id].name}`
-                  }
-                  onClick={() => onChangePlan(id)}
-                >
-                  {pending === "change"
-                    ? "Changing plan…"
-                    : `Move to ${CLOUD_PLANS[id].name}, ${formatPrice(CLOUD_PLANS[id].amount, plan.currency)} a month`}
-                </Button>
-              )
-            })}
-            {billing.canManageBilling ? (
-              <Button
-                variant={inGrace && !billing.canCheckout ? "default" : "outline"}
-                size="sm"
-                disabled={busy}
-                onClick={onPortal}
-              >
-                <ExternalLink className="size-4" />
-                {pending === "portal" ? "Opening…" : "Manage payment"}
-              </Button>
-            ) : null}
-            {billing.canManageBilling && !solo && !locked && !cancelsAtEnd ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => setCancelling(true)}
-              >
-                Cancel plan
-              </Button>
-            ) : null}
-          </div>
-          {billing.canChangeTo.some(
-            (id) => people !== null && people > CLOUD_PLANS[id].peopleLimit
-          ) ? (
-            <p className="text-xs text-muted-foreground">
-              {billing.canChangeTo
-                .filter((id) => people !== null && people > CLOUD_PLANS[id].peopleLimit)
-                .map(
-                  (id) =>
-                    `Remove ${people! - CLOUD_PLANS[id].peopleLimit} people before moving to ${CLOUD_PLANS[id].name}.`
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">{other.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {tooMany
+                          ? `Holds ${other.peopleLimit} people. Remove ${people! - other.peopleLimit} first.`
+                          : `Up to ${other.peopleLimit} people · ${formatPrice(other.amount, plan.currency)} a month`}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={primary === id ? "default" : "outline"}
+                      disabled={busy || tooMany}
+                      onClick={() => (via === "checkout" ? onCheckout(id) : onChangePlan(id))}
+                    >
+                      {(via === "checkout" && pending === "checkout") ||
+                      (via === "change" && pending === "change")
+                        ? "Changing…"
+                        : up
+                          ? "Upgrade"
+                          : "Downgrade"}
+                    </Button>
+                  </li>
                 )
-                .join(" ")}
-            </p>
-          ) : null}
-          {showExport ? (
-            <button
-              className="flex w-fit items-center gap-1.5 text-sm font-medium text-primary-text underline underline-offset-4"
-              type="button"
-              onClick={downloadCloudWorkspace}
-            >
-              <Download className="size-4" />
-              Export
-            </button>
+              })}
+            </ul>
           ) : null}
           {error ? (
             <p className="text-sm text-destructive" role="alert">
@@ -386,17 +321,54 @@ export function SubscriptionCard({
             </p>
           ) : null}
         </CardContent>
+        {(!solo && billing.canCheckout) ||
+        billing.canManageBilling ||
+        (locked && billing.canExport) ? (
+          <CardFooter className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            {!solo && billing.canCheckout ? (
+              <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
+                {pending === "checkout"
+                  ? "Opening payment…"
+                  : locked
+                    ? "Restart subscription"
+                    : "Subscribe"}
+              </Button>
+            ) : null}
+            {billing.canManageBilling ? (
+              <Button
+                variant={primary === "portal" ? "default" : "outline"}
+                size="sm"
+                disabled={busy}
+                onClick={onPortal}
+              >
+                <ExternalLink className="size-4" />
+                {pending === "portal"
+                  ? "Opening…"
+                  : inGrace
+                    ? "Update card"
+                    : "Manage payment"}
+              </Button>
+            ) : null}
+            {locked && billing.canExport ? (
+              <Button variant="ghost" size="sm" onClick={downloadCloudWorkspace}>
+                <Download className="size-4" />
+                Export
+              </Button>
+            ) : null}
+            {billing.canManageBilling && !solo && !locked && !cancelsAtEnd ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto text-muted-foreground"
+                disabled={busy}
+                onClick={() => setCancelling(true)}
+              >
+                Cancel plan
+              </Button>
+            ) : null}
+          </CardFooter>
+        ) : null}
       </Card>
-      <p className="px-1 text-sm text-muted-foreground">
-        <a
-          className="text-primary-text underline underline-offset-4"
-          href="https://www.worktable.cloud/terms#refunds"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Refund policy
-        </a>
-      </p>
       <ConfirmDialog
         open={cancelling}
         onOpenChange={setCancelling}
@@ -418,6 +390,34 @@ export function SubscriptionCard({
           setCancelling(false)
         }}
       />
+    </div>
+  )
+}
+
+/** How full the plan is, counting pending invitations. */
+function PeopleMeter({ people, limit }: { people: number; limit: number }) {
+  const full = people >= limit
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between text-sm">
+        <span className="text-muted-foreground">People</span>
+        <span className={full ? "font-medium text-foreground" : "text-foreground"}>
+          {people} of {limit}
+        </span>
+      </div>
+      <div
+        role="meter"
+        aria-label="People on this plan"
+        aria-valuemin={0}
+        aria-valuemax={limit}
+        aria-valuenow={people}
+        className="h-1.5 overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={full ? "h-full rounded-full bg-warning" : "h-full rounded-full bg-primary"}
+          style={{ width: `${Math.min(100, (people / limit) * 100)}%` }}
+        />
+      </div>
     </div>
   )
 }

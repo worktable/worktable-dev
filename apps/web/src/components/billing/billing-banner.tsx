@@ -51,6 +51,11 @@ export function BillingBanner() {
           {portal.isPending ? "Opening…" : "Update card"}
         </Button>
       ) : null}
+      {portal.isError ? (
+        <span role="alert" className="w-full text-destructive">
+          {portal.error.message || "Couldn’t open billing. Try again."}
+        </span>
+      ) : null}
     </div>
   )
 }

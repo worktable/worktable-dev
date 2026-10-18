@@ -1,129 +1,84 @@
 import { flushSync } from "react-dom"
 
-type ViewTransitionDocument = Document & {
-  startViewTransition?: (update: () => void) => {
-    ready: Promise<void>
-    finished: Promise<void>
-  }
-}
-
-/** Whether sidebar trees open as view transitions in this browser. */
-export const sidebarTransitions =
-  typeof document !== "undefined" &&
-  "startViewTransition" in document &&
-  typeof CSS !== "undefined" &&
-  CSS.supports("view-transition-name: none")
-
-/** Undoes the markers of the transition in progress, if any. */
-let settleCurrent: (() => void) | null = null
+const SLIDE = { duration: 240, easing: "cubic-bezier(0.33, 1, 0.68, 1)" }
+const FADE = { duration: 220, easing: "cubic-bezier(0.33, 1, 0.68, 1)" }
 
 /**
- * Opens or closes part of the sidebar as a view transition. The browser
- * snapshots the rows on screen, the update builds the new tree, and then
- * the rows slide from their old place to their new one while the opened
- * panel fades in. The browser animates the snapshots on the compositor, so
- * building the tree can delay the motion but never stutter it.
+ * Opens or closes part of the sidebar, then animates the change. The update
+ * applies at once, so what opens renders a single time and shows without
+ * waiting for a frame. Afterwards the rows below slide from where they were
+ * to where they are, and the opened panel fades in. Both animate only
+ * transform and opacity, which the browser runs on the compositor, so work
+ * on the page after the update can't stutter them.
  *
- * `changing` is the collapsible that opens or closes. Everything around it
- * keeps its size, so each such block slides as one; the blocks that hold
- * it grow or shrink, so the walk goes inside them instead. Without view
- * transitions, or with reduced motion, the update applies at once and the
- * panel's own height transition runs.
+ * `changing` is the collapsible that opens or closes. Everything after it
+ * keeps its size, so each such block slides as one; the blocks that hold it
+ * grow or shrink, so the walk goes inside them instead. With reduced motion
+ * the update applies without animation.
  */
 export function transitionSidebar(
   changing: Element,
   update: () => void,
   panel: () => Element | null
 ): void {
-  const start = (document as ViewTransitionDocument).startViewTransition
-  if (
-    !sidebarTransitions ||
-    !start ||
-    matchMedia("(prefers-reduced-motion: reduce)").matches
-  ) {
-    update()
-    return
-  }
   const viewport = changing.closest('[data-slot="scroll-area-viewport"]')
-  const sidebar = changing.closest("[data-worktable-sidebar-root]")
-  if (!viewport || !sidebar) {
+  if (!viewport || matchMedia("(prefers-reduced-motion: reduce)").matches) {
     update()
     return
   }
-  // A new transition replaces the one in progress; clear its markers first.
-  settleCurrent?.()
   const bounds = viewport.getBoundingClientRect()
   const from = changing.getBoundingClientRect().top
   // Closing pulls up rows from below the fold by the open panel's height.
   const closing = collapsiblePanel(changing)?.getBoundingClientRect().height ?? 0
   const reach = bounds.bottom + closing
-  const named: HTMLElement[] = []
-  const name = (element: Element, kind: string) => {
-    if (!(element instanceof HTMLElement)) return
-    element.style.setProperty("view-transition-name", `sidebar-${named.length}`)
-    element.style.setProperty("view-transition-class", kind)
-    named.push(element)
-  }
+
+  // Where each block that can move sits now, mid-slide included.
+  const blocks: { element: HTMLElement; top: number }[] = []
   const around = (container: Element) => {
     for (const child of container.children) {
+      if (child === changing) continue
       if (child.contains(changing)) {
-        if (child === changing) {
-          // Its row stays; an open panel fades out as it closes. A panel
-          // built hidden ahead of opening takes no part until it shows.
-          for (const part of child.children)
-            if (part.getBoundingClientRect().height > 0)
-              name(part, "sidebar-row")
-        } else around(child)
+        around(child)
         continue
       }
       const box = child.getBoundingClientRect()
       // Blocks above the change don't move; blocks off screen aren't seen.
       if (box.height === 0 || box.bottom <= from) continue
       if (box.bottom < bounds.top || box.top > reach) continue
-      name(child, "sidebar-row")
+      if (child instanceof HTMLElement) blocks.push({ element: child, top: box.top })
     }
   }
   around(viewport)
-  for (const cover of sidebar.querySelectorAll("[data-sidebar-motion-cover]"))
-    name(cover, "sidebar-cover")
-  // The scrollbar shows while the pointer is over the sidebar, but during
-  // the transition the pointer is over the snapshots instead. Hold it while
-  // it shows, and let its thumb glide to its new length with the rows.
-  const area = viewport.closest('[data-slot="scroll-area"]')
-  const held = area?.matches(":hover") ?? false
-  if (area && held) {
-    area.setAttribute("data-scrollbar-held", "")
-    const thumb = area.querySelector('[data-slot="scroll-area-thumb"]')
-    if (thumb) name(thumb, "sidebar-thumb")
+  const before = collapsiblePanel(changing)
+  const shown = before !== null && before.getBoundingClientRect().height > 0
+
+  for (const { element } of blocks) cancelMotion(element)
+  flushSync(update)
+
+  for (const { element, top } of blocks) {
+    if (!element.isConnected) continue
+    const offset = top - element.getBoundingClientRect().top
+    if (Math.abs(offset) < 0.5) continue
+    element.animate(
+      [{ transform: `translateY(${offset}px)` }, { transform: "none" }],
+      SLIDE
+    )
   }
-
-  // Only the sidebar's pieces take part: the page underneath stays live, so
-  // a caret or drawing in the main view doesn't freeze, and the snapshot
-  // covers the sidebar rather than the whole window.
-  const root = document.documentElement
-  root.setAttribute("data-sidebar-transition", "")
-
-  const settle = () => {
-    if (settleCurrent !== settle) return
-    settleCurrent = null
-    root.removeAttribute("data-sidebar-transition")
-    area?.removeAttribute("data-scrollbar-held")
-    for (const element of named) {
-      element.style.removeProperty("view-transition-name")
-      element.style.removeProperty("view-transition-class")
-    }
+  const opened = panel()
+  if (opened instanceof HTMLElement && !shown) {
+    cancelMotion(opened)
+    opened.animate(
+      [
+        { opacity: 0, transform: "translateY(-6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      FADE
+    )
   }
-  settleCurrent = settle
+}
 
-  const transition = start.call(document, () => {
-    flushSync(update)
-    const opened = panel()
-    if (opened && !named.includes(opened as HTMLElement))
-      name(opened, "sidebar-panel")
-  })
-  // A second tap can cut a transition short; the update still applies.
-  transition.ready.catch(() => undefined)
-  void transition.finished.catch(() => undefined).finally(settle)
+function cancelMotion(element: Element) {
+  for (const animation of element.getAnimations()) animation.cancel()
 }
 
 /** The open panel of a collapsible root, once it has rendered. */

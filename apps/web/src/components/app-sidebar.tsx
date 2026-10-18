@@ -335,8 +335,6 @@ function loadSpaceContents(queryClient: QueryClient, spaceId: string) {
   )
 }
 
-/** How long a Space waits for its contents before opening without them. */
-const OPEN_WAIT_MS = 500
 /** How long the pointer rests on a Space before its contents load. */
 const INTENT_MS = 80
 
@@ -468,6 +466,7 @@ const SpaceSection = memo(function SpaceSection({
       !userCollapsedRef.current &&
       !anotherCopyOpen()
     ) {
+      setRevealed(spaceContentsLoaded(queryClient, space.id))
       setExpandedState(true)
     }
     // Reset manual collapse flag when navigating away from the space
@@ -481,54 +480,48 @@ const SpaceSection = memo(function SpaceSection({
   // The panel takes the height of what it holds when it opens. Opening
   // once the contents are in lets it grow to the whole tree in one motion
   // instead of easing to a placeholder and jumping when the tree arrives.
-  const opening = useRef(false)
   const intent = useRef<number | undefined>(undefined)
   const rowRef = useRef<HTMLDivElement>(null)
-  // Building the tree takes as long as loading it on a phone, so it builds
-  // hidden while its contents load; opening then only reveals it. Resting
-  // the pointer only loads what is missing: a hidden tree would refetch
-  // whatever is stale, for Spaces that may never open.
-  const [prepared, setPrepared] = useState(false)
+  // A Space opens at once, with what has loaded. Its tree waits until all
+  // of its contents are in and then slides in as one, so it renders once
+  // and rows never jump in piecemeal. Resting the pointer or a press starts
+  // loading what is missing, so the contents are usually in by the click.
+  const [revealed, setRevealed] = useState(() =>
+    spaceContentsLoaded(queryClient, space.id)
+  )
   const preload = () => void loadSpaceContents(queryClient, space.id)
-  const prepare = () => {
-    setPrepared(true)
-    preload()
-  }
-  const animateExpanded = (open: boolean) => {
+  const animate = (update: () => void) => {
     const root = rowRef.current?.parentElement
-    if (!root) return setExpanded(open)
-    transitionSidebar(
-      root,
-      () => setExpanded(open),
-      () => collapsiblePanel(root)
-    )
+    if (!root) return update()
+    transitionSidebar(root, update, () => collapsiblePanel(root))
   }
   const handleToggleExpanded = (open: boolean) => {
     if (!open) {
       if (isInSpace) userCollapsedRef.current = true
-      animateExpanded(false)
-      setPrepared(false)
+      animate(() => setExpanded(false))
       return
     }
-    if (prepared && spaceContentsLoaded(queryClient, space.id)) {
-      animateExpanded(true)
-      return
-    }
-    // Keyboard and assistive opens start here; pointers prepared on press.
-    if (!prepared) setPrepared(true)
-    if (opening.current) return
-    opening.current = true
-    void Promise.race([
-      loadSpaceContents(queryClient, space.id),
-      new Promise((resolve) => setTimeout(resolve, OPEN_WAIT_MS)),
-    ]).then(() =>
-      // A frame later the hidden tree has rendered what just arrived.
-      requestAnimationFrame(() => {
-        opening.current = false
-        animateExpanded(true)
-      })
-    )
+    // A closed Space's data can be gone by the next open; check again.
+    const loaded = spaceContentsLoaded(queryClient, space.id)
+    animate(() => {
+      setExpanded(true)
+      setRevealed(loaded)
+    })
   }
+  // Reveal the tree once its contents are in, however the Space opened.
+  useEffect(() => {
+    if (!expanded || revealed) return
+    let current = true
+    void loadSpaceContents(queryClient, space.id).then(() => {
+      const root = rowRef.current?.parentElement
+      if (!current || !root) return
+      // Only the rows below move; the tree itself appears in place.
+      transitionSidebar(root, () => setRevealed(true), () => null)
+    })
+    return () => {
+      current = false
+    }
+  }, [expanded, revealed, queryClient, space.id])
 
   const handleNavigate = useCallback(() => {
     if (isMobile) setOpen(false)
@@ -632,19 +625,9 @@ const SpaceSection = memo(function SpaceSection({
               if (event.pointerType !== "mouse" || expanded) return
               intent.current = window.setTimeout(preload, INTENT_MS)
             }}
-            onPointerLeave={(event) => {
-              window.clearTimeout(intent.current)
-              // A finger "leaves" as it lifts, before its tap; only a mouse
-              // moving away means the Space won't open.
-              if (event.pointerType !== "mouse") return
-              if (!expanded && !opening.current) setPrepared(false)
-            }}
-            onPointerCancel={() => {
-              // A touch that turns into a scroll won't open the Space.
-              if (!expanded && !opening.current) setPrepared(false)
-            }}
+            onPointerLeave={() => window.clearTimeout(intent.current)}
             onPointerDown={() => {
-              if (!expanded) prepare()
+              if (!expanded) preload()
             }}
           >
             <SpaceIcon space={space} />
@@ -730,12 +713,13 @@ const SpaceSection = memo(function SpaceSection({
           </div>
         </div>
 
-        <CollapsibleContent
-          className="collapsible-instant"
-          keepMounted={prepared}
-        >
+        <CollapsibleContent className="collapsible-instant">
           <div className="ml-4 pl-2">
-            <SpaceContent space={space} onNavigate={handleNavigate} />
+            <SpaceContent
+              space={space}
+              revealed={revealed}
+              onNavigate={handleNavigate}
+            />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -747,9 +731,12 @@ const SpaceSection = memo(function SpaceSection({
 
 const SpaceContent = memo(function SpaceContent({
   space,
+  revealed,
   onNavigate,
 }: {
   space: SpaceView
+  /** False until all of the Space's contents are in; then they show at once. */
+  revealed: boolean
   onNavigate: () => void
 }) {
   const spaceId = space.id
@@ -796,21 +783,25 @@ const SpaceContent = memo(function SpaceContent({
   })
 
   return (
-    <div className="sidebar-reveal mt-1">
+    <div className="mt-1">
       <SpaceOverviewLink spaceId={spaceId} onNavigate={onNavigate} />
-      <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
-      <SpaceTreeSection
-        space={space}
-        documents={documents ?? NO_DOCUMENTS}
-        docs={docs ?? NO_DOCS}
-        isLoading={documentsLoading}
-        loadFailed={documentsError}
-        onNavigate={onNavigate}
-        onRefresh={handleRefresh}
-        onWidgetRefresh={refreshWidgets}
-      />
-      <RecordsSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
-      <ThreadsSidebarEntry spaceId={spaceId} onNavigate={onNavigate} />
+      {revealed && (
+        <>
+          <PinnedSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
+          <SpaceTreeSection
+            space={space}
+            documents={documents ?? NO_DOCUMENTS}
+            docs={docs ?? NO_DOCS}
+            isLoading={documentsLoading}
+            loadFailed={documentsError}
+            onNavigate={onNavigate}
+            onRefresh={handleRefresh}
+            onWidgetRefresh={refreshWidgets}
+          />
+          <RecordsSidebarSection spaceId={spaceId} onNavigate={onNavigate} />
+          <ThreadsSidebarEntry spaceId={spaceId} onNavigate={onNavigate} />
+        </>
+      )}
     </div>
   )
 })
@@ -2706,7 +2697,7 @@ export function AppSidebar() {
       {/* Content */}
       <ScrollFadeArea
         fadeSize={24}
-        className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:opacity-0 [&_[data-slot=scroll-area-scrollbar]]:transition-opacity [&_[data-slot=scroll-area-scrollbar]]:duration-300 [&:hover_[data-slot=scroll-area-scrollbar]]:opacity-100 [&[data-scrollbar-held]_[data-slot=scroll-area-scrollbar]]:opacity-100"
+        className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:opacity-0 [&_[data-slot=scroll-area-scrollbar]]:transition-opacity [&_[data-slot=scroll-area-scrollbar]]:duration-300 [&:hover_[data-slot=scroll-area-scrollbar]]:opacity-100"
       >
         {searching ? (
           <div className="px-2 py-3">
@@ -2867,8 +2858,7 @@ export function AppSidebar() {
       </ScrollFadeArea>
 
       <div
-        data-sidebar-motion-cover=""
-        className="flex shrink-0 items-center gap-1.5 bg-sidebar px-3 py-2.5"
+        className="flex shrink-0 items-center gap-1.5 px-3 py-2.5"
         style={{
           paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom, 0px))",
         }}

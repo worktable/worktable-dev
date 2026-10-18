@@ -24,8 +24,7 @@ import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
-import { DocumentFormatIcon } from "@/components/document-format-icon"
-import { DocLocation } from "@/components/document/doc-location"
+import { DocLocation, DocumentFormatIcon } from "@/components/document-format-icon"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"

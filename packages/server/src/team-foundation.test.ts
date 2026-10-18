@@ -1382,6 +1382,7 @@ test("invitations carry a starting Space, report their email, and grant a restri
     for (let attempt = 0; attempt < 200; attempt++) {
       const evidence = readPersonSetup(participantKey(identity))?.items[item]
       if (evidence) return evidence
+      // test-policy: external-readiness-backoff (setup progress saves off the write path)
       await Bun.sleep(5)
     }
     return undefined

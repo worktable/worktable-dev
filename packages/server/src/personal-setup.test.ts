@@ -36,6 +36,7 @@ async function eventually(check: (setup: PersonalSetup) => boolean) {
   for (let attempt = 0; attempt < 200; attempt++) {
     const current = await setup()
     if (check(current)) return current
+    // test-policy: external-readiness-backoff (setup progress saves off the write path)
     await Bun.sleep(5)
   }
   return setup()

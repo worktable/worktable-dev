@@ -26,22 +26,25 @@ import {
 
 const MOBILE_BREAKPOINT = 768
 
+// One media query for every dialog. Its `matches` is kept current by the
+// browser, unlike `window.innerWidth`, which can force a restyle and layout
+// of the whole page when read during render.
+let mobileQuery: MediaQueryList | undefined
+const mobileList = () =>
+  (mobileQuery ??= window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`))
+
+function subscribeMobile(onChange: () => void): () => void {
+  const list = mobileList()
+  list.addEventListener("change", onChange)
+  return () => list.removeEventListener("change", onChange)
+}
+
 function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean>(
-    typeof window !== "undefined"
-      ? window.innerWidth < MOBILE_BREAKPOINT
-      : false
+  return React.useSyncExternalStore(
+    subscribeMobile,
+    () => mobileList().matches,
+    () => false
   )
-
-  React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const onChange = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
-    return () => mql.removeEventListener("change", onChange)
-  }, [])
-
-  return isMobile
 }
 
 // ── Context ──────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query"
 import type { SpaceView } from "./api"
 import { registerTeamQueryClient } from "./team-access"
 import { resetBrowserTeamContext } from "./team-context"
+import { versionHistoryKeys } from "./version-history"
 
 const realWindow = Object.getOwnPropertyDescriptor(globalThis, "window")
 const realIndexedDb = Object.getOwnPropertyDescriptor(globalThis, "indexedDB")
@@ -105,6 +106,12 @@ describe("team context", () => {
       access: "fp-1",
       accessKeys: { research: "k-r", design: "k-d" },
     })
+    const savedVersion = versionHistoryKeys.snapshot("doc", "research", "plan", "saved-v1")
+    const savedHistory = versionHistoryKeys.list("doc", "research", "plan", "current-v2")
+    const otherVersion = versionHistoryKeys.snapshot("html", "design", "brief", "saved-v1")
+    queryClient.setQueryData(savedVersion, "previous plan")
+    queryClient.setQueryData(savedHistory, ["saved-v1"])
+    queryClient.setQueryData(otherVersion, "previous brief")
     applySpaceAccess([space("research", "k-r"), space("design", "k-d")])
     expect(queryClient.getQueryCache().findAll().some((query) => query.state.isInvalidated)).toBe(false)
 
@@ -114,11 +121,15 @@ describe("team context", () => {
     acceptTeamContext({ worktableId: "wt_a", memberId: "mem_1", policyRevision: 4, access: "fp-0" })
     expect(replace).not.toHaveBeenCalled()
     expect(queryClient.getQueryData(["spaces", "research", "documents"])).toEqual(["plan"])
+    expect(queryClient.getQueryData(versionHistoryKeys.snapshot("doc", "research", "plan", "saved-v1"))).toBe("previous plan")
 
     // This member loses the Space the tab is showing.
     applySpaceAccess([space("design", "k-d")])
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(queryClient.getQueryData(["spaces", "research", "documents"])).toBeUndefined()
+    expect(queryClient.getQueryData(savedVersion)).toBeUndefined()
+    expect(queryClient.getQueryData(savedHistory)).toBeUndefined()
+    expect(queryClient.getQueryData(otherVersion)).toBe("previous brief")
     expect(queryClient.getQueryData(["spaces", "design", "documents"])).toEqual(["brief"])
     // Lists spanning Spaces drop the lost Space's items at once; unrelated
     // queries stay as they are.

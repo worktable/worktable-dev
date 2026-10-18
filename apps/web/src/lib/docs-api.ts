@@ -10,7 +10,7 @@ import { fetchJSON, type ReadOptions } from "./http.ts";
 
 export interface DocVersionCheckpoint {
   meaningful: boolean;
-  kind: "manual" | "source-transition" | "restore" | "system";
+  kind: "manual" | "source-transition" | "restore" | "system" | "review";
   label?: string;
   sourceCategory: "human" | "agent" | "external" | "system" | "restore";
   transition?: { from: string; to: string };

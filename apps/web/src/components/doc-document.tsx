@@ -1,3 +1,8 @@
+import { useVersionSnapshot } from "@/lib/version-history"
+import {
+  VersionHistoryPanel,
+  VersionPreview,
+} from "@/components/document/version-history"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
 import { browserTeamMemberId } from "@/lib/team-context"
 import {
@@ -12,7 +17,6 @@ import {
 import { useNavigate, useRouter } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import {
-  Loader2,
   Archive,
   Copy,
   Download,
@@ -21,17 +25,9 @@ import {
   Printer,
   ArrowRightLeft,
   Pencil,
-  X,
-  Save,
-  RotateCw,
-  ChevronsRight,
-  ChevronsLeft,
 } from "lucide-react"
 import { docQueryKeys } from "@/lib/docs-queries"
-import {
-  documentQueryKeys,
-  useDocumentContent,
-} from "@/lib/documents-queries"
+import { documentQueryKeys, useDocumentContent } from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
@@ -50,25 +46,18 @@ import type {
   DocumentPage,
   DocumentPageResult,
 } from "@worktable/types"
-import type { DocVersionEntry, DocVersionSnapshot } from "@/lib/docs-api"
 import {
   convertDoc,
   convertDocToMarkdown,
   restoreDoc,
   exportDocMarkdown,
   downloadDocMarkdown,
-  listDocVersions,
-  readDocVersion,
-  createDocCheckpoint,
   createDoc,
-  restoreDocVersion,
 } from "@/lib/docs-api"
 import { workspaceCollaborationCacheKey } from "@/lib/collaboration-cache"
 import { HttpError } from "@/lib/http"
 import { copyText } from "@/lib/clipboard"
-import { RelativeTime } from "@/lib/time"
 import { useSpaceEvents } from "@/hooks/use-space-events"
-import { useScrollFade } from "@/hooks/use-scroll-fade"
 import {
   useSetPageMeta,
   type PageAnnotationsAction,
@@ -91,17 +80,6 @@ import {
   type DocumentStatusState,
 } from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
-import { Input } from "@worktable/ui/components/input"
-import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
-import {
-  ResponsiveDialog,
-  ResponsiveDialogBody,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogFooter,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from "@worktable/ui/components/responsive-dialog"
 import {
   Drawer,
   DrawerContent,
@@ -114,7 +92,9 @@ import { WebsocketProvider } from "y-websocket"
 import { IndexeddbPersistence } from "y-indexeddb"
 
 // Lazy-load the editor (pulls in BlockNote, Mermaid, Shiki)
-type LoadedEditorProps = ComponentProps<typeof import("@/components/editor/editor").Editor>
+type LoadedEditorProps = ComponentProps<
+  typeof import("@/components/editor/editor").Editor
+>
 const editor = preloadableComponent<LoadedEditorProps>(() =>
   import("@/components/editor/editor").then((module) => ({
     default: module.Editor,
@@ -123,7 +103,9 @@ const editor = preloadableComponent<LoadedEditorProps>(() =>
 const Editor = editor.Component
 
 export function preloadDocEditor(formatId?: string): Promise<unknown> {
-  return formatId === "worktable.rich-text" ? editor.preload() : Promise.resolve()
+  return formatId === "worktable.rich-text"
+    ? editor.preload()
+    : Promise.resolve()
 }
 
 export function DocDocumentRenderer({
@@ -255,10 +237,10 @@ function DocPageMeta({
   const { data: spaceDetail } = useSpace(spaceId)
   const shareable = Boolean(
     validated &&
-      spaceDetail &&
-      spaceDetail.space.permissions?.manage !== false &&
-      !spaceDetail.space.settings["archive"] &&
-      !archived
+    spaceDetail &&
+    spaceDetail.space.permissions?.manage !== false &&
+    !spaceDetail.space.settings["archive"] &&
+    !archived
   )
   const overflowActions = useMemo<PageOverflowAction[]>(() => {
     const actions: PageOverflowAction[] = []
@@ -613,7 +595,9 @@ function DocEditorPage({
         revision={revision}
         onRestore={handleRestore}
         restoring={restoring}
-        onConvert={page?.capabilities.edit === false ? undefined : handleConvert}
+        onConvert={
+          page?.capabilities.edit === false ? undefined : handleConvert
+        }
         converting={converting}
         onCopyMarkdown={handleCopyMarkdown}
         onDownload={handleDownload}
@@ -632,7 +616,11 @@ function DocEditorPage({
       revision={revision}
       onRestore={handleRestore}
       restoring={restoring}
-      onConvertToMarkdown={!archived && page?.capabilities.edit !== false ? handleConvertToMarkdown : undefined}
+      onConvertToMarkdown={
+        !archived && page?.capabilities.edit !== false
+          ? handleConvertToMarkdown
+          : undefined
+      }
       convertingToMarkdown={convertingToMarkdown}
       onCopyMarkdown={handleCopyMarkdown}
       onDownload={handleDownload}
@@ -644,7 +632,10 @@ function DocEditorPage({
 /** Content the server could not serve for a Doc it listed. */
 function DocUnavailable({ docPath }: { docPath: string }) {
   return (
-    <div data-document-state className="flex h-full items-center justify-center">
+    <div
+      data-document-state
+      className="flex h-full items-center justify-center"
+    >
       <div className="text-center">
         <p className="text-lg font-medium text-muted-foreground">
           Doc not found
@@ -682,15 +673,17 @@ function ArchivedDocBanner({
             This doc is archived and hidden from the main doc list by default.
           </span>
         </div>
-        {!readOnly && <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void onRestore()}
-          disabled={restoring || disabled}
-        >
-          <RotateCcw className="mr-2 h-4 w-4" />
-          {restoring ? "Restoring..." : "Restore"}
-        </Button>}
+        {!readOnly && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void onRestore()}
+            disabled={restoring || disabled}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            {restoring ? "Restoring..." : "Restore"}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -740,20 +733,19 @@ function MarkdownDocPage({
         : undefined,
     [converting, onConvert, validated]
   )
-  const contentQuery = useDocumentContent(
-    spaceId,
-    docPath,
-    revision,
-    validated
-  )
+  const contentQuery = useDocumentContent(spaceId, docPath, revision, validated)
   const content = contentQuery.data?.content
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  const [versionsRailExpanded, setVersionsRailExpanded] = useState(false)
-  const [compareVersionId, setCompareVersionId] = useState<string | null>(null)
-  const [compareVersion, setCompareVersion] =
-    useState<DocVersionSnapshot | null>(null)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
+  const versionQuery = useVersionSnapshot(
+    "doc",
+    spaceId,
+    docPath,
+    previewVersionId
+  )
+  const previewVersion = versionQuery.data
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -770,7 +762,7 @@ function MarkdownDocPage({
       open: annotationsOpen,
       onToggle: () => {
         if (!annotationsOpen) {
-          setCompareVersionId(null)
+          setPreviewVersionId(null)
           setVersionsOpen(false)
         }
         setAnnotationsOpen(!annotationsOpen)
@@ -786,8 +778,7 @@ function MarkdownDocPage({
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
     setVersionsOpen(false)
-    setVersionsRailExpanded(false)
-    setCompareVersionId(null)
+    setPreviewVersionId(null)
   }, [])
 
   useEffect(() => {
@@ -797,29 +788,6 @@ function MarkdownDocPage({
     mql.addEventListener("change", update)
     return () => mql.removeEventListener("change", update)
   }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    if (!compareVersionId) {
-      setCompareVersion(null)
-      return
-    }
-    readDocVersion(spaceId, docPath, compareVersionId)
-      .then((version) => {
-        if (!cancelled) setCompareVersion(version)
-      })
-      .catch((err) => {
-        console.error("Failed to load version", err)
-        if (!cancelled) {
-          setCompareVersionId(null)
-          setCompareVersion(null)
-          toast.error("Failed to load checkpoint")
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [spaceId, docPath, compareVersionId])
 
   if (typeof content !== "string") {
     return contentQuery.isError ? (
@@ -852,7 +820,7 @@ function MarkdownDocPage({
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
-          className={`min-w-0 overflow-hidden ${compareVersionId && !belowXl ? "flex-[1_1_50%] border-r border-border print:flex-1 print:border-r-0" : "flex-1"}`}
+          className={`min-w-0 overflow-hidden ${previewVersionId ? "hidden print:block" : "flex-1"}`}
         >
           <MarkdownViewer
             content={content}
@@ -872,36 +840,38 @@ function MarkdownDocPage({
           />
         </div>
 
-        {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
-            <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
-              <div className="min-w-0">
-                <div className="truncate font-medium text-foreground">
-                  {compareVersionLabel(compareVersion)}
-                </div>
-                <div className="truncate text-muted-foreground">
-                  {compareVersionDetail(compareVersion)}
-                </div>
-              </div>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => setCompareVersionId(null)}
-                aria-label="Exit compare"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+        {previewVersionId && (
+          <VersionPreview
+            key={previewVersionId}
+            kind="doc"
+            spaceId={spaceId}
+            path={docPath}
+            revision={
+              page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+            }
+            version={previewVersion}
+            error={versionQuery.isError}
+            onRetry={() => void versionQuery.refetch()}
+            onBack={() => setPreviewVersionId(null)}
+            onHistory={openVersions}
+            onRestored={() => {
+              void queryClient.invalidateQueries({
+                queryKey: documentQueryKeys.page(spaceId, docPath),
+                exact: true,
+              })
+              setPreviewVersionId(null)
+            }}
+          >
             <Suspense fallback={<EditorSkeleton />}>
-              {compareVersion && Array.isArray(compareVersion.after.content) ? (
+              {previewVersion && Array.isArray(previewVersion.after.content) ? (
                 <Editor
-                  initialContent={compareVersion.after.content as never[]}
+                  initialContent={previewVersion.after.content as never[]}
                   editable={false}
                 />
-              ) : compareVersion &&
-                typeof compareVersion.after.content === "string" ? (
+              ) : previewVersion &&
+                typeof previewVersion.after.content === "string" ? (
                 <MarkdownViewer
-                  content={compareVersion.after.content}
+                  content={previewVersion.after.content}
                   spaceId={spaceId}
                   docPath={docPath}
                 />
@@ -909,11 +879,11 @@ function MarkdownDocPage({
                 <EditorSkeleton />
               )}
             </Suspense>
-          </div>
+          </VersionPreview>
         )}
 
         <DesktopContextPanel
-          open={!compareVersionId && annotationsOpen && !belowXl}
+          open={!previewVersionId && annotationsOpen && !belowXl}
           width={384}
         >
           <AnnotationPanel
@@ -936,28 +906,24 @@ function MarkdownDocPage({
         </DesktopContextPanel>
 
         <VersionHistoryPanel
+          kind="doc"
           spaceId={spaceId}
-          docPath={docPath}
-          open={(versionsOpen || Boolean(compareVersionId)) && !belowXl}
-          compact={Boolean(compareVersionId) && !versionsRailExpanded}
+          path={docPath}
+          revision={
+            page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+          }
+          currentActor={page?.contributors?.lastEditor}
+          provenance={page?.provenance}
+          open={(versionsOpen || Boolean(previewVersionId)) && !belowXl}
           drawerMode={false}
-          selectedVersionId={compareVersionId}
-          onSelect={(versionId) => {
-            setCompareVersionId(versionId)
+          selectedVersionId={previewVersionId}
+          onSelect={(id) => {
+            setPreviewVersionId(id)
             setVersionsOpen(true)
-            setVersionsRailExpanded(false)
           }}
           onClose={() => {
             setVersionsOpen(false)
-            setVersionsRailExpanded(false)
-          }}
-          onToggleCompact={() => setVersionsRailExpanded((value) => !value)}
-          onExitCompare={() => setCompareVersionId(null)}
-          onRestored={() => {
-            void queryClient.invalidateQueries({
-              queryKey: documentQueryKeys.page(spaceId, docPath),
-            })
-            setCompareVersionId(null)
+            setPreviewVersionId(null)
           }}
         />
       </div>
@@ -965,20 +931,22 @@ function MarkdownDocPage({
       {belowXl && (
         <>
           <VersionHistoryPanel
+            kind="doc"
             spaceId={spaceId}
-            docPath={docPath}
+            path={docPath}
+            revision={
+              page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+            }
+            currentActor={page?.contributors?.lastEditor}
+            provenance={page?.provenance}
             open={versionsOpen}
-            compact={false}
             drawerMode
-            onClose={() => {
+            selectedVersionId={previewVersionId}
+            onSelect={(id) => {
+              setPreviewVersionId(id)
               setVersionsOpen(false)
-              setVersionsRailExpanded(false)
             }}
-            onRestored={() => {
-              void queryClient.invalidateQueries({
-                queryKey: documentQueryKeys.page(spaceId, docPath),
-              })
-            }}
+            onClose={() => setVersionsOpen(false)}
           />
           <Drawer
             open={annotationsOpen}
@@ -1129,10 +1097,14 @@ function BlockNoteDocPage({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  const [versionsRailExpanded, setVersionsRailExpanded] = useState(false)
-  const [compareVersionId, setCompareVersionId] = useState<string | null>(null)
-  const [compareVersion, setCompareVersion] =
-    useState<DocVersionSnapshot | null>(null)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
+  const versionQuery = useVersionSnapshot(
+    "doc",
+    spaceId,
+    docPath,
+    previewVersionId
+  )
+  const previewVersion = versionQuery.data
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
   )
@@ -1161,7 +1133,7 @@ function BlockNoteDocPage({
       open: annotationsOpen,
       onToggle: () => {
         if (!annotationsOpen) {
-          setCompareVersionId(null)
+          setPreviewVersionId(null)
           setVersionsOpen(false)
         }
         setAnnotationsOpen(!annotationsOpen)
@@ -1292,37 +1264,20 @@ function BlockNoteDocPage({
       setProvider(null)
       setCollabDoc(null)
     }
-  }, [spaceId, docPath, collaborationEpoch, collaborationCacheEpoch, queryClient, readOnly])
-
-  useEffect(() => {
-    let cancelled = false
-    if (!compareVersionId) {
-      setCompareVersion(null)
-      return
-    }
-    readDocVersion(spaceId, docPath, compareVersionId)
-      .then((version) => {
-        if (!cancelled) setCompareVersion(version)
-      })
-      .catch((err) => {
-        console.error("Failed to load version", err)
-        if (!cancelled) {
-          setCompareVersionId(null)
-          setCompareVersion(null)
-          toast.error("Failed to load checkpoint")
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [spaceId, docPath, compareVersionId])
+  }, [
+    spaceId,
+    docPath,
+    collaborationEpoch,
+    collaborationCacheEpoch,
+    queryClient,
+    readOnly,
+  ])
 
   const selectAnnotation = useCallback((annotation: Annotation) => {
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
     setVersionsOpen(false)
-    setVersionsRailExpanded(false)
-    setCompareVersionId(null)
+    setPreviewVersionId(null)
     if ("blockId" in annotation.target && annotation.target.blockId) {
       const node = document.querySelector(
         `[data-id="${CSS.escape(annotation.target.blockId)}"]`
@@ -1350,7 +1305,6 @@ function BlockNoteDocPage({
       label: () => firstHeadingText(collabDoc.getXmlFragment("document-store")),
     })
   }, [collabDoc, docPath, provider, spaceId])
-
 
   const byline = (
     <DocumentByline
@@ -1389,7 +1343,7 @@ function BlockNoteDocPage({
       />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
-          className={`relative min-w-0 overflow-hidden ${compareVersionId && !belowXl ? "flex-[1_1_50%] border-r border-border print:flex-1 print:border-r-0" : "flex-1"}`}
+          className={`relative min-w-0 overflow-hidden ${previewVersionId ? "hidden print:block" : "flex-1"}`}
         >
           {!editorReadable && (
             <div className="absolute inset-0 z-10">
@@ -1440,36 +1394,38 @@ function BlockNoteDocPage({
           </div>
         </div>
 
-        {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
-            <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
-              <div className="min-w-0">
-                <div className="truncate font-medium text-foreground">
-                  {compareVersionLabel(compareVersion)}
-                </div>
-                <div className="truncate text-muted-foreground">
-                  {compareVersionDetail(compareVersion)}
-                </div>
-              </div>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => setCompareVersionId(null)}
-                aria-label="Exit compare"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+        {previewVersionId && (
+          <VersionPreview
+            key={previewVersionId}
+            kind="doc"
+            spaceId={spaceId}
+            path={docPath}
+            revision={
+              page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+            }
+            version={previewVersion}
+            error={versionQuery.isError}
+            onRetry={() => void versionQuery.refetch()}
+            onBack={() => setPreviewVersionId(null)}
+            onHistory={openVersions}
+            onRestored={() => {
+              void queryClient.invalidateQueries({
+                queryKey: documentQueryKeys.page(spaceId, docPath),
+                exact: true,
+              })
+              setPreviewVersionId(null)
+            }}
+          >
             <Suspense fallback={<EditorSkeleton />}>
-              {compareVersion && Array.isArray(compareVersion.after.content) ? (
+              {previewVersion && Array.isArray(previewVersion.after.content) ? (
                 <Editor
-                  initialContent={compareVersion.after.content as never[]}
+                  initialContent={previewVersion.after.content as never[]}
                   editable={false}
                 />
-              ) : compareVersion &&
-                typeof compareVersion.after.content === "string" ? (
+              ) : previewVersion &&
+                typeof previewVersion.after.content === "string" ? (
                 <MarkdownViewer
-                  content={compareVersion.after.content}
+                  content={previewVersion.after.content}
                   spaceId={spaceId}
                   docPath={docPath}
                 />
@@ -1477,11 +1433,11 @@ function BlockNoteDocPage({
                 <EditorSkeleton />
               )}
             </Suspense>
-          </div>
+          </VersionPreview>
         )}
 
         <DesktopContextPanel
-          open={!compareVersionId && annotationsOpen && !belowXl}
+          open={!previewVersionId && annotationsOpen && !belowXl}
           width={384}
         >
           <AnnotationPanel
@@ -1504,28 +1460,24 @@ function BlockNoteDocPage({
         </DesktopContextPanel>
 
         <VersionHistoryPanel
+          kind="doc"
           spaceId={spaceId}
-          docPath={docPath}
-          open={(versionsOpen || Boolean(compareVersionId)) && !belowXl}
-          compact={Boolean(compareVersionId) && !versionsRailExpanded}
+          path={docPath}
+          revision={
+            page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+          }
+          currentActor={page?.contributors?.lastEditor}
+          provenance={page?.provenance}
+          open={(versionsOpen || Boolean(previewVersionId)) && !belowXl}
           drawerMode={false}
-          selectedVersionId={compareVersionId}
-          onSelect={(versionId) => {
-            setCompareVersionId(versionId)
+          selectedVersionId={previewVersionId}
+          onSelect={(id) => {
+            setPreviewVersionId(id)
             setVersionsOpen(true)
-            setVersionsRailExpanded(false)
           }}
           onClose={() => {
             setVersionsOpen(false)
-            setVersionsRailExpanded(false)
-          }}
-          onToggleCompact={() => setVersionsRailExpanded((value) => !value)}
-          onExitCompare={() => setCompareVersionId(null)}
-          onRestored={() => {
-            void queryClient.invalidateQueries({
-              queryKey: documentQueryKeys.page(spaceId, docPath),
-            })
-            setCompareVersionId(null)
+            setPreviewVersionId(null)
           }}
         />
       </div>
@@ -1533,20 +1485,22 @@ function BlockNoteDocPage({
       {belowXl && (
         <>
           <VersionHistoryPanel
+            kind="doc"
             spaceId={spaceId}
-            docPath={docPath}
+            path={docPath}
+            revision={
+              page?.provenance?.versionId ?? page?.document.updatedAt ?? ""
+            }
+            currentActor={page?.contributors?.lastEditor}
+            provenance={page?.provenance}
             open={versionsOpen}
-            compact={false}
             drawerMode
-            onClose={() => {
+            selectedVersionId={previewVersionId}
+            onSelect={(id) => {
+              setPreviewVersionId(id)
               setVersionsOpen(false)
-              setVersionsRailExpanded(false)
             }}
-            onRestored={() => {
-              void queryClient.invalidateQueries({
-                queryKey: documentQueryKeys.page(spaceId, docPath),
-              })
-            }}
+            onClose={() => setVersionsOpen(false)}
           />
           <Drawer
             open={annotationsOpen}
@@ -1600,510 +1554,9 @@ function BlockNoteDocPage({
         }}
       />
 
-      {!readOnly && (
+      {!readOnly && !previewVersionId && (
         <SyncStatusPill provider={provider} ready={editorReadable} />
       )}
     </div>
-  )
-}
-
-function SaveCheckpointDialog({
-  open,
-  saving,
-  onOpenChange,
-  onSave,
-}: {
-  open: boolean
-  saving: boolean
-  onOpenChange: (open: boolean) => void
-  onSave: (label: string) => void | Promise<void>
-}) {
-  const [label, setLabel] = useState("")
-
-  useEffect(() => {
-    if (!open) setLabel("")
-  }, [open])
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-tint">
-            <Save className="h-5 w-5 text-primary" />
-          </div>
-          <ResponsiveDialogTitle>Save checkpoint</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Capture the current doc so you can compare or restore it later.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
-        <ResponsiveDialogBody>
-          <label className="space-y-2 text-sm font-medium text-foreground">
-            <span>Label</span>
-            <Input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="Optional, e.g. Before desktop edits"
-              disabled={saving}
-              autoFocus
-            />
-          </label>
-        </ResponsiveDialogBody>
-        <ResponsiveDialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button onClick={() => void onSave(label)} disabled={saving}>
-            {saving ? "Saving..." : "Save Checkpoint"}
-          </Button>
-        </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  )
-}
-
-function sourceDisplay(source: string): string {
-  if (source === "browser-yjs") return "You via Browser"
-  if (source === "mcp") return "Agent via MCP"
-  if (source === "filesystem") return "Filesystem Update"
-  if (source === "rest-api") return "API Update"
-  if (source === "version-restore") return "Version Restore"
-  if (source === "manual-checkpoint") return "Manual Checkpoint"
-  return source || "Unknown Source"
-}
-
-function compareVersionLabel(version: DocVersionSnapshot | null): string {
-  if (!version) return "Loading Version"
-  return version.checkpoint?.label ?? sourceDisplay(version.source)
-}
-
-function compareVersionDetail(version: DocVersionSnapshot | null): string {
-  if (!version) return "Loading comparison..."
-  const created = new Date(version.createdAt)
-  const time = Number.isNaN(created.getTime())
-    ? "Unknown Time"
-    : created.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-  return version.checkpoint?.label
-    ? `${time} · ${sourceDisplay(version.source)}`
-    : time
-}
-
-function VersionHistoryPanel({
-  spaceId,
-  docPath,
-  open,
-  compact,
-  drawerMode,
-  selectedVersionId = null,
-  onSelect,
-  onClose,
-  onToggleCompact,
-  onExitCompare,
-  onRestored,
-}: {
-  spaceId: string
-  docPath: string
-  open: boolean
-  compact: boolean
-  drawerMode: boolean
-  selectedVersionId?: string | null
-  onSelect?: (versionId: string) => void
-  onClose: () => void
-  onToggleCompact?: () => void
-  onExitCompare?: () => void
-  onRestored: () => void
-}) {
-  const [versions, setVersions] = useState<DocVersionEntry[]>([])
-  const [showAll, setShowAll] = useState(false)
-  const [drawerSelectedVersionId, setDrawerSelectedVersionId] = useState<
-    string | null
-  >(null)
-  const [checkpointOpen, setCheckpointOpen] = useState(false)
-  const [restoreVersion, setRestoreVersion] = useState<DocVersionEntry | null>(
-    null
-  )
-  const [savingCheckpoint, setSavingCheckpoint] = useState(false)
-  const [restoringVersion, setRestoringVersion] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  const refresh = useCallback(() => {
-    if (!open) return
-    setLoading(true)
-    listDocVersions(spaceId, docPath, showAll)
-      .then(setVersions)
-      .catch((err) => {
-        console.error("Failed to load versions", err)
-        toast.error("Failed to load version history")
-      })
-      .finally(() => setLoading(false))
-  }, [spaceId, docPath, showAll, open])
-
-  useEffect(() => refresh(), [refresh])
-
-  if (!drawerMode && (!onSelect || !onToggleCompact || !onExitCompare)) {
-    throw new Error("Desktop version history requires compare actions")
-  }
-  const desktopOnSelect = onSelect as (versionId: string) => void
-  const desktopOnToggleCompact = onToggleCompact as () => void
-  const desktopOnExitCompare = onExitCompare as () => void
-
-  const activeVersionId = drawerMode
-    ? drawerSelectedVersionId
-    : selectedVersionId
-  const selectedIndex = versions.findIndex(
-    (version) => version.id === activeVersionId
-  )
-  const selected = activeVersionId
-    ? versions.find((version) => version.id === activeVersionId)
-    : null
-
-  const content = (
-    <DocVersionHistoryContent
-      spaceId={spaceId}
-      versions={versions}
-      showAll={showAll}
-      setShowAll={setShowAll}
-      loading={loading}
-      selectedVersionId={activeVersionId}
-      onSelect={
-        drawerMode
-          ? (versionId) =>
-              setDrawerSelectedVersionId((current) =>
-                current === versionId ? null : versionId
-              )
-          : desktopOnSelect
-      }
-      onClose={onClose}
-      onToggleCompact={drawerMode ? undefined : desktopOnToggleCompact}
-      onSaveCheckpoint={() => setCheckpointOpen(true)}
-      onRestore={setRestoreVersion}
-      onExitCompare={drawerMode ? undefined : desktopOnExitCompare}
-    />
-  )
-
-  const dialogs = (
-    <>
-      <SaveCheckpointDialog
-        open={checkpointOpen}
-        saving={savingCheckpoint}
-        onOpenChange={setCheckpointOpen}
-        onSave={async (label) => {
-          setSavingCheckpoint(true)
-          try {
-            await createDocCheckpoint(
-              spaceId,
-              docPath,
-              label.trim() || undefined
-            )
-            toast.success("Checkpoint saved")
-            setCheckpointOpen(false)
-            refresh()
-          } catch (err) {
-            console.error("Failed to save checkpoint", err)
-            toast.error("Failed to save checkpoint")
-          } finally {
-            setSavingCheckpoint(false)
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={Boolean(restoreVersion)}
-        onOpenChange={(open) => {
-          if (!open) setRestoreVersion(null)
-        }}
-        title="Restore checkpoint?"
-        description="This checkpoint will become the current doc."
-        confirmLabel="Restore"
-        loading={restoringVersion}
-        icon={<RotateCcw className="h-5 w-5 text-primary" />}
-        onConfirm={async () => {
-          if (!restoreVersion) return
-          setRestoringVersion(true)
-          try {
-            await restoreDocVersion(spaceId, docPath, restoreVersion.id)
-            toast.success("Checkpoint restored")
-            setRestoreVersion(null)
-            onRestored()
-            refresh()
-          } catch (err) {
-            console.error("Failed to restore checkpoint", err)
-            toast.error("Failed to restore checkpoint")
-          } finally {
-            setRestoringVersion(false)
-          }
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          Your current version will be saved first, so you can switch back if
-          needed.
-        </p>
-      </ConfirmDialog>
-    </>
-  )
-
-  if (drawerMode) {
-    return (
-      <>
-        <Drawer
-          open={open}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) onClose()
-          }}
-          repositionInputs={false}
-        >
-          <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
-            <DrawerTitle className="sr-only">Version History</DrawerTitle>
-            <DrawerDescription className="sr-only">
-              Version history for this doc.
-            </DrawerDescription>
-            <div className="flex max-h-[calc(86dvh-1.5rem)] min-h-0 flex-col">
-              {content}
-            </div>
-          </DrawerContent>
-        </Drawer>
-        {dialogs}
-      </>
-    )
-  }
-
-  return (
-    <>
-      <DesktopContextPanel open={open} width={compact ? 64 : 384}>
-        <div className="relative h-full w-full">
-          <aside
-            className={`absolute inset-0 flex flex-col items-center gap-2 bg-transparent py-4 transition-opacity duration-200 ${compact ? "opacity-100" : "pointer-events-none invisible opacity-0"}`}
-          >
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={desktopOnToggleCompact}
-              aria-label="Expand version history"
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex flex-1 items-center justify-center [writing-mode:vertical-rl]">
-              <span className="truncate text-xs font-medium text-muted-foreground">
-                {selected?.checkpoint?.label ?? "Compare"}
-              </span>
-            </div>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={
-                selectedIndex >= versions.length - 1 || selectedIndex < 0
-              }
-              onClick={() => desktopOnSelect(versions[selectedIndex + 1].id)}
-              aria-label="Previous checkpoint"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={selectedIndex <= 0}
-              onClick={() => desktopOnSelect(versions[selectedIndex - 1].id)}
-              aria-label="Next checkpoint"
-            >
-              <RotateCw className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={desktopOnExitCompare}
-              aria-label="Exit compare"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </aside>
-          <div
-            className={`absolute inset-0 transition-opacity duration-200 ${compact ? "pointer-events-none invisible opacity-0" : "opacity-100"}`}
-          >
-            {content}
-          </div>
-        </div>
-      </DesktopContextPanel>
-      {dialogs}
-    </>
-  )
-}
-
-function DocVersionHistoryContent({
-  spaceId,
-  versions,
-  showAll,
-  setShowAll,
-  loading,
-  selectedVersionId,
-  onSelect,
-  onClose,
-  onToggleCompact,
-  onSaveCheckpoint,
-  onRestore,
-  onExitCompare,
-}: {
-  spaceId: string
-  versions: DocVersionEntry[]
-  showAll: boolean
-  setShowAll: (updater: (value: boolean) => boolean) => void
-  loading: boolean
-  selectedVersionId: string | null
-  onSelect: (versionId: string) => void
-  onClose: () => void
-  onToggleCompact?: () => void
-  onSaveCheckpoint: () => void
-  onRestore: (version: DocVersionEntry) => void
-  onExitCompare?: () => void
-}) {
-  const { data: spaceDetail } = useSpace(spaceId)
-  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
-  const scrollRef = useScrollFade<HTMLDivElement>()
-
-  return (
-    <aside className="flex h-full min-h-0 w-full flex-col bg-transparent">
-      <div className="flex items-center justify-between gap-3 p-4 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <History className="h-4 w-4 shrink-0 text-primary" />
-          <h2 className="text-sm font-medium text-foreground">
-            Version History
-          </h2>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {selectedVersionId && onToggleCompact ? (
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={onToggleCompact}
-              aria-label="Collapse version history"
-            >
-              <ChevronsRight className="h-4 w-4" />
-            </Button>
-          ) : null}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            onClick={onClose}
-            aria-label="Close version history"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-2"
-          disabled={!canEdit}
-          onClick={onSaveCheckpoint}
-        >
-          <Save className="h-3.5 w-3.5" />
-          Save Checkpoint
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setShowAll((value) => !value)}
-        >
-          {showAll ? "Show Checkpoints" : "Show All Versions"}
-        </Button>
-      </div>
-      <div
-        ref={scrollRef}
-        className="scroll-fade min-h-0 flex-1 overflow-auto p-3"
-      >
-        {loading ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
-            <Loader2 className="mb-3 h-8 w-8 animate-spin text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">
-              Loading version history
-            </p>
-          </div>
-        ) : versions.length === 0 ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
-            <History className="mb-3 h-8 w-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">
-              No checkpoints yet
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Save a checkpoint or edit the doc to create meaningful history.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border/60">
-            {versions.map((version) => {
-              const active = version.id === selectedVersionId
-              const label =
-                version.checkpoint?.label ??
-                (showAll ? "Raw Version" : "Checkpoint")
-              const exact = new Date(version.createdAt).toLocaleString()
-              return (
-                <article
-                  key={version.id}
-                  className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"}`}
-                >
-                  <button
-                    type="button"
-                    className="block w-full text-left"
-                    onClick={() => onSelect(version.id)}
-                  >
-                    <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                      <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        {version.checkpoint?.sourceCategory ?? "version"}
-                      </span>
-                      <span
-                        title={exact}
-                        className="ml-auto text-[11px] text-muted-foreground"
-                      >
-                        <RelativeTime iso={version.createdAt} />
-                      </span>
-                    </div>
-                    <h3 className="mb-1 truncate text-sm font-medium text-foreground">
-                      {label}
-                    </h3>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {sourceDisplay(version.source)}
-                    </p>
-                    {version.reason ? (
-                      <p className="mt-2 line-clamp-2 text-xs text-foreground/80">
-                        {version.reason}
-                      </p>
-                    ) : null}
-                  </button>
-                  {active ? (
-                    <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={!canEdit}
-                        onClick={() => onRestore(version)}
-                      >
-                        Restore
-                      </Button>
-                      {onExitCompare ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={onExitCompare}
-                        >
-                          Exit Compare
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </article>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </aside>
   )
 }

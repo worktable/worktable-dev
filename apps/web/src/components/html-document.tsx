@@ -1,3 +1,8 @@
+import { useVersionSnapshot } from "@/lib/version-history"
+import {
+  VersionHistoryPanel,
+  VersionPreview,
+} from "@/components/document/version-history"
 import { spaceAccessKey } from "@/lib/team-access"
 import {
   AlertTriangle,
@@ -11,12 +16,7 @@ import {
   Minimize,
   Pencil,
   RotateCcw,
-  RotateCw,
-  Save,
-  ChevronsLeft,
-  ChevronsRight,
   Trash,
-  X,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { queryKeys, useSpace } from "@/lib/queries"
@@ -26,21 +26,13 @@ import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
   archiveWidget,
-  createWidgetCheckpoint,
   deleteWidget,
   exportWidgetHtml,
   getWidget,
-  listWidgetVersions,
   patchWidget,
-  readWidgetVersion,
   restoreWidget,
-  restoreWidgetVersion,
   widgetContentUrl,
   widgetVersionContentUrl,
-} from "@/lib/widgets-api"
-import type {
-  WidgetVersionEntry,
-  WidgetVersionSnapshot,
 } from "@/lib/widgets-api"
 import { useSpaceEvents } from "@/hooks/use-space-events"
 import { copyText } from "@/lib/clipboard"
@@ -49,7 +41,6 @@ import {
   type PageAnnotationsAction,
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
-import { RelativeTime } from "@/lib/time"
 import { resolveWidgetApiTarget } from "@/lib/widget-broker"
 import { resolveDocumentNavigation } from "@/lib/documents-api"
 import { documentHref, documentRoute } from "@/lib/document-views"
@@ -76,7 +67,6 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
-import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
   Drawer,
   DrawerContent,
@@ -92,7 +82,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
-import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
 import { DesktopContextPanel } from "@/components/desktop-context-panel"
 import {
@@ -272,10 +261,14 @@ function WidgetDetailPage({
 
   // Version history rail state (mirrors the doc route).
   const [versionsOpen, setVersionsOpen] = useState(false)
-  const [versionsRailExpanded, setVersionsRailExpanded] = useState(false)
-  const [compareVersionId, setCompareVersionId] = useState<string | null>(null)
-  const [compareVersion, setCompareVersion] =
-    useState<WidgetVersionSnapshot | null>(null)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
+  const versionQuery = useVersionSnapshot(
+    "html",
+    spaceId,
+    widgetId,
+    previewVersionId
+  )
+  const previewVersion = versionQuery.data
 
   // Annotations (HTML docs are DOC-LEVEL only — no block anchoring). The query
   // stays enabled so the floating button's open-count badge is always live;
@@ -304,8 +297,7 @@ function WidgetDetailPage({
     setAnnotationsOpen((open) => {
       if (!open) {
         setVersionsOpen(false)
-        setVersionsRailExpanded(false)
-        setCompareVersionId(null)
+        setPreviewVersionId(null)
       }
       return !open
     })
@@ -323,7 +315,7 @@ function WidgetDetailPage({
     setActiveAnnotationId(annotation.id)
     setAnnotationsOpen(true)
     setVersionsOpen(false)
-    setCompareVersionId(null)
+    setPreviewVersionId(null)
   }, [])
 
   useEffect(() => {
@@ -333,36 +325,13 @@ function WidgetDetailPage({
   // Reset the version rail and annotations when navigating to a different widget.
   useEffect(() => {
     setVersionsOpen(false)
-    setVersionsRailExpanded(false)
-    setCompareVersionId(null)
+    setPreviewVersionId(null)
     setAnnotationsOpen(false)
     setActiveAnnotationId(null)
     setComposerOpen(false)
   }, [spaceId, widgetId])
 
   // Load the selected snapshot for the compare pane header label.
-  useEffect(() => {
-    let cancelled = false
-    if (!compareVersionId) {
-      setCompareVersion(null)
-      return
-    }
-    readWidgetVersion(spaceId, widgetId, compareVersionId)
-      .then((version) => {
-        if (!cancelled) setCompareVersion(version)
-      })
-      .catch((err) => {
-        console.error("Failed to load version", err)
-        if (!cancelled) {
-          setCompareVersionId(null)
-          setCompareVersion(null)
-          toast.error("Failed to load checkpoint")
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [spaceId, widgetId, compareVersionId])
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -792,7 +761,14 @@ function WidgetDetailPage({
       }
     )
 
-    return readOnly ? actions.filter(action => !["edit-details", "restore", "archive", "delete"].includes(action.id)) : actions
+    return readOnly
+      ? actions.filter(
+          (action) =>
+            !["edit-details", "restore", "archive", "delete"].includes(
+              action.id
+            )
+        )
+      : actions
   }, [
     readOnly,
     archived,
@@ -815,7 +791,10 @@ function WidgetDetailPage({
         spaceId={spaceId}
         widgetId={widgetId}
         spaceShareable={Boolean(
-          validated && spaceDetail && !spaceDetail.space.settings["archive"] && spaceDetail.space.permissions?.manage !== false
+          validated &&
+          spaceDetail &&
+          !spaceDetail.space.settings["archive"] &&
+          spaceDetail.space.permissions?.manage !== false
         )}
         title={title}
         archived={archived}
@@ -832,9 +811,9 @@ function WidgetDetailPage({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           ref={wrapperRef}
-          className={`relative flex min-h-0 flex-col bg-background ${
+          className={`relative min-h-0 flex-col bg-background ${previewVersionId ? "hidden" : "flex"} ${
             overlayFullscreen ? "fixed inset-0 z-50" : ""
-          } ${compareVersionId && !belowXl ? "flex-[1_1_50%] border-r border-border print:flex-1 print:border-r-0" : "flex-1"}`}
+          } ${previewVersionId ? "hidden print:block" : "flex-1"}`}
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
           <div className="overlay-floating absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-popover p-0.5">
@@ -872,44 +851,41 @@ function WidgetDetailPage({
           )}
         </div>
 
-        {compareVersionId && (
-          <div className="hidden min-w-0 flex-[1_1_50%] flex-col overflow-hidden bg-surface-inset xl:flex print:hidden">
-            <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 pb-2 text-xs">
-              <div className="min-w-0">
-                <div className="truncate font-medium text-foreground">
-                  {compareVersionLabel(compareVersion)}
-                </div>
-                <div className="truncate text-muted-foreground">
-                  {compareVersionDetail(compareVersion)}
-                </div>
-              </div>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => setCompareVersionId(null)}
-                aria-label="Exit compare"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+        {previewVersionId && (
+          <VersionPreview
+            key={previewVersionId}
+            kind="html"
+            spaceId={spaceId}
+            path={widgetId}
+            revision={versionsRevision}
+            version={previewVersion}
+            error={versionQuery.isError}
+            onRetry={() => void versionQuery.refetch()}
+            onBack={() => setPreviewVersionId(null)}
+            onHistory={openVersions}
+            onRestored={() => {
+              void recheckPage()
+              setPreviewVersionId(null)
+            }}
+          >
             {/* Fully static: the server serves snapshots with script-src 'none'
                 and this sandbox omits allow-scripts as defense in depth —
                 historical authored JS must not run (it could exfiltrate
                 snapshot data by navigating the frame; connect-src can't stop
                 navigation). */}
             <iframe
-              key={compareVersionId}
-              title={`${title} · ${compareVersionLabel(compareVersion)}`}
-              src={`${widgetVersionContentUrl(spaceId, widgetId, compareVersionId)}?theme=${resolvedTheme}`}
+              key={previewVersionId}
+              title={`${title} · Saved version`}
+              src={`${widgetVersionContentUrl(spaceId, widgetId, previewVersionId)}?theme=${resolvedTheme}`}
               sandbox=""
               referrerPolicy="no-referrer"
               className="h-full w-full flex-1 border-0 bg-background"
             />
-          </div>
+          </VersionPreview>
         )}
 
         <DesktopContextPanel
-          open={!compareVersionId && annotationsOpen && !belowXl}
+          open={!previewVersionId && annotationsOpen && !belowXl}
           width={384}
         >
           <AnnotationPanel
@@ -934,28 +910,24 @@ function WidgetDetailPage({
           />
         </DesktopContextPanel>
 
-        <WidgetVersionHistoryPanel
+        <VersionHistoryPanel
+          kind="html"
           spaceId={spaceId}
-          widgetId={widgetId}
+          path={widgetId}
           revision={versionsRevision}
-          open={(versionsOpen || Boolean(compareVersionId)) && !belowXl}
-          compact={Boolean(compareVersionId) && !versionsRailExpanded}
-          selectedVersionId={compareVersionId}
-          onSelect={(versionId) => {
-            setCompareVersionId(versionId)
+          currentActor={page?.contributors?.lastEditor}
+          provenance={page?.provenance}
+          open={(versionsOpen || Boolean(previewVersionId)) && !belowXl}
+          drawerMode={false}
+          selectedVersionId={previewVersionId}
+          onSelect={(id) => {
+            setPreviewVersionId(id)
             setVersionsOpen(true)
-            setVersionsRailExpanded(false)
             setAnnotationsOpen(false)
           }}
           onClose={() => {
             setVersionsOpen(false)
-            setVersionsRailExpanded(false)
-          }}
-          onToggleCompact={() => setVersionsRailExpanded((value) => !value)}
-          onExitCompare={() => setCompareVersionId(null)}
-          onRestored={() => {
-            void recheckPage()
-            setCompareVersionId(null)
+            setPreviewVersionId(null)
           }}
         />
       </div>
@@ -965,16 +937,21 @@ function WidgetDetailPage({
           would leave tablets with neither surface. */}
       {belowXl && (
         <>
-          <WidgetVersionHistoryDrawer
-            open={versionsOpen}
-            onOpenChange={(open) => {
-              setVersionsOpen(open)
-              if (!open) setVersionsRailExpanded(false)
-            }}
+          <VersionHistoryPanel
+            kind="html"
             spaceId={spaceId}
-            widgetId={widgetId}
+            path={widgetId}
             revision={versionsRevision}
-            onRestored={() => void recheckPage()}
+            currentActor={page?.contributors?.lastEditor}
+            provenance={page?.provenance}
+            open={versionsOpen}
+            drawerMode
+            selectedVersionId={previewVersionId}
+            onSelect={(id) => {
+              setPreviewVersionId(id)
+              setVersionsOpen(false)
+            }}
+            onClose={() => setVersionsOpen(false)}
           />
           <Drawer
             open={annotationsOpen}
@@ -987,7 +964,7 @@ function WidgetDetailPage({
                 Annotations for this HTML doc.
               </DrawerDescription>
               <AnnotationPanel
-            readOnly={readOnly}
+                readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
                 onSelectAnnotation={selectAnnotation}
@@ -1022,7 +999,7 @@ function WidgetDetailPage({
           })
           setAnnotationsOpen(true)
           setVersionsOpen(false)
-          setCompareVersionId(null)
+          setPreviewVersionId(null)
         }}
       />
       <WidgetRenameDialog
@@ -1490,609 +1467,5 @@ function WidgetDeleteDialog({
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
-  )
-}
-
-// ── Version history ─────────────────────────────────────────
-// Mirrors the doc route's VersionHistoryPanel UX: a right-hand rail beside the
-// full-bleed iframe on desktop (with a compact mode when a compare is open) and
-// a Drawer on mobile. Compare renders a second sandboxed iframe of the RENDERED
-// snapshot — never a text diff.
-
-function sourceDisplay(source: string): string {
-  if (source === "browser-yjs") return "You via Browser"
-  if (source === "mcp") return "Agent via MCP"
-  if (source === "filesystem") return "Filesystem Update"
-  if (source === "rest-api") return "API Update"
-  if (source === "version-restore") return "Version Restore"
-  if (source === "manual-checkpoint") return "Manual Checkpoint"
-  return source || "Unknown Source"
-}
-
-function compareVersionLabel(version: WidgetVersionSnapshot | null): string {
-  if (!version) return "Loading Version"
-  return version.checkpoint?.label ?? sourceDisplay(version.source)
-}
-
-function compareVersionDetail(version: WidgetVersionSnapshot | null): string {
-  if (!version) return "Loading comparison..."
-  const created = new Date(version.createdAt)
-  const time = Number.isNaN(created.getTime())
-    ? "Unknown Time"
-    : created.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-  return version.checkpoint?.label
-    ? `${time} · ${sourceDisplay(version.source)}`
-    : time
-}
-
-function SaveCheckpointDialog({
-  open,
-  saving,
-  onOpenChange,
-  onSave,
-}: {
-  open: boolean
-  saving: boolean
-  onOpenChange: (open: boolean) => void
-  onSave: (label: string) => void | Promise<void>
-}) {
-  const [label, setLabel] = useState("")
-
-  useEffect(() => {
-    if (!open) setLabel("")
-  }, [open])
-
-  return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent>
-        <ResponsiveDialogHeader>
-          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-surface-tint">
-            <Save className="h-5 w-5 text-primary" />
-          </div>
-          <ResponsiveDialogTitle>Save checkpoint</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Capture the current HTML doc so you can compare or restore it later.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
-        <ResponsiveDialogBody>
-          <label className="space-y-2 text-sm font-medium text-foreground">
-            <span>Label</span>
-            <Input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="Optional, e.g. Before layout rework"
-              disabled={saving}
-              autoFocus
-            />
-          </label>
-        </ResponsiveDialogBody>
-        <ResponsiveDialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={saving}
-          >
-            Cancel
-          </Button>
-          <Button onClick={() => void onSave(label)} disabled={saving}>
-            {saving ? "Saving..." : "Save Checkpoint"}
-          </Button>
-        </ResponsiveDialogFooter>
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  )
-}
-
-/** Shared fetch + toggle state for the version list, used by rail and drawer.
- * `revision` changes whenever a new version is recorded (the widget's provenance
- * versionId) — including it in the refresh deps keeps an already-open history
- * list live when a widget_update arrives from another client or a disk edit,
- * instead of showing a stale list until the panel is reopened. */
-function useWidgetVersionList(
-  spaceId: string,
-  widgetId: string,
-  active: boolean,
-  revision: string
-) {
-  const [versions, setVersions] = useState<WidgetVersionEntry[]>([])
-  const [showAll, setShowAll] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  const refresh = useCallback(() => {
-    if (!active) return
-    setLoading(true)
-    listWidgetVersions(spaceId, widgetId, showAll)
-      .then(setVersions)
-      .catch((err) => {
-        console.error("Failed to load versions", err)
-        toast.error("Failed to load version history")
-      })
-      .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- revision is an intentional refetch trigger
-  }, [spaceId, widgetId, showAll, active, revision])
-
-  useEffect(() => refresh(), [refresh])
-
-  return { versions, showAll, setShowAll, loading, refresh }
-}
-
-function WidgetVersionRow({
-  canRestore,
-  version,
-  showAll,
-  active,
-  onSelect,
-  onRestore,
-  onExitCompare,
-}: {
-  canRestore: boolean
-  version: WidgetVersionEntry
-  showAll: boolean
-  active: boolean
-  onSelect: () => void
-  onRestore: () => void
-  onExitCompare?: () => void
-}) {
-  const label =
-    version.checkpoint?.label ?? (showAll ? "Raw Version" : "Checkpoint")
-  const exact = new Date(version.createdAt).toLocaleString()
-  return (
-    <article
-      className={`border-l-2 px-3 py-4 transition-colors ${active ? "border-l-primary bg-surface-selected" : "border-l-transparent hover:bg-surface-hover"}`}
-    >
-      <button
-        type="button"
-        className="block w-full text-left"
-        onClick={onSelect}
-      >
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <span className="rounded-md border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-            {version.checkpoint?.sourceCategory ?? "version"}
-          </span>
-          <span
-            title={exact}
-            className="ml-auto text-[11px] text-muted-foreground"
-          >
-            <RelativeTime iso={version.createdAt} />
-          </span>
-        </div>
-        <h3 className="mb-1 truncate text-sm font-medium text-foreground">
-          {label}
-        </h3>
-        <p className="truncate text-xs text-muted-foreground">
-          {sourceDisplay(version.source)}
-        </p>
-        {version.reason && (
-          <p className="mt-2 line-clamp-2 text-xs text-foreground/80">
-            {version.reason}
-          </p>
-        )}
-      </button>
-      {active && (
-        <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
-          <Button disabled={!canRestore} size="sm" variant="outline" onClick={onRestore}>
-            Restore
-          </Button>
-          {onExitCompare && (
-            <Button size="sm" variant="ghost" onClick={onExitCompare}>
-              Exit Compare
-            </Button>
-          )}
-        </div>
-      )}
-    </article>
-  )
-}
-
-function WidgetVersionList({
-  spaceId,
-  versions,
-  showAll,
-  setShowAll,
-  loading,
-  selectedVersionId,
-  onSelect,
-  onSaveCheckpoint,
-  onRestore,
-  onExitCompare,
-}: {
-  spaceId: string
-  versions: WidgetVersionEntry[]
-  showAll: boolean
-  setShowAll: (updater: (value: boolean) => boolean) => void
-  loading: boolean
-  selectedVersionId: string | null
-  onSelect: (versionId: string) => void
-  onSaveCheckpoint: () => void
-  onRestore: (version: WidgetVersionEntry) => void
-  onExitCompare?: () => void
-}) {
-  const { data: spaceDetail } = useSpace(spaceId)
-  const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
-  const scrollRef = useScrollFade<HTMLDivElement>()
-  return (
-    <>
-      <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-2"
-          disabled={!canEdit}
-          onClick={onSaveCheckpoint}
-        >
-          <Save className="h-3.5 w-3.5" />
-          Save Checkpoint
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setShowAll((value) => !value)}
-        >
-          {showAll ? "Show Checkpoints" : "Show All Versions"}
-        </Button>
-      </div>
-      <div
-        ref={scrollRef}
-        className="scroll-fade min-h-0 flex-1 overflow-auto p-3"
-      >
-        {loading ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
-            <Loader2 className="mb-3 h-8 w-8 animate-spin text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">
-              Loading version history
-            </p>
-          </div>
-        ) : versions.length === 0 ? (
-          <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-border p-6 text-center">
-            <History className="mb-3 h-8 w-8 text-muted-foreground/50" />
-            <p className="text-sm font-medium text-foreground">
-              No checkpoints yet
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Save a checkpoint or edit the HTML doc to create meaningful
-              history.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border/60">
-            {versions.map((version) => (
-              <WidgetVersionRow
-                key={version.id}
-                canRestore={canEdit}
-                version={version}
-                showAll={showAll}
-                active={version.id === selectedVersionId}
-                onSelect={() => onSelect(version.id)}
-                onRestore={() => onRestore(version)}
-                onExitCompare={onExitCompare}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </>
-  )
-}
-
-function WidgetVersionHistoryPanel({
-  spaceId,
-  widgetId,
-  revision,
-  open,
-  compact,
-  selectedVersionId,
-  onSelect,
-  onClose,
-  onToggleCompact,
-  onExitCompare,
-  onRestored,
-}: {
-  spaceId: string
-  widgetId: string
-  revision: string
-  open: boolean
-  compact: boolean
-  selectedVersionId: string | null
-  onSelect: (versionId: string) => void
-  onClose: () => void
-  onToggleCompact: () => void
-  onExitCompare: () => void
-  onRestored: () => void
-}) {
-  const { versions, showAll, setShowAll, loading, refresh } =
-    useWidgetVersionList(spaceId, widgetId, open, revision)
-  const [checkpointOpen, setCheckpointOpen] = useState(false)
-  const [restoreVersion, setRestoreVersion] =
-    useState<WidgetVersionEntry | null>(null)
-  const [savingCheckpoint, setSavingCheckpoint] = useState(false)
-  const [restoringVersion, setRestoringVersion] = useState(false)
-
-  const selectedIndex = versions.findIndex(
-    (version) => version.id === selectedVersionId
-  )
-  const selected = selectedVersionId
-    ? versions.find((version) => version.id === selectedVersionId)
-    : null
-
-  return (
-    <>
-      <DesktopContextPanel open={open} width={compact ? 64 : 384}>
-        <div className="relative h-full w-full">
-          {/* `invisible` (not just opacity-0) keeps the inactive pane out of
-              the keyboard focus order as well as pointer interaction. */}
-          <aside
-            className={`absolute inset-0 flex flex-col items-center gap-2 bg-transparent py-4 transition-opacity duration-200 ${compact ? "opacity-100" : "pointer-events-none invisible opacity-0"}`}
-          >
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={onToggleCompact}
-              aria-label="Expand version history"
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex flex-1 items-center justify-center [writing-mode:vertical-rl]">
-              <span className="truncate text-xs font-medium text-muted-foreground">
-                {selected?.checkpoint?.label ?? "Compare"}
-              </span>
-            </div>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={
-                selectedIndex >= versions.length - 1 || selectedIndex < 0
-              }
-              onClick={() => onSelect(versions[selectedIndex + 1].id)}
-              aria-label="Previous checkpoint"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={selectedIndex <= 0}
-              onClick={() => onSelect(versions[selectedIndex - 1].id)}
-              aria-label="Next checkpoint"
-            >
-              <RotateCw className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              onClick={onExitCompare}
-              aria-label="Exit compare"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </aside>
-          <div
-            className={`absolute inset-0 transition-opacity duration-200 ${compact || !open ? "pointer-events-none invisible opacity-0" : "opacity-100"}`}
-          >
-            <aside className="flex h-full min-h-0 w-full flex-col bg-transparent">
-              <div className="flex items-center justify-between gap-3 p-4 pb-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <History className="h-4 w-4 shrink-0 text-primary" />
-                  <h2 className="text-sm font-medium text-foreground">
-                    Version History
-                  </h2>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {selectedVersionId && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      onClick={onToggleCompact}
-                      aria-label="Collapse version history"
-                    >
-                      <ChevronsRight className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    onClick={onClose}
-                    aria-label="Close version history"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <WidgetVersionList
-                spaceId={spaceId}
-                versions={versions}
-                showAll={showAll}
-                setShowAll={setShowAll}
-                loading={loading}
-                selectedVersionId={selectedVersionId}
-                onSelect={onSelect}
-                onSaveCheckpoint={() => setCheckpointOpen(true)}
-                onRestore={setRestoreVersion}
-                onExitCompare={onExitCompare}
-              />
-            </aside>
-          </div>
-        </div>
-      </DesktopContextPanel>
-      <SaveCheckpointDialog
-        open={checkpointOpen}
-        saving={savingCheckpoint}
-        onOpenChange={setCheckpointOpen}
-        onSave={async (label) => {
-          setSavingCheckpoint(true)
-          try {
-            await createWidgetCheckpoint(
-              spaceId,
-              widgetId,
-              label.trim() || undefined
-            )
-            toast.success("Checkpoint saved")
-            setCheckpointOpen(false)
-            refresh()
-          } catch (err) {
-            console.error("Failed to save checkpoint", err)
-            toast.error("Failed to save checkpoint")
-          } finally {
-            setSavingCheckpoint(false)
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={Boolean(restoreVersion)}
-        onOpenChange={(open) => {
-          if (!open) setRestoreVersion(null)
-        }}
-        title="Restore checkpoint?"
-        description="This checkpoint will become the current HTML doc."
-        confirmLabel="Restore"
-        loading={restoringVersion}
-        icon={<RotateCcw className="h-5 w-5 text-primary" />}
-        onConfirm={async () => {
-          if (!restoreVersion) return
-          setRestoringVersion(true)
-          try {
-            await restoreWidgetVersion(spaceId, widgetId, restoreVersion.id)
-            toast.success("Checkpoint restored")
-            setRestoreVersion(null)
-            onRestored()
-            refresh()
-          } catch (err) {
-            console.error("Failed to restore checkpoint", err)
-            toast.error("Failed to restore checkpoint")
-          } finally {
-            setRestoringVersion(false)
-          }
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          Your current version will be saved first, so you can switch back if
-          needed.
-        </p>
-      </ConfirmDialog>
-    </>
-  )
-}
-
-function WidgetVersionHistoryDrawer({
-  open,
-  onOpenChange,
-  spaceId,
-  widgetId,
-  revision,
-  onRestored,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  spaceId: string
-  widgetId: string
-  revision: string
-  onRestored: () => void
-}) {
-  const { versions, showAll, setShowAll, loading, refresh } =
-    useWidgetVersionList(spaceId, widgetId, open, revision)
-  const [checkpointOpen, setCheckpointOpen] = useState(false)
-  const [restoreVersion, setRestoreVersion] =
-    useState<WidgetVersionEntry | null>(null)
-  const [savingCheckpoint, setSavingCheckpoint] = useState(false)
-  const [restoringVersion, setRestoringVersion] = useState(false)
-  // Mobile has no compare pane, but a row must still be selectable — the row's
-  // Restore action only renders on the active row.
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
-    null
-  )
-
-  return (
-    <>
-      <Drawer open={open} onOpenChange={onOpenChange} repositionInputs={false}>
-        <DrawerContent className="data-[vaul-drawer-direction=bottom]:max-h-[86dvh]">
-          <DrawerTitle className="sr-only">Version History</DrawerTitle>
-          <DrawerDescription className="sr-only">
-            Version history for this HTML doc.
-          </DrawerDescription>
-          <div className="flex max-h-[calc(86dvh-1.5rem)] flex-col">
-            <div className="flex items-center gap-2 p-4 pb-2">
-              <History className="h-4 w-4 shrink-0 text-primary" />
-              <h2 className="text-sm font-medium text-foreground">
-                Version History
-              </h2>
-            </div>
-            <WidgetVersionList
-                spaceId={spaceId}
-              versions={versions}
-              showAll={showAll}
-              setShowAll={setShowAll}
-              loading={loading}
-              selectedVersionId={selectedVersionId}
-              onSelect={(versionId) =>
-                setSelectedVersionId((current) =>
-                  current === versionId ? null : versionId
-                )
-              }
-              onSaveCheckpoint={() => setCheckpointOpen(true)}
-              onRestore={setRestoreVersion}
-            />
-          </div>
-        </DrawerContent>
-      </Drawer>
-      <SaveCheckpointDialog
-        open={checkpointOpen}
-        saving={savingCheckpoint}
-        onOpenChange={setCheckpointOpen}
-        onSave={async (label) => {
-          setSavingCheckpoint(true)
-          try {
-            await createWidgetCheckpoint(
-              spaceId,
-              widgetId,
-              label.trim() || undefined
-            )
-            toast.success("Checkpoint saved")
-            setCheckpointOpen(false)
-            refresh()
-          } catch (err) {
-            console.error("Failed to save checkpoint", err)
-            toast.error("Failed to save checkpoint")
-          } finally {
-            setSavingCheckpoint(false)
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={Boolean(restoreVersion)}
-        onOpenChange={(o) => {
-          if (!o) setRestoreVersion(null)
-        }}
-        title="Restore checkpoint?"
-        description="This checkpoint will become the current HTML doc."
-        confirmLabel="Restore"
-        loading={restoringVersion}
-        icon={<RotateCcw className="h-5 w-5 text-primary" />}
-        onConfirm={async () => {
-          if (!restoreVersion) return
-          setRestoringVersion(true)
-          try {
-            await restoreWidgetVersion(spaceId, widgetId, restoreVersion.id)
-            toast.success("Checkpoint restored")
-            setRestoreVersion(null)
-            onRestored()
-            refresh()
-          } catch (err) {
-            console.error("Failed to restore checkpoint", err)
-            toast.error("Failed to restore checkpoint")
-          } finally {
-            setRestoringVersion(false)
-          }
-        }}
-      >
-        <p className="text-sm text-muted-foreground">
-          Your current version will be saved first, so you can switch back if
-          needed.
-        </p>
-      </ConfirmDialog>
-    </>
   )
 }

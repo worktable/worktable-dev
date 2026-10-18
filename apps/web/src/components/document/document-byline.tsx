@@ -1,23 +1,33 @@
 import { Link } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useId, useState, type ReactNode } from "react"
-import { ChevronDown, FileText, History, Link2 } from "lucide-react"
+import { ArrowDownLeft, ChevronDown, Database, History } from "lucide-react"
 import type {
   ActivityActor,
   ActivityEntry,
   DocumentBacklink,
   DocumentContributors,
   DocumentProvenance,
+  DocumentReferrer,
 } from "@worktable/types"
 import {
   Collapsible,
   CollapsibleContent,
 } from "@worktable/ui/components/collapsible"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { cn } from "@worktable/ui/lib/utils"
 import {
   DOCUMENT_BYLINE_CHIP,
   DocumentLifetimeChip,
 } from "@/components/document-organize"
+import {
+  DocLocation,
+  DocumentFormatIcon,
+} from "@/components/document-format-icon"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
@@ -26,8 +36,11 @@ import { documentRoute } from "@/lib/document-views"
 import { findTreeNode } from "@/lib/space-document-tree"
 import type { TreeNode } from "@/lib/tree"
 import { RelativeTime } from "@/lib/time"
-
-type Panel = "activity" | "links"
+import {
+  useBylineState,
+  type BylineSection,
+  type BylineState,
+} from "@/hooks/use-byline-state"
 
 const ACTIVITY_SHOWN = 6
 
@@ -54,7 +67,9 @@ export function DocumentByline({
   updatedAt,
   contributors,
   backlinks,
+  referrers,
   onVersionHistory,
+  state,
 }: {
   spaceId: string
   docPath: string
@@ -64,9 +79,14 @@ export function DocumentByline({
   updatedAt?: string
   contributors?: DocumentContributors
   backlinks?: DocumentBacklink[]
+  /** Records and HTML Docs that point here. */
+  referrers?: DocumentReferrer[]
   onVersionHistory?: () => void
+  /** Shared with the page's other copy of this byline, if any. */
+  state?: BylineState
 }) {
-  const [open, setOpen] = useState<Panel | null>(null)
+  const local = useBylineState()
+  const { open, setOpen, lifetimeOpen, setLifetimeOpen } = state ?? local
   const [opening, setOpening] = useState(false)
   const queryClient = useQueryClient()
   const panelId = useId()
@@ -77,12 +97,29 @@ export function DocumentByline({
     limit: ACTIVITY_SHOWN,
   }
 
-  const linked = (backlinks ?? []).flatMap((link) => {
-    const node = trees ? findTreeNode(trees.active, link.path) : undefined
-    return node && !node.isFolder ? [{ ...link, node }] : []
+  // Only what the sidebar shows: archived sources stay out.
+  const shown = (path: string) => {
+    const node = trees ? findTreeNode(trees.active, path) : undefined
+    return node && node.kind === "document" ? node : undefined
+  }
+  const linkedDocs = (backlinks ?? []).flatMap((link) => {
+    const node = shown(link.path)
+    return node ? [{ ...link, node }] : []
   })
+  const linkedRecords = (referrers ?? []).flatMap((referrer) =>
+    referrer.kind === "record" ? [referrer] : []
+  )
+  const linkedHtml = (referrers ?? []).flatMap((referrer) => {
+    const node = referrer.kind === "html" ? shown(referrer.path) : undefined
+    return node && referrer.kind === "html"
+      ? [{ node, label: referrer.label }]
+      : []
+  })
+  const linkedCount =
+    linkedDocs.length + linkedRecords.length + linkedHtml.length
 
-  const toggle = (panel: Panel) => setOpen(open === panel ? null : panel)
+  const toggle = (panel: BylineSection) =>
+    setOpen(open === panel ? null : panel)
   // The list arrives before its panel opens, so the panel grows once to its
   // full height instead of stopping at a placeholder.
   const toggleActivity = async () => {
@@ -139,21 +176,27 @@ export function DocumentByline({
             </span>
           </button>
         )}
-        {editedAt && linked.length > 0 && (
-          <span aria-hidden="true" className="opacity-50">
-            ·
-          </span>
-        )}
-        {linked.length > 0 && (
+        {linkedCount > 0 && (
           <BylineChip
-            icon={<Link2 className="size-3.5" />}
-            label={`Linked from ${linked.length}`}
+            icon={<ArrowDownLeft className="size-3.5" />}
+            label={String(linkedCount)}
+            hint={
+              linkedCount === 1
+                ? "1 place links here"
+                : `${linkedCount} places link here`
+            }
             expanded={open === "links"}
             controls={`${panelId}-links`}
             onClick={() => toggle("links")}
           />
         )}
-        <DocumentLifetimeChip spaceId={spaceId} path={docPath} inline />
+        <DocumentLifetimeChip
+          spaceId={spaceId}
+          path={docPath}
+          inline
+          open={lifetimeOpen}
+          onOpenChange={setLifetimeOpen}
+        />
       </div>
 
       <BylinePanel id={`${panelId}-activity`} open={open === "activity"}>
@@ -163,15 +206,12 @@ export function DocumentByline({
         />
       </BylinePanel>
       <BylinePanel id={`${panelId}-links`} open={open === "links"}>
-        {linked.map((link) => (
-          <DocRow
-            key={link.path}
-            spaceId={spaceId}
-            node={link.node}
-            location={folderLabels(trees?.active, link.path)}
-            detail={link.context}
-          />
-        ))}
+        <LinkedFrom
+          spaceId={spaceId}
+          docs={linkedDocs}
+          records={linkedRecords}
+          html={linkedHtml}
+        />
       </BylinePanel>
     </DocumentBylineFrame>
   )
@@ -180,20 +220,24 @@ export function DocumentByline({
 function BylineChip({
   icon,
   label,
+  hint,
   expanded,
   controls,
   onClick,
 }: {
   icon: ReactNode
   label: string
+  /** What a short label means, as a tooltip and the chip's accessible name. */
+  hint?: string
   expanded: boolean
   controls: string
   onClick: () => void
 }) {
-  return (
+  const chip = (
     <button
       type="button"
       className={DOCUMENT_BYLINE_CHIP}
+      aria-label={hint}
       aria-expanded={expanded}
       aria-controls={controls}
       onClick={onClick}
@@ -209,6 +253,13 @@ function BylineChip({
       />
     </button>
   )
+  if (!hint) return chip
+  return (
+    <Tooltip>
+      <TooltipTrigger render={chip} />
+      <TooltipContent>{hint}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 function BylinePanel({
@@ -223,7 +274,7 @@ function BylinePanel({
   return (
     <Collapsible open={open}>
       <CollapsibleContent id={id}>
-        <div className="card-surface mt-2.5 flex max-h-80 flex-col overflow-y-auto rounded-xl px-2 py-1.5">
+        <div className="mt-2.5 flex max-h-80 flex-col overflow-y-auto rounded-xl card-surface px-2 py-1.5">
           {children}
         </div>
       </CollapsibleContent>
@@ -242,9 +293,7 @@ function DocActivity({
   const entries = data?.entries ?? []
   return (
     <>
-      {isError && (
-        <div className="px-2 py-1.5">Activity could not load.</div>
-      )}
+      {isError && <div className="px-2 py-1.5">Activity could not load.</div>}
       {!isError && data && entries.length === 0 && (
         <div className="px-2 py-1.5">No activity recorded yet.</div>
       )}
@@ -325,31 +374,160 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   )
 }
 
-function DocRow({
+/**
+ * What points at this Doc: Docs with the sentence their first link sits in,
+ * records by the field that names it, and HTML Docs that open it. Each row
+ * starts like a row on Home: icon, name, then where it lives. Kinds get a
+ * heading only when more than one kind is here.
+ */
+function LinkedFrom({
   spaceId,
-  node,
-  location,
-  detail,
+  docs,
+  records,
+  html,
 }: {
   spaceId: string
-  node: TreeNode
-  location?: string
-  detail?: string
+  docs: Array<DocumentBacklink & { node: TreeNode }>
+  records: Array<Extract<DocumentReferrer, { kind: "record" }>>
+  html: Array<{ node: TreeNode; label?: string }>
+}) {
+  const groups = [docs.length, records.length, html.length].filter(
+    Boolean
+  ).length
+  const heading = (label: string) =>
+    groups > 1 && (
+      <div className="px-2.5 pt-3 pb-1 text-[0.6875rem] font-medium text-muted-foreground/70 first:pt-1.5">
+        {label}
+      </div>
+    )
+  return (
+    <>
+      {docs.length > 0 && heading("Docs")}
+      {docs.map((link) => (
+        <Link
+          key={`doc:${link.path}`}
+          {...documentRoute(spaceId, link.node.path)}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<DocumentFormatIcon formatId={link.node.format?.id} />}
+            name={link.node.label}
+            where={<DocLocation path={link.path} />}
+            note={
+              link.count && link.count > 1 ? `${link.count} links` : undefined
+            }
+          >
+            <Marked text={link.context} mark={link.mark} />
+          </ReferrerRow>
+        </Link>
+      ))}
+      {records.length > 0 && heading("Records")}
+      {records.map((record) => (
+        <Link
+          key={`record:${record.collectionId}/${record.recordId}`}
+          to="/spaces/$spaceId/records/$collectionId/$recordId"
+          params={{
+            spaceId,
+            collectionId: record.collectionId,
+            recordId: record.recordId,
+          }}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<Database />}
+            name={record.title}
+            where={<DocLocation path={`${record.collection}/`} />}
+          >
+            <span className={MARK}>{record.field}</span> field
+          </ReferrerRow>
+        </Link>
+      ))}
+      {html.length > 0 && heading("HTML Docs")}
+      {html.map(({ node, label }) => (
+        <Link
+          key={`html:${node.path}`}
+          {...documentRoute(spaceId, node.path)}
+          className={REFERRER_ROW}
+        >
+          <ReferrerRow
+            icon={<DocumentFormatIcon formatId="worktable.html" />}
+            name={node.label}
+            where={<DocLocation path={node.path} />}
+          >
+            {/* What people click there to come here, when it can be read. */}
+            {label && <span className={MARK}>{label}</span>}
+          </ReferrerRow>
+        </Link>
+      ))}
+    </>
+  )
+}
+
+const REFERRER_ROW =
+  "group flex min-w-0 gap-3 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-hover"
+
+/** The words that link, set like inline code in a Doc: the reading blue on its tint. */
+const MARK =
+  "rounded-[0.3em] bg-[var(--code-accent-background)] px-[0.25em] text-[var(--code-accent-foreground)] [box-decoration-break:clone]"
+
+/** One source: a Home-style first line, then one quieter line of why it points here. */
+function ReferrerRow({
+  icon,
+  name,
+  where,
+  note,
+  children,
+}: {
+  icon: ReactNode
+  name: string
+  where?: ReactNode
+  note?: string
+  /** Why it points here; absent when there is nothing to show. */
+  children?: ReactNode
 }) {
   return (
-    <Link
-      {...documentRoute(spaceId, node.path)}
-      className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-hover"
-    >
-      <FileText className="mt-0.5 size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">
-          {node.label}
-        </span>
-        {location && <span className="block truncate text-xs">{location}</span>}
-        {detail && <span className="mt-0.5 line-clamp-2 block">{detail}</span>}
+    <>
+      <span className="flex h-5 shrink-0 items-center text-muted-foreground transition-colors group-hover:text-foreground [&>svg]:size-4">
+        {icon}
       </span>
-    </Link>
+      <span className="min-w-0 flex-1">
+        <span className="flex h-5 min-w-0 items-center gap-3">
+          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {name}
+          </span>
+          {where}
+          {note && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {note}
+            </span>
+          )}
+        </span>
+        {children && (
+          <span className="mt-1 block truncate text-muted-foreground">
+            {children}
+          </span>
+        )}
+      </span>
+    </>
+  )
+}
+
+/** `text` with the link's words marked. */
+function Marked({
+  text,
+  mark,
+}: {
+  text: string
+  mark?: { start: number; length: number }
+}) {
+  if (!mark) return text
+  const end = mark.start + mark.length
+  return (
+    <>
+      {text.slice(0, mark.start)}
+      <span className={MARK}>{text.slice(mark.start, end)}</span>
+      {text.slice(end)}
+    </>
   )
 }
 
@@ -371,16 +549,4 @@ function lastEditorName(
       (by.startsWith("agent:") && actor.id === by.slice("agent:".length)))
   if (same) return actorName(actor)
   return by === "user" ? "You" : undefined
-}
-
-/** "Research / Slite Review" for a doc in research/slite-review. */
-function folderLabels(nodes: TreeNode[] | undefined, path: string): string | undefined {
-  if (!nodes) return undefined
-  const segments = path.split("/").slice(0, -1)
-  const labels: string[] = []
-  for (let depth = 1; depth <= segments.length; depth += 1) {
-    const node = findTreeNode(nodes, segments.slice(0, depth).join("/"))
-    labels.push(node?.label ?? segments[depth - 1]!)
-  }
-  return labels.length > 0 ? labels.join(" / ") : undefined
 }

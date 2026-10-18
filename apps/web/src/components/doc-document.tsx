@@ -65,7 +65,10 @@ import {
   type PageSecondaryAction,
 } from "@/hooks/use-page-meta"
 import { DocumentPreview } from "@/components/editor/document-preview"
+import { useDocName, useNameFromTitleOnLeave } from "@/hooks/use-doc-name"
+import { takeJustCreated } from "@/hooks/use-new-doc"
 import { DocumentByline } from "@/components/document/document-byline"
+import { useBylineState } from "@/hooks/use-byline-state"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
 import { MarkdownViewer } from "@/components/editor/markdown-viewer"
 import { AnnotationPanel } from "@/components/annotations/annotation-panel"
@@ -834,6 +837,7 @@ function MarkdownDocPage({
                 updatedAt={page?.document.updatedAt}
                 contributors={page?.contributors}
                 backlinks={page?.backlinks}
+                referrers={page?.referrers}
                 onVersionHistory={openVersions}
               />
             }
@@ -1311,14 +1315,28 @@ function BlockNoteDocPage({
     })
   }, [collabDoc, docPath, provider, spaceId])
 
+  const docName = useDocName(spaceId, docPath)
+  const [focusTitle] = useState(() => takeJustCreated(spaceId, docPath))
+  // The editor takes focus once it is shown; until then it is inert.
+  const editorTitle = useMemo(
+    () => ({ placeholder: docName, focus: focusTitle && editorReadable }),
+    [docName, focusTitle, editorReadable]
+  )
+  useNameFromTitleOnLeave(spaceId, docPath, !readOnly && !archived)
+
+  // The preview and the editor each show the byline; one state keeps what
+  // is open when the editor takes over.
+  const bylineState = useBylineState()
   const byline = (
     <DocumentByline
+      state={bylineState}
       spaceId={spaceId}
       docPath={docPath}
       provenance={page?.provenance}
       updatedAt={page?.document.updatedAt}
       contributors={page?.contributors}
       backlinks={page?.backlinks}
+      referrers={page?.referrers}
       onVersionHistory={openVersions}
     />
   )
@@ -1356,6 +1374,7 @@ function BlockNoteDocPage({
                 <DocumentPreview
                   showStatus={false}
                   content={previewContent}
+                  titlePlaceholder={docName}
                   afterTitle={byline}
                   onScroll={(top) => {
                     previewScrollTop.current = top
@@ -1385,6 +1404,7 @@ function BlockNoteDocPage({
                     onLocalEdit: handleLocalEdit,
                   }}
                   editable={!convertingToMarkdown}
+                  title={editorTitle}
                   afterTitle={byline}
                   annotations={annotations}
                   activeAnnotationId={activeAnnotationId}

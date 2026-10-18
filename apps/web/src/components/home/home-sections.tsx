@@ -4,7 +4,7 @@ import { useState } from "react"
 import type { DocumentSummary, PendingItem } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
-import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { DocLocation, DocumentFormatIcon } from "@/components/document-format-icon"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { useLifetimeActions } from "@/hooks/use-document-organize"
 import { usePending } from "@/lib/activity"
@@ -14,38 +14,6 @@ import { useSpaces } from "@/lib/queries"
 
 const rowClass =
   "group flex h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 text-sm transition-colors hover:bg-accent"
-
-/** Where a doc lives, set like a file path: Space, then its folders. */
-function DocLocation({
-  spaceName,
-  path,
-  className,
-}: {
-  spaceName?: string
-  path: string
-  className?: string
-}) {
-  const parts = [spaceName, ...path.split("/").slice(0, -1)].filter(
-    (part): part is string => Boolean(part)
-  )
-  return (
-    <span
-      className={cn(
-        "min-w-0 flex-1 truncate font-mono text-[0.7rem] text-muted-foreground/80",
-        className
-      )}
-    >
-      {parts.map((part, index) => (
-        <span key={index}>
-          {index > 0 && (
-            <span className="px-0.5 text-muted-foreground/40">/</span>
-          )}
-          {part}
-        </span>
-      ))}
-    </span>
-  )
-}
 
 // ── Pending ────────────────────────────────────────────────
 

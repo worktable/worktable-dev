@@ -9,9 +9,14 @@ the same work.
 
 ## Create and edit
 
-Choose **Doc** from a Space's **+** menu. Without a name, Worktable uses
-`untitled`, then `untitled-2`, and so on. The sidebar uses the first heading as
-the label when one exists.
+Choose **Doc** from a Space's **+** menu. The new doc opens on its title: type
+its name, then press Enter to start writing. Until it has a title it is called
+Untitled, then Untitled 2, and so on. When you leave it, its file takes the
+title's name.
+
+A doc's name is its title, the large heading at the top, and the sidebar,
+breadcrumbs and lists all show it. A rich doc without one shows its name in
+grey where the title goes; click it to add one.
 
 Select **Edit** on a Markdown document to use the rich editor. Agents can read
 both Markdown and rich-text documents as Markdown. Ask them to change specific

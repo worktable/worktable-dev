@@ -363,6 +363,24 @@
    Placeholder Text
    ============================================ */
 
+/* The Doc's title is its name: empty, it shows the name in grey, and a Doc
+   without one shows its name where the title goes until it gets one. */
+.bn-editor .bn-block-content[data-doc-title]:has(.ProseMirror-trailingBreak:only-child)::after {
+  content: attr(data-placeholder) !important;
+  color: var(--muted-foreground);
+  font-style: normal;
+  opacity: 0.6;
+}
+
+.bn-editor .worktable-title-stand-in [data-content-type="heading"] {
+  color: var(--muted-foreground) !important;
+  opacity: 0.6;
+}
+
+.bn-editor .worktable-title-stand-in[data-editable] {
+  cursor: text;
+}
+
 .bn-editor .bn-block-content[data-is-empty-and-focused="true"]::before,
 .bn-editor .bn-block-content[data-is-empty="true"]:first-child::before {
   color: var(--muted-foreground) !important;

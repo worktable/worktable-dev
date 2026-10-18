@@ -52,7 +52,11 @@ import { createPortal } from "react-dom"
 import { useTheme } from "@/components/theme-provider"
 import { useServerSettings } from "@/hooks/use-server-settings"
 import { initMermaidTouchHandler } from "./mermaid-touch-handler"
-import { afterTitleKey, afterTitlePlugin } from "./after-title-widget"
+import {
+  afterTitleKey,
+  afterTitlePlugin,
+  type TitleOptions,
+} from "./after-title-widget"
 import {
   getBlockNoteCreationContent,
   normalizeEditorInitialContent,
@@ -179,6 +183,15 @@ interface EditorProps {
   onSelectAnnotation?: (annotation: Annotation) => void
   /** Shown under the title (the opening level-one heading), outside the content. */
   afterTitle?: ReactNode
+  /** How the editor shows the Doc's name, its title. */
+  title?: EditorTitle
+}
+
+export interface EditorTitle {
+  /** Grey text for an empty title, and for a Doc that has none yet. */
+  placeholder: string
+  /** Start with the caret in the title, for a Doc just created. */
+  focus?: boolean
 }
 
 export function Editor({
@@ -192,6 +205,7 @@ export function Editor({
   onCreateAnnotation,
   onSelectAnnotation,
   afterTitle,
+  title,
 }: EditorProps) {
   const { theme } = useTheme()
   const isMobile = useIsMobile()
@@ -219,6 +233,7 @@ export function Editor({
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
       afterTitle={afterTitle}
+      title={title}
       resolvedTheme={resolvedTheme}
       isMobile={isMobile}
       spellcheck={spellcheck}
@@ -237,6 +252,7 @@ function EditorInner({
   onCreateAnnotation,
   onSelectAnnotation,
   afterTitle,
+  title,
   resolvedTheme,
   isMobile,
   spellcheck,
@@ -351,8 +367,42 @@ function EditorInner({
     return host
   })
   const showsAfterTitle = afterTitle != null
+  const showsTitle = title != null
+  // The plugin reads the title options on each update, so new ones need no
+  // new plugin, only a transaction to show them.
+  const titleOptions = useRef<TitleOptions | null>(null)
+  const titlePlaceholder = title?.placeholder
   useEffect(() => {
-    if (!showsAfterTitle) return
+    titleOptions.current =
+      titlePlaceholder === undefined
+        ? null
+        : {
+            placeholder: titlePlaceholder,
+            onCreate: editable
+              ? () => {
+                  const first = editor.document[0]
+                  if (!first) return
+                  const [added] = editor.insertBlocks(
+                    [{ type: "heading", props: { level: 1 } }],
+                    first,
+                    "before"
+                  )
+                  if (added) editor.setTextCursorPosition(added, "start")
+                  editor.focus()
+                }
+              : undefined,
+          }
+    const view = (
+      editor as unknown as {
+        _tiptapEditor?: {
+          view?: { state: { tr: unknown }; dispatch(tr: unknown): void }
+        }
+      }
+    )._tiptapEditor?.view
+    view?.dispatch(view.state.tr)
+  }, [editor, editable, titlePlaceholder])
+  useEffect(() => {
+    if (!showsAfterTitle && !showsTitle) return
     const tiptap = (
       editor as unknown as {
         _tiptapEditor?: {
@@ -362,9 +412,44 @@ function EditorInner({
       }
     )._tiptapEditor
     if (!tiptap) return
-    tiptap.registerPlugin(afterTitlePlugin(afterTitleHost))
+    tiptap.registerPlugin(
+      afterTitlePlugin(showsAfterTitle ? afterTitleHost : null, titleOptions)
+    )
     return () => tiptap.unregisterPlugin(afterTitleKey)
-  }, [editor, showsAfterTitle, afterTitleHost])
+  }, [editor, showsAfterTitle, showsTitle, afterTitleHost])
+
+  // A Doc just created starts with the caret in its empty title. Its content
+  // arrives with the first sync, so look again as the editor changes, for a
+  // moment only: a title that is still empty later is not for this.
+  const focusTitle = editable && title?.focus === true
+  useEffect(() => {
+    if (!focusTitle) return
+    const tiptap = (editor as unknown as { _tiptapEditor?: TiptapLike })
+      ._tiptapEditor
+    if (!tiptap) return
+    const until = Date.now() + 5_000
+    const tryFocus = () => {
+      if (Date.now() > until) return stop()
+      const first = editor.document[0] as
+        | { type?: string; props?: { level?: number }; content?: unknown[] }
+        | undefined
+      if (
+        first?.type !== "heading" ||
+        (first.props?.level ?? 1) !== 1 ||
+        (first.content?.length ?? 0) > 0
+      ) {
+        return
+      }
+      // Placing the caret is itself a transaction; stop listening first.
+      stop()
+      editor.setTextCursorPosition(editor.document[0]!, "start")
+      editor.focus()
+    }
+    const stop = () => tiptap.off("transaction", tryFocus)
+    tiptap.on("transaction", tryFocus)
+    tryFocus()
+    return stop
+  }, [editor, focusTitle])
 
   useEffect(() => {
     if (collaboration) return

@@ -125,29 +125,43 @@ describe("link graph", () => {
   });
 
   describe("extractDocLinks", () => {
-    it("keeps the readable text around each link as its context", () => {
+    it("keeps the sentence each link sits in, with the link's words marked", () => {
+      const longSentence = `This one sentence ${"keeps going ".repeat(16)}until [far](/far) appears and then ${"carries on ".repeat(10)}to the end.`;
       const md = [
         "- See the [plan](/plans/arrival) for **dates** and `invitations@example.com`.",
         "```",
         "[fenced](/inside-fence)",
         "```",
-        `${"Long lead-in. ".repeat(20)}Then [far](/far) and more text after it.`,
-        "A link whose text [wraps",
-        "onto a new line](/wrapped) still counts.",
+        "An opening sentence. A link whose text [wraps",
+        "onto a new line](/wrapped) still counts. A closing sentence.",
+        "",
+        longSentence,
+        "## The [roadmap](/roadmap)",
+        "A paragraph right under the heading.",
       ].join("\n");
       const links = extractDocLinks(md);
+      expect(links).toHaveLength(4);
+      // A heading is its own block, even with no blank line after it.
+      expect(links[3]).toEqual({
+        target: "/roadmap",
+        context: "The roadmap",
+        mark: { start: 4, length: 7 },
+      });
       expect(links[0]).toEqual({
         target: "/plans/arrival",
         context: "See the plan for dates and invitations@example.com.",
+        mark: { start: 8, length: 4 },
       });
-      expect(links).toHaveLength(3);
-      expect(links[2]).toEqual({
+      // Only the sentence, though the paragraph spans two lines and three sentences.
+      expect(links[1]).toEqual({
         target: "/wrapped",
         context: "A link whose text wraps onto a new line still counts.",
+        mark: { start: 18, length: 21 },
       });
-      expect(links[1]!.context.startsWith("…")).toBe(true);
-      expect(links[1]!.context).toContain("Then far and more");
-      expect(links[1]!.context.length).toBeLessThanOrEqual(182);
+      const far = links[2]!;
+      expect(far.context.startsWith("…")).toBe(true);
+      expect(far.context.length).toBeLessThanOrEqual(162);
+      expect(far.context.slice(far.mark!.start, far.mark!.start + far.mark!.length)).toBe("far");
 
       const blocks = [
         {
@@ -155,12 +169,16 @@ describe("link graph", () => {
           content: [
             { type: "text", text: "Builds on " },
             { type: "link", href: "/research/mocks", content: [{ type: "text", text: "the mockups" }] },
-            { type: "text", text: "." },
+            { type: "text", text: ". Then something else." },
           ],
         },
       ];
       expect(extractDocLinks(blocks)).toEqual([
-        { target: "/research/mocks", context: "Builds on the mockups." },
+        {
+          target: "/research/mocks",
+          context: "Builds on the mockups.",
+          mark: { start: 10, length: 11 },
+        },
       ]);
     });
   });
@@ -378,20 +396,24 @@ describe("link graph", () => {
     // A Space never built has no answer yet; asking starts a build without waiting.
     expect(peekDocBacklinks("never-built", "target")).toBeNull();
     await getSpaceLinkGraph(SPACE);
-    expect(peekDocBacklinks(SPACE, "target")).toEqual([
-      { path: "first", context: "Read the target first." },
-    ]);
+    const first = {
+      path: "first",
+      context: "Read the target first.",
+      mark: { start: 5, length: 10 },
+      count: 1,
+    };
+    expect(peekDocBacklinks(SPACE, "target")).toEqual([first]);
 
-    await write("second", "Also [target](/target).");
+    await write("second", "Also [target](/target). And [again](/target).");
     // The graph is out of date: the last answer stands while it rebuilds.
-    expect(peekDocBacklinks(SPACE, "target")).toEqual([
-      { path: "first", context: "Read the target first." },
-    ]);
+    expect(peekDocBacklinks(SPACE, "target")).toEqual([first]);
     await getSpaceLinkGraph(SPACE);
-    expect(peekDocBacklinks(SPACE, "target")?.map((link) => link.path).sort()).toEqual([
-      "first",
-      "second",
-    ]);
+    expect(peekDocBacklinks(SPACE, "target")?.find((link) => link.path === "second")).toEqual({
+      path: "second",
+      context: "Also target.",
+      mark: { start: 5, length: 6 },
+      count: 2,
+    });
 
     // Until the rebuild after a move lands, the old paths name the moved docs.
     const moved = (path: string) =>

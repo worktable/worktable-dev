@@ -334,6 +334,45 @@ describe("doc routes", () => {
 
   // ── Rename ─────────────────────────────────────────────
 
+  describe("POST /api/spaces/:spaceId/docs/*/title", () => {
+    it("names a new doc by its title, and the next new doc does not reuse the old name", async () => {
+      const created = await req(app, "POST", "/api/spaces/test-space/docs", {
+        title: "Untitled",
+        content: [{ type: "heading", props: { level: 1 }, content: [] }],
+      });
+      expect((created.json as { path: string }).path).toBe("untitled");
+
+      const renamed = await req(app, "POST", "/api/spaces/test-space/docs/untitled/title", {
+        title: "Launch plan",
+      });
+      expect(renamed.status).toBe(200);
+      expect((renamed.json as { renamed: unknown }).renamed).toEqual([
+        { from: "untitled", to: "launch-plan" },
+      ]);
+
+      // "untitled" stays reserved for the moved doc's old links.
+      const next = await req(app, "POST", "/api/spaces/test-space/docs", {
+        title: "Untitled",
+      });
+      expect(next.status).toBe(201);
+      expect((next.json as { path: string }).path).toBe("untitled-2");
+
+      // A folder that moved reserves everything inside it: no number helps.
+      await req(app, "PUT", "/api/spaces/test-space/docs/plans/brief", {
+        content: [para("brief")],
+      });
+      const moved = await req(app, "POST", "/api/spaces/test-space/docs/plans/rename", {
+        newPath: "archive/plans",
+        scope: "folder",
+      });
+      expect(moved.status).toBe(200);
+      const insideOld = await req(app, "POST", "/api/spaces/test-space/docs", {
+        title: "plans/Untitled",
+      });
+      expect(insideOld.status).toBe(409);
+    });
+  });
+
   describe("POST /api/spaces/:spaceId/docs/*/rename", () => {
     it("renames a doc", async () => {
       await req(app, "PUT", "/api/spaces/test-space/docs/old-name", {
@@ -386,13 +425,15 @@ describe("doc routes", () => {
         { content: [para("must not replace the alias")] }
       );
       expect(reservedWrite.status).toBe(409);
+      // Creating from a title takes the next free path instead.
       const reservedQuickCreate = await req(
         app,
         "POST",
         "/api/spaces/test-space/docs",
         { title: "Old Name" }
       );
-      expect(reservedQuickCreate.status).toBe(409);
+      expect(reservedQuickCreate.status).toBe(201);
+      expect((reservedQuickCreate.json as { path: string }).path).toBe("old-name-2");
 
       // New path has content
       const { json } = await req(

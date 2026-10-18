@@ -207,14 +207,18 @@ export async function usesHtmlDocumentStorageV2(): Promise<boolean> {
 
 export async function resolveHtmlDocumentStorageV2(
   spaceId: string,
-  path: string
+  path: string,
+  /** A catalog already read for this Space, so a batch reads it once. */
+  known?: DocumentCatalog
 ): Promise<HtmlDocumentStorageV2Owner | null> {
   const analyzed = analyzeDocumentPath(path)
   if (!analyzed.safe || !analyzed.comparisonKey) return null
-  const catalog = await buildDocumentCatalog({
-    workspaceRoot: getWorkspaceRoot(),
-    spaceId,
-  })
+  const catalog =
+    known ??
+    (await buildDocumentCatalog({
+      workspaceRoot: getWorkspaceRoot(),
+      spaceId,
+    }))
   const matches = catalog.entries.filter(
     (entry) =>
       entry.kind === "document" &&
@@ -345,13 +349,18 @@ async function portableState(
 export async function readHtmlDocumentStorageV2(input: {
   spaceId: string
   path: string
+  catalog?: DocumentCatalog
 }): Promise<{
   owner: HtmlDocumentStorageV2Owner
   widget: WidgetFile
   html: string
   sourceBytes: Uint8Array
 } | null> {
-  const owner = await resolveHtmlDocumentStorageV2(input.spaceId, input.path)
+  const owner = await resolveHtmlDocumentStorageV2(
+    input.spaceId,
+    input.path,
+    input.catalog
+  )
   if (!owner) return null
   return readHtmlDocumentStorageV2Owner(input.spaceId, owner)
 }

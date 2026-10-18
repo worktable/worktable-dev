@@ -44,6 +44,7 @@ interface OutgoingMessage {
     | "space_update"
     | "doc_update"
     | "doc_deleted"
+    | "doc_links_update"
     | "widget_update"
     | "widget_moved"
     | "widget_deleted"
@@ -437,6 +438,7 @@ function canReceive(ws: WsClient, msg: OutgoingMessage): boolean {
   switch (msg.type) {
     case "doc_update":
     case "doc_deleted":
+    case "doc_links_update":
       return ws.data.canReadDocs === true
     case "widget_update":
     case "widget_moved":

@@ -629,6 +629,19 @@ export function applySpaceEvent(
     refresh.push(annotations, activity, pending)
   }
 
+  // What points at these docs changed: their open pages read it again.
+  if (type === "doc_links_update") {
+    const docPaths = (message.data as { docPaths?: unknown } | undefined)
+      ?.docPaths
+    for (const path of Array.isArray(docPaths) ? docPaths : []) {
+      if (typeof path !== "string") continue
+      refresh.push({
+        queryKey: documentQueryKeys.page(spaceId, path),
+        exact: true,
+      })
+    }
+  }
+
   if (type === "doc_update" || type === "doc_deleted") {
     // Rows open the new revision at once; the lists still read again for
     // what else the change moved (a conversion's format, dates, titles).

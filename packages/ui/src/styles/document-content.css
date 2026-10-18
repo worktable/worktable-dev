@@ -105,6 +105,12 @@
   font-size: 3rem;
 }
 
+/* A rich Doc's name where its title is empty or missing, as the editor shows it. */
+.worktable-markdown h1.worktable-title-placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
 .worktable-markdown h2 {
   margin: var(--doc-h2-before) 0 var(--doc-h2-after);
   line-height: var(--doc-h2-line-height);

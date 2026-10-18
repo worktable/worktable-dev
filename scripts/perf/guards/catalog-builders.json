@@ -192,11 +192,6 @@
       "why": "Recovers a participant missing from the store; rare."
     },
     {
-      "site": "packages/server/src/routes/docs.ts#POST /.docPath",
-      "kind": "listDocs",
-      "why": "Doc create: lists the Space's doc files to pick a free name."
-    },
-    {
       "site": "packages/server/src/routes/docs.ts#POST /*.folderDocuments",
       "kind": "listDocsByPrefix",
       "why": "Folder rename: checks the folder has documents."

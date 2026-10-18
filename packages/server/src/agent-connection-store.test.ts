@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -13,10 +13,12 @@ import {
 import { DEFAULT_AGENT_TOKEN_SCOPES } from "@worktable/types"
 import { resolveParticipant } from "./participant-store.ts"
 import {
+  cachedParticipantPresentations,
   listThreadParticipants,
   listThreadParticipantsForDisplay,
 } from "./thread-service.ts"
-import { createToken, verifyToken } from "./token-store.ts"
+import { createToken, rotateAgentToken, verifyToken } from "./token-store.ts"
+import * as agentConnections from "./agent-connection-store.ts"
 import { setWorkspaceRootOverride } from "./workspace.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 
@@ -234,6 +236,11 @@ describe("semantic agent connections", () => {
     expect(
       directory.presentations[`local-token:${desktop.metadata.id}`]
     ).toEqual(presentation)
+    const cachedPresentations = () =>
+      cachedParticipantPresentations("principal:local:owner")
+    expect(
+      (await cachedPresentations())[`local-token:${desktop.metadata.id}`]
+    ).toEqual(presentation)
     expect(await listAgentConnections()).toHaveLength(2)
     // Without Threads it cannot read or answer one, so it is not offered.
     const recipients = async () =>
@@ -283,14 +290,56 @@ describe("semantic agent connections", () => {
     ).toEqual({ ...presentation, icon: null })
 
     // Another credential under the same label is the same agent, too.
+    // Its alias must also appear in an already-loaded display cache.
+    await cachedPresentations()
     const another = await createToken({
       scopes: ["docs:read"],
       agent: "manual-codex",
     })
+    expect(
+      (await cachedPresentations())[`local-token:${another.metadata.id}`]
+    ).toEqual({ ...presentation, icon: null })
+    const rotated = await rotateAgentToken({
+      agent: "manual-codex",
+      scopes: ["docs:read"],
+    })
+    expect(
+      (await cachedPresentations())[`local-token:${rotated.metadata.id}`]
+    ).toEqual({ ...presentation, icon: null })
     expect(await listAgentConnections()).toHaveLength(2)
     expect(await disconnectAgentConnection(codex.id)).toBe(true)
     expect(await verifyToken(reissued.token)).toBeNull()
     expect(await verifyToken(another.token)).toBeNull()
+  })
+
+  it("recovers avatar metadata after a temporary connection-store failure", async () => {
+    const credential = await createToken({
+      scopes: ["docs:read"],
+      agent: "codex",
+    })
+    const connection = (await listAgentConnections())[0]!
+    await updateAgentConnection(connection.id, {
+      displayName: "Desk Codex",
+      icon: "terminal",
+    })
+    const unavailable = spyOn(
+      agentConnections,
+      "listAgentConnections"
+    ).mockRejectedValueOnce(
+      new Error("Connection store temporarily unavailable")
+    )
+    try {
+      expect(
+        await cachedParticipantPresentations("principal:local:owner")
+      ).toEqual({})
+    } finally {
+      unavailable.mockRestore()
+    }
+    expect(
+      (await cachedParticipantPresentations("principal:local:owner"))[
+        `local-token:${credential.metadata.id}`
+      ]
+    ).toEqual({ name: "Desk Codex", platform: "codex", icon: "terminal" })
   })
 
   it("keeps the same installation distinct across registered Worktables", async () => {

@@ -968,8 +968,13 @@ export function cachedParticipantPresentations(readerKey: string, policyRevision
   if (displayCache?.key !== key) displayCache = { key, readers: new Map() }
   let value = displayCache.readers.get(readerKey)
   if (!value) {
-    value = buildParticipantPresentations().catch(() => ({}))
-    displayCache.readers.set(readerKey, value)
+    const cache = displayCache
+    const pending: Promise<DisplayPresentations> = buildParticipantPresentations().catch(() => {
+      if (cache.readers.get(readerKey) === pending) cache.readers.delete(readerKey)
+      return {}
+    })
+    value = pending
+    cache.readers.set(readerKey, value)
   }
   return value
 }

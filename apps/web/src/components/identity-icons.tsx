@@ -55,11 +55,9 @@ export function AgentAvatar({
         className
       )}
       aria-label={name}
-      style={
-        icon
-          ? recognitionChip(recognitionColor(null, name))
-          : recognitionSolid(recognitionColor(null, name))
-      }
+      style={(icon ? recognitionChip : recognitionSolid)(
+        recognitionColor(null, name)
+      )}
     >
       {logo ? (
         <AgentLogo
@@ -97,11 +95,8 @@ function AgentLogo({
         <img
           src={src}
           alt=""
-          className={cn(
-            "absolute inset-0 size-full",
-            className,
-            state !== "loaded" && "opacity-0"
-          )}
+          className={cn("absolute inset-0 size-full", className)}
+          hidden={state !== "loaded"}
           onLoad={() => setState("loaded")}
           onError={() => setState("failed")}
         />
@@ -147,13 +142,12 @@ export function ThreadParticipantAvatar({
   participant,
   className,
 }: ThreadParticipantAvatarProps) {
-  const isAgent = participant?.kind === "agent"
   const workspace = useWorkspace()
   const current = participant
     ? workspace.data?.presentations?.[participant.id]
     : undefined
 
-  if (participant && isAgent) {
+  if (participant?.kind === "agent") {
     // The directory has the agent's current platform and chosen icon, also
     // for an agent no longer offered as a recipient.
     return (

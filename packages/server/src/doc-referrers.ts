@@ -42,10 +42,16 @@ interface SpaceReferrers {
   building: Promise<void> | null
   /** After a failed read, when the next may start. */
   retryAt: number
+  /** What the open pages were last told, per doc path. */
+  announced: Map<string, string>
+  /** A read scheduled to catch up with changes. */
+  timer: ReturnType<typeof setTimeout> | null
 }
 
 /** How long a Space waits to read again after a read failed. */
 const RETRY_MS = 30_000
+/** Changes that arrive together are read together. */
+const SETTLE_MS = 250
 
 const spaces = new Map<string, SpaceReferrers>()
 
@@ -270,8 +276,6 @@ async function build(
   space: SpaceReferrers,
   stale: SpaceReferrers["stale"]
 ): Promise<void> {
-  const before = signatures(space)
-
   const collections = await listRecordCollections(spaceId)
   const present = new Set(collections.map((collection) => collection.id))
   for (const id of space.collections.keys()) {
@@ -302,10 +306,22 @@ async function build(
   }
   for (const widget of widgets) {
     if (!stale.html.has(widget.id) && space.html.has(widget.id)) continue
-    const { data } = await readWidgetHtml(spaceId, widget.id, { catalog })
-    space.html.set(widget.id, data ? await openedDocuments(data) : [])
+    const { data, error } = await readWidgetHtml(spaceId, widget.id, { catalog })
+    // A failed read is not an empty HTML Doc: keep what was known and retry.
+    if (data === null) {
+      if (/not found/i.test(error ?? "")) {
+        space.html.delete(widget.id)
+        continue
+      }
+      throw new Error(error ?? `Could not read ${widget.id}`)
+    }
+    space.html.set(widget.id, await openedDocuments(data))
   }
-  await announceChanges(spaceId, before, signatures(space))
+  // Against what pages were last told, so a change read by a pass that later
+  // failed is still announced.
+  const after = signatures(space)
+  await announceChanges(spaceId, space.announced, after)
+  space.announced = after
 }
 
 function spaceFor(spaceId: string): SpaceReferrers {
@@ -320,10 +336,27 @@ function spaceFor(spaceId: string): SpaceReferrers {
       stale: { collections: new Set(), html: new Set() },
       building: null,
       retryAt: 0,
+      announced: new Map(),
+      timer: null,
     }
     spaces.set(key, space)
   }
   return space
+}
+
+/**
+ * Read again soon, once: for changes that arrive while pages may be open,
+ * for changes during a read, and after a failed read once its pause ends.
+ */
+function scheduleBuild(spaceId: string, space: SpaceReferrers, delay: number): void {
+  if (space.timer) return
+  space.timer = setTimeout(() => {
+    space.timer = null
+    // A reset workspace has let this Space go.
+    if (spaces.get(spaceKey(spaceId)) !== space || !space.changed) return
+    startBuild(spaceId, space)
+  }, Math.max(delay, space.retryAt - Date.now()))
+  space.timer.unref?.()
 }
 
 function startBuild(spaceId: string, space: SpaceReferrers): void {
@@ -346,7 +379,14 @@ function startBuild(spaceId: string, space: SpaceReferrers): void {
     })
     .finally(() => {
       space.building = null
+      if (space.changed) scheduleBuild(spaceId, space, SETTLE_MS)
     })
+}
+
+/** Note a change; a Space pages have read catches up without waiting for a page. */
+function markChanged(spaceId: string, space: SpaceReferrers): void {
+  space.changed = true
+  if (space.ready || space.building) scheduleBuild(spaceId, space, SETTLE_MS)
 }
 
 /**
@@ -384,9 +424,17 @@ export function peekDocReferrers(
   return referrers
 }
 
-/** Wait for a read of the Space already started; tests use this. */
+/** Run a scheduled read now and wait for reads under way; tests use this. */
 export async function settleDocReferrers(spaceId: string): Promise<void> {
-  await spaces.get(spaceKey(spaceId))?.building
+  const space = spaces.get(spaceKey(spaceId))
+  if (!space) return
+  await space.building
+  if (space.timer) {
+    clearTimeout(space.timer)
+    space.timer = null
+    if (space.changed) startBuild(spaceId, space)
+  }
+  await space.building
 }
 
 // Writes from this process do not reach the watcher, so they say so here.
@@ -394,11 +442,14 @@ onHtmlContentChanged((spaceId, path) => {
   const space = spaces.get(spaceKey(spaceId))
   if (!space) return
   space.stale.html.add(path)
-  space.changed = true
+  markChanged(spaceId, space)
 })
 
 onWorkspaceChange((event) => {
   if (event.type === "workspaceReset") {
+    for (const space of spaces.values()) {
+      if (space.timer) clearTimeout(space.timer)
+    }
     spaces.clear()
     return
   }
@@ -410,16 +461,16 @@ onWorkspaceChange((event) => {
     case "recordCollection":
     case "recordCollectionReconcile":
       space.stale.collections.add(event.collectionId)
-      space.changed = true
+      markChanged(event.spaceId, space)
       break
     case "widget":
       space.stale.html.add(event.widgetId)
-      space.changed = true
+      markChanged(event.spaceId, space)
       break
     case "documentCorpus":
     case "space":
       // Documents came or went: list again, read what is new.
-      space.changed = true
+      markChanged(event.spaceId, space)
       break
   }
 })

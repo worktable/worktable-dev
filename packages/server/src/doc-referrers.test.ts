@@ -14,6 +14,7 @@ import { recordsRouter } from "./routes/records.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { buildWidgetFile } from "./widget-authoring.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
+import { wsManager } from "./ws.ts"
 
 const testDir = join(tmpdir(), `worktable-doc-referrers-${Date.now()}`)
 
@@ -97,13 +98,23 @@ describe("records and HTML Docs that point at a Doc", () => {
       },
       { kind: "html", path: "pulse", label: "Plan" },
     ])
-    // An HTML Doc written by this process is read again.
+    // An HTML Doc written by this process is read again, and open pages of
+    // the docs it points at are told without anyone reading a page.
+    const announced: unknown[] = []
+    const broadcast = wsManager.broadcast.bind(wsManager)
+    wsManager.broadcast = (spaceId, message) => {
+      if (message.type === "doc_links_update") announced.push(message.data)
+      return broadcast(spaceId, message)
+    }
     const edited = await writeWidget(
       "meta",
       buildWidgetFile({ id: "pulse", name: "Pulse", createdBy: "test", updatedBy: "test" }),
       `<a href="javascript:worktable.navigation.openDocument('okrs/q3')">Open the plan</a>`
     )
     edited.release?.()
+    await settleDocReferrers("meta")
+    wsManager.broadcast = broadcast
+    expect(announced).toEqual([{ docPaths: ["okrs/q3"] }])
     expect((await settled("okrs/q3"))?.find((referrer) => referrer.kind === "html")).toEqual({
       kind: "html",
       path: "pulse",

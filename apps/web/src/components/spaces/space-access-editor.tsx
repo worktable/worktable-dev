@@ -253,25 +253,27 @@ export function SpaceAccessEditor({
                   {invite.error.message}
                 </p>
               ) : null}
-              {link ? (
-                <LinkToSend
-                  text={`Couldn't copy the invitation link. Send it to ${link.email} yourself.`}
-                  label="Invitation link"
-                  url={link.url}
-                  copy="Copy"
-                  onCopy={() =>
-                    void copyText(link.url).then(
-                      () => toast.success("Invitation link copied"),
-                      () => toast.error("Select and copy the invitation link")
-                    )
-                  }
-                />
-              ) : null}
             </form>
           ) : draft && plan ? (
             <div className="border-t border-border pt-4">
               <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
             </div>
+          ) : null}
+          {/* Outside the form: the invite that fills the plan swaps the form
+              for the full-plan notice, and this may be the only copy. */}
+          {link ? (
+            <LinkToSend
+              text={`Couldn't copy the invitation link. Send it to ${link.email} yourself.`}
+              label="Invitation link"
+              url={link.url}
+              copy="Copy"
+              onCopy={() =>
+                void copyText(link.url).then(
+                  () => toast.success("Invitation link copied"),
+                  () => toast.error("Select and copy the invitation link")
+                )
+              }
+            />
           ) : null}
           {save.isError && (
             <p role="alert" className="text-sm text-destructive">

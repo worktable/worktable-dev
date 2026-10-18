@@ -57,8 +57,10 @@ automatically; permanent deletion is a separate action.
 ## Find content
 
 Under a Doc's title, a line shows who last edited it and when. Open it to see
-the Doc's recent activity and **Version History**. **Linked from** lists the
-docs that link to this one, with the sentence around each link.
+the Doc's recent activity and **Version History**. Beside it, a count with an
+arrow pointing in shows how many places link to this Doc. Open it to see them:
+docs, with the sentence each link sits in; records whose doc field names this
+Doc; and HTML Docs with a button or link that opens it.
 
 Use search to find documents and records across Spaces. Drawings are searchable
 by typed text; freehand marks require visual inspection.

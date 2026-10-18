@@ -9,6 +9,7 @@ import {
   type DocumentId,
   type WidgetFile,
 } from "@worktable/types";
+import { notifyHtmlContentChanged } from "./content-events.ts";
 import { atomicWriteText, ensureSpaceDirectories, getSpacesBaseDir, suppressPath, unsuppressPath, withStoreWriteLock, withStoreWriteLocks } from "./store.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 import { invalidateHostedDocumentShares } from "./share-lifecycle.ts";
@@ -302,7 +303,12 @@ export async function readWidgetDocument(
     : { data: null, error: widget.error };
 }
 
-export async function readWidgetHtml(spaceId: string, widgetId: string): Promise<{ data: string | null; error: string | null }> {
+export async function readWidgetHtml(
+  spaceId: string,
+  widgetId: string,
+  /** V2: a catalog already read for this Space, so a batch reads it once. */
+  options: { catalog?: DocumentCatalog } = {}
+): Promise<{ data: string | null; error: string | null }> {
   assertSpaceAccess(spaceId, "read");
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   const storageV2 = await usesHtmlDocumentStorageV2();
@@ -314,6 +320,7 @@ export async function readWidgetHtml(spaceId: string, widgetId: string): Promise
       const document = await readHtmlDocumentStorageV2({
         spaceId,
         path: widgetId,
+        ...(options.catalog ? { catalog: options.catalog } : {}),
       });
       return document
         ? { data: document.html, error: null }
@@ -410,6 +417,7 @@ export async function writeWidget(
       release();
       throw error;
     }
+    notifyHtmlContentChanged(spaceId, parsedWidget.id);
     return { data: parsedWidget, error: null, release };
   }
   // Leaf-only nesting: a widget directory never contains another widget. Without
@@ -440,6 +448,7 @@ export async function writeWidget(
     release();
     throw err;
   }
+  notifyHtmlContentChanged(spaceId, parsedWidget.id);
   return { data: parsedWidget, error: null, release };
 }
 

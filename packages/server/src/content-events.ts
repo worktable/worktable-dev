@@ -32,3 +32,23 @@ export function notifyDocContentChanged(spaceId: string, docPath: string): void 
     }
   }
 }
+
+export type HtmlContentListener = (spaceId: string, path: string) => void;
+
+const htmlListeners = new Set<HtmlContentListener>();
+
+/** An HTML Doc's content was written by this process (REST, MCP, create). */
+export function onHtmlContentChanged(listener: HtmlContentListener): () => void {
+  htmlListeners.add(listener);
+  return () => htmlListeners.delete(listener);
+}
+
+export function notifyHtmlContentChanged(spaceId: string, path: string): void {
+  for (const listener of htmlListeners) {
+    try {
+      listener(spaceId, path);
+    } catch (err) {
+      console.error("[content-events] listener error:", logError(err));
+    }
+  }
+}

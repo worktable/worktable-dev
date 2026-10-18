@@ -289,6 +289,7 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       c.get("identity").scopes,
       "annotations:read"
     ),
+    recordsAuthorized: hasScope(c.get("identity").scopes, "records:read"),
     sharingAuthorized:
       (teamsEnabled() ? c.get("identity").principal.type === "human" && canAccessSpace(c.req.param("spaceId") ?? "", "manage") : isHumanWorkspaceOwner(c)) && Boolean(getDocumentSharingConfig()),
   })

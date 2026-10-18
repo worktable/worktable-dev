@@ -5,6 +5,7 @@ import type {
   Annotation,
   DocumentAnnotationV2,
   DocumentBacklink,
+  DocumentReferrer,
   DocumentCollaboration,
   DocumentContributors,
   DocumentContent,
@@ -43,6 +44,7 @@ import {
 } from "./document-source-reader.ts"
 import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
+import { peekDocReferrers } from "./doc-referrers.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -68,6 +70,7 @@ interface DocumentPageMetadata {
   revision?: string
   collaboration?: DocumentCollaboration
   backlinks?: DocumentBacklink[]
+  referrers?: DocumentReferrer[]
   contributors?: DocumentContributors
 }
 
@@ -108,6 +111,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
         : () => null
       const current = (recorded: string) => resolve(recorded) ?? recorded
       const backlinks = peekDocBacklinks(spaceId, path, current)
+      const referrers = peekDocReferrers(spaceId, path, current)
       const activity = peekDocActivity(
         spaceId,
         path,
@@ -117,6 +121,7 @@ const PAGE_INTEGRATIONS: readonly DocumentPageIntegration[] = [
         ...(meta.provenance ? { provenance: meta.provenance } : {}),
         ...(revision ? { revision } : {}),
         ...(backlinks ? { backlinks } : {}),
+        ...(referrers ? { referrers } : {}),
         ...(activity
           ? {
               contributors: {
@@ -266,7 +271,8 @@ async function pageForHandle(
   handle: ResolvedDocumentHandle,
   rawSourceAuthorized: boolean,
   annotationsAuthorized: boolean,
-  sharingAuthorized: boolean
+  sharingAuthorized: boolean,
+  recordsAuthorized = false
 ): Promise<DocumentPage> {
   const integration = await pageIntegration(handle)
   const storageV2 = await usesDocumentStorageV2()
@@ -310,6 +316,13 @@ async function pageForHandle(
       ? { collaboration: metadata.collaboration }
       : {}),
     ...(metadata?.backlinks ? { backlinks: metadata.backlinks } : {}),
+    ...(metadata?.referrers
+      ? {
+          referrers: metadata.referrers.filter(
+            (referrer) => recordsAuthorized || referrer.kind !== "record"
+          ),
+        }
+      : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
   }
 }
@@ -320,6 +333,8 @@ export async function readDocumentPage(options: {
   includeArchived?: boolean
   rawSourceAuthorized: boolean
   annotationsAuthorized: boolean
+  /** Whether records that point at the doc may be named. */
+  recordsAuthorized?: boolean
   sharingAuthorized: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(
@@ -330,7 +345,8 @@ export async function readDocumentPage(options: {
       handle,
       options.rawSourceAuthorized,
       options.annotationsAuthorized,
-      options.sharingAuthorized
+      options.sharingAuthorized,
+      options.recordsAuthorized ?? false
     )
   )
   if (resolution.kind === "not-found") return null

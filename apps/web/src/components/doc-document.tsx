@@ -869,6 +869,7 @@ function MarkdownDocPage({
                 updatedAt={page?.document.updatedAt}
                 contributors={page?.contributors}
                 backlinks={page?.backlinks}
+                referrers={page?.referrers}
                 onVersionHistory={openVersions}
               />
             }
@@ -1376,6 +1377,7 @@ function BlockNoteDocPage({
       updatedAt={page?.document.updatedAt}
       contributors={page?.contributors}
       backlinks={page?.backlinks}
+      referrers={page?.referrers}
       onVersionHistory={openVersions}
     />
   )

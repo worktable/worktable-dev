@@ -16,6 +16,7 @@
 
 import { docStat, listDocs, readDoc } from "./store.ts";
 import { onDocContentChanged } from "./content-events.ts";
+import { LINK_CLOSE, LINK_OPEN, sentenceContext } from "./link-context.ts";
 import { resolveDocLink, type DocListEntry } from "@worktable/types";
 import {
   readDocAliases,
@@ -45,35 +46,74 @@ export interface SpaceLinkGraph {
   orphans: string[];
   /** Outbound links whose target doc does not exist. */
   broken: Array<{ docPath: string; target: string; resolvedPath: string }>;
-  /** For each linked doc, the text around its first link from each source doc. */
-  inboundContext: Map<string, Map<string, string>>;
+  /** For each linked doc, its first link from each source doc and how many there are. */
+  inboundContext: Map<string, Map<string, InboundLinks>>;
 }
 
-/** A doc that links to another, with the text around the link. */
-export interface DocBacklink {
-  path: string;
+/** A source doc's links to one doc: the first one's sentence, and the count. */
+export interface InboundLinks {
   context: string;
+  mark?: { start: number; length: number };
+  count: number;
+}
+
+/** A doc that links to another, with the sentence around its first link. */
+export interface DocBacklink extends InboundLinks {
+  path: string;
 }
 
 // ── Extraction ────────────────────────────────────────────────
 
-/** A link target and the sentence-sized text around it. */
+/** A link target and the sentence it sits in. */
 export interface ExtractedDocLink {
   target: string;
-  /** The line or block the link sits in, as plain text, trimmed to fit a row. */
+  /** The sentence holding the link, as plain text, trimmed to fit a row. */
   context: string;
+  /** Where the link's words sit in `context`. */
+  mark?: { start: number; length: number };
 }
 
-const CONTEXT_MAX = 180;
+function linkWithContext(target: string, marked: string): ExtractedDocLink {
+  const { text, mark } = sentenceContext(marked);
+  return { target, context: text, ...(mark ? { mark } : {}) };
+}
 
-/** Plain text around a link: whitespace collapsed, centered on the link when long. */
-export function linkContext(text: string, linkText = ""): string {
-  const plain = text.replace(/\s+/g, " ").trim();
-  if (plain.length <= CONTEXT_MAX) return plain;
-  const at = linkText ? Math.max(0, plain.indexOf(linkText)) : 0;
-  const start = Math.max(0, Math.min(at - 60, plain.length - CONTEXT_MAX));
-  const end = start + CONTEXT_MAX;
-  return `${start > 0 ? "…" : ""}${plain.slice(start, end).trim()}${end < plain.length ? "…" : ""}`;
+/** Lines that start a block of their own rather than continue a paragraph. */
+const BLOCK_START = /^\s{0,3}(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|\|)/;
+
+/** An ATX heading is a block of one line. */
+const HEADING = /^\s{0,3}#{1,6}(?:\s|$)/;
+
+/** The bounds of the paragraph, list item or other block around `at`. */
+function blockAround(text: string, at: number, length: number): [number, number] {
+  const lineAt = (from: number) => {
+    const end = text.indexOf("\n", from);
+    return text.slice(from, end === -1 ? undefined : end);
+  };
+  let start = text.lastIndexOf("\n", at - 1) + 1;
+  if (HEADING.test(lineAt(start))) {
+    const end = text.indexOf("\n", at + length);
+    return [start, end === -1 ? text.length : end];
+  }
+  while (start > 0) {
+    const previousStart = text.lastIndexOf("\n", start - 2) + 1;
+    const previous = text.slice(previousStart, start - 1);
+    if (
+      previous.trim() === "" ||
+      HEADING.test(previous) ||
+      BLOCK_START.test(lineAt(start))
+    ) {
+      break;
+    }
+    start = previousStart;
+  }
+  let end = text.indexOf("\n", at + length);
+  while (end !== -1) {
+    const next = lineAt(end + 1);
+    if (next.trim() === "" || BLOCK_START.test(next)) break;
+    end = text.indexOf("\n", end + 1);
+  }
+  return [start, end === -1 ? text.length : end];
 }
 
 /** A Markdown line as people read it: links become their text, markers go. */
@@ -96,33 +136,37 @@ function extractMarkdownLinks(markdown: string): ExtractedDocLink[] {
   let match: RegExpExecArray | null;
   while ((match = linkRe.exec(scanned)) !== null) {
     if (match[1] === "!") continue;
-    // The lines the link sits on, as context; code spans read as their text.
-    const start = withoutFences.lastIndexOf("\n", match.index) + 1;
-    const end = withoutFences.indexOf("\n", match.index + match[0].length);
-    const lines = withoutFences
-      .slice(start, end === -1 ? undefined : end)
+    // The block the link sits in, with this link's words marked; code spans
+    // read as their text.
+    const [start, end] = blockAround(withoutFences, match.index, match[0].length);
+    const offset = match.index - start;
+    const block = withoutFences.slice(start, end);
+    const lines = (
+      block.slice(0, offset) +
+      `${LINK_OPEN}${match[2] ?? ""}${LINK_CLOSE}` +
+      block.slice(offset + match[0].length)
+    )
       .replace(/`([^`\n]*)`/g, "$1")
       // Links first: their text may wrap across the lines.
       .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
       .split("\n")
       .map(markdownLineText)
       .join(" ");
-    links.push({
-      target: match[3]!,
-      context: linkContext(lines, (match[2] ?? "").replace(/\s+/g, " ")),
-    });
+    links.push(linkWithContext(match[3]!, lines));
   }
   return links;
 }
 
-/** The readable text of a BlockNote inline run, including link text. */
-function inlineText(content: unknown[]): string {
+/** The readable text of a BlockNote inline run; `marked`'s words are marked. */
+function inlineText(content: unknown[], marked?: unknown): string {
   let text = "";
   for (const inline of content) {
     if (!inline || typeof inline !== "object") continue;
     const node = inline as Record<string, unknown>;
-    if (typeof node.text === "string") text += node.text;
-    else if (Array.isArray(node.content)) text += inlineText(node.content);
+    let part = "";
+    if (typeof node.text === "string") part = node.text;
+    else if (Array.isArray(node.content)) part = inlineText(node.content);
+    text += inline === marked ? `${LINK_OPEN}${part}${LINK_CLOSE}` : part;
   }
   return text;
 }
@@ -135,13 +179,11 @@ function extractBlockNoteLinks(
     if (!block || typeof block !== "object") continue;
     const b = block as Record<string, unknown>;
     if (Array.isArray(b.content)) {
-      const blockText = inlineText(b.content);
       for (const inline of b.content) {
         if (!inline || typeof inline !== "object") continue;
         const node = inline as Record<string, unknown>;
         if (node.type === "link" && typeof node.href === "string") {
-          const linkText = Array.isArray(node.content) ? inlineText(node.content) : "";
-          links.push({ target: node.href, context: linkContext(blockText, linkText) });
+          links.push(linkWithContext(node.href, inlineText(b.content, inline)));
         }
       }
     }
@@ -251,7 +293,7 @@ function resolveSpaceLinkGraph(
 
     const links: DocLink[] = [];
     const seen = new Set<string>();
-    for (const { target, context } of extracted) {
+    for (const { target, context, mark } of extracted) {
       const lexicalPath = resolveDocLink(docPath, target);
       if (lexicalPath === null) continue;
       const resolvedPath = resolveDocAliasIn(aliases, lexicalPath);
@@ -259,7 +301,11 @@ function resolveSpaceLinkGraph(
         throw new Error(`Document alias cycle or hop limit exceeded for ${lexicalPath}`);
       }
       if (resolvedPath === docPath) continue;
-      if (seen.has(resolvedPath)) continue;
+      if (seen.has(resolvedPath)) {
+        const known = inboundContext.get(resolvedPath)?.get(docPath);
+        if (known) known.count += 1;
+        continue;
+      }
       seen.add(resolvedPath);
 
       const resolved = docSet.has(resolvedPath);
@@ -268,8 +314,8 @@ function resolveSpaceLinkGraph(
         const sources = inbound.get(resolvedPath) ?? [];
         sources.push(docPath);
         inbound.set(resolvedPath, sources);
-        const contexts = inboundContext.get(resolvedPath) ?? new Map<string, string>();
-        contexts.set(docPath, context);
+        const contexts = inboundContext.get(resolvedPath) ?? new Map<string, InboundLinks>();
+        contexts.set(docPath, { context, ...(mark ? { mark } : {}), count: 1 });
         inboundContext.set(resolvedPath, contexts);
       } else {
         broken.push({ docPath, target, resolvedPath });
@@ -390,16 +436,18 @@ export function peekDocBacklinks(
   if (!graph) return null;
   // A graph built before a move still names the old paths: `current` maps
   // them to where those docs are now, until the rebuild lands.
-  const backlinks = new Map<string, string>();
+  const backlinks = new Map<string, InboundLinks>();
   for (const [target, sources] of graph.inbound) {
     if (target !== docPath && current(target) !== docPath) continue;
     const contexts = graph.inboundContext.get(target);
     for (const source of sources) {
       const path = current(source);
-      if (!backlinks.has(path)) backlinks.set(path, contexts?.get(source) ?? "");
+      // A doc that now links to itself is not a backlink.
+      if (path === docPath || backlinks.has(path)) continue;
+      backlinks.set(path, contexts?.get(source) ?? { context: "", count: 1 });
     }
   }
-  return [...backlinks].map(([path, context]) => ({ path, context }));
+  return [...backlinks].map(([path, links]) => ({ path, ...links }));
 }
 
 /** Start building a Space's graph in the background if it is missing or out of date. */

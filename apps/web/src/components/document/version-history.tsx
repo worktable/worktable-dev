@@ -103,12 +103,13 @@ function useVersionIdentity(
     (localPerson ||
     category === "human" ||
     participant?.kind === "human" ||
-    (presentation?.id !== undefined &&
-      presentation.id === workspace?.person?.id)
+    presentation?.id !== undefined
       ? "person"
       : raw.startsWith("agent:") ||
           category === "agent" ||
-          participant?.kind === "agent"
+          participant?.kind === "agent" ||
+          // Presentations retain agents that are no longer Thread recipients.
+          presentation !== undefined
         ? "agent"
         : "system")
   const name =

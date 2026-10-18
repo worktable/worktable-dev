@@ -853,6 +853,7 @@ function WidgetDetailPage({
 
         {previewVersionId && (
           <VersionPreview
+            canEdit={validated && !readOnly}
             key={previewVersionId}
             kind="html"
             spaceId={spaceId}
@@ -911,6 +912,7 @@ function WidgetDetailPage({
         </DesktopContextPanel>
 
         <VersionHistoryPanel
+          canEdit={validated && !readOnly}
           kind="html"
           spaceId={spaceId}
           path={widgetId}
@@ -938,6 +940,7 @@ function WidgetDetailPage({
       {belowXl && (
         <>
           <VersionHistoryPanel
+            canEdit={validated && !readOnly}
             kind="html"
             spaceId={spaceId}
             path={widgetId}

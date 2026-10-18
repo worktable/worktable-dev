@@ -11,11 +11,8 @@ import {
   Save,
   X,
 } from "lucide-react"
-import {
-  sourceCategory,
-  type ActivityActor,
-  type DocumentProvenance,
-} from "@worktable/types"
+import type { ActivityActor, DocumentProvenance } from "@worktable/types"
+import { sourceCategory } from "@worktable/types/doc-source"
 import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
@@ -30,7 +27,6 @@ import {
   ContextPanelHeader,
   DesktopContextPanel,
 } from "@/components/desktop-context-panel"
-import { DocumentBylineFrame } from "@/components/document/document-byline"
 import { RelativeTime } from "@/lib/time"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
@@ -43,7 +39,6 @@ import {
 } from "@/lib/docs-api"
 import { useSpace, useWorkspace } from "@/lib/queries"
 import { browserTeamMemberId } from "@/lib/team-context"
-import { useThreadParticipants } from "@/lib/threads-queries"
 import {
   createWidgetCheckpoint,
   listWidgetVersions,
@@ -59,8 +54,11 @@ interface HistoryLocation {
   revision: string
 }
 
-function listKey({ kind, spaceId, path, revision }: HistoryLocation) {
-  return versionHistoryKeys.list(kind, spaceId, path, revision)
+function listKey(
+  { kind, spaceId, path, revision }: HistoryLocation,
+  all = false
+) {
+  return versionHistoryKeys.list(kind, spaceId, path, revision, all)
 }
 
 function savedVersion(version: DocVersionEntry): boolean {
@@ -86,35 +84,26 @@ function useVersionIdentity(
   version?: Pick<DocVersionEntry, "createdBy" | "source" | "checkpoint">,
   currentActor?: ActivityActor
 ) {
-  const { data: directory } = useThreadParticipants()
   const { data: workspace } = useWorkspace()
   const raw = version?.createdBy ?? ""
   const id = currentActor?.id ?? (raw.startsWith("agent:") ? raw.slice(6) : raw)
   const localPerson = !browserTeamMemberId() && ["user", "human"].includes(id)
   const resolvedId = localPerson ? "local:owner" : id
-  const presentation = directory?.presentations?.[resolvedId]
-  const participant = directory?.participants.find(
-    (person) => person.id === (presentation?.id ?? resolvedId)
-  )
+  const presentation = workspace?.presentations?.[resolvedId]
   const category =
     version?.checkpoint?.sourceCategory ?? sourceCategory(version?.source, raw)
   const kind =
     currentActor?.kind ??
-    (localPerson ||
-    category === "human" ||
-    participant?.kind === "human" ||
-    presentation?.id !== undefined
+    (localPerson || category === "human" || presentation?.id !== undefined
       ? "person"
       : raw.startsWith("agent:") ||
           category === "agent" ||
-          participant?.kind === "agent" ||
           // Presentations retain agents that are no longer Thread recipients.
           presentation !== undefined
         ? "agent"
         : "system")
   const name =
     presentation?.name ??
-    participant?.name ??
     currentActor?.name ??
     (kind === "agent"
       ? "An agent"
@@ -210,6 +199,7 @@ export function VersionHistoryPanel({
   revision,
   open,
   drawerMode,
+  canEdit: canEditDocument,
   selectedVersionId,
   currentActor,
   provenance,
@@ -218,6 +208,7 @@ export function VersionHistoryPanel({
 }: HistoryLocation & {
   open: boolean
   drawerMode: boolean
+  canEdit: boolean
   selectedVersionId: string | null
   currentActor?: ActivityActor
   provenance?: DocumentProvenance
@@ -227,17 +218,18 @@ export function VersionHistoryPanel({
   const location = { kind, spaceId, path, revision }
   const queryClient = useQueryClient()
   const { data: space } = useSpace(spaceId)
-  const canEdit = Boolean(space && space.space.permissions?.edit !== false)
-  const [filter, setFilter] = useState<"all" | "saved">("all")
+  const canEdit =
+    canEditDocument && Boolean(space && space.space.permissions?.edit !== false)
+  const [filter, setFilter] = useState<"all" | "saved">("saved")
   const [collapsed, setCollapsed] = useState(false)
   const [saving, setSaving] = useState(false)
   const scrollRef = useScrollFade<HTMLDivElement>()
   const versions = useQuery({
-    queryKey: listKey(location),
+    queryKey: listKey(location, filter === "all"),
     queryFn: () =>
       kind === "doc"
-        ? listDocVersions(spaceId, path, true)
-        : listWidgetVersions(spaceId, path, true),
+        ? listDocVersions(spaceId, path, filter === "all")
+        : listWidgetVersions(spaceId, path, filter === "all"),
     enabled: open,
     staleTime: Infinity,
   })
@@ -246,7 +238,7 @@ export function VersionHistoryPanel({
       index === 0 &&
       version.after.contentHash === provenance?.contentHash &&
       !savedVersion(version)
-    return !currentSnapshot && (filter === "all" || savedVersion(version))
+    return !currentSnapshot
   })
   const selectedIndex = entries.findIndex(
     (version) => version.id === selectedVersionId
@@ -262,10 +254,14 @@ export function VersionHistoryPanel({
         ? createDocCheckpoint(spaceId, path)
         : createWidgetCheckpoint(spaceId, path))
       toast.success("Version saved")
-      await queryClient.invalidateQueries({
-        queryKey: listKey(location),
-        exact: true,
-      })
+      await Promise.all(
+        [false, true].map((all) =>
+          queryClient.invalidateQueries({
+            queryKey: listKey(location, all),
+            exact: true,
+          })
+        )
+      )
     } catch {
       toast.error("Couldn’t save this version")
     } finally {
@@ -473,21 +469,23 @@ function RestoreVersionButton({
   version,
   onRestored,
   inline = false,
+  canEdit,
 }: HistoryLocation & {
   version: DocVersionEntry
   onRestored: () => void
   inline?: boolean
+  canEdit: boolean
 }) {
   const { data: space } = useSpace(spaceId)
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const [restoring, setRestoring] = useState(false)
-  if (!space || space.space.permissions?.edit === false) return null
+  if (!canEdit || !space || space.space.permissions?.edit === false) return null
   return (
     <>
       <Button
         size={inline ? "xs" : "sm"}
-        className={inline ? "h-7 max-xl:h-9" : undefined}
+        className={inline ? "h-9 xl:h-7" : undefined}
         variant="outline"
         onClick={() => setConfirming(true)}
       >
@@ -510,10 +508,14 @@ function RestoreVersionButton({
             setConfirming(false)
             toast.success("Version restored")
             onRestored()
-            await queryClient.invalidateQueries({
-              queryKey: listKey({ kind, spaceId, path, revision }),
-              exact: true,
-            })
+            await Promise.all(
+              [false, true].map((all) =>
+                queryClient.invalidateQueries({
+                  queryKey: listKey({ kind, spaceId, path, revision }, all),
+                  exact: true,
+                })
+              )
+            )
           } catch {
             toast.error("Couldn’t restore this version")
           } finally {
@@ -540,6 +542,7 @@ export function VersionPreview({
   onBack,
   onHistory,
   onRestored,
+  canEdit,
   children,
 }: HistoryLocation & {
   version?: DocVersionEntry
@@ -548,6 +551,7 @@ export function VersionPreview({
   onBack: () => void
   onHistory: () => void
   onRestored: () => void
+  canEdit: boolean
   children: ReactNode | ((byline: ReactNode) => ReactNode)
 }) {
   const identity = useVersionIdentity(version)
@@ -572,12 +576,13 @@ export function VersionPreview({
           version={version}
           onRestored={onRestored}
           inline={inline}
+          canEdit={canEdit}
         />
       )}
       <Button
         size="icon-sm"
         variant="ghost"
-        className={inline ? "size-7 max-xl:size-9" : undefined}
+        className={inline ? "size-9 xl:size-7" : undefined}
         aria-label="Exit compare"
         onClick={onBack}
       >
@@ -586,7 +591,7 @@ export function VersionPreview({
     </div>
   )
   const byline = (
-    <DocumentBylineFrame>
+    <div className="worktable-doc-byline" data-doc-byline>
       <div className="flex min-h-7 items-center justify-between gap-2">
         {version && (
           <span
@@ -601,7 +606,7 @@ export function VersionPreview({
         )}
         {controls}
       </div>
-    </DocumentBylineFrame>
+    </div>
   )
   return (
     <section

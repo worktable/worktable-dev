@@ -10,8 +10,14 @@ type VersionSnapshot = DocVersionEntry & {
 }
 
 export const versionHistoryKeys = {
-  list: (kind: HistoryKind, spaceId: string, path: string, revision: string) =>
-    ["spaces", spaceId, "document-history", kind, path, revision] as const,
+  list: (
+    kind: HistoryKind,
+    spaceId: string,
+    path: string,
+    revision: string,
+    all = false
+  ) =>
+    ["spaces", spaceId, "document-history", kind, path, revision, all] as const,
   snapshot: (
     kind: HistoryKind,
     spaceId: string,

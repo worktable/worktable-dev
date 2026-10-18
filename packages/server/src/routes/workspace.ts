@@ -25,10 +25,7 @@ import { hasScope } from "../token-store.ts"
 import { isRecognitionColor } from "@worktable/types"
 import { canReadSpaceFor, personalPreferencesKey, personSummary } from "../personal-identity.ts"
 import { readPersonalNavigation } from "../personal-navigation-store.ts"
-import {
-  cachedParticipantForKey,
-  resolveParticipant,
-} from "../participant-store.ts"
+import { cachedParticipantPresentations } from "../thread-service.ts"
 import {
   appendWorkspaceImportChunk,
   createWorkspaceExportJob,
@@ -138,11 +135,9 @@ export async function workspaceSummary(
   // The person's own groups and pins ride along, so the sidebar needs no
   // request of its own. null means they have not arranged anything yet.
   const person = personalPreferencesKey(c);
-  // Establish the same participant ID before the sidebar first shows its color.
-  // Once registered, summaries keep using the existing in-memory lookup.
-  if (person && !cachedParticipantForKey(person)) {
-    await resolveParticipant(identity);
-  }
+  const presentations = person && hasScope(identity?.scopes ?? [], "threads:read")
+    ? await cachedParticipantPresentations(person, team?.policyRevision)
+    : undefined;
   // The page carries each Space's content key, so the first render addresses
   // content once instead of again after the spaces list arrives. Later reads
   // take them from the spaces list, which keeps this summary small.
@@ -152,7 +147,7 @@ export async function workspaceSummary(
     ...publicView(ensureWorkspaceManifest(), {
       includeRoot: canReadWorkspaceRoot(c),
     }),
-    ...(person ? { person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
+    ...(person ? { ...(presentations ? { presentations } : {}), person: personSummary(c), navigation: readPersonalNavigation(person, canReadSpaceFor(c)) } : {}),
     contentEpoch: await getWorkspaceCollaborationEpoch(),
     canManage:
       canManageUserSettings(c) && c.get("identity")?.principal.type === "human",

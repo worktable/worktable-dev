@@ -130,12 +130,7 @@ export function threadExcerpt(markdown: string, maxLength: number): string {
   return `${plain.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
-export function participantInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  const initials =
-    words.length > 1 ? [words[0]!, words[words.length - 1]!] : words
-  return initials.map((word) => word[0]?.toUpperCase() ?? "").join("")
-}
+export { participantInitials } from "./recognition"
 
 export function resolveMessageAuthor(
   members: ThreadMember[],

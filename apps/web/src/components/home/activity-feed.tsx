@@ -43,7 +43,7 @@ export function ActorBadge({
             id: actor.id,
             name: actor.name ?? (actor.kind === "person" ? "User" : "Agent"),
           }}
-          className="size-6 [&_[data-slot=avatar-fallback]]:text-[11px]"
+          className="size-6 text-[11px]"
         />
       ) : (
         (actor.name ?? "?").trim().charAt(0).toUpperCase()

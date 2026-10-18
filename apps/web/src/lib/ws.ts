@@ -667,6 +667,7 @@ export function applySpaceEvent(
   }
   if (type === "participants_update") {
     refresh.push({ queryKey: threadQueryKeys.participants, exact: true })
+    refresh.push({ queryKey: queryKeys.workspace, exact: true })
   }
 
   refreshLive(queryClient, refresh)
@@ -749,6 +750,7 @@ function applyMessage(
     } else if (message.type === "participants_update") {
       refreshLive(queryClient, [
         { queryKey: threadQueryKeys.participants, exact: true },
+        { queryKey: queryKeys.workspace, exact: true },
       ])
     } else if (message.type === "spaces_changed") {
       refreshLive(queryClient, [{ queryKey: queryKeys.spaces, exact: true }])

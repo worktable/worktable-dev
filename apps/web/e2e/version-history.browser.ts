@@ -77,7 +77,15 @@ for (const kind of ["doc", "html"] as const) {
     })
     expect(changed.ok()).toBe(true)
     let snapshotReads = 0
+    let rawHistoryReads = 0
     page.on("request", (request) => {
+      const url = new URL(request.url())
+      if (
+        request.method() === "GET" &&
+        url.pathname.endsWith("/versions") &&
+        url.searchParams.get("all") === "true"
+      )
+        rawHistoryReads += 1
       if (
         request.method() === "GET" &&
         new URL(request.url()).pathname.endsWith(`/versions/${versionId}`)
@@ -99,6 +107,10 @@ for (const kind of ["doc", "html"] as const) {
     await expect(
       history.getByRole("button", { name: /^Current version/ })
     ).toBeVisible()
+    await expect(
+      history.getByRole("button", { name: "Saved", exact: true })
+    ).toHaveAttribute("aria-pressed", "true")
+    expect(rawHistoryReads).toBe(0)
     await history.getByRole("button", { name: /^Before review/ }).click()
     const preview = page.getByRole("region", {
       name: "Version preview",
@@ -216,5 +228,35 @@ for (const kind of ["doc", "html"] as const) {
         (entry: { id: string }) => entry.id === savedId
       )
     ).toBe(true)
+
+    // A document can be read-only inside an editable Space. The page's
+    // capabilities govern both mutation controls, including snapshot restore.
+    await page.route(
+      /\/api\/spaces\/history\/documents\/page\?/,
+      async (route) => {
+        const response = await route.fetch()
+        const json = await response.json()
+        json.page.capabilities.edit = false
+        await route.fulfill({ response, json })
+      }
+    )
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.reload()
+    await page
+      .getByRole("button", { name: "More actions", exact: true })
+      .click()
+    await page
+      .getByRole("menuitem", { name: "Version History", exact: true })
+      .click()
+    await expect(
+      history.getByRole("button", { name: "Save version", exact: true })
+    ).toHaveCount(0)
+    await history.getByRole("button", { name: /^Before review/ }).click()
+    await expect(
+      previewText.getByText("Original paragraph", { exact: true })
+    ).toBeVisible()
+    await expect(
+      preview.getByRole("button", { name: "Restore", exact: true })
+    ).toHaveCount(0)
   })
 }

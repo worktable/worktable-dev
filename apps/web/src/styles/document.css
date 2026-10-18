@@ -15,6 +15,7 @@
 /* A Doc's byline sits in the content flow under the title, but reads as app
    text: the document's tracking, wrapping and link styles stay out of it. */
 .worktable-document-content .worktable-doc-byline {
+  @apply mb-7 font-sans text-[0.8125rem] leading-5 text-muted-foreground;
   white-space: normal;
   letter-spacing: normal;
   word-spacing: normal;

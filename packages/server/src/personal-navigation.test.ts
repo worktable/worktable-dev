@@ -34,6 +34,7 @@ async function summary(headers: HeadersInit = {}) {
   return (await response.json()) as {
     navigation?: unknown
     person?: PersonSummary
+    presentations?: Record<string, { id?: string; name?: string }>
   }
 }
 
@@ -87,7 +88,7 @@ describe("personal navigation", () => {
       person: { name: "Owner", role: "owner", signOut: null },
     })
     const firstPerson = (await summary()).person!
-    expect(firstPerson.id).toMatch(/^ptc_/)
+    expect(firstPerson.id).toBe("local:owner")
     await app().fetch(
       new Request("http://localhost/api/profile", {
         method: "PUT",
@@ -95,8 +96,11 @@ describe("personal navigation", () => {
         body: JSON.stringify({ name: "Alex" }),
       })
     )
-    expect(await summary()).toMatchObject({
-      person: { id: firstPerson.id, name: "Alex" },
+    const renamedPerson = await summary()
+    expect(renamedPerson.person?.name).toBe("Alex")
+    expect(renamedPerson.presentations?.["local:owner"]).toEqual({
+      id: renamedPerson.person?.id,
+      name: "Alex",
     })
 
     const saved = await save({ expectedRevision: 0, ...arrangement })

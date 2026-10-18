@@ -846,6 +846,7 @@ function MarkdownDocPage({
 
         {previewVersionId && (
           <VersionPreview
+            canEdit={validated && !readOnly}
             key={previewVersionId}
             kind="doc"
             spaceId={spaceId}
@@ -915,6 +916,7 @@ function MarkdownDocPage({
         </DesktopContextPanel>
 
         <VersionHistoryPanel
+          canEdit={validated && !readOnly}
           kind="doc"
           spaceId={spaceId}
           path={docPath}
@@ -940,6 +942,7 @@ function MarkdownDocPage({
       {belowXl && (
         <>
           <VersionHistoryPanel
+            canEdit={validated && !readOnly}
             kind="doc"
             spaceId={spaceId}
             path={docPath}
@@ -1421,6 +1424,7 @@ function BlockNoteDocPage({
 
         {previewVersionId && (
           <VersionPreview
+            canEdit={validated && !readOnly}
             key={previewVersionId}
             kind="doc"
             spaceId={spaceId}
@@ -1490,6 +1494,7 @@ function BlockNoteDocPage({
         </DesktopContextPanel>
 
         <VersionHistoryPanel
+          canEdit={validated && !readOnly}
           kind="doc"
           spaceId={spaceId}
           path={docPath}
@@ -1515,6 +1520,7 @@ function BlockNoteDocPage({
       {belowXl && (
         <>
           <VersionHistoryPanel
+            canEdit={validated && !readOnly}
             kind="doc"
             spaceId={spaceId}
             path={docPath}

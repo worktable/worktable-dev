@@ -24,6 +24,8 @@ import {
   threadLocationKey,
 } from "@worktable/types"
 import { hasScope, listTokens, type TokenIdentity } from "./token-store.ts"
+import { getAppDir } from "./app-storage.ts"
+import { onWorkspaceChange } from "./workspace-events.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { hasWorkspaceOwnerAuthority } from "./owner-authority.ts"
 import {
@@ -942,10 +944,38 @@ export async function listThreadParticipantsForDisplay(
   >
   presentations: Record<string, ParticipantPresentation>
 }> {
-  const [participants, connections] = await Promise.all([
-    listThreadParticipants(identity, location),
-    listAgentConnections(),
-  ])
+  const participants = await listThreadParticipants(identity, location)
+  const presentations = await buildParticipantPresentations()
+  return {
+    participants: participants.map((participant) => ({
+      ...participant,
+      ...presentations[participant.id],
+    })),
+    presentations,
+  }
+}
+
+// Display metadata reads only identity/configuration files, never portable
+// Threads. Carry one cached copy with boot/workspace so avatars need no request.
+type DisplayPresentations = Record<string, ParticipantPresentation>
+let displayCache: { key: string; readers: Map<string, Promise<DisplayPresentations>> } | undefined
+onWorkspaceChange((event) => {
+  if (event.type === "participants" || event.type === "workspaceReset") displayCache = undefined
+})
+
+export function cachedParticipantPresentations(readerKey: string, policyRevision = 0): Promise<DisplayPresentations> {
+  const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${policyRevision}`
+  if (displayCache?.key !== key) displayCache = { key, readers: new Map() }
+  let value = displayCache.readers.get(readerKey)
+  if (!value) {
+    value = buildParticipantPresentations().catch(() => ({}))
+    displayCache.readers.set(readerKey, value)
+  }
+  return value
+}
+
+async function buildParticipantPresentations(): Promise<Record<string, ParticipantPresentation>> {
+  const connections = await listAgentConnections()
   const presentations: Record<string, ParticipantPresentation> =
     Object.fromEntries(
       connections.flatMap((connection) =>
@@ -1002,13 +1032,7 @@ export async function listThreadParticipantsForDisplay(
       presentations[`local-token:${token.id}`] = presentation
     }
   }
-  return {
-    participants: participants.map((participant) => ({
-      ...participant,
-      ...presentations[participant.id],
-    })),
-    presentations,
-  }
+  return presentations
 }
 
 export async function listThreadSummaries(

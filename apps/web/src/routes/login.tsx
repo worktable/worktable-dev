@@ -34,6 +34,49 @@ function safeNext(): string {
   return raw;
 }
 
+interface InvitationDetails {
+  worktableName: string;
+  inviterName: string | null;
+  spaceName: string | null;
+  email: string;
+  expiresAt: number;
+}
+
+/** What the held invitation is for, or why it can't be used. */
+function useInvitationDetails(
+  invitationId: string | null
+): InvitationDetails | { error: string } | null {
+  const [details, setDetails] = useState<
+    InvitationDetails | { error: string } | null
+  >(null);
+  useEffect(() => {
+    if (!invitationId) return;
+    let cancelled = false;
+    fetch(`${BASE_URL}/auth/team/invitations/${encodeURIComponent(invitationId)}`, {
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const body = (await response.json()) as InvitationDetails & { error?: string };
+        if (cancelled) return;
+        if (response.ok) setDetails(body);
+        else if (response.status === 410)
+          setDetails({ error: body.error ?? "This invitation is no longer available" });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [invitationId]);
+  return details;
+}
+
+function expiresIn(at: number): string {
+  const hours = Math.floor((at - Date.now()) / 3_600_000);
+  if (hours < 1) return "Expires in under an hour";
+  if (hours < 48) return `Expires in ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `Expires in ${Math.floor(hours / 24)} days`;
+}
+
 function LoginPage() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const search = typeof window === "undefined" ? "" : window.location.search;
@@ -43,6 +86,7 @@ function LoginPage() {
     new URLSearchParams(search).get("reset")
   );
   const [notice, setNotice] = useState<string | null>(null);
+  const invite = useInvitationDetails(invitationId);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -167,19 +211,27 @@ function LoginPage() {
     [needsSetup, choosingPassword, resetting, resetToken, password, confirmPassword, redirectNext, status?.teamsEnabled, invitationId, email, name]
   );
 
+  const joinTitle =
+    invite && !("error" in invite) ? `Join ${invite.worktableName}` : "Join Worktable";
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10 text-foreground">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
           <WorktableAppIcon className="mb-4 size-12" />
           <h1 className="text-lg font-semibold">
-            {resetting ? "Choose a new password" : invitationId ? "Join Worktable" : needsSetup ? "Set your owner password" : "Sign in to Worktable"}
+            {resetting ? "Choose a new password" : invitationId ? (invite && "error" in invite ? "This invitation can’t be used" : joinTitle) : needsSetup ? "Set your owner password" : "Sign in to Worktable"}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {resetting ? "This link works once. Choosing a new password signs you out everywhere." : invitationId ? "Choose a name and password for your individual account. If you already have an account here, use its password." : status?.teamsEnabled ? "Sign in with your individual account." : needsSetup
+            {resetting ? "This link works once. Choosing a new password signs you out everywhere." : invitationId ? (invite && "error" in invite ? `${invite.error}. Ask whoever invited you for a new one.` : invite ? `${invite.inviterName ?? "A teammate"} invited you to ${invite.spaceName ?? "work with the team"}. Choose a name and password, or use your password if you already have an account here.` : "Choose a name and password for your individual account. If you already have an account here, use its password.") : status?.teamsEnabled ? "Sign in with your individual account." : needsSetup
               ? "Create a password to protect this workspace over the network."
               : "Enter your owner password to open this workspace."}
           </p>
+          {invite && !("error" in invite) && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              For {invite.email} · {expiresIn(invite.expiresAt)}
+            </p>
+          )}
         </div>
 
         {isHttp && (
@@ -192,6 +244,7 @@ function LoginPage() {
           </div>
         )}
 
+        {invite && "error" in invite ? null : (
         <form onSubmit={onSubmit} className="space-y-3">
           {resetting ? null : invitationId ? <Input aria-label="Name" autoComplete="name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting || !status} /> : status?.teamsEnabled ? <Input aria-label="Email" type="email" autoComplete="username" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={submitting || !status} /> : null}
           <div className="relative">
@@ -244,11 +297,12 @@ function LoginPage() {
               ? choosingPassword
                 ? "Setting password…"
                 : "Signing in…"
-              : resetting ? "Set new password" : invitationId ? "Join Worktable" : needsSetup
+              : resetting ? "Set new password" : invitationId ? joinTitle : needsSetup
                 ? "Set password"
                 : "Sign in"}
           </Button>
         </form>
+        )}
       </div>
     </div>
   );

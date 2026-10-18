@@ -9,6 +9,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
+import { useIsSelf } from "@/lib/use-is-self"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
@@ -23,10 +24,15 @@ export function ActorBadge({
   actor,
   live = false,
 }: {
-  actor: Pick<ActivityActor, "kind" | "name">
+  actor: Pick<ActivityActor, "kind" | "name"> & { id?: string }
   live?: boolean
 }) {
-  const initial = (actor.kind === "person" ? "You" : (actor.name ?? "?"))
+  const isSelf = useIsSelf()
+  const initial = (
+    actor.kind === "person"
+      ? actorName({ kind: "person", id: actor.id ?? "", name: actor.name }, isSelf)
+      : (actor.name ?? "?")
+  )
     .trim()
     .charAt(0)
     .toUpperCase()
@@ -128,9 +134,10 @@ function records(count: number | undefined): string {
 
 /** One plain sentence: who did what to which thing. */
 function Sentence({ entry }: { entry: ActivityEntry }) {
+  const isSelf = useIsSelf()
   const who = (
     <span className="font-medium text-foreground">
-      {actorName(entry.actor)}
+      {actorName(entry.actor, isSelf)}
     </span>
   )
   const what = <TargetLink entry={entry} />

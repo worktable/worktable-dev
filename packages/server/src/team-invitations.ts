@@ -13,6 +13,8 @@ import {
 } from "./team-access.ts"
 import { findTeamMember } from "./team-members.ts"
 import { TeamAccessError } from "./team-policy.ts"
+import { GETTING_STARTED_SPACE_ID } from "@worktable/types/setup"
+import { gettingStartedOpen, spaceOpen } from "./getting-started.ts"
 
 /** A sent invitation waits this long before another email, and is emailed at most this often. */
 export const INVITATION_EMAIL_COOLDOWN_MS = 10 * 60_000
@@ -225,18 +227,25 @@ export function applyInvitationStartSpace(
   }).immediate()
 }
 
-/** The Space a newly joined member should open, if they can see it now. */
+/**
+ * The Space a newly joined member should open: the invitation's, if they can
+ * see it now, or else Getting Started, where their own first steps are.
+ * Never an archived Space.
+ */
 export function invitationLandingSpace(
   invitationId: string,
   userId: string
 ): string | null {
-  const spaceId = invitationDetails(invitationId)?.startSpaceId
   const member = findTeamMember(userId)
   const current = accessSnapshot()
-  if (!spaceId || !member || !current) return null
-  if (!spaceInventory().ids.includes(spaceId)) return null
-  return levelAtLeast(memberLevel(current, member, spaceId), "read")
-    ? spaceId
+  if (!member || !current) return null
+  const visible = (spaceId: string) =>
+    spaceInventory().ids.includes(spaceId) &&
+    levelAtLeast(memberLevel(current, member, spaceId), "read")
+  const spaceId = invitationDetails(invitationId)?.startSpaceId
+  if (spaceId && visible(spaceId) && spaceOpen(spaceId)) return spaceId
+  return gettingStartedOpen() && visible(GETTING_STARTED_SPACE_ID)
+    ? GETTING_STARTED_SPACE_ID
     : null
 }
 

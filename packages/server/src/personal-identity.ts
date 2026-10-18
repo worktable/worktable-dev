@@ -30,6 +30,8 @@ export interface PersonSummary {
   id: string
   name: string
   role: "owner" | "member"
+  /** How Activity names them as its actor, so it can say "You". */
+  activityId: string
   /** How this person signs out here, or null when there is no session. */
   signOut: "team" | "cloud" | "password" | null
 }
@@ -45,6 +47,7 @@ export function personSummary(c: Context): PersonSummary | null {
       id: participant?.id ?? member.actorId,
       name: member.name,
       role: member.role,
+      activityId: identity.principal.id,
       signOut: isHosted() ? "cloud" : "team",
     }
   }
@@ -52,6 +55,7 @@ export function personSummary(c: Context): PersonSummary | null {
     id: participant?.id ?? identity.principal.id,
     name: participant?.name ?? "Owner",
     role: "owner",
+    activityId: identity.principal.id,
     signOut: isHosted() ? "cloud" : authRequired() ? "password" : null,
   }
 }

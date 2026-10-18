@@ -31,6 +31,14 @@ async function openBlockMenu(page: Page, block: Locator): Promise<void> {
 
 test.beforeAll(async () => {
   harness = await startWebHarness("starter-space-browser")
+  // Unpinned, Getting Started lists its documents in the sidebar like any
+  // other Space.
+  const unpinned = await fetch(`${harness.apiUrl}/api/profile/setup`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hidden: true }),
+  })
+  expect(unpinned.status).toBe(200)
   const diagramDirectory = harness.workspacePath("spaces/welcome/docs/diagrams")
   await mkdir(diagramDirectory, { recursive: true })
   await writeFile(
@@ -94,23 +102,23 @@ test("every discovered document opens through the common page", async ({
   )
 
   await page.goto(
-    new URL("/spaces/welcome/docs/ways-to-work", harness.webUrl).href,
+    new URL("/spaces/welcome/docs/what-agents-can-make", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
+  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
   await expect(
-    page.getByRole("heading", { name: "Ways to Work", exact: true })
+    page.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
   await page.goto(
-    new URL("/spaces/welcome/documents/WAYS-TO-WORK", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/WHAT-AGENTS-CAN-MAKE", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
+  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
 
   await page.route("**/api/spaces/welcome/documents/page?*", async (route) => {
     const url = new URL(route.request().url())
-    if (url.searchParams.get("path") !== "ways-to-work") {
+    if (url.searchParams.get("path") !== "what-agents-can-make") {
       await route.continue()
       return
     }
@@ -124,7 +132,7 @@ test("every discovered document opens through the common page", async ({
     })
   })
   await page.goto(
-    new URL("/spaces/welcome/documents/ways-to-work", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
   await expect(
@@ -139,43 +147,41 @@ test("the starter board renders Records and persists a status change", async ({
   page,
 }) => {
   await page.goto(
-    new URL("/spaces/welcome/documents/onboarding-board", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/launch-board", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
 
-  const boardFrame = page.locator('iframe[title="Onboarding Board"]')
+  const title = 'iframe[title="Example: Launch Plan"]'
+  const boardFrame = page.locator(title)
   await expect(boardFrame).toBeVisible({ timeout: 30_000 })
-  const board = page.frameLocator('iframe[title="Onboarding Board"]')
-  const cards = board.locator("article.card")
+  const cards = page.frameLocator(title).locator("article.card")
   await expect(cards).toHaveCount(5, { timeout: 10_000 })
 
-  const firstGuideItem = cards.filter({
-    hasText: "Explain the building blocks",
-  })
-  const status = firstGuideItem.getByRole("combobox")
-  await expect(status).toHaveValue("Next")
+  const demo = cards.filter({ hasText: "Prepare the demo" })
+  const status = demo.getByRole("combobox")
+  await expect(status).toHaveValue("To do")
 
-  await status.selectOption("Ready")
+  await status.selectOption("In progress")
 
   await expect
     .poll(async () => {
       const response = await fetch(
-        `${harness.apiUrl}/api/spaces/welcome/records/onboarding-work/purpose-in-one-minute`
+        `${harness.apiUrl}/api/spaces/welcome/records/launch-plan/demo`
       )
       const body = (await response.json()) as {
         record?: { data?: { status?: string } }
       }
       return body.record?.data?.status
     })
-    .toBe("Ready")
+    .toBe("In progress")
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(boardFrame).toBeVisible({ timeout: 30_000 })
   const reloadedCard = page
-    .frameLocator('iframe[title="Onboarding Board"]')
+    .frameLocator(title)
     .locator("article.card")
-    .filter({ hasText: "Explain the building blocks" })
-  await expect(reloadedCard.getByRole("combobox")).toHaveValue("Ready")
+    .filter({ hasText: "Prepare the demo" })
+  await expect(reloadedCard.getByRole("combobox")).toHaveValue("In progress")
 })
 
 test("rich-doc block handles remain usable after annotation composer closes", async ({
@@ -183,17 +189,17 @@ test("rich-doc block handles remain usable after annotation composer closes", as
 }) => {
   await page.setViewportSize({ width: 1100, height: 800 })
   await page.goto(
-    new URL("/spaces/welcome/documents/ways-to-work", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
 
   const editor = page.locator(".bn-editor")
   const firstBlock = editor.getByText(
-    "Use Worktable to create and revise work yourself or with a connected agent. Choose the format that fits the task.",
+    "Ask an agent for the result you want. It chooses the format, and you review the work here.",
     { exact: true }
   )
   const secondBlock = editor.getByRole("heading", {
-    name: "Useful combinations",
+    name: "Combine them",
     exact: true,
   })
   const thirdBlock = editor.getByRole("heading", {
@@ -261,7 +267,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   // Space Home also links docs from Recent and Activity; use the sidebar tree.
   const tree = page.getByRole("navigation", { name: "Active documents" })
   await expect(
-    tree.getByRole("link", { name: "Ways to Work", exact: true })
+    tree.getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
 
   const created = await page.request.post(
@@ -412,8 +418,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await frame.getByRole("button", { name: "Open move note" }).click()
   await resolutionStarted
-  await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
+  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
+  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
   releaseResolution()
   expect((await delayedResolution).status()).toBe(200)
   await page.evaluate(
@@ -422,7 +428,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       )
   )
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
+  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
   await page.unroute("**/api/spaces/welcome/documents/resolve?*")
   await treeLink.click()
   await expect(page).toHaveURL(
@@ -434,13 +440,13 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await page.getByRole("menuitem", { name: "Rename" }).click()
   const renameDialog = page.getByRole("dialog", { name: "Rename Doc" })
   const pathInput = renameDialog.getByRole("textbox", { name: "New path" })
-  await pathInput.fill("onboarding-board")
+  await pathInput.fill("launch-board")
   await renameDialog.getByRole("button", { name: "Rename" }).click()
   await expect(
     page.getByText("Failed to rename HTML doc", { exact: true })
   ).toBeVisible()
   await expect(renameDialog).toBeVisible()
-  await expect(pathInput).toHaveValue("onboarding-board")
+  await expect(pathInput).toHaveValue("launch-board")
 
   await pathInput.fill("plans/live-status-renamed")
   await renameDialog.getByRole("button", { name: "Rename" }).click()
@@ -453,11 +459,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   let racePage = await page.context().newPage()
   await racePage.routeWebSocket(/\/ws(?:\?|$)/, (socket) => socket.close())
   await racePage.goto(
-    new URL("/spaces/welcome/documents/ways-to-work", harness.webUrl).href,
+    new URL("/spaces/welcome/documents/what-agents-can-make", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
   await expect(
-    racePage.getByRole("link", { name: "Ways to Work", exact: true })
+    racePage.getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
   // The tab shares what the first one left open, so Plans may be open.
   const racePlans = racePage
@@ -480,15 +486,15 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       .getByRole("heading", { name: "Ready now" })
   ).toBeVisible()
   await racePage
-    .getByRole("link", { name: "Ways to Work", exact: true })
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
-    /\/spaces\/welcome\/documents\/ways-to-work$/
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
   )
   // The URL changes before the renderer commits. Finish leaving the cached
   // document before exercising a fresh mount during the concurrent move.
   await expect(
-    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+    racePage.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible()
   await expect(
     racePage.getByRole("link", { name: "Live Status", exact: true })
@@ -551,15 +557,15 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     racePage.getByRole("heading", { name: "Move Note", exact: true })
   ).toBeVisible()
   await racePage
-    .getByRole("link", { name: "Ways to Work", exact: true })
+    .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
-    /\/spaces\/welcome\/documents\/ways-to-work$/
+    /\/spaces\/welcome\/documents\/what-agents-can-make$/
   )
   // The URL changes before the renderer commits. Finish leaving the cached
   // document before exercising a fresh mount during the concurrent move.
   await expect(
-    racePage.getByRole("heading", { name: "Ways to Work", exact: true })
+    racePage.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible()
 
   let docMovedDuringRead = false
@@ -755,8 +761,8 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await page.getByRole("link", { name: "Ways to Work", exact: true }).click()
-  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/ways-to-work$/)
+  await page.getByRole("link", { name: "What Agents Can Make", exact: true }).click()
+  await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/what-agents-can-make$/)
 
   await page
     .getByRole("textbox", { name: "Search workspace" })

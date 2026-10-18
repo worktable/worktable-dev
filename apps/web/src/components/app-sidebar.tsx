@@ -167,6 +167,8 @@ import {
   restoreWidget,
 } from "@/lib/widgets-api"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { GettingStartedRow } from "@/components/sidebar/getting-started-row"
+import { useGettingStartedShortcut } from "@/lib/setup"
 import { toast } from "@worktable/ui/components/sonner"
 import type {
   DocListEntry,
@@ -2504,8 +2506,14 @@ export function AppSidebar() {
 
   const groupOf = (spaceId: string) =>
     navigation?.spaceGroups[spaceId] ?? null
+  // Getting Started sits above the list while the person keeps it pinned.
+  const gettingStarted = useGettingStartedShortcut(spaces)
   const activeSpaces =
-    spaces?.filter((space) => !isSpaceArchived(space as SpaceFile)) ?? []
+    spaces?.filter(
+      (space) =>
+        !isSpaceArchived(space as SpaceFile) &&
+        space.id !== gettingStarted?.space.id
+    ) ?? []
   const archivedSpaces =
     spaces?.filter((space) => isSpaceArchived(space as SpaceFile)) ?? []
   const pinnedSpaces = navigation
@@ -2720,6 +2728,17 @@ export function AppSidebar() {
               <History className="size-4 shrink-0" />
               <span>Activity</span>
             </Link>
+
+            {gettingStarted && (
+              <GettingStartedRow
+                space={gettingStarted.space}
+                progress={gettingStarted.progress}
+                active={currentSpaceId === gettingStarted.space.id}
+                onNavigate={() => {
+                  if (isMobile) setOpen(false)
+                }}
+              />
+            )}
 
             {pinnedSpaces.length > 0 &&
               renderSection("pinned", "Pinned", pinnedSpaces, undefined, {

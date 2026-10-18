@@ -1,3 +1,5 @@
+import { readPersonSetup } from "./personal-navigation-store.ts"
+import type { SetupItemId } from "@worktable/types/setup"
 import { base64url, SignJWT } from "jose"
 import {
   GATEWAY_HEADER,
@@ -1375,6 +1377,24 @@ test("invitations carry a starting Space, report their email, and grant a restri
   expect(canAccessSpace("original", "edit", identityFor("carol2@example.test"))).toBe(
     true
   )
+  // Joining has ticked off the new member's first step, and the inviter's,
+  // by the time acceptance answers, so the member's first page shows it.
+  const stepDone = (identity: TokenIdentity, item: SetupItemId) =>
+    readPersonSetup(participantKey(identity))?.items[item]
+  expect(stepDone(identityFor("carol2@example.test"), "join-space")).toMatchObject(
+    { spaceId: "original" }
+  )
+  expect(stepDone(owner, "invite-team")).toBeDefined()
+
+  // A Space archived since the invitation is not where the member lands.
+  const { invitation: hankInvitation } = (await (
+    await invite(asOwner, { email: "hank@example.test", spaceId: "original" })
+  ).json()) as { invitation: { id: string } }
+  await runWithTeamIdentity(owner, () => setSpaceArchived("original", true))
+  expect(await (await enroll(hankInvitation.id, "Hank")).json()).toEqual({
+    ok: true,
+  })
+  await runWithTeamIdentity(owner, () => setSpaceArchived("original", false))
 
   // Retiring a Space's policy clears it from pending invitations, so a Space
   // that later takes the same id is never granted through them.
@@ -1720,6 +1740,28 @@ test("access follows changes made through another database connection", async ()
   renameSync(`${teamDatabasePath()}.copy`, teamDatabasePath())
   await nextTurn()
   expect(() => currentTeamWorktable()).toThrow("restart after recovery")
+})
+
+test("an owner who already has a password keeps it for their account", async () => {
+  const { setOwnerPassword } = await import("./session-store.ts")
+  await setOwnerPassword(password)
+  const activated = await activateLocalTeams(
+    origin,
+    { name: "Alice", email: "alice@example.test" },
+    {
+      user: "owner",
+      workspace: join(root, "workspace"),
+      credentialClass: "local",
+      scopes: ["*"],
+      agent: null,
+      principal: { id: "local:owner", type: "human", displayName: "Owner" },
+    }
+  )
+  expect(activated.member.role).toBe("owner")
+  const signedIn = await (await getTeamAuth(origin)).api.signInEmail({
+    body: { email: "alice@example.test", password },
+  })
+  expect(signedIn.user.email).toBe("alice@example.test")
 })
 
 test("an interrupted activation can be retried with another email or password", async () => {
@@ -2208,6 +2250,11 @@ test("linked Cloud agents require an explicit local member binding and follow li
     )
   expect((await (await request()).json()).result.isError).toBe(true)
   expect((await readDoc("original", "linked-proof")).data).toBeNull()
+  // Signing in is connecting: the member's setup shows it before the agent
+  // has done anything.
+  expect(
+    readPersonSetup(participantKey(member))?.items["connect-agent"]
+  ).toBeDefined()
   setSpaceAccessPolicy(
     {
       spaceId: "original",

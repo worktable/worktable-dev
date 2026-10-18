@@ -569,7 +569,11 @@ function RootLayout() {
 
   if (workspaceQuery.isPending || workspaceChanged) return <InitialLoader />
 
-  if (workspace?.onboarding?.status === "pending") {
+  // Setup is the owner's; people who join skip it.
+  if (
+    workspace?.onboarding?.status === "pending" &&
+    workspace.person?.role !== "member"
+  ) {
     return (
       <>
         <Suspense fallback={<InitialLoader />}>

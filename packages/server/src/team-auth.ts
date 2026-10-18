@@ -1,3 +1,4 @@
+import { noteInvitationAcceptedForSetup } from "./personal-setup.ts"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { betterAuth, type BetterAuthOptions } from "better-auth"
 import { APIError, createAuthEndpoint } from "better-auth/api"
@@ -136,6 +137,7 @@ function teamAuthOptions(origin: string) {
           afterAcceptInvitation: async ({ invitation, member, user }) => {
             recordTeamEnrollment(member, user.name)
             applyInvitationStartSpace(invitation, member.id)
+            await noteInvitationAcceptedForSetup(invitation, member.id)
           },
           afterRemoveMember: async ({ member }) =>
             retireTeamEnrollment(member.id, member.organizationId),

@@ -111,6 +111,11 @@ import {
 } from "../html-document-storage-v2.ts"
 import { DEFAULT_AGENT_PRINCIPAL } from "./helpers.ts"
 import {
+  noteAgentCallForSetup,
+  noteAgentPairedForSetup,
+  setupKeyForIdentity,
+} from "../personal-setup.ts"
+import {
   listDocumentLifetimeTargetsLocked,
   listDocuments,
   readDocument,
@@ -803,6 +808,7 @@ export async function dispatchOperation(
   }
   authorize()
   const principal = context.principal ?? DEFAULT_AGENT_PRINCIPAL
+  if (principal.type === "agent") noteAgentCallForSetup(caller)
   const result = await runAsActivityActor(principal, () =>
     _dispatchOperationInner(operationId, args, { ...context, principal })
   )
@@ -929,6 +935,7 @@ async function _dispatchOperationInner(
       if (!name || name.length > 120) {
         throw new Error("name is required to register a participant")
       }
+      void noteAgentPairedForSetup(setupKeyForIdentity(currentRequestIdentity()))
       return await resolveParticipant(identity, {
         name,
         // Self-registration is a new adapter-only operation, so it always opts

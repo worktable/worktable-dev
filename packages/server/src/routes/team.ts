@@ -1,3 +1,4 @@
+import { hasOwnerPassword } from "../session-store.ts"
 import { updateTeamAgentConnection } from "../team-agent-connections.ts"
 import { isHosted } from "../hosted.ts"
 import { ENV } from "@worktable/hosted-contract"
@@ -74,7 +75,7 @@ const setup = z
   .object({
     name: z.string().trim().min(1).max(100),
     email: z.string().email().max(254),
-    password: z.string().min(8).max(128),
+    password: z.string().min(8).max(128).optional(),
   })
   .strict()
 const grant = z.object({
@@ -108,7 +109,11 @@ teamRouter.get("/", (c) => {
 })
 teamRouter.post("/activate", async (c) => {
   const parsed = setup.safeParse(await c.req.json().catch(() => null))
-  if (!parsed.success)
+  // Without a new password, the owner keeps the one this Worktable has.
+  if (
+    !parsed.success ||
+    (!parsed.data.password && !(await hasOwnerPassword()))
+  )
     return c.json(
       {
         error:

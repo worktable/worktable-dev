@@ -267,9 +267,14 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
 
 // ── Entry ──────────────────────────────────────────────────
 
+/** Row padding sits outside the headings' and timestamps' shared left edge. */
+export function ActivityList({ children }: { children: ReactNode }) {
+  return <ul className="-mx-2">{children}</ul>
+}
+
 function ActivityRow({ children }: { children: ReactNode }) {
   return (
-    <li className="relative isolate flex min-h-11 gap-3 rounded-lg transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
+    <li className="relative isolate flex min-h-11 gap-3 rounded-lg px-2 py-2.5 transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
       {children}
     </li>
   )
@@ -278,10 +283,13 @@ function ActivityRow({ children }: { children: ReactNode }) {
 /** The badge on the timeline, joined to the next entry by a line. */
 function Rail({ children, last }: { children: ReactNode; last: boolean }) {
   return (
-    <div className="flex shrink-0 flex-col items-center">
+    <div className="relative flex shrink-0 flex-col items-center">
       {children}
       {!last && (
-        <span aria-hidden="true" className="my-1.5 w-px flex-1 bg-border" />
+        <span
+          aria-hidden="true"
+          className="absolute top-7.5 -bottom-3.5 w-px bg-border"
+        />
       )}
     </div>
   )
@@ -289,7 +297,7 @@ function Rail({ children, last }: { children: ReactNode; last: boolean }) {
 
 function ActivityTime({ at }: { at?: string }) {
   return (
-    <span className="w-16 shrink-0 pr-1 text-right text-xs leading-5 text-muted-foreground/70 tabular-nums">
+    <span className="w-16 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
       {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
     </span>
   )
@@ -311,12 +319,7 @@ export function ActivityItem({
       <Rail last={last}>
         <ActorBadge actor={entry.actor} />
       </Rail>
-      <div
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
-          last ? "pb-1" : "pb-5"
-        )}
-      >
+      <div className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
         <p className="break-words">
           <Sentence entry={entry} />
         </p>
@@ -390,12 +393,7 @@ function LiveReply({
           live
         />
       </Rail>
-      <p
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-5 text-muted-foreground",
-          last ? "pb-1" : "pb-5"
-        )}
-      >
+      <p className="min-w-0 flex-1 text-sm leading-5 text-muted-foreground">
         <span className="font-medium text-foreground">{name}</span> is replying
         in{" "}
         <ThreadLink
@@ -461,7 +459,7 @@ export function ActivityPanel({
       </div>
       <div
         ref={scrollRef}
-        className="scroll-fade min-h-0 flex-1 overflow-y-auto"
+        className="scroll-fade -mx-2 min-h-0 flex-1 overflow-y-auto px-2"
       >
         {isPending ? (
           <div className="space-y-4 pt-1">
@@ -489,7 +487,7 @@ export function ActivityPanel({
         ) : (
           <>
             {live.length > 0 && (
-              <ul>
+              <ActivityList>
                 {live.map((thread, index) => (
                   <LiveReply
                     key={thread.id}
@@ -497,19 +495,19 @@ export function ActivityPanel({
                     last={index === live.length - 1 && entries.length === 0}
                   />
                 ))}
-              </ul>
+              </ActivityList>
             )}
             {groups.map((group, index) => (
               <div key={group.label}>
                 <h3
                   className={cn(
-                    "mb-3 text-xs leading-4 font-medium text-muted-foreground/70",
+                    "mb-1 text-xs leading-4 font-medium text-muted-foreground/70",
                     index > 0 && "mt-5"
                   )}
                 >
                   {group.label}
                 </h3>
-                <ul>
+                <ActivityList>
                   {group.items.map((entry, itemIndex) => (
                     <ActivityItem
                       key={entry.id}
@@ -522,7 +520,7 @@ export function ActivityPanel({
                       }
                     />
                   ))}
-                </ul>
+                </ActivityList>
               </div>
             ))}
           </>

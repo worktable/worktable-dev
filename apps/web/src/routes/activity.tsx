@@ -10,7 +10,11 @@ import {
   SelectValue,
 } from "@worktable/ui/components/select"
 import { Button } from "@worktable/ui/components/button"
-import { ActivityItem, ActorBadge } from "@/components/home/activity-feed"
+import {
+  ActivityItem,
+  ActivityList,
+  ActorBadge,
+} from "@/components/home/activity-feed"
 import { groupByDay } from "@/lib/activity-format"
 import { useActivityAgents, useActivityPages } from "@/lib/activity"
 import { useSpaces } from "@/lib/queries"
@@ -171,10 +175,10 @@ function ActivityPage() {
         <div className="mt-4">
           {groupByDay(entries).map((group) => (
             <section key={group.label} aria-label={group.label}>
-              <h2 className="mt-6 mb-3 flex items-center gap-3 text-xs font-semibold text-foreground after:h-px after:flex-1 after:bg-border">
+              <h2 className="mt-6 mb-1 flex items-center gap-3 text-xs font-semibold text-foreground after:h-px after:flex-1 after:bg-border">
                 {group.label}
               </h2>
-              <ul>
+              <ActivityList>
                 {group.items.map((entry, index) => (
                   <ActivityItem
                     key={entry.id}
@@ -187,7 +191,7 @@ function ActivityPage() {
                     }
                   />
                 ))}
-              </ul>
+              </ActivityList>
             </section>
           ))}
           {pages.hasNextPage && (

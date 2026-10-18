@@ -19,6 +19,12 @@ import {
   CardTitle,
 } from "@worktable/ui/components/card"
 import { Callout } from "@worktable/ui/components/callout"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@worktable/ui/components/tooltip"
 import { Download, ExternalLink, Gift, TriangleAlert } from "lucide-react"
 import { getConnection } from "@/lib/system-api"
 import {
@@ -106,9 +112,7 @@ export function AccountSection() {
           </Card>
         ) : billingQuery.error instanceof HttpError && billingQuery.error.status === 403 && (billingQuery.error.body as {code?: string})?.code === "BILLING_PAYER_REQUIRED" ? (
           <p className="text-sm text-muted-foreground">
-            {cloudPlan?.payerName
-              ? `${cloudPlan.payerName} manages billing for ${worktableName}.`
-              : `Billing for ${worktableName} is managed by the person who pays for it.`}
+            {`Contact ${cloudPlan?.payerName || "the person who pays for it"} about ${worktableName}'s plan and billing.`}
           </p>
         ) : billingQuery.isError || !billingQuery.data ? (
           <Card size="sm">
@@ -291,13 +295,16 @@ export function SubscriptionCard({
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">{other.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {tooMany
-                          ? `Holds ${other.peopleLimit} people. Remove ${people! - other.peopleLimit} first.`
-                          : `Up to ${other.peopleLimit} people · ${formatPrice(other.amount, plan.currency)} monthly`}
+                        Up to {other.peopleLimit} people ·{" "}
+                        {formatPrice(other.amount, plan.currency)} monthly
                       </p>
                     </div>
-                    <Button
-                      size="sm"
+                    <PlanButton
+                      reason={
+                        tooMany
+                          ? `Remove ${people! - other.peopleLimit} ${people! - other.peopleLimit === 1 ? "person" : "people"} to fit ${other.name}`
+                          : null
+                      }
                       variant={primary === id ? "default" : "outline"}
                       disabled={busy || tooMany}
                       onClick={() => (via === "checkout" ? onCheckout(id) : onChangePlan(id))}
@@ -308,7 +315,7 @@ export function SubscriptionCard({
                         : up
                           ? "Upgrade"
                           : "Downgrade"}
-                    </Button>
+                    </PlanButton>
                   </li>
                 )
               })}
@@ -390,6 +397,39 @@ export function SubscriptionCard({
         }}
       />
     </div>
+  )
+}
+
+/** A plan change, with why it can't happen yet on hover. */
+function PlanButton({
+  reason,
+  variant,
+  disabled,
+  onClick,
+  children,
+}: {
+  reason: string | null
+  variant: "default" | "outline"
+  disabled: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  const button = (
+    <Button size="sm" variant={variant} disabled={disabled} onClick={onClick}>
+      {children}
+    </Button>
+  )
+  if (!reason) return button
+  // A disabled button takes no pointer, so the wrapper carries the hint.
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger render={<span tabIndex={0} aria-label={reason} />}>
+          {button}
+        </TooltipTrigger>
+        <TooltipContent>{reason}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

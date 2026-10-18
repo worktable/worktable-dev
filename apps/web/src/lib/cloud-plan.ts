@@ -22,10 +22,10 @@ export function useCloudPlan(): {
   }
 }
 
-/** "$49 a month" */
+/** "$49 monthly" */
 export function planPrice(id: CloudPlanId): string {
   const plan = CLOUD_PLANS[id]
-  return plan.amount === 0 ? "Free" : `$${plan.amount / 100} a month`
+  return plan.amount === 0 ? "Free" : `$${plan.amount / 100} monthly`
 }
 
 /** "Up to 12 people", or "Just you and your agents" on Solo. */

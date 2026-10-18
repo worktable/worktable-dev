@@ -24,21 +24,19 @@ function render(plan: Partial<CloudPlan>, adding = 1) {
   )
 }
 
-test("a full plan offers the next plan to the person who pays, and names them to everyone else", () => {
+test("a full plan offers the next plan to the person who pays, and lets everyone else ask them", () => {
   expect(render({ plan: "solo", peopleLimit: 1, people: 1 })).toContain(
-    "Inviting people needs a paid plan for Northwind."
+    "Choose a plan to invite people to Northwind."
   )
   const payer = render({})
-  expect(payer).toContain(
-    "Northwind&#x27;s plan has room for 12 people, and 12 are in or invited."
-  )
-  expect(payer).toContain("Upgrade to Business")
-  expect(payer).toContain("Business holds up to 50 for $199 a month.")
-  expect(render({ isPayer: false })).toContain(
-    "Northwind is full. Ask Avery to change the plan. We&#x27;ve"
-  )
+  expect(payer).toContain("Northwind is full")
+  expect(payer).toContain("Business has room for 50 people, for $199 monthly.")
+  expect(payer).toContain(">Upgrade to Business</button>")
+  const other = render({ isPayer: false })
+  expect(other).toContain("Avery manages the plan. Ask them to upgrade to invite more people.")
+  expect(other).toContain(">Ask Avery</button>")
   expect(render({ plan: "business", peopleLimit: 50, people: 50 })).toContain(
-    "Northwind has reached 50 people."
+    "Business holds 50 people."
   )
 })
 
@@ -53,6 +51,6 @@ test("only plans that hold everyone being invited are offered", () => {
   expect(tooMany).not.toContain("Continue to payment")
   expect(tooMany).toContain("Contact us")
   const teamTooMany = render({}, 40)
-  expect(teamTooMany).not.toContain("Move to Business")
+  expect(teamTooMany).not.toContain("Upgrade to Business")
   expect(teamTooMany).toContain("Contact us")
 })

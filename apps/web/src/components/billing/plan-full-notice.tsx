@@ -15,6 +15,7 @@ import {
 } from "@/lib/cloud-plan"
 import { keepInviteesForPayment } from "@/lib/kept-invitees"
 import { queryKeys, useWorkspace } from "@/lib/queries"
+import { askPayerToUpgrade } from "@/lib/team-api"
 
 function PlanChoice({
   options,
@@ -126,20 +127,26 @@ export function PlanFullNotice({
       void queryClient.invalidateQueries({ queryKey: ["cloud", "billing"] })
     },
   })
-  const error = checkout.error ?? change.error
   const next = upgradeFor(plan)
   const payerName = plan.payerName || "the person who pays for it"
 
+  const asked = useMutation({ mutationFn: askPayerToUpgrade })
+  const payerFirst = plan.payerName?.trim().split(/\s+/)[0] || null
+
+  let title: string
   let body: React.ReactNode
   if (!next) {
+    title = `${worktableName} is full`
     body = (
       <p>
-        {worktableName} has reached {plan.peopleLimit} people.{" "}
-        <ContactUs worktableName={worktableName} /> to go further.
+        {CLOUD_PLANS[plan.plan].name} holds {plan.peopleLimit} people.{" "}
+        <ContactUs worktableName={worktableName} /> for more.
       </p>
     )
   } else if (plan.isPayer && !choice) {
     // Paying for any plan here would still leave someone out.
+    title =
+      plan.plan === "solo" ? "Solo is just for you" : `${worktableName} is full`
     body = (
       <p>
         Plans hold up to {CLOUD_PLANS.business.peopleLimit} people.{" "}
@@ -147,9 +154,10 @@ export function PlanFullNotice({
       </p>
     )
   } else if (plan.plan === "solo") {
+    title = "Solo is just for you"
     body = plan.isPayer && choice ? (
       <>
-        <p>Inviting people needs a paid plan for {worktableName}.</p>
+        <p>Choose a plan to invite people to {worktableName}.</p>
         <PlanChoice options={fitting} value={choice} onChange={setChoice} />
         <Button
           type="button"
@@ -162,19 +170,15 @@ export function PlanFullNotice({
         </Button>
       </>
     ) : (
-      <p>
-        Inviting people needs a paid plan for {worktableName}. Ask {payerName}{" "}
-        to choose one.
-      </p>
+      <p>Ask {payerName} to choose a plan so you can invite people.</p>
     )
   } else if (plan.isPayer) {
+    title = `${worktableName} is full`
     body = (
       <>
         <p>
-          {worktableName}&apos;s plan has room for {plan.peopleLimit} people,
-          and {plan.people} {plan.people === 1 ? "is" : "are"} in or invited.{" "}
-          {CLOUD_PLANS[next].name} holds up to {CLOUD_PLANS[next].peopleLimit}{" "}
-          for {planPrice(next)}.
+          {CLOUD_PLANS[next].name} has room for {CLOUD_PLANS[next].peopleLimit}{" "}
+          people, for {planPrice(next)}.
         </p>
         <Button
           type="button"
@@ -183,18 +187,32 @@ export function PlanFullNotice({
           disabled={change.isPending}
           onClick={() => change.mutate(next)}
         >
-          {change.isPending
-            ? "Changing plan…"
-            : `Upgrade to ${CLOUD_PLANS[next].name}`}
+          {change.isPending ? "Upgrading…" : `Upgrade to ${CLOUD_PLANS[next].name}`}
         </Button>
       </>
     )
   } else {
-    body = (
-      <p>
-        {worktableName} is full. Ask {payerName} to change the plan. We&apos;ve
-        let them know.
-      </p>
+    title = `${worktableName} is full`
+    body = asked.isSuccess ? (
+      <p>We&apos;ve asked {plan.payerName || "them"} to upgrade.</p>
+    ) : (
+      <>
+        <p>
+          {plan.payerName
+            ? `${plan.payerName} manages the plan. Ask them to upgrade to invite more people.`
+            : `Ask the person who pays for ${worktableName} to upgrade to invite more people.`}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="mt-3"
+          disabled={asked.isPending}
+          onClick={() => asked.mutate()}
+        >
+          {payerFirst ? `Ask ${payerFirst}` : "Ask them"}
+        </Button>
+      </>
     )
   }
 
@@ -203,10 +221,11 @@ export function PlanFullNotice({
       role="status"
       className="rounded-lg border border-border bg-surface-inset px-3.5 py-3 text-sm leading-6 text-foreground"
     >
-      {body}
-      {error ? (
+      <p className="font-medium">{title}</p>
+      <div className="text-muted-foreground">{body}</div>
+      {(checkout.error ?? change.error ?? asked.error) ? (
         <p className="mt-2 text-destructive" role="alert">
-          {error instanceof Error ? error.message : "Something went wrong."}
+          {(checkout.error ?? change.error ?? asked.error)?.message ?? "Something went wrong."}
         </p>
       ) : null}
     </div>

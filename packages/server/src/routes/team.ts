@@ -1,5 +1,6 @@
 import {
   assertPayerKeepsOwnership,
+  assertRoomForInvitation,
   inviteWithinPlan,
   memberIsPayer,
   PlanFullError,
@@ -271,6 +272,26 @@ teamRouter.get("/invitations", async (c) => {
         }
       }),
   })
+})
+// Someone who doesn't pay found the plan full and asks the payer to upgrade.
+// The control plane emails the payer at most once a day.
+teamRouter.post("/plan-full", async (c) => {
+  const { member } = await teamAdministrativeContext(
+    origin(c),
+    c.req.raw,
+    c.get("identity")
+  )
+  const billing = requestBilling(c.req.raw)
+  if (!billing || memberIsPayer(member.userId, billing))
+    return c.json({ error: "Nobody else to ask" }, 409)
+  try {
+    assertRoomForInvitation(billing)
+    return c.json({ error: "The plan has room" }, 409)
+  } catch (error) {
+    if (!(error instanceof PlanFullError)) throw error
+  }
+  notifyPayerPlanFull(member.name)
+  return c.body(null, 204)
 })
 teamRouter.post("/invitations", async (c) => {
   const parsed = z

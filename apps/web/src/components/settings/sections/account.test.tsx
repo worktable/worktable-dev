@@ -77,6 +77,6 @@ test("a plan shows its people and offers the plans this Worktable can move to", 
     { plan: CLOUD_PLANS.business, canChangeTo: ["team"] },
     14
   )
-  expect(crowded).toContain("Holds 12 people. Remove 2 first.")
+  expect(crowded).toContain('aria-label="Remove 2 people to fit Team"')
   expect(crowded).toMatch(/disabled=""[^>]*>Downgrade</)
 })

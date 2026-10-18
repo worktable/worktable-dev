@@ -15,7 +15,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@worktable/ui/components/card"
@@ -221,7 +220,7 @@ export function SubscriptionCard({
   const summary = complimentary
     ? "Boss tier"
     : [
-        solo ? "Free" : `${formatPrice(plan.amount, plan.currency)} a month`,
+        solo ? "Free" : `${formatPrice(plan.amount, plan.currency)} monthly`,
         !date || locked || inGrace || solo
           ? null
           : cancelsAtEnd
@@ -294,7 +293,7 @@ export function SubscriptionCard({
                       <p className="text-xs text-muted-foreground">
                         {tooMany
                           ? `Holds ${other.peopleLimit} people. Remove ${people! - other.peopleLimit} first.`
-                          : `Up to ${other.peopleLimit} people · ${formatPrice(other.amount, plan.currency)} a month`}
+                          : `Up to ${other.peopleLimit} people · ${formatPrice(other.amount, plan.currency)} monthly`}
                       </p>
                     </div>
                     <Button
@@ -315,16 +314,10 @@ export function SubscriptionCard({
               })}
             </ul>
           ) : null}
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </CardContent>
-        {(!solo && billing.canCheckout) ||
-        billing.canManageBilling ||
-        (locked && billing.canExport) ? (
-          <CardFooter className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          {(!solo && billing.canCheckout) ||
+          billing.canManageBilling ||
+          (locked && billing.canExport) ? (
+            <div className="flex flex-wrap items-center gap-2">
             {!solo && billing.canCheckout ? (
               <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
                 {pending === "checkout"
@@ -366,8 +359,14 @@ export function SubscriptionCard({
                 Cancel plan
               </Button>
             ) : null}
-          </CardFooter>
-        ) : null}
+            </div>
+          ) : null}
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </CardContent>
       </Card>
       <ConfirmDialog
         open={cancelling}

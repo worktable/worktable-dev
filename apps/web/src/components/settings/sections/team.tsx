@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense, type ReactNode } from "react"
-import { ChevronDown, Mail, MoreHorizontal } from "lucide-react"
+import { ChevronDown, Mail, Trash2 } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
@@ -16,9 +16,8 @@ import {
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import { SettingsGroup } from "../settings-group"
-import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
-import { peopleCount, roomFor, useCloudPlan } from "@/lib/cloud-plan"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
 import {
@@ -201,7 +200,6 @@ function TeamMembers({
   }
   const { plan, worktableName } = useCloudPlan()
   const fits = roomFor(plan, 1)
-  const people = peopleCount(plan)
   const invite = useMutation({
     mutationFn: (address: string) => inviteTeamMember(address),
     onSuccess: (result, address) => {
@@ -274,9 +272,9 @@ function TeamMembers({
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">
           <h3 className="text-sm font-medium text-foreground">People</h3>
-          {people && plan ? (
+          {plan && plan.peopleLimit !== null ? (
             <span className="text-xs text-muted-foreground">
-              {people} on {CLOUD_PLANS[plan.plan].name}
+              {plan.people} of {plan.peopleLimit}
             </span>
           ) : null}
         </div>
@@ -316,7 +314,7 @@ function TeamMembers({
               }
               label="Invitation link"
               url={invited.url}
-              copy="Copy link"
+              copy="Copy"
               onCopy={() => copyInvitation(invited.url)}
             />
           )}
@@ -325,7 +323,7 @@ function TeamMembers({
               text={`This link lets ${resetLink.name} choose a new password. It works once, expires in 24 hours, and signs them out everywhere. Send it to them directly.`}
               label="Password reset link"
               url={resetLink.url}
-              copy="Copy reset link"
+              copy="Copy"
               onCopy={() =>
                 void navigator.clipboard.writeText(resetLink.url).then(
                   () => toast.success("Reset link copied"),
@@ -342,142 +340,135 @@ function TeamMembers({
             <ul className="-mx-1 flex flex-col">
               {members.data?.map((member) => {
                 const self = member.id === selfId
-                const extras = !cloud && (operator || (owner && member.role !== "owner"))
+                const label = member.role === "owner" ? "Owner" : "Member"
                 return (
-                  <li
+                  <PersonRow
                     key={member.id}
-                    className="flex min-h-14 items-center gap-3 rounded-lg px-1 py-2"
-                  >
-                    <PersonAvatar id={member.actorId} name={member.name} size="lg" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
+                    avatar={<PersonAvatar id={member.actorId} name={member.name} size="lg" />}
+                    name={
+                      <>
                         {member.name}
                         {self ? (
                           <span className="font-normal text-muted-foreground"> (you)</span>
                         ) : null}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {member.email}
-                        {!cloud && member.operator ? " · Operates this computer" : ""}
-                      </p>
-                    </div>
-                    {owner && !self ? (
-                      <RoleMenu
-                        name={member.name}
-                        value={member.role}
-                        disabled={role.isPending}
-                        onChange={(value) => role.mutate({ id: member.id, value })}
-                      />
-                    ) : (
-                      <span className="px-2 text-sm text-muted-foreground">
-                        {member.role === "owner" ? "Owner" : "Member"}
-                      </span>
-                    )}
-                    {(owner && !self) || extras ? (
-                      <RowMenu label={`More for ${member.name}`}>
-                        {!cloud && operator ? (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              operatorChange.mutate({
-                                id: member.id,
-                                value: !member.operator,
-                              })
-                            }
+                      </>
+                    }
+                    detail={`${member.email}${!cloud && member.operator ? " · Operates this computer" : ""}`}
+                    status={
+                      owner && !self ? (
+                        <RowSelect label={label} aria={`Role for ${member.name}`} disabled={role.isPending}>
+                          <DropdownMenuRadioGroup
+                            value={member.role}
+                            onValueChange={(next) => {
+                              if (next !== member.role)
+                                role.mutate({ id: member.id, value: next as TeamMember["role"] })
+                            }}
                           >
-                            {member.operator
-                              ? "Stop operating this computer"
-                              : "Let them operate this computer"}
+                            {ROLES.map((option) => (
+                              <DropdownMenuRadioItem
+                                key={option.value}
+                                value={option.value}
+                                className="items-start py-2"
+                              >
+                                <span className="flex flex-col gap-0.5">
+                                  <span className="text-sm text-foreground">{option.label}</span>
+                                  <span className="text-xs text-muted-foreground">{option.detail}</span>
+                                </span>
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                          {!cloud && (operator || member.role !== "owner") ? (
+                            <DropdownMenuSeparator />
+                          ) : null}
+                          {!cloud && member.role !== "owner" ? (
+                            <DropdownMenuItem
+                              onClick={() => reset.mutate({ name: member.name, memberId: member.id })}
+                            >
+                              Reset password
+                            </DropdownMenuItem>
+                          ) : null}
+                          {!cloud && operator ? (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                operatorChange.mutate({ id: member.id, value: !member.operator })
+                              }
+                            >
+                              {member.operator
+                                ? "Stop operating this computer"
+                                : "Let them operate this computer"}
+                            </DropdownMenuItem>
+                          ) : null}
+                        </RowSelect>
+                      ) : (
+                        <RowLabel>{label}</RowLabel>
+                      )
+                    }
+                    action={
+                      owner && !self ? (
+                        <RemoveButton
+                          label={`Remove ${member.name}`}
+                          onClick={() => setRemoving(member)}
+                        />
+                      ) : null
+                    }
+                  />
+                )
+              })}
+              {pending.map((invitation) => (
+                <PersonRow
+                  key={invitation.id}
+                  avatar={
+                    <span
+                      aria-hidden
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
+                    >
+                      <Mail className="size-4" />
+                    </span>
+                  }
+                  name={invitation.email}
+                  detail={
+                    invitation.expired
+                      ? "Invitation expired"
+                      : emailing && !invitation.emailed
+                        ? "Invited · Not emailed yet"
+                        : "Invited"
+                  }
+                  status={
+                    invitation.expired ? (
+                      <RowLabel>Expired</RowLabel>
+                    ) : (
+                      <RowSelect label="Pending" aria={`Invitation for ${invitation.email}`}>
+                        <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
+                          Copy link
+                        </DropdownMenuItem>
+                        {emailing ? (
+                          <DropdownMenuItem
+                            disabled={resend.isPending}
+                            onClick={() => resend.mutate(invitation.id)}
+                          >
+                            {invitation.emailed ? "Send again" : "Send email"}
                           </DropdownMenuItem>
                         ) : null}
-                        {!cloud && owner && member.role !== "owner" ? (
+                        {!cloud && owner ? (
                           <DropdownMenuItem
                             onClick={() =>
-                              reset.mutate({ name: member.name, memberId: member.id })
+                              reset.mutate({ name: invitation.email, invitationId: invitation.id })
                             }
                           >
                             Reset password
                           </DropdownMenuItem>
                         ) : null}
-                        {owner && !self ? (
-                          <>
-                            {extras ? <DropdownMenuSeparator /> : null}
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => setRemoving(member)}
-                            >
-                              Remove from {worktableName}
-                            </DropdownMenuItem>
-                          </>
-                        ) : null}
-                      </RowMenu>
-                    ) : (
-                      <span className="w-8 shrink-0" aria-hidden />
-                    )}
-                  </li>
-                )
-              })}
-              {pending.map((invitation) => (
-                <li
-                  key={invitation.id}
-                  className="flex min-h-14 items-center gap-3 rounded-lg px-1 py-2"
-                >
-                  <span
-                    aria-hidden
-                    className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
-                  >
-                    <Mail className="size-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {invitation.email}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {invitation.expired
-                        ? "Invitation expired"
-                        : emailing && !invitation.emailed
-                          ? "Invited · Not emailed yet"
-                          : "Invited"}
-                    </p>
-                  </div>
-                  <span className="px-2 text-sm text-muted-foreground">
-                    {invitation.expired ? "Expired" : "Pending"}
-                  </span>
-                  <RowMenu label={`More for ${invitation.email}`}>
-                    {!invitation.expired ? (
-                      <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
-                        Copy invitation link
-                      </DropdownMenuItem>
-                    ) : null}
-                    {emailing && !invitation.expired ? (
-                      <DropdownMenuItem
-                        disabled={resend.isPending}
-                        onClick={() => resend.mutate(invitation.id)}
-                      >
-                        {invitation.emailed ? "Send again" : "Send email"}
-                      </DropdownMenuItem>
-                    ) : null}
-                    {!cloud && owner ? (
-                      <DropdownMenuItem
-                        onClick={() =>
-                          reset.mutate({
-                            name: invitation.email,
-                            invitationId: invitation.id,
-                          })
-                        }
-                      >
-                        Reset password
-                      </DropdownMenuItem>
-                    ) : null}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
+                      </RowSelect>
+                    )
+                  }
+                  action={
+                    <RemoveButton
+                      label={`Cancel the invitation for ${invitation.email}`}
                       disabled={cancel.isPending}
                       onClick={() => cancel.mutate(invitation.id)}
-                    >
-                      Cancel invitation
-                    </DropdownMenuItem>
-                  </RowMenu>
-                </li>
+                    />
+                  }
+                />
               ))}
             </ul>
           )}
@@ -543,6 +534,7 @@ function TeamMembers({
         title={`Remove ${removing?.name ?? "this person"}?`}
         description="Their personal agents and Space access will be revoked. Their existing contributions stay in the Worktable."
         confirmLabel="Remove"
+        variant="destructive"
         loading={remove.isPending}
         onConfirm={() => {
           if (removing) remove.mutate(removing.id)
@@ -552,17 +544,47 @@ function TeamMembers({
   )
 }
 
-/** Owner or Member, each with what it lets the person do. */
-function RoleMenu({
+/**
+ * One person or invitation. Role or status and the remove button sit in
+ * fixed columns, so they line up down the list.
+ */
+function PersonRow({
+  avatar,
   name,
-  value,
-  disabled,
-  onChange,
+  detail,
+  status,
+  action,
 }: {
-  name: string
-  value: TeamMember["role"]
-  disabled: boolean
-  onChange: (value: TeamMember["role"]) => void
+  avatar: ReactNode
+  name: ReactNode
+  detail: string
+  status: ReactNode
+  action: ReactNode
+}) {
+  return (
+    <li className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_7rem_2rem] items-center gap-3 px-1 py-2">
+      {avatar}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{name}</p>
+        <p className="truncate text-xs text-muted-foreground">{detail}</p>
+      </div>
+      <div className="flex">{status}</div>
+      <div className="flex justify-end">{action}</div>
+    </li>
+  )
+}
+
+/** A role or status that opens choices; its text starts where a plain label's does. */
+function RowSelect({
+  label,
+  aria,
+  disabled,
+  children,
+}: {
+  label: string
+  aria: string
+  disabled?: boolean
+  children: ReactNode
 }) {
   return (
     <DropdownMenu>
@@ -572,47 +594,46 @@ function RoleMenu({
             variant="ghost"
             size="sm"
             disabled={disabled}
-            aria-label={`Role for ${name}`}
-            className="gap-1 text-muted-foreground"
+            aria-label={aria}
+            className="w-full justify-between px-2 font-normal text-muted-foreground"
           />
         }
       >
-        {value === "owner" ? "Owner" : "Member"}
+        {label}
         <ChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuRadioGroup
-          value={value}
-          onValueChange={(next) => {
-            if (next !== value) onChange(next as TeamMember["role"])
-          }}
-        >
-          {ROLES.map((role) => (
-            <DropdownMenuRadioItem key={role.value} value={role.value} className="items-start py-2">
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm text-foreground">{role.label}</span>
-                <span className="text-xs text-muted-foreground">{role.detail}</span>
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        {children}
       </DropdownMenuContent>
     </DropdownMenu>
   )
 }
 
-function RowMenu({ label, children }: { label: string; children: ReactNode }) {
+function RowLabel({ children }: { children: ReactNode }) {
+  return <span className="px-2 text-sm text-muted-foreground">{children}</span>
+}
+
+function RemoveButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+}) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-sm" aria-label={label} />}
-      >
-        <MoreHorizontal className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-52">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      className="text-muted-foreground hover:text-destructive"
+      onClick={onClick}
+    >
+      <Trash2 className="size-4" />
+    </Button>
   )
 }
 

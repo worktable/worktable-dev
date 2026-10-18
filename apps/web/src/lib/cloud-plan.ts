@@ -42,11 +42,6 @@ export function roomFor(plan: CloudPlan | null, adding: number): boolean {
   return plan.people + Math.max(adding, 1) <= plan.peopleLimit
 }
 
-/** "3 of 12 people", or null without a limit. */
-export function peopleCount(plan: CloudPlan | null): string | null {
-  if (!plan || plan.peopleLimit === null) return null
-  return `${plan.people} of ${plan.peopleLimit} ${plan.peopleLimit === 1 ? "person" : "people"}`
-}
 
 export function upgradeFor(plan: CloudPlan): PaidCloudPlanId | null {
   return nextCloudPlan(plan.plan)

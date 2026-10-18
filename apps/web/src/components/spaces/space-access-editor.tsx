@@ -264,7 +264,7 @@ export function SpaceAccessEditor({
               !draft || save.isPending || members.isError || agents.isError
             }
           >
-            {save.isPending ? "Saving…" : "Save access"}
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

@@ -862,23 +862,28 @@ function MarkdownDocPage({
               setPreviewVersionId(null)
             }}
           >
-            <Suspense fallback={<EditorSkeleton />}>
-              {previewVersion && Array.isArray(previewVersion.after.content) ? (
-                <Editor
-                  initialContent={previewVersion.after.content as never[]}
-                  editable={false}
-                />
-              ) : previewVersion &&
-                typeof previewVersion.after.content === "string" ? (
-                <MarkdownViewer
-                  content={previewVersion.after.content}
-                  spaceId={spaceId}
-                  docPath={docPath}
-                />
-              ) : (
-                <EditorSkeleton />
-              )}
-            </Suspense>
+            {(byline) => (
+              <Suspense fallback={<EditorSkeleton />}>
+                {previewVersion &&
+                Array.isArray(previewVersion.after.content) ? (
+                  <Editor
+                    initialContent={previewVersion.after.content as never[]}
+                    editable={false}
+                    afterTitle={byline}
+                  />
+                ) : previewVersion &&
+                  typeof previewVersion.after.content === "string" ? (
+                  <MarkdownViewer
+                    content={previewVersion.after.content}
+                    afterTitle={byline}
+                    spaceId={spaceId}
+                    docPath={docPath}
+                  />
+                ) : (
+                  <EditorSkeleton />
+                )}
+              </Suspense>
+            )}
           </VersionPreview>
         )}
 
@@ -1416,23 +1421,28 @@ function BlockNoteDocPage({
               setPreviewVersionId(null)
             }}
           >
-            <Suspense fallback={<EditorSkeleton />}>
-              {previewVersion && Array.isArray(previewVersion.after.content) ? (
-                <Editor
-                  initialContent={previewVersion.after.content as never[]}
-                  editable={false}
-                />
-              ) : previewVersion &&
-                typeof previewVersion.after.content === "string" ? (
-                <MarkdownViewer
-                  content={previewVersion.after.content}
-                  spaceId={spaceId}
-                  docPath={docPath}
-                />
-              ) : (
-                <EditorSkeleton />
-              )}
-            </Suspense>
+            {(byline) => (
+              <Suspense fallback={<EditorSkeleton />}>
+                {previewVersion &&
+                Array.isArray(previewVersion.after.content) ? (
+                  <Editor
+                    initialContent={previewVersion.after.content as never[]}
+                    editable={false}
+                    afterTitle={byline}
+                  />
+                ) : previewVersion &&
+                  typeof previewVersion.after.content === "string" ? (
+                  <MarkdownViewer
+                    content={previewVersion.after.content}
+                    afterTitle={byline}
+                    spaceId={spaceId}
+                    docPath={docPath}
+                  />
+                ) : (
+                  <EditorSkeleton />
+                )}
+              </Suspense>
+            )}
           </VersionPreview>
         )}
 

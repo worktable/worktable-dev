@@ -31,6 +31,18 @@ type Panel = "activity" | "links"
 
 const ACTIVITY_SHOWN = 6
 
+/** Shared spacing for current-document and saved-version metadata. */
+export function DocumentBylineFrame({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="worktable-doc-byline mb-7 font-sans text-[0.8125rem] leading-5 text-muted-foreground"
+      data-doc-byline
+    >
+      {children}
+    </div>
+  )
+}
+
 /**
  * The line under a Doc's title: who last worked on it, what links here and
  * when it archives. Each part opens a short list in place, one at a time.
@@ -93,10 +105,7 @@ export function DocumentByline({
   const editedAt = provenance?.updatedAt ?? updatedAt
 
   return (
-    <div
-      className="worktable-doc-byline mb-7 font-sans text-[0.8125rem] leading-5 text-muted-foreground"
-      data-doc-byline
-    >
+    <DocumentBylineFrame>
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1.5">
         {editedAt && (
           <button
@@ -164,7 +173,7 @@ export function DocumentByline({
           />
         ))}
       </BylinePanel>
-    </div>
+    </DocumentBylineFrame>
   )
 }
 

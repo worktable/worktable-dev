@@ -30,6 +30,8 @@ import {
   ContextPanelHeader,
   DesktopContextPanel,
 } from "@/components/desktop-context-panel"
+import { DocumentBylineFrame } from "@/components/document/document-byline"
+import { RelativeTime } from "@/lib/time"
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { clockTime, groupByDay } from "@/lib/activity-format"
@@ -404,7 +406,7 @@ export function VersionHistoryPanel({
       ) : (
         <DesktopContextPanel
           open={open}
-          width={collapsed && selectedVersionId ? 64 : 384}
+          width={collapsed && selectedVersionId ? 48 : 384}
         >
           {collapsed && selectedVersionId ? (
             <aside
@@ -469,7 +471,12 @@ function RestoreVersionButton({
   revision,
   version,
   onRestored,
-}: HistoryLocation & { version: DocVersionEntry; onRestored: () => void }) {
+  inline = false,
+}: HistoryLocation & {
+  version: DocVersionEntry
+  onRestored: () => void
+  inline?: boolean
+}) {
   const { data: space } = useSpace(spaceId)
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
@@ -477,7 +484,12 @@ function RestoreVersionButton({
   if (!space || space.space.permissions?.edit === false) return null
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+      <Button
+        size={inline ? "xs" : "sm"}
+        className={inline ? "h-7 max-xl:h-9" : undefined}
+        variant="outline"
+        onClick={() => setConfirming(true)}
+      >
         Restore
       </Button>
       <ConfirmDialog
@@ -535,72 +547,104 @@ export function VersionPreview({
   onBack: () => void
   onHistory: () => void
   onRestored: () => void
-  children: ReactNode
+  children: ReactNode | ((byline: ReactNode) => ReactNode)
 }) {
   const identity = useVersionIdentity(version)
+  const inline = typeof children === "function"
+  const controls = (
+    <div className="flex shrink-0 items-center gap-1">
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className={cn("xl:hidden", inline && "size-9")}
+        aria-label="Choose version"
+        onClick={onHistory}
+      >
+        <History className="size-4" />
+      </Button>
+      {version && (
+        <RestoreVersionButton
+          kind={kind}
+          spaceId={spaceId}
+          path={path}
+          revision={revision}
+          version={version}
+          onRestored={onRestored}
+          inline={inline}
+        />
+      )}
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className={inline ? "size-7 max-xl:size-9" : undefined}
+        aria-label="Exit compare"
+        onClick={onBack}
+      >
+        <X className="size-4" />
+      </Button>
+    </div>
+  )
+  const byline = (
+    <DocumentBylineFrame>
+      <div className="flex min-h-7 items-center justify-between gap-2">
+        {version && (
+          <span
+            className="inline-flex h-7 min-w-0 items-center gap-2"
+            title={`${versionLabel(version)} · ${new Date(version.createdAt).toLocaleString()}`}
+          >
+            <ActorBadge actor={identity.actor} />
+            <span className="truncate">
+              {identity.label} saved <RelativeTime iso={version.createdAt} />
+            </span>
+          </span>
+        )}
+        {controls}
+      </div>
+    </DocumentBylineFrame>
+  )
   return (
     <section
       aria-label="Version preview"
       className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface-inset xl:flex-[1_1_50%] print:hidden"
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
-        <div className="min-w-0">
-          <h2 className="truncate font-medium text-foreground">
-            {version
-              ? versionLabel(version)
-              : error
-                ? "Version unavailable"
-                : "Loading version…"}
-          </h2>
-          {version && (
-            <p className="truncate text-muted-foreground">
-              {identity.label} · {new Date(version.createdAt).toLocaleString()}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="xl:hidden"
-            aria-label="Choose version"
-            onClick={onHistory}
-          >
-            <History className="size-4" />
-          </Button>
-          {version && (
-            <RestoreVersionButton
-              kind={kind}
-              spaceId={spaceId}
-              path={path}
-              revision={revision}
-              version={version}
-              onRestored={onRestored}
-            />
-          )}
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Exit compare"
-            onClick={onBack}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      </header>
+      {!inline && (
+        <header className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4 pb-2 text-xs">
+          <div className="min-w-0">
+            <h2 className="truncate font-medium text-foreground">
+              {version
+                ? versionLabel(version)
+                : error
+                  ? "Version unavailable"
+                  : "Loading version…"}
+            </h2>
+            {version && (
+              <p className="truncate text-muted-foreground">
+                {identity.label} ·{" "}
+                {new Date(version.createdAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+          {controls}
+        </header>
+      )}
       {error ? (
-        <p className="px-6 py-8 text-sm text-muted-foreground">
-          Couldn’t load this version.{" "}
-          <button
-            className="text-primary-text hover:underline"
-            type="button"
-            onClick={onRetry}
-          >
-            Try again
-          </button>
-        </p>
+        <div className="space-y-3 px-6 py-8 text-sm text-muted-foreground">
+          <p>
+            Couldn’t load this version.{" "}
+            <button
+              className="text-primary-text hover:underline"
+              type="button"
+              onClick={onRetry}
+            >
+              Try again
+            </button>
+          </p>
+          {inline && controls}
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {typeof children === "function" ? children(byline) : children}
+        </div>
       )}
     </section>
   )

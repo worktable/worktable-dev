@@ -6,6 +6,10 @@ import { Badge } from "@worktable/ui/components/badge"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import { SettingsGroup } from "../settings-group"
+import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
+import { PlanFullNotice } from "@/components/billing/plan-full-notice"
+import { peopleCount, roomFor, useCloudPlan } from "@/lib/cloud-plan"
+import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
 import {
   activateTeams,
@@ -170,7 +174,14 @@ function TeamMembers({
     queryFn: getTeamInvitations,
   })
   const spaces = useQuery({ queryKey: ["spaces"], queryFn: getSpaces })
-  const refresh = () => client.invalidateQueries({ queryKey: ["team"] })
+  const refresh = () => {
+    // The plan's room depends on who is in or invited.
+    void client.invalidateQueries({ queryKey: queryKeys.workspace, exact: true })
+    return client.invalidateQueries({ queryKey: ["team"] })
+  }
+  const { plan, worktableName } = useCloudPlan()
+  const fits = roomFor(plan, 1)
+  const people = peopleCount(plan)
   const invite = useMutation({
     mutationFn: (input: { email: string; spaceId?: string }) =>
       inviteTeamMember(input.email, input.spaceId),
@@ -326,10 +337,19 @@ function TeamMembers({
             </div>
           ))
         )}
+        {people ? (
+          <p className="text-xs text-muted-foreground">
+            {people} on {CLOUD_PLANS[plan!.plan].name}
+          </p>
+        ) : null}
+        {plan && !fits ? (
+          <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
+        ) : null}
         <form
           className="flex flex-wrap gap-2"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!fits) return
             invite.mutate({
               email,
               ...(startSpace === NO_START_SPACE ? {} : { spaceId: startSpace }),
@@ -370,7 +390,7 @@ function TeamMembers({
               </SelectContent>
             </Select>
           )}
-          <Button type="submit" disabled={invite.isPending}>
+          <Button type="submit" disabled={invite.isPending || !fits}>
             {invite.isPending ? "Creating invite…" : "Invite member"}
           </Button>
         </form>

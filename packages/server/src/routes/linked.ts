@@ -81,7 +81,7 @@ linkedRouter.patch("/", async (c) => {
         !body.workspaceId ||
         body.workspaceId.length > 256)
     )
-      return c.json({ error: "Choose a Worktable subscription" }, 400)
+      return c.json({ error: "Choose a Worktable" }, 400)
     return c.json(
       await setLinkEnabled(body.enabled, body.workspaceId as string | undefined)
     )

@@ -4,33 +4,49 @@ import { z } from "zod"
 // Worktable Cloud billing contract
 // ============================================================
 
+import {
+  CLOUD_PLAN_IDS,
+  PAID_CLOUD_PLAN_IDS,
+  PLAN_TERMS,
+  type CloudPlanId as CloudPlanIdValue,
+} from "./plans.ts"
+
+export {
+  CLOUD_PLAN_IDS,
+  CLOUD_PLAN_PRODUCT_NAMES,
+  CLOUD_PLANS,
+  nextCloudPlan,
+  PAID_CLOUD_PLAN_IDS,
+  type PaidCloudPlanId,
+} from "./plans.ts"
+export const CloudPlanId = z.enum(CLOUD_PLAN_IDS)
+export type CloudPlanId = CloudPlanIdValue
+
+/** A locked Worktable is deleted this many days after it locks. */
+export const LOCKED_RETENTION_DAYS = 30
+
 /**
- * The public, provider-neutral offer. Amounts are minor currency units.
- *
- * Provider product, price, checkout, customer, and subscription identifiers
- * intentionally live outside this package so they can never leak into a
- * browser-facing DTO.
+ * The retired early-access offer. Entitlements recorded under it read as
+ * Team; nothing new is sold under it.
  */
 export const CLOUD_PERSONAL_PLAN = {
   id: "personal",
   name: "Worktable Cloud Early Access",
   amount: 799,
-  currency: "usd",
-  interval: "month",
-  initialRefundDays: 14,
-  pastDueGraceDays: 7,
-  supportEmail: "support@worktable.dev",
+  ...PLAN_TERMS,
 } as const
 
 export const PublicPlanDetails = z.object({
-  id: z.literal(CLOUD_PERSONAL_PLAN.id),
-  name: z.literal(CLOUD_PERSONAL_PLAN.name),
-  amount: z.literal(CLOUD_PERSONAL_PLAN.amount),
-  currency: z.literal(CLOUD_PERSONAL_PLAN.currency),
-  interval: z.literal(CLOUD_PERSONAL_PLAN.interval),
-  initialRefundDays: z.literal(CLOUD_PERSONAL_PLAN.initialRefundDays),
-  pastDueGraceDays: z.literal(CLOUD_PERSONAL_PLAN.pastDueGraceDays),
-  supportEmail: z.literal(CLOUD_PERSONAL_PLAN.supportEmail),
+  id: CloudPlanId,
+  name: z.string().min(1),
+  amount: z.number().int().nonnegative(),
+  currency: z.literal(PLAN_TERMS.currency),
+  interval: z.literal(PLAN_TERMS.interval),
+  peopleLimit: z.number().int().positive(),
+  linkedDevices: z.number().int().positive(),
+  initialRefundDays: z.literal(PLAN_TERMS.initialRefundDays),
+  pastDueGraceDays: z.literal(PLAN_TERMS.pastDueGraceDays),
+  supportEmail: z.literal(PLAN_TERMS.supportEmail),
 })
 export type PublicPlanDetails = z.infer<typeof PublicPlanDetails>
 
@@ -58,8 +74,75 @@ export const BillingStatus = z.object({
   canCheckout: z.boolean(),
   canManageBilling: z.boolean(),
   canExport: z.boolean(),
+  /** The paid plans this Worktable can move to now, smallest first. */
+  canChangeTo: z.array(z.enum(PAID_CLOUD_PLAN_IDS)).default([]),
+  /** When a locked Worktable will be deleted. */
+  deletesAt: z.number().int().nonnegative().optional(),
 })
 export type BillingStatus = z.infer<typeof BillingStatus>
+
+/**
+ * What a hosted Worktable knows about its own plan. The gateway sends it on
+ * every request it admits, so a plan change applies on the next request.
+ * The tenant believes it only on requests the gateway admitted.
+ */
+export const BILLING_HEADER = "x-worktable-billing"
+
+export const TenantBilling = z.object({
+  plan: CloudPlanId,
+  /** People the plan holds: members plus pending invitations. Null is no limit. */
+  peopleLimit: z.number().int().positive().nullable(),
+  access: BillingAccess,
+  graceEndsAt: z.number().int().nonnegative().optional(),
+  deletesAt: z.number().int().nonnegative().optional(),
+  /** Who pays: their sign-in subject, and their name for messages. */
+  payer: z
+    .object({ subject: z.string().min(1).max(200), name: z.string().max(200) })
+    .optional(),
+})
+export type TenantBilling = z.infer<typeof TenantBilling>
+
+/**
+ * A member tried to invite someone and the plan was full. The tenant tells
+ * the control plane, which tells the payer; the tenant sends only a name.
+ */
+export const PLAN_FULL_NOTICE_PATH = "/runtime/plan-full"
+
+export const PlanFullNotice = z
+  .object({ memberName: z.string().trim().min(1).max(100) })
+  .strict()
+export type PlanFullNotice = z.infer<typeof PlanFullNotice>
+
+function base64UrlEncode(text: string): string {
+  let binary = ""
+  for (const byte of new TextEncoder().encode(text))
+    binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+}
+
+function base64UrlDecode(value: string): string {
+  const binary = atob(value.replaceAll("-", "+").replaceAll("_", "/"))
+  return new TextDecoder().decode(
+    Uint8Array.from(binary, (char) => char.charCodeAt(0))
+  )
+}
+
+export function encodeTenantBilling(billing: TenantBilling): string {
+  return base64UrlEncode(JSON.stringify(TenantBilling.parse(billing)))
+}
+
+/** The header's billing, or null when it is missing or malformed. */
+export function decodeTenantBilling(
+  value: string | null | undefined
+): TenantBilling | null {
+  if (!value || value.length > 4096) return null
+  try {
+    const parsed = TenantBilling.safeParse(JSON.parse(base64UrlDecode(value)))
+    return parsed.success ? parsed.data : null
+  } catch {
+    return null
+  }
+}
 
 /** Stable browser-facing billing failures shared by gateway and control plane. */
 export const BILLING_ERROR_CODES = {

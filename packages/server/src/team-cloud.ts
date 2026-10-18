@@ -12,7 +12,7 @@ import {
   waitForWorkspaceAdmission,
   WRITE_ADMISSION_WAIT_MS,
 } from "./workspace-request-lifecycle.ts"
-import { ENV } from "@worktable/hosted-contract"
+import { ENV, type TenantBilling } from "@worktable/hosted-contract"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   bindVerifiedCloudIdentity,
@@ -23,11 +23,13 @@ import {
   currentTeamWorktable,
   currentWorktableId,
   openTeamDatabase,
+  refreshTeamStateForWrite,
   requireTeamDatabase,
   teamDatabasePath,
   writeTeamMarker,
 } from "./team-database.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import { assertRoomToJoin } from "./hosted-billing.ts"
 import { noteAgentPairedForSetup, setupKeyForIdentity } from "./personal-setup.ts"
 import {
   ensureWorkspaceManifest,
@@ -220,12 +222,16 @@ export async function resolveVerifiedCloudMember(
 export async function acceptCloudTeamInvitation(
   origin: string,
   proof: NonNullable<TokenIdentity["cloudIdentity"]>,
-  invitationId: string
+  invitationId: string,
+  billing: TenantBilling | null
 ): Promise<{ spaceId?: string }> {
   return withCrossProcessLock(
     `${teamDatabasePath()}.members.lock`,
     { label: "Team invitation" },
     async () => {
+      // Counted after the wait, so two people can't both take the last place.
+      refreshTeamStateForWrite()
+      assertRoomToJoin(billing)
       // Refuse an unusable invitation or a different address before this
       // identity is bound, so a wrong-account attempt leaves nothing behind.
       const db = requireTeamDatabase()

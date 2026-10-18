@@ -1,6 +1,14 @@
 import { HttpError } from "@/lib/http"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { CLOUD_PERSONAL_PLAN } from "@worktable/hosted-contract"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  CLOUD_PLANS,
+  LOCKED_RETENTION_DAYS,
+  PAID_CLOUD_PLAN_IDS,
+  type BillingStatus,
+  type PaidCloudPlanId,
+} from "@worktable/hosted-contract"
+import { useState } from "react"
+import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { Button } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
 import {
@@ -20,11 +28,15 @@ import {
 } from "lucide-react"
 import { getConnection } from "@/lib/system-api"
 import {
+  cancelCloudPlan,
+  changeCloudPlan,
   downloadCloudWorkspace,
   getCloudBillingStatus,
   openCloudBillingCheckout,
   openCloudBillingPortal,
 } from "@/lib/billing-api"
+import { useCloudPlan } from "@/lib/cloud-plan"
+import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
 
 export function AccountSection() {
@@ -42,12 +54,26 @@ export function AccountSection() {
     enabled: sectionActive && cloudAccount,
     staleTime: 15_000,
   })
+  const queryClient = useQueryClient()
+  const { plan: cloudPlan, worktableName } = useCloudPlan()
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ["cloud", "billing"] })
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.workspace,
+      exact: true,
+    })
+  }
   const portal = useMutation({
     mutationFn: openCloudBillingPortal,
   })
   const checkout = useMutation({
-    mutationFn: openCloudBillingCheckout,
+    mutationFn: (plan?: PaidCloudPlanId) => openCloudBillingCheckout(plan),
   })
+  const change = useMutation({ mutationFn: changeCloudPlan, onSuccess: refresh })
+  const cancel = useMutation({ mutationFn: cancelCloudPlan, onSuccess: refresh })
+  const actionError = [checkout, portal, change, cancel].find(
+    (action) => action.isError
+  )?.error
 
   if (connectionQuery.isLoading) {
     return (
@@ -86,7 +112,11 @@ export function AccountSection() {
             </CardContent>
           </Card>
         ) : billingQuery.error instanceof HttpError && billingQuery.error.status === 403 && (billingQuery.error.body as {code?: string})?.code === "BILLING_PAYER_REQUIRED" ? (
-          <p className="text-sm text-muted-foreground">Billing is managed by this Worktable&rsquo;s payer.</p>
+          <p className="text-sm text-muted-foreground">
+            {cloudPlan?.payerName
+              ? `${cloudPlan.payerName} manages billing for ${worktableName}.`
+              : `Billing for ${worktableName} is managed by the person who pays for it.`}
+          </p>
         ) : billingQuery.isError || !billingQuery.data ? (
           <Card size="sm">
             <CardContent className="flex items-start gap-2">
@@ -95,7 +125,7 @@ export function AccountSection() {
                 We couldn&rsquo;t load your subscription.{" "}
                 <a
                   className="text-primary-text underline underline-offset-4"
-                  href={`mailto:${CLOUD_PERSONAL_PLAN.supportEmail}`}
+                  href={`mailto:${CLOUD_PLANS.team.supportEmail}`}
                 >
                   Contact support
                 </a>
@@ -106,14 +136,24 @@ export function AccountSection() {
         ) : (
           <SubscriptionCard
             billing={billingQuery.data}
-            checkoutPending={checkout.isPending}
-            checkoutError={
-              checkout.isError ? checkout.error.message : undefined
+            people={cloudPlan?.people ?? null}
+            worktableName={worktableName}
+            pending={
+              checkout.isPending
+                ? "checkout"
+                : portal.isPending
+                  ? "portal"
+                  : change.isPending
+                    ? "change"
+                    : cancel.isPending
+                      ? "cancel"
+                      : null
             }
-            onCheckout={() => checkout.mutate()}
-            portalPending={portal.isPending}
-            portalError={portal.isError ? portal.error.message : undefined}
+            error={actionError?.message}
+            onCheckout={(plan) => checkout.mutate(plan)}
             onPortal={() => portal.mutate()}
+            onChangePlan={(plan) => change.mutate(plan)}
+            onCancel={() => cancel.mutate()}
           />
         )}
 
@@ -123,10 +163,12 @@ export function AccountSection() {
   )
 }
 
+/** "$49", or "$7.99" when there are cents. */
 function formatPrice(amount: number, currency: string): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
+    minimumFractionDigits: amount % 100 === 0 ? 0 : 2,
   }).format(amount / 100)
 }
 
@@ -137,76 +179,67 @@ function formatDate(timestamp: number): string {
   }).format(timestamp)
 }
 
-function formatUtcDeadline(timestamp: number): string {
-  return new Intl.DateTimeFormat("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "UTC",
-    timeZoneName: "short",
-  }).format(timestamp)
-}
-
 export function SubscriptionCard({
   billing,
-  checkoutPending,
-  checkoutError,
+  people = null,
+  worktableName = "This Worktable",
+  pending = null,
+  error,
   onCheckout,
-  portalPending,
-  portalError,
   onPortal,
+  onChangePlan = () => {},
+  onCancel = () => {},
 }: {
-  billing: Awaited<ReturnType<typeof getCloudBillingStatus>>
-  checkoutPending: boolean
-  checkoutError?: string
-  onCheckout: () => void
-  portalPending: boolean
-  portalError?: string
+  billing: BillingStatus
+  /** Members plus pending invitations, when known. */
+  people?: number | null
+  worktableName?: string
+  /** The action under way, so its button says so. */
+  pending?: "checkout" | "portal" | "change" | "cancel" | null
+  error?: string
+  onCheckout: (plan?: PaidCloudPlanId) => void
   onPortal: () => void
+  onChangePlan?: (plan: PaidCloudPlanId) => void
+  onCancel?: () => void
 }) {
+  const [cancelling, setCancelling] = useState(false)
+  const plan = billing.plan
   const complimentary = billing.access === "complimentary"
   const paymentRequired = billing.access === "payment_required"
   const inGrace = billing.access === "grace"
   const locked = billing.access === "locked"
-  const price = `${formatPrice(billing.plan.amount, billing.plan.currency)} USD + tax / ${billing.plan.interval}`
-  const title = complimentary
-    ? "VIP"
+  const solo = plan.id === "solo"
+  const cancelsAtEnd = Boolean(billing.subscription?.cancelAtPeriodEnd)
+  const price =
+    plan.amount === 0 ? "Free" : `${formatPrice(plan.amount, plan.currency)} a month`
+  const title = complimentary ? "VIP" : plan.name
+  const description = complimentary
+    ? "Boss tier"
+    : solo
+      ? "Free · Just you and your agents"
+      : `${price} · Up to ${plan.peopleLimit} people`
+  const badge = complimentary
+    ? null
     : locked
-      ? "Subscription expired"
+      ? "Locked"
       : inGrace
         ? "Payment due"
         : paymentRequired
           ? "Payment required"
-          : price
-  const description = complimentary
-    ? "Boss tier"
-    : locked || inGrace || paymentRequired
-      ? price
-      : "Billed monthly."
-  const statusLabel = billing.subscription?.cancelAtPeriodEnd
-    ? "Cancels at period end"
-    : "Active"
+          : cancelsAtEnd
+            ? "Cancels at period end"
+            : solo
+              ? null
+              : "Active"
   const date = billing.subscription?.currentPeriodEnd
-  const dateLabel = billing.subscription?.cancelAtPeriodEnd
-    ? "Access through"
-    : inGrace
-      ? "Paid period ended"
-      : locked
-        ? "Access ended"
-        : "Renews"
+  const dateLine = !date || locked || inGrace
+    ? null
+    : cancelsAtEnd
+      ? `${plan.name} until ${formatDate(date)}`
+      : `Next charge ${formatDate(date)}`
+  const fitsSolo = people === null || people <= 1
   const showExport = locked && billing.canExport
-  const hasContent = Boolean(
-    date ||
-    inGrace ||
-    locked ||
-    billing.canCheckout ||
-    billing.canManageBilling ||
-    showExport ||
-    checkoutError ||
-    portalError
-  )
+  const busy = pending !== null
 
   return (
     <div className="flex flex-col gap-2">
@@ -221,93 +254,138 @@ export function SubscriptionCard({
             {title}
           </CardTitle>
           <CardDescription>{description}</CardDescription>
-          {!complimentary && !locked && !inGrace && !paymentRequired ? (
+          {badge ? (
             <CardAction>
-              <Badge variant="secondary">{statusLabel}</Badge>
+              <Badge variant="secondary">{badge}</Badge>
             </CardAction>
           ) : null}
         </CardHeader>
-        {hasContent ? (
-          <CardContent className="flex flex-col gap-4">
-            {date ? (
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {dateLabel}:
-                </span>{" "}
-                {billing.subscription?.cancelAtPeriodEnd
-                  ? formatUtcDeadline(date)
-                  : formatDate(date)}
+        <CardContent className="flex flex-col gap-4">
+          {people !== null || dateLine ? (
+            <p className="text-sm text-muted-foreground">
+              {[
+                people !== null && !complimentary
+                  ? `${people} of ${plan.peopleLimit} ${plan.peopleLimit === 1 ? "person" : "people"}`
+                  : null,
+                dateLine,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
+          {inGrace && billing.subscription?.graceEndsAt ? (
+            <div className="flex gap-2 rounded-lg bg-warning/10 p-3 text-sm text-foreground">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+              <p>
+                Payment for {worktableName} failed. Update the card by{" "}
+                {formatDate(billing.subscription.graceEndsAt)} to keep access.
               </p>
-            ) : null}
-            {inGrace && billing.subscription?.graceEndsAt ? (
-              <div className="flex gap-2 rounded-lg bg-warning/10 p-3 text-sm text-foreground">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-                <p>
-                  Update your payment method by{" "}
-                  {formatUtcDeadline(billing.subscription.graceEndsAt)} to avoid
-                  export-only access.
-                </p>
-              </div>
-            ) : null}
-            {locked ? (
-              <p className="text-sm text-muted-foreground">
-                Your Worktable data is available for export only. Resubscribe to
-                continue access.
-              </p>
-            ) : null}
-            {billing.canCheckout || billing.canManageBilling ? (
-              <div className="flex flex-wrap gap-2">
-                {billing.canCheckout ? (
+            </div>
+          ) : null}
+          {locked ? (
+            <p className="text-sm text-muted-foreground">
+              {billing.deletesAt
+                ? `${worktableName} is locked. Export it before ${formatDate(billing.deletesAt)}, when it will be deleted.`
+                : `${worktableName} is locked. You can still export it.`}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {solo && billing.canCheckout
+              ? PAID_CLOUD_PLAN_IDS.map((id, index) => (
                   <Button
+                    key={id}
                     size="sm"
-                    disabled={checkoutPending}
-                    onClick={onCheckout}
+                    variant={index === 0 ? "default" : "outline"}
+                    disabled={busy}
+                    onClick={() => onCheckout(id)}
                   >
-                    <CreditCard className="size-4" />
-                    {checkoutPending
-                      ? "Opening checkout…"
-                      : locked
-                        ? "Restart subscription"
-                        : "Subscribe"}
+                    {pending === "checkout"
+                      ? "Opening payment…"
+                      : `Move to ${CLOUD_PLANS[id].name}, ${formatPrice(CLOUD_PLANS[id].amount, plan.currency)} a month`}
                   </Button>
-                ) : null}
-                {billing.canManageBilling ? (
-                  <Button
-                    variant={
-                      inGrace && !billing.canCheckout ? "default" : "outline"
-                    }
-                    size="sm"
-                    disabled={portalPending}
-                    onClick={onPortal}
-                  >
-                    <ExternalLink className="size-4" />
-                    {portalPending ? "Opening…" : "Manage billing"}
-                  </Button>
-                ) : null}
-              </div>
+                ))
+              : null}
+            {!solo && billing.canCheckout ? (
+              <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
+                <CreditCard className="size-4" />
+                {pending === "checkout"
+                  ? "Opening payment…"
+                  : locked
+                    ? "Restart subscription"
+                    : "Subscribe"}
+              </Button>
             ) : null}
-            {showExport ? (
-              <button
-                className="flex w-fit items-center gap-1.5 text-sm font-medium text-primary-text underline underline-offset-4"
-                type="button"
-                onClick={downloadCloudWorkspace}
+            {billing.canChangeTo.map((id) => {
+              const fits = people === null || people <= CLOUD_PLANS[id].peopleLimit
+              return (
+                <Button
+                  key={id}
+                  size="sm"
+                  disabled={busy || !fits}
+                  title={
+                    fits
+                      ? undefined
+                      : `Remove ${people! - CLOUD_PLANS[id].peopleLimit} people before moving to ${CLOUD_PLANS[id].name}`
+                  }
+                  onClick={() => onChangePlan(id)}
+                >
+                  {pending === "change"
+                    ? "Changing plan…"
+                    : `Move to ${CLOUD_PLANS[id].name}, ${formatPrice(CLOUD_PLANS[id].amount, plan.currency)} a month`}
+                </Button>
+              )
+            })}
+            {billing.canManageBilling ? (
+              <Button
+                variant={inGrace && !billing.canCheckout ? "default" : "outline"}
+                size="sm"
+                disabled={busy}
+                onClick={onPortal}
               >
-                <Download className="size-4" />
-                Export
-              </button>
+                <ExternalLink className="size-4" />
+                {pending === "portal" ? "Opening…" : "Manage payment"}
+              </Button>
             ) : null}
-            {checkoutError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {checkoutError}
-              </p>
+            {billing.canManageBilling && !solo && !locked && !cancelsAtEnd ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => setCancelling(true)}
+              >
+                Cancel plan
+              </Button>
             ) : null}
-            {portalError ? (
-              <p className="text-sm text-destructive" role="alert">
-                {portalError}
-              </p>
-            ) : null}
-          </CardContent>
-        ) : null}
+          </div>
+          {billing.canChangeTo.some(
+            (id) => people !== null && people > CLOUD_PLANS[id].peopleLimit
+          ) ? (
+            <p className="text-xs text-muted-foreground">
+              {billing.canChangeTo
+                .filter((id) => people !== null && people > CLOUD_PLANS[id].peopleLimit)
+                .map(
+                  (id) =>
+                    `Remove ${people! - CLOUD_PLANS[id].peopleLimit} people before moving to ${CLOUD_PLANS[id].name}.`
+                )
+                .join(" ")}
+            </p>
+          ) : null}
+          {showExport ? (
+            <button
+              className="flex w-fit items-center gap-1.5 text-sm font-medium text-primary-text underline underline-offset-4"
+              type="button"
+              onClick={downloadCloudWorkspace}
+            >
+              <Download className="size-4" />
+              Export
+            </button>
+          ) : null}
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </CardContent>
       </Card>
       <p className="px-1 text-sm text-muted-foreground">
         <a
@@ -319,6 +397,27 @@ export function SubscriptionCard({
           Refund policy
         </a>
       </p>
+      <ConfirmDialog
+        open={cancelling}
+        onOpenChange={setCancelling}
+        title={`Cancel ${plan.name}?`}
+        description={
+          !date
+            ? `${worktableName} moves to Solo at the end of this period.`
+            : fitsSolo
+              ? `${worktableName} stays on ${plan.name} until ${formatDate(date)}, then moves to Solo.`
+              : `${worktableName} stays on ${plan.name} until ${formatDate(date)}. Then it locks, because Solo holds one person, and you can export it for ${LOCKED_RETENTION_DAYS} days.`
+        }
+        confirmLabel="Cancel plan"
+        cancelLabel="Keep plan"
+        variant="destructive"
+        loading={pending === "cancel"}
+        loadingLabel="Cancelling…"
+        onConfirm={() => {
+          onCancel()
+          setCancelling(false)
+        }}
+      />
     </div>
   )
 }

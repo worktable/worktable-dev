@@ -1,3 +1,10 @@
+import {
+  assertPayerKeepsOwnership,
+  inviteWithinPlan,
+  memberIsPayer,
+  PlanFullError,
+  requestBilling,
+} from "../hosted-billing.ts"
 import { hasOwnerPassword } from "../session-store.ts"
 import { updateTeamAgentConnection } from "../team-agent-connections.ts"
 import { isHosted } from "../hosted.ts"
@@ -13,6 +20,7 @@ import {
 import { currentTeamWorktable, currentWorktableId } from "../team-database.ts"
 import {
   findTeamMember,
+  findTeamMemberById,
   hasTeamOperatorAuthority,
   listTeamMembers,
 } from "../team-members.ts"
@@ -44,6 +52,7 @@ import {
 import {
   invitationEmailConfigured,
   sendInvitationEmail,
+  notifyPayerPlanFull,
 } from "../team-invitation-email.ts"
 import { ensureWorkspaceManifest } from "../workspace.ts"
 
@@ -139,12 +148,25 @@ teamRouter.post("/accept-invitation", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: "Invalid invitation" }, 400)
-  const accepted = await acceptCloudTeamInvitation(
-    origin(c),
-    identity.cloudIdentity,
-    parsed.data.invitationId
-  )
-  return c.json({ ok: true, ...accepted })
+  try {
+    const accepted = await acceptCloudTeamInvitation(
+      origin(c),
+      identity.cloudIdentity,
+      parsed.data.invitationId,
+      requestBilling(c.req.raw)
+    )
+    return c.json({ ok: true, ...accepted })
+  } catch (error) {
+    if (!(error instanceof PlanFullError)) throw error
+    return c.json(
+      {
+        error:
+          "This Worktable is full. Ask the person who invited you to make room.",
+        code: error.code,
+      },
+      409
+    )
+  }
 })
 teamRouter.use("*", async (c, next) => {
   requireTeamHuman(c.get("identity"))
@@ -157,6 +179,13 @@ teamRouter.patch("/members/:id", async (c) => {
     .strict()
     .safeParse(await c.req.json().catch(() => null))
   if (!body.success) return c.json({ error: "Choose owner or member" }, 400)
+  const target = findTeamMemberById(c.req.param("id"))
+  if (target)
+    assertPayerKeepsOwnership(
+      target.userId,
+      body.data.role,
+      requestBilling(c.req.raw)
+    )
   await changeTeamMembership(
     origin(c),
     c.req.raw,
@@ -167,6 +196,9 @@ teamRouter.patch("/members/:id", async (c) => {
   return c.json({ ok: true })
 })
 teamRouter.delete("/members/:id", async (c) => {
+  const target = findTeamMemberById(c.req.param("id"))
+  if (target)
+    assertPayerKeepsOwnership(target.userId, null, requestBilling(c.req.raw))
   await changeTeamMembership(
     origin(c),
     c.req.raw,
@@ -261,14 +293,28 @@ teamRouter.post("/invitations", async (c) => {
     if (!space) return c.json({ error: "Space not found" }, 404)
     assertInvitationStartSpace(member, parsed.data.spaceId)
   }
-  const invitation = await auth.api.createInvitation({
-    headers,
-    body: {
-      organizationId: worktable.organizationId,
-      email: parsed.data.email,
-      role: "member",
-    },
-  })
+  const billing = requestBilling(c.req.raw)
+  let invitation: Awaited<ReturnType<typeof auth.api.createInvitation>>
+  try {
+    invitation = await inviteWithinPlan(billing, () =>
+      auth.api.createInvitation({
+        headers,
+        body: {
+          organizationId: worktable.organizationId,
+          email: parsed.data.email,
+          role: "member",
+        },
+      })
+    )
+  } catch (error) {
+    if (!(error instanceof PlanFullError)) throw error
+    // Only the payer can change the plan; anyone else's attempt is passed on.
+    if (!memberIsPayer(member.userId, billing)) notifyPayerPlanFull(member.name)
+    return c.json(
+      { error: error.message, code: error.code, ...error.room },
+      409
+    )
+  }
   recordInvitationDetails(invitation.id, parsed.data.spaceId ?? null)
   const email = invitationEmailConfigured()
     ? claimInvitationEmail(invitation.id) === null

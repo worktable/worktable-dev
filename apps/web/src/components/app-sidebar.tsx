@@ -338,6 +338,12 @@ function loadSpaceContents(queryClient: QueryClient, spaceId: string) {
 /** How long the pointer rests on a Space before its contents load. */
 const INTENT_MS = 80
 
+/**
+ * How long an opened Space waits for all its contents before showing the
+ * tree anyway; each section then shows its own loading or error state.
+ */
+const REVEAL_WAIT_MS = 500
+
 type RowNewActionsProps = {
   spaceId: string
   folder?: string
@@ -508,11 +514,15 @@ const SpaceSection = memo(function SpaceSection({
       setRevealed(loaded)
     })
   }
-  // Reveal the tree once its contents are in, however the Space opened.
+  // Reveal the tree once its contents are in, however the Space opened,
+  // or after a short wait if a request stalls.
   useEffect(() => {
     if (!expanded || revealed) return
     let current = true
-    void loadSpaceContents(queryClient, space.id).then(() => {
+    void Promise.race([
+      loadSpaceContents(queryClient, space.id),
+      new Promise((resolve) => setTimeout(resolve, REVEAL_WAIT_MS)),
+    ]).then(() => {
       const root = rowRef.current?.parentElement
       if (!current || !root) return
       // Only the rows below move; the tree itself appears in place.

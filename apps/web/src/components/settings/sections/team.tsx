@@ -1,14 +1,25 @@
-import { useState, lazy, Suspense } from "react"
+import { useState, lazy, Suspense, type ReactNode } from "react"
+import { ChevronDown, Mail, Trash2 } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
-import { Badge } from "@worktable/ui/components/badge"
+import { Card } from "@worktable/ui/components/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@worktable/ui/components/dropdown-menu"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import { SettingsGroup } from "../settings-group"
-import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
+import { LinkToSend } from "../link-to-send"
+import { copyText } from "@/lib/clipboard"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
-import { peopleCount, roomFor, useCloudPlan } from "@/lib/cloud-plan"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
 import { useSettingsSectionActive } from "../settings-dialog"
 import {
@@ -31,6 +42,7 @@ import {
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
+import { PersonAvatar } from "@/components/person-avatar"
 import {
   Select,
   SelectContent,
@@ -141,7 +153,17 @@ function EnableTeams() {
   )
 }
 
-const NO_START_SPACE = "__none__"
+/**
+ * Team agents are registered here and get their own Space grants. The
+ * registration flow is hidden until it reads as simply as connecting a
+ * personal agent; agents already registered stay listed and managed.
+ */
+const SHOW_TEAM_AGENTS = false
+
+const ROLES: Array<{ value: TeamMember["role"]; label: string; detail: string }> = [
+  { value: "owner", label: "Owner", detail: "Manages people, the plan and every Space" },
+  { value: "member", label: "Member", detail: "Works in the Spaces shared with them" },
+]
 
 function TeamMembers({
   owner,
@@ -156,7 +178,6 @@ function TeamMembers({
 }) {
   const client = useQueryClient()
   const [email, setEmail] = useState("")
-  const [startSpace, setStartSpace] = useState<string>(NO_START_SPACE)
   const [invited, setInvited] = useState<{
     email: string
     url: string
@@ -181,17 +202,15 @@ function TeamMembers({
   }
   const { plan, worktableName } = useCloudPlan()
   const fits = roomFor(plan, 1)
-  const people = peopleCount(plan)
   const invite = useMutation({
-    mutationFn: (input: { email: string; spaceId?: string }) =>
-      inviteTeamMember(input.email, input.spaceId),
-    onSuccess: (result, input) => {
+    mutationFn: (address: string) => inviteTeamMember(address),
+    onSuccess: (result, address) => {
       const emailed = result.email === null ? null : result.email === "sent"
       if (emailed) {
-        toast.success(`Invitation sent to ${input.email}`)
+        toast.success(`Invitation sent to ${address}`)
         setInvited(null)
-      } else setInvited({ email: input.email, url: result.url, emailed })
-      setEmail((current) => (current === input.email ? "" : current))
+      } else setInvited({ email: address, url: result.url, emailed })
+      setEmail((current) => (current === address ? "" : current))
       void refresh()
     },
   })
@@ -204,19 +223,10 @@ function TeamMembers({
     },
   })
   const copyInvitation = (url: string) =>
-    void navigator.clipboard.writeText(url).then(
+    void copyText(url).then(
       () => toast.success("Invitation link copied"),
       () => toast.error("Select and copy the invitation link")
     )
-  // A shared Space is open to every member; inviting someone into a
-  // restricted one gives them access, which needs managing it.
-  const startSpaces =
-    spaces.data?.filter(
-      (space) =>
-        !space.permissions ||
-        space.permissions.manage ||
-        space.permissions.shared === true
-    ) ?? []
   const cancel = useMutation({
     mutationFn: cancelTeamInvitation,
     onSuccess: refresh,
@@ -254,254 +264,229 @@ function TeamMembers({
     remove.error ??
     reset.error ??
     operatorChange.error
+  const pending =
+    invitations.data?.invitations.filter(
+      (invitation) => invitation.status === "pending"
+    ) ?? []
+  const emailing = Boolean(invitations.data?.email)
   return (
     <div className="flex flex-col gap-6">
-      {cloud && <Button variant="outline" render={<a href="/" />}>Switch Worktable</Button>}
-      <SettingsGroup title="Members">
-        {members.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            Could not load members.
-          </p>
-        ) : (
-          members.data?.map((member) => (
-            <div
-              key={member.id}
-              className="flex flex-wrap items-center gap-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  {member.name}
-                  {member.id === selfId ? " (you)" : ""}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {member.email}
-                </p>
-              </div>
-              <Badge variant="secondary">
-                {member.role === "owner" ? "Owner" : "Member"}
-              </Badge>
-              {!cloud && member.operator && (
-                <Badge variant="outline">Operator</Badge>
-              )}
-              {!cloud && operator && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={operatorChange.isPending}
-                  onClick={() =>
-                    operatorChange.mutate({
-                      id: member.id,
-                      value: !member.operator,
-                    })
-                  }
-                >
-                  {member.operator ? "Remove operator" : "Make operator"}
-                </Button>
-              )}
-              {!cloud && owner && member.role !== "owner" && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={reset.isPending}
-                  onClick={() =>
-                    reset.mutate({ name: member.name, memberId: member.id })
-                  }
-                >
-                  Reset password
-                </Button>
-              )}
-              {owner && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={role.isPending || remove.isPending}
-                    onClick={() =>
-                      role.mutate({
-                        id: member.id,
-                        value: member.role === "owner" ? "member" : "owner",
-                      })
-                    }
-                  >
-                    {member.role === "owner" ? "Make member" : "Make owner"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setRemoving(member)}
-                  >
-                    Remove
-                  </Button>
-                </>
-              )}
-            </div>
-          ))
-        )}
-        {people ? (
-          <p className="text-xs text-muted-foreground">
-            {people} on {CLOUD_PLANS[plan!.plan].name}
-          </p>
-        ) : null}
-        {plan && !fits ? (
-          <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
-        ) : null}
-        <form
-          className="flex flex-wrap gap-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!fits) return
-            invite.mutate({
-              email,
-              ...(startSpace === NO_START_SPACE ? {} : { spaceId: startSpace }),
-            })
-          }}
-        >
-          <Input
-            aria-label="Invite email"
-            placeholder="Email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            className="min-w-0 flex-1"
-          />
-          {startSpaces.length > 0 && (
-            <Select
-              value={startSpace}
-              onValueChange={(value) => {
-                if (value) setStartSpace(value)
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="text-sm font-medium text-foreground">People</h3>
+          {plan && plan.peopleLimit !== null ? (
+            <span className="text-xs text-muted-foreground">
+              {plan.people} of {plan.peopleLimit}
+            </span>
+          ) : null}
+        </div>
+        <Card className="gap-3 px-4">
+          {plan && !fits ? (
+            <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
+          ) : (
+            <form
+              className="flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                invite.mutate(email.trim())
               }}
             >
-              <SelectTrigger aria-label="Starting Space" className="w-44">
-                <SelectValue>
-                  {startSpace === NO_START_SPACE
-                    ? "No starting Space"
-                    : (startSpaces.find((space) => space.id === startSpace)
-                        ?.name ?? "No starting Space")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_START_SPACE}>No starting Space</SelectItem>
-                {startSpaces.map((space) => (
-                  <SelectItem key={space.id} value={space.id}>
-                    {space.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Input
+                aria-label="Email to invite"
+                placeholder="Email address"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                className="min-w-0 flex-1"
+              />
+              <Button type="submit" disabled={invite.isPending}>
+                {invite.isPending ? "Inviting…" : "Invite"}
+              </Button>
+            </form>
           )}
-          <Button type="submit" disabled={invite.isPending || !fits}>
-            {invite.isPending ? "Creating invite…" : "Invite member"}
-          </Button>
-        </form>
-        {invited && (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">
-              {!cloud
-                ? "Anyone with this invitation can join. Send it directly to the person you intend to invite."
-                : invited.emailed === false
-                  ? `Couldn't email ${invited.email}. Copy the link and send it to them. It only works for that address.`
-                  : `Send this link to ${invited.email}. It only works for that address.`}
-            </p>
-            <Input
-              aria-label="Invitation link"
-              value={invited.url}
-              readOnly
-              onFocus={(event) => event.target.select()}
+          {invited && (
+            <LinkToSend
+              text={
+                !cloud
+                  ? "Anyone with this invitation can join. Send it directly to the person you intend to invite."
+                  : invited.emailed === false
+                    ? `Couldn't email ${invited.email}. Copy the link and send it to them. It only works for that address.`
+                    : `Send this link to ${invited.email}. It only works for that address.`
+              }
+              label="Invitation link"
+              url={invited.url}
+              copy="Copy"
+              onCopy={() => copyInvitation(invited.url)}
             />
-            <Button variant="outline" onClick={() => copyInvitation(invited.url)}>
-              Copy invitation
-            </Button>
-          </div>
-        )}
-        {resetLink && (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm text-muted-foreground">
-              This link lets {resetLink.name} choose a new password. It works
-              once, expires in 24 hours, and signs them out everywhere. Send it
-              to them directly.
-            </p>
-            <Input
-              aria-label="Password reset link"
-              value={resetLink.url}
-              readOnly
-              onFocus={(event) => event.target.select()}
-            />
-            <Button
-              variant="outline"
-              onClick={() =>
-                void navigator.clipboard.writeText(resetLink.url).then(
+          )}
+          {resetLink && (
+            <LinkToSend
+              text={`This link lets ${resetLink.name} choose a new password. It works once, expires in 24 hours, and signs them out everywhere. Send it to them directly.`}
+              label="Password reset link"
+              url={resetLink.url}
+              copy="Copy"
+              onCopy={() =>
+                void copyText(resetLink.url).then(
                   () => toast.success("Reset link copied"),
                   () => toast.error("Select and copy the reset link")
                 )
               }
-            >
-              Copy reset link
-            </Button>
-          </div>
-        )}
-        {invitations.data?.invitations
-          .filter((invitation) => invitation.status === "pending")
-          .map((invitation) => (
-            <div
-              key={invitation.id}
-              className="flex items-center justify-between gap-3 text-sm"
-            >
-              <span className="min-w-0 flex-1 truncate">
-                {invitation.email} ·{" "}
-                {invitation.expired
-                  ? "Expired"
-                  : invitations.data?.email
-                    ? invitation.emailed
-                      ? "Emailed"
-                      : "Not emailed"
-                    : "Invited"}
-              </span>
-              {!invitation.expired && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copyInvitation(invitation.url)}
-                >
-                  Copy link
-                </Button>
-              )}
-              {invitations.data?.email && !invitation.expired && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={resend.isPending}
-                  onClick={() => resend.mutate(invitation.id)}
-                >
-                  {invitation.emailed ? "Resend" : "Send email"}
-                </Button>
-              )}
-              {!cloud && owner && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={reset.isPending}
-                  onClick={() =>
-                    reset.mutate({
-                      name: invitation.email,
-                      invitationId: invitation.id,
-                    })
+            />
+          )}
+          {members.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not load people.
+            </p>
+          ) : (
+            <ul className="-mx-1 flex flex-col">
+              {members.data?.map((member) => {
+                const self = member.id === selfId
+                const label = member.role === "owner" ? "Owner" : "Member"
+                // Operators grant and withdraw operating whatever their role.
+                const operatorItem =
+                  !cloud && operator ? (
+                    <DropdownMenuItem
+                      onClick={() =>
+                        operatorChange.mutate({ id: member.id, value: !member.operator })
+                      }
+                    >
+                      {member.operator
+                        ? "Stop operating this computer"
+                        : "Let them operate this computer"}
+                    </DropdownMenuItem>
+                  ) : null
+                return (
+                  <PersonRow
+                    key={member.id}
+                    avatar={<PersonAvatar id={member.actorId} name={member.name} size="lg" />}
+                    name={
+                      <>
+                        {member.name}
+                        {self ? (
+                          <span className="font-normal text-muted-foreground"> (you)</span>
+                        ) : null}
+                      </>
+                    }
+                    detail={`${member.email}${!cloud && member.operator ? " · Operates this computer" : ""}`}
+                    status={
+                      owner && !self ? (
+                        <RowSelect label={label} aria={`Role for ${member.name}`} disabled={role.isPending}>
+                          <DropdownMenuRadioGroup
+                            value={member.role}
+                            onValueChange={(next) => {
+                              if (next !== member.role)
+                                role.mutate({ id: member.id, value: next as TeamMember["role"] })
+                            }}
+                          >
+                            {ROLES.map((option) => (
+                              <DropdownMenuRadioItem
+                                key={option.value}
+                                value={option.value}
+                                className="items-start py-2"
+                              >
+                                <span className="flex flex-col gap-0.5">
+                                  <span className="text-sm text-foreground">{option.label}</span>
+                                  <span className="text-xs text-muted-foreground">{option.detail}</span>
+                                </span>
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                          {!cloud && (operator || member.role !== "owner") ? (
+                            <DropdownMenuSeparator />
+                          ) : null}
+                          {!cloud && member.role !== "owner" ? (
+                            <DropdownMenuItem
+                              onClick={() => reset.mutate({ name: member.name, memberId: member.id })}
+                            >
+                              Reset password
+                            </DropdownMenuItem>
+                          ) : null}
+                          {operatorItem}
+                        </RowSelect>
+                      ) : operatorItem ? (
+                        <RowSelect
+                          label={label}
+                          aria={`Operating this computer for ${member.name}`}
+                          disabled={operatorChange.isPending}
+                        >
+                          {operatorItem}
+                        </RowSelect>
+                      ) : (
+                        <RowLabel>{label}</RowLabel>
+                      )
+                    }
+                    action={
+                      owner && !self ? (
+                        <RemoveButton
+                          label={`Remove ${member.name}`}
+                          onClick={() => setRemoving(member)}
+                        />
+                      ) : null
+                    }
+                  />
+                )
+              })}
+              {pending.map((invitation) => (
+                <PersonRow
+                  key={invitation.id}
+                  avatar={
+                    <span
+                      aria-hidden
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
+                    >
+                      <Mail className="size-4" />
+                    </span>
                   }
-                >
-                  Reset password
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={cancel.isPending}
-                onClick={() => cancel.mutate(invitation.id)}
-              >
-                Cancel invitation
-              </Button>
-            </div>
-          ))}
-      </SettingsGroup>
+                  name={invitation.email}
+                  detail={
+                    invitation.expired
+                      ? "Invitation expired"
+                      : emailing && !invitation.emailed
+                        ? "Invited · Not emailed yet"
+                        : "Invited"
+                  }
+                  status={
+                    invitation.expired ? (
+                      <RowLabel>Expired</RowLabel>
+                    ) : (
+                      <RowSelect label="Pending" aria={`Invitation for ${invitation.email}`}>
+                        <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
+                          Copy link
+                        </DropdownMenuItem>
+                        {emailing ? (
+                          <DropdownMenuItem
+                            disabled={resend.isPending}
+                            onClick={() => resend.mutate(invitation.id)}
+                          >
+                            {invitation.emailed ? "Send again" : "Send email"}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {!cloud && owner ? (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              reset.mutate({ name: invitation.email, invitationId: invitation.id })
+                            }
+                          >
+                            Reset password
+                          </DropdownMenuItem>
+                        ) : null}
+                      </RowSelect>
+                    )
+                  }
+                  action={
+                    <RemoveButton
+                      label={`Cancel the invitation for ${invitation.email}`}
+                      disabled={cancel.isPending}
+                      onClick={() => cancel.mutate(invitation.id)}
+                    />
+                  }
+                />
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
       <SettingsGroup title="Space access">
         <p className="text-sm text-muted-foreground">
           Owners can access every Space. Manage sharing for the Spaces you
@@ -548,7 +533,7 @@ function TeamMembers({
           />
         )}
       </SettingsGroup>
-      <TeamAgents owner={owner} />
+      <TeamAgents owner={owner} canRegister={SHOW_TEAM_AGENTS} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error.message}
@@ -559,9 +544,10 @@ function TeamMembers({
         onOpenChange={(open) => {
           if (!open && !remove.isPending) setRemoving(null)
         }}
-        title={`Remove ${removing?.name ?? "member"}?`}
+        title={`Remove ${removing?.name ?? "this person"}?`}
         description="Their personal agents and Space access will be revoked. Their existing contributions stay in the Worktable."
-        confirmLabel="Remove member"
+        confirmLabel="Remove"
+        variant="destructive"
         loading={remove.isPending}
         onConfirm={() => {
           if (removing) remove.mutate(removing.id)
@@ -571,7 +557,106 @@ function TeamMembers({
   )
 }
 
-function TeamAgents({ owner }: { owner: boolean }) {
+/**
+ * One person or invitation. Role or status and the remove button sit in
+ * fixed columns, so they line up down the list.
+ */
+function PersonRow({
+  avatar,
+  name,
+  detail,
+  status,
+  action,
+}: {
+  avatar: ReactNode
+  name: ReactNode
+  detail: string
+  status: ReactNode
+  action: ReactNode
+}) {
+  return (
+    <li className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_7rem_2rem] items-center gap-3 px-1 py-2">
+      {avatar}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{name}</p>
+        <p className="truncate text-xs text-muted-foreground">{detail}</p>
+      </div>
+      <div className="flex">{status}</div>
+      <div className="flex justify-end">{action}</div>
+    </li>
+  )
+}
+
+/** A role or status that opens choices; its text starts where a plain label's does. */
+function RowSelect({
+  label,
+  aria,
+  disabled,
+  children,
+}: {
+  label: string
+  aria: string
+  disabled?: boolean
+  children: ReactNode
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            aria-label={aria}
+            className="w-full justify-between px-2 font-normal text-muted-foreground"
+          />
+        }
+      >
+        {label}
+        <ChevronDown className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function RowLabel({ children }: { children: ReactNode }) {
+  return <span className="px-2 text-sm text-muted-foreground">{children}</span>
+}
+
+function RemoveButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      className="text-muted-foreground hover:text-destructive"
+      onClick={onClick}
+    >
+      <Trash2 className="size-4" />
+    </Button>
+  )
+}
+
+function TeamAgents({
+  owner,
+  canRegister,
+}: {
+  owner: boolean
+  canRegister: boolean
+}) {
   const client = useQueryClient()
   const [name, setName] = useState("")
   const [connecting, setConnecting] = useState<string | null>(null)
@@ -597,6 +682,11 @@ function TeamAgents({ owner }: { owner: boolean }) {
       void client.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
+  const teamAgents =
+    agents.data?.filter((agent) => agent.active && agent.ownership === "team") ??
+    []
+  // Without registration, the group is only for agents already registered.
+  if (!canRegister && !teamAgents.length) return null
   return (
     <SettingsGroup title="Team agents">
       <p className="text-sm text-muted-foreground">
@@ -604,35 +694,33 @@ function TeamAgents({ owner }: { owner: boolean }) {
         Space&apos;s access settings, and choose here whether they can use
         threads outside Spaces.
       </p>
-      {agents.data
-        ?.filter((agent) => agent.active && agent.ownership === "team")
-        .map((agent) => (
-          <div
-            key={agent.id}
-            className="flex items-center justify-between gap-3"
-          >
-            <span className="text-sm">{agent.name}</span>
-            {owner && (
-              <WorktableThreadsSelect
-                agent={agent}
-                onChange={(value) => threads.mutate({ id: agent.id, value })}
-                disabled={threads.isPending}
-              />
-            )}
-            {owner && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setConnecting(connecting === agent.id ? null : agent.id)
-                }
-              >
-                Connect agent
-              </Button>
-            )}
-          </div>
-        ))}
-      {owner && (
+      {teamAgents.map((agent) => (
+        <div
+          key={agent.id}
+          className="flex items-center justify-between gap-3"
+        >
+          <span className="text-sm">{agent.name}</span>
+          {owner && (
+            <WorktableThreadsSelect
+              agent={agent}
+              onChange={(value) => threads.mutate({ id: agent.id, value })}
+              disabled={threads.isPending}
+            />
+          )}
+          {owner && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setConnecting(connecting === agent.id ? null : agent.id)
+              }
+            >
+              Connect agent
+            </Button>
+          )}
+        </div>
+      ))}
+      {owner && canRegister && (
         <form
           className="flex gap-2"
           onSubmit={(event) => {

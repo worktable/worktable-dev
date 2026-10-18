@@ -14,6 +14,7 @@ import { openSettings } from "@/lib/settings-open"
 import { RUNTIME_BASE_PATH } from "@/lib/runtime-path"
 import { insideDesktop, switchDesktopWorktable } from "@/lib/desktop-connection"
 import { toast } from "@worktable/ui/components/sonner"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"])
 
@@ -52,6 +53,8 @@ export function WorktableHeader() {
   const desktop =
     typeof document !== "undefined" &&
     document.documentElement.hasAttribute("data-worktable-desktop")
+  // On Cloud, the other Worktables are listed outside this one.
+  const cloud = useDeploymentInfo().data?.mode === "cloud"
 
   const switcher = (
     <div className="flex h-12 shrink-0 items-center gap-1 px-2">
@@ -97,6 +100,12 @@ export function WorktableHeader() {
                 })
               }
             >
+              <ArrowLeftRight className="mr-2 size-4" />
+              Switch Worktable
+            </DropdownMenuItem>
+          )}
+          {cloud && !desktop && (
+            <DropdownMenuItem render={<a href="/" />}>
               <ArrowLeftRight className="mr-2 size-4" />
               Switch Worktable
             </DropdownMenuItem>

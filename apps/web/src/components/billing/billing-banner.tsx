@@ -27,12 +27,12 @@ export function BillingBanner() {
   if (!owner && now < plan.graceEndsAt - MEMBER_GRACE_NOTICE_MS)
     return null
   const date = day.format(plan.graceEndsAt)
-  const payer = plan.payerName || "The person who pays for it"
+  const payer = plan.payerName || "the person who pays for it"
   const message = !owner
-    ? `${worktableName}'s subscription needs attention. ${payer} manages billing.`
+    ? `${worktableName}'s payment needs attention. Contact ${payer} about billing.`
     : plan.isPayer
       ? `Payment for ${worktableName} failed. Update the card by ${date} to keep access.`
-      : `Payment for ${worktableName} failed. ${payer} needs to update the card by ${date} to keep access.`
+      : `Payment for ${worktableName} failed. Contact ${payer} to update the card by ${date}.`
   return (
     <div
       role="status"

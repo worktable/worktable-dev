@@ -4,7 +4,7 @@ import type {
   TeamMember,
   TeamStatus,
 } from "@worktable/types"
-import { fetchJSON } from "./http"
+import { fetchJSON, fetchVoid } from "./http"
 export const getTeamStatus = () => fetchJSON<TeamStatus>("/api/team")
 export const getTeamMembers = () =>
   fetchJSON<{ members: TeamMember[] }>("/api/team/members").then(
@@ -115,3 +115,7 @@ export const setMemberOperator = (id: string, operator: boolean) =>
     method: "PUT",
     body: JSON.stringify({ operator }),
   })
+
+/** Ask whoever pays to upgrade a full plan; they're emailed at most once a day. */
+export const askPayerToUpgrade = () =>
+  fetchVoid("/api/team/plan-full", { method: "POST" })

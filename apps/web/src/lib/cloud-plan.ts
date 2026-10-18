@@ -22,10 +22,10 @@ export function useCloudPlan(): {
   }
 }
 
-/** "$49 a month" */
+/** "$49 monthly" */
 export function planPrice(id: CloudPlanId): string {
   const plan = CLOUD_PLANS[id]
-  return plan.amount === 0 ? "Free" : `$${plan.amount / 100} a month`
+  return plan.amount === 0 ? "Free" : `$${plan.amount / 100} monthly`
 }
 
 /** "Up to 12 people", or "Just you and your agents" on Solo. */
@@ -42,11 +42,6 @@ export function roomFor(plan: CloudPlan | null, adding: number): boolean {
   return plan.people + Math.max(adding, 1) <= plan.peopleLimit
 }
 
-/** "3 of 12 people", or null without a limit. */
-export function peopleCount(plan: CloudPlan | null): string | null {
-  if (!plan || plan.peopleLimit === null) return null
-  return `${plan.people} of ${plan.peopleLimit} ${plan.peopleLimit === 1 ? "person" : "people"}`
-}
 
 export function upgradeFor(plan: CloudPlan): PaidCloudPlanId | null {
   return nextCloudPlan(plan.plan)

@@ -22,12 +22,20 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@worktable/ui/components/responsive-dialog"
+import { Input } from "@worktable/ui/components/input"
+import { toast } from "@worktable/ui/components/sonner"
 import {
   getSpaceAccess,
   getTeamAgents,
   getTeamMembers,
+  inviteTeamMember,
   setSpaceAccess,
 } from "@/lib/team-api"
+import { PlanFullNotice } from "@/components/billing/plan-full-notice"
+import { LinkToSend } from "@/components/settings/link-to-send"
+import { copyText } from "@/lib/clipboard"
+import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
+import { queryKeys } from "@/lib/queries"
 
 export function SpaceAccessEditor({
   spaceId,
@@ -93,6 +101,29 @@ export function SpaceAccessEditor({
         : previous
     )
   }
+  const { plan, worktableName } = useCloudPlan()
+  const [email, setEmail] = useState("")
+  // A link that couldn't be emailed or copied stays here to copy by hand.
+  const [link, setLink] = useState<{ email: string; url: string } | null>(null)
+  // Someone new joins straight into this Space, with access to it.
+  const invite = useMutation({
+    mutationFn: (address: string) => inviteTeamMember(address, spaceId),
+    onSuccess: (result, address) => {
+      setEmail("")
+      setLink(null)
+      // Only the invitations and the plan's people count changed.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace, exact: true })
+      void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
+      if (result.email === "sent") toast.success(`Invitation sent to ${address}`)
+      else
+        void copyText(result.url).then(
+          () => toast.success(`Invitation link for ${address} copied. Send it to them.`),
+          () => setLink({ email: address, url: result.url })
+        )
+    },
+  })
+  const teamAgents =
+    agents.data?.filter((agent) => agent.ownership === "team" && agent.active) ?? []
   const grantFor = (subjectType: SpaceAccessGrant["subjectType"], id: string) =>
     draft?.grants.find(
       (grant) => grant.subjectType === subjectType && grant.subjectId === id
@@ -171,14 +202,10 @@ export function SpaceAccessEditor({
                     </div>
                   ))}
                 <p className="text-xs text-muted-foreground">
-                  Personal agents follow their member&rsquo;s access. Team
-                  agents need their own grants.
+                  Each person&rsquo;s agents follow their access.
+                  {teamAgents.length ? " Team agents need their own grants." : ""}
                 </p>
-                {agents.data
-                  ?.filter(
-                    (agent) => agent.ownership === "team" && agent.active
-                  )
-                  .map((agent) => (
+                {teamAgents.map((agent) => (
                     <div key={agent.id} className="flex items-center gap-3">
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {agent.name}
@@ -196,6 +223,58 @@ export function SpaceAccessEditor({
               </>
             )
           )}
+          {draft && roomFor(plan, 1) ? (
+            <form
+              className="flex flex-col gap-2 border-t border-border pt-4"
+              onSubmit={(event) => {
+                event.preventDefault()
+                invite.mutate(email.trim())
+              }}
+            >
+              <label htmlFor="space-invite" className="text-sm font-medium text-foreground">
+                Invite someone new to this Space
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="space-invite"
+                  placeholder="Email address"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  className="min-w-0 flex-1"
+                />
+                <Button type="submit" variant="outline" disabled={invite.isPending}>
+                  {invite.isPending ? "Inviting…" : "Invite"}
+                </Button>
+              </div>
+              {invite.isError ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {invite.error.message}
+                </p>
+              ) : null}
+            </form>
+          ) : draft && plan ? (
+            <div className="border-t border-border pt-4">
+              <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
+            </div>
+          ) : null}
+          {/* Outside the form: the invite that fills the plan swaps the form
+              for the full-plan notice, and this may be the only copy. */}
+          {link ? (
+            <LinkToSend
+              text={`Couldn't copy the invitation link. Send it to ${link.email} yourself.`}
+              label="Invitation link"
+              url={link.url}
+              copy="Copy"
+              onCopy={() =>
+                void copyText(link.url).then(
+                  () => toast.success("Invitation link copied"),
+                  () => toast.error("Select and copy the invitation link")
+                )
+              }
+            />
+          ) : null}
           {save.isError && (
             <p role="alert" className="text-sm text-destructive">
               {save.error.message}
@@ -212,7 +291,7 @@ export function SpaceAccessEditor({
               !draft || save.isPending || members.isError || agents.isError
             }
           >
-            {save.isPending ? "Saving…" : "Save access"}
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>

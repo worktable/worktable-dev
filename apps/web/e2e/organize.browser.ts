@@ -317,6 +317,27 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
     box && { x: box.x, y: box.y }
   expect(position(await title.boundingBox())).toEqual(position(titleBox))
   expect(position(await activity.boundingBox())).toEqual(position(activityBox))
+
+  // The destination fills the activity row, including its time and empty
+  // space, while remaining a native link for keyboard navigation.
+  await activity
+    .getByRole("listitem")
+    .filter({ hasText: "You pinned Untitled" })
+    .click({ position: { x: 8, y: 8 } })
+  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
+  await page.goto(`${harness.webUrl}/activity?spaceId=organize`)
+  const pinnedEntry = page
+    .getByRole("listitem")
+    .filter({ hasText: "You pinned Untitled" })
+  await expect(pinnedEntry).toBeVisible()
+  const entryBox = await pinnedEntry.boundingBox()
+  expect(entryBox).not.toBeNull()
+  await pinnedEntry.click({ position: { x: entryBox!.width - 8, y: 8 } })
+  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
+  await page.goBack()
+  await pinnedEntry.getByRole("link", { name: "Untitled" }).focus()
+  await page.keyboard.press("Enter")
+  await expect(page).toHaveURL(/\/spaces\/organize\/documents\/untitled$/)
 })
 
 test.describe("archive date editing", () => {

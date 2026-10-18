@@ -54,9 +54,14 @@ export function ActorBadge({
 
 // ── Sentences ──────────────────────────────────────────────
 
+// Stretch the existing destination link across its ActivityRow, keeping native
+// link behavior and a single keyboard stop for each entry.
+const activityLinkClass =
+  "font-medium text-foreground outline-none after:absolute after:inset-0 after:z-10 after:rounded-lg hover:text-primary-text focus-visible:text-primary-text focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+
 function TargetLink({ entry }: { entry: ActivityEntry }) {
   const target = entry.target
-  const className = "font-medium text-foreground hover:text-primary-text"
+  const className = activityLinkClass
   if (target.kind === "doc" && entry.spaceId) {
     return (
       <Link
@@ -262,6 +267,14 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
 
 // ── Entry ──────────────────────────────────────────────────
 
+function ActivityRow({ children }: { children: ReactNode }) {
+  return (
+    <li className="relative isolate flex min-h-11 gap-3 rounded-lg transition-colors has-[a:focus-visible]:bg-surface-hover has-[a:hover]:bg-surface-hover">
+      {children}
+    </li>
+  )
+}
+
 /** The badge on the timeline, joined to the next entry by a line. */
 function Rail({ children, last }: { children: ReactNode; last: boolean }) {
   return (
@@ -293,7 +306,7 @@ export function ActivityItem({
   last?: boolean
 }) {
   return (
-    <li className="flex gap-3">
+    <ActivityRow>
       <ActivityTime at={entry.at} />
       <Rail last={last}>
         <ActorBadge actor={entry.actor} />
@@ -325,7 +338,7 @@ export function ActivityItem({
           </p>
         )}
       </div>
-    </li>
+    </ActivityRow>
   )
 }
 
@@ -369,7 +382,7 @@ function LiveReply({
   const spaceId =
     thread.location.kind === "space" ? thread.location.spaceId : null
   return (
-    <li className="flex gap-3">
+    <ActivityRow>
       <ActivityTime />
       <Rail last={last}>
         <ActorBadge
@@ -388,12 +401,12 @@ function LiveReply({
         <ThreadLink
           spaceId={spaceId}
           threadId={thread.id}
-          className="font-medium text-foreground hover:text-primary-text"
+          className={activityLinkClass}
         >
           {thread.title}
         </ThreadLink>
       </p>
-    </li>
+    </ActivityRow>
   )
 }
 

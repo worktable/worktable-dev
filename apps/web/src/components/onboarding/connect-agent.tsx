@@ -651,9 +651,10 @@ function RowItem({
 }: Omit<PanelProps, "option" | "rowId" | "connected"> & {
   row: Row
   open: boolean
-  onOpenChange: (open: boolean) => void
-  /** Look again from now for agents that sign in. */
-  onTabChange: () => void
+  /** Opens or closes the row, on the tab it shows. */
+  onOpenChange: (open: boolean, source: string) => void
+  /** Look again from now for agents that sign in on this tab. */
+  onTabChange: (source: string) => void
   connected: SetupRecord[]
 }) {
   // A row opens on the tab that already connected, if one did.
@@ -672,7 +673,7 @@ function RowItem({
   return (
     <Collapsible
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => onOpenChange(next, sourceOf(row.id, option))}
       className="border-border not-first:border-t"
     >
       <CollapsibleTrigger className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none">
@@ -705,7 +706,7 @@ function RowItem({
           <Tabs
             value={tab}
             onValueChange={(value) => {
-              onTabChange()
+              onTabChange(sourceOf(row.id, row.options[value as number]!))
               setTab(value as number)
             }}
           >
@@ -773,6 +774,8 @@ export function AgentConnectOptions({
   onSetupsChange: (setups: SetupRecord[]) => void
 }) {
   const [open, setOpen] = useState<RowId | null>(null)
+  // The tab on show in the open row, which is what the page waits for.
+  const [active, setActive] = useState<string | null>(null)
   // Cloud agents already signed in when a row or tab opened aren't new.
   const [baseline, setBaseline] = useState<Set<string>>(new Set())
   const [pairings, setPairings] = useState<Record<string, PairingCreated>>({})
@@ -783,10 +786,9 @@ export function AgentConnectOptions({
   })
   const cloud = connection.data?.mcpAuthMode === "oauth"
   // On Cloud, agents sign in on their own; nothing tells this page, so it
-  // looks while a row is open and nothing in it has connected yet.
+  // looks while the tab on show hasn't connected yet.
   const openWaiting =
-    open !== null &&
-    !setups.some((setup) => setup.source?.startsWith(`${open}:`))
+    active !== null && !setups.some((setup) => setup.source === active)
   const connections = useQuery({
     queryKey: ["agent-connections"],
     queryFn: () => listAgentConnections(),
@@ -820,17 +822,22 @@ export function AgentConnectOptions({
       new Set((connections.data?.connections ?? []).map((item) => item.id))
     )
   }
-  function openRow(row: RowId, next: boolean) {
+  function openRow(row: RowId, next: boolean, source: string) {
     if (next) snapshot()
     setOpen(next ? row : null)
+    setActive(next ? source : null)
   }
   const rowProps = (row: Row) => ({
     ...panel,
     connected: setups,
     row,
     open: open === row.id,
-    onOpenChange: (next: boolean) => openRow(row.id, next),
-    onTabChange: snapshot,
+    onOpenChange: (next: boolean, source: string) =>
+      openRow(row.id, next, source),
+    onTabChange: (source: string) => {
+      snapshot()
+      setActive(source)
+    },
   })
 
   if (connection.isPending || (cloud && connections.isPending)) {
@@ -876,7 +883,7 @@ export function AgentConnectOptions({
       </Group>
       <Collapsible
         open={open === "mcp"}
-        onOpenChange={(next) => openRow("mcp", next)}
+        onOpenChange={(next) => openRow("mcp", next, sourceOf("mcp", ANY_MCP))}
       >
         <CollapsibleTrigger className="mt-5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           Using something else?{" "}

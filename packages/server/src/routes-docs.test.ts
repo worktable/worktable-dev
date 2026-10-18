@@ -665,6 +665,39 @@ describe("doc routes", () => {
         textOf((unchangedDoc.json as { content: unknown[] }).content)
       ).toBe("second");
 
+      // A failed cache-fence write must leave the source and provenance intact.
+      const beforeFailure = await getDocProvenance("test-space", "folder/doc");
+      const metadataTemporary = join(
+        spacesDir,
+        "test-space",
+        "docs.meta.json.tmp"
+      );
+      mkdirSync(metadataTemporary);
+      try {
+        const failedRestore = await req(
+          app,
+          "POST",
+          `/api/spaces/test-space/docs/folder/doc/versions/${firstVersionId}/restore`
+        );
+        expect(failedRestore.status).toBe(500);
+      } finally {
+        rmSync(metadataTemporary, { recursive: true, force: true });
+      }
+      const afterFailure = await req(
+        app,
+        "GET",
+        "/api/spaces/test-space/docs/folder/doc"
+      );
+      expect(
+        textOf((afterFailure.json as { content: unknown[] }).content)
+      ).toBe("second");
+      expect(await getDocProvenance("test-space", "folder/doc")).toEqual(
+        beforeFailure
+      );
+      expect(
+        await getDocCollaborationCacheEpoch("test-space", "folder/doc")
+      ).toBe(cacheEpoch);
+
       const restoreRes = await req(
         app,
         "POST",

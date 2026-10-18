@@ -42,7 +42,7 @@ import {
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
-import { PersonAvatar } from "@/components/sidebar/profile-menu"
+import { PersonAvatar } from "@/components/person-avatar"
 import {
   Select,
   SelectContent,

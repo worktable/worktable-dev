@@ -16,6 +16,8 @@ import {
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import { SettingsGroup } from "../settings-group"
+import { LinkToSend } from "../link-to-send"
+import { copyText } from "@/lib/clipboard"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
 import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
@@ -154,7 +156,7 @@ function EnableTeams() {
 /**
  * Team agents are registered here and get their own Space grants. The
  * registration flow is hidden until it reads as simply as connecting a
- * personal agent; the code and existing agents stay.
+ * personal agent; agents already registered stay listed and managed.
  */
 const SHOW_TEAM_AGENTS = false
 
@@ -221,7 +223,7 @@ function TeamMembers({
     },
   })
   const copyInvitation = (url: string) =>
-    void navigator.clipboard.writeText(url).then(
+    void copyText(url).then(
       () => toast.success("Invitation link copied"),
       () => toast.error("Select and copy the invitation link")
     )
@@ -325,7 +327,7 @@ function TeamMembers({
               url={resetLink.url}
               copy="Copy"
               onCopy={() =>
-                void navigator.clipboard.writeText(resetLink.url).then(
+                void copyText(resetLink.url).then(
                   () => toast.success("Reset link copied"),
                   () => toast.error("Select and copy the reset link")
                 )
@@ -341,6 +343,19 @@ function TeamMembers({
               {members.data?.map((member) => {
                 const self = member.id === selfId
                 const label = member.role === "owner" ? "Owner" : "Member"
+                // Operators grant and withdraw operating whatever their role.
+                const operatorItem =
+                  !cloud && operator ? (
+                    <DropdownMenuItem
+                      onClick={() =>
+                        operatorChange.mutate({ id: member.id, value: !member.operator })
+                      }
+                    >
+                      {member.operator
+                        ? "Stop operating this computer"
+                        : "Let them operate this computer"}
+                    </DropdownMenuItem>
+                  ) : null
                 return (
                   <PersonRow
                     key={member.id}
@@ -387,17 +402,15 @@ function TeamMembers({
                               Reset password
                             </DropdownMenuItem>
                           ) : null}
-                          {!cloud && operator ? (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                operatorChange.mutate({ id: member.id, value: !member.operator })
-                              }
-                            >
-                              {member.operator
-                                ? "Stop operating this computer"
-                                : "Let them operate this computer"}
-                            </DropdownMenuItem>
-                          ) : null}
+                          {operatorItem}
+                        </RowSelect>
+                      ) : operatorItem ? (
+                        <RowSelect
+                          label={label}
+                          aria={`Operating this computer for ${member.name}`}
+                          disabled={operatorChange.isPending}
+                        >
+                          {operatorItem}
                         </RowSelect>
                       ) : (
                         <RowLabel>{label}</RowLabel>
@@ -520,7 +533,7 @@ function TeamMembers({
           />
         )}
       </SettingsGroup>
-      {SHOW_TEAM_AGENTS ? <TeamAgents owner={owner} /> : null}
+      <TeamAgents owner={owner} canRegister={SHOW_TEAM_AGENTS} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error.message}
@@ -637,39 +650,13 @@ function RemoveButton({
   )
 }
 
-function LinkToSend({
-  text,
-  label,
-  url,
-  copy,
-  onCopy,
+function TeamAgents({
+  owner,
+  canRegister,
 }: {
-  text: string
-  label: string
-  url: string
-  copy: string
-  onCopy: () => void
+  owner: boolean
+  canRegister: boolean
 }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-lg bg-surface-inset p-3">
-      <p className="text-sm text-muted-foreground">{text}</p>
-      <div className="flex gap-2">
-        <Input
-          aria-label={label}
-          value={url}
-          readOnly
-          className="min-w-0 flex-1"
-          onFocus={(event) => event.target.select()}
-        />
-        <Button variant="outline" onClick={onCopy}>
-          {copy}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function TeamAgents({ owner }: { owner: boolean }) {
   const client = useQueryClient()
   const [name, setName] = useState("")
   const [connecting, setConnecting] = useState<string | null>(null)
@@ -695,6 +682,11 @@ function TeamAgents({ owner }: { owner: boolean }) {
       void client.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
+  const teamAgents =
+    agents.data?.filter((agent) => agent.active && agent.ownership === "team") ??
+    []
+  // Without registration, the group is only for agents already registered.
+  if (!canRegister && !teamAgents.length) return null
   return (
     <SettingsGroup title="Team agents">
       <p className="text-sm text-muted-foreground">
@@ -702,35 +694,33 @@ function TeamAgents({ owner }: { owner: boolean }) {
         Space&apos;s access settings, and choose here whether they can use
         threads outside Spaces.
       </p>
-      {agents.data
-        ?.filter((agent) => agent.active && agent.ownership === "team")
-        .map((agent) => (
-          <div
-            key={agent.id}
-            className="flex items-center justify-between gap-3"
-          >
-            <span className="text-sm">{agent.name}</span>
-            {owner && (
-              <WorktableThreadsSelect
-                agent={agent}
-                onChange={(value) => threads.mutate({ id: agent.id, value })}
-                disabled={threads.isPending}
-              />
-            )}
-            {owner && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setConnecting(connecting === agent.id ? null : agent.id)
-                }
-              >
-                Connect agent
-              </Button>
-            )}
-          </div>
-        ))}
-      {owner && (
+      {teamAgents.map((agent) => (
+        <div
+          key={agent.id}
+          className="flex items-center justify-between gap-3"
+        >
+          <span className="text-sm">{agent.name}</span>
+          {owner && (
+            <WorktableThreadsSelect
+              agent={agent}
+              onChange={(value) => threads.mutate({ id: agent.id, value })}
+              disabled={threads.isPending}
+            />
+          )}
+          {owner && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setConnecting(connecting === agent.id ? null : agent.id)
+              }
+            >
+              Connect agent
+            </Button>
+          )}
+        </div>
+      ))}
+      {owner && canRegister && (
         <form
           className="flex gap-2"
           onSubmit={(event) => {

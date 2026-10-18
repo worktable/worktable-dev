@@ -31,6 +31,9 @@ import {
   inviteTeamMember,
   setSpaceAccess,
 } from "@/lib/team-api"
+import { PlanFullNotice } from "@/components/billing/plan-full-notice"
+import { LinkToSend } from "@/components/settings/link-to-send"
+import { copyText } from "@/lib/clipboard"
 import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { queryKeys } from "@/lib/queries"
 
@@ -98,20 +101,24 @@ export function SpaceAccessEditor({
         : previous
     )
   }
-  const { plan } = useCloudPlan()
+  const { plan, worktableName } = useCloudPlan()
   const [email, setEmail] = useState("")
+  // A link that couldn't be emailed or copied stays here to copy by hand.
+  const [link, setLink] = useState<{ email: string; url: string } | null>(null)
   // Someone new joins straight into this Space, with access to it.
   const invite = useMutation({
     mutationFn: (address: string) => inviteTeamMember(address, spaceId),
     onSuccess: (result, address) => {
       setEmail("")
+      setLink(null)
+      // Only the invitations and the plan's people count changed.
       void queryClient.invalidateQueries({ queryKey: queryKeys.workspace, exact: true })
-      void queryClient.invalidateQueries({ queryKey: ["team"] })
+      void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
       if (result.email === "sent") toast.success(`Invitation sent to ${address}`)
       else
-        void navigator.clipboard.writeText(result.url).then(
+        void copyText(result.url).then(
           () => toast.success(`Invitation link for ${address} copied. Send it to them.`),
-          () => toast.error("Couldn't copy the invitation link. Find it in Settings, under Team.")
+          () => setLink({ email: address, url: result.url })
         )
     },
   })
@@ -246,7 +253,25 @@ export function SpaceAccessEditor({
                   {invite.error.message}
                 </p>
               ) : null}
+              {link ? (
+                <LinkToSend
+                  text={`Couldn't copy the invitation link. Send it to ${link.email} yourself.`}
+                  label="Invitation link"
+                  url={link.url}
+                  copy="Copy"
+                  onCopy={() =>
+                    void copyText(link.url).then(
+                      () => toast.success("Invitation link copied"),
+                      () => toast.error("Select and copy the invitation link")
+                    )
+                  }
+                />
+              ) : null}
             </form>
+          ) : draft && plan ? (
+            <div className="border-t border-border pt-4">
+              <PlanFullNotice plan={plan} worktableName={worktableName} adding={1} />
+            </div>
           ) : null}
           {save.isError && (
             <p role="alert" className="text-sm text-destructive">

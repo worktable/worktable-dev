@@ -23,6 +23,7 @@ import { cn } from "@worktable/ui/lib/utils"
 
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import {
+  agentConnectionPlatform,
   connectAgentApp,
   getAppAgent,
   listAgentConnections,
@@ -518,7 +519,11 @@ function signedInHere(option: Option, connection: AgentConnection): boolean {
       connection.target.adapter === option.agent.adapter
     )
   }
-  return connection.authKind === "oauth"
+  if (connection.authKind !== "oauth") return false
+  // An agent another tab started signing in isn't this tab's agent.
+  const expected = platformOf(option)
+  const actual = agentConnectionPlatform(connection)
+  return expected === "other" || actual === "other" || actual === expected
 }
 
 /** On Cloud, agents sign in with the Worktable's address. */

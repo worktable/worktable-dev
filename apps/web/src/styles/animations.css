@@ -38,9 +38,16 @@
 /* Sidebar trees open at their full height at once; sidebar-transition.ts
    then slides the rows below and fades the opened rows in on the
    compositor. Animating height runs on the main thread, so it stutters
-   while the page builds the rows it reveals. */
+   while the page builds the rows it reveals. Base UI holds an opening
+   panel at the height it measured until the open settles, so rows that
+   render into it just after opening (a Space's tree) would show only
+   then, after the slide was measured. */
 [data-slot="collapsible-content"].collapsible-instant {
   transition: none;
+}
+
+[data-slot="collapsible-content"].collapsible-instant:not([data-ending-style]) {
+  height: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

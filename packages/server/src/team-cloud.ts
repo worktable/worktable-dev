@@ -28,6 +28,7 @@ import {
   writeTeamMarker,
 } from "./team-database.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
+import { noteAgentPairedForSetup, setupKeyForIdentity } from "./personal-setup.ts"
 import {
   ensureWorkspaceManifest,
   workspaceCacheKey,
@@ -320,6 +321,8 @@ export async function resolveCloudTeamAgentCredential(
       )
       updateTeamAgent(agent.id, { scopeCeiling: identity.scopes }, sponsor)
       bindTeamAgentCredential(agent.id, identity.principal.id, sponsor, true)
+      // An agent that signed in is connected, before it does anything else.
+      noteAgentPairedForSetup(setupKeyForIdentity(sponsor))
       return resolveTeamAgentCredential(identity)
     }
   )

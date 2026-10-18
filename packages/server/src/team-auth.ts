@@ -137,7 +137,7 @@ function teamAuthOptions(origin: string) {
           afterAcceptInvitation: async ({ invitation, member, user }) => {
             recordTeamEnrollment(member, user.name)
             applyInvitationStartSpace(invitation, member.id)
-            noteInvitationAcceptedForSetup(invitation, member.id)
+            await noteInvitationAcceptedForSetup(invitation, member.id)
           },
           afterRemoveMember: async ({ member }) =>
             retireTeamEnrollment(member.id, member.organizationId),

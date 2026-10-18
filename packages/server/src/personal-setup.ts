@@ -58,17 +58,19 @@ function memberSetupKey(actorId: string | undefined): string | null {
 /**
  * Runs when an invitation is accepted, after enrollment: the inviter's team
  * has grown, and the new member has joined the Space they were invited to.
+ * Acceptance waits for both, so the new member's first page already sees
+ * that they joined.
  */
-export function noteInvitationAcceptedForSetup(
+export async function noteInvitationAcceptedForSetup(
   invitation: { id: string; inviterId: string },
   memberId: string
-): void {
-  completeSetupItem(
+): Promise<void> {
+  await completeSetupItem(
     memberSetupKey(findTeamMember(invitation.inviterId)?.actorId),
     "invite-team"
   )
   const spaceId = invitationDetails(invitation.id)?.startSpaceId
-  completeSetupItem(
+  await completeSetupItem(
     memberSetupKey(findTeamMemberById(memberId)?.actorId),
     "join-space",
     spaceId ? { spaceId } : undefined
@@ -117,15 +119,16 @@ function evidence(details: Omit<SetupEvidence, "at"> = {}): SetupEvidence {
 
 /**
  * Complete an item the first time it happens. Checked in memory first, so a
- * finished item costs nothing on the write path it observes.
+ * finished item costs nothing on the write path it observes. Never rejects:
+ * callers on a write path need not wait for it.
  */
-export function completeSetupItem(
+export async function completeSetupItem(
   key: string | null,
   item: SetupItemId,
   details?: Omit<SetupEvidence, "at">
-): void {
+): Promise<void> {
   if (!key || storedSetup(key)?.items[item]) return
-  changeSetup(key, (setup) =>
+  await changeSetup(key, (setup) =>
     setup.items[item]
       ? null
       : { ...setup, items: { ...setup.items, [item]: evidence(details) } }
@@ -141,19 +144,19 @@ function currentSetupKey(): string | null {
 
 /** An agent connected and made its first call. */
 export function noteAgentCallForSetup(identity: TokenIdentity | undefined): void {
-  completeSetupItem(setupKeyForIdentity(identity), "connect-agent")
+  void completeSetupItem(setupKeyForIdentity(identity), "connect-agent")
 }
 
 /** A person paired an agent. */
 export function noteAgentPairedForSetup(key: string | null): void {
-  completeSetupItem(key, "connect-agent")
+  void completeSetupItem(key, "connect-agent")
 }
 
 /** An agent's first doc, or its first edit, is its first task done. */
 export function observeActivityForSetup(event: ActivityEvent): void {
   if (event.actor.kind !== "agent") return
   if (event.action !== "doc.created" && event.action !== "doc.edited") return
-  completeSetupItem(currentSetupKey(), "first-task", {
+  void completeSetupItem(currentSetupKey(), "first-task", {
     ...(event.spaceId ? { spaceId: event.spaceId } : {}),
     ...(event.target.kind === "doc" ? { path: event.target.path } : {}),
   })

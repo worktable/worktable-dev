@@ -24,35 +24,29 @@ export function ActorBadge({
   actor: ActivityActor
   live?: boolean
 }) {
-  const initial = (actor.kind === "person" ? "You" : (actor.name ?? "?"))
-    .trim()
-    .charAt(0)
-    .toUpperCase()
   return (
     <span
       aria-hidden="true"
       className={cn(
-        "relative flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold",
-        actor.kind === "agent"
+        "relative flex size-6 shrink-0 items-center justify-center text-[11px] font-semibold",
+        actor.kind !== "system"
           ? "rounded-full"
-          : actor.kind === "person"
-            ? "rounded-full bg-surface-tint text-foreground"
-            : "rounded-full bg-surface-tint text-muted-foreground",
+          : "rounded-full bg-surface-tint text-muted-foreground",
         live &&
           "after:absolute after:-inset-[3px] after:rounded-full after:border-[1.5px] after:border-transparent after:border-t-primary after:border-r-primary motion-safe:after:animate-spin"
       )}
     >
-      {actor.kind === "agent" ? (
+      {actor.kind !== "system" ? (
         <ThreadParticipantAvatar
           participant={{
-            kind: "agent",
+            kind: actor.kind === "person" ? "human" : "agent",
             id: actor.id,
-            name: actor.name ?? "Agent",
+            name: actor.name ?? (actor.kind === "person" ? "User" : "Agent"),
           }}
-          className="size-5 [&_[data-slot=avatar-fallback]]:text-[9px]"
+          className="size-6 [&_[data-slot=avatar-fallback]]:text-[11px]"
         />
       ) : (
-        initial
+        (actor.name ?? "?").trim().charAt(0).toUpperCase()
       )}
     </span>
   )
@@ -280,27 +274,27 @@ function Rail({ children, last }: { children: ReactNode; last: boolean }) {
   )
 }
 
+function ActivityTime({ at }: { at?: string }) {
+  return (
+    <span className="w-16 shrink-0 pr-1 text-right text-xs leading-5 text-muted-foreground/70 tabular-nums">
+      {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
+    </span>
+  )
+}
+
 export function ActivityItem({
   entry,
   spaceName,
-  hideTime = false,
   last = false,
-  leading,
 }: {
   entry: ActivityEntry
   spaceName?: string
-  hideTime?: boolean
   /** The final entry in a run; its badge ends the line. */
   last?: boolean
-  /** Content before the badge, such as the Activity page's time column. */
-  leading?: ReactNode
 }) {
-  const meta = [spaceName, hideTime ? null : clockTime(entry.at)]
-    .filter(Boolean)
-    .join(" · ")
   return (
     <li className="flex gap-3">
-      {leading}
+      <ActivityTime at={entry.at} />
       <Rail last={last}>
         <ActorBadge actor={entry.actor} />
       </Rail>
@@ -318,7 +312,7 @@ export function ActivityItem({
             {entry.quote}
           </p>
         )}
-        {meta && (
+        {spaceName && (
           <p
             className={cn(
               "text-xs leading-4 text-muted-foreground/70",
@@ -327,7 +321,7 @@ export function ActivityItem({
                 : "mt-0.5"
             )}
           >
-            {meta}
+            {spaceName}
           </p>
         )}
       </div>
@@ -376,6 +370,7 @@ function LiveReply({
     thread.location.kind === "space" ? thread.location.spaceId : null
   return (
     <li className="flex gap-3">
+      <ActivityTime />
       <Rail last={last}>
         <ActorBadge
           actor={{ kind: "agent", id: activity.participantId, name }}
@@ -459,7 +454,8 @@ export function ActivityPanel({
           <div className="space-y-4 pt-1">
             {Array.from({ length: 5 }).map((_, index) => (
               <div key={index} className="flex gap-3">
-                <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted" />
+                <div className="h-3 w-16 shrink-0 animate-pulse rounded bg-muted" />
+                <div className="size-6 shrink-0 animate-pulse rounded-full bg-muted" />
                 <div className="h-9 flex-1 animate-pulse rounded-md bg-muted" />
               </div>
             ))}

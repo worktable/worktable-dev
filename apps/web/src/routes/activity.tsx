@@ -11,7 +11,7 @@ import {
 } from "@worktable/ui/components/select"
 import { Button } from "@worktable/ui/components/button"
 import { ActivityItem, ActorBadge } from "@/components/home/activity-feed"
-import { clockTime, groupByDay } from "@/lib/activity-format"
+import { groupByDay } from "@/lib/activity-format"
 import { useActivityAgents, useActivityPages } from "@/lib/activity"
 import { useSpaces } from "@/lib/queries"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
@@ -180,12 +180,6 @@ function ActivityPage() {
                     key={entry.id}
                     entry={entry}
                     last={index === group.items.length - 1}
-                    hideTime
-                    leading={
-                      <span className="w-16 shrink-0 pr-1 text-right text-xs leading-5 text-muted-foreground/70 tabular-nums">
-                        {clockTime(entry.at)}
-                      </span>
-                    }
                     spaceName={
                       entry.spaceId && !search.spaceId
                         ? names.get(entry.spaceId)

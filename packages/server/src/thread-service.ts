@@ -916,20 +916,19 @@ export async function listThreadParticipants(
     }))
 }
 
-/** How a connected agent looks: where it comes from and its chosen icon. */
+/** A person's saved identity, or an agent's name, platform, and chosen icon. */
 
-export interface AgentPresentation {
+export interface ParticipantPresentation {
+  id?: string
   name?: string
   platform?: AgentPlatformId
   icon?: string | null
 }
 
 /**
- * Participants as the web app shows them: an agent also carries its platform
- * and the icon its owner chose, for its avatar. `presentations` covers every
- * connected agent, including one no longer offered as a recipient, so it
- * keeps its avatar in the threads it is already in. Principal IDs alias the
- * same presentation for activity and document contributors.
+ * Current identities as the web app shows them. Agents also carry their
+ * platform and chosen icon, including when no longer offered as recipients.
+ * Principal IDs alias the same identity for activity and document contributors.
  */
 export async function listThreadParticipantsForDisplay(
   identity?: ThreadIdentity,
@@ -939,30 +938,31 @@ export async function listThreadParticipantsForDisplay(
     ParticipantRef & {
       defaultIdentityId: string
       alwaysOn: boolean
-    } & AgentPresentation
+    } & ParticipantPresentation
   >
-  presentations: Record<string, AgentPresentation>
+  presentations: Record<string, ParticipantPresentation>
 }> {
   const [participants, connections] = await Promise.all([
     listThreadParticipants(identity, location),
     listAgentConnections(),
   ])
-  const presentations: Record<string, AgentPresentation> = Object.fromEntries(
-    connections.flatMap((connection) =>
-      connection.participant
-        ? [
-            [
-              connection.participant.id,
-              {
-                name: connection.displayName,
-                platform: connection.platform,
-                icon: connection.icon,
-              },
-            ],
-          ]
-        : []
+  const presentations: Record<string, ParticipantPresentation> =
+    Object.fromEntries(
+      connections.flatMap((connection) =>
+        connection.participant
+          ? [
+              [
+                connection.participant.id,
+                {
+                  name: connection.displayName,
+                  platform: connection.platform,
+                  icon: connection.icon,
+                },
+              ],
+            ]
+          : []
+      )
     )
-  )
   // Sign-in agents (Claude, ChatGPT on Cloud) carry what their owner chose.
   const [bindings, signIns, tokens] = await Promise.all([
     participantsByKey(),
@@ -979,12 +979,14 @@ export async function listThreadParticipantsForDisplay(
     }
   }
   for (const [key, participant] of bindings) {
+    if (participant.kind === "human") {
+      presentations[participant.id] = {
+        id: participant.id,
+        name: participant.name,
+      }
+    }
     const presentation = presentations[participant.id]
-    if (
-      participant.kind === "agent" &&
-      key.startsWith("principal:") &&
-      presentation
-    ) {
+    if (key.startsWith("principal:") && presentation) {
       presentations[key.slice("principal:".length)] = presentation
     }
   }

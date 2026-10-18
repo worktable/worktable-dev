@@ -8,8 +8,9 @@ import {
   setCurrentUser,
   updateUserProfile,
 } from "@/lib/profile"
-import { queryKeys } from "@/lib/queries"
+import { queryKeys, useWorkspace } from "@/lib/queries"
 import { profileStorageKey } from "@/lib/team-context"
+import { PersonAvatar } from "@/components/person-avatar"
 
 export function ProfileSection() {
   return (
@@ -25,6 +26,7 @@ const DEFAULT_NAME = "User"
 
 function DisplayNameGroup() {
   const queryClient = useQueryClient()
+  const { data: workspace } = useWorkspace()
   const [value, setValue] = useState(() => getCurrentUser().name)
   const [saving, setSaving] = useState(false)
   const editRevision = useRef(0)
@@ -89,20 +91,17 @@ function DisplayNameGroup() {
     }
   }
 
-  const initial = (value.trim() || DEFAULT_NAME).charAt(0).toUpperCase()
-
   return (
     <section className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-foreground">Display name</h3>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-sm font-medium text-foreground"
-          >
-            {initial}
-          </span>
+          <PersonAvatar
+            id={workspace?.person?.id ?? getCurrentUser().id}
+            name={value.trim() || DEFAULT_NAME}
+            size="lg"
+          />
           <Input
             aria-label="Display name"
             value={value}

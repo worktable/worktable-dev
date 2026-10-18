@@ -35,18 +35,18 @@ function threadBase(location: ThreadLocation): string {
     : `/api/spaces/${encodeURIComponent(location.spaceId)}/threads`
 }
 
-/** How a connected agent looks, keyed by participant or activity principal id. */
-export type AgentPresentations = Record<
+/** Current identities, keyed by participant or activity principal id. */
+export type ParticipantPresentations = Record<
   string,
-  Pick<ThreadParticipant, "platform" | "icon"> & { name?: string }
+  Pick<ThreadParticipant, "platform" | "icon"> & { id?: string; name?: string }
 >
 
 export function listThreadParticipants(
   location: ThreadLocation = { kind: "worktable" }
 ): Promise<{
   participants: ThreadParticipant[]
-  /** Every connected agent, including ones no longer offered as recipients. */
-  presentations?: AgentPresentations
+  /** Saved people and agents, including agents no longer offered as recipients. */
+  presentations?: ParticipantPresentations
 }> {
   return fetchJSON(`${threadBase(location)}/participants`)
 }

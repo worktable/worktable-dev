@@ -26,7 +26,8 @@ export default function InviteesAfterPayment() {
     forgetKeptInvitees(workspaceId)
     const name = CLOUD_PLANS[plan.plan].name
     if (!roomFor(plan, emails.length)) {
-      toast(`${name} plan active. It has no room for everyone you were inviting.`)
+      // Named, so they can be invited once there is room.
+      toast(`${name} plan active. It has no room to invite ${emails.join(", ")}.`)
       return
     }
     void invitePeople(emails).then((results) => {

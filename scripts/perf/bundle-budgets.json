@@ -10,8 +10,8 @@
       "why": "The theme defines eight recognition colors, each with solid, ink and soft values in light and dark. Docs share one reading stylesheet (document-content.css), which the saved preview needs before the app's JavaScript loads so nothing moves when a Doc opens. It replaces markdown.css and the preview overrides, and adds lists, checklists, code headers, tables, toggles, diagrams and the text color palette; controls that only appear once a Doc is interactive load with the viewer and editor instead. Setup and Getting Started add the connect rows, guide cards and progress ring."
     },
     "home": {
-      "gzip": 331400,
-      "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background."
+      "gzip": 333500,
+      "why": "Personal sidebar organization: Pinned Spaces, the person's groups with their menus and focus, the Worktable header menu, and saving the arrangement in the background. Shared configured agent logos, custom icons and person avatars plus full-row activity links add 1.9 KB gzip against main 9a52b0b, measured on Namespace; identity metadata uses the existing workspace response."
     },
     "space": {
       "gzip": 329000,
@@ -22,8 +22,8 @@
       "why": "The sidebar footer shows who is signed in, with a menu for Profile, Preferences, the theme and Sign Out, and Settings groups into You, the Worktable and Support."
     },
     "html document": {
-      "gzip": 349200,
-      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu."
+      "gzip": 352000,
+      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu. Configured avatars and the shared version-history chooser, aligned snapshot byline and restore controls add 2.7 KB gzip against main 9a52b0b, measured on Namespace; snapshot content stays lazy and sandboxed."
     }
   },
   "targets": {

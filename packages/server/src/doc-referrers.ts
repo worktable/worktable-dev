@@ -16,6 +16,7 @@ import {
   type RecordCollectionSchema,
   type RecordFile,
 } from "@worktable/types"
+import { onHtmlContentChanged } from "./content-events.ts"
 import { logError } from "./debug-log.ts"
 import { createDocAliasResolver, readDocAliases } from "./doc-aliases.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
@@ -39,7 +40,12 @@ interface SpaceReferrers {
   /** Collections and HTML Docs to read again; the rest are listed only. */
   stale: { collections: Set<string>; html: Set<string> }
   building: Promise<void> | null
+  /** After a failed read, when the next may start. */
+  retryAt: number
 }
+
+/** How long a Space waits to read again after a read failed. */
+const RETRY_MS = 30_000
 
 const spaces = new Map<string, SpaceReferrers>()
 
@@ -250,17 +256,20 @@ async function announceChanges(
   const { aliases } = await readDocAliases(spaceId)
   const resolve = aliases ? createDocAliasResolver(aliases) : () => null
   const docPaths = [...new Set(changed.map((path) => resolve(path) ?? path))]
-  wsManager.broadcast(spaceId, {
-    type: "doc_links_update",
-    spaceId,
-    data: { docPaths: docPaths.slice(0, 500) },
-  })
+  for (let offset = 0; offset < docPaths.length; offset += 500) {
+    wsManager.broadcast(spaceId, {
+      type: "doc_links_update",
+      spaceId,
+      data: { docPaths: docPaths.slice(offset, offset + 500) },
+    })
+  }
 }
 
-async function build(spaceId: string, space: SpaceReferrers): Promise<void> {
-  const stale = space.stale
-  space.stale = { collections: new Set(), html: new Set() }
-  space.changed = false
+async function build(
+  spaceId: string,
+  space: SpaceReferrers,
+  stale: SpaceReferrers["stale"]
+): Promise<void> {
   const before = signatures(space)
 
   const collections = await listRecordCollections(spaceId)
@@ -310,6 +319,7 @@ function spaceFor(spaceId: string): SpaceReferrers {
       changed: true,
       stale: { collections: new Set(), html: new Set() },
       building: null,
+      retryAt: 0,
     }
     spaces.set(key, space)
   }
@@ -317,16 +327,21 @@ function spaceFor(spaceId: string): SpaceReferrers {
 }
 
 function startBuild(spaceId: string, space: SpaceReferrers): void {
-  if (space.building) return
-  space.building = build(spaceId, space)
+  if (space.building || Date.now() < space.retryAt) return
+  const stale = space.stale
+  space.stale = { collections: new Set(), html: new Set() }
+  space.changed = false
+  space.building = build(spaceId, space, stale)
     .then(() => {
       space.ready = true
     })
     .catch((error) => {
-      // Read everything again next time.
-      space.collections.clear()
-      space.html.clear()
+      // Keep answering from what was read, and read what was pending again
+      // after a pause rather than on every page.
+      for (const id of stale.collections) space.stale.collections.add(id)
+      for (const path of stale.html) space.stale.html.add(path)
       space.changed = true
+      space.retryAt = Date.now() + RETRY_MS
       console.error("[referrers] could not read records and HTML Docs:", logError(error))
     })
     .finally(() => {
@@ -373,6 +388,14 @@ export function peekDocReferrers(
 export async function settleDocReferrers(spaceId: string): Promise<void> {
   await spaces.get(spaceKey(spaceId))?.building
 }
+
+// Writes from this process do not reach the watcher, so they say so here.
+onHtmlContentChanged((spaceId, path) => {
+  const space = spaces.get(spaceKey(spaceId))
+  if (!space) return
+  space.stale.html.add(path)
+  space.changed = true
+})
 
 onWorkspaceChange((event) => {
   if (event.type === "workspaceReset") {

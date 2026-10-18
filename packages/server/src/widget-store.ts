@@ -9,6 +9,7 @@ import {
   type DocumentId,
   type WidgetFile,
 } from "@worktable/types";
+import { notifyHtmlContentChanged } from "./content-events.ts";
 import { atomicWriteText, ensureSpaceDirectories, getSpacesBaseDir, suppressPath, unsuppressPath, withStoreWriteLock, withStoreWriteLocks } from "./store.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
 import { invalidateHostedDocumentShares } from "./share-lifecycle.ts";
@@ -416,6 +417,7 @@ export async function writeWidget(
       release();
       throw error;
     }
+    notifyHtmlContentChanged(spaceId, parsedWidget.id);
     return { data: parsedWidget, error: null, release };
   }
   // Leaf-only nesting: a widget directory never contains another widget. Without
@@ -446,6 +448,7 @@ export async function writeWidget(
     release();
     throw err;
   }
+  notifyHtmlContentChanged(spaceId, parsedWidget.id);
   return { data: parsedWidget, error: null, release };
 }
 

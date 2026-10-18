@@ -97,6 +97,19 @@ describe("records and HTML Docs that point at a Doc", () => {
       },
       { kind: "html", path: "pulse", label: "Plan" },
     ])
+    // An HTML Doc written by this process is read again.
+    const edited = await writeWidget(
+      "meta",
+      buildWidgetFile({ id: "pulse", name: "Pulse", createdBy: "test", updatedBy: "test" }),
+      `<a href="javascript:worktable.navigation.openDocument('okrs/q3')">Open the plan</a>`
+    )
+    edited.release?.()
+    expect((await settled("okrs/q3"))?.find((referrer) => referrer.kind === "html")).toEqual({
+      kind: "html",
+      path: "pulse",
+      label: "Open the plan",
+    })
+
     // A doc that moved is found under the path it was pointed at.
     expect(
       (await settled("plans/q4", (path) => (path === "okrs/q4" ? "plans/q4" : path)))?.map(

@@ -1,27 +1,9 @@
-import { lazy, Suspense, useState, useSyncExternalStore } from "react"
+import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { TriangleAlert } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { MEMBER_GRACE_NOTICE_MS, useCloudPlan } from "@/lib/cloud-plan"
-import { anyKeptInvitees } from "@/lib/kept-invitees"
 import { usePersonalSetup } from "@/lib/setup"
-
-const InviteesAfterPayment = lazy(() => import("./invitees-after-payment"))
-const unchanging = () => () => {}
-
-/**
- * Invites the people kept across a payment. It loads only when someone is
- * waiting, so every other page pays nothing for it.
- */
-export function KeptInvitees() {
-  // Read on the client only; storage doesn't announce its changes here.
-  const waiting = useSyncExternalStore(unchanging, anyKeptInvitees, () => false)
-  return waiting ? (
-    <Suspense fallback={null}>
-      <InviteesAfterPayment />
-    </Suspense>
-  ) : null
-}
 
 const day = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long" })
 

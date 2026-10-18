@@ -237,11 +237,15 @@ function InviteStep({
     },
   })
   const action = cloud ? "Send invites" : "Create links"
+  // Enter and the button both send, once at a time.
+  const submit = () => {
+    if (emails.length && !send.isPending) send.mutate()
+  }
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        if (emails.length) send.mutate()
+        submit()
       }}
     >
       <StepHeading
@@ -268,7 +272,7 @@ function InviteStep({
           <EmailChips
             emails={emails}
             onChange={setEmails}
-            onSubmit={() => send.mutate()}
+            onSubmit={submit}
             autoFocus
           />
         </Field>

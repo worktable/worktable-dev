@@ -169,11 +169,15 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
       !invitation.expired &&
       !invited.some((item) => item.email === invitation.email)
   )
+  // Enter and the button both send, once at a time.
+  const submit = () => {
+    if (emails.length && !send.isPending) send.mutate()
+  }
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault()
-        if (emails.length) send.mutate()
+        submit()
       }}
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
@@ -181,7 +185,7 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
           <EmailChips
             emails={emails}
             onChange={setEmails}
-            onSubmit={() => send.mutate()}
+            onSubmit={submit}
           />
         </div>
         <Button type="submit" disabled={!emails.length || send.isPending}>

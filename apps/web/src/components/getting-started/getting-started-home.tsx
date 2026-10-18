@@ -150,7 +150,8 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
   const send = useMutation({
     mutationFn: () => invitePeople(emails),
     onSuccess: (results) => {
-      setEmails([])
+      // What couldn't be invited stays typed, to try again.
+      setEmails(results.flatMap((result) => (result.error ? [result.email] : [])))
       setInvited((current) => mergeInvited(current, results))
       void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
       // The plan's room depends on who is invited.
@@ -208,6 +209,7 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
             plan={plan}
             worktableName={worktableName}
             adding={emails.length}
+            invitees={emails}
           />
         </div>
       ) : null}

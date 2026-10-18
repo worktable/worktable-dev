@@ -19,7 +19,7 @@ import {
   usePersonalSetup,
 } from "@/lib/setup"
 import { activateTeams } from "@/lib/team-api"
-import { CLOUD_PLANS } from "@worktable/hosted-contract"
+import { CLOUD_PLANS } from "@worktable/hosted-contract/plans"
 import { PlanFullNotice } from "@/components/billing/plan-full-notice"
 import { roomFor, useCloudPlan } from "@/lib/cloud-plan"
 import { ConnectAgentStep } from "./connect-agent"
@@ -248,7 +248,8 @@ function InviteStep({
   const send = useMutation({
     mutationFn: (addresses: string[]) => invitePeople(addresses),
     onSuccess: (results) => {
-      setEmails([])
+      // What couldn't be invited stays typed, to try again.
+      setEmails(results.flatMap((result) => (result.error ? [result.email] : [])))
       onKeepEmails(undefined)
       onInvited(mergeInvited(invited, results))
       // The people count moved; the plan's room is read again.
@@ -262,8 +263,10 @@ function InviteStep({
     if (resumed.current || !pendingEmails?.length || !plan) return
     if (plan.plan === "solo" || !roomFor(plan, pendingEmails.length)) return
     resumed.current = true
-    const count = pendingEmails.length
-    send.mutate(pendingEmails, { onSuccess: () => setPaidJustNow(count) })
+    send.mutate(pendingEmails, {
+      onSuccess: (results) =>
+        setPaidJustNow(results.filter((result) => !result.error).length),
+    })
   }, [pendingEmails, plan, send])
   const action = cloud ? "Send invites" : "Create links"
   // Enter and the button both send, once at a time.
@@ -285,12 +288,14 @@ function InviteStep({
             : "You'll get a link for each person to send them."
         }
       />
-      {paidJustNow && plan && !send.isPending ? (
+      {paidJustNow !== null && plan && !send.isPending ? (
         <p className="mt-6 text-sm text-foreground" role="status">
-          {CLOUD_PLANS[plan.plan].name} plan active.{" "}
-          {paidJustNow === 1
-            ? "1 invitation sent."
-            : `${paidJustNow} invitations sent.`}
+          {CLOUD_PLANS[plan.plan].name} plan active.
+          {paidJustNow === 0
+            ? null
+            : paidJustNow === 1
+              ? " 1 invitation sent."
+              : ` ${paidJustNow} invitations sent.`}
         </p>
       ) : null}
       {invited?.length ? (

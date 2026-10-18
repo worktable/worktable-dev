@@ -4,7 +4,7 @@ import {
   nextCloudPlan,
   type CloudPlanId,
   type PaidCloudPlanId,
-} from "@worktable/hosted-contract"
+} from "@worktable/hosted-contract/plans"
 import type { WorkspaceInfo } from "./api"
 import { workspaceQueryOptions } from "./queries"
 

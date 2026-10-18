@@ -76,7 +76,7 @@ const SettingsDialog = lazy(() =>
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
 import { UpdateNudge } from "@/components/update-nudge"
-import { BillingBanner } from "@/components/billing/billing-banner"
+import { BillingBanner, KeptInvitees } from "@/components/billing/billing-banner"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
 import { ShareDocumentAction } from "@/components/share-document-action"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
@@ -696,6 +696,7 @@ function RootLayout() {
             </TraceProfiler>
 
             <BillingBanner />
+            <KeptInvitees />
             {/* Main content */}
             <main
               ref={mainScrollRef}

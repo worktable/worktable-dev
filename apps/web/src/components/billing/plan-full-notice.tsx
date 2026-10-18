@@ -4,28 +4,30 @@ import {
   CLOUD_PLANS,
   PAID_CLOUD_PLAN_IDS,
   type PaidCloudPlanId,
-} from "@worktable/hosted-contract"
+} from "@worktable/hosted-contract/plans"
 import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
-import { changeCloudPlan, openCloudBillingCheckout } from "@/lib/billing-api"
 import {
   planPrice,
   planSummary,
   upgradeFor,
   type CloudPlan,
 } from "@/lib/cloud-plan"
-import { queryKeys } from "@/lib/queries"
+import { keepInviteesForPayment } from "@/lib/kept-invitees"
+import { queryKeys, useWorkspace } from "@/lib/queries"
 
 function PlanChoice({
+  options,
   value,
   onChange,
 }: {
+  options: readonly PaidCloudPlanId[]
   value: PaidCloudPlanId
   onChange: (plan: PaidCloudPlanId) => void
 }) {
   return (
     <div role="radiogroup" aria-label="Plan" className="mt-3 space-y-2">
-      {PAID_CLOUD_PLAN_IDS.map((id) => (
+      {options.map((id) => (
         <button
           key={id}
           type="button"
@@ -63,36 +65,59 @@ function PlanChoice({
   )
 }
 
+function ContactUs({ worktableName }: { worktableName: string }) {
+  return (
+    <a
+      className="font-medium text-primary-text hover:underline"
+      href={`mailto:${CLOUD_PLANS.business.supportEmail}?subject=${encodeURIComponent(`More people for ${worktableName}`)}`}
+    >
+      Contact us
+    </a>
+  )
+}
+
 /**
  * Shown where people invite, when the plan can't hold who they're adding.
- * On Solo it is how a Worktable gets a paid plan.
+ * On Solo it is how a Worktable gets a paid plan. Only plans that hold
+ * everyone being added are offered.
  */
 export function PlanFullNotice({
   plan,
   worktableName,
   adding,
+  invitees,
   onBeforeCheckout,
 }: {
   plan: CloudPlan
   worktableName: string
   /** How many people are being added. */
   adding: number
-  /** Keep what was typed before leaving for payment. */
+  /** Who is being added, invited once payment brings a plan that holds them. */
+  invitees?: string[]
+  /** Keep what was typed some other way before leaving for payment. */
   onBeforeCheckout?: () => void
 }) {
   const queryClient = useQueryClient()
+  const workspaceId = useWorkspace().data?.id
   const needed = plan.people + Math.max(adding, 1)
-  const [choice, setChoice] = useState<PaidCloudPlanId>(
-    CLOUD_PLANS.team.peopleLimit >= needed ? "team" : "business"
+  const fitting = PAID_CLOUD_PLAN_IDS.filter(
+    (id) => CLOUD_PLANS[id].peopleLimit >= needed
   )
+  const [picked, setChoice] = useState<PaidCloudPlanId | null>(null)
+  const choice = picked && fitting.includes(picked) ? picked : fitting[0]
   const checkout = useMutation({
     mutationFn: async (target: PaidCloudPlanId) => {
-      onBeforeCheckout?.()
-      await openCloudBillingCheckout(target)
+      const billing = await import("@/lib/billing-api")
+      if (onBeforeCheckout) onBeforeCheckout()
+      else if (workspaceId && invitees?.length)
+        keepInviteesForPayment(workspaceId, invitees)
+      await billing.openCloudBillingCheckout(target)
     },
   })
   const change = useMutation({
-    mutationFn: changeCloudPlan,
+    // Billing's client loads on click, with the schemas it checks replies with.
+    mutationFn: async (target: PaidCloudPlanId) =>
+      (await import("@/lib/billing-api")).changeCloudPlan(target),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.workspace,
@@ -106,11 +131,26 @@ export function PlanFullNotice({
   const payerName = plan.payerName || "the person who pays for it"
 
   let body: React.ReactNode
-  if (plan.plan === "solo") {
-    body = plan.isPayer ? (
+  if (!next) {
+    body = (
+      <p>
+        {worktableName} has reached {plan.peopleLimit} people.{" "}
+        <ContactUs worktableName={worktableName} /> to go further.
+      </p>
+    )
+  } else if (plan.isPayer && !choice) {
+    // Paying for any plan here would still leave someone out.
+    body = (
+      <p>
+        Plans hold up to {CLOUD_PLANS.business.peopleLimit} people.{" "}
+        <ContactUs worktableName={worktableName} /> for more.
+      </p>
+    )
+  } else if (plan.plan === "solo") {
+    body = plan.isPayer && choice ? (
       <>
         <p>Inviting people needs a paid plan for {worktableName}.</p>
-        <PlanChoice value={choice} onChange={setChoice} />
+        <PlanChoice options={fitting} value={choice} onChange={setChoice} />
         <Button
           type="button"
           size="sm"
@@ -125,19 +165,6 @@ export function PlanFullNotice({
       <p>
         Inviting people needs a paid plan for {worktableName}. Ask {payerName}{" "}
         to choose one.
-      </p>
-    )
-  } else if (!next) {
-    body = (
-      <p>
-        {worktableName} has reached {plan.peopleLimit} people.{" "}
-        <a
-          className="font-medium text-primary-text hover:underline"
-          href={`mailto:${CLOUD_PLANS.business.supportEmail}?subject=${encodeURIComponent(`More people for ${worktableName}`)}`}
-        >
-          Contact us
-        </a>{" "}
-        to go further.
       </p>
     )
   } else if (plan.isPayer) {

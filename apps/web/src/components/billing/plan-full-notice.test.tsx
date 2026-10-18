@@ -41,9 +41,17 @@ test("a full plan offers the next plan to the person who pays, and names them to
   )
 })
 
-test("Solo starts on the smallest paid plan that holds everyone being invited", () => {
+test("only plans that hold everyone being invited are offered", () => {
   const small = render({ plan: "solo", peopleLimit: 1, people: 1 }, 3)
   expect(small).toMatch(/aria-checked="true"[^>]*>.*?Team<\/span>/)
   const large = render({ plan: "solo", peopleLimit: 1, people: 1 }, 12)
   expect(large).toMatch(/aria-checked="true"[^>]*>.*?Business<\/span>/)
+  expect(large).not.toContain(">Team<")
+  // No plan holds the owner and fifty more: nothing to pay for.
+  const tooMany = render({ plan: "solo", peopleLimit: 1, people: 1 }, 50)
+  expect(tooMany).not.toContain("Continue to payment")
+  expect(tooMany).toContain("Contact us")
+  const teamTooMany = render({}, 40)
+  expect(teamTooMany).not.toContain("Move to Business")
+  expect(teamTooMany).toContain("Contact us")
 })

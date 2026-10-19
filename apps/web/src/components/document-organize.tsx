@@ -44,7 +44,7 @@ const Calendar = calendar.Component
 
 /** The quiet chips that sit on a Doc's byline, under its title. */
 export const DOCUMENT_BYLINE_CHIP =
-  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md bg-surface-tint px-2 text-xs text-muted-foreground transition-colors hover:bg-surface-selected hover:text-foreground aria-expanded:bg-surface-selected aria-expanded:text-foreground disabled:pointer-events-none"
+  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-surface-tint px-2 text-xs text-muted-foreground transition-colors hover:bg-surface-selected hover:text-foreground aria-expanded:bg-surface-selected aria-expanded:text-foreground disabled:pointer-events-none"
 
 /** Compare calendar days in the person's local timezone. */
 function localDay(iso: string): Date {

@@ -59,8 +59,25 @@ describe("Cloud billing API", () => {
       })
     }) as typeof fetch
 
-    await openCloudBillingCheckout()
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: {
+        documentElement: {
+          classList: { contains: (name: string) => name === "light" },
+        },
+      },
+    })
+    try {
+      await openCloudBillingCheckout("business")
+    } finally {
+      Reflect.deleteProperty(globalThis, "document")
+    }
 
+    // Checkout opens in the theme on screen.
+    expect(await requests[2]?.json()).toEqual({
+      plan: "business",
+      theme: "light",
+    })
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
       "/api/billing/checkout",
       "/gateway/session",

@@ -8,8 +8,8 @@ import type {
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
-import { actorName, clockTime, groupByDay } from "@/lib/activity-format"
-import { useIsSelf } from "@/lib/use-is-self"
+import { clockTime, groupByDay } from "@/lib/activity-format"
+import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
@@ -137,11 +137,9 @@ function records(count: number | undefined): string {
 
 /** One plain sentence: who did what to which thing. */
 function Sentence({ entry }: { entry: ActivityEntry }) {
-  const isSelf = useIsSelf()
+  const nameOf = useActorName()
   const who = (
-    <span className="font-medium text-foreground">
-      {actorName(entry.actor, isSelf)}
-    </span>
+    <span className="font-medium text-foreground">{nameOf(entry.actor)}</span>
   )
   const what = <TargetLink entry={entry} />
   const times = entry.repeats > 1 ? ` ${entry.repeats} times` : ""

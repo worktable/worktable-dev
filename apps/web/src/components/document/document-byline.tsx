@@ -31,7 +31,8 @@ import {
 import { ActorBadge } from "@/components/home/activity-feed"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
-import { actorName, shortWhen } from "@/lib/activity-format"
+import { shortWhen } from "@/lib/activity-format"
+import { useActorName } from "@/lib/use-actor-name"
 import { useIsSelf } from "@/lib/use-is-self"
 import { documentRoute } from "@/lib/document-views"
 import { findTreeNode } from "@/lib/space-document-tree"
@@ -127,7 +128,13 @@ export function DocumentByline({
     void queryClient.prefetchQuery(activityQueryOptions(activityOptions))
 
   const isSelf = useIsSelf()
-  const editor = lastEditorName(contributors?.lastEditor, provenance, isSelf)
+  const nameOf = useActorName()
+  const editor = lastEditorName(
+    contributors?.lastEditor,
+    provenance,
+    isSelf,
+    nameOf
+  )
   const faces = contributors?.recent.slice(0, 3) ?? []
   const editedAt = provenance?.updatedAt ?? updatedAt
 
@@ -321,7 +328,7 @@ const IN_DOC: Partial<Record<ActivityEntry["action"], string>> = {
  * reads "Claude edited", "Maya commented".
  */
 function DocSentence({ entry }: { entry: ActivityEntry }) {
-  const isSelf = useIsSelf()
+  const nameOf = useActorName()
   if (entry.actor.kind === "system") return <>Changed outside Worktable</>
   const instruction = entry.category === "instruction"
   const verb =
@@ -340,9 +347,7 @@ function DocSentence({ entry }: { entry: ActivityEntry }) {
       : ""
   return (
     <>
-      <span className="font-medium text-foreground">
-        {actorName(entry.actor, isSelf)}
-      </span>{" "}
+      <span className="font-medium text-foreground">{nameOf(entry.actor)}</span>{" "}
       {verb}
       {times}
     </>
@@ -530,16 +535,17 @@ function Marked({
 function lastEditorName(
   actor: ActivityActor | undefined,
   provenance: DocumentProvenance | undefined,
-  isSelf: (actor: Pick<ActivityActor, "id">) => boolean
+  isSelf: (actor: Pick<ActivityActor, "id">) => boolean,
+  nameOf: (actor: ActivityActor) => string
 ): string | undefined {
   const by = provenance?.updatedBy
-  if (!by) return actor ? actorName(actor, isSelf) : undefined
+  if (!by) return actor ? nameOf(actor) : undefined
   const same =
     actor &&
     (actor.id === by ||
       (by === "user" && actor.kind === "person") ||
       (by.startsWith("agent:") && actor.id === by.slice("agent:".length)))
-  if (same) return actorName(actor, isSelf)
+  if (same) return nameOf(actor)
   // A save by "user" is the reader's only where there is one person.
   return by === "user" && isSelf({ id: by }) ? "You" : undefined
 }

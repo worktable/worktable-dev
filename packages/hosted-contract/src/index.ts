@@ -227,6 +227,9 @@ export const GATEWAY_HEADER = "x-worktable-gateway"
 /** Capability forwarded privately after the gateway strips it from the URL. */
 export const SHARE_CAPABILITY_HEADER = "x-worktable-share-capability"
 
+/** An invitation id the gateway asks a Worktable about before sign-in. */
+export const INVITATION_HEADER = "x-worktable-invitation"
+
 /**
  * Correlates one request across the Cloud gateway and the tenant's request
  * log. The gateway generates a random id for every request it proxies and

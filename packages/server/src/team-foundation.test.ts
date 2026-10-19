@@ -2,7 +2,10 @@ import { readPersonSetup } from "./personal-navigation-store.ts"
 import type { SetupItemId } from "@worktable/types/setup"
 import { base64url, SignJWT } from "jose"
 import {
+  BILLING_HEADER,
+  encodeTenantBilling,
   GATEWAY_HEADER,
+  INVITATION_HEADER,
   LINKED_ASSERTION_HEADER,
   LINKED_ASSERTION_ISSUER,
   LINKED_ASSERTION_TYPE,
@@ -2214,6 +2217,52 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
         role: "member",
       },
     })
+    // Before sign-in, the gateway learns who invited whom, and only with the
+    // invitation id and its own secret.
+    const { publicInvitationsRouter } = await import(
+      "./routes/public-invitations.ts"
+    )
+    const savedSecret = process.env.WORKTABLE_GATEWAY_SECRET
+    process.env.WORKTABLE_GATEWAY_SECRET =
+      "synthetic-gateway-secret-for-invitation-check"
+    const preview = (id: string, secret = true, billing?: string) =>
+      publicInvitationsRouter.request("/", {
+        headers: {
+          [INVITATION_HEADER]: id,
+          ...(secret
+            ? { [GATEWAY_HEADER]: process.env.WORKTABLE_GATEWAY_SECRET! }
+            : {}),
+          ...(billing ? { [BILLING_HEADER]: billing } : {}),
+        },
+      })
+    try {
+      expect(await (await preview(invitation.id)).json()).toEqual({
+        worktableName: "Renamed cloud team",
+        email: "bob@company.test",
+        inviterName: "Alice",
+      })
+      expect((await preview(invitation.id, false)).status).toBe(404)
+      expect(await (await preview("inv_unknown")).json()).toMatchObject({
+        code: "INVITATION_UNAVAILABLE",
+      })
+      // A plan with no room left refuses the join, so the preview says so.
+      const full = await preview(
+        invitation.id,
+        true,
+        encodeTenantBilling({ plan: "solo", peopleLimit: 1, access: "active" })
+      )
+      expect(full.status).toBe(409)
+      expect(await full.json()).toEqual({
+        error: "This Worktable's plan is full",
+        code: "PLAN_FULL",
+        worktableName: "Renamed cloud team",
+        inviterName: "Alice",
+      })
+    } finally {
+      if (savedSecret === undefined)
+        delete process.env.WORKTABLE_GATEWAY_SECRET
+      else process.env.WORKTABLE_GATEWAY_SECRET = savedSecret
+    }
     // The invitation was emailed to one address; a forwarded link does not
     // admit a different account.
     await expect(

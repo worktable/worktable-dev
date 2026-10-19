@@ -288,3 +288,37 @@ export function unavailableInvitation(invitation: {
   return null
 }
 
+
+/**
+ * What a person holding an invitation link sees before signing in: the
+ * inviter's name and the invited address, for a usable invitation only.
+ */
+export function invitationPreview(
+  invitationId: string
+): { email: string; inviterName?: string } | TeamAccessError {
+  const worktable = currentTeamWorktable()
+  const invitation = worktable
+    ? requireTeamDatabase()
+        .query<
+          {
+            email: string
+            status: string
+            expiresAt: number | string
+            organizationId: string
+            inviterId: string
+          },
+          [string]
+        >(
+          "SELECT email, status, expiresAt, organizationId, inviterId FROM invitation WHERE id = ?"
+        )
+        .get(invitationId)
+    : null
+  const unavailable = unavailableInvitation(
+    invitation && invitation.organizationId === worktable!.organizationId
+      ? invitation
+      : null
+  )
+  if (unavailable) return unavailable
+  const inviterName = findTeamMember(invitation!.inviterId)?.name.trim()
+  return { email: invitation!.email, ...(inviterName ? { inviterName } : {}) }
+}

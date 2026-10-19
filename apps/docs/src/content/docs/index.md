@@ -19,7 +19,7 @@ in Worktable Cloud. Desktop and the browser are ways to open it.
 | --- | --- |
 | **[Desktop](/start/desktop/)** | A native app for Apple Silicon Macs. Open a local workspace or connect to self-hosted Worktable or Cloud. |
 | **[CLI install](/start/install/)** | Run Worktable on macOS or Linux and open it in a browser. |
-| **[Cloud setup](/guides/worktable-cloud/)** | Use a hosted workspace without maintaining a server. |
+| **[Cloud setup](/guides/worktable-cloud/)** | Give your team its own Worktable, with everyone's agents connected and no server to run. |
 
 Then [connect an agent](/start/connect-your-agent/) and complete your
 [first project](/start/first-space/). An agent can also follow the

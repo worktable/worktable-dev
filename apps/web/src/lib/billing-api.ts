@@ -21,7 +21,9 @@ export async function getCloudBillingStatus(): Promise<BillingStatus> {
     const body = (await response.json().catch(() => null)) as {
       error?: unknown
     } | null
-    throw new HttpError(response.status, body,
+    throw new HttpError(
+      response.status,
+      body,
       typeof body?.error === "string"
         ? body.error
         : "Could not read billing status"
@@ -59,14 +61,23 @@ async function openCloudBillingDestination(
   window.location.assign(body.url)
 }
 
+/** The theme on screen, so checkout opens in it too. */
+function pageTheme(): "light" | "dark" | undefined {
+  if (typeof document === "undefined") return undefined
+  return document.documentElement.classList.contains("light") ? "light" : "dark"
+}
+
 /** Pay for this Worktable: its current plan, or the paid plan chosen. */
 export async function openCloudBillingCheckout(
   plan?: PaidCloudPlanId
 ): Promise<void> {
+  const theme = pageTheme()
   return openCloudBillingDestination(
     "/api/billing/checkout",
     "Could not open checkout",
-    plan ? { plan } : undefined
+    plan || theme
+      ? { ...(plan ? { plan } : {}), ...(theme ? { theme } : {}) }
+      : undefined
   )
 }
 

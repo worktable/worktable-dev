@@ -26,7 +26,7 @@ function renderByline(
     editor?: ActivityActor
     team?: boolean
   } = {}
-): string {
+) {
   const client = new QueryClient()
   const editor = options.editor ?? actor
   client.setQueryData(queryKeys.workspace, {
@@ -53,7 +53,7 @@ function renderByline(
     }
   )
   try {
-    return renderToStaticMarkup(
+    const html = renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <DocumentByline
           spaceId="test"
@@ -71,7 +71,12 @@ function renderByline(
           }}
         />
       </QueryClientProvider>
-    ).replace(/<[^>]*>/g, "")
+    )
+    const text = (markup: string) => markup.replace(/<[^>]*>/g, "")
+    return {
+      summary: text(html.match(/<button\b[^>]*>([\s\S]*?)<\/button>/)![1]!),
+      text: text(html),
+    }
   } finally {
     client.clear()
   }
@@ -79,17 +84,18 @@ function renderByline(
 
 test("the byline and its activity use current identity names with recorded names as a fallback", () => {
   for (const name of [undefined, "Finn (Claude)", "Scout"]) {
-    const text = renderByline({ name })
-    expect(text.startsWith(`${name ?? actor.name} edited `)).toBe(true)
+    const { summary, text } = renderByline({ name })
+    expect(summary).toContain(`${name ?? actor.name} edited `)
     expect(text.split(`${name ?? actor.name} edited`)).toHaveLength(3)
     if (name) expect(text).not.toContain(actor.name!)
   }
   // A newer save by someone else must not inherit this agent's name.
-  expect(
-    renderByline({ name: "Finn", updatedBy: "agent:another-agent" }).startsWith(
-      "Edited "
-    )
-  ).toBe(true)
+  const { summary } = renderByline({
+    name: "Finn",
+    updatedBy: "agent:another-agent",
+  })
+  expect(summary).toContain("Edited ")
+  expect(summary).not.toContain("Finn")
 })
 
 test("current names preserve You for the reader and name other team members", () => {
@@ -99,16 +105,14 @@ test("current names preserve You for the reader and name other team members", ()
     name: "Old name",
   }
   expect(
-    renderByline({ editor, name: "Maya", updatedBy: "user" }).startsWith(
-      "You edited "
-    )
-  ).toBe(true)
+    renderByline({ editor, name: "Maya", updatedBy: "user" }).summary
+  ).toContain("You edited ")
   expect(
     renderByline({
       editor: { ...editor, id: "team:other" },
       name: "Maya",
       updatedBy: "team:other",
       team: true,
-    }).startsWith("Maya edited ")
-  ).toBe(true)
+    }).summary
+  ).toContain("Maya edited ")
 })

@@ -2214,6 +2214,38 @@ test("Cloud maps provider subjects to the same membership model and keeps browse
         role: "member",
       },
     })
+    // Before sign-in, the gateway learns who invited whom, and only with the
+    // invitation id and its own secret.
+    const { publicInvitationsRouter, INVITATION_HEADER } = await import(
+      "./routes/public-invitations.ts"
+    )
+    const savedSecret = process.env.WORKTABLE_GATEWAY_SECRET
+    process.env.WORKTABLE_GATEWAY_SECRET =
+      "synthetic-gateway-secret-for-invitation-check"
+    const preview = (id: string, secret = true) =>
+      publicInvitationsRouter.request("/", {
+        headers: {
+          [INVITATION_HEADER]: id,
+          ...(secret
+            ? { [GATEWAY_HEADER]: process.env.WORKTABLE_GATEWAY_SECRET! }
+            : {}),
+        },
+      })
+    try {
+      expect(await (await preview(invitation.id)).json()).toEqual({
+        worktableName: "Renamed cloud team",
+        email: "bob@company.test",
+        inviterName: "Alice",
+      })
+      expect((await preview(invitation.id, false)).status).toBe(404)
+      expect(await (await preview("inv_unknown")).json()).toMatchObject({
+        code: "INVITATION_UNAVAILABLE",
+      })
+    } finally {
+      if (savedSecret === undefined)
+        delete process.env.WORKTABLE_GATEWAY_SECRET
+      else process.env.WORKTABLE_GATEWAY_SECRET = savedSecret
+    }
     // The invitation was emailed to one address; a forwarded link does not
     // admit a different account.
     await expect(

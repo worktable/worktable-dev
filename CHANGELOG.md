@@ -32,6 +32,7 @@ infrastructure and personal context out of release notes.
 - **Rename:** Renaming a doc changes its title, starting from the name you see, and its file follows. Home, Space Home and Activity name docs by their title, as the sidebar does.
 - **Archive date:** On a temporary Doc, the archive date now sits under the title, where it also shows on phones.
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Joining on Cloud:** A Worktable Cloud invitation link names the Worktable and who invited you before you sign in, and **Accept invitation** creates your account with the invited address and joins you without asking again.
 - **Sidebar:** Tapping a Space opens or closes it instead of going to its page, and **Space Home** is the first row inside. Folders show a folder icon instead of an arrow, in the sidebar and in the page menu on phones. The sidebar remembers what you left open on each device. On phones, each row has a single menu with **New** at the top, and menus for docs and folders say **Rename**, **Archive** and **Delete**.
 - **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
 - **Team settings:** People and pending invitations share one list in **Settings → Team**. Change someone's role from the menu beside them, which says what Owner and Member allow. To invite someone straight into a Space, use that Space's access settings. On Cloud, **Switch Worktable** moved to the Worktable menu.

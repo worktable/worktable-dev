@@ -22,7 +22,9 @@ use [Desktop](/start/desktop/) or the [CLI installer](/start/install/).
 Invite people from **Settings → Team**. Each invitation is emailed and can be
 accepted only by an account with that email address, personal or on another
 domain. Choose a starting Space to open it for them when they join. If the
-email doesn't arrive, copy the invitation link and send it yourself. Newly
+email doesn't arrive, copy the invitation link and send it yourself. The link
+names the Worktable and who sent it; accepting creates an account with the
+invited address, or signs in to an existing one, and opens the Worktable. Newly
 created Spaces are shared by default; owners can access every Space and Space
 creators manage their Spaces. Threads follow the access rules of their
 containing Space.

@@ -76,6 +76,7 @@ import { pairingRouter } from "./routes/pairing.ts"
 import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
+import { publicInvitationsRouter } from "./routes/public-invitations.ts"
 import { connectRouter } from "./routes/connect.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { operatorRouter } from "./routes/operator.ts"
@@ -532,6 +533,7 @@ app.route("/auth", authSessionRouter);
 app.route("/health", healthRouter);
 app.route("/internal/operator", operatorRouter);
 app.route("/public/share", publicSharesRouter);
+app.route("/public/invitation", publicInvitationsRouter);
 app.route("/api/workspace", workspaceRouter);
 app.route("/api/profile", profileRouter);
 app.route("/api/team", teamRouter);

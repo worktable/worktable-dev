@@ -9,38 +9,40 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-10-19
+
 ### Added
 
-- **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
-- **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
 - **Cloud plans:** Worktable Cloud has three plans per Worktable: Solo, free for one person, Team for up to 12 people and Business for up to 50, with unlimited agents on every plan. Pending invitations count toward a plan's people.
-- **Full plans:** Inviting more people than a plan holds says so where you invite and offers the next plan to the person who pays; on Solo it's where a paid plan starts, and the people you typed are invited once it's active.
-- **Subscription settings:** **Settings → Subscription** shows the plan, how many people it holds and the next charge, and lets the person who pays change, manage or cancel it.
-- **Payment reminders:** When a Cloud payment fails, owners see a banner straight away and members see one two days before access locks.
 - **Setup:** A new Worktable takes three steps: name it, connect your agent and invite your team. Connecting groups agents by how they work, on demand or always on, and shows the command or address for the one you pick, then waits for it to connect. On a self-hosted Worktable with an owner password, setup asks for your email so teammates can join, and you keep signing in with the same password.
 - **Getting Started:** New Worktables start with a Getting Started Space that everyone can see. Its home lists your own first steps: connect your agent, give it a task and, for the owner, invite your team. Each one ticks off when it happens. Guides cover what agents can make, prompts to try, reviewing with your agent, always-on agents and Records. It sits at the top of the sidebar, with a line on **Home**, until you remove it. Existing Worktables keep their Welcome Space.
 - **Joining a team:** Members skip the owner's setup and open the Space they were invited to, with a short welcome. On self-hosted Worktables, the join page names the Worktable, who invited you and the Space.
+- **Invitation email:** Worktable Cloud emails each team invitation, and **Settings → Team** shows whether it was sent, with **Copy link** and **Resend**.
+- **Starting Space:** An invitation can name a Space that opens for the new member when they join, granting access if that Space is restricted.
+- **Full plans:** Inviting more people than a plan holds says so where you invite and offers the next plan to the person who pays; on Solo it's where a paid plan starts, and the people you typed are invited once it's active.
+- **Subscription settings:** **Settings → Subscription** shows the plan, how many people it holds and the next charge, and lets the person who pays change, manage or cancel it.
+- **Payment reminders:** When a Cloud payment fails, owners see a banner straight away and members see one two days before access locks.
 - **Your own groups and pins:** Organize the sidebar your way without changing it for anyone else. Pin a Space to keep it at the top, and sort Spaces into groups from **Change Group** in the Space menu or the **+** beside Spaces. Pinned, each group and your other Spaces show as sections you can collapse, and groups can be renamed or removed. Your arrangement follows you to your other devices. Anyone who can see a Space can pin it or group it. You start with the groups your Spaces already had.
 - **Worktable menu:** The top of the sidebar shows your Worktable's name and opens a menu with where it lives and **Worktable Settings**. In Desktop, **Switch Worktable** there opens the Worktable chooser, as **Workspace → Change Connection** does.
-- **Colors for Worktables, Spaces and people:** Each Space shows its icon on its own color in the sidebar, breadcrumbs, search and its page, the same for everyone. Choose it with **Icon and Color** in the Space menu. Your Worktable has a color too, chosen in **Settings → General**, and people get their own color behind their initials. New Spaces get a color unlike the others', and existing Spaces get one when you update.
 - **You in the sidebar:** The bottom of the sidebar shows who is signed in and their role. Its menu opens your **Profile** and **Preferences**, switches the theme, and has **Sign Out** wherever you have a session, including for team members on Worktable Cloud and on self-hosted Worktables with an owner password.
+- **Colors for Worktables, Spaces and people:** Each Space shows its icon on its own color in the sidebar, breadcrumbs, search and its page, the same for everyone. Choose it with **Icon and Color** in the Space menu. Your Worktable has a color too, chosen in **Settings → General**, and people get their own color behind their initials. New Spaces get a color unlike the others', and existing Spaces get one when you update.
 - **Doc titles:** A new doc opens on its title, with its name in grey until you type one, and takes the title's name when you leave it. A rich doc without a title shows its name where the title goes; click it to add one.
 - **Doc byline:** A line under each Doc's title shows who last edited it and when. Open it for the Doc's recent activity and **Version History**. Beside it, a count with an inbound arrow opens everything that links here: docs with the sentence each link sits in, records whose doc field names it, and HTML Docs with a button or link that opens it.
 
 ### Changed
 
+- **Joining on Cloud:** A Worktable Cloud invitation link names the Worktable and who invited you before you sign in, and **Accept invitation** lets you create an account with the invited address or sign in to the one you have, then joins you without asking again.
+- **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
+- **Invitation status:** An invitation that wasn't emailed says why, in setup and **Settings → Team**, and offers **Send again** when trying again can help.
+- **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
 - **Plan changes:** Upgrading or downgrading a Cloud plan asks you to confirm first and shows the new monthly price.
+- **Team settings:** People and pending invitations share one list in **Settings → Team**. Change someone's role from the menu beside them, which says what Owner and Member allow. To invite someone straight into a Space, use that Space's access settings. On Cloud, **Switch Worktable** moved to the Worktable menu.
+- **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
+- **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
+- **Sidebar:** Tapping a Space opens or closes it instead of going to its page, and **Space Home** is the first row inside. Folders show a folder icon instead of an arrow, in the sidebar and in the page menu on phones. The sidebar remembers what you left open on each device. On phones, each row has a single menu with **New** at the top, and menus for docs and folders say **Rename**, **Archive** and **Delete**.
+- **Activity on a team:** Activity names other people. **You** means only you.
 - **Rename:** Renaming a doc changes its title, starting from the name you see, and its file follows. Home, Space Home and Activity name docs by their title, as the sidebar does.
 - **Archive date:** On a temporary Doc, the archive date now sits under the title, where it also shows on phones.
-- **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.
-- **Joining on Cloud:** A Worktable Cloud invitation link names the Worktable and who invited you before you sign in, and **Accept invitation** lets you create an account with the invited address or sign in to the one you have, then joins you without asking again.
-- **Sidebar:** Tapping a Space opens or closes it instead of going to its page, and **Space Home** is the first row inside. Folders show a folder icon instead of an arrow, in the sidebar and in the page menu on phones. The sidebar remembers what you left open on each device. On phones, each row has a single menu with **New** at the top, and menus for docs and folders say **Rename**, **Archive** and **Delete**.
-- **Worktable Link:** Linking a device asks for a Worktable rather than a subscription, and names how many devices its plan links.
-- **Team settings:** People and pending invitations share one list in **Settings → Team**. Change someone's role from the menu beside them, which says what Owner and Member allow. To invite someone straight into a Space, use that Space's access settings. On Cloud, **Switch Worktable** moved to the Worktable menu.
-- **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
-- **Activity on a team:** Activity names other people. **You** means only you.
-- **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
-- **Invitation status:** An invitation that wasn't emailed says why, in setup and **Settings → Team**, and offers **Send again** when trying again can help.
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 
 ### Fixed

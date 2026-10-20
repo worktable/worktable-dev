@@ -114,7 +114,8 @@ Queries support `count`, `sum`, `avg`, `min`, `max`, and `unique` aggregates.
 Over MCP, grouping by a multi-select field counts each value. Select fields
 sort in the order their options are listed. Whenever more records match than
 the page holds, the result includes `nextCursor`; pass it as `cursor` with the
-same query. An MCP query without `limit` returns 100 records. The maximum page
+same query. `total` counts every matching record across pages. `contains` is
+case-insensitive. An MCP query without `limit` returns 100 records. The maximum page
 size is 1,000. Check returned warnings for invalid files or incomplete
 results. HTML callers also need permission for collections reached through
 relations or expansion.

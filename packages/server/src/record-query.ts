@@ -493,6 +493,7 @@ export async function runQueryV2(
 
   const keys = sortKeys(query);
   rows = [...rows].sort(buildComparator(keys, fields));
+  const total = rows.length;
 
   if (query.cursor) {
     const cursor = decodeCursor(query.cursor, keys.length);
@@ -514,7 +515,7 @@ export async function runQueryV2(
     if (rows.length > 0) nextCursor = encodeCursor(rows[rows.length - 1]!, keys);
   }
 
-  const result: RecordQueryResult = { records: rows };
+  const result: RecordQueryResult = { records: rows, total };
   if (nextCursor) result.nextCursor = nextCursor;
 
   if (query.expand) {

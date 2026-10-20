@@ -269,8 +269,6 @@ describe("MCP record-practice advisories", () => {
 
 describe("MCP record writes keep stored data", () => {
   async function seedCollection(): Promise<void> {
-describe("MCP record queries", () => {
-  async function seedSignals(count: number): Promise<void> {
     await createSpace()
     await dispatchOperation("records.upsert_collection", {
       spaceId: "product",
@@ -384,6 +382,16 @@ describe("MCP record queries", () => {
     })
   })
 })
+
+describe("MCP record queries", () => {
+  async function seedSignals(count: number): Promise<void> {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "signals",
+      name: "Signals",
+      fields: {
+        title: { type: "string", required: true },
         tags: { type: "multi_select", values: ["team", "sharing", "tools"] },
       },
     })
@@ -409,6 +417,7 @@ describe("MCP record queries", () => {
       collectionId: "signals",
     })) as { records: unknown[]; nextCursor?: string; warnings?: string[] }
     expect(first.records).toHaveLength(100)
+    expect((first as { total?: number }).total).toBe(130)
     expect(first.nextCursor).toBeDefined()
     expect(first.warnings?.join(" ")).toContain("nextCursor")
 
@@ -434,4 +443,3 @@ describe("MCP record queries", () => {
     ).toEqual({ team: 10, sharing: 5 })
   })
 })
-

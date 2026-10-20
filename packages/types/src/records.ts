@@ -134,6 +134,8 @@ export interface RecordQueryResult {
   backlinks?: Record<string, string[]>;
   groups?: Record<string, unknown>[];
   nextCursor?: string;
+  /** How many records match the query across all pages. */
+  total?: number;
   /** Non-fatal integrity notices; results may be incomplete until repaired. */
   warnings?: string[];
 }

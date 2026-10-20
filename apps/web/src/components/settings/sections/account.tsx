@@ -69,8 +69,14 @@ export function AccountSection() {
   const checkout = useMutation({
     mutationFn: (plan?: PaidCloudPlanId) => openCloudBillingCheckout(plan),
   })
-  const change = useMutation({ mutationFn: changeCloudPlan, onSuccess: refresh })
-  const cancel = useMutation({ mutationFn: cancelCloudPlan, onSuccess: refresh })
+  const change = useMutation({
+    mutationFn: changeCloudPlan,
+    onSuccess: refresh,
+  })
+  const cancel = useMutation({
+    mutationFn: cancelCloudPlan,
+    onSuccess: refresh,
+  })
   const actionError = [checkout, portal, change, cancel].find(
     (action) => action.isError
   )?.error
@@ -110,7 +116,10 @@ export function AccountSection() {
               </p>
             </CardContent>
           </Card>
-        ) : billingQuery.error instanceof HttpError && billingQuery.error.status === 403 && (billingQuery.error.body as {code?: string})?.code === "BILLING_PAYER_REQUIRED" ? (
+        ) : billingQuery.error instanceof HttpError &&
+          billingQuery.error.status === 403 &&
+          (billingQuery.error.body as { code?: string })?.code ===
+            "BILLING_PAYER_REQUIRED" ? (
           <p className="text-sm text-muted-foreground">
             {`Contact ${cloudPlan?.payerName || "the person who pays for it"} about ${worktableName}'s plan and billing.`}
           </p>
@@ -153,9 +162,7 @@ export function AccountSection() {
             onCancel={() => cancel.mutate()}
           />
         )}
-
       </section>
-
     </>
   )
 }
@@ -200,6 +207,7 @@ export function SubscriptionCard({
   onCancel?: () => void
 }) {
   const [cancelling, setCancelling] = useState(false)
+  const [changingTo, setChangingTo] = useState<PaidCloudPlanId | null>(null)
   const plan = billing.plan
   const complimentary = billing.access === "complimentary"
   const paymentRequired = billing.access === "payment_required"
@@ -245,7 +253,8 @@ export function SubscriptionCard({
       ? "checkout"
       : inGrace
         ? "portal"
-        : others.find((other) => CLOUD_PLANS[other.id].amount > plan.amount)?.id ?? null
+        : (others.find((other) => CLOUD_PLANS[other.id].amount > plan.amount)
+            ?.id ?? null)
 
   return (
     <div className="flex flex-col gap-2">
@@ -293,7 +302,9 @@ export function SubscriptionCard({
                     className="flex items-center gap-3 rounded-lg bg-surface-inset px-3 py-2.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{other.name}</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {other.name}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         Up to {other.peopleLimit} people ·{" "}
                         {formatPrice(other.amount, plan.currency)} monthly
@@ -307,7 +318,9 @@ export function SubscriptionCard({
                       }
                       variant={primary === id ? "default" : "outline"}
                       disabled={busy || tooMany}
-                      onClick={() => (via === "checkout" ? onCheckout(id) : onChangePlan(id))}
+                      onClick={() =>
+                        via === "checkout" ? onCheckout(id) : setChangingTo(id)
+                      }
                     >
                       {(via === "checkout" && pending === "checkout") ||
                       (via === "change" && pending === "change")
@@ -325,47 +338,51 @@ export function SubscriptionCard({
           billing.canManageBilling ||
           (locked && billing.canExport) ? (
             <div className="flex flex-wrap items-center gap-2">
-            {!solo && billing.canCheckout ? (
-              <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
-                {pending === "checkout"
-                  ? "Opening payment…"
-                  : locked
-                    ? "Restart subscription"
-                    : "Subscribe"}
-              </Button>
-            ) : null}
-            {billing.canManageBilling ? (
-              <Button
-                variant={primary === "portal" ? "default" : "outline"}
-                size="sm"
-                disabled={busy}
-                onClick={onPortal}
-              >
-                <ExternalLink className="size-4" />
-                {pending === "portal"
-                  ? "Opening…"
-                  : inGrace
-                    ? "Update card"
-                    : "Manage payment"}
-              </Button>
-            ) : null}
-            {locked && billing.canExport ? (
-              <Button variant="ghost" size="sm" onClick={downloadCloudWorkspace}>
-                <Download className="size-4" />
-                Export
-              </Button>
-            ) : null}
-            {billing.canManageBilling && !solo && !locked && !cancelsAtEnd ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto text-muted-foreground"
-                disabled={busy}
-                onClick={() => setCancelling(true)}
-              >
-                Cancel plan
-              </Button>
-            ) : null}
+              {!solo && billing.canCheckout ? (
+                <Button size="sm" disabled={busy} onClick={() => onCheckout()}>
+                  {pending === "checkout"
+                    ? "Opening payment…"
+                    : locked
+                      ? "Restart subscription"
+                      : "Subscribe"}
+                </Button>
+              ) : null}
+              {billing.canManageBilling ? (
+                <Button
+                  variant={primary === "portal" ? "default" : "outline"}
+                  size="sm"
+                  disabled={busy}
+                  onClick={onPortal}
+                >
+                  <ExternalLink className="size-4" />
+                  {pending === "portal"
+                    ? "Opening…"
+                    : inGrace
+                      ? "Update card"
+                      : "Manage payment"}
+                </Button>
+              ) : null}
+              {locked && billing.canExport ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={downloadCloudWorkspace}
+                >
+                  <Download className="size-4" />
+                  Export
+                </Button>
+              ) : null}
+              {billing.canManageBilling && !solo && !locked && !cancelsAtEnd ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-muted-foreground"
+                  disabled={busy}
+                  onClick={() => setCancelling(true)}
+                >
+                  Cancel plan
+                </Button>
+              ) : null}
             </div>
           ) : null}
           {error ? (
@@ -375,6 +392,31 @@ export function SubscriptionCard({
           ) : null}
         </CardContent>
       </Card>
+      {changingTo ? (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setChangingTo(null)
+          }}
+          title={
+            CLOUD_PLANS[changingTo].amount > plan.amount
+              ? `Upgrade to ${CLOUD_PLANS[changingTo].name}?`
+              : `Downgrade to ${CLOUD_PLANS[changingTo].name}?`
+          }
+          description={`${worktableName} moves to ${CLOUD_PLANS[changingTo].name} now, at ${formatPrice(CLOUD_PLANS[changingTo].amount, plan.currency)} monthly. The difference for the rest of this period is settled on your next bill.`}
+          confirmLabel={
+            CLOUD_PLANS[changingTo].amount > plan.amount
+              ? "Upgrade"
+              : "Downgrade"
+          }
+          loading={pending === "change"}
+          loadingLabel="Changing…"
+          onConfirm={() => {
+            onChangePlan(changingTo)
+            setChangingTo(null)
+          }}
+        />
+      ) : null}
       <ConfirmDialog
         open={cancelling}
         onOpenChange={setCancelling}
@@ -440,7 +482,9 @@ function PeopleMeter({ people, limit }: { people: number; limit: number }) {
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between text-sm">
         <span className="text-muted-foreground">People</span>
-        <span className={full ? "font-medium text-foreground" : "text-foreground"}>
+        <span
+          className={full ? "font-medium text-foreground" : "text-foreground"}
+        >
           {people} of {limit}
         </span>
       </div>
@@ -453,7 +497,11 @@ function PeopleMeter({ people, limit }: { people: number; limit: number }) {
         className="h-1.5 overflow-hidden rounded-full bg-muted"
       >
         <div
-          className={full ? "h-full rounded-full bg-warning" : "h-full rounded-full bg-primary"}
+          className={
+            full
+              ? "h-full rounded-full bg-warning"
+              : "h-full rounded-full bg-primary"
+          }
           style={{ width: `${Math.min(100, (people / limit) * 100)}%` }}
         />
       </div>

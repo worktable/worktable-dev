@@ -29,6 +29,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Plan changes:** Upgrading or downgrading a Cloud plan asks you to confirm first and shows the new monthly price.
 - **Rename:** Renaming a doc changes its title, starting from the name you see, and its file follows. Home, Space Home and Activity name docs by their title, as the sidebar does.
 - **Archive date:** On a temporary Doc, the archive date now sits under the title, where it also shows on phones.
 - **Cloud invitations:** A Worktable Cloud invitation can be accepted only by an account with the invited email address.

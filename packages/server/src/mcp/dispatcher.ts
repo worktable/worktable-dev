@@ -1670,9 +1670,7 @@ async function _dispatchOperationInner(
       const failed = results.filter((row) => row.error).length
       return {
         results,
-        created,
-        skipped: results.length - created - failed,
-        failed,
+        counts: { created, skipped: results.length - created - failed, failed },
       }
     }
     case "records.update_many": {
@@ -1738,7 +1736,7 @@ async function _dispatchOperationInner(
         collectionId,
       })
       const updated = results.filter((row) => row.updated).length
-      return { results, updated, failed: results.length - updated }
+      return { results, counts: { updated, failed: results.length - updated } }
     }
     case "records.delete": {
       const spaceId = args["spaceId"] as string

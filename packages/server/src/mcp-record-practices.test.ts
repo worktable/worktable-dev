@@ -15,6 +15,9 @@ import {
 } from "./record-store.ts"
 import { dispatchOperation } from "./mcp/dispatcher.ts"
 import { registerTools } from "./mcp/tools.ts"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { createWorktableMcpServer } from "./mcp/server.ts"
 import {
   logRecordPracticeWarnings,
   type RecordPracticeWarning,
@@ -631,15 +634,14 @@ describe("MCP record batches (preview)", () => {
       preview
     )) as {
       results: Array<{ recordId: string; created: boolean }>
-      created: number
-      skipped: number
+      counts: { created: number; skipped: number }
     }
     expect(result.results).toEqual([
       { recordId: "p-1", created: false },
       { recordId: "p-2", created: true },
       { recordId: "p-3", created: true },
     ])
-    expect([result.created, result.skipped]).toEqual([2, 1])
+    expect([result.counts.created, result.counts.skipped]).toEqual([2, 1])
     const kept = (await dispatchOperation("records.read", {
       spaceId: "product",
       collectionId: "posts",
@@ -695,8 +697,8 @@ describe("MCP record batches (preview)", () => {
         data: { review: "Excluded" },
       },
       preview
-    )) as { updated: number; failed: number; results: Array<{ error?: string }> }
-    expect([byIds.updated, byIds.failed]).toEqual([2, 1])
+    )) as { counts: { updated: number; failed: number }; results: Array<{ error?: string }> }
+    expect([byIds.counts.updated, byIds.counts.failed]).toEqual([2, 1])
     expect(byIds.results[2]!.error).toContain("Record not found")
 
     const byFilter = (await dispatchOperation(
@@ -708,8 +710,8 @@ describe("MCP record batches (preview)", () => {
         data: { review: "Verified" },
       },
       preview
-    )) as { updated: number }
-    expect(byFilter.updated).toBe(2)
+    )) as { counts: { updated: number } }
+    expect(byFilter.counts.updated).toBe(2)
 
     await expect(
       dispatchOperation(
@@ -723,6 +725,35 @@ describe("MCP record batches (preview)", () => {
         preview
       )
     ).rejects.toThrow("Nothing was written")
+  })
+
+  it("returns results that match the listed output schema for every write", async () => {
+    await seedTeam()
+    const server = createWorktableMcpServer({ version: "test", surface: "preview" })
+    const client = new Client({ name: "batch-test", version: "1" })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    try {
+      const write = async (request: Record<string, unknown>) => {
+        // The client validates structuredContent against the advertised
+        // outputSchema, as agents' clients do; a mismatch throws here.
+        const result = await client.callTool({
+          name: "worktable_records_write",
+          arguments: { request: { spaceId: "product", collectionId: "posts", ...request } },
+        })
+        expect(result.isError).toBeFalsy()
+        return result.structuredContent as Record<string, unknown>
+      }
+      expect((await write({ action: "create", recordId: "one", data: { title: "One" } })).created).toBe(true)
+      expect((await write({ action: "create", recordId: "one", data: { title: "Again" } })).created).toBe(false)
+      expect((await write({ action: "create_many", records: [{ recordId: "two", data: { title: "Two" } }] })).counts).toEqual({ created: 1, skipped: 0, failed: 0 })
+      expect((await write({ action: "update", recordId: "two", data: { review: "Verified" } })).record).toBeDefined()
+      expect((await write({ action: "update_many", recordIds: ["one", "two"], data: { review: "Excluded" } })).counts).toEqual({ updated: 2, failed: 0 })
+      expect((await write({ action: "upsert_collection", fields: { note: { type: "text" } } })).fieldChanges).toBeDefined()
+    } finally {
+      await client.close()
+      await server.close()
+    }
   })
 
   it("is refused to a caller offered the released tools", async () => {

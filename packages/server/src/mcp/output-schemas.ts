@@ -521,9 +521,11 @@ const RecordsCreateManyOutputSchema = z.looseObject({
       error: z.string().optional(),
     })
   ),
-  created: z.number().int().nonnegative(),
-  skipped: z.number().int().nonnegative(),
-  failed: z.number().int().nonnegative(),
+  counts: z.looseObject({
+    created: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
 })
 
 const RecordsUpdateManyOutputSchema = z.looseObject({
@@ -534,8 +536,10 @@ const RecordsUpdateManyOutputSchema = z.looseObject({
       error: z.string().optional(),
     })
   ),
-  updated: z.number().int().nonnegative(),
-  failed: z.number().int().nonnegative(),
+  counts: z.looseObject({
+    updated: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
 })
 
 const RecordQueryOutputSchema = z.looseObject({
@@ -1616,11 +1620,17 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
       ),
       '"create_many" or "update_many"'
     ),
-    created: forActions(z.number().int().nonnegative(), '"create_many"'),
-    skipped: forActions(z.number().int().nonnegative(), '"create_many"'),
-    updated: forActions(z.number().int().nonnegative(), '"update_many"'),
-    failed: forActions(
-      z.number().int().nonnegative(),
+    created: forActions(
+      z.boolean(),
+      '"create" (false when the recordId already existed)'
+    ),
+    counts: forActions(
+      z.looseObject({
+        created: z.number().int().nonnegative().optional(),
+        skipped: z.number().int().nonnegative().optional(),
+        updated: z.number().int().nonnegative().optional(),
+        failed: z.number().int().nonnegative(),
+      }),
       '"create_many" or "update_many"'
     ),
   }),

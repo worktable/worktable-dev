@@ -416,7 +416,9 @@ export function SubscriptionCard({
             try {
               await onChangePlan(changingTo)
               setChangingTo(null)
-            } catch {}
+            } catch {
+              // The error shows in the dialog, which stays open to retry.
+            }
           }}
         >
           {error ? (

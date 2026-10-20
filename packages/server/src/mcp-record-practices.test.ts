@@ -269,6 +269,8 @@ describe("MCP record-practice advisories", () => {
 
 describe("MCP record writes keep stored data", () => {
   async function seedCollection(): Promise<void> {
+describe("MCP record queries", () => {
+  async function seedSignals(count: number): Promise<void> {
     await createSpace()
     await dispatchOperation("records.upsert_collection", {
       spaceId: "product",
@@ -382,3 +384,54 @@ describe("MCP record writes keep stored data", () => {
     })
   })
 })
+        tags: { type: "multi_select", values: ["team", "sharing", "tools"] },
+      },
+    })
+    for (let i = 0; i < count; i++) {
+      await writeRecord(
+        "product",
+        buildRecordFile({
+          id: `s-${String(i).padStart(3, "0")}`,
+          collectionId: "signals",
+          data: {
+            title: `Signal ${i}`,
+            tags: i % 2 === 0 ? ["team", "sharing"] : ["team"],
+          },
+        })
+      )
+    }
+  }
+
+  it("returns one page and a cursor when the agent sets no limit", async () => {
+    await seedSignals(130)
+    const first = (await dispatchOperation("records.query", {
+      spaceId: "product",
+      collectionId: "signals",
+    })) as { records: unknown[]; nextCursor?: string; warnings?: string[] }
+    expect(first.records).toHaveLength(100)
+    expect(first.nextCursor).toBeDefined()
+    expect(first.warnings?.join(" ")).toContain("nextCursor")
+
+    const rest = (await dispatchOperation("records.query", {
+      spaceId: "product",
+      collectionId: "signals",
+      cursor: first.nextCursor,
+    })) as { records: unknown[]; nextCursor?: string; warnings?: string[] }
+    expect(rest.records).toHaveLength(30)
+    expect(rest.nextCursor).toBeUndefined()
+    expect(rest.warnings).toBeUndefined()
+  })
+
+  it("counts each value of a multi-select field", async () => {
+    await seedSignals(10)
+    const result = (await dispatchOperation("records.query", {
+      spaceId: "product",
+      collectionId: "signals",
+      aggregate: { groupBy: "tags", select: { n: { fn: "count" } } },
+    })) as { groups: Array<{ key: unknown; n: number }> }
+    expect(
+      Object.fromEntries(result.groups.map((group) => [group.key, group.n]))
+    ).toEqual({ team: 10, sharing: 5 })
+  })
+})
+

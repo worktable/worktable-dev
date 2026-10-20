@@ -96,8 +96,10 @@ open items and returns a bounded page:
 ```
 
 Compose predicates with `and`, `or`, or `not`. A leaf contains `field`, `op`,
-and `value` where needed. Legacy flat filters remain supported; do not mix
-flat keys into a predicate tree.
+and `value` where needed. A flat filter such as `{ "status": "open" }` or
+`{ "due": { "gte": "2026-01-01" } }` means the same tree and works with every
+other option; do not mix flat keys into a predicate tree. Search matches field
+values, not field names.
 
 | Operator | Meaning |
 | --- | --- |
@@ -109,8 +111,11 @@ flat keys into a predicate tree.
 | `isEmpty` | Empty when `value` is omitted or true; nonempty when false |
 
 Queries support `count`, `sum`, `avg`, `min`, `max`, and `unique` aggregates.
-Use the returned `nextCursor` for the next page with the same query. The maximum
-page size is 1,000. Check returned warnings for invalid files or incomplete
+Over MCP, grouping by a multi-select field counts each value. Select fields
+sort in the order their options are listed. Whenever more records match than
+the page holds, the result includes `nextCursor`; pass it as `cursor` with the
+same query. An MCP query without `limit` returns 100 records. The maximum page
+size is 1,000. Check returned warnings for invalid files or incomplete
 results. HTML callers also need permission for collections reached through
 relations or expansion.
 

@@ -734,6 +734,8 @@ export async function syncDocAfterToolWrite(
 }
 
 const LIST_PAGE_SIZE = 200
+/** Records an MCP query returns when the agent sets no limit. */
+const MCP_DEFAULT_RECORD_PAGE = 100
 
 function normalizePathPrefix(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
@@ -1474,16 +1476,28 @@ async function _dispatchOperationInner(
     case "records.query": {
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
-      const result = await queryRecords(spaceId, collectionId, args)
-      const diagnostics = await getRecordDiagnostics(spaceId, collectionId)
-      if (diagnostics.length === 0) return result
-      return {
-        ...result,
-        warnings: [
-          ...(result.warnings ?? []),
-          `${diagnostics.length} record file(s) in this collection are unreadable and excluded from results. Files: ${diagnostics.map((d) => d.file).join(", ")}`,
-        ],
+      // An agent that asks for records without a limit gets one page, not
+      // the whole collection in one response; nextCursor continues it.
+      const pageByDefault = args["limit"] === undefined && !args["aggregate"]
+      const result = await queryRecords(
+        spaceId,
+        collectionId,
+        pageByDefault ? { ...args, limit: MCP_DEFAULT_RECORD_PAGE } : args,
+        { groupEachValue: true }
+      )
+      const warnings = [...(result.warnings ?? [])]
+      if (pageByDefault && result.nextCursor) {
+        warnings.push(
+          `Returned the first ${MCP_DEFAULT_RECORD_PAGE} matching records. Pass nextCursor as cursor for the next page, set limit (up to 1000), or use aggregate to count.`
+        )
       }
+      const diagnostics = await getRecordDiagnostics(spaceId, collectionId)
+      if (diagnostics.length > 0) {
+        warnings.push(
+          `${diagnostics.length} record file(s) in this collection are unreadable and excluded from results. Files: ${diagnostics.map((d) => d.file).join(", ")}`
+        )
+      }
+      return warnings.length > 0 ? { ...result, warnings } : result
     }
     case "records.read": {
       const { data, error } = await readRecord(

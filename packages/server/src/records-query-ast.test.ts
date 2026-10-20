@@ -232,8 +232,9 @@ describe("record query AST", () => {
     }
     expect(seen).toHaveLength(5);
     expect(new Set(seen).size).toBe(5);
-    // blocked < done < open; within status, priority desc
-    expect(seen).toEqual(["T3", "T4", "T5", "T1", "T2"]);
+    // Select fields sort in option order (open, blocked, done); within
+    // status, priority desc.
+    expect(seen).toEqual(["T5", "T1", "T2", "T3", "T4"]);
   });
 
   it("expands relations into a side map and lists backlinks", async () => {
@@ -346,8 +347,49 @@ describe("record query AST", () => {
     expect((await query({ where: { and: [{ field: "status", op: "eq", value: "open" }], status: "open" } })).status).toBe(400);
     expect((await query({ where: { field: "status", op: "eq", value: "open", bogus: 1 } })).status).toBe(400);
     expect((await query({ cursor: "garbage!" })).status).toBe(400);
-    // Legacy flat maps don't combine with v2 features.
-    expect((await query({ where: { status: "open" }, expand: { project: true } })).status).toBe(400);
+    // Malformed operators in a flat map are rejected too.
+    expect((await query({ where: { status: { in: "open" } } })).status).toBe(400);
+  });
+
+  it("compiles flat filters so they combine with every query feature and page", async () => {
+    const expanded = await query({ where: { status: "open" }, expand: { project: true }, select: ["title"] });
+    expect(expanded.status).toBe(200);
+    expect(expanded.json.records.map((r: { data: { title: string } }) => r.data.title).sort()).toEqual(["T1", "T2", "T5"]);
+    expect(Object.keys(expanded.json.expanded.projects).sort()).toEqual(["atlas", "beacon"]);
+
+    const counted = await query({ where: { status: "open" }, aggregate: { select: { n: { fn: "count" } } } });
+    expect(counted.json.groups).toEqual([{ n: 3 }]);
+
+    // A plain limit pages with a cursor until every record has been seen.
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const res = await query({ limit: 2, ...(cursor ? { cursor } : {}) });
+      for (const record of res.json.records) seen.add(record.id);
+      cursor = res.json.nextCursor;
+      if (!cursor) break;
+    }
+    expect(seen.size).toBe(5);
+  });
+
+  it("searches field values, never field names", async () => {
+    const byValue = await query({ search: "t3" });
+    expect(byValue.json.records.map((r: { data: { title: string } }) => r.data.title)).toEqual(["T3"]);
+    const byKey = await query({ search: "priority" });
+    expect(byKey.json.records).toEqual([]);
+  });
+
+  it("sorts select fields in option order, with values off the list last", async () => {
+    // A value dropped from the options can still sit in a file edited by hand.
+    const { stringifyCanonicalYaml } = await import("./yaml.ts");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      join(testDir, "spaces", "meta", "records", "tasks", "stray.yaml"),
+      stringifyCanonicalYaml(buildRecordFile({ id: "stray", collectionId: "tasks", data: { title: "Stray", status: "archived-value" } })),
+    );
+    const res = await query({ orderBy: "status", select: ["status"], limit: 10 });
+    const statuses = res.json.records.map((r: { data: { status?: string } }) => r.data.status);
+    expect(statuses).toEqual(["open", "open", "open", "blocked", "done", "archived-value"]);
   });
 
   it("the widget bridge returns the full v2 result shape", async () => {
@@ -394,7 +436,7 @@ describe("record query AST", () => {
     expect(allowed.json.expanded.projects.atlas).toBeDefined();
   });
 
-  it("keeps legacy scalar queries typed and treats malformed or missing values as non-matching", async () => {
+  it("keeps flat scalar queries typed, treats missing values as non-matching and rejects malformed operands", async () => {
     const collectionId = "legacy";
     const schema = await writeRecordCollectionSchema(
       "meta",
@@ -430,14 +472,17 @@ describe("record query AST", () => {
       ],
       [{ where: { due: { gte: "2026-05-01", lte: "2026-07-01" } } }, ["b"]],
       [{ where: { title: { in: ["a", "c"] } } }, ["a", "c"]],
-      [{ where: { title: { in: "a" } } }, []],
-      [{ where: { title: { contains: 5 } } }, []],
     ] as const) {
       const actual = (
         await queryRecords("meta", collectionId, input)
       ).records.map((record) => record.id);
       if (!("orderBy" in input)) actual.sort();
       expect(actual).toEqual([...ids]);
+    }
+    // Malformed operands are rejected with an error rather than silently
+    // matching nothing.
+    for (const where of [{ title: { in: "a" } }, { title: { contains: 5 } }]) {
+      await expect(queryRecords("meta", collectionId, { where })).rejects.toThrow("Invalid record query");
     }
   });
 

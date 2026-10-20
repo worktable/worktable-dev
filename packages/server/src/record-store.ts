@@ -5,7 +5,7 @@ import { mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CanonicalIdSchema, normalizeRecordFieldType, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
 import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
-import { compareForOrder, fieldValue, isMissing, RecordQueryShapeError, referencedCollections, runQueryV2, usesQueryV2 } from "./record-query.ts";
+import { compareFieldValues, compareForOrder, fieldValue, isMissing, recordMatchesSearch, RecordQueryShapeError, referencedCollections, runQueryV2 } from "./record-query.ts";
 import { notifyRecordChanged } from "./record-events.ts";
 import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { atomicWriteText, deduplicateSlug, ensureSpaceDirectories, getSpacesBaseDir, slugify, withStoreWriteLock } from "./store.ts";
@@ -589,16 +589,20 @@ export async function reconcileDiscardedRecordCollection(
   await recordIndex.reconcileCollection(preparedSpaceId, collectionId);
 }
 
-// The full query surface: legacy queries delegate to listRecords (original
-// semantics, forever); any v2 feature (predicate AST, orderBy array, expand,
-// backlinks, aggregate, select, cursor) runs the documented v2 evaluator.
-// Cross-collection lookups resolve through listRecords, so they use the index
-// or the file scan exactly like the primary collection.
+// The full query surface. Every query runs the one documented evaluator: a
+// flat where-map is compiled into its predicate tree, so any query that
+// stops at a limit returns a nextCursor. Cross-collection lookups resolve
+// through listRecords, so they use the index or the file scan exactly like
+// the primary collection.
 export async function queryRecords(
   spaceId: string,
   collectionId: string,
   input: unknown,
-  options: { authorizeCollection?: (collectionId: string) => void | Promise<void> } = {},
+  options: {
+    authorizeCollection?: (collectionId: string) => void | Promise<void>;
+    /** Group list fields (multi_select, many relations) by each value. */
+    groupEachValue?: boolean;
+  } = {},
 ): Promise<RecordQueryResult> {
   assertSpaceAccess(spaceId, "read");
   await options.authorizeCollection?.(collectionId);
@@ -623,9 +627,6 @@ export async function queryRecords(
       ],
     };
   };
-  if (!usesQueryV2(query)) {
-    return withProjectionWarnings({ records: await listRecords(spaceId, collectionId, query) }, [collectionId]);
-  }
   const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
   const rows = await listRecords(spaceId, collectionId, { includeArchived: query.includeArchived ?? false });
   try {
@@ -648,7 +649,10 @@ export async function queryRecords(
         await options.authorizeCollection?.(targetCollectionId);
         return (await readRecordCollectionSchema(spaceId, targetCollectionId)).data?.fields;
       },
-      aliases ? { resolveDocumentPath: (path) => resolveDocAliasIn(aliases, path) ?? path } : undefined,
+      {
+        ...(aliases ? { resolveDocumentPath: (path: string) => resolveDocAliasIn(aliases, path) ?? path } : {}),
+        groupEachValue: options.groupEachValue,
+      },
     );
     return withProjectionWarnings(result, [collectionId, ...referencedCollections(query, schema?.fields)]);
   } catch (error) {
@@ -662,7 +666,6 @@ export async function queryRecords(
 export async function queryTargetCollections(spaceId: string, collectionId: string, input: unknown): Promise<string[]> {
   assertSpaceAccess(spaceId, "read");
   const query = parseRecordQuery(input);
-  if (!usesQueryV2(query)) return [];
   const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
   try {
     return referencedCollections(query, schema?.fields);
@@ -722,14 +725,13 @@ function filterRecords(
     }));
   }
   if (query.search) {
-    const needle = query.search.toLowerCase();
-    next = next.filter((record) => JSON.stringify(record.data).toLowerCase().includes(needle));
+    const needle = query.search;
+    next = next.filter((record) => recordMatchesSearch(record, needle));
   }
   if (typeof query.orderBy === "string") {
     const key = query.orderBy;
     const dir = query.order === "desc" ? -1 : 1;
-    const fieldType = fields?.[key]?.type;
-    next = [...next].sort((a, b) => compareForOrder(fieldValue(a, key), fieldValue(b, key), fieldType) * dir || a.id.localeCompare(b.id));
+    next = [...next].sort((a, b) => compareFieldValues(fieldValue(a, key), fieldValue(b, key), fields?.[key]) * dir || a.id.localeCompare(b.id));
   } else {
     next = [...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   }

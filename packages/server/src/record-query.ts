@@ -3,12 +3,12 @@
 // cursors, expand/backlinks/aggregate.
 // ============================================================
 //
-// The legacy flat where-map NEVER routes here — filterRecords in
-// record-store.ts keeps its original semantics forever. A query uses
-// this evaluator only when it opts into a v2 feature (AST where,
-// orderBy array, expand, backlinks, aggregate, select, cursor), and
-// those semantics are documented and strict: malformed AST input is
-// rejected with an error instead of silently matching nothing.
+// Every query through queryRecords runs here. A legacy flat where-map is
+// compiled into the equivalent predicate tree first, so flat filters page
+// with cursors and combine with select, aggregate and the rest. Semantics
+// are documented and strict: malformed input is rejected with an error
+// instead of silently matching nothing. (listRecords keeps its own flat
+// filter for internal callers.)
 //
 // This module is pure: the caller supplies the rows and a resolver
 // for other collections (one-hop relation paths, expand, backlinks).
@@ -66,6 +66,40 @@ export function compareForOrder(a: unknown, b: unknown, fieldType?: string): num
   return compareComparable(toComparable(a, fieldType), toComparable(b, fieldType));
 }
 
+type FieldSpec = RecordCollectionSchema["fields"][string];
+
+/** Order two values of one field for sorting. Select fields follow their
+ *  option order, the order the schema lists them in; a value no longer in
+ *  the list sorts after every option, and a missing value before them. */
+export function compareFieldValues(a: unknown, b: unknown, spec: FieldSpec | undefined): number {
+  const values = spec && normalizeRecordFieldType(spec.type) === "select" ? spec.values : undefined;
+  if (values && values.length > 0) {
+    const rank = (value: unknown): number => {
+      if (isMissing(value) || value === "") return -1;
+      const index = values.indexOf(String(value));
+      return index === -1 ? values.length : index;
+    };
+    const byRank = rank(a) - rank(b);
+    if (byRank !== 0) return byRank;
+  }
+  return compareForOrder(a, b, spec ? normalizeType(spec.type) : undefined);
+}
+
+/** Free-text search over a record's field values: strings, numbers and the
+ *  entries of lists, never field names or the record envelope. */
+export function recordMatchesSearch(record: RecordFile, needle: string): boolean {
+  const lowered = needle.toLowerCase();
+  const visit = (value: unknown, depth: number): boolean => {
+    if (value === null || value === undefined || depth > 8) return false;
+    if (typeof value === "string") return value.toLowerCase().includes(lowered);
+    if (typeof value === "number" || typeof value === "boolean") return String(value).toLowerCase().includes(lowered);
+    if (Array.isArray(value)) return value.some((entry) => visit(entry, depth + 1));
+    if (typeof value === "object") return Object.values(value as Record<string, unknown>).some((entry) => visit(entry, depth + 1));
+    return false;
+  };
+  return Object.values(record.data).some((value) => visit(value, 0));
+}
+
 export function isMissing(value: unknown): boolean {
   return value === undefined || value === null;
 }
@@ -94,11 +128,26 @@ export function isPredicateTree(where: Record<string, unknown>): boolean {
   return typeof where["field"] === "string" && typeof where["op"] === "string";
 }
 
-// Any v2 feature routes the query through this evaluator.
-export function usesQueryV2(query: RecordQuery): boolean {
-  if (query.where && isPredicateTree(query.where)) return true;
-  if (Array.isArray(query.orderBy)) return true;
-  return Boolean(query.expand || query.backlinks || query.aggregate || query.select || query.cursor);
+const FLAT_OPS = ["in", "contains", "gt", "gte", "lt", "lte"] as const;
+
+/** Compile a legacy flat where-map ({status: "open"}, {due: {gte: ...}}) into
+ *  the predicate tree it means: a scalar is `eq`, and an operator object is
+ *  one leaf per operator, all of which must hold. */
+export function flatWhereToPredicate(where: Record<string, unknown>): Record<string, unknown> | null {
+  const leaves: Record<string, unknown>[] = [];
+  for (const [field, expected] of Object.entries(where)) {
+    if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+      const ops = expected as Record<string, unknown>;
+      const present = FLAT_OPS.filter((op) => op in ops);
+      if (present.length > 0) {
+        for (const op of present) leaves.push({ field, op, value: ops[op] });
+        continue;
+      }
+    }
+    leaves.push({ field, op: "eq", value: expected });
+  }
+  if (leaves.length === 0) return null;
+  return leaves.length === 1 ? leaves[0]! : { and: leaves };
 }
 
 // Validate an untrusted predicate tree, rejecting malformed shapes loudly
@@ -163,7 +212,8 @@ export function referencedCollections(query: RecordQuery, fields: FieldTypeMap |
     if (target) out.add(target);
   }
   if (query.backlinks) out.add(query.backlinks.collection);
-  if (query.where && isPredicateTree(query.where)) {
+  const where = query.where && (isPredicateTree(query.where) ? query.where : flatWhereToPredicate(query.where));
+  if (where) {
     const walk = (node: RecordPredicate): void => {
       if ("and" in node) node.and.forEach(walk);
       else if ("or" in node) node.or.forEach(walk);
@@ -173,7 +223,7 @@ export function referencedCollections(query: RecordQuery, fields: FieldTypeMap |
         if (target) out.add(target);
       }
     };
-    walk(parsePredicate(query.where));
+    walk(parsePredicate(where));
   }
   return [...out];
 }
@@ -308,8 +358,7 @@ function sortKeys(query: RecordQuery): SortKey[] {
 function buildComparator(keys: SortKey[], fields: FieldTypeMap | undefined): (a: RecordFile, b: RecordFile) => number {
   return (a, b) => {
     for (const key of keys) {
-      const fieldType = fields?.[key.field] ? normalizeType(fields[key.field]!.type) : undefined;
-      const cmp = compareForOrder(fieldValue(a, key.field), fieldValue(b, key.field), fieldType) * key.dir;
+      const cmp = compareFieldValues(fieldValue(a, key.field), fieldValue(b, key.field), fields?.[key.field]) * key.dir;
       if (cmp !== 0) return cmp;
     }
     // Deterministic tiebreak so keyset cursors are stable.
@@ -334,9 +383,19 @@ function decodeCursor(cursor: string, keyCount: number): { k: unknown[]; id: str
 
 // ---- Aggregation ------------------------------------------------------
 
-function aggregateGroups(records: RecordFile[], aggregate: NonNullable<RecordQuery["aggregate"]>, ctx: EvalContext): Record<string, unknown>[] {
+function aggregateGroups(
+  records: RecordFile[],
+  aggregate: NonNullable<RecordQuery["aggregate"]>,
+  ctx: EvalContext,
+  groupEachValue = false,
+): Record<string, unknown>[] {
   const fields = ctx.fields;
   const groupField = aggregate.groupBy ? fields?.[aggregate.groupBy] : undefined;
+  const groupType = groupField ? normalizeRecordFieldType(groupField.type) : undefined;
+  // With groupEachValue, a list field (multi_select, or a many relation or
+  // document field) counts each record once under every value it holds,
+  // instead of once under the whole combination.
+  const splitValues = groupEachValue && (groupType === "multi_select" || ((groupType === "relation" || groupType === "document") && groupField?.many === true));
   const documentGroup = groupField && normalizeRecordFieldType(groupField.type) === "document";
   const resolveGroupValue = (value: unknown): unknown => {
     if (!documentGroup || !ctx.resolveDocumentPath) return value;
@@ -349,9 +408,12 @@ function aggregateGroups(records: RecordFile[], aggregate: NonNullable<RecordQue
   const groups = new Map<string, { key: unknown; rows: RecordFile[] }>();
   for (const record of records) {
     const key = aggregate.groupBy ? resolveGroupValue(fieldValue(record, aggregate.groupBy) ?? null) : null;
-    const mapKey = JSON.stringify(key);
-    if (!groups.has(mapKey)) groups.set(mapKey, { key, rows: [] });
-    groups.get(mapKey)!.rows.push(record);
+    const keys = splitValues && Array.isArray(key) ? (key.length > 0 ? [...new Set(key)] : [null]) : [key];
+    for (const groupKey of keys) {
+      const mapKey = JSON.stringify(groupKey);
+      if (!groups.has(mapKey)) groups.set(mapKey, { key: groupKey, rows: [] });
+      groups.get(mapKey)!.rows.push(record);
+    }
   }
   const out: Record<string, unknown>[] = [];
   for (const group of groups.values()) {
@@ -398,7 +460,7 @@ export async function runQueryV2(
   fields: FieldTypeMap | undefined,
   resolve: CollectionResolver,
   resolveFields?: FieldsResolver,
-  options?: { resolveDocumentPath?: (path: string) => string },
+  options?: { resolveDocumentPath?: (path: string) => string; groupEachValue?: boolean },
 ): Promise<RecordQueryResult> {
   // Preload every collection the query reaches so evaluation is synchronous.
   const ctx: EvalContext = { fields, targets: new Map(), targetFields: new Map(), resolveDocumentPath: options?.resolveDocumentPath };
@@ -409,19 +471,18 @@ export async function runQueryV2(
 
   let rows = records;
   const hasWhere = query.where !== undefined && Object.keys(query.where).length > 0;
-  if (hasWhere && isPredicateTree(query.where!)) {
-    const predicate = parsePredicate(query.where);
+  const where = hasWhere ? (isPredicateTree(query.where!) ? query.where! : flatWhereToPredicate(query.where!)) : null;
+  if (where) {
+    const predicate = parsePredicate(where);
     rows = rows.filter((record) => predicateMatches(record, predicate, ctx));
-  } else if (hasWhere) {
-    throw new RecordQueryShapeError("Legacy flat where-maps do not combine with v2 query features; use a predicate tree");
   }
   if (query.search) {
-    const needle = query.search.toLowerCase();
-    rows = rows.filter((record) => JSON.stringify(record.data).toLowerCase().includes(needle));
+    const needle = query.search;
+    rows = rows.filter((record) => recordMatchesSearch(record, needle));
   }
 
   if (query.aggregate) {
-    return { records: [], groups: aggregateGroups(rows, query.aggregate, ctx) };
+    return { records: [], groups: aggregateGroups(rows, query.aggregate, ctx, options?.groupEachValue) };
   }
 
   const keys = sortKeys(query);
@@ -434,8 +495,7 @@ export async function runQueryV2(
     // then id, exactly mirroring buildComparator's key order.
     rows = rows.filter((record) => {
       for (const [i, key] of keys.entries()) {
-        const fieldType = fields?.[key.field] ? normalizeType(fields[key.field]!.type) : undefined;
-        const cmp = compareForOrder(fieldValue(record, key.field), cursor.k[i], fieldType) * key.dir;
+        const cmp = compareFieldValues(fieldValue(record, key.field), cursor.k[i], fields?.[key.field]) * key.dir;
         if (cmp !== 0) return cmp > 0;
       }
       return record.id.localeCompare(marker.id) > 0;

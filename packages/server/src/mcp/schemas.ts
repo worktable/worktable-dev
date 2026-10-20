@@ -511,13 +511,19 @@ export const UpdateRecordInput = z.object({
 /** Records one create_many or update_many call may write. */
 export const RECORD_BATCH_LIMIT = 100
 
+const PreviewRecordIdInput = z
+  .string()
+  .describe(
+    'Lowercase letters, digits and hyphens, starting and ending with a letter or digit, e.g. "ds-3f2a9c". An id that already exists is never overwritten.'
+  )
+
 export const CreateRecordsInput = z.object({
   spaceId: z.string(),
   collectionId: z.string(),
   records: z
     .array(
       z.object({
-        recordId: z.string().optional(),
+        recordId: PreviewRecordIdInput.optional(),
         data: z.record(z.string(), z.unknown()),
         metadata: z.record(z.string(), z.unknown()).optional(),
       })
@@ -1077,7 +1083,10 @@ export const RecordsWriteInput = z.strictObject({
 export const RecordsWriteInputPreview = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("upsert_collection", UpsertRecordCollectionInput.shape),
-    actionSchema("create", CreateRecordInput.shape),
+    actionSchema("create", {
+      ...CreateRecordInput.shape,
+      recordId: PreviewRecordIdInput.optional(),
+    }),
     actionSchema("update", UpdateRecordInput.shape),
     actionSchema("create_many", CreateRecordsInput.shape),
     actionSchema("update_many", UpdateRecordsInput.shape),

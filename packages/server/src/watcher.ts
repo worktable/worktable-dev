@@ -229,26 +229,25 @@ export function parseChangedPath(
 
   // records/<collectionId>/schema.yaml or records/<collectionId>/<recordId>.yaml
   //
-  // Any other activity below the collection is deliberately normalized to a
-  // bounded collection reconcile. On Linux, an atomic
-  // `<record>.yaml.tmp -> <record>.yaml` write can emit ONLY the temporary
-  // path, so ignoring unknown/temp paths makes canonical files invisible to
-  // the projection. External editors use many temporary naming schemes; do
-  // not guess one suffix list here.
+  // On Linux, an atomic `<record>.yaml.tmp -> <record>.yaml` write can emit
+  // ONLY the temporary path. Worktable's own writes use exactly that name
+  // (atomicWriteText), so `<file>.yaml.tmp` maps to its canonical file: the
+  // ingest reads that file, and one record write stays one record event
+  // instead of a scan of the whole collection. Any other activity below the
+  // collection is deliberately normalized to a bounded collection reconcile:
+  // external editors use many temporary naming schemes; do not guess them.
   if (parts.length >= 3 && parts[1] === "records") {
     const collectionId = parts[2]
     if (!collectionId) return null
     if (parts.length === 4) {
-      const file = parts[3]
+      const written = parts[3] ?? ""
+      const ownTemporary = written.endsWith(".yaml.tmp")
+      const file = ownTemporary ? written.slice(0, -".tmp".length) : written
       if (file === "schema.yaml")
         return { type: "recordCollection", spaceId, collectionId }
-      if (file?.endsWith(".yaml")) {
-        return {
-          type: "record",
-          spaceId,
-          collectionId,
-          recordId: file.replace(/\.yaml$/, ""),
-        }
+      const recordId = file.endsWith(".yaml") ? file.slice(0, -".yaml".length) : ""
+      if (recordId && (!ownTemporary || CanonicalIdSchema.safeParse(recordId).success)) {
+        return { type: "record", spaceId, collectionId, recordId }
       }
     }
     return { type: "recordCollectionReconcile", spaceId, collectionId }

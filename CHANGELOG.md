@@ -43,6 +43,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Small elements:** Elements meant to take no space, such as the anchor for the @mention menu in thread replies, no longer take up extra room.
 - **Search:** The first search after Worktable starts is as fast as later ones, including when Spaces are added while it starts.
 - **Rename:** Renaming a doc or folder to a name that's already taken says so in the dialog instead of failing, including when someone has the other doc open.
 

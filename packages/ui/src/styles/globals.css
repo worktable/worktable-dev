@@ -22,8 +22,6 @@
 
 :root {
   --radius: 0.75rem;
-  --spacing-section: 2.5rem;
-  --spacing-block: 1.5rem;
 }
 
 .light {
@@ -102,8 +100,6 @@
   --font-sans: "General Sans", system-ui, sans-serif;
   --font-display: "Fraunces", Georgia, serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-  --spacing-section: var(--spacing-section);
-  --spacing-block: var(--spacing-block);
 }
 
 @layer base {

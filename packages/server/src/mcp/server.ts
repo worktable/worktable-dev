@@ -2,6 +2,7 @@ import { SOURCE_URL } from "../release-info.ts"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { RequestPrincipal, TokenIdentity } from "../token-store.ts"
 import { SERVER_INSTRUCTIONS } from "./instructions.ts"
+import type { McpSurface } from "./surface.ts"
 import { registerTools } from "./tools.ts"
 
 export interface WorktableMcpServerOptions {
@@ -10,6 +11,8 @@ export interface WorktableMcpServerOptions {
   urlOrigin?: string
   principal?: RequestPrincipal
   identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
+  /** Defaults to the released surface; runtime callers pass configuredMcpSurface(). */
+  surface?: McpSurface
 }
 
 export function createWorktableMcpServer(
@@ -29,6 +32,7 @@ export function createWorktableMcpServer(
     urlOrigin: options.urlOrigin,
     principal: options.principal,
     identity: options.identity,
+    surface: options.surface,
   })
   return server
 }

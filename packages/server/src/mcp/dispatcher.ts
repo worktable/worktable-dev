@@ -161,6 +161,7 @@ import {
   repairEscapedMermaidFences,
 } from "../mermaid-document.ts"
 import type { MermaidDocumentRepair } from "@worktable/types"
+import type { McpSurface } from "./surface.ts"
 import {
   logRecordPracticeWarnings,
   recordPracticeIdentitiesMatch,
@@ -790,6 +791,8 @@ interface ToolDispatchContext {
   identity?: Pick<TokenIdentity, "agent" | "credentialClass" | "principal">
   scopes?: string[]
   canReadRecords?: boolean
+  /** The tool surface the caller was offered; preview-only inputs need "preview". */
+  surface?: McpSurface
   onThreadProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 }
 

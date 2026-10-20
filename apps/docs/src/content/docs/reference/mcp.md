@@ -219,6 +219,15 @@ a token, reconnect the client with a new credential. When switching
 workspaces or hosts, verify the endpoint shown in Settings and
 update client configurations if it changed.
 
+## Preview tools
+
+On a self-hosted Worktable, **Settings → Agents → Preview agent tools** serves
+agents tool changes that aren't released yet. Agents get them the next time
+they connect. `WORKTABLE_MCP_PREVIEW=1` or `0` overrides the
+setting for one server process. Worktable Cloud serves the released tools.
+`mcp-tools.preview.json` lists the preview tools next to the released
+`mcp-tools.json`.
+
 ## Prose edits
 
 `worktable_docs_read` action `grep` matches literal text or a JavaScript regular

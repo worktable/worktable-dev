@@ -30,6 +30,10 @@ import { Button, buttonVariants } from "@worktable/ui/components/button"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
 import { Card, CardContent } from "@worktable/ui/components/card"
+import { SettingRow } from "@worktable/ui/components/setting-row"
+import { Switch } from "@worktable/ui/components/switch"
+import { useServerSettings } from "@/hooks/use-server-settings"
+import { useSettingsPatch } from "../use-settings-patch"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import {
   Collapsible,
@@ -173,7 +177,31 @@ export function AgentsSection() {
       <AgentSetupGroup connection={connectionQuery.data} />
       <ConnectedAgentsGroup />
       <DesktopAgentSkillsGroup enabled={sectionActive} />
-      <AccessTokensGroup />
+      <AccessTokensGroup>
+        <PreviewToolsRow />
+      </AccessTokensGroup>
+    </div>
+  )
+}
+
+/** Self-hosted only: Cloud always serves the released tools. */
+function PreviewToolsRow() {
+  const settingsQuery = useServerSettings()
+  const patch = useSettingsPatch()
+  const settings = settingsQuery.data
+  if (settingsQuery.isError) return null
+  return (
+    <div className="rounded-xl card-surface p-4">
+      <SettingRow
+        label="Preview agent tools"
+        description="Agents connected to this Worktable use tool changes that aren't released yet."
+      >
+        <Switch
+          checked={settings?.agents.previewTools ?? false}
+          disabled={!settings || patch.isPending}
+          onCheckedChange={(v) => patch.mutate({ agents: { previewTools: v } })}
+        />
+      </SettingRow>
     </div>
   )
 }
@@ -1544,7 +1572,7 @@ export function ConnectedAgentsGroup() {
 // future Cloud inventory belongs to the stable agent-identity roadmap rather
 // than exposing raw authorization grants through this local-token surface.
 
-export function AccessTokensGroup() {
+export function AccessTokensGroup({ children }: { children?: ReactNode } = {}) {
   const queryClient = useQueryClient()
   const sectionActive = useSettingsSectionActive()
   const tokensQuery = useQuery({
@@ -1639,6 +1667,7 @@ export function AccessTokensGroup() {
           </CollapsibleContent>
         </Card>
       </Collapsible>
+      {children}
 
       <NewTokenDialog
         open={newOpen}

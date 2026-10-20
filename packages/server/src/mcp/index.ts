@@ -4,6 +4,7 @@
 
 export { registerTools } from "./tools.ts"
 export { createWorktableMcpServer } from "./server.ts"
+export { configuredMcpSurface, type McpSurface } from "./surface.ts"
 export { SERVER_INSTRUCTIONS } from "./instructions.ts"
 export { FORMAT_SPEC } from "./format-spec.ts"
 // schemas and helpers are internal implementation details, not re-exported

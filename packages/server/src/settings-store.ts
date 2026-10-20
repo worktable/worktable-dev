@@ -92,6 +92,13 @@ export interface ServerSettings {
     /** Set when the policy was moved because the old one is no longer offered. */
     retentionNotice: RetentionNotice | null;
   };
+  agents: {
+    /**
+     * Serve the preview MCP tool surface: changes held back while the agent
+     * directories review the released tools. MACHINE-LOCAL; ignored on Cloud.
+     */
+    previewTools: boolean;
+  };
 }
 
 export const SETTINGS_DEFAULTS: ServerSettings = {
@@ -102,6 +109,7 @@ export const SETTINGS_DEFAULTS: ServerSettings = {
   // Until settleRetentionPolicy runs at boot, an install without a stored
   // policy reads as the longest one offered, so nothing is pruned early.
   history: { retention: RETENTION_CARRIED_OVER, retentionNotice: null },
+  agents: { previewTools: false },
 };
 
 type StoredRetention =
@@ -234,6 +242,9 @@ function coerce(parsed: unknown): ServerSettings {
   const history = (obj["history"] && typeof obj["history"] === "object"
     ? obj["history"]
     : {}) as Record<string, unknown>;
+  const agents = (obj["agents"] && typeof obj["agents"] === "object"
+    ? obj["agents"]
+    : {}) as Record<string, unknown>;
   return {
     version: 1,
     updates: {
@@ -248,6 +259,9 @@ function coerce(parsed: unknown): ServerSettings {
     history: {
       retention: coerceRetention(history["retention"]),
       retentionNotice: coerceRetentionNotice(history["retentionNotice"]),
+    },
+    agents: {
+      previewTools: boolOr(agents["previewTools"], SETTINGS_DEFAULTS.agents.previewTools),
     },
   };
 }
@@ -347,6 +361,7 @@ export interface ServerSettingsPatch {
   editor?: { spellcheck?: unknown };
   network?: { publicUrl?: unknown };
   history?: { retention?: unknown };
+  agents?: { previewTools?: unknown };
 }
 
 export class SettingsValidationError extends Error {
@@ -479,11 +494,12 @@ async function applyPatchWithResult(
     editor: { ...current.editor },
     network: { ...current.network },
     history: { ...current.history },
+    agents: { ...current.agents },
   };
 
   const patchObj = patch as Record<string, unknown>;
   for (const key of Object.keys(patchObj)) {
-    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history") {
+    if (key !== "updates" && key !== "editor" && key !== "network" && key !== "history" && key !== "agents") {
       throw new SettingsValidationError(`Unknown settings group: ${key}`);
     }
   }
@@ -523,6 +539,25 @@ async function applyPatchWithResult(
     }
     if (group["spellcheck"] !== undefined) {
       next.editor.spellcheck = assertBool(group["spellcheck"], "editor.spellcheck");
+    }
+  }
+
+  if (patch.agents !== undefined) {
+    if (
+      !patch.agents ||
+      typeof patch.agents !== "object" ||
+      Array.isArray(patch.agents)
+    ) {
+      throw new SettingsValidationError("agents must be an object");
+    }
+    const group = patch.agents as Record<string, unknown>;
+    for (const key of Object.keys(group)) {
+      if (key !== "previewTools") {
+        throw new SettingsValidationError(`Unknown agents field: ${key}`);
+      }
+    }
+    if (group["previewTools"] !== undefined) {
+      next.agents.previewTools = assertBool(group["previewTools"], "agents.previewTools");
     }
   }
 

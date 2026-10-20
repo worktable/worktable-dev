@@ -763,12 +763,15 @@ async function runStdioMcp(): Promise<void> {
     return
   }
 
-  const [{ createWorktableMcpServer }, { StdioServerTransport }] =
+  const [{ configuredMcpSurface, createWorktableMcpServer }, { StdioServerTransport }] =
     await Promise.all([
       import("@worktable/server/mcp"),
       import("@modelcontextprotocol/sdk/server/stdio.js"),
     ])
-  const server = createWorktableMcpServer({ version: VERSION })
+  const server = createWorktableMcpServer({
+    version: VERSION,
+    surface: configuredMcpSurface(),
+  })
   await server.connect(new StdioServerTransport())
   console.error("[Worktable MCP] server started on stdio")
 }

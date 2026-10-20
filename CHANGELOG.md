@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Preview agent tools:** On a self-hosted Worktable, **Settings → Agents** can give connected agents tool changes before they are released. The first ones describe how record writes and queries behave: creates never overwrite, schema edits merge fields, and queries page with a total.
+
 ### Changed
 
 - **Record validation:** Date and date-time fields accept ISO dates such as `2026-10-19`, so values like "Sep 1" no longer slip in and sort wrongly. An update checks only the fields it changes. Agents writing a field the schema doesn't declare get an error naming the declared fields instead of a hidden value. A collection without a title field is reported once when its schema is saved rather than on every record, and records with nothing to name them get a short random id instead of `record-2`.

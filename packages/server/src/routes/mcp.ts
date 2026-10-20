@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { implicitLoopbackRequestAllowed, requireIdentity } from "../auth.ts"
 import { isHosted } from "../hosted.ts"
 import { createWorktableMcpServer } from "../mcp/server.ts"
+import { configuredMcpSurface } from "../mcp/surface.ts"
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts"
 import type { TokenIdentity } from "../token-store.ts"
 import { runWithTeamIdentity } from "../team-policy.ts"
@@ -18,6 +19,7 @@ function createRemoteMcpServer(identity: TokenIdentity, urlOrigin: string) {
     version: "0.0.1",
     scopes: identity.scopes,
     urlOrigin,
+    surface: configuredMcpSurface(),
     // The implicit loopback bridge and legacy WORKTABLE_MCP_TOKEN both use
     // ownerIdentity() for authorization, but the caller is still an MCP agent.
     // Preserve the historical agent attribution for those compatibility modes;

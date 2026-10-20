@@ -76,6 +76,8 @@ import { createHtmlDocument } from "../html-document-create.ts"
 import { withCanonicalHtmlDocumentPath } from "../html-document-path.ts"
 import {
   buildRecordCollectionSchema,
+  checkRecordData,
+  undeclaredFieldsError,
   createRecord,
   deleteRecord,
   findRecordBounded,
@@ -169,7 +171,11 @@ import {
   reviewRecordCreate,
   reviewRecordSchema,
 } from "./record-practices.ts"
-import { OPERATION_DEFINITIONS, type OperationId } from "./operations.ts"
+import {
+  OPERATION_DEFINITIONS,
+  PREVIEW_OPERATIONS,
+  type OperationId,
+} from "./operations.ts"
 import {
   searchWithStatus,
   invalidateSearchIndex,
@@ -251,6 +257,7 @@ import {
   ArchiveDocumentFolderInput,
   RestoreDocumentFolderInput,
   DeleteDocumentFolderInput,
+  RECORD_BATCH_LIMIT,
 } from "./schemas.ts"
 
 import { resolveParticipant } from "../participant-store.ts"
@@ -801,6 +808,12 @@ export async function dispatchOperation(
   args: Record<string, unknown>,
   context: ToolDispatchContext = {}
 ): Promise<unknown> {
+  if (PREVIEW_OPERATIONS.has(operationId) && context.surface !== "preview") {
+    // Defense in depth: the released input schema already rejects these.
+    throw new Error(
+      `${operationId} is a preview action. Turn on Preview agent tools in Settings → Agents to use it.`
+    )
+  }
   const caller = currentRequestIdentity()
   const definition = OPERATION_DEFINITIONS[operationId]
   const authorize = () => {
@@ -1593,6 +1606,139 @@ async function _dispatchOperationInner(
         data: result.data,
       })
       return { record: result.data }
+    }
+    case "records.create_many": {
+      const spaceId = args["spaceId"] as string
+      const collectionId = args["collectionId"] as string
+      const rows = args["records"] as Array<{
+        recordId?: string
+        data: Record<string, unknown>
+        metadata?: Record<string, unknown>
+      }>
+      // Check every row first, so a bad row never leaves half a batch written.
+      const schema = (await readRecordCollectionSchema(spaceId, collectionId))
+        .data
+      const problems: string[] = []
+      for (const [index, row] of rows.entries()) {
+        const label = `row ${index + 1}${row.recordId ? ` (${row.recordId})` : ""}`
+        const undeclared = undeclaredFieldsError(
+          Object.keys(row.data),
+          schema,
+          collectionId
+        )
+        if (undeclared) {
+          problems.push(`${label}: ${undeclared}`)
+          continue
+        }
+        const invalid = await checkRecordData(spaceId, collectionId, row.data)
+        if (invalid) problems.push(`${label}: ${invalid}`)
+      }
+      if (problems.length > 0) {
+        throw new Error(
+          `Nothing was written: ${problems.length} of ${rows.length} rows need fixing. ${problems.slice(0, 10).join("; ")}${problems.length > 10 ? "; …" : ""}`
+        )
+      }
+      const results: Array<{
+        recordId: string
+        created: boolean
+        error?: string
+      }> = []
+      for (const row of rows) {
+        const result = await createRecord(spaceId, collectionId, {
+          id: row.recordId,
+          data: row.data,
+          metadata: row.metadata,
+          createdBy: actorId,
+          strictFields: true,
+        })
+        results.push(
+          result.data
+            ? { recordId: result.data.id, created: result.created === true }
+            : {
+                recordId: row.recordId ?? "",
+                created: false,
+                error: result.error ?? "Write failed",
+              }
+        )
+      }
+      wsManager.broadcast(spaceId, {
+        type: "record_collection_update",
+        spaceId,
+        collectionId,
+      })
+      const created = results.filter((row) => row.created).length
+      const failed = results.filter((row) => row.error).length
+      return {
+        results,
+        created,
+        skipped: results.length - created - failed,
+        failed,
+      }
+    }
+    case "records.update_many": {
+      const spaceId = args["spaceId"] as string
+      const collectionId = args["collectionId"] as string
+      const recordIds = args["recordIds"] as string[] | undefined
+      const where = args["where"] as Record<string, unknown> | undefined
+      const data = args["data"] as Record<string, unknown> | undefined
+      const metadata = args["metadata"] as Record<string, unknown> | undefined
+      if ((recordIds ? 1 : 0) + (where ? 1 : 0) !== 1) {
+        throw new Error("Give either recordIds or where.")
+      }
+      if (!data && !metadata) throw new Error("Give data or metadata to set.")
+      if (data) {
+        const schema = (
+          await readRecordCollectionSchema(spaceId, collectionId)
+        ).data
+        const undeclared = undeclaredFieldsError(
+          Object.keys(data),
+          schema,
+          collectionId
+        )
+        if (undeclared) throw new Error(`Nothing was written: ${undeclared}`)
+        const invalid = await checkRecordData(
+          spaceId,
+          collectionId,
+          data,
+          new Set(Object.keys(data))
+        )
+        if (invalid) throw new Error(`Nothing was written: ${invalid}`)
+      }
+      let ids = recordIds ? [...new Set(recordIds)] : []
+      if (where) {
+        const matched = await queryRecords(spaceId, collectionId, {
+          where,
+          select: [],
+          limit: RECORD_BATCH_LIMIT,
+        })
+        if ((matched.total ?? matched.records.length) > RECORD_BATCH_LIMIT) {
+          throw new Error(
+            `Nothing was written: the filter matches ${matched.total} records, more than ${RECORD_BATCH_LIMIT}. Narrow it, or update in several calls.`
+          )
+        }
+        ids = matched.records.map((record) => record.id)
+      }
+      const results: Array<{ recordId: string; updated: boolean; error?: string }> = []
+      for (const recordId of ids) {
+        const result = await updateRecord(spaceId, collectionId, recordId, {
+          data,
+          metadata,
+          updatedBy: actorId,
+          strictFields: true,
+        })
+        results.push(
+          result.data
+            ? { recordId, updated: true }
+            : { recordId, updated: false, error: result.error ?? "Update failed" }
+        )
+      }
+      wsManager.broadcast(spaceId, {
+        type: "record_collection_update",
+        spaceId,
+        collectionId,
+      })
+      const updated = results.filter((row) => row.updated).length
+      return { results, updated, failed: results.length - updated }
     }
     case "records.delete": {
       const spaceId = args["spaceId"] as string

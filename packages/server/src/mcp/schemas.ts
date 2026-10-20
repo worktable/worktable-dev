@@ -508,6 +508,46 @@ export const UpdateRecordInput = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
+/** Records one create_many or update_many call may write. */
+export const RECORD_BATCH_LIMIT = 100
+
+export const CreateRecordsInput = z.object({
+  spaceId: z.string(),
+  collectionId: z.string(),
+  records: z
+    .array(
+      z.object({
+        recordId: z.string().optional(),
+        data: z.record(z.string(), z.unknown()),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .min(1)
+    .max(RECORD_BATCH_LIMIT)
+    .describe(
+      "Up to 100 records. Every row is checked before any is written. A recordId that already exists is skipped, never overwritten."
+    ),
+})
+
+export const UpdateRecordsInput = z.object({
+  spaceId: z.string(),
+  collectionId: z.string(),
+  recordIds: z
+    .array(z.string())
+    .min(1)
+    .max(RECORD_BATCH_LIMIT)
+    .optional()
+    .describe("The records to change. Give recordIds or where, not both."),
+  where: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Change the records this filter matches, written as in query. It may match at most 100 records."
+    ),
+  data: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
 export const DeleteRecordInput = z.object({
   spaceId: z.string(),
   collectionId: z.string(),
@@ -1030,6 +1070,17 @@ export const RecordsWriteInput = z.strictObject({
     actionSchema("upsert_collection", UpsertRecordCollectionInput.shape),
     actionSchema("create", CreateRecordInput.shape),
     actionSchema("update", UpdateRecordInput.shape),
+  ]),
+})
+
+/** Preview surface: the released record writes plus batches. */
+export const RecordsWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("upsert_collection", UpsertRecordCollectionInput.shape),
+    actionSchema("create", CreateRecordInput.shape),
+    actionSchema("update", UpdateRecordInput.shape),
+    actionSchema("create_many", CreateRecordsInput.shape),
+    actionSchema("update_many", UpdateRecordsInput.shape),
   ]),
 })
 

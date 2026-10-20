@@ -441,6 +441,22 @@ function validateAgainstSchema(data: Record<string, unknown>, schema: RecordColl
   return null;
 }
 
+/** Check record data against its collection schema without writing, the
+ *  way a create (or, with onlyKeys, an update) would. Returns the error a
+ *  write would return, or null. */
+export async function checkRecordData(
+  spaceId: string,
+  collectionId: string,
+  data: Record<string, unknown>,
+  onlyKeys?: ReadonlySet<string>,
+): Promise<string | null> {
+  const { data: schema, error } = await readRecordCollectionSchema(spaceId, collectionId);
+  if (error) return error;
+  const normalized = normalizeDocumentFields(data, schema, onlyKeys);
+  if (normalized.error || !normalized.data) return normalized.error ?? "Invalid document field";
+  return validateAgainstSchema(normalized.data, schema, onlyKeys);
+}
+
 function normalizeDocumentFields(data: Record<string, unknown>, schema: RecordCollectionSchema | null, onlyKeys?: ReadonlySet<string>): { data?: Record<string, unknown>; error?: string } {
   if (!schema) return { data };
   const normalized = { ...data };

@@ -592,3 +592,148 @@ describe("MCP record queries", () => {
     ).toEqual({ team: 10, sharing: 5 })
   })
 })
+
+describe("MCP record batches (preview)", () => {
+  const preview = { surface: "preview" as const }
+
+  async function seedTeam(): Promise<void> {
+    await createSpace()
+    await dispatchOperation("records.upsert_collection", {
+      spaceId: "product",
+      collectionId: "posts",
+      name: "Posts",
+      fields: {
+        title: { type: "string", required: true },
+        review: { type: "select", values: ["Verified", "Excluded"] },
+      },
+    })
+  }
+
+  it("adds new records and skips existing ids in one call", async () => {
+    await seedTeam()
+    await dispatchOperation("records.create", {
+      spaceId: "product",
+      collectionId: "posts",
+      recordId: "p-1",
+      data: { title: "Kept as is" },
+    })
+    const result = (await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        records: [
+          { recordId: "p-1", data: { title: "Would overwrite" } },
+          { recordId: "p-2", data: { title: "Two" } },
+          { recordId: "p-3", data: { title: "Three" } },
+        ],
+      },
+      preview
+    )) as {
+      results: Array<{ recordId: string; created: boolean }>
+      created: number
+      skipped: number
+    }
+    expect(result.results).toEqual([
+      { recordId: "p-1", created: false },
+      { recordId: "p-2", created: true },
+      { recordId: "p-3", created: true },
+    ])
+    expect([result.created, result.skipped]).toEqual([2, 1])
+    const kept = (await dispatchOperation("records.read", {
+      spaceId: "product",
+      collectionId: "posts",
+      recordId: "p-1",
+    })) as { record: { data: { title: string } } }
+    expect(kept.record.data.title).toBe("Kept as is")
+  })
+
+  it("writes nothing when any row is invalid, and lists every bad row", async () => {
+    await seedTeam()
+    await expect(
+      dispatchOperation(
+        "records.create_many",
+        {
+          spaceId: "product",
+          collectionId: "posts",
+          records: [
+            { recordId: "ok", data: { title: "Fine" } },
+            { recordId: "bad-1", data: { title: "X", reveiw: "Verified" } },
+            { recordId: "bad-2", data: { title: "Y", review: "Maybe" } },
+          ],
+        },
+        preview
+      )
+    ).rejects.toThrow(/Nothing was written: 2 of 3 rows.*row 2 \(bad-1\).*reveiw.*row 3 \(bad-2\).*review must be one of/)
+    const all = (await dispatchOperation("records.query", {
+      spaceId: "product",
+      collectionId: "posts",
+    })) as { records: unknown[] }
+    expect(all.records).toHaveLength(0)
+  })
+
+  it("sets the same values on records chosen by ids or by a filter", async () => {
+    await seedTeam()
+    await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        records: ["a", "b", "c", "d"].map((id) => ({
+          recordId: id,
+          data: { title: `Post ${id}` },
+        })),
+      },
+      preview
+    )
+    const byIds = (await dispatchOperation(
+      "records.update_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        recordIds: ["a", "b", "missing"],
+        data: { review: "Excluded" },
+      },
+      preview
+    )) as { updated: number; failed: number; results: Array<{ error?: string }> }
+    expect([byIds.updated, byIds.failed]).toEqual([2, 1])
+    expect(byIds.results[2]!.error).toContain("Record not found")
+
+    const byFilter = (await dispatchOperation(
+      "records.update_many",
+      {
+        spaceId: "product",
+        collectionId: "posts",
+        where: { review: { in: ["Excluded"] } },
+        data: { review: "Verified" },
+      },
+      preview
+    )) as { updated: number }
+    expect(byFilter.updated).toBe(2)
+
+    await expect(
+      dispatchOperation(
+        "records.update_many",
+        {
+          spaceId: "product",
+          collectionId: "posts",
+          recordIds: ["a"],
+          data: { review: "Maybe" },
+        },
+        preview
+      )
+    ).rejects.toThrow("Nothing was written")
+  })
+
+  it("is refused to a caller offered the released tools", async () => {
+    await seedTeam()
+    await expect(
+      dispatchOperation("records.create_many", {
+        spaceId: "product",
+        collectionId: "posts",
+        records: [{ data: { title: "x" } }],
+      })
+    ).rejects.toThrow("preview action")
+  })
+})
+

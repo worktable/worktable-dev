@@ -216,7 +216,13 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
       {invited.length || waiting.length ? (
         <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
           {invited.map((item) => (
-            <InviteResult key={item.email} invited={item} cloud={cloud} />
+            <InviteResult
+              key={item.email}
+              invited={item}
+              onChange={(next) =>
+                setInvited((current) => mergeInvited(current, [next]))
+              }
+            />
           ))}
           {waiting.map((invitation) => (
             <li

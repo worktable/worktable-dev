@@ -301,7 +301,11 @@ function InviteStep({
       {invited?.length ? (
         <ul className="mt-7 card-surface divide-y divide-border rounded-xl">
           {invited.map((item) => (
-            <InviteResult key={item.email} invited={item} cloud={cloud} />
+            <InviteResult
+              key={item.email}
+              invited={item}
+              onChange={(next) => onInvited(mergeInvited(invited, [next]))}
+            />
           ))}
         </ul>
       ) : null}

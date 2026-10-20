@@ -1,7 +1,14 @@
 import { useRef, useState } from "react"
 import { X } from "lucide-react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useCopy } from "@worktable/ui/hooks/use-copy"
-import { EMAIL, type Invited } from "@/lib/invite-people"
+import { toast } from "@worktable/ui/components/sonner"
+import {
+  EMAIL,
+  invitationEmailNote,
+  sendInvitationAgain,
+  type Invited,
+} from "@/lib/invite-people"
 
 /** Addresses as chips; a comma, a space or Enter adds what was typed. */
 export function EmailChips({
@@ -79,22 +86,48 @@ export function EmailChips({
   )
 }
 
-export function InviteResult({ invited, cloud }: { invited: Invited; cloud: boolean }) {
+/** One invited address: how its email went, and its link to copy. */
+export function InviteResult({
+  invited,
+  onChange,
+}: {
+  invited: Invited
+  onChange: (invited: Invited) => void
+}) {
   const copy = useCopy()
+  const queryClient = useQueryClient()
+  const resend = useMutation({
+    mutationFn: () => sendInvitationAgain(invited),
+    onSuccess: (next) => {
+      onChange(next)
+      void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const note = invitationEmailNote(invited.status)
   return (
-    <li className="flex min-w-0 items-center gap-3 px-4 py-3 text-sm">
-      <span className="min-w-0 flex-1 truncate text-foreground">{invited.email}</span>
+    // On a narrow screen the status and actions wrap under the address.
+    <li className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
+      <span className="min-w-0 flex-1 basis-40 truncate text-foreground">{invited.email}</span>
       {invited.error ? (
         <span className="shrink-0 text-xs text-destructive">{invited.error}</span>
       ) : invited.status === "sent" ? (
         <span className="shrink-0 text-xs text-muted-foreground">Emailed</span>
       ) : invited.url ? (
-        <>
-          {cloud && (
-            <span className="shrink-0 text-xs text-muted-foreground">
-              Not emailed
-            </span>
+        <span className="flex shrink-0 items-center gap-3">
+          {note && (
+            <span className="shrink-0 text-xs text-muted-foreground">{note.reason}</span>
           )}
+          {note?.retry && invited.id ? (
+            <button
+              type="button"
+              className="shrink-0 text-xs font-medium text-primary-text hover:underline disabled:opacity-50"
+              disabled={resend.isPending}
+              onClick={() => resend.mutate()}
+            >
+              {resend.isPending ? "Sending…" : "Send again"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="shrink-0 text-xs font-medium text-primary-text hover:underline"
@@ -102,7 +135,7 @@ export function InviteResult({ invited, cloud }: { invited: Invited; cloud: bool
           >
             {copy.copied ? "Copied" : "Copy link"}
           </button>
-        </>
+        </span>
       ) : null}
     </li>
   )

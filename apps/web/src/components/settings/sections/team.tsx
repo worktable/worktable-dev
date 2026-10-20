@@ -39,6 +39,7 @@ import {
   issueInvitationPasswordReset,
   setMemberOperator,
 } from "@/lib/team-api"
+import { invitationEmailNote } from "@/lib/invite-people"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
@@ -218,7 +219,10 @@ function TeamMembers({
     mutationFn: emailTeamInvitation,
     onSuccess: (result) => {
       if (result.email === "sent") toast.success("Invitation sent again")
-      else toast.error("Couldn't send the invitation. Copy the link instead.")
+      else
+        toast.error(
+          `${invitationEmailNote(result.email)?.reason ?? "Couldn't send the invitation"}. Copy the link instead.`
+        )
       void refresh()
     },
   })
@@ -443,7 +447,7 @@ function TeamMembers({
                     invitation.expired
                       ? "Invitation expired"
                       : emailing && !invitation.emailed
-                        ? "Invited · Not emailed yet"
+                        ? `Invited · ${invitationEmailNote(invitation.emailStatus)?.reason ?? "Not emailed yet"}`
                         : "Invited"
                   }
                   status={
@@ -454,12 +458,12 @@ function TeamMembers({
                         <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
                           Copy link
                         </DropdownMenuItem>
-                        {emailing ? (
+                        {emailing && invitation.emailStatus !== "not_allowed" ? (
                           <DropdownMenuItem
                             disabled={resend.isPending}
                             onClick={() => resend.mutate(invitation.id)}
                           >
-                            {invitation.emailed ? "Send again" : "Send email"}
+                            {invitation.emailed || invitation.emailStatus ? "Send again" : "Send email"}
                           </DropdownMenuItem>
                         ) : null}
                         {!cloud && owner ? (

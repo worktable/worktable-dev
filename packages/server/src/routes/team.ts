@@ -268,6 +268,7 @@ teamRouter.get("/invitations", async (c) => {
           url: invitationUrl(c, item.id),
           startSpaceId: extra?.startSpaceId ?? null,
           emailed: (extra?.emailSends ?? 0) > 0,
+          emailStatus: extra?.emailStatus ?? null,
           expired: !(new Date(item.expiresAt).getTime() > Date.now()),
         }
       }),

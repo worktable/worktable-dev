@@ -92,14 +92,15 @@ export function InviteResult({
   onChange,
 }: {
   invited: Invited
-  onChange: (invited: Invited) => void
+  /** Without it, the row shows the new status once invitations reload. */
+  onChange?: (invited: Invited) => void
 }) {
   const copy = useCopy()
   const queryClient = useQueryClient()
   const resend = useMutation({
     mutationFn: () => sendInvitationAgain(invited),
     onSuccess: (next) => {
-      onChange(next)
+      onChange?.(next)
       void queryClient.invalidateQueries({ queryKey: ["team", "invitations"] })
     },
     onError: (error) => toast.error(error.message),

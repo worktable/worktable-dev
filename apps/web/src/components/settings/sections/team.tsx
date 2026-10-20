@@ -39,7 +39,7 @@ import {
   issueInvitationPasswordReset,
   setMemberOperator,
 } from "@/lib/team-api"
-import { invitationEmailNote } from "@/lib/invite-people"
+import { invitationEmailNote, pendingInvitationEmail } from "@/lib/invite-people"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { getSpaces } from "@/lib/api"
 import { SpaceAccessEditor } from "@/components/spaces/space-access-editor"
@@ -431,62 +431,63 @@ function TeamMembers({
                   />
                 )
               })}
-              {pending.map((invitation) => (
-                <PersonRow
-                  key={invitation.id}
-                  avatar={
-                    <span
-                      aria-hidden
-                      className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
-                    >
-                      <Mail className="size-4" />
-                    </span>
-                  }
-                  name={invitation.email}
-                  detail={
-                    invitation.expired
-                      ? "Invitation expired"
-                      : emailing && !invitation.emailed
-                        ? `Invited · ${invitationEmailNote(invitation.emailStatus)?.reason ?? "Not emailed yet"}`
-                        : "Invited"
-                  }
-                  status={
-                    invitation.expired ? (
-                      <RowLabel>Expired</RowLabel>
-                    ) : (
-                      <RowSelect label="Pending" aria={`Invitation for ${invitation.email}`}>
-                        <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
-                          Copy link
-                        </DropdownMenuItem>
-                        {emailing && invitation.emailStatus !== "not_allowed" ? (
-                          <DropdownMenuItem
-                            disabled={resend.isPending}
-                            onClick={() => resend.mutate(invitation.id)}
-                          >
-                            {invitation.emailed || invitation.emailStatus ? "Send again" : "Send email"}
+              {pending.map((invitation) => {
+                const email = pendingInvitationEmail(invitation, emailing)
+                return (
+                  <PersonRow
+                    key={invitation.id}
+                    avatar={
+                      <span
+                        aria-hidden
+                        className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground"
+                      >
+                        <Mail className="size-4" />
+                      </span>
+                    }
+                    name={invitation.email}
+                    detail={
+                      invitation.expired
+                        ? "Invitation expired"
+                        : email.detail
+                    }
+                    status={
+                      invitation.expired ? (
+                        <RowLabel>Expired</RowLabel>
+                      ) : (
+                        <RowSelect label="Pending" aria={`Invitation for ${invitation.email}`}>
+                          <DropdownMenuItem onClick={() => copyInvitation(invitation.url)}>
+                            Copy link
                           </DropdownMenuItem>
-                        ) : null}
-                        {!cloud && owner ? (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              reset.mutate({ name: invitation.email, invitationId: invitation.id })
-                            }
-                          >
-                            Reset password
-                          </DropdownMenuItem>
-                        ) : null}
-                      </RowSelect>
-                    )
-                  }
-                  action={
-                    <RemoveButton
-                      label={`Cancel the invitation for ${invitation.email}`}
-                      disabled={cancel.isPending}
-                      onClick={() => cancel.mutate(invitation.id)}
-                    />
-                  }
-                />
-              ))}
+                          {email.send ? (
+                            <DropdownMenuItem
+                              disabled={resend.isPending}
+                              onClick={() => resend.mutate(invitation.id)}
+                            >
+                              {email.send}
+                            </DropdownMenuItem>
+                          ) : null}
+                          {!cloud && owner ? (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                reset.mutate({ name: invitation.email, invitationId: invitation.id })
+                              }
+                            >
+                              Reset password
+                            </DropdownMenuItem>
+                          ) : null}
+                        </RowSelect>
+                      )
+                    }
+                    action={
+                      <RemoveButton
+                        label={`Cancel the invitation for ${invitation.email}`}
+                        disabled={cancel.isPending}
+                        onClick={() => cancel.mutate(invitation.id)}
+                      />
+                    }
+                  />
+                )
+              })}
             </ul>
           )}
         </Card>

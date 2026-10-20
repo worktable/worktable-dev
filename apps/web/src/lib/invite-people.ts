@@ -78,4 +78,29 @@ export function invitationEmailNote(
   }
 }
 
+/**
+ * A pending invitation in Settings: its detail line and the email action,
+ * both from how its latest email went.
+ */
+export function pendingInvitationEmail(
+  invitation: { emailed: boolean; emailStatus: InvitationEmailStatus | null },
+  emailing: boolean
+): { detail: string; send: string | null } {
+  if (!emailing) return { detail: "Invited", send: null }
+  const note = invitationEmailNote(invitation.emailStatus)
+  return {
+    detail: note
+      ? `Invited · ${note.reason}`
+      : invitation.emailed
+        ? "Invited"
+        : "Invited · Not emailed yet",
+    send:
+      note && !note.retry
+        ? null
+        : invitation.emailed || invitation.emailStatus
+          ? "Send again"
+          : "Send email",
+  }
+}
+
 export const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/

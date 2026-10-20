@@ -225,17 +225,15 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
             />
           ))}
           {waiting.map((invitation) => (
-            <li
+            <InviteResult
               key={invitation.id}
-              className="flex min-w-0 items-center gap-3 px-4 py-3 text-sm"
-            >
-              <span className="min-w-0 flex-1 truncate text-foreground">
-                {invitation.email}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                Invited, not joined yet
-              </span>
-            </li>
+              invited={{
+                email: invitation.email,
+                id: invitation.id,
+                url: invitation.url,
+                status: invitation.emailStatus,
+              }}
+            />
           ))}
         </ul>
       ) : null}

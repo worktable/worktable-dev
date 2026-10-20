@@ -1,7 +1,11 @@
 import { afterEach, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { sendInvitationAgain, type Invited } from "@/lib/invite-people"
+import {
+  pendingInvitationEmail,
+  sendInvitationAgain,
+  type Invited,
+} from "@/lib/invite-people"
 import type { InvitationEmailStatus } from "@/lib/team-api"
 import { InviteResult } from "./invite-people"
 
@@ -63,4 +67,32 @@ test("sending again emails that invitation and returns its new status", async ()
     requests.map((request) => [request.method, new URL(request.url).pathname])
   ).toEqual([["POST", "/api/team/invitations/inv_1/email"]])
   expect(next).toEqual({ ...invited("failed"), status: "sent" })
+})
+
+test("Settings describes a pending invitation by its latest email", () => {
+  // Emailed once, then a resend failed: the failure shows, and retrying is offered.
+  expect(
+    pendingInvitationEmail({ emailed: true, emailStatus: "failed" }, true)
+  ).toEqual({
+    detail: "Invited · Email didn’t send",
+    send: "Send again",
+  })
+  expect(
+    pendingInvitationEmail({ emailed: false, emailStatus: "limited" }, true)
+  ).toEqual({
+    detail: "Invited · Email limit reached",
+    send: null,
+  })
+  expect(
+    pendingInvitationEmail({ emailed: true, emailStatus: "sent" }, true)
+  ).toEqual({
+    detail: "Invited",
+    send: "Send again",
+  })
+  expect(
+    pendingInvitationEmail({ emailed: false, emailStatus: null }, false)
+  ).toEqual({
+    detail: "Invited",
+    send: null,
+  })
 })

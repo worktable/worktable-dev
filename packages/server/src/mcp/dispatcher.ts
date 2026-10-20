@@ -1432,7 +1432,10 @@ async function _dispatchOperationInner(
                   JSON.stringify(sentFields[key])
             ),
             kept: Object.keys(previousFields).filter(
-              (key) => !Object.hasOwn(sentFields, key)
+              (key) =>
+                !Object.hasOwn(sentFields, key) ||
+                JSON.stringify(previousFields[key]) ===
+                  JSON.stringify(sentFields[key])
             ),
           }
         : undefined

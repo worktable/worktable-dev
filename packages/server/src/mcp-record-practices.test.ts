@@ -307,9 +307,14 @@ describe("MCP record writes keep stored data", () => {
     const widened = (await dispatchOperation("records.upsert_collection", {
       spaceId: "product",
       collectionId: "signals",
-      fields: { platform: { type: "select", values: ["Reddit", "X", "LinkedIn"] } },
-    })) as { fieldChanges: { changed: string[] } }
+      fields: {
+        title: { type: "string", required: true },
+        platform: { type: "select", values: ["Reddit", "X", "LinkedIn"] },
+      },
+    })) as { fieldChanges: { changed: string[]; kept: string[] } }
+    // A field sent again unchanged is reported as kept, like one left out.
     expect(widened.fieldChanges.changed).toEqual(["platform"])
+    expect(widened.fieldChanges.kept).toEqual(["title", "url", "review"])
   })
 
   it("returns an existing record unchanged instead of overwriting it", async () => {

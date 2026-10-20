@@ -117,10 +117,16 @@ relations or expansion.
 ## Schema changes
 
 Worktable validates a proposed schema against existing records and identifies
-rows that would become invalid. Carry forward fields you intend to retain when
-upserting a schema. Removing a schema field does not erase its stored values.
-Record updates preserve unspecified data fields; permanent deletion uses the
-separate destructive tool.
+rows that would become invalid. Over MCP, `upsert_collection` merges fields by
+key: the fields you send are added or replaced, the rest stay, and the result
+lists them in `fieldChanges`. Remove a field in the schema editor. Removing a
+schema field does not erase its stored values.
+
+Creating a record with an `id` that already exists never overwrites it. MCP
+returns the stored record with `created: false`; REST and HTML Docs answer
+`409 CONFLICT`. Derive the id from a natural key, such as a normalized URL, to
+add each item once. Record updates preserve unspecified data and metadata keys;
+permanent deletion uses the separate destructive tool.
 
 The generated [MCP tools](/reference/mcp-tools/) catalog defines exact request
 shapes. See [Manage records](/agents/records-and-schemas/) for the authoring

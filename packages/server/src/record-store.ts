@@ -72,6 +72,18 @@ function validationProjection(field: RecordCollectionSchema["fields"][string]): 
   };
 }
 
+/** True when an existing field's new rules accept every value the old rules
+ *  accepted (more select options, or no longer required), so no stored record
+ *  can break and the gate can skip its row scan. */
+function onlyLoosens(prev: Record<string, unknown>, next: Record<string, unknown>): boolean {
+  if (prev.type !== next.type || prev.references !== next.references || prev.many !== next.many) return false;
+  if (next.required && !prev.required) return false;
+  if (next.values === null) return true;
+  if (prev.values === null) return false;
+  const allowed = new Set(next.values as string[]);
+  return (prev.values as string[]).every((value) => allowed.has(value));
+}
+
 /** Lock shared by record writes and schema writes: the conforming-row gate
  *  must not race a record landing between its scan and the schema write.
  *  Lock ordering is acyclic: record writers hold their per-record (or
@@ -268,7 +280,7 @@ export async function writeRecordCollectionSchema(
     const changedKeys = Object.keys(parsed.data.fields).filter((key) => {
       const next = validationProjection(parsed.data.fields[key]!);
       const prev = previous?.fields[key] ? validationProjection(previous.fields[key]!) : null;
-      return JSON.stringify(next) !== JSON.stringify(prev);
+      return JSON.stringify(next) !== JSON.stringify(prev) && !(prev && onlyLoosens(prev, next));
     });
     if (changedKeys.length > 0) {
       // File-truth scan, same rule as delete-policy resolution: listRecords
@@ -784,19 +796,14 @@ export async function writeRecord(spaceId: string, record: RecordFile): Promise<
   return withStoreWriteLock(recordPath(spaceId, record.collectionId, record.id), () => writeRecordInner(spaceId, record));
 }
 
-export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+/** Create a record. An explicit id that already exists is never overwritten:
+ *  the stored record comes back unchanged with `created: false`, so callers
+ *  that derive ids from a natural key get add-or-skip for free. Changing an
+ *  existing record goes through updateRecord. */
+export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
   assertSpaceAccess(spaceId, "edit");
-  // An explicit ID that already exists overwrites that record.
-  const existed =
-    input.id !== undefined &&
-    isCanonicalId(spaceId) &&
-    isCanonicalId(collectionId) &&
-    isCanonicalId(input.id) &&
-    existsSync(recordPath(spaceId, collectionId, input.id));
   const result = await createRecordInner(spaceId, collectionId, input);
-  if (result.data) {
-    noteRecordActivity(spaceId, collectionId, existed ? "records.updated" : "records.added");
-  }
+  if (result.data && result.created) noteRecordActivity(spaceId, collectionId, "records.added");
   return result;
 }
 
@@ -814,12 +821,26 @@ function noteRecordActivity(
   });
 }
 
-async function createRecordInner(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null }> {
+async function createRecordInner(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
+  if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   await ensureRecordDirs(spaceId, collectionId);
   if (input.id) {
-    const record = buildRecordFile({ id: input.id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
-    return writeRecord(spaceId, record);
+    const id = input.id;
+    if (!isCanonicalId(id)) return { data: null, error: invalidIdError("record", id) };
+    // The existence check and the write share the per-record lock, so two
+    // agents creating the same id cannot both see it missing: exactly one
+    // creates it and the other gets the stored record back.
+    return withStoreWriteLock(recordPath(spaceId, collectionId, id), async () => {
+      if (existsSync(recordPath(spaceId, collectionId, id))) {
+        const { data: existing, error } = await readRecord(spaceId, collectionId, id);
+        if (!existing) return { data: null, error: error ?? `Record ${id} already exists and could not be read` };
+        return { data: existing, error: null, created: false };
+      }
+      const record = buildRecordFile({ id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
+      const written = await writeRecordInner(spaceId, record);
+      return written.data ? { ...written, created: true } : written;
+    });
   }
   // Derive a unique slug under a collection-scoped lock so two concurrent creates
   // can't scan the same directory and land on the same id. writeRecord then takes
@@ -829,7 +850,8 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
     const baseId = slugify(String(input.data["title"] ?? input.data["name"] ?? "record"));
     const id = await deduplicateSlug(baseId, existing.map((record) => record.id));
     const record = buildRecordFile({ id, collectionId, data: input.data, metadata: input.metadata, createdBy: input.createdBy });
-    return writeRecord(spaceId, record);
+    const written = await writeRecord(spaceId, record);
+    return written.data ? { ...written, created: true } : written;
   });
 }
 
@@ -849,7 +871,10 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
   return withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
-    const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata: patch.metadata ?? existing.metadata, createdBy: patch.updatedBy, existing });
+    // Data and metadata both merge key by key: a patch names what changes,
+    // and keys it leaves out keep their stored values.
+    const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
+    const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
     return writeRecordInner(spaceId, record);
   });
 }

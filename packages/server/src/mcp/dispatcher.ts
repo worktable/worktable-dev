@@ -1410,12 +1410,38 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const existing = await readRecordCollectionSchema(spaceId, collectionId)
+      // Fields merge by key: the fields sent are added or replaced, and fields
+      // left out stay. Sending only a new field must never drop the rest of
+      // the schema. Removing a field is a deliberate edit in the web app.
+      const sentFields = args["fields"] as
+        | RecordCollectionSchema["fields"]
+        | undefined
+      const previousFields = existing.data?.fields ?? {}
+      const fields = sentFields
+        ? { ...previousFields, ...sentFields }
+        : undefined
+      const fieldChanges = sentFields
+        ? {
+            added: Object.keys(sentFields).filter(
+              (key) => !Object.hasOwn(previousFields, key)
+            ),
+            changed: Object.keys(sentFields).filter(
+              (key) =>
+                Object.hasOwn(previousFields, key) &&
+                JSON.stringify(previousFields[key]) !==
+                  JSON.stringify(sentFields[key])
+            ),
+            kept: Object.keys(previousFields).filter(
+              (key) => !Object.hasOwn(sentFields, key)
+            ),
+          }
+        : undefined
       const schema = buildRecordCollectionSchema({
         id: collectionId,
         name: args["name"] as string | undefined,
         description: args["description"] as string | undefined,
         wellKnownType: args["wellKnownType"] as string | undefined,
-        fields: args["fields"] as RecordCollectionSchema["fields"],
+        fields,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
         createdBy: actorId,
         existing: existing.data ?? undefined,
@@ -1438,6 +1464,7 @@ async function _dispatchOperationInner(
       })
       return {
         collection: result.data,
+        ...(fieldChanges ? { fieldChanges } : {}),
         ...(warnings.length > 0 ? { warnings } : {}),
       }
     }
@@ -1468,6 +1495,18 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const data = args["data"] as Record<string, unknown>
+      const result = await createRecord(spaceId, collectionId, {
+        id: args["recordId"] as string | undefined,
+        data,
+        metadata: args["metadata"] as Record<string, unknown> | undefined,
+        createdBy: actorId,
+      })
+      if (result.error || !result.data)
+        throw new Error(result.error ?? "Write failed")
+      // An existing id is left untouched: return the stored record so the
+      // agent can skip it, or call update if it meant to change it.
+      if (!result.created) return { record: result.data, created: false }
+      const createdId = result.data.id
       const schema = await readRecordCollectionSchema(spaceId, collectionId)
       const identity = recordPracticeIdentity(data, schema.data)
       const duplicate =
@@ -1476,6 +1515,7 @@ async function _dispatchOperationInner(
               spaceId,
               collectionId,
               (record) => {
+                if (record.id === createdId) return false
                 const existing = recordPracticeIdentity(
                   record.data,
                   schema.data
@@ -1494,14 +1534,6 @@ async function _dispatchOperationInner(
         data,
         existingRecords,
       })
-      const result = await createRecord(spaceId, collectionId, {
-        id: args["recordId"] as string | undefined,
-        data,
-        metadata: args["metadata"] as Record<string, unknown> | undefined,
-        createdBy: actorId,
-      })
-      if (result.error || !result.data)
-        throw new Error(result.error ?? "Write failed")
       wsManager.broadcast(spaceId, {
         type: "record_update",
         spaceId,
@@ -1514,6 +1546,7 @@ async function _dispatchOperationInner(
       })
       return {
         record: result.data,
+        created: true,
         ...(warnings.length > 0 ? { warnings } : {}),
       }
     }

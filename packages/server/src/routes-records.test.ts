@@ -488,4 +488,40 @@ describe("record REST routes", () => {
     const list = await req(app, "POST", "/api/spaces/meta/records/notes/query", {});
     expect(list.json.records).toHaveLength(5);
   });
+
+  it("never overwrites an existing record id, even when creates race", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", {
+      id: "notes",
+      name: "Notes",
+      fields: { title: { type: "string", required: true }, body: { type: "text" } },
+    });
+    const first = await req(app, "POST", "/api/spaces/meta/records/notes", { id: "same", data: { title: "First", body: "kept" }, metadata: { source: "a" } });
+    expect(first.status).toBe(201);
+    await req(app, "POST", "/api/spaces/meta/records/notes/same/archive", { reason: "parked" });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => req(app, "POST", "/api/spaces/meta/records/notes", { id: "same", data: { title: `Writer ${i}` } }))
+    );
+    expect(results.map((r) => r.status)).toEqual([409, 409, 409, 409, 409]);
+    expect(results[0]!.json.code).toBe("CONFLICT");
+    expect(results[0]!.json.record.data.title).toBe("First");
+
+    const stored = await req(app, "GET", "/api/spaces/meta/records/notes/same");
+    expect(stored.json.record.data).toEqual({ title: "First", body: "kept" });
+    expect(stored.json.record.metadata).toEqual({ source: "a" });
+    expect(stored.json.record.createdAt).toBe(first.json.record.createdAt);
+    expect(stored.json.record.archive?.reason).toBe("parked");
+  });
+
+  it("creates exactly one record when the same new id races", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", { id: "notes", name: "Notes", fields: { title: { type: "string" } } });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => req(app, "POST", "/api/spaces/meta/records/notes", { id: "fresh", data: { title: `Writer ${i}` } }))
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(4);
+    const winner = results.find((r) => r.status === 201)!.json.record.data.title;
+    const stored = await req(app, "GET", "/api/spaces/meta/records/notes/fresh");
+    expect(stored.json.record.data.title).toBe(winner);
+  });
 });

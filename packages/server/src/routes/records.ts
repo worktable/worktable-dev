@@ -154,6 +154,8 @@ recordsRouter.post("/:collectionId", requireScope("records:write"), async (c) =>
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
   const result = await createRecord(spaceId, collectionId, { ...parsed.data, createdBy: restWriteActor(c, parsed.data.createdBy) });
   if (result.error || !result.data) return c.json({ error: result.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
+  // An explicit id never overwrites: answer with the stored record unchanged.
+  if (!result.created) return c.json({ error: `Record ${result.data.id} already exists; update it instead`, code: "CONFLICT", record: result.data }, 409);
   noteRecordMutated();
   wsManager.broadcast(spaceId, { type: "record_update", spaceId, collectionId, recordId: result.data.id, data: result.data });
   return c.json({ record: result.data, recordId: result.data.id }, 201);

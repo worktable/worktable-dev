@@ -9,7 +9,7 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
-## [0.1.25] - 2026-10-19
+## [0.1.25] - 2026-10-20
 
 ### Added
 

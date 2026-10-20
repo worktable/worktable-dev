@@ -40,6 +40,7 @@ infrastructure and personal context out of release notes.
 - **Who pays:** The person who pays for a Cloud Worktable stays an owner; they can't be removed or made a member.
 - **Activity on a team:** Activity names other people. **You** means only you.
 - **Settings:** Sections are grouped into **You**, your Worktable and **Support**. Your display name moved to the new **Profile** section, and the Cloud **Account** section is now **Subscription**.
+- **Invitation status:** An invitation that wasn't emailed says why, in setup and **Settings → Team**, and offers **Send again** when trying again can help.
 - **Version history:** Edits you or an agent make in a row are kept as one version until there is a 10-minute pause, so history shows meaningful steps. An edit by someone else, a restore or a checkpoint starts a new version.
 
 ### Fixed

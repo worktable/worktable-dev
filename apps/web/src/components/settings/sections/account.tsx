@@ -158,7 +158,7 @@ export function AccountSection() {
             error={actionError?.message}
             onCheckout={(plan) => checkout.mutate(plan)}
             onPortal={() => portal.mutate()}
-            onChangePlan={(plan) => change.mutate(plan)}
+            onChangePlan={(plan) => change.mutateAsync(plan)}
             onCancel={() => cancel.mutate()}
           />
         )}
@@ -203,7 +203,7 @@ export function SubscriptionCard({
   error?: string
   onCheckout: (plan?: PaidCloudPlanId) => void
   onPortal: () => void
-  onChangePlan?: (plan: PaidCloudPlanId) => void
+  onChangePlan?: (plan: PaidCloudPlanId) => Promise<unknown> | void
   onCancel?: () => void
 }) {
   const [cancelling, setCancelling] = useState(false)
@@ -411,11 +411,20 @@ export function SubscriptionCard({
           }
           loading={pending === "change"}
           loadingLabel="Changing…"
-          onConfirm={() => {
-            onChangePlan(changingTo)
-            setChangingTo(null)
+          onConfirm={async () => {
+            // Stay open while the change runs; a failure shows here to retry.
+            try {
+              await onChangePlan(changingTo)
+              setChangingTo(null)
+            } catch {}
           }}
-        />
+        >
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </ConfirmDialog>
       ) : null}
       <ConfirmDialog
         open={cancelling}

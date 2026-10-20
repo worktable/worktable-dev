@@ -349,6 +349,18 @@ describe("MCP record writes keep stored data", () => {
     expect(again.record.createdAt).toBe(first.record.createdAt)
   })
 
+  it("says which ids are valid when a record id is not", async () => {
+    await seedCollection()
+    await expect(
+      dispatchOperation("records.create", {
+        spaceId: "product",
+        collectionId: "signals",
+        recordId: "https://example.com/post/1",
+        data: { title: "By url" },
+      })
+    ).rejects.toThrow("Ids use lowercase letters, digits and hyphens")
+  })
+
   it("merges metadata on update like data", async () => {
     await seedCollection()
     await dispatchOperation("records.create", {

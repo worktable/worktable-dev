@@ -38,7 +38,7 @@ function isCanonicalId(id: string): boolean {
 }
 
 function invalidIdError(kind: string, id: string): string {
-  return `Invalid ${kind} id: ${id}`;
+  return `Invalid ${kind} id: ${id}. Ids use lowercase letters, digits and hyphens, starting and ending with a letter or digit (for example "ds-3f2a9c")`;
 }
 
 function spaceDir(spaceId: string): string {

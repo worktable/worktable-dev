@@ -216,20 +216,24 @@ function InviteBody({ cloud, teams }: { cloud: boolean; teams: boolean }) {
       {invited.length || waiting.length ? (
         <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
           {invited.map((item) => (
-            <InviteResult key={item.email} invited={item} cloud={cloud} />
+            <InviteResult
+              key={item.email}
+              invited={item}
+              onChange={(next) =>
+                setInvited((current) => mergeInvited(current, [next]))
+              }
+            />
           ))}
           {waiting.map((invitation) => (
-            <li
+            <InviteResult
               key={invitation.id}
-              className="flex min-w-0 items-center gap-3 px-4 py-3 text-sm"
-            >
-              <span className="min-w-0 flex-1 truncate text-foreground">
-                {invitation.email}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                Invited, not joined yet
-              </span>
-            </li>
+              invited={{
+                email: invitation.email,
+                id: invitation.id,
+                url: invitation.url,
+                status: invitation.emailStatus,
+              }}
+            />
           ))}
         </ul>
       ) : null}

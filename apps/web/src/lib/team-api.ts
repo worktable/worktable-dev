@@ -45,7 +45,11 @@ export type InvitationEmailStatus =
   | "failed"
 /** `email` is `null` where this Worktable doesn't email invitations. */
 export const inviteTeamMember = (email: string, spaceId?: string) =>
-  fetchJSON<{ url: string; email: InvitationEmailStatus | null }>(
+  fetchJSON<{
+    invitation: { id: string }
+    url: string
+    email: InvitationEmailStatus | null
+  }>(
     "/api/team/invitations",
     {
       method: "POST",
@@ -72,6 +76,8 @@ export interface TeamInvitation {
   startSpaceId: string | null
   /** Whether an email for it was accepted for delivery. */
   emailed: boolean
+  /** How the most recent email went; `null` if none was tried. */
+  emailStatus: InvitationEmailStatus | null
   expired: boolean
 }
 export const getTeamInvitations = () =>

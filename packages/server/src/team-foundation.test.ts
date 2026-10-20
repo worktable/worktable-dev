@@ -1446,6 +1446,7 @@ test("invitations carry a starting Space, report their email, and grant a restri
         id: string
         startSpaceId: string | null
         emailed: boolean
+        emailStatus: string | null
         url: string
       }>
     }
@@ -1455,6 +1456,7 @@ test("invitations carry a starting Space, report their email, and grant a restri
     ).toMatchObject({
       startSpaceId: "original",
       emailed: true,
+      emailStatus: "sent",
       url: `${origin}/login?invite=${carolInvite.invitation.id}`,
     })
 

@@ -176,6 +176,12 @@ export function parsePredicate(input: unknown, depth = 0): RecordPredicate {
     return key === "and" ? { and: children } : { or: children };
   }
   if ("not" in node) return { not: parsePredicate(node["not"], depth + 1) };
+  // A flat filter inside a tree ({and: [{status: "open"}, ...]}) means the
+  // same as at the top level. A node is a leaf when it names a string field
+  // and op; anything else without connectives is read as a flat filter.
+  if (!(typeof node["field"] === "string" && typeof node["op"] === "string") && Object.keys(node).length > 0) {
+    return parsePredicate(flatWhereToPredicate(node), depth + 1);
+  }
   const field = node["field"];
   const op = node["op"];
   if (typeof field !== "string" || !field) throw new RecordQueryShapeError("Predicate leaf needs a string \"field\"");

@@ -360,6 +360,11 @@ describe("record query AST", () => {
     const counted = await query({ where: { status: "open" }, aggregate: { select: { n: { fn: "count" } } } });
     expect(counted.json.groups).toEqual([{ n: 3 }]);
 
+    // Flat filters also work as children of a predicate tree.
+    const nested = await query({ where: { and: [{ status: "open" }, { priority: { gte: 3 } }] }, select: ["title"] });
+    expect(nested.status).toBe(200);
+    expect(nested.json.records.map((r: { data: { title: string } }) => r.data.title).sort()).toEqual(["T1", "T5"]);
+
     // A plain limit pages with a cursor until every record has been seen.
     const seen = new Set<string>();
     let cursor: string | undefined;

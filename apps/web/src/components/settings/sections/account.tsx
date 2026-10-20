@@ -208,6 +208,7 @@ export function SubscriptionCard({
 }) {
   const [cancelling, setCancelling] = useState(false)
   const [changingTo, setChangingTo] = useState<PaidCloudPlanId | null>(null)
+  const [changeError, setChangeError] = useState<string | null>(null)
   const plan = billing.plan
   const complimentary = billing.access === "complimentary"
   const paymentRequired = billing.access === "payment_required"
@@ -318,9 +319,11 @@ export function SubscriptionCard({
                       }
                       variant={primary === id ? "default" : "outline"}
                       disabled={busy || tooMany}
-                      onClick={() =>
-                        via === "checkout" ? onCheckout(id) : setChangingTo(id)
-                      }
+                      onClick={() => {
+                        if (via === "checkout") return onCheckout(id)
+                        setChangeError(null)
+                        setChangingTo(id)
+                      }}
                     >
                       {(via === "checkout" && pending === "checkout") ||
                       (via === "change" && pending === "change")
@@ -416,14 +419,19 @@ export function SubscriptionCard({
             try {
               await onChangePlan(changingTo)
               setChangingTo(null)
-            } catch {
-              // The error shows in the dialog, which stays open to retry.
+            } catch (failure) {
+              // The dialog stays open to retry, with this change's own error.
+              setChangeError(
+                failure instanceof Error
+                  ? failure.message
+                  : "Couldn't change the plan"
+              )
             }
           }}
         >
-          {error ? (
+          {changeError ? (
             <p className="text-sm text-destructive" role="alert">
-              {error}
+              {changeError}
             </p>
           ) : null}
         </ConfirmDialog>

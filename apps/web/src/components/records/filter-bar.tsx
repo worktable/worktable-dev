@@ -22,7 +22,7 @@ import {
   TooltipTrigger,
 } from "@worktable/ui/components/tooltip"
 import type { RecordPredicateOp } from "@worktable/types"
-import { queryKeys } from "@/lib/queries"
+import { queryKeys, useRecordCollectionSchema } from "@/lib/queries"
 import { queryRecords } from "@/lib/records-api"
 import { DocumentPicker } from "./field-editor"
 import { FieldValue } from "./field-value"
@@ -486,13 +486,14 @@ function RelationValuePicker({
     enabled: Boolean(target),
     staleTime: 15_000,
   })
+  const targetSchema = useRecordCollectionSchema(spaceId, target)
   const options = useMemo(
     () =>
       (data?.records ?? []).map((record) => ({
         value: record.id,
-        label: recordTitle(record),
+        label: recordTitle(record, targetSchema),
       })),
-    [data]
+    [data, targetSchema]
   )
   if (!target)
     return (

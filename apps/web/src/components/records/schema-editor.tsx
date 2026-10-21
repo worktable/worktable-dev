@@ -98,6 +98,19 @@ function slugifyFieldKey(name: string): string {
     .replace(/^-|-$/g, "")
 }
 
+/** Field types a value can be unique in (the server enforces the same set). */
+const UNIQUE_TYPES = new Set([
+  "string",
+  "text",
+  "url",
+  "email",
+  "person",
+  "number",
+  "date",
+  "datetime",
+  "select",
+])
+
 /** Metadata keys only make sense for specific types; a retype clears the
  *  rest (undefined keys drop from the JSON payload). */
 function clearInapplicableMetadata(spec: RecordField): RecordField {
@@ -111,6 +124,7 @@ function clearInapplicableMetadata(spec: RecordField): RecordField {
     inverse: type === "relation" ? spec.inverse : undefined,
     onDelete: type === "relation" ? spec.onDelete : undefined,
     unit: type === "number" ? spec.unit : undefined,
+    unique: UNIQUE_TYPES.has(type) ? spec.unique : undefined,
   }
 }
 
@@ -233,6 +247,17 @@ export function SchemaEditorDialog({
 
   const updateField = (key: string, patch: Partial<RecordField>) => {
     setSaveError(null)
+    // A retype to a type that can't name records also drops the title choice,
+    // whose checkbox would otherwise be hidden while the server refuses it.
+    if (
+      patch.type !== undefined &&
+      key === titleField &&
+      !(TITLE_FIELD_TYPES as readonly string[]).includes(
+        normalizeRecordFieldType(patch.type)
+      )
+    ) {
+      setTitleField(null)
+    }
     setFields((prev) =>
       prev.map((field) => {
         if (field.key !== key) return field
@@ -461,18 +486,6 @@ export function SchemaEditorDialog({
   )
 }
 
-/** Field types a value can be unique in (the server enforces the same set). */
-const UNIQUE_TYPES = new Set([
-  "string",
-  "text",
-  "url",
-  "email",
-  "person",
-  "number",
-  "date",
-  "datetime",
-  "select",
-])
 
 function FieldRow({
   field,

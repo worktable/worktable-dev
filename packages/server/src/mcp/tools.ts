@@ -102,6 +102,9 @@ export function missingMcpScope(
     required.push("documents:read")
   if (id === "spaces.update" && request.pins !== undefined)
     required.push("documents:write")
+  // A where filter reads record contents to choose the records it updates.
+  if (id === "records.update_many" && request.where !== undefined)
+    required.push("records:read")
   return required.find((scope) => !hasScope(scopes, scope)) ?? null
 }
 

@@ -568,4 +568,33 @@ describe("record REST routes", () => {
     const multi = await req(app, "POST", "/api/spaces/meta/records", { id: "tags", fields: { tags: { type: "multi_select", values: ["a"], unique: true } } });
     expect(multi.status).toBe(400);
   });
+
+  it("lets an existing id win over a unique match, and matches odd field keys exactly", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", { id: "links", name: "Links", fields: { 'ref"id': { type: "string", unique: true }, "ref\\id": { type: "string" } } });
+    await req(app, "POST", "/api/spaces/meta/records/links", { id: "a", data: { 'ref"id': "one" } });
+    await req(app, "POST", "/api/spaces/meta/records/links", { id: "b", data: { 'ref"id': "two" } });
+    // A retry naming record a returns a, even with b's value.
+    const retry = await req(app, "POST", "/api/spaces/meta/records/links", { id: "a", data: { 'ref"id': "two" } });
+    expect(retry.status).toBe(409);
+    expect(retry.json.record.id).toBe("a");
+    const dup = await req(app, "POST", "/api/spaces/meta/records/links", { id: "c", data: { 'ref"id': "one" } });
+    expect(dup.status).toBe(409);
+    expect(dup.json.record.id).toBe("a");
+    // Another key that differs only by the quote isn't unique and doesn't clash.
+    const other = await req(app, "POST", "/api/spaces/meta/records/links", { id: "d", data: { 'ref"id': "three", "ref\\id": "one" } });
+    expect(other.status).toBe(201);
+  });
+
+  it("never commits a duplicate while a field is made unique", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", { id: "race", name: "Race", fields: { url: { type: "url" } } });
+    await req(app, "POST", "/api/spaces/meta/records/race", { id: "r1", data: { url: "https://example.com/r" } });
+    await Promise.all([
+      req(app, "POST", "/api/spaces/meta/records", { id: "race", fields: { url: { type: "url", unique: true } } }),
+      ...["r2", "r3"].map((id) => req(app, "POST", "/api/spaces/meta/records/race", { id, data: { url: "https://example.com/r" } })),
+    ]);
+    const schema = await req(app, "GET", "/api/spaces/meta/records/race");
+    const held = (schema.json.records as Array<{ data: { url?: string } }>).filter((record) => record.data.url === "https://example.com/r");
+    if (schema.json.schema.fields.url.unique) expect(held).toHaveLength(1);
+    else expect(held.length).toBeGreaterThan(1);
+  });
 });

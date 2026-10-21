@@ -95,8 +95,10 @@ function schemaGateKey(spaceId: string, collectionId: string): string {
   return `${collectionDir(spaceId, collectionId)}#schema-gate`;
 }
 
-/** Held around every write to a collection with unique fields, from the
- *  duplicate check through the write, and by schema writes. It is taken
+/** Held around every create and update, from reading the schema and the
+ *  duplicate check through the write, and by schema writes. Taking it
+ *  whatever the schema says means a write can't check against a schema
+ *  without unique fields while a schema write makes one unique. It is taken
  *  before any other record lock, so the ordering stays acyclic. */
 function uniqueLockKey(spaceId: string, collectionId: string): string {
   return `${collectionDir(spaceId, collectionId)}#unique`;
@@ -108,8 +110,9 @@ function uniqueFieldKeys(schema: RecordCollectionSchema | null | undefined): str
   return Object.entries(schema?.fields ?? {}).filter(([, field]) => field.unique).map(([key]) => key);
 }
 
-async function withUniqueLock<T>(spaceId: string, collectionId: string, schema: RecordCollectionSchema | null, fn: () => Promise<T>): Promise<T> {
-  return uniqueFieldKeys(schema).length > 0 ? withStoreWriteLock(uniqueLockKey(spaceId, collectionId), fn) : fn();
+/** Runs `fn` under the unique lock with the schema read inside it. */
+async function withUniqueLock<T>(spaceId: string, collectionId: string, fn: (schema: RecordCollectionSchema | null) => Promise<T>): Promise<T> {
+  return withStoreWriteLock(uniqueLockKey(spaceId, collectionId), async () => fn((await readRecordCollectionSchema(spaceId, collectionId)).data));
 }
 
 /** The first unique field whose value in `data` another record already
@@ -121,15 +124,18 @@ async function findUniqueClash(
   data: Record<string, unknown>,
   options: { excludeId?: string; onlyKeys?: ReadonlySet<string> } = {},
 ): Promise<{ field: string; recordId: string } | null> {
+  // Without a ready index, one file scan serves every unique field.
+  let scanned: RecordFile[] | null = null;
   for (const field of uniqueFieldKeys(schema)) {
     if (options.onlyKeys && !options.onlyKeys.has(field)) continue;
     const value = data[field];
     if (typeof value !== "string" && typeof value !== "number") continue;
     if (value === "") continue;
-    const indexed = recordIndexEnabled() ? recordIndex.findIdsByFieldValue(spaceId, collectionId, field, value) : null;
-    const ids = indexed ?? (await listRecords(spaceId, collectionId, { includeArchived: true }))
-      .filter((record) => record.data[field] === value)
-      .map((record) => record.id);
+    let ids = recordIndexEnabled() ? recordIndex.findIdsByFieldValue(spaceId, collectionId, field, value) : null;
+    if (!ids) {
+      scanned ??= await listRecords(spaceId, collectionId, { includeArchived: true });
+      ids = scanned.filter((record) => record.data[field] === value).map((record) => record.id);
+    }
     const other = ids.find((id) => id !== options.excludeId);
     if (other) return { field, recordId: other };
   }
@@ -169,7 +175,9 @@ export function buildRecordCollectionSchema(input: {
   const now = new Date().toISOString();
   const fields = input.fields ?? input.existing?.fields ?? {};
   const titleField = input.titleField === undefined ? input.existing?.titleField : input.titleField ?? undefined;
-  const { titleField: _previousTitle, ...existing } = input.existing ?? ({} as Partial<RecordCollectionSchema>);
+  // The stored title field is dropped here so a cleared one stays cleared.
+  const existing: Partial<RecordCollectionSchema> = { ...input.existing };
+  delete existing.titleField;
   return {
     // Spread the existing schema first so keys (and versions) written by a newer
     // Worktable survive an edit from this one instead of being silently dropped.
@@ -957,12 +965,14 @@ export async function createRecord(spaceId: string, collectionId: string, input:
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   // A unique field works like the id: a value another record already holds
-  // returns that record unchanged instead of adding a second one.
-  const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
-  const result = await withUniqueLock(spaceId, collectionId, schema, async () => {
+  // returns that record unchanged instead of adding a second one. An id that
+  // already exists wins, so a retry gets the record it named.
+  const result = await withUniqueLock(spaceId, collectionId, async (schema) => {
+    if (input.id && isCanonicalId(input.id) && existsSync(recordPath(spaceId, collectionId, input.id))) {
+      return createRecordInner(spaceId, collectionId, input);
+    }
     const clash = await findUniqueClash(spaceId, collectionId, schema, input.data);
-    // A clash with the record the id already names is just that record.
-    if (clash && clash.recordId !== input.id) {
+    if (clash) {
       const { data: existing, error } = await readRecord(spaceId, collectionId, clash.recordId);
       if (!existing) return { data: null, error: error ?? `Record ${clash.recordId} could not be read` };
       return { data: existing, error: null, created: false, matchedBy: clash.field };
@@ -1061,11 +1071,10 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
-  const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
   const touched = new Set(Object.keys(patch.data ?? {}));
   // Hold the per-record lock across the whole read-modify-write so concurrent
   // patches can't read the same "before" state and lost-update each other.
-  return withUniqueLock(spaceId, collectionId, schema, () => withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
+  return withUniqueLock(spaceId, collectionId, (schema) => withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
     const clash = await findUniqueClash(spaceId, collectionId, schema, patch.data ?? {}, { excludeId: recordId, onlyKeys: touched });

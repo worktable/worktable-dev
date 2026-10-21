@@ -15,7 +15,12 @@ import {
   UsersRoundIcon,
 } from "lucide-react"
 import type { ThreadLocation, ThreadListItem } from "@worktable/types"
-import { Avatar, AvatarFallback } from "@worktable/ui/components/avatar"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+} from "@worktable/ui/components/avatar"
 import { Button } from "@worktable/ui/components/button"
 import {
   Empty,
@@ -401,26 +406,46 @@ const ThreadListRow = memo(function ThreadListRow({
 })
 
 function ThreadAvatar({ thread }: { thread: ThreadListItem }) {
-  const agents = thread.members.filter((member) => member.kind === "agent")
-  const nonAgents = thread.members.filter((member) => member.kind !== "agent")
-  const participant =
-    agents.length === 1
-      ? agents[0]
-      : nonAgents.length === 1
-        ? nonAgents[0]
-        : undefined
-  const label = participant
-    ? participant.name
-    : thread.members.map((entry) => entry.name).join(", ")
+  const visibleMembers = thread.members.slice(0, 2)
+  const remainingCount = thread.members.length - visibleMembers.length
+  const label =
+    thread.members.map((member) => member.name).join(", ") || "No participants"
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>
-        {participant ? (
-          <ThreadParticipantAvatar
-            participant={participant}
-            className="size-9"
-          />
+      <TooltipTrigger render={<div className="inline-flex" />}>
+        {visibleMembers.length > 0 ? (
+          <AvatarGroup
+            className="h-9 w-14 items-center"
+            role="img"
+            aria-label={label}
+          >
+            {visibleMembers.map((member) => (
+              <span
+                key={member.id}
+                data-slot="avatar"
+                className="rounded-full"
+                aria-hidden="true"
+              >
+                <ThreadParticipantAvatar
+                  participant={member}
+                  className={
+                    thread.members.length === 1
+                      ? "size-9"
+                      : "size-6 text-[11px]"
+                  }
+                />
+              </span>
+            ))}
+            {remainingCount > 0 ? (
+              <AvatarGroupCount
+                className="size-6 text-[11px] tabular-nums"
+                aria-hidden="true"
+              >
+                +{remainingCount}
+              </AvatarGroupCount>
+            ) : null}
+          </AvatarGroup>
         ) : (
           <Avatar className="size-9" aria-label={label}>
             <AvatarFallback>

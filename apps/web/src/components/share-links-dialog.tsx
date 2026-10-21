@@ -51,6 +51,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
+import { Switch } from "@worktable/ui/components/switch"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { Skeleton } from "@worktable/ui/components/skeleton"
 import { cn } from "@worktable/ui/lib/utils"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
@@ -79,9 +81,16 @@ import {
 interface LinkDraft {
   label: string
   expiry: ShareLinkExpiry
+  passwordEnabled: boolean
+  password: string
 }
 
-const NEW_LINK: LinkDraft = { label: "", expiry: "never" }
+const NEW_LINK: LinkDraft = {
+  label: "",
+  expiry: "never",
+  passwordEnabled: false,
+  password: "",
+}
 
 type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
 
@@ -101,6 +110,7 @@ export function ShareLinksDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const preview = useDeploymentInfo().data?.capabilities.sharingPreview === true
   const queryClient = useQueryClient()
   const { spaceId, artifactKey: path } = target
   const queryKey = shareLinksQueryKey(spaceId, path)
@@ -153,6 +163,10 @@ export function ShareLinksDialog({
         target: { kind: target.kind, spaceId, path },
         label: input.label.trim(),
         expiresAt: shareLinkExpiresAt(input.expiry) ?? null,
+        ...(preview &&
+        (input.passwordEnabled || list.data?.policy.requirePassword)
+          ? { password: input.password }
+          : {}),
       }),
     onSuccess: (result) => {
       writeLinks((current) => [
@@ -171,6 +185,15 @@ export function ShareLinksDialog({
       return updateShareLink(link.id, {
         label: input.label.trim(),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
+        ...(preview
+          ? !input.passwordEnabled && !list.data?.policy.requirePassword
+            ? link.hasPassword
+              ? { password: null }
+              : {}
+            : input.password
+              ? { password: input.password }
+              : {}
+          : {}),
       })
     },
     onSuccess: ({ link }) => {
@@ -215,6 +238,7 @@ export function ShareLinksDialog({
     setOpen(nextOpen)
     if (nextOpen) return
     setEditing(null)
+    setDraft(NEW_LINK)
     setCreated(null)
     setRevoking(null)
     create.reset()
@@ -231,6 +255,8 @@ export function ShareLinksDialog({
         ? {
             label: next.link.label,
             expiry: next.link.expiresAt ? "keep" : "never",
+            passwordEnabled: next.link.hasPassword,
+            password: "",
           }
         : NEW_LINK
     )
@@ -321,6 +347,9 @@ export function ShareLinksDialog({
                 choices={choices}
                 disabled={saving}
                 onSubmit={submit}
+                passwords={preview}
+                passwordRequired={list.data?.policy.requirePassword ?? false}
+                hasPassword={editingLink?.hasPassword ?? false}
               />
             ) : canCreate && !list.isError && list.data ? (
               <Button
@@ -558,7 +587,13 @@ function ShareLinkForm({
   choices,
   disabled,
   onSubmit,
+  passwords,
+  passwordRequired,
+  hasPassword,
 }: {
+  passwords: boolean
+  passwordRequired: boolean
+  hasPassword: boolean
   draft: LinkDraft
   onChange: (draft: LinkDraft) => void
   choices: Array<{ value: ShareLinkExpiry; label: string }>
@@ -637,6 +672,61 @@ function ShareLinkForm({
           </Select>
         </div>
       </div>
+      {passwords ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <label
+              htmlFor="share-link-password-enabled"
+              className="text-sm font-medium"
+            >
+              Password
+            </label>
+            <Switch
+              id="share-link-password-enabled"
+              checked={draft.passwordEnabled || passwordRequired}
+              disabled={disabled || passwordRequired}
+              onCheckedChange={(passwordEnabled) =>
+                onChange({ ...draft, passwordEnabled, password: "" })
+              }
+            />
+          </div>
+          {draft.passwordEnabled || passwordRequired ? (
+            <>
+              <label htmlFor="share-link-password" className="sr-only">
+                {hasPassword ? "New password" : "Link password"}
+              </label>
+              <Input
+                id="share-link-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
+                required={!hasPassword}
+                disabled={disabled}
+                placeholder={
+                  hasPassword
+                    ? "Leave blank to keep the password"
+                    : "At least 8 characters"
+                }
+                value={draft.password}
+                onChange={(event) =>
+                  onChange({ ...draft, password: event.target.value })
+                }
+              />
+              {passwordRequired ? (
+                <p className="text-xs text-muted-foreground">
+                  This Worktable requires a password for every link.
+                </p>
+              ) : null}
+              {hasPassword ? (
+                <p className="text-xs text-muted-foreground">
+                  Changing it asks visitors to unlock the link again.
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </form>
   )
 }

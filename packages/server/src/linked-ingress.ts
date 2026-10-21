@@ -12,7 +12,10 @@ import {
   LinkedRequestClaims,
   SHARE_CAPABILITY_HEADER,
   ShareLinkToken,
+  ShareTicket,
+  SHARE_UNLOCK_HEADER,
 } from "@worktable/hosted-contract"
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
@@ -25,6 +28,31 @@ import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { currentTeamWorktable } from "./team-database.ts"
 import { resolveCloudTeamAgentCredential } from "./team-cloud.ts"
 import type { TokenIdentity } from "./token-store.ts"
+
+function validShareRequest(claims: LinkedRequestClaims): boolean {
+  if (claims.grant.kind !== "share" || claims.grant.visitor !== undefined)
+    return false
+  const preview = sharingPreviewEnabled()
+  if (claims.grant.unlock !== undefined && !preview) return false
+  if (claims.path === "/public/share/unlock") {
+    return (
+      preview &&
+      claims.method === "POST" &&
+      ShareLinkToken.safeParse(claims.grant.capability).success
+    )
+  }
+  if (
+    !["/public/share", "/public/share/content"].includes(claims.path) ||
+    !["GET", "HEAD"].includes(claims.method)
+  )
+    return false
+  return (
+    ShareLinkToken.safeParse(claims.grant.capability).success ||
+    (preview &&
+      claims.path === "/public/share/content" &&
+      ShareTicket.safeParse(claims.grant.capability).success)
+  )
+}
 
 async function readBody(
   request: Request,
@@ -121,7 +149,10 @@ export async function createLinkedIngress(options: {
         ? admitWorkspaceRequest()
         : null)
     if (!release)
-      return new Response(null, { status: 503, headers: { "Retry-After": "1" } })
+      return new Response(null, {
+        status: 503,
+        headers: { "Retry-After": "1" },
+      })
     if (inFlight >= 8) {
       release()
       return new Response(null, {
@@ -170,15 +201,7 @@ export async function createLinkedIngress(options: {
             : claims.grant.kind === "mcp"
               ? claims.path !== "/api/mcp" ||
                 !["GET", "POST", "DELETE"].includes(claims.method)
-              : !["/public/share", "/public/share/content"].includes(
-                  claims.path
-                ) ||
-                !["GET", "HEAD"].includes(claims.method) ||
-                // Tickets and visitors come with share requests this
-                // runtime doesn't serve yet.
-                !ShareLinkToken.safeParse(claims.grant.capability).success ||
-                claims.grant.unlock !== undefined ||
-                claims.grant.visitor !== undefined
+              : !validShareRequest(claims)
         )
           return denied()
         body = await readBody(request, payload.exp * 1000)
@@ -214,8 +237,16 @@ export async function createLinkedIngress(options: {
         )
       if (claims.grant.kind === "share") {
         headers.set(SHARE_CAPABILITY_HEADER, claims.grant.capability)
+        if (claims.grant.unlock)
+          headers.set(SHARE_UNLOCK_HEADER, claims.grant.unlock)
         return await shares.fetch(
-          new Request(request.url, { method: request.method, headers })
+          new Request(request.url, {
+            method: request.method,
+            headers,
+            ...(request.method === "POST"
+              ? { body: new Uint8Array(body) }
+              : {}),
+          })
         )
       }
       const grant = claims.grant

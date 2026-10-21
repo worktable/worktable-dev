@@ -1,3 +1,16 @@
+import {
+  SHARE_UNLOCK_HEADER,
+  ShareUnlockRequest,
+} from "@worktable/hosted-contract"
+import { sharingPreviewEnabled } from "../sharing-preview.ts"
+import {
+  mintShareTicket,
+  mintLegacyFrameTicket,
+  legacyFrameToken,
+  SharePasswordBusy,
+  verifyShareLinkPassword,
+  SharePasswordLimited,
+} from "../share-link-credentials.ts"
 import { createHash } from "node:crypto"
 import { SOURCE_URL } from "../release-info.ts"
 import { Hono, type Context } from "hono"
@@ -15,7 +28,11 @@ import {
   renderPublicHtmlProjection,
 } from "../public-share-renderer.ts"
 import { resolveDocumentShare } from "../share-store.ts"
-import { legacyShareHeldBack } from "../share-policy.ts"
+import {
+  currentSharingPolicy,
+  effectiveExpiresAt,
+  legacyShareHeldBack,
+} from "../share-policy.ts"
 import {
   readShareLinkDocument,
   resolveShareLinkView,
@@ -24,6 +41,7 @@ import {
 } from "../share-link-views.ts"
 import {
   noteShareLinkUsed,
+  shareUnlockSecret,
   onShareLinksChanged,
   ShareLinksStoreError,
   sharingV2Active,
@@ -392,6 +410,16 @@ export function createPublicSharesRouter(
 ): Hono {
   const router = new Hono()
   router.onError((error, c) => {
+    if (error instanceof SharePasswordLimited) {
+      const headers = projectionHeaders()
+      headers.set("Retry-After", String(error.retryAfter))
+      return Response.json(
+        { code: "RATE_LIMITED" },
+        { status: PUBLIC_SHARE_STATUS.RATE_LIMITED, headers }
+      )
+    }
+    if (error instanceof SharePasswordBusy)
+      return busy(c.req.raw, false, getShareOrigin() ?? "")
     console.error(
       "[public-share] unavailable:",
       error instanceof Error ? error.name : "error"
@@ -417,7 +445,8 @@ export function createPublicSharesRouter(
     let view: Awaited<ReturnType<typeof resolveShareLinkView>>
     try {
       view = await resolveShareLinkView(
-        c.req.raw.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
+        c.req.raw.headers.get(SHARE_CAPABILITY_HEADER) ?? "",
+        { content, unlock: c.req.header(SHARE_UNLOCK_HEADER) }
       )
     } catch (error) {
       // A store this binary cannot open serves none of its links, and its
@@ -426,18 +455,59 @@ export function createPublicSharesRouter(
       throw error
     }
     if (view === null) return null
+    if (view === "expired")
+      return htmlResponse(
+        c.req.raw,
+        JSON.stringify({ code: "EXPIRED" }),
+        PUBLIC_SHARE_STATUS.EXPIRED,
+        projectionHeaders()
+      )
+    if (view === "password-required")
+      return htmlResponse(
+        c.req.raw,
+        JSON.stringify({ code: "PASSWORD_REQUIRED" }),
+        PUBLIC_SHARE_STATUS.PASSWORD_REQUIRED,
+        projectionHeaders()
+      )
     if (view === "unavailable" || (content && view.link.kind !== "html")) {
       return unavailable(c.req.raw, content, shareOrigin)
     }
     const page = await renderLinkPage(view, surface)
     if (page === "busy") return busy(c.req.raw, content, shareOrigin)
     if (!page) return unavailable(c.req.raw, content, shareOrigin)
+    let response: Response
+    if (!content && view.link.kind === "html" && sharingPreviewEnabled()) {
+      if (!view.ticketSecret) return busy(c.req.raw, false, shareOrigin)
+      const ticket = mintShareTicket(
+        view.ticketSecret,
+        view.link,
+        "frame",
+        view.expiresAt
+      )
+      if (!ticket) return unavailable(c.req.raw)
+      // Tickets are minted per response; cached projections contain no ticket
+      // that could expire while the document's content revision stays current.
+      response = new Response(
+        c.req.method === "HEAD"
+          ? null
+          : JSON.stringify({
+              ...JSON.parse(page.body),
+              contentTicket: ticket.ticket,
+            }),
+        { headers: projectionHeaders() }
+      )
+    } else {
+      response = await pageResponse(
+        c.req.raw,
+        page,
+        content ? contentHeaders(shareOrigin) : projectionHeaders()
+      )
+    }
+    // Covers cached pages, compression and password changes during rendering.
+    if (!shareLinkStillOpens(view.link))
+      return unavailable(c.req.raw, content, shareOrigin)
     noteShareLinkUsed(view.link)
-    return pageResponse(
-      c.req.raw,
-      page,
-      content ? contentHeaders(shareOrigin) : projectionHeaders()
-    )
+    return response
   }
 
   async function renderOuterShare(c: Context): Promise<Response> {
@@ -473,15 +543,50 @@ export function createPublicSharesRouter(
         )
     )
     if (!page) return unavailable(c.req.raw)
-    return pageResponse(c.req.raw, page, projectionHeaders())
+    let response: Response
+    if (artifact.kind === "html" && sharingPreviewEnabled()) {
+      const secret = shareUnlockSecret()
+      if (!secret) return busy(c.req.raw, false, shareOrigin)
+      const share = await resolveDocumentShare(resolved.token)
+      if (!share || legacyShareHeldBack(share)) return unavailable(c.req.raw)
+      const ticket = mintLegacyFrameTicket(
+        secret,
+        resolved.token,
+        effectiveExpiresAt(
+          { createdAt: Date.parse(share.createdAt), expiresAt: null },
+          currentSharingPolicy()
+        )
+      )
+      if (!ticket) return unavailable(c.req.raw)
+      response = new Response(
+        c.req.method === "HEAD"
+          ? null
+          : JSON.stringify({ ...JSON.parse(page.body), contentTicket: ticket }),
+        { headers: projectionHeaders() }
+      )
+    } else response = await pageResponse(c.req.raw, page, projectionHeaders())
+    return (await legacyShareStillOpens(resolved.token))
+      ? response
+      : unavailable(c.req.raw)
   }
 
   async function renderHtmlContent(c: Context): Promise<Response> {
     const shareOrigin = getShareOrigin()
     if (!shareOrigin) return unavailable(c.req.raw, true)
-    const link = await serveLink(c, "content", shareOrigin)
-    if (link) return link
-    const resolved = await resolveRequest(c.req.raw)
+    const capability = c.req.header(SHARE_CAPABILITY_HEADER) ?? ""
+    let request = c.req.raw
+    if (sharingPreviewEnabled() && capability.startsWith("lf1.")) {
+      const secret = shareUnlockSecret()
+      const token = secret ? legacyFrameToken(secret, capability) : null
+      if (!token) return unavailable(c.req.raw, true, shareOrigin)
+      const headers = new Headers(c.req.raw.headers)
+      headers.set(SHARE_CAPABILITY_HEADER, token)
+      request = new Request(c.req.raw, { headers })
+    } else {
+      const link = await serveLink(c, "content", shareOrigin)
+      if (link) return link
+    }
+    const resolved = await resolveRequest(request)
     const artifact = resolved?.artifact
     if (!resolved || artifact?.kind !== "html") {
       return unavailable(c.req.raw, true, shareOrigin)
@@ -490,8 +595,61 @@ export function createPublicSharesRouter(
       renderPublicHtmlProjection(artifact.html)
     )
     if (!page) return unavailable(c.req.raw, true, shareOrigin)
-    return pageResponse(c.req.raw, page, contentHeaders(shareOrigin))
+    const response = await pageResponse(
+      c.req.raw,
+      page,
+      contentHeaders(shareOrigin)
+    )
+    return (await legacyShareStillOpens(resolved.token))
+      ? response
+      : unavailable(c.req.raw, true, shareOrigin)
   }
+
+  router.post("/unlock", async (c) => {
+    if (!getShareOrigin() || !sharingPreviewEnabled())
+      return unavailable(c.req.raw)
+    const input = ShareUnlockRequest.safeParse(
+      await c.req.json().catch(() => null)
+    )
+    if (!input.success) return unavailable(c.req.raw)
+    const capability = c.req.header(SHARE_CAPABILITY_HEADER) ?? ""
+    const view = await resolveShareLinkView(capability, { allowLocked: true })
+    if (
+      !view ||
+      typeof view === "string" ||
+      !view.link.passwordHash ||
+      !view.ticketSecret
+    )
+      return unavailable(c.req.raw)
+    if (
+      !(await verifyShareLinkPassword(
+        view.link,
+        input.data.password,
+        view.link.passwordHash
+      ))
+    ) {
+      return Response.json(
+        { code: "PASSWORD_REQUIRED" },
+        {
+          status: PUBLIC_SHARE_STATUS.PASSWORD_REQUIRED,
+          headers: projectionHeaders(),
+        }
+      )
+    }
+    // Hashing awaits native work. A concurrent revoke/password/flag/policy
+    // change must not issue a ticket for the state we verified earlier.
+    if (!sharingPreviewEnabled() || !shareLinkStillOpens(view.link))
+      return unavailable(c.req.raw)
+    const ticket = mintShareTicket(
+      view.ticketSecret,
+      view.link,
+      "unlock",
+      view.expiresAt
+    )
+    return ticket
+      ? Response.json(ticket, { headers: projectionHeaders() })
+      : unavailable(c.req.raw)
+  })
 
   router.on(["GET", "HEAD"], "/", renderOuterShare)
   router.on(["GET", "HEAD"], "/content", renderHtmlContent)

@@ -118,7 +118,10 @@ function base64UrlEncode(text: string): string {
   let binary = ""
   for (const byte of new TextEncoder().encode(text))
     binary += String.fromCharCode(byte)
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "")
 }
 
 function base64UrlDecode(value: string): string {
@@ -264,6 +267,32 @@ export const PUBLIC_SHARE_STATUS = {
   /** Too busy to answer now; `Retry-After` says when to retry. */
   BUSY: 503,
 } as const
+
+/**
+ * What the gateway sends a Worktable's `POST /public/share/unlock`, with the
+ * link token in SHARE_CAPABILITY_HEADER.
+ */
+export const ShareUnlockRequest = z
+  .object({ password: z.string().min(1).max(1024) })
+  .strict()
+export type ShareUnlockRequest = z.infer<typeof ShareUnlockRequest>
+
+/**
+ * A Worktable's answer to the right password: the unlock ticket, which the
+ * gateway keeps in a cookie scoped to the link, and its lifetime in seconds.
+ * A wrong password is a PASSWORD_REQUIRED status instead.
+ */
+export const ShareUnlockReply = z
+  .object({
+    ticket: ShareTicket,
+    maxAge: z
+      .number()
+      .int()
+      .min(1)
+      .max(12 * 60 * 60),
+  })
+  .strict()
+export type ShareUnlockReply = z.infer<typeof ShareUnlockReply>
 
 /** An invitation id the gateway asks a Worktable about before sign-in. */
 export const INVITATION_HEADER = "x-worktable-invitation"
@@ -603,10 +632,14 @@ export const BrowserAssertionClaims = z.object({
   wt: z.object({
     credential: z.literal("browser"),
     worktableName: z.string().trim().min(1).max(4096).optional(),
-    identity: z.object({
-      issuer: z.string().url(), subject: z.string().min(1), email: z.string().email(),
-      companyId: z.string().min(1).optional(),
-    }).optional(),
+    identity: z
+      .object({
+        issuer: z.string().url(),
+        subject: z.string().min(1),
+        email: z.string().email(),
+        companyId: z.string().min(1).optional(),
+      })
+      .optional(),
     workspaceId: z.string().min(1),
     requestHash: z
       .string()
@@ -647,7 +680,10 @@ export function browserRequestBinding(method: string, url: URL): string {
  * tenant ALSO pins the token's `sub` to its owner (M1): audience alone cannot
  * isolate tenants on a shared authorization server, and never could.
  */
-export function tenantResourceUrl(publicBaseUrl: string, worktableId?: string): string {
+export function tenantResourceUrl(
+  publicBaseUrl: string,
+  worktableId?: string
+): string {
   return `${publicBaseUrl.replace(/\/+$/, "")}${MCP_RESOURCE_PATH}${worktableId ? `/w/${encodeURIComponent(worktableId)}` : ""}`
 }
 
@@ -774,7 +810,10 @@ export function buildTenantEnv(
     [ENV.NO_UPDATE_CHECK]: "1",
     [ENV.VERSION]: parsed.version,
     [ENV.AUTH_SERVER_URL]: parsed.authServerUrl,
-    [ENV.RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl, parsed.cloudWorkspaceId),
+    [ENV.RESOURCE_URL]: tenantResourceUrl(
+      parsed.publicBaseUrl,
+      parsed.cloudWorkspaceId
+    ),
     [ENV.LEGACY_RESOURCE_URL]: tenantResourceUrl(parsed.publicBaseUrl),
     [ENV.OWNER_SUBJECT]: parsed.ownerSubject,
     [ENV.CLOUD_WORKSPACE_ID]: parsed.cloudWorkspaceId,
@@ -852,25 +891,34 @@ export {
 } from "./backups.ts"
 
 /** A derived Cloud directory snapshot. It never grants access to runtime content. */
-export const TeamDirectorySnapshot = z.object({
-  workspaceId: z.string().min(1).max(128),
-  name: z.string().trim().min(1).max(4096).optional(),
-  portableWorkspaceId: z.string().min(1).max(128),
-  epoch: z.string().regex(/^[a-f0-9]{64}$/),
-  revision: z.number().int().nonnegative(),
-  capturedAt: z.number().int().nonnegative(),
-  members: z.array(z.object({
-    subject: z.string().min(1).max(128),
-    memberId: z.string().min(1).max(128),
-    actorId: z.string().min(1).max(128),
-    role: z.enum(["owner", "member"]),
-  }).strict()).max(10000),
-}).strict()
+export const TeamDirectorySnapshot = z
+  .object({
+    workspaceId: z.string().min(1).max(128),
+    name: z.string().trim().min(1).max(4096).optional(),
+    portableWorkspaceId: z.string().min(1).max(128),
+    epoch: z.string().regex(/^[a-f0-9]{64}$/),
+    revision: z.number().int().nonnegative(),
+    capturedAt: z.number().int().nonnegative(),
+    members: z
+      .array(
+        z
+          .object({
+            subject: z.string().min(1).max(128),
+            memberId: z.string().min(1).max(128),
+            actorId: z.string().min(1).max(128),
+            role: z.enum(["owner", "member"]),
+          })
+          .strict()
+      )
+      .max(10000),
+  })
+  .strict()
 export type TeamDirectorySnapshot = z.infer<typeof TeamDirectorySnapshot>
 
-
 /** Bound tenant-controlled bytes before either shared Cloud service decodes them. */
-export async function readTeamDirectorySnapshot(response: Response): Promise<TeamDirectorySnapshot> {
+export async function readTeamDirectorySnapshot(
+  response: Response
+): Promise<TeamDirectorySnapshot> {
   if (!response.body) throw new Error("Team directory has no body")
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
@@ -895,5 +943,7 @@ export async function readTeamDirectorySnapshot(response: Response): Promise<Tea
     bytes.set(chunk, offset)
     offset += chunk.byteLength
   }
-  return TeamDirectorySnapshot.parse(JSON.parse(new TextDecoder().decode(bytes)))
+  return TeamDirectorySnapshot.parse(
+    JSON.parse(new TextDecoder().decode(bytes))
+  )
 }

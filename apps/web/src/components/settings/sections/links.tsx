@@ -1,3 +1,4 @@
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useRef, useState } from "react"
 import {
   useInfiniteQuery,
@@ -137,7 +138,11 @@ function useSharingPolicy(enabled: boolean) {
   )
   const query = useQuery({
     queryKey: SHARE_POLICY_QUERY_KEY,
-    queryFn: async () => (confirmed.current = await getSharingPolicy()),
+    queryFn: async ({ signal }) => {
+      const policy = await getSharingPolicy(signal)
+      if (!signal.aborted) confirmed.current = policy
+      return policy
+    },
     enabled,
   })
   const save = useMutation({
@@ -149,7 +154,10 @@ function useSharingPolicy(enabled: boolean) {
     },
     // The control answers at once; the server's copy replaces it.
     onMutate: async (change) => {
-      await queryClient.cancelQueries({ queryKey: SHARE_POLICY_QUERY_KEY })
+      await queryClient.cancelQueries({
+        queryKey: SHARE_POLICY_QUERY_KEY,
+        exact: true,
+      })
       queryClient.setQueryData<SharingPolicyResponse>(
         SHARE_POLICY_QUERY_KEY,
         (current) =>
@@ -171,7 +179,27 @@ function useSharingPolicy(enabled: boolean) {
           : "Couldn’t save the change. Try again."
       )
     },
-    onSettled: () => {
+    onSettled: async (saved, error) => {
+      const state = queryClient.getQueryState<SharingPolicyResponse>(
+        SHARE_POLICY_QUERY_KEY
+      )
+      // A socket or focus read can already carry another owner's newer save.
+      // If cancelling that read, replace it after installing our response.
+      const revalidate =
+        state?.fetchStatus === "fetching" ||
+        state?.isInvalidated === true ||
+        (state?.data?.revision ?? 0) >
+          (saved?.revision ?? confirmed.current?.revision ?? 0)
+      await queryClient.cancelQueries({
+        queryKey: SHARE_POLICY_QUERY_KEY,
+        exact: true,
+      })
+      const newer =
+        error instanceof HttpError && error.status === 409
+          ? (error.body as SharingPolicyResponse)
+          : null
+      if (saved) confirmed.current = saved
+      else if (newer?.policy) confirmed.current = newer
       // A later change still on its way brings the newer copy.
       if (queryClient.isMutating({ mutationKey: SHARE_POLICY_QUERY_KEY }) > 1)
         return
@@ -181,7 +209,17 @@ function useSharingPolicy(enabled: boolean) {
       // Whether each link opens follows the policy: the lists, and each
       // document page's count of links that open and whether Share makes
       // one. Only the page on screen reads again now.
-      invalidateSharingQueries(queryClient, confirmed.current?.revision)
+      const authoritative = Boolean(saved || newer?.policy)
+      invalidateSharingQueries(
+        queryClient,
+        authoritative ? confirmed.current?.revision : undefined,
+        { keepPolicy: authoritative }
+      )
+      if (authoritative && revalidate)
+        void queryClient.invalidateQueries({
+          queryKey: SHARE_POLICY_QUERY_KEY,
+          exact: true,
+        })
     },
   })
   const update = (change: Partial<SharingPolicy>) => {
@@ -191,6 +229,7 @@ function useSharingPolicy(enabled: boolean) {
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
+  const preview = useDeploymentInfo().data?.capabilities.sharingPreview === true
   const { query, update } = useSharingPolicy(enabled)
   const policy = query.data?.policy
 
@@ -270,6 +309,19 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
             </SettingRow>
           ) : null}
           <SpacesSetting policy={policy} onChange={update} />
+          {preview ? (
+            <SettingRow
+              label="Require a password"
+              description="Links without a password stop opening while this is on."
+            >
+              <Switch
+                checked={policy.requirePassword}
+                onCheckedChange={(requirePassword) =>
+                  update({ requirePassword })
+                }
+              />
+            </SettingRow>
+          ) : null}
           <SettingRow
             className="flex-col items-start sm:flex-row sm:items-center"
             label="Longest expiry"
@@ -451,9 +503,16 @@ function noteRevoked(
         links: current.links.filter((link) => link.id !== revoked.id),
       }
   )
-  const remaining = queryClient.getQueryData<DocumentShareLinks>(shareLinksQueryKey(before.spaceId, before.path))
-  if (remaining) notePageLinks(queryClient, before.spaceId, before.path, remaining.links)
-  else void queryClient.invalidateQueries({ queryKey: documentQueryKeys.page(before.spaceId, before.path), exact: true })
+  const remaining = queryClient.getQueryData<DocumentShareLinks>(
+    shareLinksQueryKey(before.spaceId, before.path)
+  )
+  if (remaining)
+    notePageLinks(queryClient, before.spaceId, before.path, remaining.links)
+  else
+    void queryClient.invalidateQueries({
+      queryKey: documentQueryKeys.page(before.spaceId, before.path),
+      exact: true,
+    })
 }
 
 function LinkList({ enabled, titled }: { enabled: boolean; titled: boolean }) {

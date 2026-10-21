@@ -68,7 +68,7 @@ import {
   ensureWorkspaceManifest,
   setWorkspaceRootOverride,
 } from "./workspace.ts"
-import { notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
+import { drainWorkspaceChanges, notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
 import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
 import { recoverMissingWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
 
@@ -247,13 +247,24 @@ describe("share links", () => {
     expect((await send("PATCH", `/api/shares/links/${created.link.id}`, { grant })).status).toBe(200)
     expect((await view(projection.contentTicket, "/public/share/content")).status).toBe(404)
     const bridge = (token: string, call: unknown = { v: 1, op: "records.query", collection: "deals", query: {} }) => app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token, Origin: sharing.shareOrigin, Cookie: "member=ignored", Authorization: "Bearer ignored" }, body: JSON.stringify(call) })
-    const response = await bridge(created.token)
+    // A watcher echo can advance the first cold snapshot after a fixture
+    // write. Like the outer broker, retry that explicit transient response.
+    const readRecords = async (token: string): Promise<Response> => {
+      let response = await bridge(token)
+      for (let attempt = 0; response.status === 429 && attempt < 10; attempt++) {
+        if ((await response.clone().json()).error?.code !== "LINK_BUSY") break
+        await drainWorkspaceChanges()
+        response = await bridge(token)
+      }
+      return response
+    }
+    const response = await readRecords(created.token)
     expect(response.status).toBe(200)
     const result = await response.json()
     expect(result.result.records[0].data).toEqual({ name: "Public name" })
     expect(JSON.stringify(result)).not.toContain("private-id")
     expect(JSON.stringify(result)).not.toContain("Hidden data")
-    const otherLink = await (await bridge(neverExpires.token)).json()
+    const otherLink = await (await readRecords(neverExpires.token)).json()
     expect(otherLink.result.records[0].id).not.toBe(result.result.records[0].id)
     expect((await bridge(created.token, { v: 1, op: "records.create", collection: "deals", data: {} })).status).toBe(400)
     process.env["WORKTABLE_RECORDS_INDEX"] = "1"

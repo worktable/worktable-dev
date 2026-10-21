@@ -1614,6 +1614,7 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
         z.looseObject({
           recordId: z.string(),
           created: z.boolean().optional(),
+          matchedBy: z.string().optional(),
           updated: z.boolean().optional(),
           error: z.string().optional(),
         })
@@ -1622,7 +1623,11 @@ export const PREVIEW_OUTPUT_SCHEMAS: Partial<
     ),
     created: forActions(
       z.boolean(),
-      '"create" (false when the recordId already existed)'
+      '"create" (false when the recordId, or a unique field\'s value, already existed)'
+    ),
+    matchedBy: forActions(
+      z.string(),
+      '"create" when a unique field matched an existing record'
     ),
     counts: forActions(
       z.looseObject({

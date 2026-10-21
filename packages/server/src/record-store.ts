@@ -3,7 +3,7 @@ import { recordActivity } from "./activity-log.ts";
 import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { CanonicalIdSchema, normalizeRecordFieldType, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
+import { CanonicalIdSchema, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
 import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
 import { compareFieldValues, compareForOrder, fieldValue, isMissing, recordMatchesSearch, RecordQueryShapeError, referencedCollections, runQueryV2 } from "./record-query.ts";
 import { notifyRecordChanged } from "./record-events.ts";
@@ -69,6 +69,7 @@ function validationProjection(field: RecordCollectionSchema["fields"][string]): 
     values: field.values ?? null,
     references: field.references ?? null,
     many: field.many ?? false,
+    unique: field.unique ?? false,
   };
 }
 
@@ -78,6 +79,7 @@ function validationProjection(field: RecordCollectionSchema["fields"][string]): 
 function onlyLoosens(prev: Record<string, unknown>, next: Record<string, unknown>): boolean {
   if (prev.type !== next.type || prev.references !== next.references || prev.many !== next.many) return false;
   if (next.required && !prev.required) return false;
+  if (next.unique && !prev.unique) return false;
   if (next.values === null) return true;
   if (prev.values === null) return false;
   const allowed = new Set(next.values as string[]);
@@ -91,6 +93,47 @@ function onlyLoosens(prev: Record<string, unknown>, next: Record<string, unknown
  *  the schema file lock — record writers never take the schema file lock. */
 function schemaGateKey(spaceId: string, collectionId: string): string {
   return `${collectionDir(spaceId, collectionId)}#schema-gate`;
+}
+
+/** Held around every write to a collection with unique fields, from the
+ *  duplicate check through the write, and by schema writes. It is taken
+ *  before any other record lock, so the ordering stays acyclic. */
+function uniqueLockKey(spaceId: string, collectionId: string): string {
+  return `${collectionDir(spaceId, collectionId)}#unique`;
+}
+
+const UNIQUE_FIELD_TYPES = new Set(["string", "text", "url", "email", "person", "number", "date", "datetime", "select"]);
+
+function uniqueFieldKeys(schema: RecordCollectionSchema | null | undefined): string[] {
+  return Object.entries(schema?.fields ?? {}).filter(([, field]) => field.unique).map(([key]) => key);
+}
+
+async function withUniqueLock<T>(spaceId: string, collectionId: string, schema: RecordCollectionSchema | null, fn: () => Promise<T>): Promise<T> {
+  return uniqueFieldKeys(schema).length > 0 ? withStoreWriteLock(uniqueLockKey(spaceId, collectionId), fn) : fn();
+}
+
+/** The first unique field whose value in `data` another record already
+ *  holds (archived records count). Empty values never clash. */
+async function findUniqueClash(
+  spaceId: string,
+  collectionId: string,
+  schema: RecordCollectionSchema | null,
+  data: Record<string, unknown>,
+  options: { excludeId?: string; onlyKeys?: ReadonlySet<string> } = {},
+): Promise<{ field: string; recordId: string } | null> {
+  for (const field of uniqueFieldKeys(schema)) {
+    if (options.onlyKeys && !options.onlyKeys.has(field)) continue;
+    const value = data[field];
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    if (value === "") continue;
+    const indexed = recordIndexEnabled() ? recordIndex.findIdsByFieldValue(spaceId, collectionId, field, value) : null;
+    const ids = indexed ?? (await listRecords(spaceId, collectionId, { includeArchived: true }))
+      .filter((record) => record.data[field] === value)
+      .map((record) => record.id);
+    const other = ids.find((id) => id !== options.excludeId);
+    if (other) return { field, recordId: other };
+  }
+  return null;
 }
 
 function recordPath(spaceId: string, collectionId: string, recordId: string): string {
@@ -119,14 +162,19 @@ export function buildRecordCollectionSchema(input: {
   wellKnownType?: string;
   createdBy?: string;
   metadata?: Record<string, unknown>;
+  /** A field key to name records by; null clears it; undefined keeps it. */
+  titleField?: string | null;
   existing?: RecordCollectionSchema;
 }): RecordCollectionSchema {
   const now = new Date().toISOString();
   const fields = input.fields ?? input.existing?.fields ?? {};
+  const titleField = input.titleField === undefined ? input.existing?.titleField : input.titleField ?? undefined;
+  const { titleField: _previousTitle, ...existing } = input.existing ?? ({} as Partial<RecordCollectionSchema>);
   return {
     // Spread the existing schema first so keys (and versions) written by a newer
     // Worktable survive an edit from this one instead of being silently dropped.
-    ...(input.existing ?? {}),
+    ...existing,
+    ...(titleField ? { titleField } : {}),
     // Stamp the lowest version the fields actually require: collections using
     // only v1 types stay version 1 (readable on every Worktable ever shipped);
     // v2 types/metadata bump to 2. Never downgrade a newer server's stamp.
@@ -238,6 +286,17 @@ export async function writeRecordCollectionSchema(
     if (normalizeRecordFieldType(spec.type) === "relation" && spec.onDelete === "setNull" && spec.required) {
       return { data: null, error: `Field ${name} cannot be required with onDelete: setNull — deleting its target must be able to clear it` };
     }
+    if (spec.unique && !UNIQUE_FIELD_TYPES.has(normalizeRecordFieldType(spec.type))) {
+      return { data: null, error: `Field ${name} can't be unique: only single text, number, date and select fields can be` };
+    }
+  }
+  const titleField = parsed.data.titleField;
+  if (titleField !== undefined) {
+    const spec = parsed.data.fields[titleField];
+    if (!spec) return { data: null, error: `titleField "${titleField}" is not a field of this collection` };
+    if (!(TITLE_FIELD_TYPES as readonly string[]).includes(normalizeRecordFieldType(spec.type))) {
+      return { data: null, error: `titleField "${titleField}" must be a text, URL, email, person or select field` };
+    }
   }
   await ensureRecordDirs(spaceId, parsed.data.id);
   const path = schemaPath(spaceId, parsed.data.id);
@@ -247,7 +306,7 @@ export async function writeRecordCollectionSchema(
   // otherwise slip past the gate and land newly invalid.
   let conflict = false;
   let gateError: string | null = null;
-  await withStoreWriteLock(schemaGateKey(spaceId, parsed.data.id), async () => {
+  await withStoreWriteLock(uniqueLockKey(spaceId, parsed.data.id), () => withStoreWriteLock(schemaGateKey(spaceId, parsed.data.id), async () => {
     // Strict-create (ifAbsent) conflicts come FIRST: a duplicate create must
     // 409 per its contract, not surface the gate's 400 about rows it was
     // never allowed to adopt. The check runs inside the gate lock, so two
@@ -317,12 +376,30 @@ export async function writeRecordCollectionSchema(
         gateError = `Schema change would break ${broken.length} existing record(s) — fix the records first or loosen the change. ${preview}${broken.length > 5 ? "; …" : ""}`;
         return;
       }
+      // A field made unique must not already hold the same value twice.
+      for (const key of changedKeys) {
+        if (!parsed.data.fields[key]!.unique || previous?.fields[key]?.unique) continue;
+        const holders = new Map<string, string[]>();
+        for (const row of rows) {
+          const value = row.data[key];
+          if ((typeof value !== "string" && typeof value !== "number") || value === "") continue;
+          const ids = holders.get(String(value)) ?? [];
+          ids.push(row.id);
+          holders.set(String(value), ids);
+        }
+        const shared = [...holders.entries()].filter(([, ids]) => ids.length > 1);
+        if (shared.length > 0) {
+          const preview = shared.slice(0, 3).map(([value, ids]) => `"${value.slice(0, 80)}" in ${ids.slice(0, 3).join(", ")}`).join("; ");
+          gateError = `Field ${key} can't be unique yet: ${shared.length} value(s) are held by more than one record. Fix the duplicates first. ${preview}${shared.length > 3 ? "; …" : ""}`;
+          return;
+        }
+      }
     }
     await withStoreWriteLock(path, async () => {
       await mkdir(dirname(path), { recursive: true });
       await atomicWriteText(path, stringifyCanonicalYaml(parsed.data));
     });
-  });
+  }));
   if (gateError) {
     return { data: null, error: gateError };
   }
@@ -875,9 +952,23 @@ export async function writeRecord(spaceId: string, record: RecordFile, opts?: Wr
  *  the stored record comes back unchanged with `created: false`, so callers
  *  that derive ids from a natural key get add-or-skip for free. Changing an
  *  existing record goes through updateRecord. */
-export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean }> {
+export async function createRecord(spaceId: string, collectionId: string, input: { id?: string; data: Record<string, unknown>; metadata?: Record<string, unknown>; createdBy?: string; strictFields?: boolean }): Promise<{ data: RecordFile | null; error: string | null; created?: boolean; matchedBy?: string }> {
   assertSpaceAccess(spaceId, "edit");
-  const result = await createRecordInner(spaceId, collectionId, input);
+  if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
+  if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
+  // A unique field works like the id: a value another record already holds
+  // returns that record unchanged instead of adding a second one.
+  const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
+  const result = await withUniqueLock(spaceId, collectionId, schema, async () => {
+    const clash = await findUniqueClash(spaceId, collectionId, schema, input.data);
+    // A clash with the record the id already names is just that record.
+    if (clash && clash.recordId !== input.id) {
+      const { data: existing, error } = await readRecord(spaceId, collectionId, clash.recordId);
+      if (!existing) return { data: null, error: error ?? `Record ${clash.recordId} could not be read` };
+      return { data: existing, error: null, created: false, matchedBy: clash.field };
+    }
+    return createRecordInner(spaceId, collectionId, input);
+  });
   if (result.data && result.created) noteRecordActivity(spaceId, collectionId, "records.added");
   return result;
 }
@@ -931,13 +1022,11 @@ async function createRecordInner(spaceId: string, collectionId: string, input: {
   });
 }
 
-/** The value that names a record: its title or name, else the first required
- *  string field (the same rule the web uses for a record's title). */
+/** The value that names a record: its collection's title field (the same
+ *  rule the web uses for a record's title), or title or name without one. */
 function recordTitleValue(data: Record<string, unknown>, schema: RecordCollectionSchema | null): string | null {
-  const keys = ["title", "name"];
-  for (const [key, field] of Object.entries(schema?.fields ?? {})) {
-    if (field.required && normalizeRecordFieldType(field.type) === "string") keys.push(key);
-  }
+  const titleKey = recordTitleFieldKey(schema);
+  const keys = titleKey ? [titleKey, "title", "name"] : ["title", "name"];
   for (const key of keys) {
     const value = data[key];
     if (typeof value === "string" && value.trim()) return value;
@@ -972,17 +1061,21 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
+  const schema = (await readRecordCollectionSchema(spaceId, collectionId)).data;
+  const touched = new Set(Object.keys(patch.data ?? {}));
   // Hold the per-record lock across the whole read-modify-write so concurrent
   // patches can't read the same "before" state and lost-update each other.
-  return withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
+  return withUniqueLock(spaceId, collectionId, schema, () => withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
+    const clash = await findUniqueClash(spaceId, collectionId, schema, patch.data ?? {}, { excludeId: recordId, onlyKeys: touched });
+    if (clash) return { data: null, error: `Field ${clash.field} must be unique: record ${clash.recordId} already has this value` };
     // Data and metadata both merge key by key: a patch names what changes,
     // and keys it leaves out keep their stored values.
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
-    return writeRecordInner(spaceId, record, { onlyKeys: new Set(Object.keys(patch.data ?? {})), strictFields: patch.strictFields });
-  });
+    return writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields });
+  }));
 }
 
 interface InboundRelation {

@@ -35,6 +35,7 @@ const CollectionSchema = z.object({
   wellKnownType: z.string().optional(),
   fields: z.record(z.string(), FieldSchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  titleField: z.string().nullable().optional(),
   createdBy: z.string().optional(),
 });
 
@@ -80,7 +81,7 @@ recordsRouter.post("/", requireScope("records:write"), async (c) => {
   if (existing.data && ifAbsent) {
     return c.json({ error: `Collection "${id}" already exists`, code: "CONFLICT" }, 409);
   }
-  const schema = buildRecordCollectionSchema({ id, name: parsed.data.name ?? id, description: parsed.data.description, wellKnownType: parsed.data.wellKnownType, fields: parsed.data.fields, metadata: parsed.data.metadata, createdBy: restWriteActor(c, parsed.data.createdBy), existing: existing.data ?? undefined });
+  const schema = buildRecordCollectionSchema({ id, name: parsed.data.name ?? id, description: parsed.data.description, wellKnownType: parsed.data.wellKnownType, fields: parsed.data.fields, metadata: parsed.data.metadata, titleField: parsed.data.titleField, createdBy: restWriteActor(c, parsed.data.createdBy), existing: existing.data ?? undefined });
   const result = await writeRecordCollectionSchema(spaceId, schema, { ifAbsent });
   if (result.conflict) return c.json({ error: result.error ?? `Collection "${id}" already exists`, code: "CONFLICT" }, 409);
   if (result.error || !result.data) return c.json({ error: result.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
@@ -155,7 +156,7 @@ recordsRouter.post("/:collectionId", requireScope("records:write"), async (c) =>
   const result = await createRecord(spaceId, collectionId, { ...parsed.data, createdBy: restWriteActor(c, parsed.data.createdBy) });
   if (result.error || !result.data) return c.json({ error: result.error ?? "Write failed", code: "VALIDATION_ERROR" }, 400);
   // An explicit id never overwrites: answer with the stored record unchanged.
-  if (!result.created) return c.json({ error: `Record ${result.data.id} already exists; update it instead`, code: "CONFLICT", record: result.data }, 409);
+  if (!result.created) return c.json({ error: result.matchedBy ? `Record ${result.data.id} already has this ${result.matchedBy}` : `Record ${result.data.id} already exists; update it instead`, code: "CONFLICT", record: result.data }, 409);
   noteRecordMutated();
   wsManager.broadcast(spaceId, { type: "record_update", spaceId, collectionId, recordId: result.data.id, data: result.data });
   return c.json({ record: result.data, recordId: result.data.id }, 201);

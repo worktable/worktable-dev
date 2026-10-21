@@ -9927,6 +9927,10 @@
                       "unit": {
                         "description": "number only: display unit",
                         "type": "string"
+                      },
+                      "unique": {
+                        "description": "No two records may hold the same value. create with a value another record has returns that record with created: false and matchedBy.",
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -9941,6 +9945,17 @@
                     "type": "string"
                   },
                   "additionalProperties": {}
+                },
+                "titleField": {
+                  "description": "The field that names each record in lists, links and generated ids (a text, URL, email, person or select field). null clears it.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -10228,6 +10243,9 @@
               "created": {
                 "type": "boolean"
               },
+              "matchedBy": {
+                "type": "string"
+              },
               "updated": {
                 "type": "boolean"
               },
@@ -10242,8 +10260,12 @@
           }
         },
         "created": {
-          "description": "Returned by action \"create\" (false when the recordId already existed).",
+          "description": "Returned by action \"create\" (false when the recordId, or a unique field's value, already existed).",
           "type": "boolean"
+        },
+        "matchedBy": {
+          "description": "Returned by action \"create\" when a unique field matched an existing record.",
+          "type": "string"
         },
         "counts": {
           "description": "Returned by action \"create_many\" or \"update_many\".",

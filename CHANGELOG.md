@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Record titles and unique fields:** In a collection's schema, **Use as record title** picks the field that names its records, such as a summary, and **Unique** keeps a field's values, such as a URL, from appearing twice. Adding a record with a value that's already there returns the existing record instead of a duplicate. Agents using preview tools can set both.
 - **Preview agent tools:** On a self-hosted Worktable, **Settings → Agents** can give connected agents tool changes before they are released. The first ones describe how record writes and queries behave: creates never overwrite, schema edits merge fields, and queries page with a total.
 
 ### Changed

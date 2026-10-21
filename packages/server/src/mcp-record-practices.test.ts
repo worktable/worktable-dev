@@ -749,11 +749,52 @@ describe("MCP record batches (preview)", () => {
       expect((await write({ action: "create_many", records: [{ recordId: "two", data: { title: "Two" } }] })).counts).toEqual({ created: 1, skipped: 0, failed: 0 })
       expect((await write({ action: "update", recordId: "two", data: { review: "Verified" } })).record).toBeDefined()
       expect((await write({ action: "update_many", recordIds: ["one", "two"], data: { review: "Excluded" } })).counts).toEqual({ updated: 2, failed: 0 })
-      expect((await write({ action: "upsert_collection", fields: { note: { type: "text" } } })).fieldChanges).toBeDefined()
+      expect((await write({ action: "upsert_collection", titleField: "title", fields: { note: { type: "text", unique: true } } })).fieldChanges).toBeDefined()
+      await write({ action: "update", recordId: "one", data: { note: "same" } })
+      const matched = await write({ action: "create", recordId: "three", data: { title: "Three", note: "same" } })
+      expect([matched.created, matched.matchedBy]).toEqual([false, "note"])
     } finally {
       await client.close()
       await server.close()
     }
+  })
+
+  it("skips rows whose unique value another record holds, and names the field", async () => {
+    await createSpace()
+    await dispatchOperation(
+      "records.upsert_collection",
+      {
+        spaceId: "product",
+        collectionId: "links",
+        name: "Links",
+        titleField: "summary",
+        fields: {
+          summary: { type: "text" },
+          url: { type: "url", unique: true },
+        },
+      },
+      preview
+    )
+    const result = (await dispatchOperation(
+      "records.create_many",
+      {
+        spaceId: "product",
+        collectionId: "links",
+        records: [
+          { data: { summary: "First post", url: "https://example.com/1" } },
+          { data: { summary: "Same post again", url: "https://example.com/1" } },
+          { data: { summary: "Second post", url: "https://example.com/2" } },
+        ],
+      },
+      preview
+    )) as {
+      results: Array<{ recordId: string; created: boolean; matchedBy?: string }>
+    }
+    expect(result.results).toEqual([
+      { recordId: "first-post", created: true },
+      { recordId: "first-post", created: false, matchedBy: "url" },
+      { recordId: "second-post", created: true },
+    ])
   })
 
   it("is refused to a caller offered the released tools", async () => {

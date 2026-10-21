@@ -524,4 +524,48 @@ describe("record REST routes", () => {
     const stored = await req(app, "GET", "/api/spaces/meta/records/notes/fresh");
     expect(stored.json.record.data.title).toBe(winner);
   });
+
+  it("names records by the collection's title field", async () => {
+    const bad = await req(app, "POST", "/api/spaces/meta/records", { id: "quotes", name: "Quotes", titleField: "missing", fields: { quote: { type: "text" } } });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toContain('titleField "missing" is not a field');
+    const ok = await req(app, "POST", "/api/spaces/meta/records", { id: "quotes", name: "Quotes", titleField: "summary", fields: { summary: { type: "text" }, url: { type: "url" } } });
+    expect(ok.status).toBe(201);
+    expect(ok.json.collection.titleField).toBe("summary");
+    const created = await req(app, "POST", "/api/spaces/meta/records/quotes", { data: { summary: "Agents lose team context", url: "https://example.com/a" } });
+    expect(created.json.record.id).toBe("agents-lose-team-context");
+    const cleared = await req(app, "POST", "/api/spaces/meta/records", { id: "quotes", titleField: null });
+    expect(cleared.json.collection.titleField).toBeUndefined();
+  });
+
+  it("keeps a unique field's values unique across creates, updates and schema changes", async () => {
+    await req(app, "POST", "/api/spaces/meta/records", { id: "posts", name: "Posts", fields: { title: { type: "string" }, url: { type: "url", unique: true } } });
+    const first = await req(app, "POST", "/api/spaces/meta/records/posts", { id: "p1", data: { title: "One", url: "https://example.com/1" } });
+    expect(first.status).toBe(201);
+
+    // Parallel creates under different ids with the same url: one record.
+    const racing = await Promise.all(
+      ["p2", "p3", "p4"].map((id) => req(app, "POST", "/api/spaces/meta/records/posts", { id, data: { title: id, url: "https://example.com/2" } }))
+    );
+    expect(racing.filter((r) => r.status === 201)).toHaveLength(1);
+    const again = await req(app, "POST", "/api/spaces/meta/records/posts", { id: "p9", data: { title: "Dup", url: "https://example.com/1" } });
+    expect(again.status).toBe(409);
+    expect(again.json.error).toBe("Record p1 already has this url");
+    expect(again.json.record.id).toBe("p1");
+
+    const clash = await req(app, "PATCH", "/api/spaces/meta/records/posts/p1", { data: { url: "https://example.com/2" } });
+    expect(clash.status).toBe(400);
+    expect(clash.json.error).toContain("Field url must be unique");
+    const sameValue = await req(app, "PATCH", "/api/spaces/meta/records/posts/p1", { data: { url: "https://example.com/1", title: "One again" } });
+    expect(sameValue.status).toBe(200);
+
+    await req(app, "POST", "/api/spaces/meta/records", { id: "loose", name: "Loose", fields: { url: { type: "url" } } });
+    await req(app, "POST", "/api/spaces/meta/records/loose", { id: "a", data: { url: "https://example.com/x" } });
+    await req(app, "POST", "/api/spaces/meta/records/loose", { id: "b", data: { url: "https://example.com/x" } });
+    const tighten = await req(app, "POST", "/api/spaces/meta/records", { id: "loose", fields: { url: { type: "url", unique: true } } });
+    expect(tighten.status).toBe(400);
+    expect(tighten.json.error).toContain("Field url can't be unique yet: 1 value(s) are held by more than one record");
+    const multi = await req(app, "POST", "/api/spaces/meta/records", { id: "tags", fields: { tags: { type: "multi_select", values: ["a"], unique: true } } });
+    expect(multi.status).toBe(400);
+  });
 });

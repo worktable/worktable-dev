@@ -1464,6 +1464,7 @@ async function _dispatchOperationInner(
         wellKnownType: args["wellKnownType"] as string | undefined,
         fields,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
+        titleField: args["titleField"] as string | null | undefined,
         createdBy: actorId,
         existing: existing.data ?? undefined,
       })
@@ -1541,7 +1542,12 @@ async function _dispatchOperationInner(
         throw new Error(result.error ?? "Write failed")
       // An existing id is left untouched: return the stored record so the
       // agent can skip it, or call update if it meant to change it.
-      if (!result.created) return { record: result.data, created: false }
+      if (!result.created)
+        return {
+          record: result.data,
+          created: false,
+          ...(result.matchedBy ? { matchedBy: result.matchedBy } : {}),
+        }
       const createdId = result.data.id
       const schema = await readRecordCollectionSchema(spaceId, collectionId)
       const identity = recordPracticeIdentity(data, schema.data)
@@ -1641,6 +1647,7 @@ async function _dispatchOperationInner(
       const results: Array<{
         recordId: string
         created: boolean
+        matchedBy?: string
         error?: string
       }> = []
       for (const row of rows) {
@@ -1653,7 +1660,11 @@ async function _dispatchOperationInner(
         })
         results.push(
           result.data
-            ? { recordId: result.data.id, created: result.created === true }
+            ? {
+                recordId: result.data.id,
+                created: result.created === true,
+                ...(result.matchedBy ? { matchedBy: result.matchedBy } : {}),
+              }
             : {
                 recordId: row.recordId ?? "",
                 created: false,

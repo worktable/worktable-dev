@@ -1082,7 +1082,29 @@ export const RecordsWriteInput = z.strictObject({
 /** Preview surface: the released record writes plus batches. */
 export const RecordsWriteInputPreview = z.strictObject({
   request: z.discriminatedUnion("action", [
-    actionSchema("upsert_collection", UpsertRecordCollectionInput.shape),
+    actionSchema("upsert_collection", {
+      ...UpsertRecordCollectionInput.shape,
+      titleField: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          "The field that names each record in lists, links and generated ids (a text, URL, email, person or select field). null clears it."
+        ),
+      fields: z
+        .record(
+          z.string(),
+          RecordFieldInput.extend({
+            unique: z
+              .boolean()
+              .optional()
+              .describe(
+                "No two records may hold the same value. create with a value another record has returns that record with created: false and matchedBy."
+              ),
+          })
+        )
+        .optional(),
+    }),
     actionSchema("create", {
       ...CreateRecordInput.shape,
       recordId: PreviewRecordIdInput.optional(),

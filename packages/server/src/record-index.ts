@@ -999,6 +999,19 @@ class RecordIndex {
     return rows.map((row) => JSON.parse(row.json) as RecordFile);
   }
 
+  /** Ids of records (archived included) whose data field holds exactly this
+   *  string or number. null until the index is ready. */
+  findIdsByFieldValue(spaceId: string, collectionId: string, field: string, value: string | number): string[] | null {
+    if (!this.isReady()) return null;
+    const path = `$.data."${field.replace(/["\\]/g, "")}"`;
+    const rows = timing.span("db", () =>
+      this.db!.query(
+        "SELECT record_id FROM records WHERE space_id = ? AND collection_id = ? AND valid = 1 AND json_extract(json, ?) = ?",
+      ).all(spaceId, collectionId, path, value),
+    ) as { record_id: string }[];
+    return rows.map((row) => row.record_id);
+  }
+
   listDiagnostics(spaceId: string, collectionId: string): { file: string; error: string }[] | null {
     if (!this.isReady()) return null;
     const rows = this.db!.query("SELECT record_id, error FROM records WHERE space_id = ? AND collection_id = ? AND valid = 0").all(spaceId, collectionId) as { record_id: string; error: string }[];

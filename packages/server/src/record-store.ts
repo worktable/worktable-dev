@@ -737,6 +737,8 @@ export async function reconcileDiscardedRecordCollection(
  */
 export interface RecordReadView {
   readonly spaceId: string;
+  /** Rows contributing to this reader's totals, before paging or aggregation. */
+  readonly onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void;
   /** The collection's fields as the reader sees them, or null when the
    *  reader can't read it. Hidden and missing collections look the same. */
   fields(collectionId: string): FieldTypeMap | null;
@@ -771,10 +773,12 @@ async function queryRecordsInView(
       view.fields(collectionId) ?? undefined,
       async (targetCollectionId) => {
         await options.authorizeCollection?.(targetCollectionId);
-        return new Map((await view.rows(targetCollectionId)).map((record) => [record.id, record]));
+        const rows = await view.rows(targetCollectionId);
+        view.onQueryRows?.(targetCollectionId, rows);
+        return new Map(rows.map((record) => [record.id, record]));
       },
       async (targetCollectionId) => view.fields(targetCollectionId) ?? undefined,
-      { groupEachValue: options.groupEachValue },
+      { groupEachValue: options.groupEachValue, onQueryRows: view.onQueryRows ? (rows) => view.onQueryRows!(collectionId, rows) : undefined },
     );
     if (result.nextCursor) result.nextCursor = view.sealCursor(collectionId, query, result.nextCursor);
     if (result.groups) result.groups = view.shownGroups(collectionId, result.groups);

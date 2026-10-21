@@ -50,7 +50,7 @@ export async function queryRecordsForLink(
   target: LinkReadTarget,
   collectionId: string,
   query: unknown,
-  options: { policy: SharingPolicy; budgets?: LinkBudgets; permissions?: WidgetFile["permissions"]; schemas?: ReadonlyMap<string, RecordCollectionSchema>; loadRows?: (collectionId: string) => Promise<RecordFile[]>; memo?: (load: () => Promise<RecordQueryResult>, rowsPerQuery: number) => Promise<RecordQueryResult> },
+  options: { policy: SharingPolicy; budgets?: LinkBudgets; permissions?: WidgetFile["permissions"]; schemas?: ReadonlyMap<string, RecordCollectionSchema>; loadRows?: (collectionId: string) => Promise<RecordFile[]>; memo?: (load: () => Promise<RecordQueryResult>, rowsPerQuery: number) => Promise<RecordQueryResult>; onQueryRows?: (collectionId: string, rows: readonly RecordFile[]) => void },
 ): Promise<LinkQueryResponse> {
   const budgets = options.budgets ?? linkBudgets;
   // Limits come from the grant and the policy, never from the tool, so a
@@ -66,7 +66,7 @@ export async function queryRecordsForLink(
       // A page never holds more rows than the link has left this hour.
       const page = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
       const load = async () => {
-        const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId, schemas: options.schemas, loadRows: options.loadRows });
+        const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId, schemas: options.schemas, loadRows: options.loadRows, onQueryRows: options.onQueryRows });
         return queryRecords(target.spaceId, collectionId, query, { view });
       };
       const result = options.memo ? await options.memo(load, page.rowsPerQuery) : await load();

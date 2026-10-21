@@ -1,3 +1,4 @@
+import { LinkGrantSchema, defaultSharingPolicy } from "@worktable/types"
 import { afterEach, beforeEach, expect, it } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -22,6 +23,7 @@ import {
   closeShareLinkStores,
   createShareLink,
   revokeShareLink,
+  saveSharingPolicy,
 } from "./share-links-store.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createLinkedIngress } from "./linked-ingress.ts"
@@ -555,6 +557,107 @@ it("carries password unlocks and frame tickets over authenticated Link requests"
       404
     )
   } finally {
+    if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
+    else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
+    closeShareLinkStores()
+  }
+}, 20_000)
+
+it("carries bounded live bridge calls and reserves MCP capacity while share bodies are held", async () => {
+  const previous = process.env["WORKTABLE_SHARING_PREVIEW"]
+  process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+  const closeBodies: Array<() => void> = []
+  const held: Promise<Response>[] = []
+  try {
+    ingress.setSharingOrigin("https://share.example.test")
+    saveSharingPolicy(
+      { ...defaultSharingPolicy(), liveLinks: true },
+      "local:owner"
+    )
+    await createHtmlDocument({
+      spaceId: "space",
+      explicitId: "live",
+      name: "Live",
+      html: "<h1>Live report</h1>",
+      createdBy: "test",
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    const documentId = (await useResolvedDocumentHandle(
+      { spaceId: "space", path: "live", materializeIdentity: true },
+      (handle) => handle.documentId
+    )) as string
+    const { token } = createShareLink({
+      workspaceEpoch: ingress.binding.workspaceEpoch,
+      spaceId: "space",
+      documentId,
+      kind: "html",
+      label: "",
+      level: "view",
+      createdBy: { id: "local:owner", name: "Owner" },
+      expiresAt: null,
+      comments: {
+        acceptComments: true,
+        anonymousAllowed: false,
+        showSharerName: false,
+        visitorsSee: "own",
+      },
+      grant: LinkGrantSchema.parse({ version: 1 }),
+    })
+    const body = new TextEncoder().encode(JSON.stringify({ v: 1, op: "ping" }))
+    const request = (value = body) =>
+      createLinkedRequest({
+        origin: server.url.origin,
+        key,
+        binding: ingress.binding,
+        grant: { kind: "share", capability: token },
+        method: "POST",
+        path: "/public/share/bridge",
+        body: value,
+      })
+    expect(await (await fetch(await request())).json()).toEqual({
+      ok: true,
+      result: {},
+    })
+    expect(
+      (await fetch(await request(new Uint8Array(16 * 1024 + 1)))).status
+    ).toBe(403)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await fetch(await request())).status).toBe(403)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    for (let index = 0; index < 6; index++) {
+      const signed = await request()
+      const slow = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(body)
+          closeBodies.push(() => {
+            try {
+              controller.close()
+            } catch { /* A response can already have cancelled the upload. */ }
+          })
+        },
+      })
+      held.push(fetch(new Request(signed, { body: slow })))
+    }
+    let overloaded: Response | undefined
+    for (let attempt = 0; attempt < 50; attempt++) {
+      overloaded = await fetch(await request())
+      if (overloaded.status === 429) break
+      await overloaded.body?.cancel()
+      await Bun.sleep(5)
+    }
+    expect(overloaded?.status).toBe(429)
+    expect(overloaded?.headers.get("Retry-After")).toBe("1")
+    expect((await fetch(await mcpRequest())).status).toBe(200)
+    expect((await readDoc("space", "plan")).data).not.toBeNull()
+    closeBodies.forEach((close) => close())
+    expect(
+      (await Promise.all(held)).every((response) => response.status === 200)
+    ).toBe(true)
+    expect((await fetch(await request())).status).toBe(200)
+  } finally {
+    closeBodies.forEach((close) => close())
+    await Promise.allSettled(held)
     if (previous === undefined) delete process.env["WORKTABLE_SHARING_PREVIEW"]
     else process.env["WORKTABLE_SHARING_PREVIEW"] = previous
     closeShareLinkStores()

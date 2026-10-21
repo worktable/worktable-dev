@@ -508,7 +508,12 @@ function launch(): void {
                   port,
                   connected,
                   ...(sharingPreviewEnabled()
-                    ? { capabilities: [LINKED_CAPABILITIES.SHARE_TICKETS] }
+                    ? {
+                        capabilities: [
+                          LINKED_CAPABILITIES.SHARE_TICKETS,
+                          LINKED_CAPABILITIES.SHARE_BRIDGE,
+                        ],
+                      }
                     : {}),
                 }),
                 signal: signal(),

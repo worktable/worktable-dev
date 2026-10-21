@@ -20,6 +20,7 @@ import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import {
   admitWorkspaceRequest,
+  classifyWorkspaceRequest,
   waitForWorkspaceAdmission,
   WRITE_ADMISSION_WAIT_MS,
 } from "./workspace-request-lifecycle.ts"
@@ -34,7 +35,10 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
     return false
   const preview = sharingPreviewEnabled()
   if (claims.grant.unlock !== undefined && !preview) return false
-  if (claims.path === "/public/share/unlock") {
+  if (
+    claims.path === "/public/share/unlock" ||
+    claims.path === "/public/share/bridge"
+  ) {
     return (
       preview &&
       claims.method === "POST" &&
@@ -56,7 +60,8 @@ function validShareRequest(claims: LinkedRequestClaims): boolean {
 
 async function readBody(
   request: Request,
-  expiresAt: number
+  expiresAt: number,
+  maxBytes = LINKED_REQUEST_MAX_BYTES
 ): Promise<Uint8Array> {
   const reader = request.body?.getReader()
   if (!reader) return new Uint8Array()
@@ -76,7 +81,7 @@ async function readBody(
       if (expired) throw new Error("Expired request")
       if (done) break
       size += value.byteLength
-      if (size > LINKED_REQUEST_MAX_BYTES) throw new Error("Request too large")
+      if (size > maxBytes) throw new Error("Request too large")
       chunks.push(value)
     }
   } catch (error) {
@@ -135,6 +140,7 @@ export async function createLinkedIngress(options: {
   const consumed = new Map<string, number>()
   let active = true
   let inFlight = 0
+  let shareInFlight = 0
 
   async function fetch(request: Request): Promise<Response> {
     const denied = () =>
@@ -142,27 +148,38 @@ export async function createLinkedIngress(options: {
         status: 403,
         headers: { "Cache-Control": "no-store" },
       })
-    // Admission precedes all asynchronous work, fencing workspace replacements.
-    const release =
-      admitWorkspaceRequest() ??
-      ((await waitForWorkspaceAdmission("write", WRITE_ADMISSION_WAIT_MS))
-        ? admitWorkspaceRequest()
-        : null)
-    if (!release)
+    const url = new URL(request.url)
+    const sharing =
+      url.pathname === "/public/share" ||
+      url.pathname.startsWith("/public/share/")
+    // Reserve before JWT verification or body reads. Sharing can occupy six
+    // slots; two remain available for MCP even when visitors hold slow bodies.
+    if (inFlight >= 8 || (sharing && shareInFlight >= 6)) {
       return new Response(null, {
-        status: 503,
-        headers: { "Retry-After": "1" },
-      })
-    if (inFlight >= 8) {
-      release()
-      return new Response(null, {
-        status: 503,
-        headers: { "Retry-After": "1" },
+        status: sharing ? 429 : 503,
+        headers: { "Cache-Control": "no-store", "Retry-After": "1" },
       })
     }
     inFlight++
+    if (sharing) shareInFlight++
+    let release: (() => void) | null = null
     try {
-      const url = new URL(request.url)
+      const kind =
+        sharing &&
+        classifyWorkspaceRequest(request.method, url.pathname) === "read"
+          ? "read"
+          : "write"
+      // Admission still fences every workspace read before asynchronous work.
+      release =
+        admitWorkspaceRequest(kind) ??
+        ((await waitForWorkspaceAdmission(kind, WRITE_ADMISSION_WAIT_MS))
+          ? admitWorkspaceRequest(kind)
+          : null)
+      if (!release)
+        return new Response(null, {
+          status: 503,
+          headers: { "Retry-After": "1" },
+        })
       const raw = request.headers.get(LINKED_ASSERTION_HEADER)
       if (!active || !raw || raw.length > 16384 || url.search) return denied()
       let claims: LinkedRequestClaims
@@ -204,7 +221,13 @@ export async function createLinkedIngress(options: {
               : !validShareRequest(claims)
         )
           return denied()
-        body = await readBody(request, payload.exp * 1000)
+        body = await readBody(
+          request,
+          payload.exp * 1000,
+          claims.path === "/public/share/bridge"
+            ? 16 * 1024
+            : LINKED_REQUEST_MAX_BYTES
+        )
         if (
           createHash("sha256").update(body).digest("hex") !== claims.bodyDigest
         )
@@ -283,7 +306,8 @@ export async function createLinkedIngress(options: {
       )
     } finally {
       inFlight--
-      release()
+      if (sharing) shareInFlight--
+      release?.()
     }
   }
   return {

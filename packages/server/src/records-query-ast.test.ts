@@ -210,7 +210,7 @@ describe("record query AST", () => {
     await req(app, "POST", "/api/spaces/meta/records", {
       id: "projects",
       name: "Projects",
-      fields: { title: { type: "string" }, status: { type: "select", values: ["active", "done"] }, deadline: { type: "datetime" } },
+      fields: { title: { type: "string" }, status: { type: "select", values: ["active", "done"] }, deadline: { type: "date" } },
     });
     await req(app, "PATCH", "/api/spaces/meta/records/projects/atlas", { data: { deadline: "2026-10-5" } });
     await req(app, "PATCH", "/api/spaces/meta/records/projects/beacon", { data: { deadline: "2026-2-1" } });
@@ -280,10 +280,10 @@ describe("record query AST", () => {
         priority: { type: "number" },
         project: { type: "relation", references: "projects" },
         tags: { type: "multi_select", values: ["a", "b", "c"] },
-        due: { type: "datetime" },
+        due: { type: "date" },
       },
     });
-    // Non-padded datetimes: lexically "2026-10-5" < "2026-9-1"; typed
+    // Non-padded dates: lexically "2026-10-5" < "2026-9-1"; typed
     // comparison must pick Oct 5 as the max.
     await req(app, "PATCH", "/api/spaces/meta/records/tasks/t1", { data: { due: "2026-9-1" } });
     await req(app, "PATCH", "/api/spaces/meta/records/tasks/t2", { data: { due: "2026-10-5" } });

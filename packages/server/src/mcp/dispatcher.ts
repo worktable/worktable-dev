@@ -1512,11 +1512,14 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const data = args["data"] as Record<string, unknown>
+      // Agents write fields by name, so a misspelled or never-declared field
+      // is refused rather than stored where no column or filter sees it.
       const result = await createRecord(spaceId, collectionId, {
         id: args["recordId"] as string | undefined,
         data,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
         createdBy: actorId,
+        strictFields: true,
       })
       if (result.error || !result.data)
         throw new Error(result.error ?? "Write failed")
@@ -1572,6 +1575,7 @@ async function _dispatchOperationInner(
       const collectionId = args["collectionId"] as string
       const recordId = args["recordId"] as string
       const result = await updateRecord(spaceId, collectionId, recordId, {
+        strictFields: true,
         data: args["data"] as Record<string, unknown> | undefined,
         metadata: args["metadata"] as Record<string, unknown> | undefined,
         updatedBy: actorId,

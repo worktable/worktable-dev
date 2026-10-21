@@ -59,8 +59,8 @@ External YAML edits must preserve valid envelopes and quoted timestamp strings.
 | `email` | Email string |
 | `number` | Number; optional `unit` metadata |
 | `boolean` | `true` or `false` |
-| `date` | Calendar-date string |
-| `datetime` | Date-time string |
+| `date` | ISO calendar date, such as `2026-10-19` |
+| `datetime` | ISO date-time, such as `2026-10-19T08:45:00Z` |
 | `person` | Person string |
 | `select` | One string from `values` |
 | `multi_select` | Array of strings from `values` |
@@ -70,6 +70,13 @@ External YAML edits must preserve valid envelopes and quoted timestamp strings.
 
 `many: true` permits arrays for `relation` and `document` fields. Relation metadata includes `inverse` and `onDelete`
 (`restrict`, `setNull`, or `none`).
+
+A write checks the fields it changes, so a value that no longer fits the schema
+doesn't block edits to other fields. MCP writes refuse fields the schema doesn't
+declare; add a field with `upsert_collection` first. A record is named by its
+`title` or `name` field, or else the first required string field. A record
+created without an id gets one from the first words of that field, or a short
+random id when there is none.
 
 Legacy `string`, `enum`, and `reference` remain readable. `enum` uses select
 semantics. Legacy references retain their looser string validation; they are not

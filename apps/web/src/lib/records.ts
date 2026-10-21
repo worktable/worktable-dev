@@ -154,7 +154,8 @@ export function recordTitleKey(schema: RecordCollectionSchema | undefined): stri
   if (!schema) return null
   for (const key of ["title", "name"]) {
     const field = schema.fields[key]
-    if (field && normalizeRecordFieldType(field.type) === "string") return key
+    const type = field ? normalizeRecordFieldType(field.type) : null
+    if (type === "string" || type === "text") return key
   }
   for (const [key, field] of Object.entries(schema.fields)) {
     if (field.required && normalizeRecordFieldType(field.type) === "string") return key

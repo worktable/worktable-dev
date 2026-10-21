@@ -740,9 +740,10 @@ export interface RecordReadView {
   /** The collection's fields as the reader sees them, or null when the
    *  reader can't read it. Hidden and missing collections look the same. */
   fields(collectionId: string): FieldTypeMap | null;
-  /** The rows the reader may see, as fresh records. Throws when the reader
-   *  can't read the collection. */
-  rows(collectionId: string): Promise<RecordFile[]>;
+  /** The rows the reader may see, as fresh records. Given the admitted
+   *  query, only the rows that query may read. Throws when the reader can't
+   *  read the collection. */
+  rows(collectionId: string, query?: RecordQuery): Promise<RecordFile[]>;
   /** The query to run in place of the reader's, or a throw when it names
    *  something the reader can't see. Opens a sealed cursor. */
   admit(collectionId: string, query: RecordQuery): RecordQuery;
@@ -765,7 +766,7 @@ async function queryRecordsInView(
   try {
     const query = view.admit(collectionId, parseRecordQuery(input));
     const result = await runQueryV2(
-      await view.rows(collectionId),
+      await view.rows(collectionId, query),
       query,
       view.fields(collectionId) ?? undefined,
       async (targetCollectionId) => {

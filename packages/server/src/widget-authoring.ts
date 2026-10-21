@@ -160,6 +160,18 @@ export function inferWidgetRecordPermissions(
   return inferred
 }
 
+/** Whether some worktable.records call names its collection with an
+ *  expression rather than a literal (a template literal with `${...}`
+ *  counts as an expression), so the HTML alone can't tell which
+ *  collections it reaches. */
+export function hasDynamicRecordCollection(html: string): boolean {
+  const calls = html.match(ANY_RECORD_CALL_RE)?.length ?? 0
+  const literals = Array.from(html.matchAll(RECORD_CALL_RE)).filter(
+    (match) => !(match[2] === "`" && match[3]?.includes("${"))
+  ).length
+  return calls > literals
+}
+
 function addRecordPermissionWarnings(
   html: string,
   permissions: WidgetFile["permissions"] | undefined,

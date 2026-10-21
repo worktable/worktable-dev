@@ -22,8 +22,8 @@
       "why": "The sidebar footer shows who is signed in, with a menu for Profile, Preferences, the theme and Sign Out, and Settings groups into You, the Worktable and Support. Share-link counts now refresh at their next expiry without polling: c3416a55 measured 802.0 KB gzip on Namespace CI (run 39589556673), about 0.1 KB over the prior budget. Allow 0.3 KB for that deadline hook; the Share dialog remains lazy and document contents are not refetched."
     },
     "html document": {
-      "gzip": 353000,
-      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu. Configured avatars and the shared version-history chooser, aligned snapshot byline and restore controls add 2.7 KB gzip against main 9a52b0b, measured on Namespace; snapshot content stays lazy and sandboxed. Every page carries a small Cloud billing root that loads the payment banner only while a payment is overdue, and the invitations kept across a payment only while some wait."
+      "gzip": 353200,
+      "why": "Worktable Teams: HTML documents open read-only for members with read access, and address their frame by the member's per-Space content key (Plan 16). The personal sidebar organization adds Pinned Spaces, groups and the Worktable header menu. Configured avatars and the shared version-history chooser, aligned snapshot byline and restore controls add 2.7 KB gzip against main 9a52b0b, measured on Namespace; snapshot content stays lazy and sandboxed. Every page carries a small Cloud billing root that loads the payment banner only while a payment is overdue, and the invitations kept across a payment only while some wait. Sharing password controls reuse the shared Switch and preview metadata. Namespace CI run 39594365651 measured the HTML route at 353.0 KB gzip, just above its previous 353000-byte limit; allow 0.2 KB for this change while the password form stays in the lazy share dialog."
     }
   },
   "targets": {

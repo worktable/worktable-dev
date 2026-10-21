@@ -779,6 +779,41 @@ describe("moving today's links into links v2", () => {
     expect((await documentLinks("plan")).links).toHaveLength(0)
   })
 
+  it("recovers a durable legacy removal before SQLite was settled", async () => {
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    await writeDoc("space", "plan", "# Plan")
+    const plan = await legacyLink("plan")
+    await useResolvedDocumentHandle(
+      { spaceId: "space", path: "plan", materializeIdentity: true },
+      (handle) => handle.documentId
+    )
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    const originalRename = fsPromises.rename
+    const interrupted = spyOn(fsPromises, "rename").mockImplementation(
+      async (from, to) => {
+        await originalRename(from, to)
+        if (String(to) === v1File())
+          throw new Error("interrupted after removal")
+      }
+    )
+    try {
+      await expect(drainV1ShareLinks()).rejects.toThrow(
+        "interrupted after removal"
+      )
+    } finally {
+      interrupted.mockRestore()
+    }
+    expect(await v1FileAsOlderBinaryReadsIt(plan.token)).toBeNull()
+    const journal = await readFile(`${v1File()}.moving`, "utf8")
+    expect(journal).not.toContain(plan.token)
+    closeShareLinkStores()
+    await drainV1ShareLinks()
+    expect((await view(plan.token)).status).toBe(200)
+    expect((await documentLinks("plan")).links).toHaveLength(1)
+    await drainV1ShareLinks()
+    expect((await view(plan.token)).status).toBe(200)
+  })
+
   it("makes a legacy link manageable after its path conflict is resolved", async () => {
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     await writeDoc("space", "plan", "# Plan")

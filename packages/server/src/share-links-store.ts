@@ -410,13 +410,15 @@ export function importV1ShareLink(input: {
  */
 export function settleV1ShareLinks(
   present: readonly string[],
-  moved: readonly string[]
+  moved: readonly string[],
+  recoveredDigests: readonly string[] = []
 ): void {
   const db = openDatabase(false)
   if (!db) return
-  const inFile = new Set(
-    present.map((token) => tokenDigest(token).toString("hex"))
-  )
+  const inFile = new Set([
+    ...present.map((token) => tokenDigest(token).toString("hex")),
+    ...recoveredDigests,
+  ])
   const stopped = db
     .query<{ id: string; token_hash: Uint8Array }, [string]>(
       "SELECT id, token_hash FROM share_links WHERE migrated_from = ?"
@@ -438,6 +440,8 @@ export function settleV1ShareLinks(
       "UPDATE share_links SET migrated_from = 'v1' WHERE token_hash = ? AND migrated_from = ?"
     )
     for (const token of moved) settle.run(tokenDigest(token), V1_MOVING)
+    for (const digest of recoveredDigests)
+      settle.run(Buffer.from(digest, "hex"), V1_MOVING)
   })()
   if (stopped.length > 0) notifyChanged(stopped)
 }
@@ -640,6 +644,32 @@ export function countOpenDocumentShareLinks(
   return listDocumentShareLinks(spaceId, documentId).filter(
     (link) => link.servable && (link.expiresAt === null || link.expiresAt > now)
   ).length
+}
+
+/** Count and next expiry only; never materialize a document's link history. */
+export function documentShareLinkSummary(
+  spaceId: string,
+  documentId: string,
+  now = Date.now()
+): { activeLinks: number; nextExpiry: number | null } {
+  return (
+    openDatabase(false)
+      ?.query<
+        { activeLinks: number; nextExpiry: number | null },
+        [string, string, number]
+      >(
+        `
+    SELECT COUNT(*) AS activeLinks, MIN(expires_at) AS nextExpiry FROM share_links
+    WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
+      AND (expires_at IS NULL OR expires_at > ?)
+      AND kind IN ('doc', 'html') AND level = 'view'
+      AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
+      AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
+      AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
+  `
+      )
+      .get(spaceId, documentId, now) ?? { activeLinks: 0, nextExpiry: null }
+  )
 }
 
 /** Unrevoked links into a Space, by link id and document. */

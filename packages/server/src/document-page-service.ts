@@ -47,7 +47,7 @@ import { peekDocActivity } from "./activity-log.ts"
 import { peekDocBacklinks } from "./link-graph.ts"
 import { peekDocReferrers } from "./doc-referrers.ts"
 import {
-  listDocumentShareLinks,
+  documentShareLinkSummary,
   ShareLinksStoreError,
   sharingV2Active,
 } from "./share-links-store.ts"
@@ -357,23 +357,15 @@ function sharingSummary(
 ): DocumentSharingSummary | undefined {
   try {
     if (!sharingV2Active()) return undefined
-    const now = Date.now()
-    const active =
+    const summary =
       handle.identity === "durable"
-        ? listDocumentShareLinks(spaceId, handle.documentId).filter(
-            (link) =>
-              link.servable && (link.expiresAt === null || link.expiresAt > now)
-          )
-        : []
-    const nextExpiry = active.reduce(
-      (earliest, link) => Math.min(earliest, link.expiresAt ?? Infinity),
-      Infinity
-    )
+        ? documentShareLinkSummary(spaceId, handle.documentId)
+        : { activeLinks: 0, nextExpiry: null }
     return {
-      activeLinks: active.length,
+      activeLinks: summary.activeLinks,
       canCreate,
-      ...(Number.isFinite(nextExpiry)
-        ? { nextExpiry: new Date(nextExpiry).toISOString() }
+      ...(summary.nextExpiry !== null
+        ? { nextExpiry: new Date(summary.nextExpiry).toISOString() }
         : {}),
     }
   } catch (error) {

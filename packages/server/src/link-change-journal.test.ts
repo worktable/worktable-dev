@@ -54,6 +54,7 @@ test("change hints respect row access, retain removals of served rows, and reset
   const baseline = journal.changes("link").cursor
   journal.record(event, row("private"))
   journal.collection("space", "ungranted")
+  journal.record({ ...event, collectionId: "constructor" }, null)
   expect(journal.changes("link", baseline)).toEqual({
     cursor: baseline,
     reset: false,

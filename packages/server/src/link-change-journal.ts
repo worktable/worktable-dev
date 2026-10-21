@@ -94,8 +94,8 @@ export class LinkChangeJournal {
     for (const entry of this.links.values()) {
       const { target } = entry
       if (target.spaceId !== event.spaceId) continue
-      const grant = target.grant.collections[event.collectionId]
-      if (!grant) continue
+      if (!Object.hasOwn(target.grant.collections, event.collectionId)) continue
+      const grant = target.grant.collections[event.collectionId]!
       let visible =
         !record ||
         !grant.rows ||

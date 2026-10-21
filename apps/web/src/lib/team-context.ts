@@ -96,6 +96,12 @@ export function acceptTeamContext(value: unknown): void {
     )
     return
   }
+  if (next.policyRevision !== previous.policyRevision) {
+    const client = teamQueryClient()
+    if (client) void import("./sharing-cache").then(({ invalidateSharingQueries }) => {
+      invalidateSharingQueries(client)
+    })
+  }
   if (changed) void refreshTeamAccess(next.access!)
 }
 

@@ -4,6 +4,7 @@ import {
   TeamBackupStateSchema,
 } from "./team-backup.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
+import { sharingPolicyForBackup } from "./share-links-store.ts"
 import { createHash, randomBytes } from "node:crypto"
 import { lstat, mkdir, open, realpath, rename } from "node:fs/promises"
 import {
@@ -64,6 +65,11 @@ export const WorkspaceSnapshotManifestSchema = z.object({
     )
     .max(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES),
   teamState: TeamBackupStateSchema.optional(),
+  /**
+   * The owner policy for share links, as saved. Links are never backed up.
+   * Older runtimes ignore it.
+   */
+  sharingPolicy: z.record(z.string(), z.unknown()).optional(),
   directories: z
     .array(z.object(metadata))
     .max(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES),
@@ -92,6 +98,7 @@ async function sync(path: string): Promise<void> {
 export async function writeWorkspaceSnapshot(
   destination: string,
   options: Parameters<typeof withPortableWorkspaceCapture>[1] & {
+    /** Operator backups: team state and the share link policy too. */
     captureTeamState?: boolean
   } = {}
 ): Promise<WorkspaceSnapshotManifest> {
@@ -119,6 +126,7 @@ export async function writeWorkspaceSnapshot(
   let published = false
   try {
     let teamState: Awaited<ReturnType<typeof captureTeamBackupState>>
+    let sharingPolicy: Record<string, unknown> | null = null
     const manifest = await withPortableWorkspaceCapture(
       async (capture) => {
         const inventory: PortableWorkspaceInventory = {
@@ -127,6 +135,7 @@ export async function writeWorkspaceSnapshot(
         }
         const result: WorkspaceSnapshotManifest = {
           ...(teamState ? { teamState } : {}),
+          ...(sharingPolicy ? { sharingPolicy } : {}),
           type: "worktable.workspace-snapshot",
           backupFormatVersion: 1,
           snapshotId: `snap_${randomBytes(16).toString("base64url")}`,
@@ -165,8 +174,11 @@ export async function writeWorkspaceSnapshot(
         withCaptureBarrier: async (work) => {
           const capture = async () => {
             const result = await work()
-            if (options.captureTeamState)
+            if (options.captureTeamState) {
               teamState = await captureTeamBackupState(temporary)
+              // Operator backups also keep the owner's share link policy.
+              sharingPolicy = sharingPolicyForBackup()
+            }
             return result
           }
           return options.withCaptureBarrier

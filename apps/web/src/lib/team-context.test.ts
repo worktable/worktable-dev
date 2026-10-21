@@ -115,10 +115,40 @@ describe("team context", () => {
     applySpaceAccess([space("research", "k-r"), space("design", "k-d")])
     expect(queryClient.getQueryCache().findAll().some((query) => query.state.isInvalidated)).toBe(false)
 
-    // Another member renamed an agent: the revision moves, this access doesn't.
+    const sharingPage = ["spaces", "research", "document-page", "plan"]
+    const ordinaryPage = ["spaces", "research", "document-page", "private"]
+    const content = ["spaces", "research", "document-content", "plan", "v1"]
+    const links = ["share-links", "research", "plan"]
+    queryClient.setQueryData(sharingPage, { kind: "document", sharing: { activeLinks: 1, canCreate: true } })
+    queryClient.setQueryData(ordinaryPage, { kind: "document" })
+    queryClient.setQueryData(content, "Plan")
+    queryClient.setQueryData(links, { links: [] })
+    // Another member's access changed: the revision moves, this access doesn't.
     acceptTeamContext({ worktableId: "wt_a", memberId: "mem_1", policyRevision: 6, access: "fp-1" })
     // A replayed older response never moves the tab backwards.
     acceptTeamContext({ worktableId: "wt_a", memberId: "mem_1", policyRevision: 4, access: "fp-0" })
+    await import("./sharing-cache")
+    // Allow the asynchronous policy-only module to apply this revision.
+    await Promise.resolve()
+    expect(stale(sharingPage)).toBe(true)
+    expect(stale(links)).toBe(true)
+    expect(stale(ordinaryPage)).toBe(false)
+    expect(stale(content)).toBe(false)
+    expect(stale(savedHistory)).toBe(false)
+    const { invalidateSharingQueries } = await import("./sharing-cache")
+    invalidateSharingQueries(queryClient, 8)
+    const refreshed = queryClient.getQueryData(sharingPage)
+    queryClient.setQueryData(sharingPage, refreshed)
+    // The same policy event can arrive on more than one Space socket.
+    invalidateSharingQueries(queryClient, 8)
+    expect(stale(sharingPage)).toBe(false)
+    // A recovered sharing store restarts its own revision sequence.
+    invalidateSharingQueries(queryClient, 7)
+    expect(stale(sharingPage)).toBe(true)
+    queryClient.setQueryData(sharingPage, refreshed)
+    invalidateSharingQueries(queryClient, 9)
+    expect(stale(sharingPage)).toBe(true)
+    expect(stale(content)).toBe(false)
     expect(replace).not.toHaveBeenCalled()
     expect(queryClient.getQueryData(["spaces", "research", "documents"])).toEqual(["plan"])
     expect(queryClient.getQueryData(versionHistoryKeys.snapshot("doc", "research", "plan", "saved-v1"))).toBe("previous plan")

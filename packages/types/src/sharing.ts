@@ -285,6 +285,11 @@ export type SharerPolicy = Omit<
 export interface SharingPolicyResponse {
   policy: SharingPolicy
   canEdit: boolean
+  /**
+   * Moves with every save. A save sends it back as `If-Match`, so one made
+   * from an older copy is refused rather than undoing a newer change.
+   */
+  revision: number
 }
 
 // ---- Visitor comments ----------------------------------------------------

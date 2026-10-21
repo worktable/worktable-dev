@@ -17,6 +17,7 @@ import {
 } from "../shared-artifact.ts"
 import { sharingV2Active } from "../share-links-store.ts"
 import { shareLinksRouter } from "./share-links.ts"
+import { sharePolicyRouter } from "./share-policy.ts"
 
 export const sharesRouter = new Hono()
 
@@ -34,6 +35,7 @@ sharesRouter.use("*", async (c, next) => {
 })
 
 sharesRouter.route("/links", shareLinksRouter)
+sharesRouter.route("/policy", sharePolicyRouter)
 
 // Today's single link per document, until links v2 takes over. Once it has,
 // these answer as if they were gone, so no new link is made in the old file.

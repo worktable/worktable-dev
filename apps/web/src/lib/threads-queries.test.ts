@@ -1,3 +1,4 @@
+import { refreshThreadNamingCapabilities } from "./thread-naming-cache"
 import { describe, expect, test } from "bun:test"
 import type {
   ThreadActivity,
@@ -13,10 +14,7 @@ import {
   refreshThreadWindow,
   threadQueryKeys,
 } from "./threads-queries"
-import {
-  applyThreadRename,
-  refreshThreadNamingCapabilities,
-} from "./thread-naming"
+import { applyThreadRename } from "./thread-naming"
 import { applyThreadPayload } from "./ws"
 
 const createdAt = "2026-08-15T10:00:00.000Z"

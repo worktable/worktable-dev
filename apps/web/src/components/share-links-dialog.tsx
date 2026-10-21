@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react"
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Link2,
   Loader2,
@@ -15,7 +10,6 @@ import {
 } from "lucide-react"
 import type {
   CreatedShareLink,
-  DocumentPageResult,
   DocumentShareLinks,
   DocumentSharingSummary,
   ShareLink,
@@ -62,11 +56,12 @@ import { cn } from "@worktable/ui/lib/utils"
 import { HtmlSafetyNote, InlineError } from "@/components/share-document-action"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
-import { documentQueryKeys } from "@/lib/documents-queries"
+import { notePageLinks } from "@/lib/sharing-cache"
+import { useWorkspace } from "@/lib/queries"
+import { openSettings } from "@/lib/settings-open"
 import {
   allowedShareLinkExpiry,
   createBlockedMessage,
-  openShareLinkCount,
   SHARE_LINK_LEVEL_LABELS,
   shareLinkDetails,
   shareLinkExpiresAt,
@@ -89,36 +84,6 @@ interface LinkDraft {
 const NEW_LINK: LinkDraft = { label: "", expiry: "never" }
 
 type Editing = { kind: "new" } | { kind: "edit"; link: ShareLink } | null
-
-/** Keep the page's count of open links in step with the dialog's list. */
-function notePageLinks(
-  queryClient: QueryClient,
-  spaceId: string,
-  path: string,
-  links: readonly ShareLink[]
-): void {
-  const activeLinks = openShareLinkCount(links)
-  const expiry = links.reduce(
-    (soonest, link) =>
-      link.status === "active" && link.expiresAt
-        ? Math.min(soonest, Date.parse(link.expiresAt))
-        : soonest,
-    Infinity
-  )
-  const nextExpiry = Number.isFinite(expiry)
-    ? new Date(expiry).toISOString()
-    : undefined
-  queryClient.setQueryData<DocumentPageResult>(
-    documentQueryKeys.page(spaceId, path),
-    (page) =>
-      page?.kind === "document" &&
-      page.sharing &&
-      (page.sharing.activeLinks !== activeLinks ||
-        page.sharing.nextExpiry !== nextExpiry)
-        ? { ...page, sharing: { ...page.sharing, activeLinks, nextExpiry } }
-        : undefined
-  )
-}
 
 /**
  * The share dialog while links v2 is on: a document's links, a form for a
@@ -151,6 +116,8 @@ export function ShareLinksDialog({
   const [revoking, setRevoking] = useState<ShareLink | null>(null)
   const [announcement, setAnnouncement] = useState("")
   const scrollRef = useScrollFade<HTMLDivElement>()
+  // Owners can lift a pause or allow the Space from Settings → Links.
+  const owner = useWorkspace().data?.person?.role === "owner"
 
   // Each opening starts afresh; one with no open links starts a new link.
   const [shownOpen, setShownOpen] = useState(false)
@@ -305,7 +272,24 @@ export function ShareLinksDialog({
           >
             {list.data && !list.data.canCreate ? (
               <Callout>
-                {createBlockedMessage(list.data.createBlockedBy)}
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span>{createBlockedMessage(list.data.createBlockedBy)}</span>
+                  {owner &&
+                  (list.data.createBlockedBy === "paused" ||
+                    list.data.createBlockedBy === "space") ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        handleOpenChange(false)
+                        openSettings("links")
+                      }}
+                    >
+                      Manage Links
+                    </Button>
+                  ) : null}
+                </span>
               </Callout>
             ) : null}
 

@@ -1,7 +1,14 @@
 import { Database } from "bun:sqlite"
-import type { ShareLinkCommentSettings, ShareLinkKind } from "@worktable/types"
+import {
+  defaultSharingPolicy,
+  SharingPolicySchema,
+  type ShareLinkCommentSettings,
+  type ShareLinkKind,
+  type SharingPolicy,
+} from "@worktable/types"
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync } from "node:fs"
+import { chmod, link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getAppDir } from "./app-storage.ts"
 import { sharingPreviewEnabled } from "./sharing-preview.ts"
@@ -12,7 +19,8 @@ import { workspaceCacheKey } from "./workspace.ts"
 // ============================================================
 //
 // Links live in <appDir>/sharing/<workspace>/sharing.sqlite, outside the
-// workspace and outside backups. A link is keyed by its document's durable
+// workspace and outside backups; only the owner policy beside them is copied
+// into operator backups. A link is keyed by its document's durable
 // id, so renames and moves keep it. Only a SHA-256 of each token is stored:
 // the URL exists once, in the response that created it.
 //
@@ -101,11 +109,37 @@ interface LinkRow {
   migrated_from: string | null
 }
 
-const LINK_COLUMNS = `id, token_hash, token_hint, workspace_epoch, space_id,
-  document_id, kind, label, level, created_by_id, created_by_name, created_at,
-  expires_at, password_hash, grant_json, pinned_version, accept_comments,
-  anonymous_allowed, visitors_see, show_sharer_name, revoked_at,
-  revoked_reason, last_used_at, migrated_from`
+const LINK_COLUMN_NAMES = [
+  "id",
+  "token_hash",
+  "token_hint",
+  "workspace_epoch",
+  "space_id",
+  "document_id",
+  "kind",
+  "label",
+  "level",
+  "created_by_id",
+  "created_by_name",
+  "created_at",
+  "expires_at",
+  "password_hash",
+  "grant_json",
+  "pinned_version",
+  "accept_comments",
+  "anonymous_allowed",
+  "visitors_see",
+  "show_sharer_name",
+  "revoked_at",
+  "revoked_reason",
+  "last_used_at",
+  "migrated_from",
+] as const satisfies readonly (keyof LinkRow)[]
+const LINK_COLUMNS = LINK_COLUMN_NAMES.join(", ")
+/** The same columns, from `share_links l` in a join. */
+const JOINED_LINK_COLUMNS = LINK_COLUMN_NAMES.map((name) => `l.${name}`).join(
+  ", "
+)
 
 const flag = (value: number): boolean | null =>
   value === 0 ? false : value === 1 ? true : null
@@ -256,11 +290,18 @@ export function closeShareLinkStores(): void {
   for (const db of databases.values()) db.close()
   databases.clear()
   drained = null
+  policyCache = null
 }
 
 // ── Whether links v2 is on ───────────────────────────────────
 
-let drained: { key: string; value: boolean; checkedAt: number } | null = null
+let drained: {
+  key: string
+  value: boolean
+  /** Read from the store, so a true value holds for good. */
+  settled: boolean
+  checkedAt: number
+} | null = null
 const DRAINED_RECHECK_MS = MINUTE_MS
 
 /**
@@ -278,11 +319,13 @@ function v1AlreadyDrained(): boolean {
   const now = Date.now()
   if (
     drained?.key === key &&
-    (drained.value || now - drained.checkedAt < DRAINED_RECHECK_MS)
+    ((drained.value && drained.settled) ||
+      now - drained.checkedAt < DRAINED_RECHECK_MS)
   ) {
     return drained.value
   }
   let value = false
+  let settled = true
   try {
     value =
       openDatabase(false)
@@ -292,9 +335,12 @@ function v1AlreadyDrained(): boolean {
         >("SELECT value FROM share_meta WHERE key = ?")
         .get("v1_drained_at") != null
   } catch {
-    // An unreadable store serves nothing either way.
+    // A store this version can't read keeps today's routes retired, so no
+    // link is made outside its owner policy; it serves nothing itself.
+    value = true
+    settled = false
   }
-  drained = { key, value, checkedAt: now }
+  drained = { key, value, settled, checkedAt: now }
   return value
 }
 
@@ -456,7 +502,12 @@ export function markV1SharesDrained(now = Date.now()): void {
       "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
     )
     .run(String(now))
-  drained = { key: workspaceCacheKey(), value: true, checkedAt: now }
+  drained = {
+    key: workspaceCacheKey(),
+    value: true,
+    settled: true,
+    checkedAt: now,
+  }
 }
 
 export interface ShareLinkChange {
@@ -583,26 +634,56 @@ export function revokeAllShareLinks(reason: ShareLinkRevocationReason): number {
 // ── Reads ────────────────────────────────────────────────────
 
 /**
- * The link a token opens: one indexed SELECT, no lock and no file read. The
- * caller checks revocation, epoch and expiry.
+ * The link a token opens and the owner policy as it stands: one indexed
+ * SELECT, no lock and no file read. The policy is parsed again only when its
+ * revision moved. The caller checks revocation, epoch, expiry and policy.
  */
-export function findShareLinkByToken(token: string): StoredShareLink | null {
+export function findShareLinkForView(
+  token: string
+): { link: StoredShareLink; policy: SharingPolicy } | null {
   if (!TOKEN_PATTERN.test(token)) return null
   const db = openDatabase(false)
   if (!db) return null
   const digest = tokenDigest(token)
   const row = db
-    .query<
-      LinkRow,
-      [Buffer]
-    >(`SELECT ${LINK_COLUMNS} FROM share_links WHERE token_hash = ?`)
+    .query<LinkRow & { policy_revision: number | null }, [Buffer]>(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       WHERE l.token_hash = ?`
+    )
     .get(digest)
   if (!row) return null
   const stored = Buffer.from(row.token_hash)
   if (stored.length !== digest.length || !timingSafeEqual(stored, digest)) {
     return null
   }
-  return storedLink(row)
+  return {
+    link: storedLink(row),
+    policy: policyAt(db, row.policy_revision ?? 0),
+  }
+}
+
+/** A link by id and the owner policy as it stands, to check a view again. */
+export function findShareLinkWithPolicy(
+  id: string
+): { link: StoredShareLink; policy: SharingPolicy } | null {
+  const db = openDatabase(false)
+  if (!db) return null
+  const row = db
+    .query<LinkRow & { policy_revision: number | null }, [string]>(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       WHERE l.id = ?`
+    )
+    .get(id)
+  return row
+    ? { link: storedLink(row), policy: policyAt(db, row.policy_revision ?? 0) }
+    : null
+}
+
+/** The link a token opens, whatever the policy says. */
+export function findShareLinkByToken(token: string): StoredShareLink | null {
+  return findShareLinkForView(token)?.link ?? null
 }
 
 export function getShareLink(id: string): StoredShareLink | null {
@@ -632,43 +713,48 @@ export function listDocumentShareLinks(
   )
 }
 
-/**
- * How many of a document's links still open: neither revoked nor expired.
- * One statement on the document index, and none before a link exists.
- */
-export function countOpenDocumentShareLinks(
-  spaceId: string,
-  documentId: string,
-  now = Date.now()
-): number {
-  return listDocumentShareLinks(spaceId, documentId).filter(
-    (link) => link.servable && (link.expiresAt === null || link.expiresAt > now)
-  ).length
-}
-
 /** Count and next expiry only; never materialize a document's link history. */
 export function documentShareLinkSummary(
   spaceId: string,
   documentId: string,
-  now = Date.now()
+  now = Date.now(),
+  maxExpiryDays: number | null = null,
+  creatorAllowed: (id: string) => boolean = () => true
 ): { activeLinks: number; nextExpiry: number | null } {
-  return (
-    openDatabase(false)
-      ?.query<
-        { activeLinks: number; nextExpiry: number | null },
-        [string, string, number]
-      >(
-        `
-    SELECT COUNT(*) AS activeLinks, MIN(expires_at) AS nextExpiry FROM share_links
-    WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
-      AND (expires_at IS NULL OR expires_at > ?)
-      AND kind IN ('doc', 'html') AND level = 'view'
-      AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
-      AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
-      AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
+  const cap = maxExpiryDays === null ? null : maxExpiryDays * 86_400_000
+  const groups = openDatabase(false)
+    ?.query<
+      { createdById: string; activeLinks: number; nextExpiry: number | null },
+      [number | null, number | null, number | null, string, string, number]
+    >(
+      `
+    WITH eligible AS (
+      SELECT created_by_id, CASE WHEN ? IS NULL THEN expires_at
+        WHEN expires_at IS NULL THEN created_at + ?
+        ELSE min(expires_at, created_at + ?) END AS expiry
+      FROM share_links
+      WHERE space_id = ? AND document_id = ? AND revoked_at IS NULL
+        AND kind IN ('doc', 'html') AND level = 'view'
+        AND password_hash IS NULL AND grant_json IS NULL AND pinned_version IS NULL
+        AND accept_comments IN (0, 1) AND anonymous_allowed IN (0, 1)
+        AND show_sharer_name IN (0, 1) AND visitors_see IN ('own', 'all')
+    ) SELECT created_by_id AS createdById, COUNT(*) AS activeLinks, MIN(expiry) AS nextExpiry
+      FROM eligible WHERE expiry IS NULL OR expiry > ? GROUP BY created_by_id
   `
-      )
-      .get(spaceId, documentId, now) ?? { activeLinks: 0, nextExpiry: null }
+    )
+    .all(cap, cap, cap, spaceId, documentId, now) ?? []
+  return groups.reduce<{ activeLinks: number; nextExpiry: number | null }>(
+    (summary, group) => {
+      if (!creatorAllowed(group.createdById)) return summary
+      summary.activeLinks += group.activeLinks
+      if (group.nextExpiry !== null)
+        summary.nextExpiry =
+          summary.nextExpiry === null
+            ? group.nextExpiry
+            : Math.min(summary.nextExpiry, group.nextExpiry)
+      return summary
+    },
+    { activeLinks: 0, nextExpiry: null }
   )
 }
 
@@ -755,6 +841,26 @@ export function listShareLinks(options: {
   }
 }
 
+/**
+ * Forget links revoked longer ago than they stay listed. Background work:
+ * the daily retention pass runs it, never a request.
+ */
+export function sweepRevokedShareLinks(now = Date.now()): number {
+  try {
+    return (
+      openDatabase(false)
+        ?.query(
+          "DELETE FROM share_links WHERE revoked_at IS NOT NULL AND revoked_at <= ?"
+        )
+        .run(now - REVOKED_LISTED_MS).changes ?? 0
+    )
+  } catch (error) {
+    // A later version's store keeps its own rows.
+    if (error instanceof ShareLinksStoreError) return 0
+    throw error
+  }
+}
+
 function decodeCursor(
   cursor: string | null | undefined
 ): { createdAt: number; id: string } | null {
@@ -764,6 +870,275 @@ function decodeCursor(
     .split(":", 2)
   const at = Number(createdAt)
   return Number.isSafeInteger(at) && id ? { createdAt: at, id } : null
+}
+
+// ── Owner policy ─────────────────────────────────────────────
+//
+// One row, saved whole, whose revision moves with every save. Each view
+// reads the revision with its link, so a change made by any process applies
+// at the next view; the policy itself is parsed again only when the revision
+// moved. Revision 0 is the defaults, before an owner first saves a policy.
+
+export interface StoredSharingPolicy {
+  policy: SharingPolicy
+  revision: number
+}
+
+const DEFAULT_POLICY: SharingPolicy = defaultSharingPolicy()
+
+let policyCache: (StoredSharingPolicy & { path: string }) | null = null
+
+/**
+ * A saved policy this binary can't read, such as one a later version saved
+ * with settings it doesn't know, stops every link until an owner saves the
+ * policy again here.
+ */
+function parsePolicy(text: string): SharingPolicy {
+  try {
+    return SharingPolicySchema.parse(JSON.parse(text))
+  } catch {
+    return { ...DEFAULT_POLICY, paused: true }
+  }
+}
+
+function policyAt(db: Database, revision: number): SharingPolicy {
+  const path = shareLinksDatabasePath()
+  if (policyCache?.path === path && policyCache.revision === revision) {
+    return policyCache.policy
+  }
+  const row = db
+    .query<
+      { policy: string; revision: number },
+      []
+    >("SELECT policy, revision FROM share_policy WHERE id = 1")
+    .get()
+  const policy = row ? parsePolicy(row.policy) : DEFAULT_POLICY
+  policyCache = { path, revision: row?.revision ?? 0, policy }
+  return policy
+}
+
+/** The owner policy as saved, with its revision. */
+export function readSharingPolicy(): StoredSharingPolicy {
+  const db = openDatabase(false)
+  if (!db) return { policy: DEFAULT_POLICY, revision: 0 }
+  const revision =
+    db
+      .query<
+        { revision: number },
+        []
+      >("SELECT revision FROM share_policy WHERE id = 1")
+      .get()?.revision ?? 0
+  return { policy: policyAt(db, revision), revision }
+}
+
+/** Save a whole owner policy; it applies from every link's next view. */
+export function saveSharingPolicy(
+  policy: SharingPolicy,
+  updatedBy: string,
+  /**
+   * The revision the change was made from, 0 before any save. A save from
+   * another revision changes nothing and returns null. Omitted, it applies.
+   */
+  expectedRevision?: number
+): StoredSharingPolicy | null {
+  const db = openDatabase(true)!
+  const values = [JSON.stringify(policy), updatedBy, Date.now()] as const
+  // One statement each way, so a save made from an older copy, in any
+  // process, changes nothing.
+  const saved =
+    expectedRevision === undefined
+      ? db
+          .query<{ revision: number }, [string, string, number]>(
+            `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+             VALUES (1, ?, 1, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET policy = excluded.policy,
+               revision = share_policy.revision + 1,
+               updated_by = excluded.updated_by, updated_at = excluded.updated_at
+             RETURNING revision`
+          )
+          .get(...values)
+      : expectedRevision === 0
+        ? db
+            .query<{ revision: number }, [string, string, number]>(
+              `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+               VALUES (1, ?, 1, ?, ?) ON CONFLICT (id) DO NOTHING
+               RETURNING revision`
+            )
+            .get(...values)
+        : db
+            .query<{ revision: number }, [string, string, number, number]>(
+              `UPDATE share_policy SET policy = ?, updated_by = ?,
+                 updated_at = ?, revision = revision + 1
+               WHERE id = 1 AND revision = ? RETURNING revision`
+            )
+            .get(...values, expectedRevision)
+  if (!saved) return null
+  policyCache = {
+    path: shareLinksDatabasePath(),
+    revision: saved.revision,
+    policy,
+  }
+  return { policy, revision: saved.revision }
+}
+
+/** The saved policy, including future fields. An unreadable policy fails a backup. */
+export function sharingPolicyForBackup(): Record<string, unknown> | null {
+  const row = openDatabase(false)
+    ?.query<
+      { policy: string },
+      []
+    >("SELECT policy FROM share_policy WHERE id = 1")
+    .get()
+  if (!row) return null
+  let value: unknown
+  try {
+    value = JSON.parse(row.policy)
+  } catch {
+    throw new ShareLinksStoreError("Saved sharing policy is unreadable")
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new ShareLinksStoreError("Saved sharing policy is unreadable")
+  return value as Record<string, unknown>
+}
+
+const PENDING_POLICY_RESTORE = "pending-policy-restore"
+
+/** Only a store made by an unpublished recovery may take another snapshot's policy. */
+function replacePendingRestoredPolicy(
+  db: Database,
+  policy: Record<string, unknown> | null
+): boolean {
+  return db.transaction(() => {
+    const pending = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM share_meta WHERE key = ?")
+      .get(PENDING_POLICY_RESTORE)?.value
+    const saved = db
+      .query<
+        { revision: number; updated_by: string },
+        []
+      >("SELECT revision, updated_by FROM share_policy WHERE id = 1")
+      .get()
+    if (
+      !pending ||
+      !(pending === "none" || /^[1-9][0-9]*$/.test(pending)) ||
+      (saved
+        ? saved.updated_by !== "restore" || pending !== String(saved.revision)
+        : pending !== "none")
+    )
+      return false
+    if (db.query("SELECT 1 FROM share_links LIMIT 1").get()) return false
+    if (
+      saved &&
+      (!Number.isSafeInteger(saved.revision) ||
+        saved.revision >= Number.MAX_SAFE_INTEGER)
+    )
+      return false
+    const revision = (saved?.revision ?? 0) + 1
+    if (policy)
+      db.query(
+        "INSERT OR REPLACE INTO share_policy (id, policy, revision, updated_by, updated_at) VALUES (1, ?, ?, 'restore', ?)"
+      ).run(JSON.stringify(policy), revision, Date.now())
+    else db.query("DELETE FROM share_policy WHERE id = 1").run()
+    db.query("UPDATE share_meta SET value = ? WHERE key = ?").run(
+      policy ? String(revision) : "none",
+      PENDING_POLICY_RESTORE
+    )
+    policyCache = null
+    return true
+  })()
+}
+
+/**
+ * Install a policy before publishing a recovered workspace. The store starts
+ * as a complete, durable file; its marker stays until publication succeeds.
+ * A failed or interrupted recovery may therefore retry a different snapshot.
+ * Any store with an owner's save or a link remains authoritative.
+ */
+export async function restoreSharingPolicy(
+  policy: Record<string, unknown> | null
+): Promise<boolean> {
+  const path = shareLinksDatabasePath()
+  if (databases.has(path) || existsSync(path)) {
+    let db: Database | null
+    try {
+      db = openDatabase(false)
+    } catch (error) {
+      if (error instanceof ShareLinksStoreError) return false
+      throw error
+    }
+    return db ? replacePendingRestoredPolicy(db, policy) : false
+  }
+  if (!policy) return false
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const staged = `${path}.restore-${randomBytes(16).toString("hex")}`
+  let db: Database | null = null
+  try {
+    db = new Database(staged, { create: true, strict: true })
+    await chmod(staged, 0o600)
+    // Close a complete single-file database before its no-replace publication.
+    db.exec("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL")
+    migrate(db)
+    db.transaction(() => {
+      db!
+        .query(
+          "INSERT INTO share_policy (id, policy, revision, updated_by, updated_at) VALUES (1, ?, 1, 'restore', ?)"
+        )
+        .run(JSON.stringify(policy), Date.now())
+      db!
+        .query("INSERT INTO share_meta (key, value) VALUES (?, '1')")
+        .run(PENDING_POLICY_RESTORE)
+    })()
+    db.close()
+    db = null
+    try {
+      await link(staged, path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false
+      throw error
+    }
+    const parent = await open(dirname(path), "r")
+    try {
+      await parent.sync()
+    } finally {
+      await parent.close()
+    }
+    policyCache = null
+    return true
+  } finally {
+    db?.close()
+    await rm(staged, { force: true })
+    await rm(`${staged}-journal`, { force: true })
+  }
+}
+
+/** Publication completed, or the restored workspace reached its first boot. */
+export function finalizeRestoredSharingPolicy(): void {
+  let db: Database | null
+  let marker: string | undefined
+  try {
+    db = openDatabase(false)
+    marker = db
+      ?.query<
+        { value: string },
+        [string]
+      >("SELECT value FROM share_meta WHERE key = ?")
+      .get(PENDING_POLICY_RESTORE)?.value
+  } catch (error) {
+    // An unreadable sharing store closes sharing without blocking the app.
+    if (
+      error instanceof ShareLinksStoreError ||
+      (error instanceof Error && error.name === "SQLiteError")
+    )
+      return
+    throw error
+  }
+  if (marker === "none" || (marker && /^[1-9][0-9]*$/.test(marker)))
+    db!
+      .query("DELETE FROM share_meta WHERE key = ?")
+      .run(PENDING_POLICY_RESTORE)
 }
 
 // ── Changes ──────────────────────────────────────────────────

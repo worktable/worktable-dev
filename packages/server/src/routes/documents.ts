@@ -1,6 +1,5 @@
 import { teamsEnabled } from "../team-database.ts";
-import { sharingV2Active } from "../share-links-store.ts"
-import { authorizeShareAction } from "../share-policy.ts"
+import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { Hono, type Context } from "hono"
 import { z } from "zod"
@@ -41,6 +40,8 @@ import {
   setDocumentLifetime,
 } from "../document-lifetime.ts"
 import { getDocumentSharingConfig } from "../linked-sharing.ts"
+import { sharingV2Active } from "../share-links-store.ts"
+import { pageShareAccess } from "../share-policy.ts"
 import { readSpace, slugifyDocPath } from "../store.ts"
 import { hasScope } from "../token-store.ts"
 import {
@@ -273,6 +274,27 @@ documentsRouter.get("/resolve", requireScope("documents:read"), async (c) => {
   )
 })
 
+/**
+ * Whether a document page offers Share, and whether its reader may make a
+ * link now. Only people share: solo the owner; in Teams, today's single link
+ * is for the Space's managers, and with links v2 the owner policy decides.
+ */
+function pageSharing(
+  c: Context,
+  spaceId: string
+): { canCreate: boolean } | null {
+  if (!getDocumentSharingConfig()) return null
+  const identity = c.get("identity")
+  const person = teamsEnabled()
+    ? identity.principal.type === "human"
+    : isHumanWorkspaceOwner(c)
+  if (!person) return null
+  if (sharingV2Active()) return pageShareAccess(identity, spaceId)
+  return !teamsEnabled() || canAccessSpace(spaceId, "manage")
+    ? { canCreate: true }
+    : null
+}
+
 documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
   const path = exactDocumentPath(c.req.query("path"))
   if (!path) {
@@ -281,8 +303,10 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       400
     )
   }
+  const spaceId = c.req.param("spaceId") ?? ""
+  const sharing = pageSharing(c, spaceId)
   const page = await readDocumentPage({
-    spaceId: c.req.param("spaceId") ?? "",
+    spaceId,
     path,
     includeArchived: true,
     rawSourceAuthorized: canManageUserSettings(c),
@@ -291,19 +315,8 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
       "annotations:read"
     ),
     recordsAuthorized: hasScope(c.get("identity").scopes, "records:read"),
-    sharingAuthorized:
-      (teamsEnabled()
-        ? authorizeShareAction(
-            c.get("identity"),
-            sharingV2Active() ? "read" : "create",
-            c.req.param("spaceId") ?? ""
-          ).allowed
-        : isHumanWorkspaceOwner(c)) && Boolean(getDocumentSharingConfig()),
-    canCreateShareLinks: authorizeShareAction(
-      c.get("identity"),
-      "create",
-      c.req.param("spaceId") ?? ""
-    ).allowed,
+    sharingAuthorized: sharing !== null,
+    canCreateShareLinks: sharing?.canCreate ?? false,
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

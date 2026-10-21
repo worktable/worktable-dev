@@ -51,6 +51,7 @@ import {
   ShareLinksStoreError,
   sharingV2Active,
 } from "./share-links-store.ts"
+import { creatorMayShare, currentSharingPolicy } from "./share-policy.ts"
 import { getDocMetaView, listDocVersions, readSpace } from "./store.ts"
 import type { VersionEntry } from "./version-store.ts"
 import {
@@ -347,8 +348,9 @@ async function pageForHandle(
 
 /**
  * The page's sharing while links v2 is on, so the page needs no request of
- * its own for it: one statement on the links index, and none for a document
- * that has never had a durable id, which every link needs.
+ * its own for it: a policy revision read and an indexed aggregate, and none for a document
+ * that has never had a durable id, which every link needs. Only links the
+ * owner policy lets open now count as active.
  */
 function sharingSummary(
   spaceId: string,
@@ -357,10 +359,22 @@ function sharingSummary(
 ): DocumentSharingSummary | undefined {
   try {
     if (!sharingV2Active()) return undefined
-    const summary =
-      handle.identity === "durable"
-        ? documentShareLinkSummary(spaceId, handle.documentId)
-        : { activeLinks: 0, nextExpiry: null }
+    if (handle.identity !== "durable") return { activeLinks: 0, canCreate }
+    const policy = currentSharingPolicy()
+    const allowed =
+      !policy.paused &&
+      policy.levels.includes("view") &&
+      !policy.requirePassword &&
+      (policy.spaces.mode === "all" || policy.spaces.spaceIds.includes(spaceId))
+    const summary = allowed
+      ? documentShareLinkSummary(
+          spaceId,
+          handle.documentId,
+          Date.now(),
+          policy.maxExpiryDays,
+          (creator) => creatorMayShare(creator, spaceId, policy)
+        )
+      : { activeLinks: 0, nextExpiry: null }
     return {
       activeLinks: summary.activeLinks,
       canCreate,
@@ -384,6 +398,10 @@ export async function readDocumentPage(options: {
   /** Whether records that point at the doc may be named. */
   recordsAuthorized?: boolean
   sharingAuthorized: boolean
+  /**
+   * Whether the reader may make a share link now. Only a hint for the share
+   * dialog; making a link checks again.
+   */
   canCreateShareLinks?: boolean
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(

@@ -15,13 +15,14 @@ import {
   renderPublicHtmlProjection,
 } from "../public-share-renderer.ts"
 import { resolveDocumentShare } from "../share-store.ts"
+import { legacyShareHeldBack } from "../share-policy.ts"
 import {
   readShareLinkDocument,
   resolveShareLinkView,
+  shareLinkStillOpens,
   type ShareLinkView,
 } from "../share-link-views.ts"
 import {
-  getShareLink,
   noteShareLinkUsed,
   onShareLinksChanged,
   ShareLinksStoreError,
@@ -219,16 +220,6 @@ async function withRenderSlot<T>(
   }
 }
 
-function linkStillOpens(id: string): boolean {
-  const link = getShareLink(id)
-  return Boolean(
-    link &&
-    link.servable &&
-    link.revokedAt === null &&
-    (link.expiresAt === null || link.expiresAt > Date.now())
-  )
-}
-
 async function renderLinkBody(
   view: ShareLinkView,
   surface: "projection" | "content"
@@ -264,10 +255,9 @@ async function renderLinkBody(
     )
     revision = document.revision
   }
-  // A render can outlast the link: revoked or expired meanwhile, it is
-  // neither kept nor sent. Only renders pay this lookup; a cached page was
-  // checked by the request's own lookup.
-  if (!linkStillOpens(view.link.id)) return null
+  // Rendering takes a while: a link revoked or held back meanwhile gets
+  // neither this page nor a cached one. One statement, on a miss only.
+  if (!shareLinkStillOpens(view.link)) return null
   // Kept under the revision that was read, which may be newer than the one
   // the request looked up.
   if (revision === null) {
@@ -326,12 +316,18 @@ async function resolveRequest(request: Request): Promise<ResolvedShare | null> {
   const token = request.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
   // The lifecycle lock covers only the lookup; see renderedPage.
   const share = await resolveDocumentShare(token)
-  if (!share) {
+  // With links v2 on, the owner policy holds back today's links too.
+  if (!share || (sharingV2Active() && legacyShareHeldBack(share))) {
     for (const key of pageKeys(token)) forgetPage(key)
     return null
   }
   const artifact = await readSharedArtifact(share)
   return artifact ? { token, artifact } : null
+}
+
+async function legacyShareStillOpens(token: string): Promise<boolean> {
+  const share = await resolveDocumentShare(token)
+  return Boolean(share && (!sharingV2Active() || !legacyShareHeldBack(share)))
 }
 
 /** The page for this share and artifact revision, rendering it at most once. */
@@ -345,6 +341,7 @@ async function renderedPage(
     .digest("base64url")
   const cached = renderedPages.get(key)
   if (cached?.revision === revision) {
+    if (!(await legacyShareStillOpens(resolved.token))) return null
     renderedPages.delete(key)
     renderedPages.set(key, cached)
     return cached
@@ -358,7 +355,7 @@ async function renderedPage(
       // The artifact was read after the lookup released the lifecycle lock.
       // Shares are revoked before their path changes owner, so a share that
       // is still current proves the read was this share's artifact.
-      if (!(await resolveDocumentShare(resolved.token))) return null
+      if (!(await legacyShareStillOpens(resolved.token))) return null
       return rememberPage(key, revision, body)
     })()
     renderingPages.set(renderKey, rendering)
@@ -423,8 +420,8 @@ export function createPublicSharesRouter(
         c.req.raw.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
       )
     } catch (error) {
-      // A store this binary cannot open serves none of its links; older
-      // links may still answer.
+      // A store this binary cannot open serves none of its links, and its
+      // policy, which can't be checked, holds older links back too.
       if (error instanceof ShareLinksStoreError) return null
       throw error
     }

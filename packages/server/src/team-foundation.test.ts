@@ -18,7 +18,11 @@ import { teamRouter } from "./routes/team.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
-import { DEFAULT_AGENT_ACCESS, type DocumentId } from "@worktable/types"
+import {
+  DEFAULT_AGENT_ACCESS,
+  type DocumentId,
+  type SharingPolicy,
+} from "@worktable/types"
 import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
   createTeamAgentConnection,
@@ -32,6 +36,7 @@ import { profileRouter } from "./routes/profile.ts"
 import { workspaceRouter } from "./routes/workspace.ts"
 import { systemRouter, type DeploymentInfo } from "./routes/system.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
+import { createPublicSharesRouter } from "./routes/public-shares.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { closeShareLinkStores } from "./share-links-store.ts"
 import { tokensRouter } from "./routes/tokens.ts"
@@ -814,14 +819,15 @@ describe("team foundation", () => {
     }
   })
 
-  test("share links are made and revoked by owners and Space managers; editors only see them", async () => {
-    const { owner, member } = await setup()
+  test("the owner policy decides who makes and keeps share links, and agents reach neither links nor policy", async () => {
+    const { owner, member, auth, ownerHeaders } = await setup()
     await writeDoc("original", "brief", "# Brief")
     const request = (
       identity: TokenIdentity,
       method: string,
       path: string,
-      body?: unknown
+      body?: unknown,
+      headers: Record<string, string> = {}
     ) => {
       const app = new Hono()
       app.onError((error, c) =>
@@ -835,19 +841,38 @@ describe("team foundation", () => {
       })
       app.route("/api/shares", sharesRouter)
       app.route("/api/spaces/:spaceId/documents", documentsRouter)
+      app.route(
+        "/public/share",
+        createPublicSharesRouter(() => "https://share.example.test")
+      )
       return app.request(path, {
         method,
-        ...(body
-          ? {
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            }
-          : {}),
+        headers: {
+          ...headers,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       })
     }
+    const view = async (token: string) =>
+      (
+        await request(owner, "GET", "/public/share", undefined, {
+          "x-worktable-share-capability": token,
+        })
+      ).status
     const target = { kind: "doc", spaceId: "original", path: "brief" }
     const create = (identity: TokenIdentity) =>
       request(identity, "POST", "/api/shares/links", { target })
+    const setPolicy = async (change: Partial<SharingPolicy>) => {
+      const { policy } = (await (
+        await request(owner, "GET", "/api/shares/policy")
+      ).json()) as { policy: SharingPolicy }
+      const saved = await request(owner, "PUT", "/api/shares/policy", {
+        ...policy,
+        ...change,
+      })
+      expect(saved.status).toBe(200)
+    }
     const grantBob = (access: "read" | "edit" | "manage") =>
       setSpaceAccessPolicy(
         {
@@ -863,6 +888,11 @@ describe("team foundation", () => {
         },
         owner
       )
+    const agent: TokenIdentity = {
+      ...owner,
+      agent: "codex",
+      principal: { id: "agent:codex", type: "agent", displayName: "Codex" },
+    }
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     setLinkedSharing({
       workspaceId: "ws_synthetic",
@@ -870,18 +900,55 @@ describe("team foundation", () => {
       htmlShareOrigin: "https://html.example.test",
     })
     try {
-      const made = await create(owner)
-      expect(made.status).toBe(201)
-      const { link } = (await made.json()) as { link: { id: string } }
+      // Owners always share; a member as Who Can Share allows for their access.
+      const created: Record<SharingPolicy["whoMayShare"], number[]> = {
+        owners: [403, 403, 403],
+        "space-managers": [403, 403, 201],
+        editors: [403, 201, 201],
+      }
+      for (const [whoMayShare, statuses] of Object.entries(created)) {
+        await setPolicy({
+          whoMayShare: whoMayShare as SharingPolicy["whoMayShare"],
+        })
+        expect((await create(owner)).status).toBe(201)
+        const accesses = ["read", "edit", "manage"] as const
+        for (const [index, access] of accesses.entries()) {
+          grantBob(access)
+          expect((await create(member)).status).toBe(statuses[index]!)
+        }
+      }
 
+      // Only owners read or change the policy. Agents reach no sharing route.
+      expect(
+        (await request(member, "GET", "/api/shares/policy")).status
+      ).toBe(403)
+      expect(
+        (await request(member, "PUT", "/api/shares/policy", {})).status
+      ).toBe(403)
+      for (const [method, path] of [
+        ["GET", "/api/shares/policy"],
+        ["PUT", "/api/shares/policy"],
+        ["GET", "/api/shares/links/all"],
+        ["GET", "/api/shares/links?kind=doc&spaceId=original&path=brief"],
+        ["POST", "/api/shares/links"],
+      ] as const) {
+        expect((await request(agent, method, path, { target })).status).toBe(
+          403
+        )
+      }
+
+      // An editor sees links but can't make, revoke or oversee them.
+      await setPolicy({ whoMayShare: "space-managers" })
+      const owners = (await (await create(owner)).json()) as {
+        link: { id: string }
+      }
       for (const access of ["read", "edit"] as const) {
         grantBob(access)
         const page = await request(member, "GET", "/api/spaces/original/documents/page?path=brief")
         expect(page.status).toBe(200)
-        expect(await page.json()).toMatchObject({ page: { sharing: { activeLinks: 1, canCreate: false } } })
+        expect(await page.json()).toMatchObject({ page: { sharing: { canCreate: false } } })
       }
       grantBob("edit")
-      expect((await create(member)).status).toBe(403)
       const seen = await request(
         member,
         "GET",
@@ -890,20 +957,50 @@ describe("team foundation", () => {
       expect(await seen.json()).toMatchObject({
         canCreate: false,
         createBlockedBy: "sharer",
-        links: [{ id: link.id, canManage: false }],
       })
       expect(
-        (await request(member, "DELETE", `/api/shares/links/${link.id}`)).status
+        (await request(member, "DELETE", `/api/shares/links/${owners.link.id}`))
+          .status
       ).toBe(403)
       expect(
         (await request(member, "GET", "/api/shares/links/all")).status
       ).toBe(403)
 
+      // A sharer who loses the right to share stops their links at the next
+      // view, and they open again with it.
       grantBob("manage")
-      expect((await create(member)).status).toBe(201)
+      const made = (await (await create(member)).json()) as {
+        link: { id: string }
+        url: string
+      }
+      const token = made.url.split("/").at(-1)!
+      expect(await view(token)).toBe(200)
+      grantBob("edit")
+      expect(await view(token)).toBe(404)
+      const listed = (await (
+        await request(owner, "GET", "/api/shares/links/all")
+      ).json()) as { links: Array<{ id: string }> }
+      expect(listed.links.find((link) => link.id === made.link.id)).toMatchObject(
+        { status: "blocked", blockedBy: "sharer" }
+      )
+      await setPolicy({ whoMayShare: "editors" })
+      expect(await view(token)).toBe(200)
+      // While entitled, the creator manages their own link.
       expect(
-        (await request(member, "DELETE", `/api/shares/links/${link.id}`)).status
+        (
+          await request(member, "PATCH", `/api/shares/links/${made.link.id}`, {
+            label: "Board",
+          })
+        ).status
       ).toBe(200)
+      await auth.api.removeMember({
+        headers: ownerHeaders,
+        body: {
+          organizationId: currentTeamWorktable()!.organizationId,
+          memberIdOrEmail: member.team!.memberId!,
+        },
+      })
+      expect(await view(token)).toBe(404)
     } finally {
       setLinkedSharing(null)
       closeShareLinkStores()

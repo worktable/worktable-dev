@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
-import type { CreatedShareLink, DocumentShareLinks } from "@worktable/types"
+import {
+  defaultSharingPolicy,
+  type CreatedShareLink,
+  type DocumentShareLinks,
+  type ShareLinkBlockedBy,
+  type SharingPolicy,
+} from "@worktable/types"
 import { Hono } from "hono"
 import * as fsPromises from "node:fs/promises"
 import { existsSync } from "node:fs"
 import {
+  cp,
   mkdtemp,
   readdir,
   readFile,
@@ -17,11 +24,14 @@ import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import * as documentPages from "./document-page-service.ts"
 import { readDocumentPage } from "./document-page-service.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { deleteHtmlDocument } from "./html-document-delete.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import { moveHtmlDocument } from "./html-document-move.ts"
+import * as publicRenderer from "./public-share-renderer.ts"
+import { wsManager } from "./ws.ts"
 import * as views from "./share-link-views.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { createPublicSharesRouter } from "./routes/public-shares.ts"
@@ -41,10 +51,14 @@ import {
   flushShareLinkUse,
   importV1ShareLink,
   revokeShareLink,
+  restoreSharingPolicy,
+  sharingPolicyForBackup,
+  markV1SharesDrained,
   shareLinksDatabasePath,
   updateShareLink,
 } from "./share-links-store.ts"
 import { authorizeShareAction } from "./share-policy.ts"
+import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
 import { setDocArchived, writeDoc, writeSpace } from "./store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { updateWidgetMetadata } from "./widget-store.ts"
@@ -53,6 +67,8 @@ import {
   setWorkspaceRootOverride,
 } from "./workspace.ts"
 import { notifyWorkspaceChangeAndWaitOrThrow } from "./workspace-events.ts"
+import { writeWorkspaceSnapshot } from "./workspace-snapshot.ts"
+import { recoverMissingWorkspaceSnapshot } from "./workspace-snapshot-restore.ts"
 
 // Links on a Worktable shared through Link: not hosted, so this also covers
 // lifecycle revocation outside Cloud.
@@ -324,7 +340,7 @@ describe("share links", () => {
     expect(await missed.text()).toBe(await malformed.text())
   })
 
-  it("serves nothing it does not understand, and older links still open", async () => {
+  it("serves nothing it does not understand, and no older link once it can't read the owner policy", async () => {
     await writeDoc("space", "plan", "# Plan")
     // Today's links are made only while links v2 is off.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
@@ -350,18 +366,35 @@ describe("share links", () => {
     )
     expect((await view(locked.token)).status).toBe(404)
     expect((await view(open.token)).status).toBe(200)
+    expect((await view(legacyToken)).status).toBe(200)
 
-    // A later version of the whole store.
+    // A later version of the whole store: its policy can't be checked, so
+    // today's links stay closed too.
     closeShareLinkStores()
     db.exec("PRAGMA user_version = 2")
     db.close()
     expect((await view(open.token)).status).toBe(404)
-    expect((await view(legacyToken)).status).toBe(200)
+    expect((await view(legacyToken)).status).toBe(404)
     const closed = await send("GET", "/api/shares/links/all")
     expect(closed.status).toBe(503)
     expect(await closed.json()).toMatchObject({
       code: "SHARE_LINKS_UNAVAILABLE",
     })
+
+    // With the preview off, that store still keeps today's routes retired,
+    // so no link is made outside its owner policy.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    closeShareLinkStores()
+    expect(
+      (
+        await send("POST", "/api/shares", {
+          kind: "doc",
+          spaceId: "space",
+          artifactKey: "plan",
+        })
+      ).status
+    ).toBe(404)
+    expect((await view(legacyToken)).status).toBe(404)
   })
 
   it("follows a Doc through renames and moves, and archiving ends its links for good", async () => {
@@ -883,6 +916,376 @@ describe("moving today's links into links v2", () => {
       expect((await view(plan.token)).status).toBe(200)
     } finally {
       invalidateServerSettingsCache()
+    }
+  })
+})
+
+describe("owner policy", () => {
+  const target = { kind: "doc", spaceId: "space", path: "plan" }
+  const DAY_MS = 86_400_000
+  const inDays = (days: number) =>
+    new Date(Date.now() + days * DAY_MS).toISOString()
+
+  async function savePolicy(
+    change: Partial<SharingPolicy>,
+    identity?: TokenIdentity
+  ): Promise<Response> {
+    return await send(
+      "PUT",
+      "/api/shares/policy",
+      { ...defaultSharingPolicy(), ...change },
+      identity
+    )
+  }
+
+  async function policyNow(): Promise<SharingPolicy> {
+    const response = await send("GET", "/api/shares/policy")
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { policy: SharingPolicy }).policy
+  }
+
+  async function activeOnPage(): Promise<number | undefined> {
+    const page = await readDocumentPage({
+      spaceId: "space",
+      path: "plan",
+      rawSourceAuthorized: false,
+      annotationsAuthorized: false,
+      sharingAuthorized: true,
+    })
+    return page?.kind === "document" ? page.sharing?.activeLinks : undefined
+  }
+
+  it("applies policy tightened during a legacy render and tells other human sessions", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const legacy = await createDocumentShare({
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "plan",
+    })
+    const messages: unknown[] = []
+    const agentMessages: unknown[] = []
+    const humanSocket = {
+      data: { spaceId: "space", identity: person() },
+      send: (value: string) => messages.push(JSON.parse(value)),
+      close() {},
+    }
+    const agentSocket = {
+      data: { spaceId: "space", identity: agent },
+      send: (value: string) => agentMessages.push(JSON.parse(value)),
+      close() {},
+    }
+    wsManager.subscribe(humanSocket, "space")
+    wsManager.subscribe(agentSocket, "space")
+    const original = publicRenderer.renderPublicDocProjection
+    const rendering = spyOn(
+      publicRenderer,
+      "renderPublicDocProjection"
+    ).mockImplementationOnce(async (...args) => {
+      const body = await original(...args)
+      expect((await savePolicy({ paused: true })).status).toBe(200)
+      return body
+    })
+    try {
+      expect((await view(legacy.token)).status).toBe(404)
+      expect(messages).toEqual([{ type: "share_policy_changed", revision: 1 }])
+      expect(agentMessages).toEqual([])
+    } finally {
+      rendering.mockRestore()
+      wsManager.unsubscribe(humanSocket)
+      wsManager.unsubscribe(agentSocket)
+    }
+  })
+
+  it("checks policy again after document resolution before creating a link", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const original = documentPages.publicShareKind
+    for (const [change, status] of [
+      [{ paused: true }, 403],
+      [{ maxExpiryDays: 7 }, 400],
+    ] as const) {
+      await savePolicy({})
+      const resolution = spyOn(
+        documentPages,
+        "publicShareKind"
+      ).mockImplementation(async (handle) => {
+        const kind = await original(handle)
+        expect((await savePolicy(change)).status).toBe(200)
+        return kind
+      })
+      try {
+        const response = await send("POST", "/api/shares/links", { target })
+        expect(response.status).toBe(status)
+      } finally {
+        resolution.mockRestore()
+      }
+      expect((await documentLinks("plan")).links).toHaveLength(0)
+    }
+  })
+
+  it("cuts existing links at their next view when tightened, and lets them open again when loosened", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    // A link of today's format that views fall back to until it moves.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    const legacy = await send("POST", "/api/shares", {
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "plan",
+    })
+    const legacyToken = (
+      (await legacy.json()) as { share: { url: string } }
+    ).share.url
+      .split("/")
+      .at(-1)!
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    const { token, link } = await createLink("plan")
+    const dead = await (await view("not-a-token")).text()
+    expect(await policyNow()).toEqual(defaultSharingPolicy())
+    for (const identity of [agent, person(["docs:read"])]) {
+      expect(
+        (await send("GET", "/api/shares/policy", undefined, identity)).status
+      ).toBe(403)
+      expect((await savePolicy({ paused: true }, identity)).status).toBe(403)
+    }
+
+    const tightened: Array<[Partial<SharingPolicy>, ShareLinkBlockedBy]> = [
+      [{ paused: true }, "paused"],
+      [{ spaces: { mode: "selected", spaceIds: ["elsewhere"] } }, "space"],
+    ]
+    for (const [change, blockedBy] of tightened) {
+      expect((await savePolicy(change)).status).toBe(200)
+      const stopped = await view(token)
+      expect(stopped.status).toBe(404)
+      // Visitors can't tell a link the policy stops from any dead link.
+      expect(await stopped.text()).toBe(dead)
+      expect((await view(legacyToken)).status).toBe(404)
+      expect(await documentLinks("plan")).toMatchObject({
+        canCreate: false,
+        createBlockedBy: blockedBy,
+        links: [{ id: link.id, status: "blocked", blockedBy }],
+      })
+      expect(await activeOnPage()).toBe(0)
+      expect((await send("POST", "/api/shares/links", { target })).status).toBe(
+        403
+      )
+
+      expect((await savePolicy({})).status).toBe(200)
+      expect((await view(token)).status).toBe(200)
+      expect((await view(legacyToken)).status).toBe(200)
+      expect(await activeOnPage()).toBe(1)
+    }
+
+    // The longest expiry ends links older than it, and new links must
+    // expire within it.
+    const createdAt = Date.now() - 10 * DAY_MS
+    closeShareLinkStores()
+    const db = new Database(shareLinksDatabasePath())
+    db.query("UPDATE share_links SET created_at = ? WHERE id = ?").run(
+      createdAt,
+      link.id
+    )
+    db.close()
+    expect((await savePolicy({ maxExpiryDays: 7 })).status).toBe(200)
+    expect((await view(token)).status).toBe(404)
+    expect((await documentLinks("plan")).links[0]).toMatchObject({
+      status: "blocked",
+      blockedBy: "expiry-cap",
+      expiresAt: new Date(createdAt + 7 * DAY_MS).toISOString(),
+    })
+    for (const expiresAt of [null, inDays(30)]) {
+      const refused = await send("POST", "/api/shares/links", {
+        target,
+        expiresAt,
+      })
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toMatchObject({ code: "EXPIRY_TOO_LONG" })
+    }
+    expect(
+      (
+        await send("POST", "/api/shares/links", {
+          target,
+          expiresAt: inDays(7),
+        })
+      ).status
+    ).toBe(201)
+
+    expect((await savePolicy({ maxExpiryDays: 30 })).status).toBe(200)
+    expect((await view(token)).status).toBe(200)
+  })
+
+  it("refuses a save made from an older copy, so it can't undo a newer change", async () => {
+    const read = (await (await send("GET", "/api/shares/policy")).json()) as {
+      revision: number
+    }
+    const saveFrom = async (revision: number, change: Partial<SharingPolicy>) =>
+      await app().request("/api/shares/policy", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${revision}"`,
+        },
+        body: JSON.stringify({ ...defaultSharingPolicy(), ...change }),
+      })
+    // One window pauses links; another, still showing the copy from before,
+    // changes the longest expiry.
+    expect((await saveFrom(read.revision, { paused: true })).status).toBe(200)
+    const stale = await saveFrom(read.revision, { maxExpiryDays: 30 })
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toMatchObject({
+      code: "POLICY_CHANGED",
+      policy: { paused: true, maxExpiryDays: null },
+      revision: read.revision + 1,
+    })
+    expect((await policyNow()).paused).toBe(true)
+  })
+
+  it("keeps settings for unreleased sharing features to the sharing preview", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const { token } = await createLink("plan")
+    // Links v2 stays on once today's links have moved, preview or not.
+    markV1SharesDrained()
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    const previewOnly: Partial<SharingPolicy>[] = [
+      { requirePassword: true },
+      { levels: ["view", "comment"] },
+      { liveLinks: true },
+    ]
+    for (const change of previewOnly) {
+      const refused = await savePolicy(change)
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toMatchObject({
+        code: "PREVIEW_POLICY_NOT_AVAILABLE",
+      })
+    }
+
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect((await savePolicy({ requirePassword: true })).status).toBe(200)
+    expect((await view(token)).status).toBe(404)
+
+    // Off, the preview's settings act as their defaults and keep their
+    // values for when it is on again.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    expect((await view(token)).status).toBe(200)
+    expect((await policyNow()).requirePassword).toBe(false)
+    expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
+    expect(await policyNow()).toMatchObject({
+      requirePassword: true,
+      maxExpiryDays: 90,
+    })
+    expect((await view(token)).status).toBe(404)
+  })
+
+  it("travels in operator backups, and comes back only onto a machine with no links store", async () => {
+    await writeDoc("space", "plan", "# Plan")
+    const { token } = await createLink("plan")
+    expect((await savePolicy({ paused: true, maxExpiryDays: 30 })).status).toBe(
+      200
+    )
+    const snapshots = await mkdtemp(join(tmpdir(), "worktable-share-backup-"))
+    try {
+      const captured = join(snapshots, "capture")
+      const snapshot = await writeWorkspaceSnapshot(captured, {
+        captureTeamState: true,
+      })
+      expect(snapshot.sharingPolicy).toMatchObject({
+        paused: true,
+        maxExpiryDays: 30,
+      })
+      // The owner loosens the policy after the backup.
+      expect((await savePolicy({ maxExpiryDays: 90 })).status).toBe(200)
+
+      const differentCapture = join(snapshots, "different-capture")
+      const differentSnapshot = await writeWorkspaceSnapshot(differentCapture, {
+        captureTeamState: true,
+      })
+
+      const recover = async (
+        operationId: string,
+        source = captured,
+        selected = snapshot
+      ) => {
+        await cp(
+          source,
+          join(await operatorSnapshotDirectory(operationId), "download"),
+          { recursive: true }
+        )
+        await rm(workspaceDir, { recursive: true, force: true })
+        await recoverMissingWorkspaceSnapshot(
+          operationId,
+          selected.workspaceId,
+          selected.sourceCheckpoint
+        )
+      }
+
+      // A machine that still has its links store keeps its newer policy.
+      await recover("recovery-with-store")
+      expect((await policyNow()).paused).toBe(false)
+
+      // A machine that lost everything gets the policy back, but no links.
+      closeShareLinkStores()
+      await rm(join(appDir, "sharing"), { recursive: true, force: true })
+      // Publication can fail after the app-owned policy was prepared. That
+      // unfinished store must take the next chosen snapshot, including after
+      // process state is discarded; a published store must keep its policy.
+      const originalRename = fsPromises.rename
+      const publication = spyOn(fsPromises, "rename").mockImplementation(
+        async (from, to) => {
+          if (String(to) === workspaceDir)
+            throw new Error("workspace publication failed")
+          return originalRename(from, to)
+        }
+      )
+      try {
+        await expect(recover("recovery-publication-failed")).rejects.toThrow(
+          "workspace publication failed"
+        )
+      } finally {
+        publication.mockRestore()
+      }
+      expect(existsSync(workspaceDir)).toBe(false)
+      expect(await restoreSharingPolicy(null)).toBe(true)
+      expect(sharingPolicyForBackup()).toBeNull()
+      closeShareLinkStores()
+      await recover("recovery-selected-next", differentCapture, differentSnapshot)
+      expect(await policyNow()).toMatchObject({
+        paused: false,
+        maxExpiryDays: 90,
+      })
+      await recover("recovery-published-store-keeps-policy")
+      expect(await policyNow()).toMatchObject({
+        paused: false,
+        maxExpiryDays: 90,
+      })
+      closeShareLinkStores()
+      await rm(join(appDir, "sharing"), { recursive: true, force: true })
+      await recover("recovery-fresh-machine")
+      expect(await policyNow()).toMatchObject({
+        paused: true,
+        maxExpiryDays: 30,
+      })
+      expect((await view(token)).status).toBe(404)
+      closeShareLinkStores()
+      const unreadable = new Database(shareLinksDatabasePath())
+      unreadable.query("UPDATE share_policy SET policy = ? WHERE id = 1").run("{")
+      unreadable.close()
+      await expect(
+        writeWorkspaceSnapshot(join(snapshots, "bad-policy"), {
+          captureTeamState: true,
+        })
+      ).rejects.toThrow("Saved sharing policy is unreadable")
+      expect(existsSync(join(snapshots, "bad-policy"))).toBe(false)
+      closeShareLinkStores()
+      const futureStore = new Database(shareLinksDatabasePath())
+      futureStore.exec("PRAGMA user_version = 99")
+      futureStore.close()
+      await expect(
+        writeWorkspaceSnapshot(join(snapshots, "future-policy"), {
+          captureTeamState: true,
+        })
+      ).rejects.toThrow("unsupported version")
+      expect(existsSync(join(snapshots, "future-policy"))).toBe(false)
+    } finally {
+      await rm(snapshots, { recursive: true, force: true })
     }
   })
 })

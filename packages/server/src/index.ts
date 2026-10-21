@@ -1,3 +1,4 @@
+import { finalizeRestoredSharingPolicy } from "./share-links-store.ts";
 import { recoverTeamInitialization } from "./team-initialization.ts";
 import { resetTeamSpacePoliciesAfterContentReplacement, finalizePendingTeamSpacePolicyReset } from "./team-policy.ts";
 import { serveTeamDirectory, TEAM_DIRECTORY_PATH } from "./team-directory.ts"
@@ -77,7 +78,7 @@ import { agentConnectionsRouter } from "./routes/agent-connections.ts"
 import { sharesRouter } from "./routes/shares.ts"
 import { linkGrantsRouter } from "./routes/link-grants.ts"
 import { publicSharesRouter } from "./routes/public-shares.ts"
-import { flushShareLinkUse } from "./share-links-store.ts"
+import { flushShareLinkUse, sweepRevokedShareLinks } from "./share-links-store.ts"
 import { settleShareLinkReconciles } from "./share-links-lifecycle.ts"
 import { startV1ShareLinkDrain } from "./share-links-drain.ts"
 import { publicInvitationsRouter } from "./routes/public-invitations.ts"
@@ -713,6 +714,7 @@ interface WsData {
   sessionStillValid?: () => Promise<boolean>;
   /** The member's access fingerprint last reported on this socket. */
   teamAccess?: string;
+  teamPolicyRevision?: number;
   type: "space" | "yjs";
   spaceId: string;
   threadScope?: boolean;
@@ -1250,6 +1252,7 @@ export function startServer(
   // without a password exposes nothing.
   recoverTeamInitialization();
   finalizePendingTeamSpacePolicyReset();
+  finalizeRestoredSharingPolicy();
   const bindIsLoopback =
     hostname === undefined || isLoopbackBindHost(hostname);
   const exposedBind = authRequired() || !bindIsLoopback;
@@ -1415,7 +1418,8 @@ export function startServer(
   // Doc version-history retention: one deferred sweep ~30s after boot (so it
   // never delays startup) plus a 24h steady-state sweep. At boot, before any
   // sweep, the install's policy is settled: new installs start at 30 days;
-  // installs whose stored policy is no longer offered move to 180.
+  // installs whose stored policy is no longer offered move to 180. The same
+  // pass forgets share links revoked more than 90 days ago.
   // Replace-not-stack across reboots, and both timers are unref'd so they
   // never keep a test process (or a briefly idle server) alive.
   // WORKTABLE_SKIP_RETENTION_SWEEP=1 disables them for the test runner,
@@ -1430,10 +1434,16 @@ export function startServer(
     }).catch((err) =>
       console.error("[version-retention] could not settle the policy:", logError(err))
     )
-    const sweep = () =>
+    const sweep = () => {
       void settled
         .then(() => runRetentionSweep())
         .catch((err) => console.error("[version-retention] sweep error:", logError(err)));
+      try {
+        sweepRevokedShareLinks();
+      } catch (err) {
+        console.error("[share-links] revoked link sweep error:", logError(err));
+      }
+    };
     retentionBootTimer = setTimeout(sweep, RETENTION_BOOT_DELAY_MS);
     retentionBootTimer.unref?.();
     retentionSweepTimer = setInterval(sweep, RETENTION_SWEEP_INTERVAL_MS);
@@ -1870,17 +1880,18 @@ export function startServer(
           revokeSocket(socket);
           continue;
         }
-        // A member whose own access changed is told in place, so their tab
-        // updates without waiting for its next request.
+        // Tell members about access and policy changes in place. Another
+        // creator losing access can also change their cached link summaries.
         const memberId = socket.data.identity?.team?.memberId;
         if (socket.data.type === "space" && memberId && socket.data.identity?.principal.type === "human") {
           try {
             const access = memberAccess(memberId)?.fingerprint;
-            if (access && socket.data.teamAccess && access !== socket.data.teamAccess) {
-              const worktable = currentTeamWorktable();
+            const worktable = currentTeamWorktable();
+            if (access && socket.data.teamAccess && (access !== socket.data.teamAccess || worktable?.policyRevision !== socket.data.teamPolicyRevision)) {
               socket.send(JSON.stringify({ type: "team_access", worktableId: worktable?.id, memberId, policyRevision: worktable?.policyRevision, access }));
             }
             if (access) socket.data.teamAccess = access;
+            socket.data.teamPolicyRevision = worktable?.policyRevision;
           } catch {
             // Team state is unavailable; the next request reports it.
           }
@@ -2120,6 +2131,7 @@ export function startServer(
           if (ws.data.type === "space" && memberId && ws.data.identity?.principal.type === "human") {
             try {
               ws.data.teamAccess = memberAccess(memberId)?.fingerprint
+              ws.data.teamPolicyRevision = currentTeamWorktable()?.policyRevision
             } catch {
               // Team state is unavailable; the sweep reports it.
             }

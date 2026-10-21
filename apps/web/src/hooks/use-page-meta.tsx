@@ -15,10 +15,11 @@ export interface PageShareTarget {
 }
 
 /**
- * The page's share target. When the page carries its links (links v2), it
- * shows to people who may make links or who see links already made; without
- * them, `legacyShareable` decides as it always has. Takes the summary's
- * fields so callers can depend on primitives.
+ * The page's share target. When the page carries its links (links v2), the
+ * server sent them only to people who may share here or manage its links,
+ * including while the owner policy holds links back, so the dialog can say
+ * why; without them, `legacyShareable` decides as it always has. Takes the
+ * summary's fields so callers can depend on primitives.
  */
 export function pageShareTarget(
   target: Omit<PageShareTarget, "links">,
@@ -29,9 +30,7 @@ export function pageShareTarget(
   if (activeLinks === undefined || canCreate === undefined) {
     return legacyShareable ? target : undefined
   }
-  return canCreate || activeLinks > 0
-    ? { ...target, links: { activeLinks, canCreate } }
-    : undefined
+  return { ...target, links: { activeLinks, canCreate } }
 }
 
 export interface PagePrimaryAction {

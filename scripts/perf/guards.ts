@@ -366,6 +366,8 @@ export const BACKGROUND_FUNCTIONS = [
   // Event-triggered retries stay off the writer's request path.
   "packages/server/src/share-links-drain.ts#drain",
   "packages/server/src/share-links-drain.ts#moveShare",
+  // The daily retention pass forgets share links revoked over 90 days ago.
+  "packages/server/src/share-links-store.ts#sweepRevokedShareLinks",
 ]
 
 const inBackground = (site: string) =>

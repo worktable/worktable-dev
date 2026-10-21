@@ -19,9 +19,12 @@ import {
   readDocumentSource,
 } from "./document-source-reader.ts"
 import {
-  findShareLinkByToken,
+  findShareLinkForView,
+  findShareLinkWithPolicy,
+  ShareLinksStoreError,
   type StoredShareLink,
 } from "./share-links-store.ts"
+import { effectiveSharingPolicy, linkBlockedBy } from "./share-policy.ts"
 import { readWidgetDocument } from "./widget-store.ts"
 import { getWorkspaceRoot } from "./workspace.ts"
 
@@ -29,9 +32,11 @@ import { getWorkspaceRoot } from "./workspace.ts"
 // What a share link shows, for anonymous visitors
 // ============================================================
 //
-// Resolving a token costs one indexed SELECT and the Space's read-model
-// snapshot: no share lock, no file read while the snapshot is current, and no
-// second lookup after rendering. The document is found by its durable id, so
+// Resolving a token costs one indexed SELECT, which also reads the owner
+// policy's revision, and the Space's read-model snapshot: no share lock, no
+// file read while the snapshot is current, and no second lookup after
+// rendering. The owner policy and the creator's access are checked on every
+// view from memory, so tightening the policy cuts a link off at its next view. The document is found by its durable id, so
 // a rename or move keeps the link, and the content revision lets the caller
 // answer from its cache without reading content. Only a cache miss reads the
 // document, through the same snapshot read members use, and only if the id
@@ -55,12 +60,14 @@ export interface ShareLinkView {
 export async function resolveShareLinkView(
   token: string
 ): Promise<ShareLinkView | "unavailable" | null> {
-  const link = findShareLinkByToken(token)
-  if (!link) return null
+  const found = findShareLinkForView(token)
+  if (!found) return null
+  const { link } = found
+  const now = Date.now()
   if (
     link.revokedAt !== null ||
-    !link.servable ||
-    (link.expiresAt !== null && link.expiresAt <= Date.now()) ||
+    (link.expiresAt !== null && link.expiresAt <= now) ||
+    linkBlockedBy(link, effectiveSharingPolicy(found.policy), now) !== null ||
     link.workspaceEpoch !== (await getWorkspaceCollaborationEpoch())
   ) {
     return "unavailable"
@@ -86,6 +93,29 @@ export async function resolveShareLinkView(
     title: target.title,
     revision: revisions.get(target.path) ?? null,
   }
+}
+
+/**
+ * Whether a link a view resolved still opens: checked again after rendering
+ * a page, which can take a while, so a link revoked or held back meanwhile
+ * isn't served. A store that can't be read says no.
+ */
+export function shareLinkStillOpens(link: StoredShareLink): boolean {
+  let found: ReturnType<typeof findShareLinkWithPolicy>
+  try {
+    found = findShareLinkWithPolicy(link.id)
+  } catch (error) {
+    if (error instanceof ShareLinksStoreError) return false
+    throw error
+  }
+  const now = Date.now()
+  return Boolean(
+    found &&
+    found.link.revokedAt === null &&
+    !(found.link.expiresAt !== null && found.link.expiresAt <= now) &&
+    linkBlockedBy(found.link, effectiveSharingPolicy(found.policy), now) ===
+      null
+  )
 }
 
 export type ShareLinkDocument =

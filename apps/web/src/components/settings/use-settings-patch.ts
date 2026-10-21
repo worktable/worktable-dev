@@ -1,3 +1,4 @@
+import { refreshThreadNamingCapabilities } from "@/lib/thread-naming-cache"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import {
@@ -43,8 +44,6 @@ export function useSettingsPatch() {
     onSuccess: async (settings, patch) => {
       queryClient.setQueryData(SETTINGS_QUERY_KEY, settings)
       if (patch.agents?.previewTools !== undefined) {
-        const { refreshThreadNamingCapabilities } =
-          await import("@/lib/thread-naming")
         await refreshThreadNamingCapabilities(queryClient)
       }
     },

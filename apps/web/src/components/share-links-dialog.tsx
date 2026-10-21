@@ -391,6 +391,16 @@ export function ShareLinksDialog({
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent
           ref={setPortalContainer}
+          // Vaul captures Escape before a nested Base UI popup dismisses.
+          // Keep that popup's first Escape inside this sharing sheet.
+          onEscapeKeyDown={(event) => {
+            if (
+              portalContainer?.querySelector(
+                '[data-slot$="-content"][data-open]'
+              )
+            )
+              event.preventDefault()
+          }}
           className={
             draft.grant
               ? "overflow-clip sm:max-w-lg"

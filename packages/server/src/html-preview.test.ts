@@ -475,3 +475,45 @@ test("guards actual relation reads if its schema is retargeted after permission 
     })
   ).rejects.toBeInstanceOf(WidgetRecordAccessError)
 })
+
+import { defaultSharingPolicy } from "@worktable/types"
+import { prepareShareLinkAccess } from "./link-sharing-access.ts"
+
+previewTest(
+  "prepares a live link from actual first-load record observations",
+  async () => {
+    const created = await createHtmlDocument({
+      spaceId,
+      explicitId: "access-check",
+      name: "Access check",
+      html: "<h1>Loading</h1><script>worktable.records.query('tasks',{fields:['title']}).then(rows=>document.querySelector('h1').textContent=rows[0].data.title)</script>",
+      permissions,
+      versionSource: "test",
+      versionUpdatedBy: "test",
+    })
+    expect(created.error).toBeUndefined()
+    const access = await prepareShareLinkAccess({
+      spaceId,
+      path: "access-check",
+      policy: { ...defaultSharingPolicy(), liveLinks: true },
+      observe: true,
+      scopes: ["documents:read", "records:read"],
+      signal: AbortSignal.timeout(15_000),
+    })
+    expect(access).not.toBeNull()
+    expect(access!.grant.collections.tasks?.fields).toEqual(["title"])
+    expect(access!.fixedReads.tasks).toHaveLength(1)
+    expect(access!.counts.tasks).toBe(1)
+    expect(
+      access!.warnings.some((warning) => warning.code === "later_reads")
+    ).toBe(true)
+    expect(
+      access!.warnings.some(
+        (warning) =>
+          warning.code === "preview_unavailable" ||
+          warning.code === "preview_partial"
+      )
+    ).toBe(false)
+    expect(JSON.stringify(access)).not.toContain("Initial task")
+  }
+)

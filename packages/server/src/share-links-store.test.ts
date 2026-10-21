@@ -32,6 +32,7 @@ import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { renameDocAndSync } from "./doc-rename.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import * as collaborationEpoch from "./collaboration-epoch.ts"
 import * as documentPages from "./document-page-service.ts"
 import { readDocumentPage } from "./document-page-service.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
@@ -64,6 +65,7 @@ import {
   markV1SharesDrained,
   shareLinksDatabasePath,
   updateShareLink,
+  shareUnlockSecret,
 } from "./share-links-store.ts"
 import { authorizeShareAction } from "./share-policy.ts"
 import { operatorSnapshotDirectory } from "./operator-snapshot.ts"
@@ -432,12 +434,12 @@ describe("share links", () => {
     })
     expect(page?.kind === "document" ? page.sharing?.activeLinks : null).toBe(1)
     expect((await view(created.token)).status).toBe(401)
-    const unlock = (value: string) =>
+    const unlock = (value: string, token = created.token) =>
       app().request("/public/share/unlock", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-worktable-share-capability": created.token,
+          "x-worktable-share-capability": token,
         },
         body: JSON.stringify({ password: value }),
       })
@@ -464,6 +466,19 @@ describe("share links", () => {
     expect((await unlock(password)).status).toBe(401)
     const next = (await (await unlock("replacement password")).json()) as {
       ticket: string
+    }
+    const limited = await createLink("plan", { password })
+    const wrong = spyOn(Bun.password, "verify").mockResolvedValue(false)
+    try {
+      for (let attempt = 0; attempt < 30; attempt++)
+        expect((await unlock("wrong", limited.token)).status).toBe(401)
+      const blocked = await unlock("wrong", limited.token)
+      expect(blocked.status).toBe(429)
+      expect(blocked.headers.get("Retry-After")).toMatch(/^[1-9][0-9]*$/)
+      expect(blocked.headers.get("Cache-Control")).toContain("no-store")
+      expect(wrong).toHaveBeenCalledTimes(30)
+    } finally {
+      wrong.mockRestore()
     }
     updateShareLink(created.link.id, { expiresAt: Date.now() - 1 })
     expect(
@@ -496,24 +511,46 @@ describe("share links", () => {
       spaceId: "space",
       artifactKey: "legacy",
     })
-    markV1SharesDrained()
     process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
-    const outer = await view(legacy.token)
-    expect(outer.status).toBe(200)
-    const { contentTicket } = (await outer.json()) as { contentTicket: string }
-    expect(contentTicket).not.toContain(legacy.token)
-    expect((await view(legacy.token, "/public/share/content")).status).toBe(404)
-    const frame = await view(contentTicket, "/public/share/content")
-    expect(frame.status).toBe(200)
-    expect(await frame.text()).toContain("Legacy report")
-    await stopDocumentShare({
-      kind: "html",
-      spaceId: "space",
-      artifactKey: "legacy",
-    })
-    expect((await view(contentTicket, "/public/share/content")).status).toBe(
-      404
+    const epoch = await getWorkspaceCollaborationEpoch()
+    let resume!: () => void
+    const held = spyOn(
+      collaborationEpoch,
+      "getWorkspaceCollaborationEpoch"
+    ).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resume = () => resolve(epoch)
+        })
     )
+    const draining = drainV1ShareLinks()
+    try {
+      expect(shareUnlockSecret()).not.toBeNull()
+      const outer = await view(legacy.token)
+      expect(outer.status).toBe(200)
+      const { contentTicket } = (await outer.json()) as {
+        contentTicket: string
+      }
+      expect(contentTicket).not.toContain(legacy.token)
+      expect((await view(legacy.token, "/public/share/content")).status).toBe(
+        404
+      )
+      const frame = await view(contentTicket, "/public/share/content")
+      expect(frame.status).toBe(200)
+      expect(await frame.text()).toContain("Legacy report")
+      await stopDocumentShare({
+        kind: "html",
+        spaceId: "space",
+        artifactKey: "legacy",
+      })
+      expect((await view(contentTicket, "/public/share/content")).status).toBe(
+        404
+      )
+    } finally {
+      resume?.()
+      await draining
+      held.mockRestore()
+    }
   })
 
   it("opens several links to one document on their own, and revoking one leaves the rest", async () => {
@@ -1574,7 +1611,11 @@ describe("owner policy", () => {
       expect(await restoreSharingPolicy(null)).toBe(true)
       expect(sharingPolicyForBackup()).toBeNull()
       closeShareLinkStores()
-      await recover("recovery-selected-next", differentCapture, differentSnapshot)
+      await recover(
+        "recovery-selected-next",
+        differentCapture,
+        differentSnapshot
+      )
       expect(await policyNow()).toMatchObject({
         paused: false,
         maxExpiryDays: 90,
@@ -1594,7 +1635,9 @@ describe("owner policy", () => {
       expect((await view(token)).status).toBe(404)
       closeShareLinkStores()
       const unreadable = new Database(shareLinksDatabasePath())
-      unreadable.query("UPDATE share_policy SET policy = ? WHERE id = 1").run("{")
+      unreadable
+        .query("UPDATE share_policy SET policy = ? WHERE id = 1")
+        .run("{")
       unreadable.close()
       await expect(
         writeWorkspaceSnapshot(join(snapshots, "bad-policy"), {

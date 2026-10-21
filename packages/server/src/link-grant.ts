@@ -3,9 +3,10 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { normalizeRecordFieldType, recordTitleFieldKey, type LinkGrant, type RecordCollectionSchema, type RecordPredicate } from "@worktable/types";
+import { normalizeRecordFieldType, recordTitleFieldKey, SHARING_RECORD_ACCESS, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
+import { canWidgetRecord } from "./widget-runtime-policy.ts";
 
 export interface LinkGrantIssue {
   collectionId: string;
@@ -18,6 +19,37 @@ const DIMENSION_TYPES = new Set(["select", "multi_select", "boolean"]);
  *  the record before its data, so a data field under one of them would be
  *  filtered, sorted and grouped by the wrong value. */
 const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"]);
+
+/**
+ * What a link may read on this call: its grant, narrowed by what its tool may
+ * read now and by the owner policy, so a republish or a tighter policy
+ * narrows a link and never widens it.
+ * - A collection stays only if the tool may read it (a `*` entry counts) and
+ *   the policy allows its mode. Otherwise it is unavailable; it is never
+ *   switched to another mode.
+ * - Fields and row conditions come only from the grant.
+ * - Writes are reserved, so a collection that sets them is unavailable.
+ * - Limits are the grant's: the policy sets none yet.
+ * - The team's saved state shows only if the tool may read state.
+ */
+export function effectiveLinkGrant(
+  grant: LinkGrant,
+  permissions: WidgetFile["permissions"] | undefined,
+  policy: Pick<SharingPolicy, "records">,
+): LinkGrant {
+  const widest = SHARING_RECORD_ACCESS.indexOf(policy.records);
+  const collections = Object.entries(grant.collections).filter(([collectionId, collection]) =>
+    canWidgetRecord({ permissions }, collectionId, "read") &&
+    SHARING_RECORD_ACCESS.indexOf(collection.mode) <= widest &&
+    !collection.writes);
+  return {
+    version: grant.version,
+    // fromEntries defines own keys, so no id can reach the prototype.
+    collections: Object.fromEntries(collections),
+    limits: grant.limits,
+    state: grant.state === "team-read" && permissions?.state?.read !== true ? "visitor" : grant.state,
+  };
+}
 
 /** The live schemas of every collection a grant names. Missing or unreadable
  *  schemas are left out, which validateLinkGrant reports. */

@@ -42,10 +42,50 @@ export class TeamAccessError extends Error {
 const requestIdentity = new AsyncLocalStorage<TokenIdentity>()
 const levels: Record<SpaceAccessLevel, number> = { read: 1, edit: 2, manage: 3 }
 
+// ---- Link visitors --------------------------------------------------------
+//
+// Someone holding a share link has no identity. Everywhere else, no identity
+// means trusted internal work, so a visitor must never look like that. Inside
+// runAsLinkVisitor every check in this file says no, in solo and Teams mode
+// alike and whatever identity a caller passes. The one exception is reading
+// the link's own Space inside withLinkGrantRead, which only the link grant
+// engine opens. Members pay one lookup per check.
+
+interface LinkVisitorScope {
+  /** The Space the grant engine is reading for the link, if any. */
+  readonly grantRead: string | null
+}
+
+const linkVisitor = new AsyncLocalStorage<LinkVisitorScope>()
+const OUTSIDE_GRANT: LinkVisitorScope = Object.freeze({ grantRead: null })
+
+/** Runs a share link visitor's request: no identity, and every check fails closed. */
+export function runAsLinkVisitor<T>(action: () => T): T {
+  return requestIdentity.exit(() => linkVisitor.run(OUTSIDE_GRANT, action))
+}
+
+/**
+ * Lets a link visitor's request read one Space: the link's own, for the
+ * grant engine. Only that engine calls this; it widens nothing outside a
+ * visitor's request.
+ */
+export function withLinkGrantRead<T>(spaceId: string, action: () => T): T {
+  if (!linkVisitor.getStore())
+    throw new Error("withLinkGrantRead runs only inside runAsLinkVisitor")
+  if (!isSpaceIdShape(spaceId)) throw new TeamAccessError()
+  return linkVisitor.run(Object.freeze({ grantRead: spaceId }), action)
+}
+
+function isSpaceIdShape(spaceId: string): boolean {
+  return Boolean(spaceId) && spaceId !== "." && spaceId !== ".." && !/[\\/\0]/.test(spaceId)
+}
+
 export function runWithTeamIdentity<T>(
   identity: TokenIdentity,
   action: () => T
 ): T {
+  // A visitor's request can't take on anyone's identity.
+  if (linkVisitor.getStore()) throw new TeamAccessError()
   return requestIdentity.run(identity, action)
 }
 
@@ -82,6 +122,7 @@ export function noteVerifiedTeamSession(
 export function teamMemberForIdentity(
   identity: TokenIdentity
 ): TeamMember | null {
+  if (linkVisitor.getStore()) return null
   const worktable = currentTeamWorktable()
   if (
     !worktable ||
@@ -166,6 +207,7 @@ function parseAgent(row: AgentRow): TeamAgent {
 export function teamAgentForIdentity(
   identity: TokenIdentity
 ): TeamAgent | null {
+  if (linkVisitor.getStore()) return null
   const worktable = currentTeamWorktable()
   if (
     !worktable ||
@@ -205,6 +247,7 @@ export function teamAgentForIdentity(
 }
 
 export function assertCurrentTeamIdentity(identity: TokenIdentity): void {
+  if (linkVisitor.getStore()) throw new TeamAccessError()
   if (!currentTeamWorktable() || identity.operatorVerification) return
   if (
     identity.credentialExpiresAt !== undefined &&
@@ -252,14 +295,10 @@ export function canAccessSpace(
   access: SpaceAccessLevel = "read",
   identity = currentRequestIdentity()
 ): boolean {
+  const visitor = linkVisitor.getStore()
+  if (visitor) return access === "read" && visitor.grantRead === spaceId
   if (!currentTeamWorktable() || !identity) return true
-  if (
-    !spaceId ||
-    spaceId === "." ||
-    spaceId === ".." ||
-    /[\\/\0]/.test(spaceId)
-  )
-    return false
+  if (!isSpaceIdShape(spaceId)) return false
   if (identity.operatorVerification) return access === "read"
   const member = teamMemberForIdentity(identity)
   if (member) return memberHasSpaceAccess(member, spaceId, access)
@@ -274,6 +313,7 @@ export function teamAgentHasSpaceAccess(
   spaceId: string,
   access: "read" | "edit"
 ): boolean {
+  if (linkVisitor.getStore()) return false
   if (agent.ownership === "personal") {
     if (agent.spaceIds !== null && !agent.spaceIds.includes(spaceId))
       return false
@@ -288,6 +328,7 @@ export function teamAgentHasSpaceAccess(
 export function agentWorktableThreadAccess(
   agent: Pick<TeamAgent, "ownership" | "spaceIds" | "worktableThreads">
 ): WorktableThreadAccess {
+  if (linkVisitor.getStore()) return "none"
   if (agent.ownership === "personal")
     return agent.spaceIds === null ? "edit" : "none"
   return agent.worktableThreads
@@ -298,6 +339,7 @@ export function canAccessWorktableThreads(
   access: "read" | "edit" = "read",
   identity = currentRequestIdentity()
 ): boolean {
+  if (linkVisitor.getStore()) return false
   if (!currentTeamWorktable() || !identity) return true
   if (identity.operatorVerification) return access === "read"
   if (teamMemberForIdentity(identity)) return true
@@ -311,6 +353,7 @@ export function canAccessWorktableThreads(
 export function readableSpaceIds(
   identity = currentRequestIdentity()
 ): string[] | null {
+  if (linkVisitor.getStore()) return []
   if (!currentTeamWorktable() || !identity) return null
   if (teamMemberForIdentity(identity)?.role === "owner") return null
   return spaceInventory().ids.filter((spaceId) =>
@@ -336,6 +379,7 @@ export function assertSpaceAccess(
 export function canCreateTeamSpace(
   identity = currentRequestIdentity()
 ): boolean {
+  if (linkVisitor.getStore()) return false
   if (!currentTeamWorktable() || !identity) return true
   if (!hasScope(identity.scopes, "docs:write")) return false
   if (teamMemberForIdentity(identity)) return true
@@ -344,6 +388,7 @@ export function canCreateTeamSpace(
 }
 
 export function registerTeamSpace(spaceId: string, existing = false): boolean {
+  if (linkVisitor.getStore()) throw new TeamAccessError()
   const worktable = currentTeamWorktable()
   if (!worktable) return false
   const db = requireTeamDatabase()
@@ -632,6 +677,7 @@ export function bindTeamAgentCredential(
 export function resolveTeamAgentCredential(
   identity: TokenIdentity
 ): TokenIdentity | null {
+  if (linkVisitor.getStore()) return null
   const worktable = currentTeamWorktable()
   if (!worktable) return identity
   const current = accessSnapshot()!

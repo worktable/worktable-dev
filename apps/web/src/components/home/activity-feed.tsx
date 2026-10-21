@@ -267,7 +267,7 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
 
 // ── Entry ──────────────────────────────────────────────────
 
-/** Row padding sits outside the headings' and timestamps' shared left edge. */
+/** Row padding sits outside the headings' and time columns' shared left edge. */
 export function ActivityList({ children }: { children: ReactNode }) {
   return <ul className="-mx-2">{children}</ul>
 }
@@ -297,7 +297,7 @@ function Rail({ children, last }: { children: ReactNode; last: boolean }) {
 
 function ActivityTime({ at }: { at?: string }) {
   return (
-    <span className="w-14 shrink-0 text-left text-xs leading-5 text-muted-foreground/70 tabular-nums">
+    <span className="w-14 shrink-0 text-end text-xs leading-5 text-muted-foreground/70 tabular-nums">
       {at ? <time dateTime={at}>{clockTime(at)}</time> : "Now"}
     </span>
   )

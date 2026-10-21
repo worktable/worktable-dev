@@ -263,6 +263,20 @@ test("self-managed Settings retain local controls and normalize Account requests
   await expect(
     settings.getByText("Check for updates automatically", { exact: true })
   ).toBeVisible()
+
+  // The owner turns on sharing previews, and the capability follows.
+  const sharingPreview = settings.getByRole("switch", {
+    name: "Preview sharing features",
+  })
+  await expect(sharingPreview).not.toBeChecked()
+  const capabilityOn = page.waitForResponse(
+    async (response) =>
+      new URL(response.url()).pathname === "/api/system/deployment" &&
+      (await response.json()).capabilities.sharingPreview === true
+  )
+  await sharingPreview.click()
+  await expect(sharingPreview).toBeChecked()
+  await capabilityOn
 })
 
 test("Cloud mobile settings keeps the Subscription section reachable", async ({

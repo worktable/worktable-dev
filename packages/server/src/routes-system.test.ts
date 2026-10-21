@@ -534,6 +534,8 @@ describe("GET /api/system/deployment", () => {
         updateChecks: true,
         previewStatus: true,
         documentSharing: false,
+        shareLinks: false,
+        sharingPreview: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -560,6 +562,8 @@ describe("GET /api/system/deployment", () => {
         updateChecks: false,
         previewStatus: false,
         documentSharing: false,
+        shareLinks: false,
+        sharingPreview: false,
       },
     };
     expect(getDeploymentInfo()).toEqual(expected);
@@ -576,8 +580,8 @@ describe("GET /api/system/deployment", () => {
     process.env["WORKTABLE_HTML_SHARE_BASE_URL"] =
       "https://html.worktable-usercontent.com";
 
-    expect(getDeploymentInfo().capabilities.documentSharing).toBe(true);
+    expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: true, shareLinks: true });
     delete process.env["WORKTABLE_HTML_SHARE_BASE_URL"];
-    expect(getDeploymentInfo().capabilities.documentSharing).toBe(false);
+    expect(getDeploymentInfo().capabilities).toMatchObject({ documentSharing: false, shareLinks: false });
   });
 });

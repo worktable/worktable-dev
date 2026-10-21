@@ -126,6 +126,9 @@ export const advanceGenerationOnWrite: MiddlewareHandler = async (c, next) => {
       c.req.path === "/public/share/unlock")
   )
     return next()
+  if (c.req.path === "/public/share/comments" ||
+      (method === "POST" && /^\/api\/spaces\/[^/]+\/visitor-comments\/[^/]+\/(?:replies|done)$/.test(c.req.path)) ||
+      (method === "DELETE" && /^\/api\/spaces\/[^/]+\/visitor-comments\/[^/]+$/.test(c.req.path))) return next()
   noteWorkspaceActivity()
   try {
     await next()

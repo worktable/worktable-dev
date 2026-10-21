@@ -73,7 +73,12 @@ export interface ShareLinkView {
  */
 export async function resolveShareLinkView(
   capability: string,
-  options: { content?: boolean; unlock?: string; allowLocked?: boolean; revision?: boolean } = {}
+  options: {
+    content?: boolean
+    unlock?: string
+    allowLocked?: boolean
+    revision?: boolean
+  } = {}
 ): Promise<
   ShareLinkView | "unavailable" | "expired" | "password-required" | null
 > {
@@ -123,11 +128,10 @@ export async function resolveShareLinkView(
   const { catalog, identities } = snapshot
   const target = identities.current.get(link.documentId)
   if (identities.spaceArchived || !target) return "unavailable"
-  const revisions = options.revision === false || link.grant ? null : await documentContentRevisions(
-    link.spaceId,
-    [target.path],
-    catalog
-  )
+  const revisions =
+    options.revision === false || link.grant
+      ? null
+      : await documentContentRevisions(link.spaceId, [target.path], catalog)
   return {
     link,
     expiresAt,
@@ -145,7 +149,11 @@ export async function resolveShareLinkView(
  * a page, which can take a while, so a link revoked or held back meanwhile
  * isn't served. A store that can't be read says no.
  */
-export function shareLinkStillOpens(link: StoredShareLink, policyRevision?: number): boolean {
+export function shareLinkStillOpens(
+  link: StoredShareLink,
+  policyRevision?: number,
+  options: { comments?: boolean } = {}
+): boolean {
   let found: ReturnType<typeof findShareLinkWithPolicy>
   try {
     found = findShareLinkWithPolicy(link.id)
@@ -156,6 +164,13 @@ export function shareLinkStillOpens(link: StoredShareLink, policyRevision?: numb
   const now = Date.now()
   return Boolean(
     found &&
+    (!options.comments ||
+      (found.link.level === link.level &&
+        found.link.comments.acceptComments === link.comments.acceptComments &&
+        found.link.comments.anonymousAllowed ===
+          link.comments.anonymousAllowed &&
+        found.link.comments.showSharerName === link.comments.showSharerName &&
+        found.link.comments.visitorsSee === link.comments.visitorsSee)) &&
     found.link.revokedAt === null &&
     found.link.passwordRevision === link.passwordRevision &&
     found.link.grantRevision === link.grantRevision &&

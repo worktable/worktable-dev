@@ -65,6 +65,7 @@ import { docsRouter } from "./routes/docs.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
 import { recordsRouter } from "./routes/records.ts"
+import { visitorCommentsRouter } from "./routes/visitor-comments.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { threadsRouter } from "./routes/threads.ts"
 import { searchRouter } from "./routes/search.ts"
@@ -554,6 +555,7 @@ app.route("/api/spaces/:spaceId/doc-aliases", docAliasesRouter);
 app.route("/api/spaces/:spaceId/widgets", widgetsRouter);
 app.route("/api/spaces/:spaceId/records", recordsRouter);
 app.route("/api/spaces/:spaceId/annotations", annotationsRouter);
+app.route("/api/spaces/:spaceId/visitor-comments", visitorCommentsRouter);
 app.route("/api/spaces/:spaceId/threads", threadsRouter);
 app.route("/api/threads", threadsRouter);
 app.route("/api/search", searchRouter);

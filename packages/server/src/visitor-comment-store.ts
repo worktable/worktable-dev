@@ -1,0 +1,462 @@
+import { Database } from "bun:sqlite"
+import { chmodSync, existsSync, mkdirSync, realpathSync } from "node:fs"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { nanoid } from "nanoid"
+import type { VisitorCommentStatus } from "@worktable/types"
+import { getAppDir } from "./app-storage.ts"
+import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
+
+// Visitor text never enters the portable workspace, ordinary activity, search
+// or annotations. Readers are reached only through the person boundary or
+// authenticated, capability-scoped visitor routes.
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
+const stores = new Map<string, { db: Database | null; retry: number }>()
+
+export class VisitorCommentsUnavailable extends Error {}
+export class VisitorCommentRefused extends Error {
+  readonly status: 409 | 429
+  readonly code: "COMMENTS_PAUSED" | "COMMENTS_LIMIT"
+  readonly retryAfter: number
+  constructor(paused: boolean, retryAfter = 60) {
+    super(paused ? "Comments are paused for this link." : "Try again later.")
+    this.status = paused ? 409 : 429
+    this.code = paused ? "COMMENTS_PAUSED" : "COMMENTS_LIMIT"
+    this.retryAfter = retryAfter
+  }
+}
+
+/** Resolve existing parents too, so a not-yet-created app directory or a
+ * symlinked parent cannot put this private store inside the workspace. */
+function physicalPath(path: string): string {
+  let parent = resolve(path)
+  const tail: string[] = []
+  while (!existsSync(parent)) {
+    const next = dirname(parent)
+    if (next === parent) throw new VisitorCommentsUnavailable()
+    tail.unshift(relative(next, parent))
+    parent = next
+  }
+  return join(realpathSync(parent), ...tail)
+}
+
+function storePath(): string {
+  const app = physicalPath(getAppDir())
+  const root = physicalPath(getWorkspaceRoot())
+  const within = relative(root, app)
+  if (
+    !within ||
+    (!isAbsolute(within) &&
+      within !== ".." &&
+      !within.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`))
+  )
+    throw new VisitorCommentsUnavailable(
+      "Visitor comments need storage outside the workspace"
+    )
+  return join(app, "visitor-comments", workspaceCacheKey(), "comments.sqlite")
+}
+
+function rememberStore(
+  key: string,
+  entry: { db: Database | null; retry: number }
+): void {
+  stores.delete(key)
+  stores.set(key, entry)
+  while (stores.size > 8) {
+    const oldest = stores.keys().next().value!
+    stores.get(oldest)?.db?.close()
+    stores.delete(oldest)
+  }
+}
+
+function database(create = false): Database | null {
+  // Physical path checks happen once per opened store, not once per request.
+  const key = `${getAppDir()}\0${getWorkspaceRoot()}\0${workspaceCacheKey()}`
+  const cached = stores.get(key)
+  if (cached?.db || (!create && cached && cached.retry > Date.now()))
+    return cached.db
+  const path = storePath()
+  if (!create && !existsSync(path)) {
+    rememberStore(key, { db: null, retry: Date.now() + 60_000 })
+    return null
+  }
+  let db: Database | undefined
+  try {
+    if (create) mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    db = new Database(path, { create })
+    const version = (
+      db.query("PRAGMA user_version").get() as { user_version: number }
+    ).user_version
+    if (version !== 1 && !(create && version === 0))
+      throw new VisitorCommentsUnavailable()
+    if (create) {
+      chmodSync(path, 0o600)
+      db.exec(
+        "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON"
+      )
+      if (version === 0)
+        db.transaction(() => {
+          db!.exec(`CREATE TABLE visitor_comments (
+          id TEXT PRIMARY KEY, worktableId TEXT NOT NULL, link_id TEXT NOT NULL,
+          link_label TEXT NOT NULL, link_creator TEXT NOT NULL, document_id TEXT NOT NULL,
+          space_at_receipt TEXT NOT NULL, kind TEXT NOT NULL, visitor_name TEXT,
+          visitor_key TEXT NOT NULL, client_key TEXT, body TEXT, received_at INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('new','done','passed','deleted')),
+          passed_by TEXT, passed_name TEXT, passed_at INTEGER, annotation_id TEXT,
+          deleted_by TEXT, deleted_at INTEGER, request_id TEXT NOT NULL,
+          UNIQUE(worktableId, link_id, visitor_key, request_id));
+          CREATE INDEX comments_document ON visitor_comments(worktableId, document_id, received_at DESC, id);
+          CREATE INDEX comments_link ON visitor_comments(worktableId, link_id, received_at DESC, id);
+          CREATE INDEX comments_day ON visitor_comments(worktableId, received_at);
+          CREATE INDEX comments_pending ON visitor_comments(worktableId, link_id, status);
+          CREATE TABLE visitor_replies(id TEXT PRIMARY KEY, comment_id TEXT NOT NULL REFERENCES visitor_comments(id) ON DELETE CASCADE,
+            author_id TEXT NOT NULL, author_name TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
+          CREATE INDEX replies_comment ON visitor_replies(comment_id, created_at);
+          CREATE TABLE visitor_link_state(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, paused TEXT, PRIMARY KEY(worktableId,link_id));
+          CREATE TABLE visitor_cap_hits(worktableId TEXT NOT NULL, link_id TEXT NOT NULL, client_key TEXT NOT NULL, at INTEGER NOT NULL,
+            PRIMARY KEY(worktableId,link_id,client_key));
+          PRAGMA user_version=1;`)
+        }).immediate()
+    } else db.exec("PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON")
+    rememberStore(key, { db, retry: Infinity })
+    return db
+  } catch (error) {
+    db?.close()
+    if (error instanceof VisitorCommentsUnavailable) throw error
+    throw new VisitorCommentsUnavailable("Visitor comments are unavailable")
+  }
+}
+
+// The portable Worktable ID is retained by operator restore.
+// The service separately fences requests with the machine collaboration epoch.
+export interface StoredVisitorComment {
+  id: string
+  worktableId: string
+  link_id: string
+  link_label: string
+  link_creator: string
+  document_id: string
+  space_at_receipt: string
+  kind: string
+  visitor_name: string | null
+  visitor_key: string
+  client_key: string | null
+  body: string | null
+  received_at: number
+  status: VisitorCommentStatus
+  passed_by: string | null
+  passed_name: string | null
+  passed_at: number | null
+  annotation_id: string | null
+  deleted_by: string | null
+  deleted_at: number | null
+  request_id: string
+}
+export interface StoredVisitorReply {
+  id: string
+  comment_id: string
+  author_id: string
+  author_name: string
+  body: string
+  created_at: number
+}
+export function cleanVisitorText(text: string): string {
+  return text
+    .normalize("NFC")
+    .replace(/[\p{Cc}\u202A-\u202E\u2066-\u2069]/gu, (char) =>
+      char === "\n" ? char : ""
+    )
+    .trim()
+}
+export function commentPause(
+  worktableId: string,
+  linkId: string
+): string | null {
+  return (
+    (
+      database()
+        ?.query(
+          "SELECT paused FROM visitor_link_state WHERE worktableId=? AND link_id=?"
+        )
+        .get(worktableId, linkId) as { paused: string | null } | null
+    )?.paused ?? null
+  )
+}
+export function pauseVisitorComments(
+  worktableId: string,
+  linkId: string,
+  paused: boolean
+): void {
+  database(true)!
+    .query(
+      "INSERT INTO visitor_link_state(worktableId,link_id,paused) VALUES(?,?,?) ON CONFLICT(worktableId,link_id) DO UPDATE SET paused=excluded.paused"
+    )
+    .run(worktableId, linkId, paused ? "sharer" : null)
+}
+
+export function receiveVisitorComment(input: {
+  worktableId: string
+  linkId: string
+  linkLabel: string
+  linkCreator: string
+  documentId: string
+  spaceId: string
+  kind: string
+  visitorName: string | null
+  visitorKey: string
+  clientKey: string
+  body: string
+  requestId: string
+}): { id: string; receivedAt: string } {
+  const db = database(true)!
+  // Refusals are values until the transaction commits: a cap can also pause
+  // the link. Throwing inside would roll that abuse control back.
+  const result = db
+    .transaction(() => {
+      const prior = db
+        .query(
+          "SELECT id,received_at FROM visitor_comments WHERE worktableId=? AND link_id=? AND visitor_key=? AND request_id=?"
+        )
+        .get(
+          input.worktableId,
+          input.linkId,
+          input.visitorKey,
+          input.requestId
+        ) as {
+        id: string
+        received_at: number
+      } | null
+      if (prior)
+        return {
+          id: prior.id,
+          receivedAt: new Date(prior.received_at).toISOString(),
+        }
+      if (commentPause(input.worktableId, input.linkId))
+        return new VisitorCommentRefused(true)
+      const now = Date.now()
+      const totals = db
+        .query(
+          `SELECT count(*) AS workspaceDay,
+      coalesce(sum(link_id=?),0) AS linkDay,
+      coalesce(sum(link_id=? AND received_at>?),0) AS linkHour,
+      coalesce(sum(link_id=? AND received_at>?),0) AS linkTen,
+      coalesce(sum(link_id=? AND client_key=? AND received_at>?),0) AS clientTen,
+      coalesce(sum(visitor_key=?),0) AS visitorDay
+      FROM visitor_comments WHERE worktableId=? AND received_at>?`
+        )
+        .get(
+          input.linkId,
+          input.linkId,
+          now - HOUR,
+          input.linkId,
+          now - 600_000,
+          input.linkId,
+          input.clientKey,
+          now - 600_000,
+          input.visitorKey,
+          input.worktableId,
+          now - DAY
+        ) as {
+        workspaceDay: number
+        linkDay: number
+        linkHour: number
+        linkTen: number
+        clientTen: number
+        visitorDay: number
+      }
+      const pending = (
+        db
+          .query(
+            "SELECT count(*) AS n FROM visitor_comments WHERE worktableId=? AND link_id=? AND status='new'"
+          )
+          .get(input.worktableId, input.linkId) as { n: number }
+      ).n
+      let spike = totals.linkTen >= 30
+      if (totals.clientTen >= 5) {
+        db.query(
+          "INSERT INTO visitor_cap_hits VALUES(?,?,?,?) ON CONFLICT(worktableId,link_id,client_key) DO UPDATE SET at=excluded.at"
+        ).run(input.worktableId, input.linkId, input.clientKey, now)
+        spike ||=
+          (
+            db
+              .query(
+                "SELECT count(*) AS n FROM visitor_cap_hits WHERE worktableId=? AND link_id=? AND at>?"
+              )
+              .get(input.worktableId, input.linkId, now - 600_000) as {
+              n: number
+            }
+          ).n > 3
+      }
+      if (spike)
+        db.query(
+          "INSERT INTO visitor_link_state VALUES(?,?,'spike') ON CONFLICT(worktableId,link_id) DO UPDATE SET paused='spike'"
+        ).run(input.worktableId, input.linkId)
+      if (
+        spike ||
+        totals.workspaceDay >= 500 ||
+        totals.linkDay >= 200 ||
+        totals.linkHour >= 30 ||
+        totals.clientTen >= 5 ||
+        totals.visitorDay >= 20 ||
+        pending >= 500
+      )
+        return new VisitorCommentRefused(
+          false,
+          totals.clientTen >= 5 ? 600 : 3600
+        )
+      const id = `vc_${nanoid(22)}`
+      db.query(
+        `INSERT INTO visitor_comments(id,worktableId,link_id,link_label,link_creator,document_id,space_at_receipt,kind,visitor_name,visitor_key,client_key,body,received_at,status,request_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'new',?)`
+      ).run(
+        id,
+        input.worktableId,
+        input.linkId,
+        input.linkLabel,
+        input.linkCreator,
+        input.documentId,
+        input.spaceId,
+        input.kind,
+        input.visitorName,
+        input.visitorKey,
+        input.clientKey,
+        input.body,
+        now,
+        input.requestId
+      )
+      return { id, receivedAt: new Date(now).toISOString() }
+    })
+    .immediate()
+  if (result instanceof VisitorCommentRefused) throw result
+  return result
+}
+
+export function readVisitorComment(
+  worktableId: string,
+  id: string
+): StoredVisitorComment | null {
+  return (
+    (database()
+      ?.query("SELECT * FROM visitor_comments WHERE worktableId=? AND id=?")
+      .get(worktableId, id) as StoredVisitorComment | null) ?? null
+  )
+}
+export function visitorCommentRows(input: {
+  worktableId: string
+  linkId?: string
+  documentId?: string
+  visitorKey?: string
+  before?: number
+}): StoredVisitorComment[] {
+  const db = database()
+  if (!db || (!input.linkId && !input.documentId)) return []
+  const where = ["worktableId=?", "status!='deleted'", "body IS NOT NULL"]
+  const args: (string | number)[] = [input.worktableId]
+  for (const [column, value] of [
+    ["link_id", input.linkId],
+    ["document_id", input.documentId],
+    ["visitor_key", input.visitorKey],
+  ] as const)
+    if (value !== undefined) {
+      where.push(`${column}=?`)
+      args.push(value)
+    }
+  if (input.before !== undefined) {
+    where.push("received_at<?")
+    args.push(input.before)
+  }
+  return db
+    .query(
+      `SELECT * FROM visitor_comments WHERE ${where.join(" AND ")} ORDER BY received_at DESC,id DESC LIMIT 100`
+    )
+    .all(...args) as StoredVisitorComment[]
+}
+export function visitorReplies(ids: string[]): StoredVisitorReply[] {
+  if (!ids.length || ids.length > 100) return []
+  return (
+    (database()
+      ?.query(
+        `SELECT id,comment_id,author_id,author_name,body,created_at FROM (
+          SELECT *,row_number() OVER (PARTITION BY comment_id ORDER BY created_at DESC,id DESC) AS position
+          FROM visitor_replies WHERE comment_id IN (${ids.map(() => "?").join(",")})
+        ) WHERE position<=20 ORDER BY created_at,id`
+      )
+      .all(...ids) as StoredVisitorReply[]) ?? []
+  )
+}
+export function appendVisitorReply(
+  worktableId: string,
+  id: string,
+  author: { id: string; name: string },
+  body: string
+): void {
+  const db = database(true)!
+  db.transaction(() => {
+    if (
+      !readVisitorComment(worktableId, id) ||
+      readVisitorComment(worktableId, id)!.status === "deleted"
+    )
+      throw new VisitorCommentsUnavailable()
+    if (
+      (
+        db
+          .query("SELECT count(*) AS n FROM visitor_replies WHERE comment_id=?")
+          .get(id) as { n: number }
+      ).n >= 100
+    )
+      throw new VisitorCommentRefused(false, 3600)
+    db.query("INSERT INTO visitor_replies VALUES(?,?,?,?,?,?)").run(
+      `vr_${nanoid(22)}`,
+      id,
+      author.id,
+      author.name,
+      body,
+      Date.now()
+    )
+  }).immediate()
+}
+export function finishVisitorComment(
+  worktableId: string,
+  id: string,
+  deletedBy?: string
+): void {
+  const db = database(true)!
+  if (deletedBy)
+    db.transaction(() => {
+      db.query(
+        "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE worktableId=? AND id=?)"
+      ).run(worktableId, id)
+      db.query(
+        "UPDATE visitor_comments SET status='deleted',body=NULL,visitor_name=NULL,deleted_by=?,deleted_at=? WHERE worktableId=? AND id=?"
+      ).run(deletedBy, Date.now(), worktableId, id)
+    }).immediate()
+  else
+    db.query(
+      "UPDATE visitor_comments SET status='done' WHERE worktableId=? AND id=? AND status='new'"
+    ).run(worktableId, id)
+}
+
+/** Called only at boot and daily, never by a view or a comment request. */
+export function sweepVisitorComments(now = Date.now()): void {
+  const db = database()
+  if (!db) return
+  db.transaction(() => {
+    db.query(
+      "UPDATE visitor_comments SET client_key=NULL WHERE received_at<?"
+    ).run(now - 7 * DAY)
+    db.query(
+      "UPDATE visitor_comments SET body=NULL,visitor_name=NULL WHERE status='passed' AND passed_at<?"
+    ).run(now - 30 * DAY)
+    db.query(
+      "DELETE FROM visitor_replies WHERE comment_id IN (SELECT id FROM visitor_comments WHERE status='passed' AND passed_at<?)"
+    ).run(now - 30 * DAY)
+    db.query(
+      "DELETE FROM visitor_comments WHERE (status IN ('new','done') AND received_at<?) OR (status='deleted' AND deleted_at<?)"
+    ).run(now - 180 * DAY, now - 30 * DAY)
+    db.query("DELETE FROM visitor_cap_hits WHERE at<?").run(now - 600_000)
+  }).immediate()
+}
+export function closeVisitorCommentStores(): void {
+  for (const entry of stores.values()) entry.db?.close()
+  stores.clear()
+}

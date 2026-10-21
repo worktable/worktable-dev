@@ -76,8 +76,8 @@ const SPACE_NOT_ALLOWED: ShareDecision = {
   blockedBy: "space",
 }
 
-/** The levels this version can serve. Comment and use come later. */
-const AVAILABLE_LEVELS: ReadonlySet<string> = new Set<ShareLinkLevel>(["view"])
+/** Comment links are held behind the same sharing preview; use comes later. */
+const AVAILABLE_LEVELS: ReadonlySet<string> = new Set<ShareLinkLevel>(["view", "comment"])
 
 const DAY_MS = 86_400_000
 
@@ -312,6 +312,7 @@ export function authorizeShareAction(
   if (
     level !== undefined &&
     (!AVAILABLE_LEVELS.has(level) ||
+      (level === "comment" && !sharingPreviewEnabled()) ||
       !policy().levels.some((allowed) => allowed === level))
   ) {
     return { allowed: false, status: 400, code: "LEVEL_NOT_AVAILABLE" }

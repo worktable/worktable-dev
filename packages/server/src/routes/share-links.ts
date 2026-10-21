@@ -472,7 +472,7 @@ shareLinksRouter.post("/", async (c) => {
           documentId: handle.documentId,
           kind: target.kind,
           label,
-          level: "view",
+          level: level as "view" | "comment",
           createdBy: sharerOf(identity!),
           expiresAt,
           comments,
@@ -605,6 +605,7 @@ shareLinksRouter.patch("/:linkId", async (c) => {
   if (expiresAt !== undefined && !expiryAllowed(expiresAt, latestPolicy))
     return expiryTooLong(c, latestPolicy)
   const updated = updateShareLink(link.id, {
+    ...(input.data.level ? {level:input.data.level as "view" | "comment"} : {}),
     ...(input.data.grant !== undefined ? { grant: input.data.grant } : {}),
     ...(passwordHash !== undefined ? { passwordHash } : {}),
     ...(input.data.label !== undefined ? { label: input.data.label } : {}),

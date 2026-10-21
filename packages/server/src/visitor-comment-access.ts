@@ -1,0 +1,139 @@
+import type { Context } from "hono"
+import type { DocumentId, VisitorComment } from "@worktable/types"
+import { isHumanWorkspaceOwner } from "./auth.ts"
+import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
+import { readDocumentIdentities } from "./document-query.ts"
+import { authorizeShareAction } from "./share-policy.ts"
+import { sharingPreviewEnabled } from "./sharing-preview.ts"
+import { teamsEnabled } from "./team-database.ts"
+import { canAccessSpace, requireTeamHuman } from "./team-policy.ts"
+import type { TokenIdentity } from "./token-store.ts"
+import { getWorkspaceRoot, prepareWorkspaceTarget } from "./workspace.ts"
+import {
+  visitorReplies,
+  VisitorCommentsUnavailable,
+  type StoredVisitorComment,
+} from "./visitor-comment-store.ts"
+
+/** This is a person boundary, never a scope that an agent can acquire. */
+export function visitorCommentReader(c: Context, spaceId: string): boolean {
+  const identity = c.get("identity") as TokenIdentity | undefined
+  if (
+    !sharingPreviewEnabled() ||
+    !identity ||
+    identity.agent !== null ||
+    identity.operatorVerification ||
+    identity.principal.type !== "human"
+  )
+    return false
+  if (!teamsEnabled()) return isHumanWorkspaceOwner(c)
+  try {
+    requireTeamHuman(identity)
+    return canAccessSpace(spaceId, "edit", identity)
+  } catch {
+    return false
+  }
+}
+
+interface VisitorNamespace {
+  root: string
+  epoch: string
+  worktableId: string
+}
+let namespace: VisitorNamespace | null = null
+let loading: {
+  root: string
+  epoch: string
+  value: Promise<VisitorNamespace>
+} | null = null
+/** One cold manifest read per workspace boot/replacement, never a GET write. */
+export async function visitorCommentNamespace(): Promise<VisitorNamespace> {
+  const root = getWorkspaceRoot()
+  const epoch = await getWorkspaceCollaborationEpoch()
+  if (namespace?.root === root && namespace.epoch === epoch) return namespace
+  if (loading?.root === root && loading.epoch === epoch) return loading.value
+  const entry = {
+    root,
+    epoch,
+    value: Promise.resolve(null) as unknown as Promise<VisitorNamespace>,
+  }
+  entry.value = Promise.resolve()
+    .then(async () => {
+      const worktableId = prepareWorkspaceTarget(root, "open").manifest.id
+      if (!(await visitorNamespaceStillCurrent(entry)))
+        throw new VisitorCommentsUnavailable()
+      namespace = { root, epoch, worktableId }
+      return namespace
+    })
+    .finally(() => {
+      if (loading === entry) loading = null
+    })
+  loading = entry
+  return entry.value
+}
+export async function visitorNamespaceStillCurrent(value: {
+  root: string
+  epoch: string
+}): Promise<boolean> {
+  return (
+    (await getWorkspaceCollaborationEpoch()) === value.epoch &&
+    getWorkspaceRoot() === value.root
+  )
+}
+/** The receipt's Space is history. Resolve access against the document now. */
+export async function visitorDocumentInSpace(
+  spaceId: string,
+  documentId: string
+): Promise<boolean> {
+  const { identities } = await readDocumentIdentities(spaceId)
+  return (
+    !identities.spaceArchived &&
+    identities.current.has(documentId as DocumentId)
+  )
+}
+export function canDeleteVisitorComment(
+  c: Context,
+  spaceId: string,
+  row: StoredVisitorComment
+): boolean {
+  return (
+    visitorCommentReader(c, spaceId) &&
+    authorizeShareAction(c.get("identity"), "manage", spaceId, {
+      creatorId: row.link_creator,
+    }).allowed
+  )
+}
+export function memberVisitorComments(
+  c: Context,
+  spaceId: string,
+  rows: StoredVisitorComment[]
+): VisitorComment[] {
+  const replies = visitorReplies(rows.map((row) => row.id))
+  return rows.map((row) => ({
+    id: row.id,
+    documentId: row.document_id,
+    linkId: row.link_id,
+    linkLabel: row.link_label,
+    visitorName: row.visitor_name,
+    body: row.body,
+    receivedAt: new Date(row.received_at).toISOString(),
+    status: row.status,
+    replies: replies
+      .filter((reply) => reply.comment_id === row.id)
+      .map((reply) => ({
+        id: reply.id,
+        author: { id: reply.author_id, name: reply.author_name },
+        body: reply.body,
+        createdAt: new Date(reply.created_at).toISOString(),
+      })),
+    passed:
+      row.annotation_id && row.passed_by && row.passed_at
+        ? {
+            by: { id: row.passed_by, name: row.passed_name ?? "Team member" },
+            at: new Date(row.passed_at).toISOString(),
+            annotationId: row.annotation_id,
+          }
+        : null,
+    canDelete: canDeleteVisitorComment(c, spaceId, row),
+  }))
+}

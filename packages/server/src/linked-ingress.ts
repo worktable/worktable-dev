@@ -11,6 +11,7 @@ import {
   LinkedDestinationBinding,
   LinkedRequestClaims,
   SHARE_CAPABILITY_HEADER,
+  ShareLinkToken,
 } from "@worktable/hosted-contract"
 import { getWorkspaceRoot } from "./workspace.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
@@ -171,7 +172,13 @@ export async function createLinkedIngress(options: {
                 !["GET", "POST", "DELETE"].includes(claims.method)
               : !["/public/share", "/public/share/content"].includes(
                   claims.path
-                ) || !["GET", "HEAD"].includes(claims.method)
+                ) ||
+                !["GET", "HEAD"].includes(claims.method) ||
+                // Tickets and visitors come with share requests this
+                // runtime doesn't serve yet.
+                !ShareLinkToken.safeParse(claims.grant.capability).success ||
+                claims.grant.unlock !== undefined ||
+                claims.grant.visitor !== undefined
         )
           return denied()
         body = await readBody(request, payload.exp * 1000)

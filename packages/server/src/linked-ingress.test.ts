@@ -350,6 +350,32 @@ it("serves real MCP writes and read-only shares through a separate socket, with 
   expect(content.headers.get("Content-Security-Policy")).toContain(
     "script-src 'none'"
   )
+  // The contract already carries later share requests; this runtime
+  // still refuses every one of them.
+  const ticket = "v1.lnk_frame.1.1767225600.signature"
+  const visitor = { verified: true, key: "a".repeat(64) }
+  for (const [later, method, path] of [
+    [{ capability: html.token, unlock: ticket }, "GET", "/public/share"],
+    [{ capability: ticket }, "GET", "/public/share/content"],
+    [{ capability: html.token }, "POST", "/public/share/unlock"],
+    [{ capability: html.token }, "POST", "/public/share/bridge"],
+    [{ capability: html.token, visitor }, "GET", "/public/share/comments"],
+    [{ capability: html.token, visitor }, "POST", "/public/share/comments"],
+  ] as const)
+    expect(
+      (
+        await fetch(
+          await createLinkedRequest({
+            origin: server.url.origin,
+            key,
+            binding: ingress.binding,
+            grant: { kind: "share", ...later },
+            method,
+            path,
+          })
+        )
+      ).status
+    ).toBe(403)
   const crossPurpose = await htmlRequest()
   expect(
     (

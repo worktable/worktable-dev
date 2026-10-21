@@ -15,6 +15,24 @@ export const LinkedEnrollment = z
   })
   .strict()
 
+/**
+ * Share requests a device serves beyond the original contract. Each request
+ * that needs one goes only to a device whose current boot named it in its
+ * heartbeat. Older devices name none and reject the newer claims outright,
+ * so a request sent without checking fails closed.
+ */
+export const LINKED_CAPABILITIES = {
+  /**
+   * `POST /public/share/unlock`, `unlock` on share grants, and a frame ticket
+   * in place of the link token on `/public/share/content`.
+   */
+  SHARE_TICKETS: "share-tickets",
+  /** `POST /public/share/bridge`. */
+  SHARE_BRIDGE: "share-bridge",
+  /** `GET` and `POST /public/share/comments`, and `visitor` on share grants. */
+  SHARE_COMMENTS: "share-comments",
+} as const
+
 export const LinkedHeartbeat = z
   .object({
     workspaceEpoch: z.string().min(1).max(256),
@@ -22,6 +40,14 @@ export const LinkedHeartbeat = z
     bootNonce: z.string().min(1).max(256),
     port: z.number().int().min(1024).max(65535),
     connected: z.boolean(),
+    /**
+     * Names from LINKED_CAPABILITIES. Names Cloud doesn't know yet are
+     * accepted and ignored, so a device can be newer than the gateway.
+     */
+    capabilities: z
+      .array(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/))
+      .max(32)
+      .optional(),
   })
   .strict()
 
@@ -63,6 +89,42 @@ export const LinkedHostReply = z.union([
 ])
 
 const identifier = z.string().min(1).max(256)
+
+/** A link's token: 32 random bytes, base64url. */
+export const ShareLinkToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
+
+/**
+ * A short-lived ticket a Worktable mints for one of its links and alone
+ * verifies: a password link's unlock ticket, or the frame ticket that stands
+ * in for the link token in an HTML link's frame URL. Otherwise opaque, it is
+ * dot-separated base64url parts, so it is never mistaken for a link token and
+ * is safe in a header, a cookie and a URL path segment.
+ */
+export const ShareTicket = z
+  .string()
+  .min(16)
+  .max(256)
+  .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$/)
+
+const visitorDigest = z.string().regex(/^[a-f0-9]{32,64}$/)
+
+/**
+ * What the gateway learned about a visitor commenting through a link. It is
+ * the only party that sees the visitor's address or raw key; a Worktable
+ * receives keyed digests of them.
+ */
+export const ShareVisitor = z
+  .object({
+    /** The gateway checked this visitor is a person, for this link. */
+    verified: z.boolean(),
+    /** Digest of the link and the visitor's own random key. */
+    key: visitorDigest,
+    /** Digest of the visitor's address and the day, for per-client limits. */
+    client: visitorDigest.optional(),
+  })
+  .strict()
+export type ShareVisitor = z.infer<typeof ShareVisitor>
+
 export const LinkedDestinationBinding = z
   .object({
     installationId: identifier,
@@ -89,7 +151,11 @@ export const LinkedRequestGrant = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("share"),
-      capability: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      /** The link token, or on a frame request the frame ticket. */
+      capability: z.union([ShareLinkToken, ShareTicket]),
+      /** A password link's unlock ticket. */
+      unlock: ShareTicket.optional(),
+      visitor: ShareVisitor.optional(),
     })
     .strict(),
 ])
@@ -104,6 +170,9 @@ export const LinkedRequestClaims = z
       "/api/mcp",
       "/public/share",
       "/public/share/content",
+      "/public/share/unlock",
+      "/public/share/bridge",
+      "/public/share/comments",
       "/linked/health",
     ]),
     bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),

@@ -658,6 +658,24 @@ export function findShareLinkForView(
   }
 }
 
+/** A link by id and the owner policy as it stands, to check a view again. */
+export function findShareLinkWithPolicy(
+  id: string
+): { link: StoredShareLink; policy: SharingPolicy } | null {
+  const db = openDatabase(false)
+  if (!db) return null
+  const row = db
+    .query<LinkRow & { policy_revision: number | null }, [string]>(
+      `SELECT ${JOINED_LINK_COLUMNS}, p.revision AS policy_revision
+       FROM share_links l LEFT JOIN share_policy p ON p.id = 1
+       WHERE l.id = ?`
+    )
+    .get(id)
+  return row
+    ? { link: storedLink(row), policy: policyAt(db, row.policy_revision ?? 0) }
+    : null
+}
+
 /** The link a token opens, whatever the policy says. */
 export function findShareLinkByToken(token: string): StoredShareLink | null {
   return findShareLinkForView(token)?.link ?? null
@@ -897,21 +915,51 @@ export function readSharingPolicy(): StoredSharingPolicy {
 /** Save a whole owner policy; it applies from every link's next view. */
 export function saveSharingPolicy(
   policy: SharingPolicy,
-  updatedBy: string
-): StoredSharingPolicy {
+  updatedBy: string,
+  /**
+   * The revision the change was made from, 0 before any save. A save from
+   * another revision changes nothing and returns null. Omitted, it applies.
+   */
+  expectedRevision?: number
+): StoredSharingPolicy | null {
   const db = openDatabase(true)!
-  const { revision } = db
-    .query<{ revision: number }, [string, string, number]>(
-      `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
-       VALUES (1, ?, 1, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET policy = excluded.policy,
-         revision = share_policy.revision + 1,
-         updated_by = excluded.updated_by, updated_at = excluded.updated_at
-       RETURNING revision`
-    )
-    .get(JSON.stringify(policy), updatedBy, Date.now())!
-  policyCache = { path: shareLinksDatabasePath(), revision, policy }
-  return { policy, revision }
+  const values = [JSON.stringify(policy), updatedBy, Date.now()] as const
+  // One statement each way, so a save made from an older copy, in any
+  // process, changes nothing.
+  const saved =
+    expectedRevision === undefined
+      ? db
+          .query<{ revision: number }, [string, string, number]>(
+            `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+             VALUES (1, ?, 1, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET policy = excluded.policy,
+               revision = share_policy.revision + 1,
+               updated_by = excluded.updated_by, updated_at = excluded.updated_at
+             RETURNING revision`
+          )
+          .get(...values)
+      : expectedRevision === 0
+        ? db
+            .query<{ revision: number }, [string, string, number]>(
+              `INSERT INTO share_policy (id, policy, revision, updated_by, updated_at)
+               VALUES (1, ?, 1, ?, ?) ON CONFLICT (id) DO NOTHING
+               RETURNING revision`
+            )
+            .get(...values)
+        : db
+            .query<{ revision: number }, [string, string, number, number]>(
+              `UPDATE share_policy SET policy = ?, updated_by = ?,
+                 updated_at = ?, revision = revision + 1
+               WHERE id = 1 AND revision = ? RETURNING revision`
+            )
+            .get(...values, expectedRevision)
+  if (!saved) return null
+  policyCache = {
+    path: shareLinksDatabasePath(),
+    revision: saved.revision,
+    policy,
+  }
+  return { policy, revision: saved.revision }
 }
 
 /**

@@ -20,6 +20,8 @@ import {
 } from "./document-source-reader.ts"
 import {
   findShareLinkForView,
+  findShareLinkWithPolicy,
+  ShareLinksStoreError,
   type StoredShareLink,
 } from "./share-links-store.ts"
 import { effectiveSharingPolicy, linkBlockedBy } from "./share-policy.ts"
@@ -91,6 +93,29 @@ export async function resolveShareLinkView(
     title: target.title,
     revision: revisions.get(target.path) ?? null,
   }
+}
+
+/**
+ * Whether a link a view resolved still opens: checked again after rendering
+ * a page, which can take a while, so a link revoked or held back meanwhile
+ * isn't served. A store that can't be read says no.
+ */
+export function shareLinkStillOpens(link: StoredShareLink): boolean {
+  let found: ReturnType<typeof findShareLinkWithPolicy>
+  try {
+    found = findShareLinkWithPolicy(link.id)
+  } catch (error) {
+    if (error instanceof ShareLinksStoreError) return false
+    throw error
+  }
+  const now = Date.now()
+  return Boolean(
+    found &&
+    found.link.revokedAt === null &&
+    !(found.link.expiresAt !== null && found.link.expiresAt <= now) &&
+    linkBlockedBy(found.link, effectiveSharingPolicy(found.policy), now) ===
+      null
+  )
 }
 
 export type ShareLinkDocument =

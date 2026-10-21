@@ -1,6 +1,5 @@
 import { teamsEnabled } from "../team-database.ts";
-import { sharingV2Active } from "../share-links-store.ts"
-import { authorizeShareAction } from "../share-policy.ts"
+import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { Hono, type Context } from "hono"
 import { z } from "zod"

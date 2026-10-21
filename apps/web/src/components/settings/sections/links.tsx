@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import {
   useInfiniteQuery,
   useMutation,
@@ -54,6 +54,7 @@ import {
 import { cn } from "@worktable/ui/lib/utils"
 import { SpaceIcon } from "@/components/identity-icons"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { HttpError } from "@/lib/http"
 import { useSpaces, useWorkspace } from "@/lib/queries"
 import { revokeShareLink, shareLinksQueryKey } from "@/lib/share-api"
 import {
@@ -121,32 +122,62 @@ function expiryLabel(days: number | null): string {
 }
 
 /**
- * Save the whole policy. Each change builds on the one before it, and saves
- * go to the server one at a time in order, so the last change always wins.
+ * The owner policy, and a way to change it. Each change is sent as the last
+ * policy the server confirmed plus that change, one save at a time in
+ * order, with the revision it was made from. A save made from an older copy,
+ * such as one from another window, is refused, and the newer policy shows.
  */
-function usePolicyChange() {
+function useSharingPolicy(enabled: boolean) {
   const queryClient = useQueryClient()
-  const change = useMutation({
+  // The server's copy, which every save builds on; the query's own data
+  // also shows changes still on their way.
+  const confirmed = useRef<SharingPolicyResponse | null>(
+    queryClient.getQueryData<SharingPolicyResponse>(SHARE_POLICY_QUERY_KEY) ??
+      null
+  )
+  const query = useQuery({
+    queryKey: SHARE_POLICY_QUERY_KEY,
+    queryFn: async () => (confirmed.current = await getSharingPolicy()),
+    enabled,
+  })
+  const save = useMutation({
     mutationKey: SHARE_POLICY_QUERY_KEY,
     scope: { id: "share-policy" },
-    mutationFn: saveSharingPolicy,
+    mutationFn: (change: Partial<SharingPolicy>) => {
+      const base = confirmed.current!
+      return saveSharingPolicy({ ...base.policy, ...change }, base.revision)
+    },
     // The control answers at once; the server's copy replaces it.
-    onMutate: async (policy) => {
+    onMutate: async (change) => {
       await queryClient.cancelQueries({ queryKey: SHARE_POLICY_QUERY_KEY })
       queryClient.setQueryData<SharingPolicyResponse>(
         SHARE_POLICY_QUERY_KEY,
-        (current) => (current ? { ...current, policy } : current)
+        (current) =>
+          current && { ...current, policy: { ...current.policy, ...change } }
       )
     },
-    onError: () => {
-      void queryClient.invalidateQueries({ queryKey: SHARE_POLICY_QUERY_KEY })
-      toast.error("Couldn’t save the change. Try again.")
-    },
     onSuccess: (saved) => {
+      confirmed.current = saved
+    },
+    onError: (error) => {
+      const newer =
+        error instanceof HttpError && error.status === 409
+          ? (error.body as SharingPolicyResponse)
+          : null
+      if (newer?.policy) confirmed.current = newer
+      toast.error(
+        newer?.policy
+          ? "The policy changed elsewhere. Check it and try again."
+          : "Couldn’t save the change. Try again."
+      )
+    },
+    onSettled: () => {
       // A later change still on its way brings the newer copy.
       if (queryClient.isMutating({ mutationKey: SHARE_POLICY_QUERY_KEY }) > 1)
         return
-      queryClient.setQueryData(SHARE_POLICY_QUERY_KEY, saved)
+      if (confirmed.current) {
+        queryClient.setQueryData(SHARE_POLICY_QUERY_KEY, confirmed.current)
+      }
       // Whether each link opens follows the policy: the lists, and each
       // document page's count of links that open and whether Share makes
       // one. Only the page on screen reads again now.
@@ -154,12 +185,10 @@ function usePolicyChange() {
       void queryClient.invalidateQueries({ predicate: isDocumentPageQuery })
     },
   })
-  return (next: Partial<SharingPolicy>) => {
-    const current = queryClient.getQueryData<SharingPolicyResponse>(
-      SHARE_POLICY_QUERY_KEY
-    )
-    if (current) change.mutate({ ...current.policy, ...next })
+  const update = (change: Partial<SharingPolicy>) => {
+    if (confirmed.current) save.mutate(change)
   }
+  return { query, update }
 }
 
 /** A document's page check in any Space (`documentQueryKeys.page`). */
@@ -168,12 +197,7 @@ function isDocumentPageQuery(query: { queryKey: readonly unknown[] }) {
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
-  const query = useQuery({
-    queryKey: SHARE_POLICY_QUERY_KEY,
-    queryFn: getSharingPolicy,
-    enabled,
-  })
-  const update = usePolicyChange()
+  const { query, update } = useSharingPolicy(enabled)
   const policy = query.data?.policy
 
   return (

@@ -19,6 +19,7 @@ import { legacyShareHeldBack } from "../share-policy.ts"
 import {
   readShareLinkDocument,
   resolveShareLinkView,
+  shareLinkStillOpens,
   type ShareLinkView,
 } from "../share-link-views.ts"
 import {
@@ -265,10 +266,9 @@ async function renderLinkBody(
     )
     revision = document.revision
   }
-  // A render can outlast the link: revoked or expired meanwhile, it is
-  // neither kept nor sent. Only renders pay this lookup; a cached page was
-  // checked by the request's own lookup.
-  if (!linkStillOpens(view.link.id)) return null
+  // Rendering takes a while: a link revoked or held back meanwhile gets
+  // neither this page nor a cached one. One statement, on a miss only.
+  if (!shareLinkStillOpens(view.link)) return null
   // Kept under the revision that was read, which may be newer than the one
   // the request looked up.
   if (revision === null) {

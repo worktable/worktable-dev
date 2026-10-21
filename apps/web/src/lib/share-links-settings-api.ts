@@ -40,12 +40,17 @@ export function getSharingPolicy(): Promise<SharingPolicyResponse> {
   return fetchJSON<SharingPolicyResponse>("/api/shares/policy")
 }
 
-/** Saved whole; it applies from every link's next view. */
+/**
+ * Saved whole; it applies from every link's next view. Made from an older
+ * revision than the server's, it is refused with 409 and the newer policy.
+ */
 export function saveSharingPolicy(
-  policy: SharingPolicy
+  policy: SharingPolicy,
+  revision: number
 ): Promise<SharingPolicyResponse> {
   return fetchJSON<SharingPolicyResponse>("/api/shares/policy", {
     method: "PUT",
+    headers: { "If-Match": `"${revision}"` },
     body: JSON.stringify(policy),
   })
 }

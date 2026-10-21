@@ -946,6 +946,32 @@ describe("owner policy", () => {
     expect((await view(token)).status).toBe(200)
   })
 
+  it("refuses a save made from an older copy, so it can't undo a newer change", async () => {
+    const read = (await (await send("GET", "/api/shares/policy")).json()) as {
+      revision: number
+    }
+    const saveFrom = async (revision: number, change: Partial<SharingPolicy>) =>
+      await app().request("/api/shares/policy", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${revision}"`,
+        },
+        body: JSON.stringify({ ...defaultSharingPolicy(), ...change }),
+      })
+    // One window pauses links; another, still showing the copy from before,
+    // changes the longest expiry.
+    expect((await saveFrom(read.revision, { paused: true })).status).toBe(200)
+    const stale = await saveFrom(read.revision, { maxExpiryDays: 30 })
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toMatchObject({
+      code: "POLICY_CHANGED",
+      policy: { paused: true, maxExpiryDays: null },
+      revision: read.revision + 1,
+    })
+    expect((await policyNow()).paused).toBe(true)
+  })
+
   it("keeps settings for unreleased sharing features to the sharing preview", async () => {
     await writeDoc("space", "plan", "# Plan")
     const { token } = await createLink("plan")

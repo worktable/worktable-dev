@@ -11,6 +11,7 @@ import {
   saveSharingPolicy,
   ShareLinksStoreError,
   sharingV2Active,
+  type StoredSharingPolicy,
 } from "../share-links-store.ts"
 import {
   effectiveSharingPolicy,
@@ -46,22 +47,37 @@ sharePolicyRouter.onError((error, c) => {
   throw error
 })
 
-function respond(c: Context, policy: SharingPolicy) {
-  const body: SharingPolicyResponse = {
-    policy: effectiveSharingPolicy(policy),
+function body(stored: StoredSharingPolicy): SharingPolicyResponse {
+  return {
+    policy: effectiveSharingPolicy(stored.policy),
     canEdit: true,
+    revision: stored.revision,
   }
-  return c.json(body)
 }
 
-sharePolicyRouter.get("/", (c) => respond(c, readSharingPolicy().policy))
+/** The revision a save was made from, from `If-Match: "<revision>"`. */
+function expectedRevision(c: Context): number | undefined | null {
+  const header = c.req.header("If-Match")
+  if (header === undefined) return undefined
+  const match = /^"(\d{1,15})"$/.exec(header.trim())
+  return match ? Number(match[1]) : null
+}
+
+sharePolicyRouter.get("/", (c) => c.json(body(readSharingPolicy())))
 
 sharePolicyRouter.put("/", async (c) => {
   const input = SharingPolicyInputSchema.safeParse(
     await c.req.json().catch(() => null)
   )
-  if (!input.success) {
-    return c.json({ error: input.error.message, code: "VALIDATION_ERROR" }, 400)
+  const expected = expectedRevision(c)
+  if (!input.success || expected === null) {
+    return c.json(
+      {
+        error: input.success ? "Invalid If-Match" : input.error.message,
+        code: "VALIDATION_ERROR",
+      },
+      400
+    )
   }
   let policy: SharingPolicy = input.data
   if (!sharingPreviewEnabled()) {
@@ -82,8 +98,21 @@ sharePolicyRouter.put("/", async (c) => {
       Object.assign(policy, { [key]: saved[key] })
     }
   }
-  return respond(
-    c,
-    saveSharingPolicy(policy, sharerOf(c.get("identity")).id).policy
+  const saved = saveSharingPolicy(
+    policy,
+    sharerOf(c.get("identity")).id,
+    expected
   )
+  if (!saved) {
+    // Made from an older copy: the newer policy stays, and comes back.
+    return c.json(
+      {
+        error: "The policy changed since it was read",
+        code: "POLICY_CHANGED",
+        ...body(readSharingPolicy()),
+      },
+      409
+    )
+  }
+  return c.json(body(saved))
 })

@@ -1,8 +1,14 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { sharingPreviewEnabled } from "../sharing-preview.ts"
+import { withStoreWriteLock } from "../store.ts"
+import {
+  passVisitorComment,
+  VisitorCommentPassError,
+} from "../visitor-comment-service.ts"
 import {
   DocumentIdSchema,
+  PassVisitorCommentInputSchema,
   VisitorCommentReplyInputSchema,
 } from "@worktable/types"
 import {
@@ -22,6 +28,7 @@ import {
   visitorCommentRows,
   VisitorCommentRefused,
   VisitorCommentsUnavailable,
+  type StoredVisitorComment,
 } from "../visitor-comment-store.ts"
 
 export const visitorCommentsRouter = new Hono()
@@ -37,6 +44,8 @@ visitorCommentsRouter.use("*", async (c, next) => {
   return next()
 })
 visitorCommentsRouter.onError((error, c) => {
+  if (error instanceof VisitorCommentPassError)
+    return c.json({ error: error.message, code: "PASS_REFUSED" }, error.status)
   if (error instanceof VisitorCommentRefused)
     return c.json({ error: error.message, code: error.code }, error.status, {
       "Retry-After": String(error.retryAfter),
@@ -95,74 +104,98 @@ visitorCommentsRouter.get("/", async (c) => {
         : null,
   })
 })
+/** Serialize the explicit pass with private edits and deletion of its receipt. */
+async function withEditableComment(
+  c: Context,
+  use: (
+    context: Awaited<ReturnType<typeof visitorCommentNamespace>>,
+    row: StoredVisitorComment
+  ) => Response | Promise<Response>,
+  allowDeleted = false
+): Promise<Response> {
+  const id = c.req.param("id")!
+  if (!/^vc_[A-Za-z0-9_-]{22}$/.test(id))
+    return c.json({ error: "Not found" }, 404)
+  const spaceId = c.req.param("spaceId")!
+  const context = await visitorCommentNamespace()
+  return withStoreWriteLock(
+    `visitor-comment:${context.root}:${context.worktableId}:${id}`,
+    async () => {
+      const row = readVisitorComment(context.worktableId, id)
+      if (
+        !row ||
+        (row.status === "deleted" && !allowDeleted) ||
+        !(await visitorDocumentInSpace(spaceId, row.document_id))
+      )
+        return c.json({ error: "Not found" }, 404)
+      if (
+        !(await visitorNamespaceStillCurrent(context)) ||
+        !visitorCommentReader(c, spaceId)
+      )
+        return c.json({ error: "Forbidden" }, 403)
+      return use(context, row)
+    }
+  )
+}
 visitorCommentsRouter.post("/:id/replies", async (c) => {
   const input = VisitorCommentReplyInputSchema.safeParse(
     await c.req.json().catch(() => null)
   )
   if (!input.success)
     return c.json({ error: "Enter a reply", code: "INVALID_REQUEST" }, 400)
-  const spaceId = c.req.param("spaceId")!
-  const context = await visitorCommentNamespace()
-  const row = readVisitorComment(context.worktableId, c.req.param("id"))
-  if (
-    !row ||
-    row.status === "deleted" ||
-    !(await visitorDocumentInSpace(spaceId, row.document_id))
-  )
-    return c.json({ error: "Not found" }, 404)
-  if (
-    !(await visitorNamespaceStillCurrent(context)) ||
-    !visitorCommentReader(c, spaceId)
-  )
-    return c.json({ error: "Forbidden" }, 403)
-  const actor = c.get("identity").principal
   const body = cleanVisitorText(input.data.body)
   if (!body)
     return c.json({ error: "Enter a reply", code: "INVALID_REQUEST" }, 400)
-  appendVisitorReply(
-    context.worktableId,
-    row.id,
-    { id: actor.id, name: actor.displayName },
-    body
-  )
-  notifyVisitorComments(spaceId, row.document_id, row.link_id)
-  return c.json({ ok: true }, 201)
+  return withEditableComment(c, (context, row) => {
+    const actor = c.get("identity").principal
+    appendVisitorReply(
+      context.worktableId,
+      row.id,
+      { id: actor.id, name: actor.displayName },
+      body
+    )
+    notifyVisitorComments(c.req.param("spaceId")!, row.document_id, row.link_id)
+    return c.json({ ok: true }, 201)
+  })
 })
-visitorCommentsRouter.post("/:id/done", async (c) => {
-  const spaceId = c.req.param("spaceId")!
-  const context = await visitorCommentNamespace()
-  const row = readVisitorComment(context.worktableId, c.req.param("id"))
-  if (
-    !row ||
-    row.status === "deleted" ||
-    !(await visitorDocumentInSpace(spaceId, row.document_id))
+visitorCommentsRouter.post("/:id/done", async (c) =>
+  withEditableComment(c, (context, row) => {
+    finishVisitorComment(context.worktableId, row.id)
+    notifyVisitorComments(c.req.param("spaceId")!, row.document_id, row.link_id)
+    return c.json({ ok: true })
+  })
+)
+visitorCommentsRouter.delete("/:id", async (c) =>
+  withEditableComment(
+    c,
+    (context, row) => {
+      const spaceId = c.req.param("spaceId")!
+      if (!canDeleteVisitorComment(c, spaceId, row))
+        return c.json({ error: "Forbidden" }, 403)
+      finishVisitorComment(
+        context.worktableId,
+        row.id,
+        c.get("identity").principal.id
+      )
+      notifyVisitorComments(spaceId, row.document_id, row.link_id)
+      return c.json({ ok: true })
+    },
+    true
   )
-    return c.json({ error: "Not found" }, 404)
-  if (
-    !(await visitorNamespaceStillCurrent(context)) ||
-    !visitorCommentReader(c, spaceId)
+)
+visitorCommentsRouter.post("/:id/pass", async (c) => {
+  const input = PassVisitorCommentInputSchema.safeParse(
+    await c.req.json().catch(() => null)
   )
-    return c.json({ error: "Forbidden" }, 403)
-  finishVisitorComment(context.worktableId, row.id)
-  notifyVisitorComments(spaceId, row.document_id, row.link_id)
-  return c.json({ ok: true })
-})
-visitorCommentsRouter.delete("/:id", async (c) => {
-  const spaceId = c.req.param("spaceId")!
-  const context = await visitorCommentNamespace()
-  const row = readVisitorComment(context.worktableId, c.req.param("id"))
-  if (!row || !(await visitorDocumentInSpace(spaceId, row.document_id)))
-    return c.json({ error: "Not found" }, 404)
-  if (
-    !(await visitorNamespaceStillCurrent(context)) ||
-    !canDeleteVisitorComment(c, spaceId, row)
+  if (!input.success)
+    return c.json(
+      {
+        error: "Enter what should happen and a quote",
+        code: "INVALID_REQUEST",
+      },
+      400
+    )
+  return withEditableComment(c, async (context, row) =>
+    c.json(await passVisitorComment(c, context, row, input.data))
   )
-    return c.json({ error: "Forbidden" }, 403)
-  finishVisitorComment(
-    context.worktableId,
-    row.id,
-    c.get("identity").principal.id
-  )
-  notifyVisitorComments(spaceId, row.document_id, row.link_id)
-  return c.json({ ok: true })
 })

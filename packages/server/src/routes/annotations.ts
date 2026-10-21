@@ -1,4 +1,5 @@
 import { requireScope, restWriteActor } from "../auth.ts";
+import { reservedAnnotationInput } from "../annotation-origin.ts";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { AnnotationTargetSchema, WidgetIdSchema, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
@@ -117,6 +118,7 @@ annotationsRouter.post("/", requireScope("annotations:write"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = CreateAnnotationSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  if (reservedAnnotationInput(parsed.data)) return c.json({ error: "Source metadata is set by Worktable", code: "RESERVED_METADATA" }, 400);
   if (parsed.data.target.type === "widget") {
     const valid = (await usesHtmlDocumentStorageV2())
       ? isHtmlDocumentPath(parsed.data.target.widgetId)
@@ -149,6 +151,7 @@ annotationsRouter.patch("/:annotationId", requireScope("annotations:write"), asy
   const body = await c.req.json().catch(() => null);
   const parsed = UpdateAnnotationSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400);
+  if (reservedAnnotationInput(parsed.data)) return c.json({ error: "Source metadata is set by Worktable", code: "RESERVED_METADATA" }, 400);
   const { updatedBy, ...patch } = parsed.data;
   const annotation = await updateAnnotation(spaceId, annotationId, patch as never, restWriteActor(c, updatedBy));
   broadcast(spaceId, annotation.id, { annotation, event: "updated" });

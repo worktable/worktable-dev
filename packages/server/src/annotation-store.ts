@@ -1,4 +1,5 @@
 import { assertSpaceAccess } from "./team-policy.ts";
+import type { AnnotationWriteGuard } from "./annotation-origin.ts";
 import { noteCommentActivity } from "./activity-log.ts"
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { NON_ENGAGING_ACTORS, noteDocumentActivity } from "./document-activity.ts"
@@ -177,7 +178,7 @@ async function readAnnotationFile(spaceId: string, key: AnnotationKey): Promise<
   return parsed.data;
 }
 
-async function writeAnnotationFile(spaceId: string, key: AnnotationKey, file: AnnotationFile): Promise<AnnotationFile> {
+async function writeAnnotationFile(spaceId: string, key: AnnotationKey, file: AnnotationFile, beforeWrite?: AnnotationWriteGuard): Promise<AnnotationFile> {
   const now = new Date().toISOString();
   const base = {
     type: ANNOTATION_FILE_TYPE,
@@ -189,6 +190,7 @@ async function writeAnnotationFile(spaceId: string, key: AnnotationKey, file: An
   const next: AnnotationFile = { ...base, revision: revisionFor(base) };
   const path = annotationPath(spaceId, key);
   await mkdir(dirname(path), { recursive: true });
+  if (beforeWrite) await beforeWrite();
   await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return next;
 }
@@ -321,9 +323,9 @@ export async function readAnnotation(spaceId: string, annotationId: string): Pro
   return (await findAnnotation(spaceId, annotationId)).annotation;
 }
 
-async function createAnnotationRecord(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
+async function createAnnotationRecord(spaceId: string, input: CreateAnnotationInput, beforeWrite?: AnnotationWriteGuard): Promise<{ annotation: Annotation; created: boolean }> {
   if (await usesDocumentDataV2()) {
-    return createLegacyCompatibleAnnotationV2(spaceId, input)
+    return createLegacyCompatibleAnnotationV2(spaceId, input, beforeWrite)
   }
   const key = storageKeyFromTarget(input.target);
   if (!key) throw new Error("Only doc- and HTML-doc-backed annotations are supported in this release");
@@ -331,7 +333,10 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
     const file = await readAnnotationFile(spaceId, key);
     if (input.idempotencyKey) {
       const existing = file.annotations.find((annotation) => annotation.idempotencyKey === input.idempotencyKey);
-      if (existing) return { annotation: existing, created: false };
+      if (existing) {
+        if (beforeWrite) await beforeWrite();
+        return { annotation: existing, created: false };
+      }
     }
     const now = new Date().toISOString();
     const annotation: Annotation = {
@@ -351,7 +356,7 @@ async function createAnnotationRecord(spaceId: string, input: CreateAnnotationIn
       metadata: input.metadata ?? {},
     };
     file.annotations.push(annotation);
-    await writeAnnotationFile(spaceId, key, file);
+    await writeAnnotationFile(spaceId, key, file, beforeWrite);
     return { annotation, created: true };
   };
   return key.root === "docs" ? withDocPathLock(spaceId, () => withAnnotationStoreLock(spaceId, create))
@@ -450,9 +455,9 @@ async function noteAnnotationActivity(spaceId: string, annotation: Annotation): 
   if (path) await noteDocumentActivity(spaceId, [path])
 }
 
-export async function createAnnotation(spaceId: string, input: CreateAnnotationInput): Promise<{ annotation: Annotation; created: boolean }> {
+export async function createAnnotation(spaceId: string, input: CreateAnnotationInput, beforeWrite?: AnnotationWriteGuard): Promise<{ annotation: Annotation; created: boolean }> {
   assertSpaceAccess(spaceId, "edit");
-  const result = await createAnnotationRecord(spaceId, input)
+  const result = await createAnnotationRecord(spaceId, input, beforeWrite)
   if (result.created && (input.author ?? DEFAULT_AUTHOR).type !== "system") {
     await noteAnnotationActivity(spaceId, result.annotation)
     const path = annotatedDocumentPath(result.annotation)

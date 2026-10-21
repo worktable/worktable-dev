@@ -460,6 +460,31 @@ export function finishVisitorComment(
     ).run(worktableId, id)
 }
 
+/** The ordinary annotation is durable before this private receipt changes. */
+export function markVisitorCommentPassed(
+  worktableId: string,
+  id: string,
+  passed: {
+    annotationId: string
+    by: { id: string; name: string }
+    at: string
+  }
+): void {
+  const changed = database(true)!
+    .query(
+      "UPDATE visitor_comments SET status='passed',annotation_id=?,passed_by=?,passed_name=?,passed_at=? WHERE worktableId=? AND id=? AND status!='deleted'"
+    )
+    .run(
+      passed.annotationId,
+      passed.by.id,
+      passed.by.name,
+      Date.parse(passed.at),
+      worktableId,
+      id
+    )
+  if (!changed.changes) throw new VisitorCommentsUnavailable()
+}
+
 /** Called only at boot and daily, never by a view or a comment request. */
 export function sweepVisitorComments(now = Date.now()): void {
   const db = database()

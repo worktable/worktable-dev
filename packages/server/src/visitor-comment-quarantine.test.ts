@@ -224,12 +224,15 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
       `/api/spaces/space/annotations/${ordinary.annotation.id}/context`,
     ]) {
       const response = await app.request(path, { headers })
-      expect(response.status).toBe(200)
+      // Teams keeps raw-source downloads behind its separate owner boundary.
+      const expected = identity.team && path.includes("/source?") ? 403 : 200
+      expect(response.status, `${identity.agent}: ${path}`).toBe(expected)
       const body = await response.text()
       expect(body).not.toContain(sentinel)
       if (path === "/api/pending")
         expect(body).not.toContain('"visitorComments')
-      if (path.includes("/source?")) expect(body).toContain("PUBLIC_CONTROL")
+      if (path.includes("/source?") && response.ok)
+        expect(body).toContain("PUBLIC_CONTROL")
     }
     expect(
       (await app.request("/api/workspace/export", { headers })).status

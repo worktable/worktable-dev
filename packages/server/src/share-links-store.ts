@@ -863,6 +863,11 @@ export function listDocumentShareLinks(
   )
 }
 
+/** An indexed existence check for the private Visitors tab, with no link history. */
+export function documentHasCommentLink(spaceId: string, documentId: string): boolean {
+  return Boolean(openDatabase(false)?.query("SELECT 1 FROM share_links WHERE space_id=? AND document_id=? AND revoked_at IS NULL AND level='comment' LIMIT 1").get(spaceId, documentId))
+}
+
 /** Count and next expiry only; never materialize a document's link history. */
 export function documentShareLinkSummary(
   spaceId: string,

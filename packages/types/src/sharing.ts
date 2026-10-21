@@ -199,7 +199,7 @@ export const DocumentSharingSummarySchema = z.object({
   nextExpiry: IsoTimestampSchema.optional(),
   canCreate: z.boolean(),
   /** Present only to readers who may read visitor comments, when the document has a comment link or comments. */
-  visitorComments: z.object({ newCount: z.number().int().min(0) }).optional(),
+  visitorComments: z.object({ documentId: z.string(), newCount: z.number().int().min(0) }).optional(),
 })
 export type DocumentSharingSummary = z.infer<
   typeof DocumentSharingSummarySchema

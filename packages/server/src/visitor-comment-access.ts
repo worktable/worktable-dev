@@ -3,6 +3,7 @@ import type {
   DocumentId,
   VisitorComment,
   SharingPolicy,
+  DocumentSharingSummary,
 } from "@worktable/types"
 import { isHumanWorkspaceOwner } from "./auth.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
@@ -15,10 +16,27 @@ import type { TokenIdentity } from "./token-store.ts"
 import { getWorkspaceRoot, prepareWorkspaceTarget } from "./workspace.ts"
 import {
   visitorReplies,
+  visitorCommentCounts,
   VisitorCommentsUnavailable,
   type StoredVisitorComment,
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
+import { documentHasCommentLink } from "./share-links-store.ts"
+
+/** The page carries the badge; opening Visitors is the only list request. */
+export async function visitorCommentPageSummary(c: Context, spaceId: string, documentId: string): Promise<DocumentSharingSummary["visitorComments"]> {
+  if (!visitorCommentReader(c, spaceId)) return undefined
+  try {
+    const context = await visitorCommentNamespace()
+    if (!(await visitorDocumentInSpace(spaceId, documentId)) || !(await visitorNamespaceStillCurrent(context)) || !visitorCommentReader(c, spaceId)) return undefined
+    const counts = visitorCommentCounts(context.worktableId, documentId)
+    if (!counts.total && !documentHasCommentLink(spaceId, documentId)) return undefined
+    return {documentId, newCount: counts.newCount}
+  } catch {
+    // An unavailable private store must not stop the ordinary document opening.
+    return undefined
+  }
+}
 
 /** Only opaque identifiers cross this person-only socket boundary. */
 export function notifyVisitorComments(

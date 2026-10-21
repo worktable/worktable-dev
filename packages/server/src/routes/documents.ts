@@ -1,5 +1,6 @@
 import { teamsEnabled } from "../team-database.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts"
+import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { canAccessSpace } from "../team-policy.ts";
 import { documentSourceDisposition } from "../content-disposition.ts"
 import { Hono, type Context } from "hono"
@@ -318,6 +319,7 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
     recordsAuthorized: hasScope(c.get("identity").scopes, "records:read"),
     sharingAuthorized: sharing !== null,
     canCreateShareLinks: sharing?.canCreate ?? false,
+    ...(visitorCommentReader(c, spaceId) ? {visitorComments: (documentId: string) => visitorCommentPageSummary(c, spaceId, documentId)} : {}),
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

@@ -288,7 +288,8 @@ async function pageForHandle(
   annotationsAuthorized: boolean,
   sharingAuthorized: boolean,
   recordsAuthorized = false,
-  canCreateShareLinks = true
+  canCreateShareLinks = true,
+  visitorComments?: (documentId: string) => Promise<DocumentSharingSummary["visitorComments"]>
 ): Promise<DocumentPage> {
   const integration = await pageIntegration(handle)
   const storageV2 = await usesDocumentStorageV2()
@@ -309,6 +310,9 @@ async function pageForHandle(
   const renderer = rendererForHandle(handle, integration, storageV2)
   const links = sharing
     ? sharingSummary(spaceId, handle, canCreateShareLinks)
+    : undefined
+  const visitorSummary = links && visitorComments && handle.identity === "durable" && !handle.document.archived
+    ? await visitorComments(handle.documentId)
     : undefined
   return {
     kind: "document",
@@ -343,7 +347,7 @@ async function pageForHandle(
         }
       : {}),
     ...(metadata?.contributors ? { contributors: metadata.contributors } : {}),
-    ...(links ? { sharing: links } : {}),
+    ...(links ? { sharing: {...links, ...(visitorSummary ? {visitorComments: visitorSummary} : {})} } : {}),
   }
 }
 
@@ -406,6 +410,7 @@ export async function readDocumentPage(options: {
    * dialog; making a link checks again.
    */
   canCreateShareLinks?: boolean
+  visitorComments?: (documentId: string) => Promise<DocumentSharingSummary["visitorComments"]>
 }): Promise<DocumentPageResult | { kind: "alias-error" } | null> {
   const resolution = await useResolvedDocumentHandle(
     { ...options, snapshot: true },
@@ -417,7 +422,8 @@ export async function readDocumentPage(options: {
         options.annotationsAuthorized,
         options.sharingAuthorized,
         options.recordsAuthorized ?? false,
-        options.canCreateShareLinks ?? true
+        options.canCreateShareLinks ?? true,
+        options.visitorComments
       )
   )
   if (resolution.kind === "not-found") return null

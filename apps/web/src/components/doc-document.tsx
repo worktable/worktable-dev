@@ -958,6 +958,7 @@ function MarkdownDocPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -1032,6 +1033,7 @@ function MarkdownDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}
@@ -1596,6 +1598,7 @@ function BlockNoteDocPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -1670,6 +1673,7 @@ function BlockNoteDocPage({
                 Annotations for this doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}

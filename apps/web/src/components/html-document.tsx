@@ -893,6 +893,7 @@ function WidgetDetailPage({
           width={384}
         >
           <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
             readOnly={readOnly}
             annotations={annotations}
             activeAnnotationId={activeAnnotationId}
@@ -970,6 +971,7 @@ function WidgetDetailPage({
                 Annotations for this HTML doc.
               </DrawerDescription>
               <AnnotationPanel
+            visitorComments={page?.sharing?.visitorComments ? {spaceId, path: page.document.path, ...page.sharing.visitorComments} : undefined}
                 readOnly={readOnly}
                 annotations={annotations}
                 activeAnnotationId={activeAnnotationId}

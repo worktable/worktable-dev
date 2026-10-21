@@ -514,6 +514,11 @@ export function readVisitorComment(
   )
 }
 
+/** A private count for the existing document-page response, never visitor text. */
+export function visitorCommentCounts(worktableId: string, documentId: string): { total: number; newCount: number } {
+  return (database()?.query("SELECT count(*) AS total,coalesce(sum(status='new'),0) AS newCount FROM visitor_comments WHERE worktableId=? AND document_id=? AND status!='deleted' AND body IS NOT NULL").get(worktableId, documentId) as { total: number; newCount: number } | null) ?? {total: 0, newCount: 0}
+}
+
 /** One grouped private read for a person's Pending, never ordinary activity. */
 export function pendingVisitorCommentGroups(worktableId: string): Array<{
   document_id: string

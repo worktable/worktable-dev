@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-export { LegacyShareDocumentDialog } from "./legacy-share-document-dialog"
+export { LegacyShareDocumentDialogContents } from "./legacy-share-document-dialog"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ExternalLink,

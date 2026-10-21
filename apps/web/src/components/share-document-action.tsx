@@ -1,13 +1,29 @@
-import { lazy, useState } from "react"
-import { Check, Share2 } from "lucide-react"
+import { lazy, useEffect, useRef, useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { Check, Link2, Share2 } from "lucide-react"
 import type { DocumentSharingSummary } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@worktable/ui/components/responsive-dialog"
+import { useDocumentSharingAvailable } from "@/hooks/use-deployment-info"
 import {
   useDocumentShareStatus,
   useShareMode,
 } from "@/hooks/use-document-share"
 import type { PageShareTarget } from "@/hooks/use-page-meta"
+import { copyText } from "@/lib/clipboard"
+import {
+  createDocumentShare,
+  shareQueryKey,
+  stopDocumentShare,
+  type ShareStatus,
+} from "@/lib/share-api"
 
 // Loaded when first opened, like New Space.
 const ShareLinksDialog = lazy(() =>
@@ -16,9 +32,9 @@ const ShareLinksDialog = lazy(() =>
   }))
 )
 
-const LegacyShareDocumentDialog = lazy(() =>
+const LegacyShareDocumentDialogContents = lazy(() =>
   import("@/components/share-links-dialog").then((module) => ({
-    default: module.LegacyShareDocumentDialog,
+    default: module.LegacyShareDocumentDialogContents,
   }))
 )
 
@@ -115,24 +131,104 @@ function ShareLinksAction({
   )
 }
 
-/** The existing single-link trigger; dialog code waits until it opens. */
+// ── Today's single link ──────────────────────────────────────
+
+type CopyState = "idle" | "copied" | "error"
+
 function LegacyShareDocumentAction({
   target,
   open: controlledOpen,
   onOpenChange,
   showTrigger = true,
-}: ShareDocumentActionProps) {
+}: {
+  target: PageShareTarget
+  /** Lets another control, such as the narrow-screen page menu, open it. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  showTrigger?: boolean
+}) {
+  const queryClient = useQueryClient()
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const open = controlledOpen ?? uncontrolledOpen
   const setOpen = (next: boolean) => {
     setUncontrolledOpen(next)
     onOpenChange?.(next)
   }
+  const [confirmingStop, setConfirmingStop] = useState(false)
+  const [copyState, setCopyState] = useState<CopyState>("idle")
+  const [announcement, setAnnouncement] = useState("")
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const available = useDocumentSharingAvailable()
+  const queryKey = shareQueryKey(target)
   const status = useDocumentShareStatus(target)
-  const shared = status.data?.share != null
+
+  const create = useMutation({
+    mutationFn: () => createDocumentShare(target),
+    onMutate: () => {
+      setAnnouncement("")
+      setCopyState("idle")
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(queryKey, result)
+      setAnnouncement("Link ready")
+    },
+  })
+  const stop = useMutation({
+    mutationFn: () => stopDocumentShare(target),
+    onSuccess: () => {
+      queryClient.setQueryData<ShareStatus>(queryKey, { share: null })
+      setConfirmingStop(false)
+      setCopyState("idle")
+      setAnnouncement("Sharing stopped")
+    },
+  })
+
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+    },
+    []
+  )
+
+  if (!available) return null
+
+  const share = status.data?.share ?? null
+  const shared = share !== null
+  const creating = create.isPending
+  const stopping = stop.isPending
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && (creating || stopping)) return
+    setOpen(nextOpen)
+    if (nextOpen) return
+    setConfirmingStop(false)
+    setCopyState("idle")
+    setAnnouncement("")
+    create.reset()
+    stop.reset()
+  }
+
+  async function handleCopy() {
+    if (!share) return
+    try {
+      await copyText(share.url)
+      setCopyState("copied")
+      setAnnouncement("Link copied")
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current)
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopyState("idle")
+        setAnnouncement("")
+      }, 1_800)
+    } catch (error) {
+      console.error("Share link copy failed:", error)
+      setCopyState("error")
+      setAnnouncement("Couldn’t copy the link")
+    }
+  }
+
   return (
     <>
-      {showTrigger ? (
+      {showTrigger && (
         <Button
           type="button"
           size="xs"
@@ -149,15 +245,37 @@ function LegacyShareDocumentAction({
           )}
           <span className="hidden sm:inline">Share</span>
         </Button>
-      ) : null}
-      <DeferredMount active={open}>
-        <LegacyShareDocumentDialog
-          target={target}
-          open={open}
-          onOpenChange={setOpen}
-          status={status}
-        />
-      </DeferredMount>
+      )}
+
+      <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
+        <ResponsiveDialogContent className="sm:max-w-md">
+          <ResponsiveDialogHeader>
+            <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-surface-tint text-primary">
+              <Link2 className="size-5" />
+            </div>
+            <ResponsiveDialogTitle>Share document</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="sr-only">
+              Manage a view-only link for this document.
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+
+          <DeferredMount active={open}>
+            <LegacyShareDocumentDialogContents
+              target={target}
+              status={status}
+              create={create}
+              stop={stop}
+              share={share}
+              copyState={copyState}
+              confirmingStop={confirmingStop}
+              setConfirmingStop={setConfirmingStop}
+              announcement={announcement}
+              onOpenChange={handleOpenChange}
+              onCopy={handleCopy}
+            />
+          </DeferredMount>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </>
   )
 }

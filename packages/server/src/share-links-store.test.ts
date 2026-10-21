@@ -327,7 +327,7 @@ describe("share links", () => {
     expect(await missed.text()).toBe(await malformed.text())
   })
 
-  it("serves nothing it does not understand, and older links still open", async () => {
+  it("serves nothing it does not understand, and no older link once it can't read the owner policy", async () => {
     await writeDoc("space", "plan", "# Plan")
     // Today's links are made only while links v2 is off.
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
@@ -353,13 +353,15 @@ describe("share links", () => {
     )
     expect((await view(locked.token)).status).toBe(404)
     expect((await view(open.token)).status).toBe(200)
+    expect((await view(legacyToken)).status).toBe(200)
 
-    // A later version of the whole store.
+    // A later version of the whole store: its policy can't be checked, so
+    // today's links stay closed too.
     closeShareLinkStores()
     db.exec("PRAGMA user_version = 2")
     db.close()
     expect((await view(open.token)).status).toBe(404)
-    expect((await view(legacyToken)).status).toBe(200)
+    expect((await view(legacyToken)).status).toBe(404)
     const closed = await send("GET", "/api/shares/links/all")
     expect(closed.status).toBe(503)
     expect(await closed.json()).toMatchObject({
@@ -379,7 +381,7 @@ describe("share links", () => {
         })
       ).status
     ).toBe(404)
-    expect((await view(legacyToken)).status).toBe(200)
+    expect((await view(legacyToken)).status).toBe(404)
   })
 
   it("follows a Doc through renames and moves, and archiving ends its links for good", async () => {

@@ -425,8 +425,8 @@ export function createPublicSharesRouter(
         c.req.raw.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
       )
     } catch (error) {
-      // A store this binary cannot open serves none of its links; older
-      // links may still answer.
+      // A store this binary cannot open serves none of its links, and its
+      // policy, which can't be checked, holds older links back too.
       if (error instanceof ShareLinksStoreError) return null
       throw error
     }

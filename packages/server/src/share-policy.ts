@@ -241,7 +241,8 @@ export function linkBlockedBy(
  * views still fall back to while links v2 is on: before the move at boot, or
  * while its path names more than one document. It names no creator and has
  * no password, so pause, Spaces, a required password and the longest expiry
- * decide. A store this version can't read leaves it served, as before.
+ * decide. A store this version can't read holds a policy it can't check,
+ * so the link stays closed.
  */
 export function legacyShareHeldBack(
   share: { spaceId: string; createdAt: string },
@@ -251,7 +252,7 @@ export function legacyShareHeldBack(
   try {
     policy = currentSharingPolicy()
   } catch (error) {
-    if (error instanceof ShareLinksStoreError) return false
+    if (error instanceof ShareLinksStoreError) return true
     throw error
   }
   const cap = capOf({ createdAt: Date.parse(share.createdAt) }, policy)

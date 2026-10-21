@@ -1,7 +1,9 @@
 import { advanceGenerationOnWrite } from "./shared-reads.ts"
 import { LinkGrantSchema } from "@worktable/types"
+import type { RecordFile } from "@worktable/types"
+import { saveSharingPolicy } from "./share-links-store.ts"
 import { createHash } from "node:crypto"
-import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord } from "./record-store.ts"
+import { buildRecordCollectionSchema, writeRecordCollectionSchema, writeRecord, writeWidgetState } from "./record-store.ts"
 import * as linkQueries from "./link-query.ts"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import { Database } from "bun:sqlite"
@@ -224,10 +226,11 @@ describe("share links", () => {
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
     const at = new Date().toISOString()
     await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Public name", secret: "Hidden data" } })
-    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<!doctype html><html><head></head><body><h1>Board</h1></body></html>", permissions: { network: true, records: { deals: { read: true } }, state: { read: true, write: true } }, versionSource: "test", versionUpdatedBy: "test" })
+    await createHtmlDocument({ spaceId: "space", name: "Board", html: "<!doctype html><html><head></head><body><h1>Board</h1></body></html>", permissions: { network: true, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    await writeWidgetState("space", "board", { team: "default" })
     const beforeLive = await readDocumentPage({ spaceId: "space", path: "board", rawSourceAuthorized: false, annotationsAuthorized: false, sharingAuthorized: true })
     expect(beforeLive?.kind === "document" ? beforeLive.sharing?.activeLinks : null).toBe(0)
-    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], timestamps: false } } })
+    const grant = LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], timestamps: false } }, state: "team-read" })
     await writeDoc("space", "plan", "# Plan")
     expect((await send("POST", "/api/shares/links", { target: { kind: "doc", spaceId: "space", path: "plan" }, grant })).status).toBe(400)
     expect((await send("POST", "/api/shares/links", { target: { kind: "html", spaceId: "space", path: "board" }, grant: { ...grant, collections: { deals: { ...grant.collections.deals, fields: ["missing"] } } } })).status).toBe(400)
@@ -268,6 +271,7 @@ describe("share links", () => {
     expect(result.result.records[0].data).toEqual({ name: "Public name" })
     expect(JSON.stringify(result)).not.toContain("private-id")
     expect(JSON.stringify(result)).not.toContain("Hidden data")
+    expect(await (await bridge(created.token, { v: 1, op: "state.read" })).json()).toEqual({ ok: true, result: { state: { team: "default" } } })
     const otherLink = await (await readRecords(neverExpires.token)).json()
     expect(otherLink.result.records[0].id).not.toBe(result.result.records[0].id)
     expect((await bridge(created.token, { v: 1, op: "records.create", collection: "deals", data: {} })).status).toBe(400)
@@ -300,6 +304,19 @@ describe("share links", () => {
       expect(entered).toBe(2)
       expect(reads.map((read) => read.status)).toEqual([200, 200])
     } finally { releaseReads(); clearTimeout(safety); overlap.mockRestore() }
+    const duringOtherSpaceWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      const read = await originalRead(...args)
+      await writeSpace({ type: "worktable.space", version: 1, id: "other", name: "Other", createdAt: at, updatedAt: at, createdBy: "test", settings: {} })
+      await writeDoc("other", "notes", "# Other activity")
+      return read
+    })
+    try { expect((await bridge(created.token)).status).toBe(200) } finally { duringOtherSpaceWrite.mockRestore() }
+    const duringOwnRecordWrite = spyOn(linkQueries, "queryRecordsForLink").mockImplementation(async (...args) => {
+      const read = await originalRead(...args)
+      await writeRecord("space", { version: 1, kind: "worktable.record", id: "private-id", collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: "Changed name", secret: "Hidden data" } })
+      return read
+    })
+    try { expect((await bridge(created.token)).status).toBe(429) } finally { duringOwnRecordWrite.mockRestore() }
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "document" }, secret: { type: "text" } } }))
     expect((await bridge(created.token)).status).toBe(403)
     await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, secret: { type: "text" } } }))
@@ -314,6 +331,51 @@ describe("share links", () => {
     expect((await bridge(created.token)).status).toBe(403)
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
     expect((await bridge(created.token)).status).toBe(404)
+  })
+
+  it("updates totals and summaries when an unreturned row leaves the link's scope", async () => {
+    process.env["WORKTABLE_RECORDS_INDEX"] = "0"
+    saveSharingPolicy({ ...defaultSharingPolicy(), liveLinks: true }, "local:owner")
+    await writeRecordCollectionSchema("space", buildRecordCollectionSchema({ id: "deals", name: "Deals", fields: { name: { type: "text" }, visibility: { type: "text" } } }))
+    const at = new Date().toISOString()
+    const row = (id: string, visibility: string): RecordFile => ({ version: 1, kind: "worktable.record", id, collectionId: "deals", createdAt: at, updatedAt: at, createdBy: "test", metadata: {}, data: { name: id, visibility } })
+    await writeRecord("space", row("first", "public"))
+    await writeRecord("space", row("second", "public"))
+    await createHtmlDocument({ spaceId: "space", name: "Counts", html: "<h1>Counts</h1>", permissions: { network: false, records: { deals: { read: true } }, state: {} }, versionSource: "test", versionUpdatedBy: "test" })
+    const rows = { field: "visibility", op: "eq", value: "public" }
+    const scoped = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { fields: ["name"], rows } } }) }, "html")
+    const summary = await createLink("counts", { grant: LinkGrantSchema.parse({ version: 1, collections: { deals: { mode: "summaries", fields: [], rows, summaries: { groupBy: [], measures: [], fns: ["count"], minGroupSize: 2 } } } }) }, "html")
+    const call = async (token: string, value: unknown) => {
+      let response: Response
+      for (let attempt = 0;; attempt++) {
+        response = await app().request("/public/share/bridge", { method: "POST", headers: { "Content-Type": "application/json", "x-worktable-share-capability": token }, body: JSON.stringify(value) })
+        if (response.status !== 429 || attempt === 10) break
+        await drainWorkspaceChanges()
+      }
+      expect(response.status).toBe(200)
+      return (await response.json()).result
+    }
+    const query = (query: unknown) => ({ v: 1, op: "records.query", collection: "deals", query })
+    const limited = await call(scoped.token, query({ limit: 1 }))
+    expect(limited.records).toHaveLength(1)
+    expect(limited.total).toBe(2)
+    const aggregate = query({ aggregate: { select: { n: { fn: "count" } } } })
+    expect((await call(summary.token, aggregate)).groups).toEqual([{ n: 2 }])
+    const cursors = await Promise.all([scoped, summary].map(async ({ token }) => (await call(token, { v: 1, op: "changes" })).cursor))
+    await writeRecord("space", row("second", "private"))
+    await notifyWorkspaceChangeAndWaitOrThrow({ type: "record", spaceId: "space", collectionId: "deals", recordId: "second" })
+    for (const [index, { token }] of [scoped, summary].entries()) {
+      let changed: string[] = []
+      for (let attempt = 0; attempt < 20; attempt++) {
+        changed = (await call(token, { v: 1, op: "changes", since: cursors[index] })).collections
+        if (changed.includes("deals")) break
+        // test-policy: external-readiness-backoff. Await the bounded background record delivery.
+        await Bun.sleep(5)
+      }
+      expect(changed).toEqual(["deals"])
+    }
+    expect((await call(scoped.token, query({ limit: 1 }))).total).toBe(1)
+    expect((await call(summary.token, aggregate)).groups).toEqual([])
   })
 
   it("requires passwords, binds unlocks to current credentials, and expires links", async () => {

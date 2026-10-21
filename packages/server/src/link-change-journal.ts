@@ -75,18 +75,35 @@ export class LinkChangeJournal {
   served(linkId: string, collection: string, result: RecordQueryResult): void {
     const entry = this.links.get(linkId)
     if (!entry || entry.overflow) return
-    const remember = (collectionId: string, id: string) => {
-      if (entry.overflow) return
-      if (entry.served.size >= 5000) {
-        entry.overflow = true
-        entry.served.clear()
-      } else entry.served.add(`${collectionId}\0${id}`)
-    }
-    for (const row of result.records) remember(collection, row.id)
+    for (const row of result.records) this.remember(entry, collection, row.id)
     for (const [related, rows] of Object.entries(result.expanded ?? {}))
-      for (const id of Object.keys(rows)) remember(related, id)
+      for (const id of Object.keys(rows)) this.remember(entry, related, id)
     for (const [related, ids] of Object.entries(result.backlinks ?? {}))
-      for (const id of ids) remember(related, id)
+      for (const id of ids) this.remember(entry, related, id)
+  }
+
+  /** Counts and summaries depend on matching rows even when no row is shown. */
+  queried(
+    linkId: string,
+    collection: string,
+    rows: readonly RecordFile[]
+  ): void {
+    const entry = this.links.get(linkId)
+    if (!entry || entry.overflow) return
+    for (const row of rows) {
+      this.remember(entry, collection, row.id)
+      if (entry.overflow) break
+    }
+  }
+
+  private remember(entry: Journal, collection: string, id: string): void {
+    if (entry.overflow) return
+    const key = `${collection}\0${id}`
+    if (entry.served.has(key)) return
+    if (entry.served.size >= 5000) {
+      entry.overflow = true
+      entry.served.clear()
+    } else entry.served.add(key)
   }
 
   record(event: RecordChangeEvent, record: RecordFile | null): void {

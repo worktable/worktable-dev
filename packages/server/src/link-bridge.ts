@@ -18,12 +18,15 @@ import { queryRecordsForLink } from "./link-query.ts"
 import { linkReadPool } from "./link-read-pool.ts"
 import { linkReadMemo } from "./link-read-memo.ts"
 import { linkChangeJournal } from "./link-change-journal.ts"
-import { linkSchemaGeneration } from "./link-schema-generation.ts"
+import {
+  linkRecordGeneration,
+  linkSchemaGeneration,
+} from "./link-schema-generation.ts"
 import { LinkToolChanged, readLinkTool } from "./link-tool.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { recordIndex, recordIndexEnabled } from "./record-index.ts"
 import { listRecords, readWidgetState } from "./record-store.ts"
-import { workspaceGeneration, spaceGeneration } from "./workspace-read-model.ts"
+import { spaceGeneration } from "./workspace-read-model.ts"
 import { runAsLinkVisitor, withLinkGrantRead } from "./team-policy.ts"
 
 class LinkRecordsBusy extends Error {
@@ -170,7 +173,8 @@ export function linkBridge(getShareOrigin: () => string | null) {
       let refused: Response | null = null
       let changed = false
       if (call.op !== "ping") {
-        const generation = workspaceGeneration()
+        const collections = Object.keys(view.link.grant.collections)
+        const generation = linkRecordGeneration(view.link.spaceId, collections)
         const tool = await readLinkTool(view)
         if (!tool || !tool.permissions) return unavailable()
         const policy = view.policy
@@ -206,6 +210,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
               view.link.grantRevision,
               view.link.passwordRevision,
               generation,
+              tool.generation,
               tool.schemaGeneration,
               policy,
               call,
@@ -227,6 +232,8 @@ export function linkBridge(getShareOrigin: () => string | null) {
               policy,
               permissions: tool.permissions,
               schemas: tool.schemas,
+              onQueryRows: (collection, rows) =>
+                linkChangeJournal.queried(view.link.id, collection, rows),
               loadRows: async (collection) => {
                 if (!recordIndexEnabled())
                   return listRecords(view.link.spaceId, collection, {
@@ -281,7 +288,7 @@ export function linkBridge(getShareOrigin: () => string | null) {
           result = linkChangeJournal.changes(view.link.id, call.since)
         }
         changed =
-          workspaceGeneration() !== generation ||
+          linkRecordGeneration(view.link.spaceId, collections) !== generation ||
           spaceGeneration(view.link.spaceId) !== tool.generation ||
           linkSchemaGeneration(view.link.spaceId) !== tool.schemaGeneration
       }

@@ -359,7 +359,7 @@ function v1AlreadyDrained(): boolean {
 }
 
 /** Created only on a mutation or boot migration, never by a visitor GET. */
-function ensureShareUnlockSecret(): void {
+export function ensureShareUnlockSecret(): void {
   openDatabase(true)!
     .query(
       "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('unlock_secret', ?)"

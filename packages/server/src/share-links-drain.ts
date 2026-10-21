@@ -11,6 +11,7 @@ import {
   markV1SharesDrained,
   settleV1ShareLinks,
   sharingV2Active,
+  ensureShareUnlockSecret,
 } from "./share-links-store.ts"
 import {
   readStoredDocumentShares,
@@ -96,6 +97,9 @@ export function drainV1ShareLinks(): Promise<void> {
 }
 
 async function drain(): Promise<void> {
+  // Legacy HTML needs a frame ticket while the asynchronous move is pending.
+  // Prepare its secret before yielding; visitor GETs never create it.
+  ensureShareUnlockSecret()
   for (let round = 0; round < ROUNDS; round++) {
     const epoch = await getWorkspaceCollaborationEpoch()
     const outcomes = new Map<string, boolean>()

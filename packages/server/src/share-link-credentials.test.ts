@@ -9,6 +9,8 @@ import {
   supportedSharePasswordHash,
   validShareTicket,
   verifySharePassword,
+  verifyShareLinkPassword,
+  SharePasswordLimited,
 } from "./share-link-credentials.ts"
 
 test("tickets are bound to purpose, link, password revision, workspace and expiry", () => {
@@ -89,26 +91,70 @@ test("pending legacy frames seal bearer tokens and expire independently of them"
   ).toBeNull()
 })
 
-test("password work rejects overload and releases its slots", async () => {
+test("visitor verification preserves owner capacity and both slots recover", async () => {
   const hash = await hashSharePassword("test-only password")
-  const finish: Array<(value: boolean) => void> = []
-  const held = spyOn(Bun.password, "verify").mockImplementation(
-    () => new Promise<boolean>((resolve) => finish.push(resolve))
+  let finishVisitor!: (value: boolean) => void
+  let finishOwner!: (value: string) => void
+  const visitor = spyOn(Bun.password, "verify").mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishVisitor = resolve
+      })
+  )
+  const owner = spyOn(Bun.password, "hash").mockImplementation(
+    () =>
+      new Promise<string>((resolve) => {
+        finishOwner = resolve
+      })
   )
   try {
-    const first = verifySharePassword("one", hash)
-    const second = verifySharePassword("two", hash)
-    await expect(verifySharePassword("three", hash)).rejects.toBeInstanceOf(
-      SharePasswordBusy
-    )
-    await expect(hashSharePassword("four")).rejects.toBeInstanceOf(
-      SharePasswordBusy
-    )
-    for (const resolve of finish) resolve(true)
-    expect(await Promise.all([first, second])).toEqual([true, true])
+    const verifying = verifySharePassword("visitor", hash)
+    const saving = hashSharePassword("owner replacement")
+    await expect(
+      verifySharePassword("another visitor", hash)
+    ).rejects.toBeInstanceOf(SharePasswordBusy)
+    await expect(
+      hashSharePassword("another owner save")
+    ).rejects.toBeInstanceOf(SharePasswordBusy)
+    finishVisitor(true)
+    finishOwner(hash)
+    expect(await Promise.all([verifying, saving])).toEqual([true, hash])
   } finally {
-    for (const resolve of finish) resolve(false)
-    held.mockRestore()
+    finishVisitor?.(false)
+    finishOwner?.(hash)
+    visitor.mockRestore()
+    owner.mockRestore()
   }
   expect(await verifySharePassword("test-only password", hash)).toBe(true)
+})
+
+test("failed link guesses stop before native verification and recover on expiry or password change", async () => {
+  const hash = await hashSharePassword("test-only password")
+  const link = { id: crypto.randomUUID(), passwordRevision: 1 }
+  const now = Date.now()
+  const verify = spyOn(Bun.password, "verify").mockResolvedValue(false)
+  try {
+    for (let attempt = 0; attempt < 30; attempt++)
+      expect(await verifyShareLinkPassword(link, "wrong", hash, now)).toBe(
+        false
+      )
+    await expect(
+      verifyShareLinkPassword(link, "wrong", hash, now)
+    ).rejects.toBeInstanceOf(SharePasswordLimited)
+    expect(verify).toHaveBeenCalledTimes(30)
+    verify.mockResolvedValue(true)
+    expect(
+      await verifyShareLinkPassword(
+        { ...link, passwordRevision: 2 },
+        "new",
+        hash,
+        now
+      )
+    ).toBe(true)
+    expect(
+      await verifyShareLinkPassword(link, "right", hash, now + 60_000)
+    ).toBe(true)
+  } finally {
+    verify.mockRestore()
+  }
 })

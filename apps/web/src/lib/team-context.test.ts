@@ -136,7 +136,10 @@ describe("team context", () => {
     expect(stale(content)).toBe(false)
     expect(stale(savedHistory)).toBe(false)
     const { invalidateSharingQueries } = await import("./sharing-cache")
-    invalidateSharingQueries(queryClient, 8)
+    const policy = ["share-policy"]
+    queryClient.setQueryData(policy, { revision: 8 })
+    invalidateSharingQueries(queryClient, 8, { keepPolicy: true })
+    expect(stale(policy)).toBe(false)
     const refreshed = queryClient.getQueryData(sharingPage)
     queryClient.setQueryData(sharingPage, refreshed)
     // The same policy event can arrive on more than one Space socket.
@@ -144,6 +147,7 @@ describe("team context", () => {
     expect(stale(sharingPage)).toBe(false)
     // A recovered sharing store restarts its own revision sequence.
     invalidateSharingQueries(queryClient, 7)
+    expect(stale(policy)).toBe(true)
     expect(stale(sharingPage)).toBe(true)
     queryClient.setQueryData(sharingPage, refreshed)
     invalidateSharingQueries(queryClient, 9)

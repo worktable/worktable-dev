@@ -44,7 +44,7 @@ export function useSettingsPatch() {
       queryClient.setQueryData(SETTINGS_QUERY_KEY, settings)
       if (patch.agents?.previewTools !== undefined) {
         const { refreshThreadNamingCapabilities } =
-          await import("@/lib/thread-naming")
+          await import("@/lib/threads-queries")
         await refreshThreadNamingCapabilities(queryClient)
       }
     },

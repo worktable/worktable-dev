@@ -25,20 +25,6 @@ export function useThreadRename(location: ThreadLocation) {
   })
 }
 
-/** A preview-setting change can change capabilities without changing content. */
-export async function refreshThreadNamingCapabilities(
-  queryClient: QueryClient
-): Promise<void> {
-  const details = queryClient
-    .getQueryCache()
-    .findAll({ queryKey: [...threadQueryKeys.root, "detail"] })
-  await Promise.all(
-    details.map(({ queryKey }) =>
-      queryClient.invalidateQueries({ queryKey, exact: true })
-    )
-  )
-}
-
 /** A rename changes metadata only; keep the cached conversation and list rows. */
 export function applyThreadRename(
   queryClient: QueryClient,

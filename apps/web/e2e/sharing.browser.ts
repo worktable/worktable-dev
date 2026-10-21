@@ -1,5 +1,9 @@
-import { expect, test, type Page } from "@playwright/test"
-import { defaultSharingPolicy, type ShareLink } from "@worktable/types"
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test"
+import {
+  defaultSharingPolicy,
+  type ShareLink,
+  type SharingPolicyResponse,
+} from "@worktable/types"
 import { writeFile } from "node:fs/promises"
 import { startWebHarness, type WebHarness } from "./harness"
 
@@ -132,9 +136,123 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("keeps confirmed policy saves cached and recovers a newer owner update during settlement", async ({
+  page,
+}) => {
+  let current: SharingPolicyResponse = {
+    policy: defaultSharingPolicy(),
+    revision: 1,
+    canEdit: true,
+  }
+  let policyReads = 0
+  let linkReads = 0
+  let holdRefresh = false
+  const revisions: Array<string | undefined> = []
+  const saveGate = deferred()
+  const refreshGate = deferred()
+  const sockets: WebSocketRoute[] = []
+  await page.routeWebSocket(/\/ws(?:\?|$)/, (socket) => {
+    sockets.push(socket)
+  })
+  await page.route("**/api/system/deployment", (route) =>
+    route.fulfill({
+      json: {
+        ...cloudDeployment,
+        capabilities: {
+          ...cloudDeployment.capabilities,
+          sharingPreview: true,
+          shareLinks: true,
+        },
+      },
+    })
+  )
+  await page.route("**/api/shares/links/all**", (route) => {
+    linkReads++
+    return route.fulfill({ json: { links: [], spaces: [], nextCursor: null } })
+  })
+  await page.route("**/api/shares/policy", async (route) => {
+    if (route.request().method() === "GET") {
+      policyReads++
+      if (holdRefresh) await refreshGate.promise
+      await route.fulfill({ json: current })
+      return
+    }
+    revisions.push(route.request().headers()["if-match"])
+    const saved: SharingPolicyResponse = {
+      policy: route.request().postDataJSON(),
+      revision: current.revision + 1,
+      canEdit: true,
+    }
+    current = saved
+    if (revisions.length === 2) await saveGate.promise
+    await route.fulfill({ json: saved })
+  })
+  try {
+    await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
+      waitUntil: "domcontentloaded",
+    })
+    await expect(
+      page.getByRole("button", { name: "Share document" })
+    ).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => sockets.length).toBeGreaterThan(0)
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("worktable:open-settings", {
+          detail: { section: "links" },
+        })
+      )
+    )
+    const settings = page.getByRole("dialog")
+    const paused = settings.getByRole("switch", { name: "Pause all links" })
+    const passwords = settings.getByRole("switch", {
+      name: "Require a password",
+    })
+    await expect(paused).not.toBeChecked()
+    await expect(
+      settings.getByText("No links yet", { exact: true })
+    ).toBeVisible()
+    const initialPolicyReads = policyReads
+    const initialLinkReads = linkReads
+    await paused.click()
+    await expect.poll(() => linkReads).toBeGreaterThan(initialLinkReads)
+    expect(policyReads).toBe(initialPolicyReads)
+    await expect(paused).toBeChecked()
+
+    await paused.click()
+    await expect.poll(() => revisions.length).toBe(2)
+    holdRefresh = true
+    const linksBeforeExternalChange = linkReads
+    current = {
+      ...current,
+      revision: 4,
+      policy: { ...current.policy, requirePassword: true },
+    }
+    for (const socket of sockets)
+      socket.send(JSON.stringify({ type: "share_policy_changed", revision: 4 }))
+    await expect.poll(() => policyReads).toBe(initialPolicyReads + 1)
+    await expect
+      .poll(() => linkReads)
+      .toBeGreaterThan(linksBeforeExternalChange)
+    const linksBeforeSettlement = linkReads
+    saveGate.resolve()
+    await expect.poll(() => linkReads).toBeGreaterThan(linksBeforeSettlement)
+    refreshGate.resolve()
+    await expect(passwords).toBeChecked()
+
+    await paused.click()
+    await expect.poll(() => revisions.length).toBe(3)
+    expect(revisions).toEqual(['"1"', '"2"', '"4"'])
+    expect(current.policy.requirePassword).toBe(true)
+  } finally {
+    saveGate.resolve()
+    refreshGate.resolve()
+  }
+})
+
 test("creates, copies, and stops one Doc link from the persistent header action", async ({
   page,
   context,
+  browserName,
 }) => {
   let sharingEnabled = false
   const createGate = deferred()
@@ -142,9 +260,31 @@ test("creates, copies, and stops one Doc link from the persistent header action"
     createGate: createGate.promise,
     sharingEnabled: () => sharingEnabled,
   })
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: harness.webUrl,
-  })
+  let copiedText = ""
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: harness.webUrl,
+    })
+  } else {
+    // Playwright cannot grant clipboard permissions in Firefox or WebKit.
+    // Chromium exercises the system clipboard; these engines mock that OS
+    // boundary while keeping the full create/copy/stop interaction and bytes.
+    await page.exposeFunction("recordShareClipboard", (text: string) => {
+      copiedText = text
+    })
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: (text: string) =>
+            (
+              window as unknown as {
+                recordShareClipboard: (text: string) => Promise<void>
+              }
+            ).recordShareClipboard(text),
+        },
+      })
+    })
+  }
   await page.goto(appUrl("/spaces/share-browser/documents/launch-plan"), {
     waitUntil: "domcontentloaded",
   })
@@ -185,9 +325,11 @@ test("creates, copies, and stops one Doc link from the persistent header action"
   await expect(dialog.getByText(/move or rename this document/i)).toBeVisible()
   await dialog.getByRole("button", { name: "Copy link" }).click()
   await expect(dialog.getByRole("button", { name: "Copied" })).toBeVisible()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "https://share.worktable.cloud/s/"
-  )
+  const clipboard =
+    browserName === "chromium"
+      ? await page.evaluate(() => navigator.clipboard.readText())
+      : copiedText
+  expect(clipboard).toBe(await shareUrl.inputValue())
   await dialog.getByRole("button", { name: "Done" }).click()
   await expect(shareButton).toHaveAttribute("title", "Share link active")
 

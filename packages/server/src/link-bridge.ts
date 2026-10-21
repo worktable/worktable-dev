@@ -25,7 +25,7 @@ import {
 import { LinkToolChanged, readLinkTool } from "./link-tool.ts"
 import { workspaceCacheKey } from "./workspace.ts"
 import { recordIndex, recordIndexEnabled } from "./record-index.ts"
-import { listRecords, readWidgetState } from "./record-store.ts"
+import { readWidgetState } from "./record-store.ts"
 import { spaceGeneration } from "./workspace-read-model.ts"
 import { runAsLinkVisitor, withLinkGrantRead } from "./team-policy.ts"
 
@@ -165,144 +165,174 @@ export function linkBridge(getShareOrigin: () => string | null) {
         return unavailable()
       release = await linkReadPool.acquire(view.link.id)
       if (!release) return busy()
+      const savedGrant = view.link.grant
       const deadline = Date.now() + 1500
-      const call = await readCall(c.req.raw, deadline)
-      if (!call) return Date.now() >= deadline ? busy() : invalid()
-      if (!sharingPreviewEnabled()) return unavailable()
-      let result: unknown = {}
-      let refused: Response | null = null
-      let changed = false
-      if (call.op !== "ping") {
-        const collections = Object.keys(view.link.grant.collections)
-        const generation = linkRecordGeneration(view.link.spaceId, collections)
-        const tool = await readLinkTool(view)
-        if (!tool || !tool.permissions) return unavailable()
-        const policy = view.policy
-        const grant = effectiveLinkGrant(
-          view.link.grant,
-          tool.permissions,
-          policy
-        )
-        const authorization = createHash("sha256")
-          .update(
-            canonicalJson([
-              view.link.grantRevision,
-              view.link.passwordRevision,
-              view.policyRevision,
-              tool.permissions,
-              [...tool.schemas],
-            ])
+      let expired = false
+      const admitted = async (): Promise<Response> => {
+        const call = await readCall(c.req.raw, deadline)
+        if (!call) return Date.now() >= deadline ? busy() : invalid()
+        if (expired) return busy()
+        if (!sharingPreviewEnabled()) return unavailable()
+        let result: unknown = {}
+        let refused: Response | null = null
+        let changed = false
+        if (call.op !== "ping") {
+          const collections = Object.keys(savedGrant.collections)
+          const generation = linkRecordGeneration(
+            view.link.spaceId,
+            collections
           )
-          .digest("hex")
-        linkChangeJournal.touch({
-          id: view.link.id,
-          spaceId: view.link.spaceId,
-          authorization,
-          grant,
-          schemas: tool.schemas,
-          key: tool.key,
-        })
-        const key = createHash("sha256")
-          .update(
-            canonicalJson([
-              workspaceCacheKey(),
-              view.link.id,
-              view.link.grantRevision,
-              view.link.passwordRevision,
-              generation,
-              tool.generation,
-              tool.schemaGeneration,
-              policy,
-              call,
-            ])
-          )
-          .digest("hex")
-        if (call.op === "records.query") {
-          const response = await queryRecordsForLink(
-            {
-              linkId: view.link.id,
-              spaceId: view.link.spaceId,
-              path: view.path,
-              grant: view.link.grant,
-              linkKey: tool.key,
-            },
-            call.collection,
-            call.query,
-            {
-              policy,
-              permissions: tool.permissions,
-              schemas: tool.schemas,
-              onQueryRows: (collection, rows) =>
-                linkChangeJournal.queried(view.link.id, collection, rows),
-              loadRows: async (collection) => {
-                if (!recordIndexEnabled())
-                  return listRecords(view.link.spaceId, collection, {
-                    includeArchived: false,
-                  })
-                const rows = recordIndex.listCollection(
-                  view.link.spaceId,
-                  collection,
-                  false
-                )
-                if (rows === null) throw new LinkRecordsBusy()
-                return rows
+          const tool = await readLinkTool(view)
+          if (expired) return busy()
+          if (!tool || !tool.permissions) return unavailable()
+          const policy = view.policy
+          const grant = effectiveLinkGrant(savedGrant, tool.permissions, policy)
+          const authorization = createHash("sha256")
+            .update(
+              canonicalJson([
+                view.link.grantRevision,
+                view.link.passwordRevision,
+                view.policyRevision,
+                tool.permissions,
+                [...tool.schemas],
+              ])
+            )
+            .digest("hex")
+          linkChangeJournal.touch({
+            id: view.link.id,
+            spaceId: view.link.spaceId,
+            authorization,
+            grant,
+            schemas: tool.schemas,
+            key: tool.key,
+          })
+          const key = createHash("sha256")
+            .update(
+              canonicalJson([
+                workspaceCacheKey(),
+                view.link.id,
+                view.link.grantRevision,
+                view.link.passwordRevision,
+                generation,
+                tool.generation,
+                tool.schemaGeneration,
+                policy,
+                call,
+              ])
+            )
+            .digest("hex")
+          if (call.op === "records.query") {
+            const response = await queryRecordsForLink(
+              {
+                linkId: view.link.id,
+                spaceId: view.link.spaceId,
+                path: view.path,
+                grant: savedGrant,
+                linkKey: tool.key,
               },
-              memo: (load, rows) => linkReadMemo.read(`${key}:${rows}`, load),
-            }
-          )
-          if (response.status !== 200)
-            refused = failure(
-              response.body.code === "LINK_LIMIT"
-                ? "LINK_QUERY_BUDGET"
-                : response.body.code,
-              response.status,
-              response.body.error,
-              response.headers?.["Retry-After"]
-            )
-          else {
-            result = response.body
-            linkChangeJournal.served(
-              view.link.id,
               call.collection,
-              response.body
-            )
-          }
-        } else if (call.op === "state.read") {
-          if (grant.state !== "team-read")
-            refused = failure(
-              "LINK_FORBIDDEN",
-              403,
-              "This link can't read that."
-            )
-          else
-            result = {
-              state: await linkReadMemo.read(key, () =>
-                runAsLinkVisitor(() =>
-                  withLinkGrantRead(view.link.spaceId, () =>
-                    readWidgetState(view.link.spaceId, view.path)
+              call.query,
+              {
+                policy,
+                permissions: tool.permissions,
+                schemas: tool.schemas,
+                onQueryRows: (collection, rows) => {
+                  if (!expired)
+                    linkChangeJournal.queried(view.link.id, collection, rows)
+                },
+                loadRows: async (collection) => {
+                  if (expired) throw new LinkRecordsBusy()
+                  if (!recordIndexEnabled()) throw new LinkRecordsBusy()
+                  const rows = recordIndex.listCollection(
+                    view.link.spaceId,
+                    collection,
+                    false
                   )
-                )
-              ),
+                  if (rows === null) throw new LinkRecordsBusy()
+                  return rows
+                },
+                memo: (load, rows) => linkReadMemo.read(`${key}:${rows}`, load),
+              }
+            )
+            if (expired) return busy()
+            if (response.status !== 200)
+              refused = failure(
+                response.body.code === "LINK_LIMIT"
+                  ? "LINK_QUERY_BUDGET"
+                  : response.body.code,
+                response.status,
+                response.body.error,
+                response.headers?.["Retry-After"]
+              )
+            else {
+              result = response.body
+              linkChangeJournal.served(
+                view.link.id,
+                call.collection,
+                response.body
+              )
             }
-        } else {
-          result = linkChangeJournal.changes(view.link.id, call.since)
+          } else if (call.op === "state.read") {
+            if (grant.state !== "team-read")
+              refused = failure(
+                "LINK_FORBIDDEN",
+                403,
+                "This link can't read that."
+              )
+            else
+              result = {
+                state: await linkReadMemo.read(key, () =>
+                  runAsLinkVisitor(() =>
+                    withLinkGrantRead(view.link.spaceId, () =>
+                      readWidgetState(view.link.spaceId, view.path)
+                    )
+                  )
+                ),
+              }
+          } else {
+            result = linkChangeJournal.changes(view.link.id, call.since)
+          }
+          changed =
+            linkRecordGeneration(view.link.spaceId, collections) !==
+              generation ||
+            spaceGeneration(view.link.spaceId) !== tool.generation ||
+            linkSchemaGeneration(view.link.spaceId) !== tool.schemaGeneration
         }
-        changed =
-          linkRecordGeneration(view.link.spaceId, collections) !== generation ||
-          spaceGeneration(view.link.spaceId) !== tool.generation ||
-          linkSchemaGeneration(view.link.spaceId) !== tool.schemaGeneration
+        if (
+          !sharingPreviewEnabled() ||
+          !shareLinkStillOpens(view.link, view.policyRevision)
+        )
+          return unavailable()
+        if (expired || changed || Date.now() > deadline) return busy()
+        if (refused) return refused
+        const body = JSON.stringify({ ok: true, result })
+        return Buffer.byteLength(body) > 1024 * 1024
+          ? failure("LINK_BUSY", 503, "This result is too large.", "1")
+          : new Response(body, { headers: HEADERS })
       }
-      if (
-        !sharingPreviewEnabled() ||
-        !shareLinkStillOpens(view.link, view.policyRevision)
-      )
-        return unavailable()
-      if (changed || Date.now() > deadline) return busy()
-      if (refused) return refused
-      const body = JSON.stringify({ ok: true, result })
-      return Buffer.byteLength(body) > 1024 * 1024
-        ? failure("LINK_BUSY", 503, "This result is too large.", "1")
-        : new Response(body, { headers: HEADERS })
+      // Native reads cannot always be interrupted. Return on time, stop later
+      // stages, and retain their lease until settlement so abandoned work can
+      // never escape the bounded visitor pool.
+      const lease = release
+      release = null
+      const work = admitted().finally(lease)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        return await Promise.race([
+          work,
+          new Promise<Response>((resolve) => {
+            timer = setTimeout(
+              () => {
+                expired = true
+                resolve(busy())
+              },
+              Math.max(0, deadline - Date.now())
+            )
+          }),
+        ])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
     } catch (error) {
       if (error instanceof LinkToolChanged) return busy()
       if (error instanceof ShareLinksStoreError) return unavailable()

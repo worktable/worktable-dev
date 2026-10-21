@@ -294,7 +294,13 @@ export function closeShareLinkStores(): void {
 
 // ── Whether links v2 is on ───────────────────────────────────
 
-let drained: { key: string; value: boolean; checkedAt: number } | null = null
+let drained: {
+  key: string
+  value: boolean
+  /** Read from the store, so a true value holds for good. */
+  settled: boolean
+  checkedAt: number
+} | null = null
 const DRAINED_RECHECK_MS = MINUTE_MS
 
 /**
@@ -312,11 +318,13 @@ function v1AlreadyDrained(): boolean {
   const now = Date.now()
   if (
     drained?.key === key &&
-    (drained.value || now - drained.checkedAt < DRAINED_RECHECK_MS)
+    ((drained.value && drained.settled) ||
+      now - drained.checkedAt < DRAINED_RECHECK_MS)
   ) {
     return drained.value
   }
   let value = false
+  let settled = true
   try {
     value =
       openDatabase(false)
@@ -326,9 +334,12 @@ function v1AlreadyDrained(): boolean {
         >("SELECT value FROM share_meta WHERE key = ?")
         .get("v1_drained_at") != null
   } catch {
-    // An unreadable store serves nothing either way.
+    // A store this version can't read keeps today's routes retired, so no
+    // link is made outside its owner policy; it serves nothing itself.
+    value = true
+    settled = false
   }
-  drained = { key, value, checkedAt: now }
+  drained = { key, value, settled, checkedAt: now }
   return value
 }
 
@@ -486,7 +497,12 @@ export function markV1SharesDrained(now = Date.now()): void {
       "INSERT OR IGNORE INTO share_meta (key, value) VALUES ('v1_drained_at', ?)"
     )
     .run(String(now))
-  drained = { key: workspaceCacheKey(), value: true, checkedAt: now }
+  drained = {
+    key: workspaceCacheKey(),
+    value: true,
+    settled: true,
+    checkedAt: now,
+  }
 }
 
 export interface ShareLinkChange {

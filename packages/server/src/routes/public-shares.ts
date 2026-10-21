@@ -15,6 +15,7 @@ import {
   renderPublicHtmlProjection,
 } from "../public-share-renderer.ts"
 import { resolveDocumentShare } from "../share-store.ts"
+import { legacyShareHeldBack } from "../share-policy.ts"
 import {
   readShareLinkDocument,
   resolveShareLinkView,
@@ -326,7 +327,8 @@ async function resolveRequest(request: Request): Promise<ResolvedShare | null> {
   const token = request.headers.get(SHARE_CAPABILITY_HEADER) ?? ""
   // The lifecycle lock covers only the lookup; see renderedPage.
   const share = await resolveDocumentShare(token)
-  if (!share) {
+  // With links v2 on, the owner policy holds back today's links too.
+  if (!share || (sharingV2Active() && legacyShareHeldBack(share))) {
     for (const key of pageKeys(token)) forgetPage(key)
     return null
   }

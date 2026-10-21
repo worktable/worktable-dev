@@ -236,6 +236,34 @@ export function linkBlockedBy(
   return null
 }
 
+/**
+ * Whether the owner policy holds back a link of the earlier format, which
+ * views still fall back to while links v2 is on: before the move at boot, or
+ * while its path names more than one document. It names no creator and has
+ * no password, so pause, Spaces, a required password and the longest expiry
+ * decide. A store this version can't read leaves it served, as before.
+ */
+export function legacyShareHeldBack(
+  share: { spaceId: string; createdAt: string },
+  now = Date.now()
+): boolean {
+  let policy: SharingPolicy
+  try {
+    policy = currentSharingPolicy()
+  } catch (error) {
+    if (error instanceof ShareLinksStoreError) return false
+    throw error
+  }
+  const cap = capOf({ createdAt: Date.parse(share.createdAt) }, policy)
+  return (
+    policy.paused ||
+    !spaceAllowed(policy, share.spaceId) ||
+    policy.requirePassword ||
+    !policy.levels.includes("view") ||
+    (cap !== null && !(cap > now))
+  )
+}
+
 /** Whether the policy lets links into a Space now. */
 function policyAllowsLinks(
   policy: SharingPolicy,

@@ -365,6 +365,21 @@ describe("share links", () => {
     expect(await closed.json()).toMatchObject({
       code: "SHARE_LINKS_UNAVAILABLE",
     })
+
+    // With the preview off, that store still keeps today's routes retired,
+    // so no link is made outside its owner policy.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    closeShareLinkStores()
+    expect(
+      (
+        await send("POST", "/api/shares", {
+          kind: "doc",
+          spaceId: "space",
+          artifactKey: "plan",
+        })
+      ).status
+    ).toBe(404)
+    expect((await view(legacyToken)).status).toBe(200)
   })
 
   it("follows a Doc through renames and moves, and archiving ends its links for good", async () => {
@@ -841,6 +856,19 @@ describe("owner policy", () => {
 
   it("cuts existing links at their next view when tightened, and lets them open again when loosened", async () => {
     await writeDoc("space", "plan", "# Plan")
+    // A link of today's format that views fall back to until it moves.
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0"
+    const legacy = await send("POST", "/api/shares", {
+      kind: "doc",
+      spaceId: "space",
+      artifactKey: "plan",
+    })
+    const legacyToken = (
+      (await legacy.json()) as { share: { url: string } }
+    ).share.url
+      .split("/")
+      .at(-1)!
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1"
     const { token, link } = await createLink("plan")
     const dead = await (await view("not-a-token")).text()
     expect(await policyNow()).toEqual(defaultSharingPolicy())
@@ -861,6 +889,7 @@ describe("owner policy", () => {
       expect(stopped.status).toBe(404)
       // Visitors can't tell a link the policy stops from any dead link.
       expect(await stopped.text()).toBe(dead)
+      expect((await view(legacyToken)).status).toBe(404)
       expect(await documentLinks("plan")).toMatchObject({
         canCreate: false,
         createBlockedBy: blockedBy,
@@ -873,6 +902,7 @@ describe("owner policy", () => {
 
       expect((await savePolicy({})).status).toBe(200)
       expect((await view(token)).status).toBe(200)
+      expect((await view(legacyToken)).status).toBe(200)
       expect(await activeOnPage()).toBe(1)
     }
 

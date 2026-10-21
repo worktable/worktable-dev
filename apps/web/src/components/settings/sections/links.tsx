@@ -55,16 +55,15 @@ import { cn } from "@worktable/ui/lib/utils"
 import { SpaceIcon } from "@/components/identity-icons"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { useSpaces, useWorkspace } from "@/lib/queries"
+import { revokeShareLink, shareLinksQueryKey } from "@/lib/share-api"
 import {
   allShareLinksQueryKey,
   getShareLinksPage,
   getSharingPolicy,
-  revokeShareLink,
   saveSharingPolicy,
   SHARE_POLICY_QUERY_KEY,
-  shareLinksQueryKey,
   type ShareLinksFilters,
-} from "@/lib/share-api"
+} from "@/lib/share-links-settings-api"
 import {
   SHARE_LINK_LEVEL_LABELS,
   shareLinkBlockedLabel,
@@ -121,9 +120,15 @@ function expiryLabel(days: number | null): string {
   )
 }
 
+/**
+ * Save the whole policy. Each change builds on the one before it, and saves
+ * go to the server one at a time in order, so the last change always wins.
+ */
 function usePolicyChange() {
   const queryClient = useQueryClient()
-  return useMutation({
+  const change = useMutation({
+    mutationKey: SHARE_POLICY_QUERY_KEY,
+    scope: { id: "share-policy" },
     mutationFn: saveSharingPolicy,
     // The control answers at once; the server's copy replaces it.
     onMutate: async (policy) => {
@@ -138,11 +143,28 @@ function usePolicyChange() {
       toast.error("Couldn’t save the change. Try again.")
     },
     onSuccess: (saved) => {
+      // A later change still on its way brings the newer copy.
+      if (queryClient.isMutating({ mutationKey: SHARE_POLICY_QUERY_KEY }) > 1)
+        return
       queryClient.setQueryData(SHARE_POLICY_QUERY_KEY, saved)
-      // Whether each link opens follows the policy.
+      // Whether each link opens follows the policy: the lists, and each
+      // document page's count of links that open and whether Share makes
+      // one. Only the page on screen reads again now.
       void queryClient.invalidateQueries({ queryKey: ["share-links"] })
+      void queryClient.invalidateQueries({ predicate: isDocumentPageQuery })
     },
   })
+  return (next: Partial<SharingPolicy>) => {
+    const current = queryClient.getQueryData<SharingPolicyResponse>(
+      SHARE_POLICY_QUERY_KEY
+    )
+    if (current) change.mutate({ ...current.policy, ...next })
+  }
+}
+
+/** A document's page check in any Space (`documentQueryKeys.page`). */
+function isDocumentPageQuery(query: { queryKey: readonly unknown[] }) {
+  return query.queryKey[0] === "spaces" && query.queryKey[2] === "document-page"
 }
 
 function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
@@ -151,11 +173,8 @@ function PolicyGroup({ enabled, teams }: { enabled: boolean; teams: boolean }) {
     queryFn: getSharingPolicy,
     enabled,
   })
-  const change = usePolicyChange()
+  const update = usePolicyChange()
   const policy = query.data?.policy
-  const update = (next: Partial<SharingPolicy>) => {
-    if (policy) change.mutate({ ...policy, ...next })
-  }
 
   return (
     <SettingsGroup title="Policy">
@@ -280,9 +299,8 @@ function SpacesSetting({
   policy: SharingPolicy
   onChange: (change: Partial<SharingPolicy>) => void
 }) {
-  const spaces = (useSpaces().data ?? []).filter(
-    (space) => !getSpaceArchiveInfo(space)
-  )
+  const loaded = useSpaces().data
+  const spaces = (loaded ?? []).filter((space) => !getSpaceArchiveInfo(space))
   const selected = policy.spaces.mode === "selected" ? policy.spaces : null
   const chosen = new Set(selected?.spaceIds ?? [])
 
@@ -304,7 +322,7 @@ function SpacesSetting({
           value={policy.spaces.mode}
           onValueChange={(mode) => {
             if (mode === "all") onChange({ spaces: { mode: "all" } })
-            else if (mode === "selected" && !selected) {
+            else if (mode === "selected" && !selected && loaded) {
               onChange({
                 spaces: {
                   mode: "selected",
@@ -321,7 +339,10 @@ function SpacesSetting({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Spaces</SelectItem>
-            <SelectItem value="selected">Selected Spaces</SelectItem>
+            {/* Starts from every Space, so it waits until they are known. */}
+            <SelectItem value="selected" disabled={!loaded}>
+              Selected Spaces
+            </SelectItem>
           </SelectContent>
         </Select>
       </SettingRow>
@@ -371,7 +392,10 @@ function filtersFor(spaceId: string, status: StatusChoice): ShareLinksFilters {
   }
 }
 
-/** Show a revoked link as revoked wherever its old state is cached. */
+/**
+ * Take a revoked link out of the list on screen, which shows revoked links
+ * only when filtered to them, and out of its document's cached state.
+ */
 function noteRevoked(
   queryClient: QueryClient,
   filters: ShareLinksFilters,
@@ -385,8 +409,12 @@ function noteRevoked(
         ...data,
         pages: data.pages.map((page) => ({
           ...page,
-          links: page.links.map((link) =>
-            link.id === revoked.id ? revoked : link
+          links: page.links.flatMap((link) =>
+            link.id !== revoked.id
+              ? [link]
+              : filters.status === "revoked"
+                ? [revoked]
+                : []
           ),
         })),
       }

@@ -55,6 +55,11 @@
       "site": "apps/web/src/lib/team-context.ts#applySpaceAccess",
       "kind": "predicate",
       "why": "A team member lost Spaces: lists that gather items from every readable Space are removed, so the lost Space's titles leave the screen at once, and read again when shown. Runs only when this member's own access changes."
+    },
+    {
+      "site": "apps/web/src/components/settings/sections/links.tsx#usePolicyChange.change",
+      "kind": "predicate",
+      "why": "An owner changed the share link policy, which can change every document page's link count and whether Share makes a link: page checks (never content) read again, only the one on screen now. Runs only when an owner saves the policy."
     }
   ]
 }

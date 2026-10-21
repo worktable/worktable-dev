@@ -31,6 +31,8 @@ interface RenameDialogProps {
   title?: string
   isFolder?: boolean
   pathInput?: boolean
+  itemType?: "Doc" | "Thread"
+  maxLength?: number
 }
 
 export function RenameDialog({
@@ -41,6 +43,8 @@ export function RenameDialog({
   title,
   isFolder,
   pathInput,
+  itemType = "Doc",
+  maxLength,
 }: RenameDialogProps) {
   const [newName, setNewName] = useState("")
   const [pending, setPending] = useState(false)
@@ -97,12 +101,12 @@ export function RenameDialog({
             <Pencil className="h-5 w-5 text-primary" />
           </div>
           <ResponsiveDialogTitle>
-            Rename {isFolder ? "Folder" : "Doc"}
+            Rename {isFolder ? "Folder" : itemType}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             {pathInput
               ? "Change its name or use / to move it into a folder."
-              : `Enter a new name for this ${isFolder ? "folder" : "doc"}.`}
+              : `Enter a new name for this ${isFolder ? "folder" : itemType.toLowerCase()}.`}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -113,6 +117,7 @@ export function RenameDialog({
             </label>
             <Input
               id="new-name"
+              maxLength={maxLength}
               value={newName}
               onChange={(e) => {
                 setNewName(e.target.value)

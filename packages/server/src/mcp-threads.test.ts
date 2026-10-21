@@ -68,10 +68,12 @@ async function connect(
   agent: string,
   principal: RequestPrincipal,
   scopes: string[],
-  clientName = agent
+  clientName = agent,
+  surface: "released" | "preview" = "released"
 ): Promise<Client> {
   const server = createWorktableMcpServer({
     version: "test",
+    surface,
     scopes,
     identity: { agent, principal },
     principal,
@@ -161,6 +163,52 @@ describe("thread MCP operations", () => {
         to: "Atlas",
         body: "This scope cannot post directly.",
         idempotencyKey: "registration-is-not-write",
+      })
+    ).rejects.toThrow()
+  })
+
+  it("offers creation titles and conditional rename only to preview clients", async () => {
+    const preview = await connect(
+      "claude-code@work",
+      finn,
+      ["threads:*"],
+      "preview-agent",
+      "preview"
+    )
+    const released = await connect("claude-code@work", finn, ["threads:*"])
+    const post = {
+      action: "post",
+      to: "Atlas",
+      body: "Please review the plan",
+      title: "Launch review",
+      idempotencyKey: "preview-topic",
+    }
+    const created = await call(preview, "worktable_threads_write", post)
+    const rename = {
+      action: "rename",
+      location: created.location,
+      threadId: created.threadId,
+      title: "Launch readiness",
+    }
+    expect(
+      await call(preview, "worktable_threads_write", {
+        ...rename,
+        onlyIfAutomatic: true,
+      })
+    ).toMatchObject({ title: "Launch review" })
+    expect(
+      await call(preview, "worktable_threads_write", rename)
+    ).toMatchObject({ title: "Launch readiness" })
+    expect(
+      (await call(preview, "worktable_threads_write", post)).messageId
+    ).toBe(created.messageId)
+    await expect(
+      call(released, "worktable_threads_write", rename)
+    ).rejects.toThrow()
+    await expect(
+      call(released, "worktable_threads_write", {
+        ...post,
+        idempotencyKey: "released-title",
       })
     ).rejects.toThrow()
   })

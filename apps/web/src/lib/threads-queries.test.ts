@@ -9,6 +9,7 @@ import { QueryClient } from "@tanstack/react-query"
 import {
   applyPostedThreadMessage,
   applyThreadAssignment,
+  applyThreadRename,
   mergeThreadPage,
   refreshThreadWindow,
   threadQueryKeys,
@@ -87,6 +88,35 @@ function result(
 }
 
 describe("thread query refresh", () => {
+  test("renames cached metadata without replacing messages or overwriting newer state", () => {
+    const client = new QueryClient()
+    const current = result([message(8), message(9)], {
+      revision: 9,
+      oldestCursor: 8,
+      hasOlder: true,
+    })
+    const key = threadQueryKeys.detail(current.location, current.thread.id)
+    client.setQueryData(key, current)
+    applyThreadRename(client, current.location, {
+      threadId: current.thread.id,
+      title: "Named topic",
+      revision: 10,
+      updatedAt: createdAt,
+    })
+    const renamed = client.getQueryData<ThreadReadResult>(key)!
+    expect(renamed.thread.title).toBe("Named topic")
+    expect(renamed.messages).toBe(current.messages)
+    expect(renamed.oldestCursor).toBe(8)
+    expect(renamed.hasOlder).toBe(true)
+    applyThreadRename(client, current.location, {
+      threadId: current.thread.id,
+      title: "Stale name",
+      revision: 9,
+      updatedAt: createdAt,
+    })
+    expect(client.getQueryData(key)).toBe(renamed)
+  })
+
   test("applies a new assignment to both cached message views immediately", () => {
     const assigned = {
       ...message(1),

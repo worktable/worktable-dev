@@ -248,6 +248,8 @@ import {
   ReadThreadMessageInput,
   WaitThreadInput,
   PostThreadInput,
+  PostThreadInputPreview,
+  RenameThreadInput,
   AssignResponseRequestInput,
   ClaimThreadDeliveryInput,
   AcceptThreadDeliveryInput,
@@ -270,6 +272,7 @@ import {
   listThreadParticipants,
   listThreadSummaries,
   postThreadMessage,
+  renameThreadTitle,
   progressDelivery,
   readThreadMessages,
   readThreadMessage,
@@ -925,7 +928,14 @@ async function _dispatchOperationInner(
       })
     }
     case "threads.post": {
-      const parsed = PostThreadInput.parse(args)
+      if (args.title !== undefined && context.surface !== "preview") {
+        throw new Error(
+          "Thread titles require Preview agent tools in Settings → Agents."
+        )
+      }
+      const parsed = (
+        context.surface === "preview" ? PostThreadInputPreview : PostThreadInput
+      ).parse(args)
       return await postThreadMessage(
         identity,
         {
@@ -934,6 +944,9 @@ async function _dispatchOperationInner(
         },
         context.onThreadProgress
       )
+    }
+    case "threads.rename": {
+      return await renameThreadTitle(RenameThreadInput.parse(args))
     }
     case "threads.assign_response": {
       const parsed = AssignResponseRequestInput.parse(args)

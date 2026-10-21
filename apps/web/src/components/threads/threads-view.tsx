@@ -9,13 +9,14 @@ import {
 } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import {
-  ArrowLeftIcon,
   CircleAlertIcon,
   MessageCircleIcon,
   PlusIcon,
+  PencilIcon,
   XIcon,
 } from "lucide-react"
 import {
+  THREAD_TITLE_MAX_LENGTH,
   threadBodyMentionsIdentity,
   threadLocationKey,
   type ParticipantRef,
@@ -85,6 +86,7 @@ import {
   threadDraftKey,
   type ThreadDraftState,
 } from "@/lib/thread-submission"
+import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"
 import { ThreadComposer } from "./thread-composer"
 import { ThreadList, type ThreadLink } from "./thread-list"
@@ -282,6 +284,7 @@ function ThreadDetail({
   const [sendFailure, setSendFailure] = useState<SendFailure>()
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const setPageMeta = useSetPageMeta()
+  const [renameTitle, setRenameTitle] = useState<string | null>(null)
   const navigate = useNavigate()
 
   useEffect(
@@ -594,11 +597,23 @@ function ThreadDetail({
     createMutations.create.isPending || replyMutations.reply.isPending
   const selectedLocationLabel = locationLabel(selectedLocation)
   const pageTitle = threadId ? thread?.title : "New thread"
+  const canRename = threadQuery.data?.canRename === true
 
   useEffect(() => {
     setPageMeta({
       titleOverride: pageTitle,
       parentTitleOverride: selectedLocationLabel,
+      overflowActions:
+        canRename && pageTitle
+          ? [
+              {
+                id: "rename-thread",
+                label: "Rename",
+                icon: PencilIcon,
+                onSelect: () => setRenameTitle(pageTitle),
+              },
+            ]
+          : [],
       secondaryAction: {
         label: "New thread",
         displayLabel: "Thread",
@@ -607,7 +622,7 @@ function ThreadDetail({
       },
     })
     return () => setPageMeta(null)
-  }, [navigateNew, pageTitle, selectedLocationLabel, setPageMeta])
+  }, [canRename, navigateNew, pageTitle, selectedLocationLabel, setPageMeta])
 
   const replyTarget = threadQuery.data
     ? resolveReplyTarget(threadQuery.data.thread.messages, replyTo)
@@ -691,23 +706,28 @@ function ThreadDetail({
       />
     ) : threadQuery.data ? (
       <>
-        <header className="shrink-0 px-4 pt-5 pb-4 sm:px-6 md:hidden">
-          <div className="flex items-start gap-3">
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Back to threads"
-              onClick={() => navigateNew(false)}
-            >
-              <ArrowLeftIcon />
-            </Button>
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate font-display text-lg font-semibold">
-                {threadQuery.data.thread.title}
-              </h2>
-            </div>
-          </div>
-        </header>
+        <RenameDialog
+          open={renameTitle !== null}
+          onClose={() => setRenameTitle(null)}
+          currentPath={threadId}
+          title={renameTitle ?? threadQuery.data.thread.title}
+          itemType="Thread"
+          maxLength={THREAD_TITLE_MAX_LENGTH}
+          onRename={async (title) => {
+            try {
+              await replyMutations.rename.mutateAsync({
+                threadId,
+                title,
+                expectedTitle: renameTitle ?? threadQuery.data.thread.title,
+              })
+            } catch (error) {
+              void threadQuery.refetch()
+              return error instanceof Error
+                ? error.message
+                : "Could not rename thread"
+            }
+          }}
+        />
 
         <div className="min-h-0 flex-1">
           <ThreadTimeline

@@ -515,7 +515,7 @@ export function ShareLinksDialog({
                         error={probe.isError}
                         onChange={changeGrant}
                         onCheck={() =>
-                          checkAccess(draft.grant ?? undefined, !access)
+                          checkAccess(draft.grant ?? undefined, true)
                         }
                       />
                     ) : null}

@@ -4,6 +4,12 @@ import type {
   RecordPredicate,
   ShareLinkAccess,
 } from "@worktable/types"
+import {
+  LINK_GRANT_MAX_COLLECTIONS,
+  LINK_GRANT_MAX_FIELDS,
+  LINK_SUMMARY_MAX_GROUP_FIELDS,
+  LINK_SUMMARY_MAX_MEASURES,
+} from "@worktable/types/constants"
 import { Loader2 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { Callout } from "@worktable/ui/components/callout"
@@ -18,7 +24,11 @@ import {
 } from "@worktable/ui/components/select"
 import { FieldEditorScope } from "./records/field-editor"
 import { FilterButton, FilterChips } from "./records/filter-bar"
-import { recordFieldColumns, type RecordFilter } from "@/lib/records"
+import {
+  recordFieldColumns,
+  type RecordFilter,
+  type RecordFieldColumn,
+} from "@/lib/records"
 
 function rowFilters(rows: RecordPredicate | null): RecordFilter[] | null {
   if (!rows) return []
@@ -62,6 +72,48 @@ function Choice({
       />
       {children}
     </label>
+  )
+}
+
+/** Keep persisted choices removable even when their schema field is gone. */
+function FieldSelection({
+  columns,
+  selected,
+  limit,
+  onChange,
+}: {
+  columns: RecordFieldColumn[]
+  selected: string[]
+  limit: number
+  onChange: (fields: string[]) => void
+}) {
+  const keys = [
+    ...new Set([...columns.map((column) => column.key), ...selected]),
+  ]
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {keys.map((key) => {
+        const column = columns.find((entry) => entry.key === key)
+        const checked = selected.includes(key)
+        return (
+          <Choice
+            key={key}
+            checked={checked}
+            disabled={!checked && selected.length >= limit}
+            onChange={(enabled) =>
+              onChange(
+                enabled
+                  ? [...selected, key]
+                  : selected.filter((name) => name !== key)
+              )
+            }
+          >
+            {column?.field?.name || key}
+            {!column ? " (unavailable)" : ""}
+          </Choice>
+        )
+      })}
+    </div>
   )
 }
 
@@ -111,10 +163,37 @@ export function ShareLinkAccessEditor({
         </div>
         {access && grant ? (
           <>
-            {Object.entries(access.collections).map(([id, schema]) => {
+            {[
+              ...new Set([
+                ...Object.keys(access.collections),
+                ...Object.keys(grant.collections),
+              ]),
+            ].map((id) => {
+              const schema = Object.hasOwn(access.collections, id)
+                ? access.collections[id]
+                : undefined
               const collection = Object.hasOwn(grant.collections, id)
                 ? grant.collections[id]
                 : undefined
+              if (!schema)
+                return (
+                  <fieldset
+                    key={id}
+                    disabled={disabled || busy}
+                    className="space-y-2 border-t border-border pt-3"
+                  >
+                    <Choice
+                      checked={Boolean(collection)}
+                      onChange={() => changeCollection(id, null)}
+                    >
+                      {id} (unavailable)
+                    </Choice>
+                    <p className="text-xs text-muted-foreground">
+                      Remove this collection to save other access changes. The
+                      tool no longer opens it.
+                    </p>
+                  </fieldset>
+                )
               const columns = recordFieldColumns(schema, []).filter(
                 (column) => column.type !== "document"
               )
@@ -136,6 +215,11 @@ export function ShareLinkAccessEditor({
                 >
                   <Choice
                     checked={Boolean(collection)}
+                    disabled={
+                      !collection &&
+                      Object.keys(grant.collections).length >=
+                        LINK_GRANT_MAX_COLLECTIONS
+                    }
                     onChange={(enabled) =>
                       changeCollection(
                         id,
@@ -271,26 +355,19 @@ export function ShareLinkAccessEditor({
                           <p className="text-xs font-medium">
                             Fields visitors can see
                           </p>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {columns.map(({ key, field }) => (
-                              <Choice
-                                key={key}
-                                checked={collection.fields.includes(key)}
-                                onChange={(enabled) =>
-                                  changeCollection(id, {
-                                    ...collection,
-                                    fields: enabled
-                                      ? [...collection.fields, key]
-                                      : collection.fields.filter(
-                                          (name) => name !== key
-                                        ),
-                                  })
-                                }
-                              >
-                                {field?.name || key}
-                              </Choice>
-                            ))}
-                          </div>
+                          <FieldSelection
+                            columns={columns}
+                            selected={collection.fields}
+                            limit={LINK_GRANT_MAX_FIELDS}
+                            onChange={(fields) =>
+                              changeCollection(id, { ...collection, fields })
+                            }
+                          />
+                          {columns.length > LINK_GRANT_MAX_FIELDS ? (
+                            <p className="text-xs text-muted-foreground">
+                              Choose up to {LINK_GRANT_MAX_FIELDS} fields.
+                            </p>
+                          ) : null}
                           <Choice
                             checked={collection.timestamps}
                             onChange={(timestamps) =>
@@ -310,69 +387,51 @@ export function ShareLinkAccessEditor({
                             hidden.
                           </p>
                           <p className="text-xs font-medium">Group totals by</p>
-                          {columns
-                            .filter((column) =>
+                          <FieldSelection
+                            columns={columns.filter((column) =>
                               ["select", "multi_select", "boolean"].includes(
                                 column.type
                               )
-                            )
-                            .map(({ key, field }) => (
-                              <Choice
-                                key={key}
-                                checked={collection.summaries!.groupBy.includes(
-                                  key
-                                )}
-                                onChange={(enabled) =>
-                                  changeCollection(id, {
-                                    ...collection,
-                                    summaries: {
-                                      ...collection.summaries!,
-                                      groupBy: enabled
-                                        ? [
-                                            ...collection.summaries!.groupBy,
-                                            key,
-                                          ]
-                                        : collection.summaries!.groupBy.filter(
-                                            (name) => name !== key
-                                          ),
-                                    },
-                                  })
-                                }
-                              >
-                                {field?.name || key}
-                              </Choice>
-                            ))}
+                            )}
+                            selected={collection.summaries!.groupBy}
+                            limit={LINK_SUMMARY_MAX_GROUP_FIELDS}
+                            onChange={(groupBy) =>
+                              changeCollection(id, {
+                                ...collection,
+                                summaries: {
+                                  ...collection.summaries!,
+                                  groupBy,
+                                },
+                              })
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Choose up to {LINK_SUMMARY_MAX_GROUP_FIELDS}{" "}
+                            grouping fields.
+                          </p>
                           <p className="text-xs font-medium">
                             Number fields for totals
                           </p>
-                          {columns
-                            .filter((column) => column.type === "number")
-                            .map(({ key, field }) => (
-                              <Choice
-                                key={key}
-                                checked={collection.summaries!.measures.includes(
-                                  key
-                                )}
-                                onChange={(enabled) =>
-                                  changeCollection(id, {
-                                    ...collection,
-                                    summaries: {
-                                      ...collection.summaries!,
-                                      measures: enabled
-                                        ? [
-                                            ...collection.summaries!.measures,
-                                            key,
-                                          ]
-                                        : collection.summaries!.measures.filter(
-                                            (name) => name !== key
-                                          ),
-                                    },
-                                  })
-                                }
-                              >
-                                {field?.name || key}
-                              </Choice>
-                            ))}
+                          <FieldSelection
+                            columns={columns.filter(
+                              (column) => column.type === "number"
+                            )}
+                            selected={collection.summaries!.measures}
+                            limit={LINK_SUMMARY_MAX_MEASURES}
+                            onChange={(measures) =>
+                              changeCollection(id, {
+                                ...collection,
+                                summaries: {
+                                  ...collection.summaries!,
+                                  measures,
+                                },
+                              })
+                            }
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Choose up to {LINK_SUMMARY_MAX_MEASURES} number
+                            fields.
+                          </p>
                           <label className="flex items-center justify-between gap-3 text-sm">
                             Minimum records per group
                             <Input

@@ -456,6 +456,7 @@ for (const appearance of [
     let links: ShareLink[] = []
     const mutations: Array<Record<string, unknown>> = []
     const checks: Array<Record<string, unknown>> = []
+    let laterSchema = false
     await page.route("**/api/system/deployment", (route) =>
       route.fulfill({
         json: {
@@ -500,6 +501,22 @@ for (const appearance of [
                     name: { type: "text", name: "Name" },
                     amount: { type: "number", name: "Amount" },
                     secret: { type: "text", name: "Secret" },
+                    ...(laterSchema
+                      ? Object.fromEntries([
+                          ...Array.from({ length: 7 }, (_, index) => [
+                            `group-${index}`,
+                            {
+                              type: "select",
+                              name: `Group ${index}`,
+                              values: ["A", "B"],
+                            },
+                          ]),
+                          ...Array.from({ length: 13 }, (_, index) => [
+                            `measure-${index}`,
+                            { type: "number", name: `Measure ${index}` },
+                          ]),
+                        ])
+                      : {}),
                   },
                   createdAt: at,
                   updatedAt: at,
@@ -509,9 +526,31 @@ for (const appearance of [
               },
               counts: { deals: 2 },
               sentences: ["Anyone with this link can read 2 Deals records."],
-              fixedReads: {},
-              warnings: [],
-              issues: [],
+              fixedReads: body.observe
+                ? {
+                    deals: [
+                      { id: "read-1", query: { fields: ["name"] }, params: {} },
+                    ],
+                  }
+                : {},
+              warnings: body.observe
+                ? [
+                    {
+                      code: "later_reads",
+                      message: "Later filters may need other fields.",
+                    },
+                  ]
+                : [],
+              issues:
+                Object.hasOwn(grant.collections, "gone") ||
+                grant.collections.deals?.fields.includes("removed-field")
+                  ? [
+                      {
+                        collectionId: "deals",
+                        message: "Some saved access is no longer available.",
+                      },
+                    ]
+                  : [],
               stateReadable: true,
             },
           })
@@ -538,7 +577,26 @@ for (const appearance of [
           title: "Status card",
           label: String(body.label),
           level: "view",
-          grant: body.grant ?? links[0]?.grant,
+          grant:
+            laterSchema && request.method() === "PATCH" && !body.grant
+              ? (() => {
+                  const saved = links[0]!.grant!
+                  return {
+                    ...saved,
+                    collections: {
+                      ...saved.collections,
+                      deals: {
+                        ...saved.collections.deals!,
+                        fields: [
+                          ...saved.collections.deals!.fields,
+                          "removed-field",
+                        ],
+                      },
+                      gone: { ...saved.collections.deals!, fields: [] },
+                    },
+                  }
+                })()
+              : (body.grant ?? links[0]?.grant),
           createdBy: { id: "local:owner", name: "Owner" },
           createdAt: at,
           expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
@@ -608,7 +666,15 @@ for (const appearance of [
     await expect(
       dialog.getByRole("button", { name: "Create link", exact: true })
     ).toBeEnabled()
-    expect(checks[1]?.observe).toBe(false)
+    expect(checks[1]?.observe).toBe(true)
+    await expect(
+      dialog.getByText("Later filters may need other fields.")
+    ).toBeVisible()
+    await mode.click()
+    await expect(
+      page.getByRole("option", { name: "Saved reads", exact: true })
+    ).toBeEnabled()
+    await page.keyboard.press("Escape")
     if (appearance.width >= 640)
       await expect(
         dialog.getByRole("button", { name: "Close", exact: true })
@@ -630,11 +696,47 @@ for (const appearance of [
       .getByRole("button", { name: "Actions for Untitled link" })
       .click()
     await page.getByRole("menuitem", { name: "Edit Link" }).click()
+    laterSchema = true
     await dialog.getByLabel("Label", { exact: true }).fill("Board")
     await dialog.getByRole("button", { name: "Save", exact: true }).click()
     await expect(
       dialog.getByRole("button", { name: "Save", exact: true })
     ).toBeHidden()
     expect(mutations[1]).not.toHaveProperty("grant")
+    await dialog.getByRole("button", { name: "Actions for Board" }).click()
+    await page.getByRole("menuitem", { name: "Edit Link" }).click()
+    await dialog
+      .getByRole("checkbox", { name: "gone (unavailable)", exact: true })
+      .click()
+    await dialog
+      .getByRole("checkbox", {
+        name: "removed-field (unavailable)",
+        exact: true,
+      })
+      .click()
+    await mode.click()
+    await page.getByRole("option", { name: "Totals", exact: true }).click()
+    for (let index = 0; index < 6; index++)
+      await dialog
+        .getByRole("checkbox", { name: `Group ${index}`, exact: true })
+        .click()
+    await expect(
+      dialog.getByRole("checkbox", { name: "Group 6", exact: true })
+    ).toBeDisabled()
+    for (let index = 0; index < 12; index++)
+      await dialog
+        .getByRole("checkbox", { name: `Measure ${index}`, exact: true })
+        .click()
+    await expect(
+      dialog.getByRole("checkbox", { name: "Measure 12", exact: true })
+    ).toBeDisabled()
+    await dialog
+      .getByRole("button", { name: "Check access", exact: true })
+      .click()
+    await expect(
+      dialog.getByRole("button", { name: "Save", exact: true })
+    ).toBeEnabled()
+    const finalGrant = checks.at(-1)!.grant as typeof initialGrant
+    expect(finalGrant.collections).not.toHaveProperty("gone")
   })
 }

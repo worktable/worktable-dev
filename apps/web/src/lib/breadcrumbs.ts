@@ -88,7 +88,7 @@ function threadsCrumbs(
       kind: "text",
       role: "thread",
       label: titleOverride,
-      mobileHidden: true,
+      mobileHidden: !threadOpen,
     })
   }
   return crumbs

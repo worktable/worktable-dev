@@ -22,6 +22,8 @@ import {
   defaultConversationIdentityId,
   threadLocation,
   threadLocationKey,
+  ThreadTitleSchema,
+  type ThreadRenameResult,
 } from "@worktable/types"
 import { hasScope, listTokens, type TokenIdentity } from "./token-store.ts"
 import { getAppDir } from "./app-storage.ts"
@@ -55,6 +57,7 @@ import {
   findThread,
   normalizeThreadLocation,
   readThread,
+  renameThread,
   scanAllThreadDigests,
   scanThreadDigests,
   ThreadError,
@@ -89,6 +92,7 @@ type ThreadIdentity = Pick<
 >
 
 export interface PostThreadInput {
+  title?: string
   location?: ThreadLocation
   /** @deprecated Use location instead. */
   spaceId?: string
@@ -426,6 +430,15 @@ export async function postThreadMessageWithStored(
   input: PostThreadInput,
   onProgress?: (update: ThreadProgressUpdate) => void | Promise<void>
 ): Promise<{ result: ThreadPostResult; message: ThreadMessage }> {
+  if (input.title !== undefined) {
+    if (input.threadId) {
+      throw new ThreadError(
+        "FORBIDDEN",
+        "Use the rename action to name an existing thread"
+      )
+    }
+    input = { ...input, title: ThreadTitleSchema.parse(input.title) }
+  }
   const actorBinding = await participantForIdentity(identity)
   const actor = actorBinding.participant
   const responseTo = input.responseTo ?? undefined
@@ -544,6 +557,7 @@ export async function postThreadMessageWithStored(
       )
     }
     const replay = await findThreadCreationRetry(location, {
+      title: input.title,
       author: actor,
       authorIdentityId: input.authorIdentityId,
       to: input.to,
@@ -562,6 +576,7 @@ export async function postThreadMessageWithStored(
       recipient = await requireParticipant(input.to)
       await assertCurrentThreadRecipients(location, actor.id, recipient, input)
       result = await createThread(location, {
+        title: input.title,
         author: actor,
         authorIdentityId: input.authorIdentityId,
         recipient,
@@ -958,7 +973,9 @@ export async function listThreadParticipantsForDisplay(
 // Display metadata reads only identity/configuration files, never portable
 // Threads. Carry one cached copy with boot/workspace so avatars need no request.
 type DisplayPresentations = Record<string, ParticipantPresentation>
-let displayCache: { key: string; readers: Map<string, Promise<DisplayPresentations>> } | undefined
+let displayCache:
+  | { key: string; readers: Map<string, Promise<DisplayPresentations>> }
+  | undefined
 onWorkspaceChange((event) => {
   if (event.type === "participants" || event.type === "workspaceReset") displayCache = undefined
 })
@@ -1286,6 +1303,22 @@ async function threadForManagement(
   return {
     thread,
     actor: (await participantForIdentity(identity)).participant,
+  }
+}
+
+export async function renameThreadTitle(input: {
+  location: ThreadLocation
+  threadId: string
+  title: string
+  expectedTitle?: string
+  onlyIfAutomatic?: boolean
+}): Promise<ThreadRenameResult> {
+  const thread = await renameThread(input.location, input.threadId, input)
+  return {
+    threadId: thread.id,
+    title: thread.title,
+    revision: thread.revision,
+    updatedAt: thread.updatedAt,
   }
 }
 

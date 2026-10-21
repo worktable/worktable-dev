@@ -5,6 +5,7 @@ import type {
   ThreadMessage,
   ThreadPostResponse,
   ThreadReadResult,
+  ThreadRenameResult,
   ThreadListItem,
   ThreadWaitResult,
 } from "@worktable/types"
@@ -98,6 +99,17 @@ export function createThread(
 ): Promise<ThreadPostResponse> {
   return fetchJSON(threadBase(location), {
     method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export function renameThread(
+  location: ThreadLocation,
+  threadId: string,
+  input: { title: string; expectedTitle: string }
+): Promise<ThreadRenameResult> {
+  return fetchJSON(`${threadBase(location)}/${encodeURIComponent(threadId)}`, {
+    method: "PATCH",
     body: JSON.stringify(input),
   })
 }

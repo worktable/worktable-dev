@@ -1,6 +1,16 @@
 import { z } from "zod"
+import { THREAD_TITLE_MAX_LENGTH } from "./constants"
 
 export const THREAD_IDENTITY_NAME_MAX_LENGTH = 120
+export const ThreadTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(THREAD_TITLE_MAX_LENGTH)
+  .refine(
+    (title) => !/[\r\n]/.test(title),
+    "A thread title must be a single line"
+  )
 
 export const ParticipantKindSchema = z.enum(["human", "agent", "system"])
 export const ThreadLocationSchema = z.discriminatedUnion("kind", [
@@ -708,6 +718,8 @@ export interface ThreadListItem extends Omit<ThreadSummary, "lastMessage"> {
 }
 
 export interface ThreadReadResult {
+  /** Browser capability: naming is available only with preview agent tools. */
+  canRename?: boolean
   location: ThreadLocation
   /** @deprecated Use location instead. */
   spaceId?: string
@@ -723,6 +735,13 @@ export interface ThreadReadResult {
   viewerIdentityId?: string
   /** @deprecated Use viewerMemberId instead. */
   viewerParticipantId: string
+}
+
+export interface ThreadRenameResult {
+  threadId: string
+  title: string
+  revision: number
+  updatedAt: string
 }
 
 export interface ThreadWaitResult extends ThreadReadResult {

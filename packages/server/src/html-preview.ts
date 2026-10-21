@@ -73,6 +73,13 @@ export interface HtmlPreviewCapture {
   capturedAt: string
   rendererVersion: string
   fontVersion: string
+  /** Records reads the document made, once each, when the capture was asked to observe them. */
+  observed?: ObservedRecordQuery[]
+}
+/** A Records query a document sent, as it sent it. */
+export interface ObservedRecordQuery {
+  collectionId: string
+  query: unknown
 }
 
 /** Called while namespace and widget transaction locks are held. */
@@ -196,10 +203,15 @@ const failure = (status: number, code: string, error: string): BrokerReply => ({
   body: { error, code },
 })
 
-/** The only data authority used by the preview frame. No generic HTTP proxy. */
+/**
+ * The only data authority used by the preview frame. No generic HTTP proxy.
+ * `observe` sees every Records query the frame sends, repeats included, before
+ * permissions are checked; it can't change the reply.
+ */
 export function createHtmlPreviewBroker(
   snapshot: HtmlPreviewSnapshot,
-  scopes: string[]
+  scopes: string[],
+  observe?: (read: ObservedRecordQuery) => void
 ) {
   const base = `/api/spaces/${encodeURIComponent(snapshot.spaceId)}/widgets/__document/${Buffer.from(snapshot.path, "utf8").toString("base64url")}`
   const queries = new Map<string, Promise<BrokerReply>>()
@@ -291,6 +303,7 @@ export function createHtmlPreviewBroker(
       return failure(400, "INVALID_REQUEST", "Preview query body must be JSON")
     }
     const collection = match[1]!
+    observe?.({ collectionId: collection, query: structuredClone(query) })
     const key = `${collection}\0${JSON.stringify(query)}`
     const prior = queries.get(key)
     if (prior) return structuredClone(await prior)
@@ -372,6 +385,8 @@ export async function captureHtmlPreviewOnPage(
     scopes: string[]
     options?: HtmlPreviewOptions
     signal?: AbortSignal
+    /** Return the Records reads the document makes while it loads. */
+    observeRecordReads?: boolean
   }
 ): Promise<HtmlPreviewCapture> {
   const snapshot = structuredClone(input.snapshot)
@@ -446,7 +461,20 @@ export async function captureHtmlPreviewOnPage(
   const productFontFallback = productFontIssue()
   if (productFontFallback)
     diagnostic("preview_product_font_fallback", productFontFallback, "info")
-  const broker = createHtmlPreviewBroker(snapshot, [...input.scopes])
+  const observed: ObservedRecordQuery[] = []
+  const observedKeys = new Set<string>()
+  const broker = createHtmlPreviewBroker(
+    snapshot,
+    [...input.scopes],
+    input.observeRecordReads
+      ? (read) => {
+          const key = `${read.collectionId}\0${JSON.stringify(read.query)}`
+          if (observedKeys.has(key)) return
+          observedKeys.add(key)
+          observed.push(read)
+        }
+      : undefined
+  )
   const binding = `preview_${randomUUID().replaceAll("-", "")}`
   let pending = 0
   let lastActivity = Date.now()
@@ -833,14 +861,21 @@ window.addEventListener('message',async event=>{
     capturedAt: new Date().toISOString(),
     rendererVersion: "worktable-html-1/playwright-1.61.1",
     fontVersion: previewFontVersion(),
+    ...(input.observeRecordReads ? { observed } : {}),
   }
 }
 
+/**
+ * With `observeRecordReads`, the capture also lists each distinct Records
+ * query the document sent while it loaded. That is what its first load reads,
+ * not what it reads after a click.
+ */
 export async function captureHtmlPreview(input: {
   snapshot: HtmlPreviewSnapshot
   scopes: string[]
   options?: HtmlPreviewOptions
   signal?: AbortSignal
+  observeRecordReads?: boolean
 }): Promise<HtmlPreviewCapture> {
   dimensions(input.options ?? {})
   const timeout = new AbortController()

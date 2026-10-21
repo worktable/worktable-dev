@@ -3,7 +3,8 @@
 // granted field that disappears, or turns into something a link can't show,
 // closes the collection rather than widening it.
 
-import { normalizeRecordFieldType, recordTitleFieldKey, SHARING_RECORD_ACCESS, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
+import { normalizeRecordFieldType, RecordFieldTypeSchema, recordTitleFieldKey, SHARING_RECORD_ACCESS, type LinkGrant, type RecordCollectionSchema, type RecordPredicate, type SharingPolicy, type WidgetFile } from "@worktable/types";
+import { fixedReadIssues } from "./link-fixed-reads.ts";
 import { readRecordCollectionSchema } from "./record-store.ts";
 import { parsePredicate, RecordQueryShapeError } from "./record-query.ts";
 import { canWidgetRecord } from "./widget-runtime-policy.ts";
@@ -19,7 +20,7 @@ const DIMENSION_TYPES = new Set(["select", "multi_select", "boolean"]);
  *  the record before its data, so a data field under one of them would be
  *  filtered, sorted and grouped by the wrong value. */
 const VIEW_RECORD_KEYS = new Set(["id", "version", "kind", "collectionId", "createdAt", "updatedAt", "data"]);
-const isRecordKey = (name: string) => VIEW_RECORD_KEYS.has(name) || name in Object.prototype;
+export const isRecordKey = (name: string) => VIEW_RECORD_KEYS.has(name) || name in Object.prototype;
 const recordKeyIssue = (name: string) => `Field "${name}" has a name records use for themselves, so links can't show it.`;
 
 /** Whether totals may be split by a field of this type: few values, none of
@@ -96,11 +97,16 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
       if (!spec) add(`Field "${name}" doesn't exist.`);
       else if (isRecordKey(name)) add(recordKeyIssue(name));
       else if (type === "document") add(`Field "${name}" holds document links, which links can't show yet.`);
+      // A type from a newer Worktable may hold paths or ids this one can't hide.
+      else if (!RecordFieldTypeSchema.safeParse(spec.type).success) add(`Field "${name}" has a type links can't show yet.`);
       else if (type === "relation" && (!spec.references || !Object.hasOwn(grant.collections, spec.references))) {
         add(`Field "${name}" points at a collection this link doesn't open.`);
       } else if (type === "relation" && grant.collections[spec.references!]!.mode === "summaries") {
         // Its values would name rows the link shows only as totals.
         add(`Field "${name}" points at a collection this link shows only as totals.`);
+      } else if (type === "relation" && collection.mode === "scoped" && grant.collections[spec.references!]!.mode === "fixed") {
+        // Any query could follow it to rows only saved reads may reach.
+        add(`Field "${name}" points at a collection this link opens only through saved reads.`);
       }
     }
 
@@ -141,6 +147,7 @@ export function validateLinkGrant(grant: LinkGrant, schemas: ReadonlyMap<string,
         else if (typeOf(name) !== "number") add(`Summary measure "${name}" must be a number field.`);
       }
     }
+    for (const message of fixedReadIssues(collectionId, grant, schemas)) add(message);
     if (collection.writes) add("Links can't change records yet.");
   }
   return issues;

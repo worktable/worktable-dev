@@ -65,7 +65,7 @@ export async function queryRecordsForLink(
       const grant = effectiveLinkGrant(target.grant, permissions, options.policy);
       // A page never holds more rows than the link has left this hour.
       const page = { ...grant.limits, rowsPerQuery: Math.min(grant.limits.rowsPerQuery, admission.rowsLeft) };
-      const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey);
+      const view = await openLinkReadView(target.spaceId, { ...grant, limits: page }, target.linkKey, { linkId: target.linkId });
       const result = await queryRecords(target.spaceId, collectionId, query, { view });
       const taken = budgets.take(target.linkId, rowsRead(result), limits);
       return taken.ok ? { status: 200, body: result } : limitReached(taken);

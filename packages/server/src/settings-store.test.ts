@@ -13,11 +13,12 @@ import {
   updateServerSettings,
   updateServerSettingsWithResult,
 } from "./settings-store.ts";
-import { systemRouter } from "./routes/system.ts";
+import { systemRouter, type DeploymentInfo } from "./routes/system.ts";
 import { mcpBearerRequired, publicSurfaceAuthRequired, trustedLocalIdentity } from "./auth.ts";
 import { createToken } from "./token-store.ts";
 import { setOwnerPassword } from "./session-store.ts";
 import { configuredMcpSurface } from "./mcp/surface.ts";
+import { sharingPreviewEnabled } from "./sharing-preview.ts";
 
 let appDir: string;
 let workspaceDir: string;
@@ -156,6 +157,46 @@ describe("preview agent tools", () => {
   });
 });
 
+describe("preview sharing features", () => {
+  const turnOn = (headers: Record<string, string> = {}) =>
+    app().request("/api/system/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ sharing: { preview: true } }),
+    });
+  const capability = async () => ((await (await app().request("/api/system/deployment")).json()) as DeploymentInfo).capabilities.sharingPreview;
+
+  it("are off until the owner turns them on, and tell the web app", async () => {
+    expect(sharingPreviewEnabled()).toBe(false);
+    expect(await capability()).toBe(false);
+
+    const { token } = await createToken({ scopes: ["docs:read"] });
+    expect((await turnOn({ Authorization: `Bearer ${token}` })).status).toBe(403);
+    expect((await turnOn()).status).toBe(200);
+    invalidateServerSettingsCache();
+    expect(sharingPreviewEnabled()).toBe(true);
+    expect(await capability()).toBe(true);
+
+    await expect(updateServerSettings({ sharing: { preview: "yes" } })).rejects.toThrow("sharing.preview must be a boolean");
+    await expect(updateServerSettings({ sharing: { other: true } } as never)).rejects.toThrow("Unknown sharing field: other");
+  });
+
+  it("follow the environment over the setting, stay off on Cloud, and show the override", async () => {
+    await updateServerSettings({ sharing: { preview: true } });
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "0";
+    expect(sharingPreviewEnabled()).toBe(false);
+    const settings = (await (await app().request("/api/system/settings")).json()) as { sharing: unknown };
+    expect(settings.sharing).toEqual({ preview: true, previewOverride: false });
+    delete process.env["WORKTABLE_SHARING_PREVIEW"];
+
+    process.env["WORKTABLE_HOSTED"] = "1";
+    expect(sharingPreviewEnabled()).toBe(false);
+    process.env["WORKTABLE_SHARING_PREVIEW"] = "1";
+    await updateServerSettings({ sharing: { preview: false } });
+    expect(sharingPreviewEnabled()).toBe(true);
+  });
+});
+
 describe("GET /api/system/settings", () => {
   it("returns full settings without an owner gate", async () => {
     const res = await app().fetch(new Request("http://localhost/api/system/settings"));
@@ -163,6 +204,7 @@ describe("GET /api/system/settings", () => {
     expect(await res.json()).toEqual({
       ...SETTINGS_DEFAULTS,
       agents: { ...SETTINGS_DEFAULTS.agents, previewToolsOverride: null },
+      sharing: { ...SETTINGS_DEFAULTS.sharing, previewOverride: null },
     });
   });
 });

@@ -14,6 +14,8 @@ const capabilities: DeploymentInfo["capabilities"] = {
   softwareUpdates: true,
   updateChecks: true,
   documentSharing: false,
+  shareLinks: false,
+  sharingPreview: false,
 }
 
 describe("settings sections", () => {

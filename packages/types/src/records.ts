@@ -156,6 +156,46 @@ export type RecordPredicate =
   | { not: RecordPredicate }
   | { field: string; op: RecordPredicateOp; value?: unknown };
 
+/** The deepest predicate tree the query engine evaluates; the root is depth 0. */
+export const RECORD_PREDICATE_MAX_DEPTH = 20;
+
+// The value rules the query engine's parsePredicate enforces per operator.
+function predicateValueProblem(op: RecordPredicateOp, value: unknown): string | null {
+  if (op === "in" && !Array.isArray(value)) return '"in" requires an array value';
+  if (op === "contains" && typeof value !== "string") return '"contains" requires a string value';
+  if (op === "has" && (value === undefined || value === null || typeof value === "object")) return '"has" requires a scalar value';
+  if ((op === "gt" || op === "gte" || op === "lt" || op === "lte") && (value === undefined || value === null)) return `"${op}" requires a value`;
+  if (op === "isEmpty" && value !== undefined && typeof value !== "boolean") return '"isEmpty" takes an optional boolean value';
+  return null;
+}
+
+const RecordPredicateLeafSchema = z
+  .strictObject({ field: z.string().min(1), op: RecordPredicateOpSchema, value: z.unknown().optional() })
+  .superRefine((leaf, ctx) => {
+    const problem = predicateValueProblem(leaf.op, leaf.value);
+    if (problem) ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
+  });
+
+// One schema per level, so the depth limit holds while parsing: a tree
+// deeper than the limit fails at the last level instead of recursing on.
+function predicateSchemaAt(depth: number): z.ZodType<RecordPredicate> {
+  if (depth === RECORD_PREDICATE_MAX_DEPTH) return RecordPredicateLeafSchema;
+  const child = predicateSchemaAt(depth + 1);
+  return z.union([
+    z.strictObject({ and: z.array(child).min(1) }),
+    z.strictObject({ or: z.array(child).min(1) }),
+    z.strictObject({ not: child }),
+    RecordPredicateLeafSchema,
+  ]);
+}
+
+/**
+ * A predicate tree in the canonical form the query engine's parser returns.
+ * Unlike `RecordQuery.where`, it never accepts a flat filter map, so stored
+ * conditions (link grants, saved reads) have exactly one spelling.
+ */
+export const RecordPredicateSchema = predicateSchemaAt(0);
+
 export interface RecordQueryResult {
   records: RecordFile[];
   expanded?: Record<string, Record<string, RecordFile>>;

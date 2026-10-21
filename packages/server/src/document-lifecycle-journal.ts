@@ -114,8 +114,11 @@ import {
   withStoreWriteLock,
   withStoreWriteLocks,
 } from "./store.ts"
-import { withHostedDocumentShareLifecycle } from "./share-lifecycle.ts"
-import type { ShareArtifact } from "./share-store.ts"
+import {
+  withHostedDocumentShareLifecycle,
+  type DocumentShareChange,
+  type DocumentShareTarget,
+} from "./share-lifecycle.ts"
 import {
   retiredVersionGenerationDir,
   stableVersionHash,
@@ -8621,7 +8624,10 @@ export async function reconcileRecoveredDocumentLifecycles(
 
 async function executePrepared(
   prepared: PreparedJournal,
-  invalidateShares: (artifacts: ShareArtifact[]) => Promise<number>
+  invalidateShares: (
+    targets: DocumentShareTarget[],
+    change: DocumentShareChange
+  ) => Promise<number>
 ): Promise<void> {
   const journal = prepared.journal
   let collaborationStateApplied = false
@@ -8629,18 +8635,21 @@ async function executePrepared(
     createJournal(prepared)
     if (journal.operationType === "exact-rename") {
       const behavior = exactRenameBehavior(journal)
-      await invalidateShares([
-        {
-          kind: behavior.shareKind,
-          spaceId: journal.from.spaceId,
-          artifactKey: journal.from.logicalPath,
-        },
-        {
-          kind: behavior.shareKind,
-          spaceId: journal.to.spaceId,
-          artifactKey: journal.to.logicalPath,
-        },
-      ])
+      await invalidateShares(
+        [
+          {
+            kind: behavior.shareKind,
+            spaceId: journal.from.spaceId,
+            artifactKey: journal.from.logicalPath,
+          },
+          {
+            kind: behavior.shareKind,
+            spaceId: journal.to.spaceId,
+            artifactKey: journal.to.logicalPath,
+          },
+        ],
+        "renamed"
+      )
       markCompleted(journal, "share-revoked")
       await stepHookForTests?.("share-revoked")
     } else if (journal.operationType === "prefix-rename") {
@@ -8651,7 +8660,8 @@ async function executePrepared(
             spaceId: endpoint.spaceId,
             artifactKey: endpoint.logicalPath,
           }))
-        )
+        ),
+        "renamed"
       )
       markCompleted(journal, "share-revoked")
       await stepHookForTests?.("share-revoked")
@@ -8661,7 +8671,9 @@ async function executePrepared(
           kind: prefixArchiveBehavior(entry).shareKind,
           spaceId: entry.at.spaceId,
           artifactKey: entry.at.logicalPath,
-        }))
+          documentId: entry.document.id,
+        })),
+        "archived"
       )
       markCompleted(journal, "share-revoked")
       await stepHookForTests?.("share-revoked")
@@ -8671,19 +8683,25 @@ async function executePrepared(
           kind: prefixDeleteBehavior(entry).shareKind,
           spaceId: entry.at.spaceId,
           artifactKey: entry.at.logicalPath,
-        }))
+          documentId: entry.document.id,
+        })),
+        "removed"
       )
       markCompleted(journal, "share-revoked")
       await stepHookForTests?.("share-revoked")
     } else if (journal.operationType === "exact-delete") {
       const behavior = exactDeleteBehavior(journal)
-      await invalidateShares([
-        {
-          kind: behavior.shareKind,
-          spaceId: journal.from.spaceId,
-          artifactKey: journal.from.logicalPath,
-        },
-      ])
+      await invalidateShares(
+        [
+          {
+            kind: behavior.shareKind,
+            spaceId: journal.from.spaceId,
+            artifactKey: journal.from.logicalPath,
+            documentId: journal.document.id,
+          },
+        ],
+        "removed"
+      )
       markCompleted(journal, "share-revoked")
       await stepHookForTests?.("share-revoked")
     }

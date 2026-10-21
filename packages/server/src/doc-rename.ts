@@ -225,7 +225,8 @@ function invalidateRenamedShares(
         spaceId,
         artifactKey,
       }))
-    )
+    ),
+    "renamed"
   )
 }
 

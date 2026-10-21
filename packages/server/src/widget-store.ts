@@ -549,7 +549,7 @@ async function setWidgetArchivedUnderLock(
   if (archived) {
     await invalidateHostedDocumentShares([
       { kind: "html", spaceId, artifactKey: widgetId },
-    ]);
+    ], "archived");
   }
   return { data: parsed.data, error: null };
 }
@@ -580,7 +580,7 @@ export async function setWidgetArchived(
       if (archived) {
         await invalidateHostedDocumentShares([
           { kind: "html", spaceId, artifactKey: widgetId },
-        ]);
+        ], "archived");
       }
       return result;
     } catch (error) {

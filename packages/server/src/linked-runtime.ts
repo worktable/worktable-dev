@@ -21,6 +21,7 @@ import { createLinkedIngress } from "./linked-ingress.ts"
 import { linkedConnectorBinary } from "./linked-connector.ts"
 import { setLinkedSharing } from "./linked-sharing.ts"
 import { invalidateAllDocumentShares } from "./share-store.ts"
+import { revokeAllLinks } from "./share-links-lifecycle.ts"
 import { isHosted } from "./hosted.ts"
 import { currentTeamWorktable, requireTeamDatabase } from "./team-database.ts"
 import {
@@ -302,6 +303,7 @@ export async function disconnectLink(): Promise<void> {
     const file = path()
     const link = await readLink(file)
     await invalidateAllDocumentShares()
+    await revokeAllLinks("link-disconnected")
     if (link) {
       await saveLink(file, { ...link, disabled: true })
       status = {

@@ -12,6 +12,7 @@ import { recordIndex } from "./record-index.ts";
 import { buildRecordCollectionSchema, queryRecords, writeRecord, writeRecordCollectionSchema } from "./record-store.ts";
 import { linkGrantsRouter } from "./routes/link-grants.ts";
 import { spacesRouter } from "./routes/spaces.ts";
+import { writeWidget } from "./widget-store.ts";
 import { setWorkspaceRootOverride } from "./workspace.ts";
 
 // ---- Two workspaces that differ only in what the grant hides -------------
@@ -418,7 +419,7 @@ describe("link grants against live schemas", () => {
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
-      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, tally: { type: "relation", references: "tallies" } },
+      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, tally: { type: "relation", references: "tallies" }, constructor: { type: "text" } },
     }));
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "tallies",
@@ -445,7 +446,7 @@ describe("link grants against live schemas", () => {
       version: 1,
       collections: {
         notes: {
-          rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }] },
+          rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }, { field: "constructor", op: "contains", value: "native" }] },
           fields: ["title", "page", "deal", "gone", "kind", "tally"],
           writes: { update: true },
         },
@@ -466,6 +467,7 @@ describe("link grants against live schemas", () => {
       'notes: Field "tally" points at a collection this link shows only as totals.',
       'notes: The row condition can\'t follow "deal.name" into another collection.',
       'notes: The row condition uses "updatedBy", which isn\'t a field of this collection.',
+      'notes: The row condition can\'t use the field "constructor".',
       "notes: Links can't change records yet.",
       'tallies: Summaries can\'t be grouped by "label". Use a select, multi-select or yes/no field.',
       'tallies: Summaries can\'t be grouped by "code". Use a select, multi-select or yes/no field.',
@@ -512,7 +514,21 @@ describe("run as link", () => {
   it("shows the owner what a visitor would get, behind the preview and only to people", async () => {
     await app.fetch(new Request("http://localhost/api/spaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Probe A" }) }));
     await seed("a");
-    const body = { spaceId: "probe-a", collectionId: "deals", grant: GRANT, query: { orderBy: [{ field: "amount" }, { field: "name" }], select: ["name", "notes"] } };
+    const now = new Date().toISOString();
+    const tool = await writeWidget("probe-a", {
+      version: 1,
+      kind: "worktable.widget",
+      id: "board",
+      name: "Board",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "user",
+      metadata: {},
+      runtime: { type: "html", entry: "index.html" },
+      permissions: { network: false, records: { "*": { read: true } }, state: { read: true, write: true } },
+    }, "<h1>Board</h1>");
+    tool.release?.();
+    const body = { spaceId: "probe-a", path: "board", collectionId: "deals", grant: GRANT, query: { orderBy: [{ field: "amount" }, { field: "name" }], select: ["name", "notes"] } };
 
     process.env["WORKTABLE_SHARING_PREVIEW"] = "0";
     expect((await run(body)).status).toBe(404);

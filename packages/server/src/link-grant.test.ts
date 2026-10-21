@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { CanonicalIdSchema, LinkGrantSchema, type LinkGrant, type RecordFile } from "@worktable/types";
 import { ownerIdentity } from "./auth.ts";
 import { setAppDirOverride } from "./app-storage.ts";
+import { shapeDigest, unrecordedReads } from "./link-fixed-reads.ts";
 import { readLinkGrantSchemas, validateLinkGrant } from "./link-grant.ts";
 import { createLinkKey, linkQueryFailure, openLinkReadView, type LinkKey } from "./link-grant-view.ts";
 import { recordIndex } from "./record-index.ts";
@@ -22,7 +23,9 @@ import { setWorkspaceRootOverride } from "./workspace.ts";
 // metadata, unknown top-level keys), unshown times, and every stored id, which in "a" is a slug
 // of the title. A link query that answers differently in the two leaks.
 // Orders are granted only as totals, so there only the groupings and measures
-// of visible rows match: even the order rows are stored in differs.
+// of visible rows match: even the order rows are stored in differs. Tasks are
+// granted only through saved reads, one of which hard-codes a stored id: the
+// tool saved in each workspace names that workspace's id for the same deal.
 
 const SCHEMAS = {
   deals: {
@@ -50,9 +53,40 @@ const SCHEMAS = {
     owner: { type: "person" },
     deal: { type: "relation", references: "deals" },
   },
+  tasks: {
+    title: { type: "text" },
+    status: { type: "select", values: ["open", "done", "private"] },
+    deal: { type: "relation", references: "deals" },
+    effort: { type: "number" },
+    secret: { type: "text" },
+    owner: { type: "person" },
+  },
 } as const;
 
-const GRANT: LinkGrant = LinkGrantSchema.parse({
+// The renewal deal's stored id, which differs between the workspaces.
+const renewalId = (v: "a" | "b") => (v === "a" ? "renewal" : "d-1");
+const pilotId = (v: "a" | "b") => (v === "a" ? "pilot" : "d-2");
+
+// The saved reads of a task board: open or done tasks (the board may switch
+// between them, and also saved a one-row version), the renewal deal's tasks
+// by its stored id, a search box, and one person's open tasks by a field the
+// link doesn't show.
+const BOARD = {
+  where: { and: [{ field: "effort", op: "gte", value: 1 }, { field: "status", op: "eq", value: "open" }] },
+  orderBy: [{ field: "title", dir: "asc" }],
+  select: ["deal", "status", "title"],
+};
+const savedReads = (v: "a" | "b") => [
+  { id: "board-peek", query: { ...BOARD, limit: 1 }, params: { "/where/and/1/value": { kind: "oneOf", values: ["open", "done"] } } },
+  { id: "board", query: BOARD, params: { "/where/and/1/value": { kind: "oneOf", values: ["open", "done"] } } },
+  { id: "renewal", query: { where: { field: "deal", op: "eq", value: renewalId(v) }, expand: { deal: ["name"] } } },
+  { id: "search", query: { search: "brief", orderBy: [{ field: "effort", dir: "desc" }] }, params: { "/search": { kind: "any" } } },
+  { id: "mine", query: { where: { and: [{ field: "owner", op: "eq", value: "alice" }, { field: "status", op: "eq", value: "open" }] }, orderBy: [{ field: "title", dir: "asc" }] } },
+  // A deal picker that lists the deals by stored id.
+  { id: "by-deal", query: { where: { field: "deal", op: "eq", value: renewalId(v) }, select: ["title"] }, params: { "/where/value": { kind: "oneOf", values: [renewalId(v), pilotId(v)] } } },
+];
+
+const grantFor = (v: "a" | "b"): LinkGrant => LinkGrantSchema.parse({
   version: 1,
   collections: {
     deals: { rows: { field: "region", op: "eq", value: "eu" }, fields: ["name", "stage", "amount", "client"] },
@@ -64,9 +98,17 @@ const GRANT: LinkGrant = LinkGrantSchema.parse({
       mode: "summaries",
       summaries: { groupBy: ["region", "channel", "tags"], measures: ["amount"] },
     },
+    tasks: {
+      rows: { field: "status", op: "in", value: ["done", "open"] },
+      fields: ["title", "status", "deal", "effort"],
+      mode: "fixed",
+      fixed: savedReads(v),
+    },
   },
   limits: { rowsPerQuery: 2 },
 });
+const GRANTS = { a: grantFor("a"), b: grantFor("b") };
+const GRANT = GRANTS.a;
 
 // The (region, channel, amount) of every visible order, the same in both
 // workspaces. "us" holds the smallest amount, and the "eu" sum changes in its
@@ -121,6 +163,36 @@ const SUMMARY_REFUSALS: [Record<string, unknown>, string][] = [
   [{ ...ANY_TOTAL, where: { field: "deal.name", op: "eq", value: "Renewal" } }, HIDDEN],
 ];
 
+// The board's read as its tool sends it: a flat filter, a plain sort, and
+// fields in any order. It matches the saved read with any listed status.
+const boardAsk = (status: unknown) => ({ where: { status, effort: { gte: 1 } }, orderBy: "title", select: ["title", "status", "deal"] });
+const SAVED_READ_ASKS: Record<string, unknown>[] = [
+  boardAsk("open"),
+  boardAsk("done"),
+  { ...boardAsk("open"), includeArchived: true, limit: 50 },
+  { where: { status: "open", owner: "alice" }, orderBy: "title" },
+  // A listed deal named by the id the link showed for it.
+  { where: { deal: "lr-deal-2" }, select: ["title"] },
+  { search: "pilot", orderBy: [{ field: "effort", dir: "desc" }] },
+  { search: "brief", orderBy: [{ field: "effort", dir: "desc" }] },
+];
+// Each differs from every saved read: a value outside the list, a changed
+// saved value (on a shown or a hidden field), another sort, an extra
+// condition (on a shown, hidden or missing field), other fields, nothing at
+// all, and the link's id where the read saved a stored one.
+const UNSAVED_ASKS: Record<string, unknown>[] = [
+  boardAsk("private"),
+  { ...boardAsk("open"), where: { status: "open", effort: { gte: 2 } } },
+  { where: { status: "open", owner: "bob" }, orderBy: "title" },
+  { where: { deal: "lr-deal-3" }, select: ["title"] },
+  { ...boardAsk("open"), orderBy: "effort" },
+  ...["title", "secret", "nonexistent"].map((field) => ({ ...boardAsk("open"), where: { status: "open", effort: { gte: 1 }, [field]: "Chase" } })),
+  { ...boardAsk("open"), select: ["title"] },
+  {},
+  { where: { deal: "lr-deal-1" }, expand: { deal: ["name"] } },
+  { search: "brief" },
+];
+
 interface Seed {
   collection: keyof typeof SCHEMAS;
   id: string;
@@ -157,6 +229,13 @@ function variant(v: "a" | "b"): Seed[] {
     { collection: "activities", id: id("intro-call", "a-2"), label: "lr-act-2", data: { title: "Intro call", deal: hiddenDeal, kind: "call" }, times: T1, envelope },
     { collection: "activities", id: id("private-note", "a-9"), data: { title: a ? "Private note" : "Note", deal: a ? d1 : d3, kind: "private", body: a ? "salary" : "" }, envelope },
     { collection: "vault", id: id("crown-jewels", "v-1"), data: { name: a ? "Crown jewels" : "Spoons" }, envelope },
+    // "brief" also sits in a hidden field and on a hidden row of "a". Owners
+    // are hidden but match: one saved read picks a person's tasks by them.
+    { collection: "tasks", id: id("write-brief", "t-1"), label: "lr-task-1", data: { title: "Write brief", status: "open", deal: d1, effort: 3, secret: a ? "x" : "", owner: "alice" }, times: T1, envelope },
+    { collection: "tasks", id: id("send-quote", "t-2"), label: "lr-task-2", data: { title: "Send quote", status: "done", deal: d1, effort: 1, owner: "alice" }, times: T2, envelope },
+    { collection: "tasks", id: id("plan-pilot", "t-3"), label: "lr-task-3", data: { title: "Plan pilot", status: "open", deal: d2, effort: 2, secret: a ? "brief" : "", owner: "alice" }, times: T1, envelope },
+    { collection: "tasks", id: id("chase", "t-4"), label: "lr-task-4", data: { title: "Chase", status: "open", deal: hiddenDeal, effort: 5, owner: "bob" }, times: T2, envelope },
+    { collection: "tasks", id: id("private-brief", "t-9"), data: { title: a ? "Private brief" : "Other", status: "private", deal: d1, effort: a ? 9 : 1, owner: a ? "alice" : "carol" }, envelope },
     // Ids in "a" run the other way, so rows taken in id order would add up
     // differently. Void and archived orders would lift "shop" over five.
     ...ORDERS.map(([region, channel, amount], i): Seed => ({
@@ -217,7 +296,7 @@ async function seed(v: "a" | "b") {
 
 async function ask(v: "a" | "b", collectionId: string, query: unknown, key = labelledKeys[v]): Promise<{ status: number; body: unknown }> {
   try {
-    const view = await openLinkReadView(SPACES[v], GRANT, key);
+    const view = await openLinkReadView(SPACES[v], GRANTS[v], key);
     return { status: 200, body: await queryRecords(SPACES[v], collectionId, query, { view }) };
   } catch (error) {
     const failure = linkQueryFailure(error);
@@ -303,6 +382,10 @@ describe("a link's read view", () => {
       // A collection shown only as totals, and never as rows from elsewhere.
       ...[...SUMMARY_QUERIES, ...SUMMARY_REFUSALS.map(([query]) => query)].map((query): [string, unknown] => ["orders", query]),
       ["deals", { backlinks: { collection: "orders", field: "region" } }],
+      // A collection opened only through saved reads, and never from a query
+      // the link doesn't save.
+      ...[...SAVED_READ_ASKS, ...UNSAVED_ASKS].map((query): [string, unknown] => ["tasks", query]),
+      ["deals", { backlinks: { collection: "tasks", field: "deal" } }],
       // Unshown times can't be read, sorted or filtered.
       ["clients", {}],
       ["clients", { orderBy: "updatedAt" }],
@@ -334,6 +417,14 @@ describe("a link's read view", () => {
         [{ orderBy: "amount", where: { stage: "lead" } }, first.nextCursor],
         [{ orderBy: "margin" }, first.nextCursor],
       ] as const) out.push(JSON.stringify(await ask(v, "deals", { ...query, cursor: foreign })));
+      // The saved read that names the renewal deal by its stored id, and the
+      // same read naming another deal.
+      out.push(JSON.stringify(await ask(v, "tasks", { where: { deal: renewalId(v) }, expand: { deal: ["name"] } })));
+      out.push(JSON.stringify(await ask(v, "tasks", { where: { field: "deal", op: "eq", value: pilotId(v) }, expand: { deal: ["name"] } })));
+      // A saved read's cursor continues it only with the values it began with.
+      const board = (await ask(v, "tasks", { ...boardAsk("open"), limit: 1 })).body as { nextCursor: string };
+      out.push(JSON.stringify(await ask(v, "tasks", { ...boardAsk("open"), cursor: board.nextCursor })));
+      out.push(JSON.stringify(await ask(v, "tasks", { ...boardAsk("done"), cursor: board.nextCursor })));
       return out;
     };
 
@@ -361,6 +452,44 @@ describe("a link's read view", () => {
     });
     expect(await ask("a", "vault", {})).toEqual(await ask("a", "nope", {}));
     expect(a.filter((answer) => answer.includes("lr-unlabelled"))).toEqual([]);
+
+    // Saved reads run in the link's ids, the hard-coded stored id included.
+    const shown = async (query: unknown) => {
+      const { body } = await ask("a", "tasks", query);
+      const { records, expanded } = body as { records: RecordFile[]; expanded?: Record<string, Record<string, RecordFile>> };
+      return { records: records.map((record) => [record.id, record.data]), expanded };
+    };
+    expect(await shown({ where: { deal: "renewal" }, expand: { deal: ["name"] } })).toMatchObject({
+      records: [
+        ["lr-task-2", { title: "Send quote", status: "done", deal: "lr-deal-1", effort: 1 }],
+        ["lr-task-1", { title: "Write brief", status: "open", deal: "lr-deal-1", effort: 3 }],
+      ],
+      expanded: { deals: { "lr-deal-1": { id: "lr-deal-1", data: { name: "Renewal" } } } },
+    });
+    // The board may switch status within its list; search finds shown text only.
+    expect((await shown(boardAsk("open"))).records).toEqual([
+      ["lr-task-4", { title: "Chase", status: "open", deal: null }],
+      ["lr-task-3", { title: "Plan pilot", status: "open", deal: "lr-deal-2" }],
+    ]);
+    expect((await shown(boardAsk("done"))).records).toEqual([["lr-task-2", { title: "Send quote", status: "done", deal: "lr-deal-1" }]]);
+    expect((await shown({ where: { deal: "lr-deal-2" }, select: ["title"] })).records).toEqual([["lr-task-3", { title: "Plan pilot" }]]);
+    // A saved condition on a hidden field picks rows without showing it.
+    expect((await shown({ where: { status: "open", owner: "alice" }, orderBy: "title" })).records).toEqual([
+      ["lr-task-3", { title: "Plan pilot", status: "open", deal: "lr-deal-2", effort: 2 }],
+      ["lr-task-1", { title: "Write brief", status: "open", deal: "lr-deal-1", effort: 3 }],
+    ]);
+    expect((await shown(SAVED_READ_ASKS.at(-1))).records.map(([id]) => id)).toEqual(["lr-task-1"]);
+    expect(await ask("a", "tasks", boardAsk("private"))).toEqual({
+      status: 403,
+      body: { error: "This link can only run the reads saved with it.", code: "LINK_QUERY_NOT_RECORDED" },
+    });
+    for (const query of UNSAVED_ASKS) expect({ query, ...(await ask("a", "tasks", query)) }).toMatchObject({ query, status: 403, body: { code: "LINK_QUERY_NOT_RECORDED" } });
+
+    // Each link counts the reads it refused, by shape and never by value.
+    const counted = await openLinkReadView(SPACES.a, GRANTS.a, labelledKeys.a, { linkId: "link-counted" });
+    for (const query of [boardAsk("private"), boardAsk("someone's secret"), {}]) await queryRecords(SPACES.a, "tasks", query, { view: counted }).catch(() => {});
+    expect(unrecordedReads("link-counted")).toMatchObject({ total: 3, reads: [{ collectionId: "tasks", count: 2 }, { collectionId: "tasks", count: 1, shapeDigest: shapeDigest("{}") }] });
+    expect(unrecordedReads("link-other").total).toBe(0);
   });
 });
 
@@ -418,7 +547,12 @@ describe("link grants against live schemas", () => {
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "notes",
       name: "notes",
-      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, tally: { type: "relation", references: "tallies" } },
+      fields: { title: { type: "text" }, page: { type: "document" }, deal: { type: "relation", references: "deals" }, kind: { type: "text" }, tally: { type: "relation", references: "tallies" }, step: { type: "relation", references: "steps" }, later: { type: "hologram" } },
+    }));
+    await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
+      id: "steps",
+      name: "steps",
+      fields: { title: { type: "text" }, done: { type: "boolean" }, secret: { type: "text" } },
     }));
     await writeRecordCollectionSchema("probe-a", buildRecordCollectionSchema({
       id: "tallies",
@@ -440,13 +574,16 @@ describe("link grants against live schemas", () => {
     // and never the envelope itself ("updatedBy"). Showing "kind" is refused:
     // a link's queries would read the record's own kind instead.
     // Totals split only by few-valued fields that don't name a row, and no
-    // relation may lead to the rows behind them.
+    // relation may lead to the rows behind them. A collection opened through
+    // saved reads is reached by no other query. A saved read leaves a value
+    // open only on a field the link shows, and filters on a hidden field only
+    // with a saved condition every result meets.
     const grant = LinkGrantSchema.parse({
       version: 1,
       collections: {
         notes: {
           rows: { and: [{ field: "deal.name", op: "eq", value: "x" }, { field: "updatedBy", op: "eq", value: "y" }, { field: "kind", op: "eq", value: "z" }] },
-          fields: ["title", "page", "deal", "gone", "kind", "tally"],
+          fields: ["title", "page", "deal", "gone", "kind", "tally", "step", "later"],
           writes: { update: true },
         },
         tallies: {
@@ -454,6 +591,21 @@ describe("link grants against live schemas", () => {
           fields: ["gone", "kind", "note"],
           mode: "summaries",
           summaries: { groupBy: ["region", "paid", "label", "code", "note", "kind"], measures: ["amount", "paid", "version", "gone"] },
+        },
+        steps: {
+          fields: ["title", "done"],
+          mode: "fixed",
+          fixed: [
+            { id: "unsorted", query: { select: ["title", "done"] } },
+            { id: "open-secret", query: { where: { field: "secret", op: "eq", value: "x" } }, params: { "/where/value": { kind: "any" } } },
+            { id: "listed-secret", query: { where: { field: "secret", op: "eq", value: "x" } }, params: { "/where/value": { kind: "oneOf", values: ["x", "y"] } } },
+            { id: "open-field", query: { where: { field: "title", op: "eq", value: "x" } }, params: { "/where/field": { kind: "oneOf", values: ["done"] } } },
+            { id: "closed-secret", query: { where: { and: [{ field: "secret", op: "eq", value: "x" }, { field: "title", op: "eq", value: "y" }] } } },
+            { id: "either-secret", query: { where: { or: [{ field: "secret", op: "eq", value: "x" }, { field: "title", op: "eq", value: "y" }] } } },
+            { id: "gone", query: { where: { field: "gone", op: "eq", value: "x" } } },
+            { id: "by-secret", query: { orderBy: [{ field: "secret", dir: "asc" }] } },
+            { id: "either-title", query: { where: { or: [{ field: "title", op: "eq", value: "a" }, { field: "title", op: "eq", value: "b" }] } }, params: { "/where/or/0/value": { kind: "any" } } },
+          ],
         },
         missing: { fields: [] },
       },
@@ -464,6 +616,8 @@ describe("link grants against live schemas", () => {
       'notes: Field "gone" doesn\'t exist.',
       'notes: Field "kind" has a name records use for themselves, so links can\'t show it.',
       'notes: Field "tally" points at a collection this link shows only as totals.',
+      'notes: Field "step" points at a collection this link opens only through saved reads.',
+      'notes: Field "later" has a type links can\'t show yet.',
       'notes: The row condition can\'t follow "deal.name" into another collection.',
       'notes: The row condition uses "updatedBy", which isn\'t a field of this collection.',
       "notes: Links can't change records yet.",
@@ -474,6 +628,14 @@ describe("link grants against live schemas", () => {
       'tallies: Summary measure "paid" must be a number field.',
       'tallies: Field "version" has a name records use for themselves, so links can\'t show it.',
       'tallies: Summary measure "gone" isn\'t a field of this collection.',
+      'steps: Saved read "unsorted" isn\'t in canonical form.',
+      'steps: Saved read "open-secret" can leave "secret" open only if the link shows it.',
+      'steps: Saved read "listed-secret" can leave "secret" open only if the link shows it.',
+      'steps: Saved read "open-field" leaves "/where/field" open, which isn\'t a value it compares with.',
+      'steps: Saved read "either-secret" can filter on "secret", which this link doesn\'t show, only with a condition every result meets.',
+      'steps: Saved read "gone" can\'t filter on "gone", which this link doesn\'t show.',
+      'steps: Saved read "by-secret" uses "secret", which this link doesn\'t show.',
+      'steps: Saved read "either-title" can\'t leave "/where/or/0/value" open beside a condition of the same form.',
       "missing: This collection doesn't exist.",
     ]);
   });

@@ -199,10 +199,12 @@ test("Records reads intersect caller and document authority, including expanded 
   expect((await noRecords(query)).status).toBe(403)
   const noDocument = createHtmlPreviewBroker(frozen, ["records:read"])
   expect((await noDocument(query)).status).toBe(403)
-  const broker = createHtmlPreviewBroker(frozen, [
-    "widgets:read",
-    "records:read",
-  ])
+  const observed: unknown[] = []
+  const broker = createHtmlPreviewBroker(
+    frozen,
+    ["widgets:read", "records:read"],
+    (read) => observed.push(read)
+  )
   expect(
     (
       await broker({
@@ -222,6 +224,12 @@ test("Records reads intersect caller and document authority, including expanded 
     ok: true,
     body: { records: [{ data: { title: "Initial task" } }] },
   })
+  // The observer sees every query as sent, refused and repeated ones too.
+  expect(observed).toEqual([
+    { collectionId: "tasks", query: { expand: { project: true } } },
+    { collectionId: "tasks", query: {} },
+    { collectionId: "tasks", query: {} },
+  ])
   const fresh = createHtmlPreviewBroker(frozen, [
     "documents:read",
     "records:read",
@@ -307,10 +315,12 @@ previewTest(
       },
       scopes: ["documents:read", "records:read"],
       options: { width: 600, height: 300 },
+      observeRecordReads: true,
     })
     expect(capture.status).toBe("complete")
     expect(capture.width).toBe(600)
     expect(capture.bytes.byteLength).toBeGreaterThan(1000)
+    expect(capture.observed).toEqual([{ collectionId: "tasks", query: {} }])
     const emoji = await captureHtmlPreview({
       snapshot: {
         ...snapshot,
@@ -319,6 +329,8 @@ previewTest(
       scopes: ["documents:read"],
       options: { width: 300, height: 200, theme: "light" },
     })
+    // A member's preview carries nothing new.
+    expect("observed" in emoji).toBe(false)
     const emojiPixels = await sharp(emoji.bytes).removeAlpha().raw().toBuffer()
     let coloredPixels = 0
     for (let i = 0; i < emojiPixels.length; i += 3) {

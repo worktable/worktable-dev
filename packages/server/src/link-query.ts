@@ -88,12 +88,12 @@ function limitReached(refusal: { limit: LinkLimitName; retryAfter: number }): Li
 
 /** The tool's record permissions, read the way its own records calls read them. */
 async function toolPermissions(target: LinkReadTarget): Promise<WidgetFile["permissions"] | null> {
-  if (target.pinnedVersion) {
-    const version = await getWidgetVersion(target.spaceId, target.path, target.pinnedVersion);
-    return version?.after.content.widget.permissions ?? null;
-  }
+  // A pinned link still needs its tool to be there now.
   const { data: widget } = await readWidget(target.spaceId, target.path);
-  return widget && !widget.archive ? widget.permissions : null;
+  if (!widget || widget.archive) return null;
+  if (!target.pinnedVersion) return widget.permissions;
+  const version = await getWidgetVersion(target.spaceId, target.path, target.pinnedVersion);
+  return version?.after.content.widget.permissions ?? null;
 }
 
 /** Every row a result carries: records, expanded rows, backlink ids and groups. */

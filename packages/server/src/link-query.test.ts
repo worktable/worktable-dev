@@ -16,7 +16,8 @@ import { clearTeamAuthInstances } from "./team-auth.ts";
 import { closeTeamDatabases } from "./team-database.ts";
 import * as teamPolicy from "./team-policy.ts";
 import type { TokenIdentity } from "./token-store.ts";
-import { readWidget, writeWidget } from "./widget-store.ts";
+import { readWidget, setWidgetArchived, writeWidget } from "./widget-store.ts";
+import { listWidgetVersions, recordWidgetVersion } from "./widget-version-store.ts";
 import { prepareWorkspaceTarget, setWorkspaceRootOverride } from "./workspace.ts";
 import { stringifyCanonicalYaml } from "./yaml.ts";
 
@@ -102,6 +103,8 @@ describe("a link's records reads", () => {
     const read = (collectionId: string, policy = POLICY) => queryRecordsForLink(link(), collectionId, {}, { policy, budgets: new LinkBudgets() });
     const before = [await read("deals"), await read("notes")];
     expect(before.map(names)).toEqual([["Expansion", "Pilot", "Renewal"], ["Kickoff"]]);
+    await recordWidgetVersion(SHOP, TOOL, null, { source: "test" }, { operation: "create" });
+    const [pinned] = await listWidgetVersions(SHOP, TOOL);
 
     // Every collection and the network: the link still opens only its grant.
     await publish({ network: true, records: { "*": { read: true, create: true, update: true, delete: true } } });
@@ -118,10 +121,16 @@ describe("a link's records reads", () => {
 
     // A tighter owner policy cuts a collection off; it isn't switched to summaries.
     expect(await read("deals", { ...POLICY, records: "summaries" })).toEqual(closed);
-    // A tool that's gone, or a version that isn't there, closes the link.
-    for (const target of [link({ path: "gone" }), link({ pinnedVersion: "missing" })]) {
-      expect(await queryRecordsForLink(target, "deals", {}, { policy: POLICY })).toEqual(LINK_UNAVAILABLE);
+    // A link pinned to a version reads that version's permissions...
+    const readPinned = () => queryRecordsForLink(link({ pinnedVersion: pinned!.id }), "notes", {}, { policy: POLICY, budgets: new LinkBudgets() });
+    expect(await readPinned()).toEqual(before[1]!);
+    // ...while its tool is still there. A missing tool or version closes the link.
+    expect((await setWidgetArchived(SHOP, TOOL, true)).error).toBeNull();
+    for (const response of [await readPinned(), await read("deals"), await queryRecordsForLink(link({ path: "gone" }), "deals", {}, { policy: POLICY })]) {
+      expect(response).toEqual(LINK_UNAVAILABLE);
     }
+    expect((await setWidgetArchived(SHOP, TOOL, false)).error).toBeNull();
+    expect(await queryRecordsForLink(link({ pinnedVersion: "missing" }), "deals", {}, { policy: POLICY })).toEqual(LINK_UNAVAILABLE);
   });
 
   it("holds a link to its budget, then lets it back in", async () => {

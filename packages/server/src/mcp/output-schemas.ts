@@ -1603,6 +1603,26 @@ export function assertPublicOperationOutput(
 export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
 > = {
+  worktable_records_read: resultSchema("worktable_records_read", {
+    collections: forActions(
+      z.array(CompactCollectionSchema),
+      '"list_collections"'
+    ),
+    records: forActions(z.array(CompactRecordSchema), '"query"'),
+    total: forActions(
+      z.number().int().nonnegative(),
+      '"query" (every matching record, across pages)'
+    ),
+    expanded: forActions(
+      z.record(z.string(), z.record(z.string(), CompactRecordSchema)),
+      '"query"'
+    ),
+    backlinks: forActions(z.record(z.string(), z.array(z.string())), '"query"'),
+    groups: forActions(z.array(z.record(z.string(), z.unknown())), '"query"'),
+    nextCursor: forActions(z.string(), '"query"'),
+    warnings: forActions(z.array(z.string()), '"query"'),
+    record: forActions(CompactRecordSchema, '"read"'),
+  }),
   worktable_records_write: resultSchema("worktable_records_write", {
     collection: forActions(CompactCollectionSchema, '"upsert_collection"'),
     record: forActions(CompactRecordSchema, '"create" or "update"'),

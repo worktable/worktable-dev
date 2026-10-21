@@ -490,7 +490,7 @@ export async function runQueryV2(
   fields: FieldTypeMap | undefined,
   resolve: CollectionResolver,
   resolveFields?: FieldsResolver,
-  options?: { resolveDocumentPath?: (path: string) => string; groupEachValue?: boolean },
+  options?: { resolveDocumentPath?: (path: string) => string; groupEachValue?: boolean; onQueryRows?: (rows: readonly RecordFile[]) => void },
 ): Promise<RecordQueryResult> {
   // Preload every collection the query reaches so evaluation is synchronous.
   const ctx: EvalContext = { fields, targets: new Map(), targetFields: new Map(), resolveDocumentPath: options?.resolveDocumentPath };
@@ -510,6 +510,10 @@ export async function runQueryV2(
     const needle = query.search;
     rows = rows.filter((record) => recordMatchesSearch(record, needle));
   }
+
+  // A visitor subscription must retain rows contributing to totals or groups,
+  // including rows beyond this page. Member callers install no observer.
+  options?.onQueryRows?.(rows);
 
   if (query.aggregate) {
     return { records: [], groups: aggregateGroups(rows, query.aggregate, ctx, options?.groupEachValue) };

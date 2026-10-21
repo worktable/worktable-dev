@@ -3,8 +3,6 @@ import type {
   CreateShareLinkInput,
   DocumentShareLinks,
   ShareLink,
-  LinkGrant,
-  ShareLinkAccess,
   ShareTarget,
   UpdateShareLinkInput,
 } from "@worktable/types"
@@ -98,15 +96,4 @@ export function revokeShareLink(id: string): Promise<{ link: ShareLink }> {
     `/api/shares/links/${encodeURIComponent(id)}`,
     { method: "DELETE" }
   )
-}
-
-/** An explicit human check; this endpoint creates no link. */
-export function checkShareLinkAccess(
-  target: ShareTarget,
-  options: { grant?: LinkGrant; observe: boolean }
-): Promise<ShareLinkAccess> {
-  return fetchJSON<ShareLinkAccess>("/api/shares/links/access", {
-    method: "POST",
-    body: JSON.stringify({ target, ...options }),
-  })
 }

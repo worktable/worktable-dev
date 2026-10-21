@@ -18,6 +18,7 @@ import { teamRouter } from "./routes/team.ts"
 import { teamAuthRouter } from "./routes/team-auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
 import {
   DEFAULT_AGENT_ACCESS,
   type DocumentId,
@@ -917,6 +918,31 @@ describe("team foundation", () => {
           expect((await create(member)).status).toBe(statuses[index]!)
         }
       }
+
+      // Managers can check an existing link under an owners-only policy,
+      // without gaining permission to prepare a new one or another tool.
+      await setPolicy({ whoMayShare: "owners", liveLinks: true })
+      for (const name of ["Board", "Other board"])
+        await createHtmlDocument({ spaceId: "original", name, html: "<h1>Board</h1>", permissions: { network: false, records: {}, state: { read: true, write: true } }, versionSource: "test", versionUpdatedBy: "test" })
+      const liveTarget = { kind: "html", spaceId: "original", path: "board" }
+      const grant = { version: 1, collections: {}, limits: { rowsPerQuery: 200, queriesPerMinute: 120, rowsPerHour: 10_000 }, state: "visitor" }
+      const liveResponse = await request(owner, "POST", "/api/shares/links", { target: liveTarget, grant })
+      expect(liveResponse.status).toBe(201)
+      const live = await liveResponse.json() as { link: { id: string } }
+      const check = (linkId?: string, path = "board") => request(member, "POST", "/api/shares/links/access", {
+        target: { ...liveTarget, path }, grant, observe: false, ...(linkId ? { linkId } : {}),
+      })
+      for (const access of ["read", "edit"] as const) {
+        grantBob(access)
+        expect((await check(live.link.id)).status).toBe(403)
+      }
+      grantBob("manage")
+      expect((await check()).status).toBe(403)
+      expect((await check(live.link.id)).status).toBe(200)
+      expect((await check(live.link.id, "other-board")).status).toBe(404)
+      expect((await request(member, "PATCH", `/api/shares/links/${live.link.id}`, { grant })).status).toBe(200)
+      expect((await request(member, "DELETE", `/api/shares/links/${live.link.id}`)).status).toBe(200)
+      expect((await check(live.link.id)).status).toBe(404)
 
       // Only owners read or change the policy. Agents reach no sharing route.
       expect(

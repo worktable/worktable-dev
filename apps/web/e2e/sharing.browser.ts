@@ -551,7 +551,7 @@ for (const appearance of [
                       },
                     ]
                   : [],
-              stateReadable: true,
+              stateReadable: !laterSchema,
             },
           })
           return
@@ -657,6 +657,9 @@ for (const appearance of [
     await page.getByRole("option", { name: "Records", exact: true }).click()
     await dialog.getByRole("checkbox", { name: "Name", exact: true }).click()
     await dialog.getByRole("checkbox", { name: "Amount", exact: true }).click()
+    await dialog
+      .getByRole("checkbox", { name: "Read team saved state", exact: true })
+      .click()
     await expect(
       dialog.getByRole("button", { name: "Create link", exact: true })
     ).toBeDisabled()
@@ -697,6 +700,9 @@ for (const appearance of [
       .getByRole("button", { name: "Actions for Untitled link" })
       .click()
     await page.getByRole("menuitem", { name: "Edit Link" }).click()
+    await expect
+      .poll(() => checks.at(-1)?.linkId)
+      .toBe("lnk_aaaaaaaaaaaaaaaaaaaaaa")
     laterSchema = true
     await dialog.getByLabel("Label", { exact: true }).fill("Board")
     await dialog.getByRole("button", { name: "Save", exact: true }).click()
@@ -706,6 +712,13 @@ for (const appearance of [
     expect(mutations[1]).not.toHaveProperty("grant")
     await dialog.getByRole("button", { name: "Actions for Board" }).click()
     await page.getByRole("menuitem", { name: "Edit Link" }).click()
+    const teamState = dialog.getByRole("checkbox", {
+      name: "Read team saved state",
+      exact: true,
+    })
+    await expect(teamState).toBeChecked()
+    await expect(teamState).toBeEnabled()
+    await teamState.click()
     await dialog
       .getByRole("checkbox", { name: "gone (unavailable)", exact: true })
       .click()
@@ -731,6 +744,26 @@ for (const appearance of [
     await expect(
       dialog.getByRole("checkbox", { name: "Measure 12", exact: true })
     ).toBeDisabled()
+    const groupSize = dialog.getByRole("spinbutton", {
+      name: "Minimum records per group",
+    })
+    const checkAccess = dialog.getByRole("button", {
+      name: "Check access",
+      exact: true,
+    })
+    const checksBeforeInvalid = checks.length
+    for (const invalid of ["1001", "", "1.5"]) {
+      await groupSize.fill(invalid)
+      await expect(checkAccess).toBeDisabled()
+      await expect(
+        dialog.getByText("Choose a whole number from 2 to 1000.")
+      ).toBeVisible()
+      await expect(
+        dialog.getByRole("button", { name: "Save", exact: true })
+      ).toBeDisabled()
+    }
+    expect(checks).toHaveLength(checksBeforeInvalid)
+    await groupSize.fill("2")
     await dialog
       .getByRole("button", { name: "Check access", exact: true })
       .click()
@@ -739,5 +772,6 @@ for (const appearance of [
     ).toBeEnabled()
     const finalGrant = checks.at(-1)!.grant as typeof initialGrant
     expect(finalGrant.collections).not.toHaveProperty("gone")
+    expect(finalGrant.state).toBe("visitor")
   })
 }

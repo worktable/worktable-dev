@@ -252,8 +252,7 @@ function ResponsiveDialogBody({
     <div
       data-slot="responsive-dialog-body"
       className={cn(
-        "min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-1 py-4 [scrollbar-gutter:stable]",
-        "-mx-1",
+        "-mx-1 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-1 py-4 [scrollbar-gutter:stable]",
         className
       )}
       {...props}

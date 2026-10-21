@@ -6,11 +6,17 @@ import {
   timingSafeEqual,
 } from "node:crypto"
 
-// Bound Argon2 work across creation, edits and visitor unlocks. Reject excess
-// work instead of retaining passwords in a queue or exhausting tenant memory.
-const MAX_PASSWORD_WORK = 2
-let passwordWork = 0
+// Keep the existing two-operation memory bound, reserving one operation for
+// people creating or replacing passwords even while visitors are unlocking.
+const passwordWork = { owner: 0, visitor: 0 }
 export class SharePasswordBusy extends Error {}
+export class SharePasswordLimited extends Error {
+  readonly retryAfter: number
+  constructor(retryAfter: number) {
+    super("Too many password attempts")
+    this.retryAfter = retryAfter
+  }
+}
 const PASSWORD_OPTIONS = {
   algorithm: "argon2id",
   memoryCost: 19_456,
@@ -30,18 +36,23 @@ export function supportedSharePasswordHash(hash: string): boolean {
   )
 }
 
-async function withPasswordSlot<T>(work: () => Promise<T>): Promise<T> {
-  if (passwordWork >= MAX_PASSWORD_WORK) throw new SharePasswordBusy()
-  passwordWork++
+async function withPasswordSlot<T>(
+  kind: keyof typeof passwordWork,
+  work: () => Promise<T>
+): Promise<T> {
+  if (passwordWork[kind] >= 1) throw new SharePasswordBusy()
+  passwordWork[kind]++
   try {
     return await work()
   } finally {
-    passwordWork--
+    passwordWork[kind]--
   }
 }
 
 export function hashSharePassword(password: string): Promise<string> {
-  return withPasswordSlot(() => Bun.password.hash(password, PASSWORD_OPTIONS))
+  return withPasswordSlot("owner", () =>
+    Bun.password.hash(password, PASSWORD_OPTIONS)
+  )
 }
 
 export function verifySharePassword(
@@ -49,9 +60,62 @@ export function verifySharePassword(
   hash: string
 ): Promise<boolean> {
   if (!supportedSharePasswordHash(hash)) return Promise.resolve(false)
-  return withPasswordSlot(() =>
+  return withPasswordSlot("visitor", () =>
     Bun.password.verify(password, hash).catch(() => false)
   )
+}
+
+const PASSWORD_WINDOW_MS = 60_000
+const MAX_PASSWORD_FAILURES = 30
+const MAX_PASSWORD_LINKS = 10_000
+interface PasswordAttempts {
+  failures: number
+  active: number
+  until: number
+}
+const passwordAttempts = new Map<string, PasswordAttempts>()
+
+/** Runtime-wide protection also covers distributed guesses and every transport.
+ * Success and capacity refusals spend no failure budget. A changed password
+ * starts a fresh budget; no password or bearer token is retained. */
+export async function verifyShareLinkPassword(
+  link: Pick<ShareTicketLink, "id" | "passwordRevision">,
+  password: string,
+  hash: string,
+  now = Date.now()
+): Promise<boolean> {
+  const key = `${link.id}:${link.passwordRevision}`
+  let attempts = passwordAttempts.get(key)
+  if (!attempts || attempts.until <= now) {
+    if (attempts) passwordAttempts.delete(key)
+    if (passwordAttempts.size >= MAX_PASSWORD_LINKS) {
+      for (const [id, entry] of passwordAttempts)
+        if (entry.until <= now && entry.active === 0)
+          passwordAttempts.delete(id)
+      if (passwordAttempts.size >= MAX_PASSWORD_LINKS)
+        throw new SharePasswordLimited(60)
+    }
+    attempts = { failures: 0, active: 0, until: now + PASSWORD_WINDOW_MS }
+    passwordAttempts.set(key, attempts)
+  }
+  if (attempts.failures + attempts.active >= MAX_PASSWORD_FAILURES)
+    throw new SharePasswordLimited(
+      Math.max(1, Math.ceil((attempts.until - now) / 1000))
+    )
+  attempts.active++
+  try {
+    const verified = await verifySharePassword(password, hash)
+    if (!verified) attempts.failures++
+    return verified
+  } finally {
+    attempts.active--
+    if (
+      attempts.failures === 0 &&
+      attempts.active === 0 &&
+      passwordAttempts.get(key) === attempts
+    )
+      passwordAttempts.delete(key)
+  }
 }
 
 export interface ShareTicketLink {

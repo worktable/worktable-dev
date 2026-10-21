@@ -715,7 +715,11 @@ describe("doc store", () => {
       const mdPath = `${docBase}.md`
       const jsonPath = `${docBase}.json`
       const events: unknown[] = []
-      const off = onWorkspaceChange((event) => events.push(event))
+      // Earlier tests' events can arrive late; count only this document's.
+      const off = onWorkspaceChange((event) => {
+        if ("docPath" in event && event.docPath === "replay-doc")
+          events.push(event)
+      })
       try {
         suppressPath(mdPath)
         await writeDoc("test-space", "replay-doc", "# Internal\n", {
@@ -782,7 +786,10 @@ describe("doc store", () => {
       const docBase = resolve(spacesDir, "test-space", "docs", docPath)
       const mdPath = `${docBase}.md`
       const events: unknown[] = []
-      const off = onWorkspaceChange((event) => events.push(event))
+      // Earlier tests' events can arrive late; count only this document's.
+      const off = onWorkspaceChange((event) => {
+        if ("docPath" in event && event.docPath === docPath) events.push(event)
+      })
       let releaseVersionLock!: () => void
       let reportVersionLock!: () => void
       const versionLockAcquired = new Promise<void>((resolve) => {
@@ -832,7 +839,10 @@ describe("doc store", () => {
       const docBase = resolve(spacesDir, "test-space", "docs", docPath)
       const mdPath = `${docBase}.md`
       const events: unknown[] = []
-      const off = onWorkspaceChange((event) => events.push(event))
+      // Earlier tests' events can arrive late; count only this document's.
+      const off = onWorkspaceChange((event) => {
+        if ("docPath" in event && event.docPath === docPath) events.push(event)
+      })
       let releaseFirstVersionLock!: () => void
       let reportFirstVersionLock!: () => void
       const firstVersionLockAcquired = new Promise<void>((resolve) => {

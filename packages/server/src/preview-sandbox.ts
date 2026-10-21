@@ -60,8 +60,16 @@ export function missingPreviewLibraries(
   }
   const named = /error while loading shared libraries: ([^:\s]+)/.exec(output)
   if (named) missing.add(named[1]!)
-  if (/undefined symbol: snd_/.test(output)) missing.add("libasound.so.2")
   return [...missing]
+}
+
+/** The loader's complaint without the browser's path, for when no library is named. */
+export function loaderError(output: string): string | null {
+  return (
+    /undefined symbol: [^\n]+/.exec(output)?.[0] ??
+    /error while loading shared libraries: [^\n]+/.exec(output)?.[0] ??
+    null
+  )
 }
 
 /**
@@ -139,10 +147,13 @@ function readOsRelease(): string | null {
 /** Names the missing libraries and, on Debian or Ubuntu, the install command. */
 export function describeMissingLibraries(
   missing: string[],
-  release: DebianRelease
+  release: DebianRelease,
+  loader: string | null = null
 ): string {
   if (!missing.length)
-    return "The preview browser can't load the system libraries it needs."
+    return loader
+      ? `The preview browser can't load the system libraries it needs: ${loader}.`
+      : "The preview browser can't load the system libraries it needs."
   // A bare server lacks about twenty; the install command covers them all.
   const named =
     missing.length > 3

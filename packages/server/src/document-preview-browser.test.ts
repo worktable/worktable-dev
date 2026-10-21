@@ -231,11 +231,17 @@ describe("preview launch failures", () => {
     ).toBe(
       "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0. Install them with `sudo apt-get install libglib2.0-0`."
     )
+    // An unresolved symbol doesn't say which package is missing, so it's quoted.
     const alsa =
       "Error: Preview browser exited: /r/headless_shell: symbol lookup error: /r/headless_shell: undefined symbol: snd_device_name_get_hint, version ALSA_0.9"
     expect(
-      describePreviewLaunchFailure(alsa, { ...selfHosted, debian: { time64: true } })
-    ).toContain("libasound.so.2. Install them with `sudo apt-get install libasound2t64`.")
+      describePreviewLaunchFailure(alsa, {
+        ...selfHosted,
+        debian: { time64: true },
+      })
+    ).toBe(
+      "The preview browser can't load the system libraries it needs: undefined symbol: snd_device_name_get_hint, version ALSA_0.9."
+    )
     // Without Debian or Ubuntu, and on Cloud, there's no command to suggest.
     expect(
       describePreviewLaunchFailure(glib, { ...selfHosted, debian: null })
@@ -249,10 +255,10 @@ describe("preview launch failures", () => {
     expect(
       describeMissingLibraries(
         ["libglib-2.0.so.0", "libgobject-2.0.so.0", "libnss3.so", "libnspr4.so", "libX11.so.6"],
-        { time64: false }
+        { time64: true }
       )
     ).toBe(
-      "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0, libgobject-2.0.so.0, libnss3.so and 2 more. Install them with `sudo apt-get install libglib2.0-0 libnspr4 libnss3 libx11-6`."
+      "The preview browser needs system libraries this host doesn't have: libglib-2.0.so.0, libgobject-2.0.so.0, libnss3.so and 2 more. Install them with `sudo apt-get install libglib2.0-0t64 libnspr4 libnss3 libx11-6`."
     )
   })
 })

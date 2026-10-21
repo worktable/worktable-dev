@@ -7,6 +7,7 @@ import {
   classifyPreviewSandboxFailure,
   debianRelease,
   describeMissingLibraries,
+  loaderError,
   missingPreviewLibraries,
   userNamespacesRestricted,
   type DebianRelease,
@@ -233,7 +234,8 @@ export function describePreviewLaunchFailure(
       ? "This host is missing system libraries the preview browser needs."
       : describeMissingLibraries(
           missingPreviewLibraries(details, executable),
-          host.debian !== undefined ? host.debian : debianRelease()
+          host.debian !== undefined ? host.debian : debianRelease(),
+          loaderError(details)
         )
   // Cloud operators fix the host themselves, so tenants get the generic message.
   if (failure === "root" && !host.hosted)

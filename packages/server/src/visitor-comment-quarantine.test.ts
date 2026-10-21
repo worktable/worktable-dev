@@ -282,11 +282,21 @@ it("quarantines visitor text from real agent credentials, content paths, Pending
 
   const solo = await createToken({ scopes: ["*"], agent: "quarantine" })
   await probe(solo.token)
-  expect(messages).toHaveLength(1)
-  expect(messages[0]).not.toContain(sentinel)
+  const visitorNotices = () =>
+    messages
+      .map((message) => JSON.parse(message))
+      .filter((message) => message.type === "visitor_comments_changed")
+  expect(visitorNotices()).toEqual([
+    {
+      type: "visitor_comments_changed",
+      spaceId: "space",
+      data: { documentId, linkId: "synthetic-link" },
+    },
+  ])
+  expect(messages.join()).not.toContain(sentinel)
   mayEdit = false
   notifyVisitorComments("space", documentId, "synthetic-link")
-  expect(messages).toHaveLength(1)
+  expect(visitorNotices()).toHaveLength(1)
 
   // Exercise the hosted OAuth admission path with a real signature and JWKS,
   // then the exact resolved agent identity at the private-route boundary.

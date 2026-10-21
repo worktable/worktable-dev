@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { ShareLink } from "@worktable/types"
 import { formatArchiveDate } from "@/lib/lifetime"
-import { ShareLinkList } from "./share-document-action"
+import { ShareLinkList } from "./share-links-dialog"
 
 const DAY = 86_400_000
 

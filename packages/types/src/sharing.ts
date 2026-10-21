@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AnnotationCategorySchema } from "./annotations"
+import { SHARE_LINK_LABEL_MAX_LENGTH } from "./constants"
 import { CanonicalIdSchema, IsoTimestampSchema } from "./widgets"
 
 // Share links: several per document, each with its own label, level, expiry
@@ -35,7 +36,6 @@ export const ShareLinkBlockedBySchema = z.enum([
 ])
 export type ShareLinkBlockedBy = z.infer<typeof ShareLinkBlockedBySchema>
 
-export const SHARE_LINK_LABEL_MAX_LENGTH = 80
 const ShareLinkLabelSchema = z.string().trim().max(SHARE_LINK_LABEL_MAX_LENGTH)
 const ShareLinkPasswordSchema = z.string().min(8).max(128)
 

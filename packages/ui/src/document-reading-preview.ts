@@ -6,7 +6,6 @@ import {
   isValidElement,
   type ReactElement,
   type ReactNode,
-  type UIEvent,
 } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -490,13 +489,11 @@ export function markdownTitleLine(markdown: string): number | null {
 
 export function DocumentReadingPreview({
   content,
-  onScroll,
   showStatus = true,
   afterTitle,
   titlePlaceholder,
 }: {
   content: unknown[] | string
-  onScroll?: (top: number) => void
   showStatus?: boolean
   /** Shown under the title (the opening level-one heading), as the open Doc shows it. */
   afterTitle?: ReactNode
@@ -519,10 +516,11 @@ export function DocumentReadingPreview({
     h("h1", { key, className: "worktable-title-placeholder" }, titlePlaceholder)
   const richPreview = (blocks: unknown[]): ReactNode[] => {
     if (titlePlaceholder === undefined) return blocks as ReactNode[]
-    if (!opensWithTitle) return [placeholderTitle("title-stand-in"), ...blocks] as ReactNode[]
+    if (!opensWithTitle)
+      return [placeholderTitle("title-stand-in"), ...blocks] as ReactNode[]
     return hasText(record(content[0] as unknown).content)
       ? (blocks as ReactNode[])
-      : [placeholderTitle("title"), ...blocks.slice(1)] as ReactNode[]
+      : ([placeholderTitle("title"), ...blocks.slice(1)] as ReactNode[])
   }
   const preview = Array.isArray(content)
     ? (([title, ...rest]) =>
@@ -563,8 +561,6 @@ export function DocumentReadingPreview({
     "div",
     {
       "data-document-preview": true,
-      onScroll: (event: UIEvent<HTMLDivElement>) =>
-        onScroll?.(event.currentTarget.scrollTop),
       className: "relative h-full overflow-auto bg-background",
     },
     h(

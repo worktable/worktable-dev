@@ -25,8 +25,12 @@ import {
   normalizeMermaidBlocks,
 } from "@worktable/types";
 
+// An unlabeled fence stays unlabeled ("" rather than upstream's JavaScript),
+// so Markdown converted to rich text and back reads as it was written. Keep
+// in step with the editor's options in apps/web rich-code-block.ts.
 const worktableCodeBlockOptions = {
   ...codeBlockOptions,
+  defaultLanguage: "",
   supportedLanguages: Object.fromEntries(
     Object.entries(codeBlockOptions.supportedLanguages ?? {}).filter(
       ([language]) => language !== "mermaid" && language !== "mmd"

@@ -258,6 +258,17 @@ describe("blocks → markdown → blocks", () => {
     expect(inlineText(back[0].content)).toBe("const x: number = 1;");
   });
 
+  it("a fence keeps what was written: aliases, unknown languages and none", async () => {
+    const markdown = ["txt", "plaintext", "Foo-Lang", ""]
+      .map((language) => "```" + language + "\nline\n```\n")
+      .join("\n");
+    const blocks = (await canonicalizeBlocks(await markdownToBlocks(markdown))) as {
+      props: { language: string };
+    }[];
+    expect(blocks.map((block) => block.props.language)).toEqual(["txt", "plaintext", "Foo-Lang", ""]);
+    expect(await blocksToMarkdown(blocks)).toBe(markdown);
+  });
+
   it("mermaid block serializes to a ```mermaid fence carrying the diagram source", async () => {
     // The first-party server mermaid spec (blocknote.ts) exports
     // <pre><code class="language-mermaid"> so markdown projections carry the

@@ -1,12 +1,13 @@
 /**
  * Display names for code block languages, keyed by id and alias. Mirrors
- * the rich text editor's language picker (@blocknote/code-block), which is
+ * the rich text editor's language picker (rich-code-block.ts), which is
  * too heavy to load just for a label; code-language.test.ts keeps them equal.
  */
 const LANGUAGE_NAMES: Record<string, string> = {
   text: "Plain Text",
   txt: "Plain Text",
   plain: "Plain Text",
+  plaintext: "Plain Text",
   c: "C",
   cpp: "C++",
   "c++": "C++",

@@ -949,6 +949,12 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "threads.message": [z.looseObject({ message: PortableThreadMessageSchema })],
   "threads.wait": [ThreadWaitOutputSchema],
   "threads.post": [ThreadPostOutputSchema],
+  "threads.rename": [
+    ThreadMutationReceiptSchema.extend({
+      title: z.string(),
+      updatedAt: z.string(),
+    }),
+  ],
   "threads.assign_response": [
     ThreadMutationReceiptSchema.extend({
       messageId: z.string(),
@@ -1603,6 +1609,19 @@ export function assertPublicOperationOutput(
 export const PREVIEW_OUTPUT_SCHEMAS: Partial<
   Record<keyof typeof WORKTABLE_OUTPUT_SCHEMAS, z.ZodType>
 > = {
+  worktable_threads_write:
+    WORKTABLE_OUTPUT_SCHEMAS.worktable_threads_write.extend({
+      threadId: forActions(z.string(), '"post", "assign_response" or "rename"'),
+      revision: forActions(
+        z.number().int().positive(),
+        '"assign_response" or "rename"'
+      ),
+      title: forActions(
+        z.string(),
+        '"rename" (the saved title, including when a conditional rename leaves it unchanged)'
+      ),
+      updatedAt: forActions(z.string(), '"rename"'),
+    }),
   worktable_records_read: resultSchema("worktable_records_read", {
     collections: forActions(
       z.array(CompactCollectionSchema),

@@ -20,6 +20,7 @@ import {
   ThreadDeliveryStateSchema,
   ThreadLocationSchema,
   ThreadMessageIdSchema,
+  ThreadTitleSchema,
 } from "@worktable/types"
 import { PATH_GLOB_MAX_LENGTH } from "../path-glob.ts"
 import {
@@ -702,6 +703,30 @@ export const PostThreadInput = z.object({
   waitSeconds: z.number().min(0).max(25).optional(),
 })
 
+export const PostThreadInputPreview = PostThreadInput.extend({
+  title: ThreadTitleSchema.optional().describe(
+    "A short, specific topic for a new thread. For an existing thread, use rename instead."
+  ),
+})
+
+export const RenameThreadInput = z.object({
+  location: ThreadLocationSchema,
+  threadId: z.string().min(1),
+  title: ThreadTitleSchema,
+  expectedTitle: z
+    .string()
+    .optional()
+    .describe(
+      "The title you read. Refuses a conflicting rename if someone changed it."
+    ),
+  onlyIfAutomatic: z
+    .boolean()
+    .optional()
+    .describe(
+      "Use true when naming a human-started conversation before your first answer. Leaves an already chosen title unchanged."
+    ),
+})
+
 export const ClaimThreadDeliveryInput = z.object({
   waitSeconds: z.number().min(0).max(25).optional(),
   threadLocationVersion: z.literal(2).optional(),
@@ -1162,6 +1187,14 @@ export const ThreadsWriteInput = z.strictObject({
   request: z.discriminatedUnion("action", [
     actionSchema("post", PostThreadInput.shape),
     actionSchema("assign_response", AssignResponseRequestInput.shape),
+  ]),
+})
+
+export const ThreadsWriteInputPreview = z.strictObject({
+  request: z.discriminatedUnion("action", [
+    actionSchema("post", PostThreadInputPreview.shape),
+    actionSchema("assign_response", AssignResponseRequestInput.shape),
+    actionSchema("rename", RenameThreadInput.shape),
   ]),
 })
 

@@ -35,6 +35,7 @@ import {
   AnnotationsWriteInput,
   ThreadsReadInput,
   ThreadsWriteInput,
+  ThreadsWriteInputPreview,
   ThreadDeliveryInput,
   DeleteInput,
   GuidanceInput,
@@ -163,9 +164,13 @@ export const TOOL_DESCRIPTIONS: Record<WorktableToolName, string> = {
  * directories review the released tools. Each entry replaces the released
  * description when the server is built with surface "preview".
  */
-export const PREVIEW_TOOL_DESCRIPTIONS: Partial<Record<WorktableToolName, string>> = {
+export const PREVIEW_TOOL_DESCRIPTIONS: Partial<
+  Record<WorktableToolName, string>
+> = {
+  worktable_threads_write:
+    "Post messages, name conversations, and manage reply assignments in Worktable threads. Give new threads a concise topic using title. Before your first answer to a human-started conversation, call rename with a short topic and onlyIfAutomatic: true; this preserves any title already chosen by a person or another agent. If your adapter posts the reply for you, still call rename before answering. Use an unconditional rename only when explicitly asked to change a title.",
   worktable_records_read:
-    "List Record collections, query Records, or read one. A query returns up to 100 records unless limit is set (at most 1000), with total and, while more match, a nextCursor to pass as cursor. where takes a flat map ({status: \"open\"}) or a predicate tree, and contains ignores letter case. Use aggregate to count; grouping by a multi_select counts each value.",
+    'List Record collections, query Records, or read one. A query returns up to 100 records unless limit is set (at most 1000), with total and, while more match, a nextCursor to pass as cursor. where takes a flat map ({status: "open"}) or a predicate tree, and contains ignores letter case. Use aggregate to count; grouping by a multi_select counts each value.',
   worktable_records_write:
     "Create or update Record collection schemas and Records. upsert_collection merges fields by key: fields you send are added or replaced, and the rest stay. create never overwrites: an existing recordId returns the stored record unchanged with created: false, so a recordId derived from a natural key such as a URL adds each item once. update merges data and metadata keys. create_many adds up to 100 records in one call and update_many sets the same values on up to 100 records chosen by recordIds or where; both check every row before writing and report each row's result.",
 }
@@ -175,7 +180,10 @@ export const PREVIEW_TOOL_DESCRIPTIONS: Partial<Record<WorktableToolName, string
  * that tool. The dispatcher refuses preview-only inputs from a caller that
  * was offered the released surface.
  */
-export const PREVIEW_INPUT_SCHEMAS: Partial<Record<WorktableToolName, z.ZodType>> = {
+export const PREVIEW_INPUT_SCHEMAS: Partial<
+  Record<WorktableToolName, z.ZodType>
+> = {
+  worktable_threads_write: ThreadsWriteInputPreview,
   worktable_records_write: RecordsWriteInputPreview,
 }
 

@@ -114,6 +114,67 @@ afterEach(async () => {
 })
 
 describe("thread REST routes", () => {
+  it("gates naming on preview and rejects stale edits without changing the conversation", async () => {
+    const previous = process.env.WORKTABLE_MCP_PREVIEW
+    try {
+      process.env.WORKTABLE_MCP_PREVIEW = "0"
+      const created = await request("POST", "/api/threads", {
+        to: "Atlas",
+        body: "Can you help?",
+        idempotencyKey: "rename-preview",
+      })
+      const path = `/api/threads/${created.json.threadId}`
+      expect((await request("GET", path)).json.canRename).toBe(false)
+      expect(
+        (await request("PATCH", path, { title: "New topic" })).status
+      ).toBe(403)
+      expect(
+        (
+          await request("POST", "/api/threads", {
+            to: "Atlas",
+            body: "Hello",
+            title: "Topic",
+            idempotencyKey: "title-disabled",
+          })
+        ).status
+      ).toBe(403)
+      process.env.WORKTABLE_MCP_PREVIEW = "1"
+      expect((await request("GET", path)).json.canRename).toBe(true)
+      expect(
+        (
+          await request("PATCH", path, {
+            title: "New topic",
+            expectedTitle: "Can you help?",
+          })
+        ).status
+      ).toBe(200)
+      expect(
+        (
+          await request("PATCH", path, {
+            title: "Stale topic",
+            expectedTitle: "Can you help?",
+          })
+        ).status
+      ).toBe(409)
+      expect(
+        (await request("PATCH", path, { title: "two\nlines" })).status
+      ).toBe(400)
+      expect((await request("PATCH", path, { title: "  " })).status).toBe(400)
+      expect((await request("GET", path)).json.thread).toMatchObject({
+        title: "New topic",
+        messages: [{ body: "Can you help?" }],
+      })
+      app = buildApp({ ...finn, scopes: ["threads:read"] })
+      expect((await request("GET", path)).json.canRename).toBe(false)
+      expect(
+        (await request("PATCH", path, { title: "Forbidden" })).status
+      ).toBe(403)
+    } finally {
+      if (previous === undefined) delete process.env.WORKTABLE_MCP_PREVIEW
+      else process.env.WORKTABLE_MCP_PREVIEW = previous
+    }
+  })
+
   it("creates and filters Worktable and Space threads through the global surface", async () => {
     const worktableCreated = await request("POST", "/api/threads", {
       to: "Atlas",

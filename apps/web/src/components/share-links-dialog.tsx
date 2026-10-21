@@ -135,6 +135,9 @@ export function ShareLinksDialog({
   })
   const [editing, setEditing] = useState<Editing>(null)
   const [draft, setDraft] = useState<LinkDraft>(NEW_LINK)
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+    null
+  )
   const [access, setAccess] = useState<ShareLinkAccess | null>(null)
   const [checkedGrant, setCheckedGrant] = useState<string | null>(null)
   const accessVersion = useRef(0)
@@ -180,12 +183,13 @@ export function ShareLinksDialog({
       createShareLink({
         target: { kind: target.kind, spaceId, path },
         label: input.label.trim(),
-        ...(input.grant &&
+        ...(input.live &&
+        input.grant &&
         Object.keys(input.grant.collections).length > 0 &&
         !input.expiryChosen
           ? {}
           : { expiresAt: shareLinkExpiresAt(input.expiry) ?? null }),
-        ...(preview && input.grant ? { grant: input.grant } : {}),
+        ...(preview && input.live && input.grant ? { grant: input.grant } : {}),
         ...(preview &&
         (input.passwordEnabled || list.data?.policy.requirePassword)
           ? { password: input.password }
@@ -266,6 +270,14 @@ export function ShareLinksDialog({
       setDraft((current) => ({ ...current, grant: result.grant }))
     },
   })
+  // Closing can also come from the page menu or navigation, outside this
+  // dialog's own close handler. Never apply a result to a later opening.
+  const resetProbe = probe.reset
+  useEffect(() => {
+    accessVersion.current++
+    resetProbe()
+  }, [open, resetProbe])
+
   function checkAccess(grant?: LinkGrant, observe = false) {
     const version = ++accessVersion.current
     probe.mutate({ grant, observe, version })
@@ -378,6 +390,7 @@ export function ShareLinksDialog({
     <>
       <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
         <ResponsiveDialogContent
+          ref={setPortalContainer}
           className={draft.grant ? "sm:max-w-lg" : "sm:max-w-md"}
         >
           <ResponsiveDialogHeader>
@@ -423,6 +436,7 @@ export function ShareLinksDialog({
               links.length > 0 ? (
                 <ShareLinkList
                   links={links}
+                  container={portalContainer}
                   created={created}
                   editingId={editingLink?.id ?? null}
                   disabled={saving}
@@ -448,6 +462,7 @@ export function ShareLinksDialog({
                 passwords={preview}
                 passwordRequired={list.data?.policy.requirePassword ?? false}
                 hasPassword={editingLink?.hasPassword ?? false}
+                container={portalContainer}
               >
                 {preview && target.kind === "html" ? (
                   <div className="space-y-3">
@@ -487,6 +502,7 @@ export function ShareLinksDialog({
                     {draft.live ? (
                       <ShareLinkAccessEditor
                         spaceId={spaceId}
+                        container={portalContainer}
                         access={access}
                         grant={draft.grant}
                         checked={accessChecked}
@@ -615,6 +631,7 @@ export function ShareLinksDialog({
 /** A document's links, each with what it allows and when it was last used. */
 export function ShareLinkList({
   links,
+  container,
   created,
   editingId,
   disabled,
@@ -622,6 +639,7 @@ export function ShareLinkList({
   onRevoke,
   onCopied,
 }: {
+  container?: HTMLElement | null
   links: readonly ShareLink[]
   /** The link just made: its URL shows this once. */
   created: CreatedShareLink | null
@@ -683,7 +701,11 @@ export function ShareLinkList({
                   >
                     <MoreVertical className="size-4" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-40">
+                  <DropdownMenuContent
+                    container={container}
+                    align="end"
+                    className="min-w-40"
+                  >
                     <DropdownMenuItem onClick={() => onEdit(link)}>
                       <Pencil className="mr-2 size-4" />
                       Edit Link
@@ -754,10 +776,12 @@ function ShareLinkForm({
   passwords,
   passwordRequired,
   hasPassword,
+  container,
   children,
 }: {
   passwords: boolean
   passwordRequired: boolean
+  container?: HTMLElement | null
   hasPassword: boolean
   children?: React.ReactNode
   draft: LinkDraft
@@ -804,7 +828,7 @@ function ShareLinkForm({
             >
               <SelectValue>{SHARE_LINK_LEVEL_LABELS.view}</SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent container={container}>
               <SelectItem value="view">
                 {SHARE_LINK_LEVEL_LABELS.view}
               </SelectItem>
@@ -828,7 +852,7 @@ function ShareLinkForm({
             >
               <SelectValue>{expiryLabel}</SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent container={container}>
               {choices.map((choice) => (
                 <SelectItem key={choice.value} value={choice.value}>
                   {choice.label}

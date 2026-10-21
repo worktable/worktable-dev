@@ -45,14 +45,17 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
 
 function SelectContent({
   className,
+  container,
   align = "start",
   side = "bottom",
   sideOffset = 4,
   ...props
-}: SelectPrimitive.Popup.Props &
-  Pick<SelectPrimitive.Positioner.Props, "align" | "side" | "sideOffset">) {
+}: SelectPrimitive.Popup.Props & { container?: HTMLElement | null } & Pick<
+    SelectPrimitive.Positioner.Props,
+    "align" | "side" | "sideOffset"
+  >) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={container}>
       <SelectPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}

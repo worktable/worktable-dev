@@ -128,6 +128,7 @@ function ShareLinksAction({
 
       <DeferredMount active={open}>
         <ShareLinksDialog
+          key={`${target.kind}:${target.spaceId}:${target.artifactKey}`}
           target={target}
           summary={summary}
           open={open}
@@ -314,7 +315,9 @@ function LegacyShareDocumentAction({
                       <Button
                         type="button"
                         className="h-11 sm:h-10"
-                        variant={copyState === "copied" ? "secondary" : "default"}
+                        variant={
+                          copyState === "copied" ? "secondary" : "default"
+                        }
                         aria-label={
                           copyState === "copied" ? "Copied" : "Copy link"
                         }
@@ -473,7 +476,9 @@ function LegacyShareDocumentAction({
                   onClick={() => stop.mutate()}
                   disabled={stopping}
                 >
-                  {stopping ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {stopping ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : null}
                   {stopping ? "Stopping…" : "Stop sharing"}
                 </Button>
               </>

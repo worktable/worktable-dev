@@ -587,6 +587,17 @@ for (const appearance of [
       dialog.getByText("Anyone with this link can read 2 Deals records.")
     ).toBeVisible()
     expect(checks[0]?.observe).toBe(true)
+    const mode = dialog.getByRole("combobox", { name: "Read mode for Deals" })
+    await mode.click()
+    await page.getByRole("option", { name: "Totals", exact: true }).click()
+    await expect(
+      dialog.getByText(
+        "Only totals are returned. Individual records stay hidden."
+      )
+    ).toBeVisible()
+    await mode.click()
+    await page.getByRole("option", { name: "Records", exact: true }).click()
+    await dialog.getByRole("checkbox", { name: "Name", exact: true }).click()
     await dialog.getByRole("checkbox", { name: "Amount", exact: true }).click()
     await expect(
       dialog.getByRole("button", { name: "Create link", exact: true })

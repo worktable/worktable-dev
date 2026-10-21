@@ -43,6 +43,7 @@ import {
  * and edits the chip list.
  */
 interface FilterControlsProps {
+  container?: HTMLElement | null
   spaceId: string
   columns: RecordFieldColumn[]
   filters: RecordFilter[]
@@ -62,6 +63,7 @@ export function FilterButton({
   spaceId,
   columns,
   filters,
+  container,
   onChange,
 }: FilterControlsProps) {
   const [addOpen, setAddOpen] = useState(false)
@@ -97,8 +99,9 @@ export function FilterButton({
         </TooltipTrigger>
         <TooltipContent>Add filter</TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" className="w-72">
+      <PopoverContent container={container} align="end" className="w-72">
         <FilterForm
+          container={container}
           spaceId={spaceId}
           columns={availableColumns}
           onApply={(next) => {
@@ -116,6 +119,7 @@ export function FilterChips({
   spaceId,
   columns,
   filters,
+  container,
   onChange,
 }: FilterControlsProps) {
   const [editIndex, setEditIndex] = useState<number | null>(null)
@@ -172,9 +176,14 @@ export function FilterChips({
                 <X className="size-3" />
               </span>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72">
+            <PopoverContent
+              container={container}
+              align="start"
+              className="w-72"
+            >
               {column && availableColumns.length > 0 && (
                 <FilterForm
+                  container={container}
                   spaceId={spaceId}
                   columns={availableColumns}
                   initial={filter}
@@ -208,11 +217,13 @@ function FilterForm({
   spaceId,
   columns,
   initial,
+  container,
   onApply,
 }: {
   spaceId: string
   columns: RecordFieldColumn[]
   initial?: RecordFilter
+  container?: HTMLElement | null
   onApply: (filter: RecordFilter) => void
 }) {
   const [field, setField] = useState(initial?.f ?? columns[0]?.key ?? "")
@@ -266,7 +277,7 @@ function FilterForm({
               )}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent container={container}>
             {columns.map((entry) => (
               <SelectItem key={entry.key} value={entry.key}>
                 {columnLabel(entry)}
@@ -283,7 +294,7 @@ function FilterForm({
           <SelectTrigger className="h-8 text-xs" aria-label="Filter operator">
             <SelectValue>{FILTER_OP_LABELS[op]}</SelectValue>
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent container={container}>
             {ops.map((entry) => (
               <SelectItem key={entry} value={entry}>
                 {FILTER_OP_LABELS[entry]}
@@ -375,9 +386,7 @@ function FilterValueEditor({
           onOpenChange={setDocumentOpen}
           onCommit={onChange}
         >
-          <span
-            className="flex min-h-8 w-full items-center rounded-md border border-input bg-background px-2 text-left text-sm"
-          >
+          <span className="flex min-h-8 w-full items-center rounded-md border border-input bg-background px-2 text-left text-sm">
             {typeof value === "string" && value ? (
               <FieldValue
                 column={pickerColumn}

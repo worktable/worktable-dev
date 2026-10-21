@@ -675,6 +675,7 @@ for (const appearance of [
       page.getByRole("option", { name: "Saved reads", exact: true })
     ).toBeEnabled()
     await page.keyboard.press("Escape")
+    await expect(dialog).toBeVisible()
     if (appearance.width >= 640)
       await expect(
         dialog.getByRole("button", { name: "Close", exact: true })

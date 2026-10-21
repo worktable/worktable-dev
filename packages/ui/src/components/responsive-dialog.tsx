@@ -123,6 +123,18 @@ function ResponsiveDialogContent({
   if (isMobile) {
     return (
       <DrawerContent
+        // Vaul's document capture listener runs before a nested Base UI
+        // popup handles Escape. Let that popup dismiss before the sheet.
+        onEscapeKeyDown={(event) => {
+          const target = event.target
+          if (
+            target instanceof Element &&
+            target
+              .closest('[data-slot="drawer-content"]')
+              ?.querySelector('[data-slot$="-content"][data-open]')
+          )
+            event.preventDefault()
+        }}
         className={cn(
           keyboardFriendly
             ? "data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-1rem)]"
